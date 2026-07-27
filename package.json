@@ -1,0 +1,13 @@
+{
+  "name": "lumi-pos",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Point-of-sale offline-first untuk kafe 2-20 outlet di Indonesia",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "lint:ds": "oxlint --config ds-bundle/_adherence.oxlintrc.json apps packages",
+    "test:isolation": "echo 'GATE F0 — belum diimplementasikan. Lihat tests/README.md' && exit 1",
+    "test:dst": "echo 'Belum diimplementasikan. Referensi: prototypes/02-dst-sinkronisasi/sim.py' && exit 1"
+  }
+}

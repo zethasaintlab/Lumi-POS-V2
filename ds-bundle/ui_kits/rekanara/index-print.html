@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>The Cafe by ORIGEN — UI Kit (cetak)</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="./data.js"></script>
+<script src="./image-slot.js"></script>
+<style>
+  doc-page:not(:defined) { visibility: hidden; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  * { animation-delay: -99s !important; animation-duration: .001s !important;
+      animation-iteration-count: 1 !important; animation-fill-mode: both !important;
+      animation-play-state: running !important; transition-duration: 0s !important; }
+  .page { overflow: hidden; background: var(--surface); display: flex; flex-direction: column; }
+  .cap { flex: none; display: flex; align-items: baseline; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
+  .cap b { font-weight: 600; color: var(--accent); letter-spacing: -0.02em; }
+  .cap span { color: var(--ink-muted); font-size: var(--text-caption); }
+  .mount { flex: 1; min-height: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+<doc-page orientation="landscape" margin="0">
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Dashboard</span></div><div class="mount" data-screen="dashboard"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Shift &amp; Schedule</span></div><div class="mount" data-screen="shift"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Settings</span></div><div class="mount" data-screen="settings"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Access Control</span></div><div class="mount" data-screen="access"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Reservations</span></div><div class="mount" data-screen="reservations"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Customer List</span></div><div class="mount" data-screen="customers"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Table Management</span></div><div class="mount" data-screen="table-mgmt"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Admin · Table Monitoring</span></div><div class="mount" data-screen="table-mon"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Kasir · POS (tablet counter)</span></div><div class="mount" data-screen="pos"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Dapur · Kitchen Display</span></div><div class="mount" data-screen="kds"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Publik · QR Sticker</span></div><div class="mount" data-screen="qr"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Publik · Landing</span></div><div class="mount" data-screen="landing"></div></section>
+  <section class="page"><div class="cap"><b>The Cafe by ORIGEN</b><span>Publik · Customer Order</span></div><div class="mount" data-screen="order"></div></section>
+</doc-page>
+<script src="./doc-page.js"></script>
+<script type="text/babel" src="DashboardScreen.jsx"></script>
+<script type="text/babel" src="ShiftScheduleScreen.jsx"></script>
+<script type="text/babel" src="SettingsScreen.jsx"></script>
+<script type="text/babel" src="AccessControlScreen.jsx"></script>
+<script type="text/babel" src="ReservationsScreen.jsx"></script>
+<script type="text/babel" src="CustomersScreen.jsx"></script>
+<script type="text/babel" src="TableManagementScreen.jsx"></script>
+<script type="text/babel" src="TableMonitoringScreen.jsx"></script>
+<script type="text/babel" src="PosScreen.jsx"></script>
+<script type="text/babel" src="KdsScreen2.jsx"></script>
+<script type="text/babel" src="LandingScreen.jsx"></script>
+<script type="text/babel" src="SelectTableScreen.jsx"></script>
+<script type="text/babel" src="QrStickerScreen.jsx"></script>
+<script type="text/babel">
+const { AppShell } = window.LumiPOSDesignSystem_dae7d1;
+const R = window.REKANARA;
+const ADMIN = {
+  dashboard: { crumb: 'Dashboard', C: () => window.DashboardScreen },
+  shift: { crumb: 'Shift & Schedule', C: () => window.ShiftScheduleScreen },
+  settings: { crumb: 'Settings', C: () => window.SettingsScreen },
+  access: { crumb: ['Settings', 'Access Control'], C: () => window.AccessControlScreen },
+  reservations: { crumb: 'Reservations', C: () => window.ReservationsScreen },
+  customers: { crumb: ['Customers', 'Customer List'], C: () => window.CustomersScreen },
+  'table-mgmt': { crumb: ['Tables', 'Table Management'], C: () => window.TableManagementScreen },
+  'table-mon': { crumb: ['Table Management', 'Monitoring'], C: () => window.TableMonitoringScreen },
+};
+const FULL = {
+  pos: () => window.PosScreen, kds: () => window.KdsScreen2, qr: () => window.QrStickerScreen,
+  landing: () => window.LandingScreen, order: () => window.SelectTableScreen,
+};
+document.querySelectorAll('.mount').forEach((el) => {
+  const id = el.dataset.screen;
+  let view;
+  if (ADMIN[id]) {
+    const Screen = ADMIN[id].C();
+    view = <AppShell brand={R.brand} user={R.user} nav={R.nav} active={id} breadcrumb={ADMIN[id].crumb}><Screen /></AppShell>;
+  } else {
+    const C = FULL[id]();
+    view = <div style={{ height: '100%', overflow: 'hidden' }}><C /></div>;
+  }
+  ReactDOM.createRoot(el).render(view);
+});
+</script>
+</body>
+</html>

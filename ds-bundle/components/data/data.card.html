@@ -1,0 +1,67 @@
+<!-- @dsCard group="Components" viewport="700x340" name="Data — Card, Badge, Sync, Table, Empty" subtitle="Status selalu bertext; sync tiga keadaan" -->
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{padding:20px;background:var(--surface-sunk)}.grp{margin-bottom:18px}.grp>.t-caption{margin-bottom:8px}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { Card, Badge, SyncIndicator, Table, EmptyState, Icon } = window.LumiPOSDesignSystem_dae7d1;
+function Demo(){
+  return (
+    <div>
+      <div className="grp">
+        <div className="t-caption">Badge — status selalu punya teks; ikon di KDS</div>
+        <div className="row" style={{gap:8,flexWrap:'wrap'}}>
+          <Badge>Mengantre</Badge>
+          <Badge tone="accent">Diproses</Badge>
+          <Badge tone="success" icon={<Icon name="check" size={14}/>}>Siap</Badge>
+          <Badge tone="warning" icon={<Icon name="alert" size={14}/>}>Lewat 10 menit</Badge>
+          <Badge tone="danger">Habis</Badge>
+        </div>
+      </div>
+      <div className="grp">
+        <div className="t-caption">SyncIndicator — tiga keadaan offline-first</div>
+        <div className="row" style={{gap:12,flexWrap:'wrap'}}>
+          <SyncIndicator state="ok" />
+          <SyncIndicator state="queued" count={3} />
+          <SyncIndicator state="failed" count={2} onRetry={()=>{}} />
+        </div>
+      </div>
+      <div className="row" style={{gap:16,flexWrap:'wrap',alignItems:'stretch'}}>
+        <div className="grp" style={{flex:'1 1 300px'}}>
+          <div className="t-caption">Table — zebra, kolom uang tabular</div>
+          <Card pad={false} style={{overflow:'hidden'}}>
+            <Table
+              columns={[
+                {key:'jam',header:'Jam'},
+                {key:'struk',header:'No. Struk'},
+                {key:'total',header:'Total',align:'right',render:r=><span className="num">{r.total}</span>}
+              ]}
+              rows={[
+                {jam:'14:32',struk:'K1-…-0007',total:'Rp 48.000'},
+                {jam:'14:29',struk:'K1-…-0006',total:'Rp 26.000'},
+                {jam:'14:21',struk:'K1-…-0005',total:'Rp 132.000'}
+              ]}
+              keyField="struk" />
+          </Card>
+        </div>
+        <div className="grp" style={{flex:'1 1 200px'}}>
+          <div className="t-caption">EmptyState</div>
+          <Card pad={false}><EmptyState title="Belum ada pesanan" clock="14:32:07" /></Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script>
+</body>
+</html>

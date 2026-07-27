@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" viewport="700x300" name="POS — ProductCard, CartRow, Ticket" subtitle="Primitif kasir & Kitchen Display" -->
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{padding:20px;background:var(--surface-sunk)}.t-caption.hd{margin-bottom:8px}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { ProductCard, CartRow, Ticket, Card } = window.LumiPOSDesignSystem_dae7d1;
+function Demo(){
+  const [q,setQ]=React.useState(2);
+  return (
+    <div className="row" style={{gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
+      <div style={{flex:'1 1 260px'}}>
+        <div className="t-caption hd">ProductCard — tinggi 96px, state habis</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          <ProductCard name="Americano" sku="KOP-01" price={8000} />
+          <ProductCard name="Pain au Chocolat" sku="PST-02" price={26000} available={false} />
+        </div>
+        <div className="t-caption hd" style={{marginTop:16}}>CartRow</div>
+        <Card style={{padding:'0 16px'}}>
+          <CartRow name="Americano" modifiers="Extra shot · Less ice" unitPrice={13000} qty={q} onQty={setQ} onRemove={()=>setQ(1)} />
+        </Card>
+      </div>
+      <div style={{flex:'1 1 260px'}}>
+        <div className="t-caption hd">Ticket (KDS) — terlambat</div>
+        <Ticket code="A04" orderNo="ORD-0231" orderType="Dine In" waited="12m 04s" late
+          items={[{qty:2,name:'Americano',note:'Extra shot · Less ice'},{qty:1,name:'Butter Croissant',note:'Dipanaskan'}]}
+          status="queued" primaryLabel="Mulai Proses" />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script>
+</body>
+</html>

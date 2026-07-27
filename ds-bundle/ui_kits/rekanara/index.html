@@ -1,0 +1,107 @@
+<!-- @dsCard group="The Cafe by ORIGEN App" viewport="1280x800" name="The Cafe by ORIGEN — kit lengkap (admin, POS, KDS, publik)" subtitle="Produk penuh di-reskin ke bahasa Lumi" -->
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Cafe by ORIGEN — UI Kit (Lumi)</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="./data.js"></script>
+<script src="./image-slot.js"></script>
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; overflow: hidden; }
+  .kit { display: flex; flex-direction: column; height: 100vh; }
+  .ctx { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
+  .ctx .brand { font-weight: 600; letter-spacing: -0.02em; color: var(--accent); margin-right: var(--space-2); }
+  .ctx button { min-height: 34px; padding: 0 var(--space-3); border: 1px solid var(--border); background: var(--surface); border-radius: 999px; font-family: inherit; font-size: var(--text-body); color: var(--ink-muted); cursor: pointer; white-space: nowrap; }
+  .ctx button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .stage { flex: 1; min-height: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="DashboardScreen.jsx"></script>
+<script type="text/babel" src="ShiftScheduleScreen.jsx"></script>
+<script type="text/babel" src="SettingsScreen.jsx"></script>
+<script type="text/babel" src="AccessControlScreen.jsx"></script>
+<script type="text/babel" src="ReservationsScreen.jsx"></script>
+<script type="text/babel" src="CustomersScreen.jsx"></script>
+<script type="text/babel" src="TableManagementScreen.jsx"></script>
+<script type="text/babel" src="TableMonitoringScreen.jsx"></script>
+<script type="text/babel" src="PosScreen.jsx"></script>
+<script type="text/babel" src="KdsScreen2.jsx"></script>
+<script type="text/babel" src="LandingScreen.jsx"></script>
+<script type="text/babel" src="SelectTableScreen.jsx"></script>
+<script type="text/babel" src="QrStickerScreen.jsx"></script>
+<script type="text/babel">
+const { AppShell, EmptyState, Icon } = window.LumiPOSDesignSystem_dae7d1;
+const R = window.REKANARA;
+
+// id sidebar → { breadcrumb, komponen }
+const ADMIN = {
+  dashboard: { crumb: 'Dashboard', C: () => window.DashboardScreen },
+  shift: { crumb: 'Shift & Schedule', C: () => window.ShiftScheduleScreen },
+  settings: { crumb: 'Settings', C: () => window.SettingsScreen },
+  access: { crumb: ['Settings', 'Access Control'], C: () => window.AccessControlScreen },
+  reservations: { crumb: 'Reservations', C: () => window.ReservationsScreen },
+  customers: { crumb: ['Customers', 'Customer List'], C: () => window.CustomersScreen },
+  'table-mgmt': { crumb: ['Tables', 'Table Management'], C: () => window.TableManagementScreen },
+  'table-mon': { crumb: ['Table Management', 'Monitoring'], C: () => window.TableMonitoringScreen },
+};
+
+function Placeholder({ id }) {
+  const label = R.nav.flatMap((g) => g.items).find((i) => i.id === id)?.label || id;
+  return <EmptyState icon={<Icon name="layers" size={36} />} title={label} body="Modul ini ada di sidebar produk asli, tetapi tidak termasuk layar contoh yang direkreasi di kit ini." />;
+}
+
+function Admin() {
+  const [active, setActive] = React.useState('dashboard');
+  const entry = ADMIN[active];
+  const Screen = entry ? entry.C() : null;
+  return (
+    <AppShell brand={R.brand} user={R.user} nav={R.nav} active={active} onNavigate={setActive}
+      breadcrumb={entry ? entry.crumb : 'The Cafe by ORIGEN'}>
+      {Screen ? <Screen /> : <Placeholder id={active} />}
+    </AppShell>
+  );
+}
+
+const CONTEXTS = [
+  { id: 'admin', label: 'Admin' },
+  { id: 'pos', label: 'POS' },
+  { id: 'kds', label: 'Kitchen Display' },
+  { id: 'qr', label: 'QR Sticker' },
+  { id: 'landing', label: 'Landing' },
+  { id: 'order', label: 'Customer Order' },
+];
+
+function Kit() {
+  const [ctx, setCtx] = React.useState('admin');
+  let view = null;
+  if (ctx === 'admin') view = <Admin />;
+  else if (ctx === 'pos') view = <window.PosScreen onExit={() => setCtx('admin')} />;
+  else if (ctx === 'kds') view = <window.KdsScreen2 onExit={() => setCtx('admin')} />;
+  else if (ctx === 'qr') view = <window.QrStickerScreen onExit={() => setCtx('admin')} />;
+  else if (ctx === 'landing') view = <div style={{ height: '100%', overflowY: 'auto' }}><window.LandingScreen /></div>;
+  else if (ctx === 'order') view = <div style={{ height: '100%', overflowY: 'auto' }}><window.SelectTableScreen /></div>;
+  return (
+    <div className="kit">
+      <div className="ctx">
+        <span className="brand">The Cafe by ORIGEN</span>
+        {CONTEXTS.map((c) => <button key={c.id} aria-pressed={ctx === c.id} onClick={() => setCtx(c.id)}>{c.label}</button>)}
+        <span className="grow" />
+        <span className="t-caption">Di-reskin ke bahasa Lumi (teal · Inter)</span>
+      </div>
+      <div className="stage">{view}</div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Kit />);
+</script>
+</body>
+</html>

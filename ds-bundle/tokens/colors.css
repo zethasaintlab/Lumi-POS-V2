@@ -1,0 +1,51 @@
+/* ============================================================
+   WARNA — kontras dihitung ulang & diverifikasi, bukan diperkirakan.
+   Kasus TERBURUK yang diuji: di atas --surface-alt (#F0EDEA / baris
+   zebra), bukan di atas putih. 8 dari 8 pasangan lolos WCAG AA.
+   ============================================================ */
+:root {
+  /* --- AKSEN: satu, dan hanya satu ---
+     Deep teal. (1) Bertahan terhadap glare layar counter yang kena
+     matahari. (2) Tidak bentrok dengan semantik hijau/merah.
+     (3) Tidak dipakai kompetitor ID. Kuota: < 5% area, satu aksi utama. */
+  --accent:        #0D5C63;
+  --accent-hover:  #0A4A50;
+  --accent-soft:   #E6F2F2;
+  --accent-border: #9CC9CB;
+  --on-accent:     #FFFFFF;
+
+  /* --- SEMANTIK — hanya untuk status, tidak pernah dekoratif --- */
+  --success:       #137535;   /* digelapkan dari #15803D: badge 12px butuh 4.5:1 */
+  --success-soft:  #E8F5EC;
+  --success-border:#B6DCC3;
+  --danger:        #B91C1C;
+  --danger-soft:   #FDEAEA;
+  --danger-border: #EFB4B4;
+  --warning:       #B45309;
+  --warning-soft:  #FDF3E7;
+  --warning-border:#E8C79B;
+
+  /* Warna modul — diperluas untuk produk penuh (KPI dasbor, identitas modul).
+     Dipakai HANYA untuk identitas modul & kartu statistik, tidak untuk aksi
+     utama (aksi utama tetap teal). Tetap warm/tenang agar sejalan dengan Lumi. */
+  --info:          #1D4ED8;   /* biru — informasi, swap shift */
+  --info-soft:     #EAF0FD;
+  --info-border:   #BCD0F5;
+  --violet:        #6D5AE0;   /* modul reservasi */
+  --violet-soft:   #EFEDFB;
+  --violet-border: #CFC8F2;
+
+  /* --- NETRAL HANGAT ---
+     Abu netral murni terasa dingin & klinis untuk kafe; sedikit
+     kehangatan agar layar tidak terasa seperti software rumah sakit. */
+  --ink:        #14110F;   /* teks utama    — 18.8:1 putih · 16.3:1 alt  ✔ AAA */
+  --ink-muted:  #5C5450;   /* teks sekunder —  7.4:1 putih ·  6.4:1 alt  ✔ AAA */
+  --ink-subtle: #6E6560;   /* hint, meta    —  5.7:1 putih ·  4.9:1 alt  ✔ AA  */
+
+  --surface:      #FFFFFF;  /* kartu, panel */
+  --surface-sunk: #F7F5F3;  /* latar halaman */
+  --surface-alt:  #F0EDEA;  /* baris zebra, disabled */
+
+  --border:        #E2DDD8;
+  --border-strong: #C9C2BB;
+}

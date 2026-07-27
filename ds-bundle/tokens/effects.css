@@ -1,0 +1,10 @@
+/* ============================================================
+   ELEVASI — bayangan minim. Kafe terang; bayangan tebal hilang di
+   bawah glare dan hanya menambah noise. Kartu dibedakan oleh border,
+   bukan bayangan. Sheet (bottom sheet keranjang) satu-satunya yang
+   butuh bayangan jelas karena ia mengambang di atas konten.
+   ============================================================ */
+:root {
+  --shadow-card:  0 1px 2px rgba(20, 17, 15, 0.05);
+  --shadow-sheet: 0 -4px 24px rgba(20, 17, 15, 0.12);
+}

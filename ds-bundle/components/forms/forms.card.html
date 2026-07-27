@@ -1,0 +1,64 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Forms — Button, Field, Stepper, Chip, Segmented" subtitle="Kontrol input; kritis 56px untuk aksi uang" -->
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{padding:20px;background:var(--surface-sunk)}.grp{margin-bottom:20px}.grp>.t-caption{margin-bottom:8px}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { Button, Field, Stepper, Chip, SegmentedControl, Icon } = window.LumiPOSDesignSystem_dae7d1;
+function Demo(){
+  const [q,setQ]=React.useState(2);
+  const [cat,setCat]=React.useState('Semua');
+  const [mode,setMode]=React.useState('Dine In');
+  return (
+    <div>
+      <div className="grp">
+        <div className="t-caption">Button — varian & aksi kritis 56px</div>
+        <div className="row" style={{gap:8,flexWrap:'wrap'}}>
+          <Button variant="primary">Bayar</Button>
+          <Button variant="secondary">Open Bill</Button>
+          <Button variant="ghost">Batal</Button>
+          <Button variant="danger">Void</Button>
+          <Button variant="primary" disabled>Nonaktif</Button>
+          <Button variant="primary" critical>Tutup Sesi Kas</Button>
+        </div>
+      </div>
+      <div className="grp" style={{maxWidth:320}}>
+        <div className="t-caption">Field — default, nominal (lg), error</div>
+        <div className="stack" style={{gap:12}}>
+          <Field id="a" label="Cari produk" placeholder="Nama produk atau SKU…" />
+          <Field id="b" label="Uang diterima" size="lg" prefix="Rp" defaultValue="200.000" />
+          <Field id="c" label="PIN Owner" type="password" placeholder="••••" error="PIN salah" required />
+        </div>
+      </div>
+      <div className="row" style={{gap:32,flexWrap:'wrap',alignItems:'flex-start'}}>
+        <div className="grp">
+          <div className="t-caption">Stepper — tombol tetap 44px</div>
+          <Stepper value={q} min={0} onChange={setQ} label="item" />
+        </div>
+        <div className="grp">
+          <div className="t-caption">Chip — filter pilihan tunggal</div>
+          <div className="row" style={{gap:8}}>
+            {['Semua','Kopi','Makanan'].map(c=><Chip key={c} selected={cat===c} onClick={()=>setCat(c)}>{c}</Chip>)}
+          </div>
+        </div>
+        <div className="grp">
+          <div className="t-caption">Segmented — mode pesanan</div>
+          <SegmentedControl options={['Dine In','Takeaway']} value={mode} onChange={setMode} ariaLabel="Tipe pesanan" />
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script>
+</body>
+</html>

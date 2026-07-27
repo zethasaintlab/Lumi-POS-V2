@@ -1,0 +1,23 @@
+/* ============================================================
+   SPACING (basis 4px), RADIUS, dan TARGET SENTUH.
+   ============================================================ */
+:root {
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-12: 48px;
+
+  --radius-control: 8px;   /* tombol, input */
+  --radius-card:    12px;  /* kartu, panel  */
+
+  /* TARGET SENTUH
+     44px = minimum absolut (WCAG 2.5.5 / Apple HIG).
+     56px = aksi yang menyangkut uang (Bayar, Tutup Kas, konfirmasi void).
+     Kasir berdiri, satu tangan, tangan sering basah — tap meleset =
+     pesanan salah = uang salah. */
+  --touch-min:      44px;
+  --touch-critical: 56px;
+}

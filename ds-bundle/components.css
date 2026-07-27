@@ -1,0 +1,197 @@
+/* ============================================================
+   KOMPONEN — lapisan kelas. Komponen React memancarkan className
+   ini; tidak ada nilai warna/ukuran yang ditulis langsung di JSX.
+   Semuanya lewat token (colors/typography/spacing/effects).
+   ============================================================ */
+
+/* --- Tombol --- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-height: var(--touch-min); padding: 0 var(--space-4);
+  font-family: inherit; font-size: var(--text-body); font-weight: var(--weight-medium);
+  border-radius: var(--radius-control); border: 1px solid transparent;
+  cursor: pointer; transition: background-color .12s, border-color .12s;
+  white-space: nowrap;
+}
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.btn-primary   { background: var(--accent); color: var(--on-accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+.btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--border-strong); }
+.btn-secondary:hover:not(:disabled) { background: var(--surface-alt); }
+
+.btn-ghost     { background: transparent; color: var(--ink-muted); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-alt); color: var(--ink); }
+
+.btn-danger    { background: var(--surface); color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
+
+/* Aksi kritis: Bayar, Tutup Kas, Konfirmasi void. Lebih tinggi, lebih tebal. */
+.btn-critical  { min-height: var(--touch-critical); font-size: var(--text-title); padding: 0 var(--space-6); }
+
+/* --- Input --- */
+.field {
+  width: 100%; min-height: var(--touch-min); padding: 0 var(--space-3);
+  font-family: inherit; font-size: var(--text-body); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+}
+.field:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+.field::placeholder { color: var(--ink-subtle); }
+.field-invalid, .field[aria-invalid="true"] { border-color: var(--danger); }
+.field-invalid:focus, .field[aria-invalid="true"]:focus { outline-color: var(--danger); }
+.field-lg { min-height: var(--touch-critical); font-size: var(--text-display); font-weight: var(--weight-bold); text-align: right; }
+
+.label { display: block; font-size: var(--text-caption); font-weight: var(--weight-medium); color: var(--ink-muted); margin-bottom: var(--space-2); }
+.field-error { display: block; font-size: var(--text-caption); font-weight: var(--weight-medium); color: var(--danger); margin-top: var(--space-2); }
+
+/* --- Kartu --- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+}
+.card-pad { padding: var(--space-4); }
+
+/* --- Badge status ---
+   Status TIDAK PERNAH dikodekan hanya dengan warna. Selalu ada teks,
+   dan pada KDS ditambah ikon. Aksesibilitas + keterbacaan di bawah glare. */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 2px var(--space-2); border-radius: 999px;
+  font-size: var(--text-caption); font-weight: var(--weight-medium);
+  border: 1px solid transparent; white-space: nowrap;
+}
+.badge-neutral { background: var(--surface-alt);  color: var(--ink-muted);  border-color: var(--border); }
+.badge-accent  { background: var(--accent-soft);  color: var(--accent);     border-color: var(--accent-border); }
+.badge-success { background: var(--success-soft); color: var(--success);    border-color: var(--success-border); }
+.badge-warning { background: var(--warning-soft); color: var(--warning);    border-color: var(--warning-border); }
+.badge-danger  { background: var(--danger-soft);  color: var(--danger);     border-color: var(--danger-border); }
+.badge-info    { background: var(--info-soft);    color: var(--info);       border-color: var(--info-border); }
+.badge-violet  { background: var(--violet-soft);  color: var(--violet);     border-color: var(--violet-border); }
+
+/* --- Switch (toggle setelan) — track 44px, tetap target sentuh --- */
+.switch { position: relative; display: inline-flex; align-items: center; width: 44px; height: 26px; flex: none; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch .track { width: 100%; height: 100%; border-radius: 999px; background: var(--border-strong); transition: background-color .15s; }
+.switch .thumb { position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(20,17,15,.2); transition: transform .15s; }
+.switch input:checked ~ .track { background: var(--accent); }
+.switch input:checked ~ .thumb { transform: translateX(18px); }
+.switch input:focus-visible ~ .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --- Tabs (bilah tab) --- */
+.tabs { display: inline-flex; gap: var(--space-1); background: var(--surface-alt); border-radius: var(--radius-control); padding: 3px; }
+.tabs button { min-height: 36px; padding: 0 var(--space-4); border: 0; background: transparent; border-radius: 6px; font-family: inherit; font-size: var(--text-body); color: var(--ink-muted); cursor: pointer; white-space: nowrap; }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: var(--weight-medium); box-shadow: var(--shadow-card); }
+/* varian garis-bawah (dipakai di Settings/Access Control) */
+.tabs-underline { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--border); padding: 0; background: none; }
+.tabs-underline button { min-height: 44px; padding: 0 0 var(--space-2); border: 0; border-bottom: 2px solid transparent; background: none; border-radius: 0; font-family: inherit; font-size: var(--text-body); color: var(--ink-muted); cursor: pointer; }
+.tabs-underline button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: var(--weight-medium); }
+
+/* --- Avatar (inisial) --- */
+.avatar { display: inline-grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: var(--weight-medium); flex: none; overflow: hidden; }
+
+/* --- Kartu statistik (KPI) — garis-atas aksen menandai identitas modul --- */
+.stat { position: relative; padding: var(--space-4); border-radius: var(--radius-card); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-card); overflow: hidden; }
+.stat::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--stat-accent, var(--accent)); }
+
+/* --- App shell (sidebar admin + konten) --- */
+.shell { display: flex; height: 100%; background: var(--surface-sunk); }
+.shell-side { width: 248px; flex: none; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); }
+.shell-brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex: none; }
+.shell-nav { flex: 1; overflow-y: auto; padding: var(--space-2) var(--space-2) var(--space-4); }
+.shell-group { font-size: 11px; font-weight: var(--weight-medium); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); padding: var(--space-4) var(--space-3) var(--space-1); }
+.shell-link { display: flex; align-items: center; gap: var(--space-3); min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-control); color: var(--ink-muted); cursor: pointer; font-size: var(--text-body); border: 0; background: none; width: 100%; text-align: left; font-family: inherit; }
+.shell-link:hover { background: var(--surface-alt); color: var(--ink); }
+.shell-link[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--weight-medium); }
+.shell-user { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); flex: none; }
+.shell-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.shell-top { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--border); background: var(--surface); flex: none; color: var(--ink-muted); font-size: var(--text-caption); }
+.shell-body { flex: 1; overflow-y: auto; padding: var(--space-6); }
+
+/* --- Indikator sync — tiga keadaan harus bisa dibedakan sekilas --- */
+.sync { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); border-radius: 999px; font-size: var(--text-caption); font-weight: var(--weight-medium); }
+.sync-ok      { background: var(--success-soft); color: var(--success); }
+.sync-queued  { background: var(--warning-soft); color: var(--warning); }
+.sync-failed  { background: var(--danger-soft);  color: var(--danger); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+
+/* --- Kartu produk (grid kasir) ---
+   Tinggi 96px diturunkan dari density: min 12 kartu tanpa scroll di 1024×768. */
+.product-card {
+  display: flex; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-3); min-height: 96px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card); cursor: pointer;
+  transition: border-color .12s, background-color .12s;
+}
+.product-card:hover { border-color: var(--accent-border); background: var(--accent-soft); }
+.product-card:active { background: var(--accent-soft); border-color: var(--accent); }
+.product-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.product-card[data-out="true"] { opacity: .55; }
+
+/* --- Baris keranjang --- */
+.cart-row { display: flex; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+
+/* --- Stepper qty — tiap tombol tetap ≥44px --- */
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--border-strong); border-radius: var(--radius-control); overflow: hidden; }
+.stepper button {
+  width: var(--touch-min); height: var(--touch-min);
+  display: grid; place-items: center;
+  background: var(--surface); border: 0; cursor: pointer;
+  font-size: var(--text-title); color: var(--ink); font-family: inherit;
+}
+.stepper button:hover:not(:disabled) { background: var(--surface-alt); }
+.stepper button:disabled { color: var(--ink-subtle); cursor: not-allowed; }
+.stepper span { min-width: 40px; text-align: center; font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+
+/* --- Chip (pilihan tunggal dalam grup: kategori, rentang waktu) --- */
+.chip {
+  min-height: var(--touch-min); padding: 0 var(--space-4);
+  display: inline-flex; align-items: center; white-space: nowrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  font-family: inherit; font-size: var(--text-body); color: var(--ink-muted); cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* --- Segmented control (toggle berkotak: Dine In / Takeaway) --- */
+.segmented { display: inline-flex; background: var(--surface-alt); border-radius: var(--radius-control); padding: 3px; }
+.segmented button {
+  flex: 1; min-height: 38px; padding: 0 var(--space-3); border: 0; background: transparent; border-radius: 6px;
+  font-family: inherit; font-size: var(--text-body); color: var(--ink-muted); cursor: pointer;
+}
+.segmented button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: var(--weight-medium); box-shadow: var(--shadow-card); }
+
+/* --- Tabel --- */
+.table { width: 100%; border-collapse: collapse; }
+.table th {
+  text-align: left; padding: var(--space-3);
+  font-size: var(--text-caption); font-weight: var(--weight-medium);
+  color: var(--ink-muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.table td { padding: var(--space-3); border-bottom: 1px solid var(--border); font-size: var(--text-body); }
+.table tbody tr:nth-child(even) { background: var(--surface-alt); }
+.table .right { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- Empty state --- */
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-12) var(--space-4); text-align: center; color: var(--ink-subtle); }
+
+/* --- KDS ticket --- */
+.ticket { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.ticket-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.ticket-items { padding: var(--space-2) var(--space-4); display: flex; flex-direction: column; }
+.ticket .item { display: flex; gap: var(--space-3); padding: var(--space-2) 0; align-items: flex-start; }
+.ticket .qty { min-width: 2.2em; font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+.ticket-foot { padding: var(--space-2) var(--space-4) var(--space-3); }
+.ticket .item.done { opacity: .5; text-decoration: line-through; }
+/* Keterlambatan ditandai border + ikon + teks, bukan warna saja. */
+.ticket[data-late="true"] { border-color: var(--warning); border-width: 2px; }
+.ticket[data-late="true"] .ticket-head { background: var(--warning-soft); }
+
+/* --- Dialog / overlay --- */
+.overlay { position: fixed; inset: 0; background: rgba(20, 17, 15, 0.45); display: grid; place-items: center; padding: var(--space-4); z-index: 50; }
+.dialog { width: 100%; max-width: 420px; background: var(--surface); border-radius: var(--radius-card); box-shadow: 0 12px 48px rgba(20,17,15,.24); overflow: hidden; }
+.dialog-danger { border-top: 4px solid var(--danger); }
+.dialog-pad { padding: var(--space-6); }
+.dialog-foot { display: flex; gap: var(--space-2); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border); }

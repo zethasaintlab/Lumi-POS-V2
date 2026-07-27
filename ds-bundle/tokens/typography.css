@@ -1,0 +1,40 @@
+/* ============================================================
+   TIPOGRAFI — TEPAT 4 UKURAN: 32 / 20 / 15 / 12. Tidak boleh kelima.
+   KDS membesar lewat --scale (1.6×), BUKAN dengan token ukuran baru.
+   ============================================================ */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --scale: 1; /* @kind other */
+  /* Skala inti Lumi tetap: 32 / 20 / 15 / 12.
+     Untuk produk penuh (dasbor, halaman marketing) skala diperluas —
+     tetap terbatas & berjenjang, bukan bebas. */
+  --text-hero:     calc(40px * var(--scale));  /* hero landing */
+  --text-heading:  calc(28px * var(--scale));  /* judul halaman admin: "Dashboard" */
+  --text-title-lg: calc(24px * var(--scale));  /* sub-judul besar, angka KPI */
+  --text-display: calc(32px * var(--scale));  /* kembalian, nomor order KDS, total */
+  --text-title:   calc(20px * var(--scale));  /* judul layar, nama item KDS */
+  --text-body:    calc(15px * var(--scale));  /* default */
+  --text-caption: calc(12px * var(--scale));  /* meta, label, timestamp */
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-bold:    600;   /* hanya untuk --text-display */
+
+  --leading-tight: 1.2;
+  --leading-body:  1.5;
+}
+
+/* KDS: satu variabel memperbesar SELURUH skala. Terpasang di layar dapur.
+   display → 51px, title → 32px — melampaui syarat baca dari 2 meter. */
+.kds-scale { --scale: 1.6; /* @kind other */ }
+
+/* Kelas tipografi — pakai kelas, bukan ukuran lepas. */
+.t-hero     { font-size: var(--text-hero);     font-weight: var(--weight-bold);   line-height: 1.05; letter-spacing: -0.03em; }
+.t-heading  { font-size: var(--text-heading);  font-weight: var(--weight-bold);   line-height: var(--leading-tight); letter-spacing: -0.02em; }
+.t-title-lg { font-size: var(--text-title-lg); font-weight: var(--weight-bold);   line-height: var(--leading-tight); letter-spacing: -0.02em; }
+.t-display { font-size: var(--text-display); font-weight: var(--weight-bold);    line-height: var(--leading-tight); letter-spacing: -0.02em; }
+.t-title   { font-size: var(--text-title);   font-weight: var(--weight-medium);  line-height: var(--leading-tight); letter-spacing: -0.01em; }
+.t-body    { font-size: var(--text-body);    font-weight: var(--weight-regular); line-height: var(--leading-body); }
+.t-body-md { font-size: var(--text-body);    font-weight: var(--weight-medium);  line-height: var(--leading-body); }
+.t-caption { font-size: var(--text-caption); font-weight: var(--weight-regular); line-height: var(--leading-body); color: var(--ink-muted); }
