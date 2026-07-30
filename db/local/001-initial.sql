@@ -99,6 +99,16 @@ CREATE TABLE stock_movement (
   order_id TEXT, stocktake_id TEXT, reason_code TEXT, note TEXT, unit_cost INTEGER,
   created_by TEXT, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
+
+-- stock_snapshot: cache lokal hasil agregasi stock_movement, dibangun ulang
+-- saat tutup shift (bukan direplikasi naik/turun) — bentuk dan alasan index
+-- ix_mv_hlc di bawah sudah diukur, lihat prototypes/01-sqlite-sizing/FINDINGS.md §5.
+CREATE TABLE stock_snapshot (
+  tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL, variation_id TEXT NOT NULL,
+  balance INTEGER NOT NULL, checkpoint_hlc INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, outlet_id, variation_id)
+) WITHOUT ROWID;
+
 CREATE TABLE cash_drawer_shift (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL,
   device_id TEXT NOT NULL, business_date TEXT NOT NULL, status TEXT NOT NULL,
@@ -143,6 +153,7 @@ CREATE INDEX ix_line_variation      ON order_line(variation_id, id);
 CREATE INDEX ix_payment_order       ON payment(order_id);
 CREATE INDEX ix_payment_pending     ON payment(status) WHERE status='pending_confirmation';
 CREATE INDEX ix_mv_stock            ON stock_movement(tenant_id, outlet_id, variation_id, occurred_at);
+CREATE INDEX ix_mv_hlc              ON stock_movement(tenant_id, outlet_id, hlc);
 CREATE INDEX ix_audit_outlet        ON audit_event(tenant_id, outlet_id, occurred_at);
 CREATE INDEX ix_audit_actor         ON audit_event(actor_user_id, occurred_at);
 CREATE INDEX ix_cash_shift          ON cash_movement(shift_id);

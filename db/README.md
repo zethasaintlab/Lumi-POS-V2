@@ -19,5 +19,4 @@ Aturan wajib setiap migrasi (`product/ERD-lumi-pos-v1.md` § 17):
 **Migrasi lokal wajib aditif-saja** sampai beberapa versi berlalu. Rollback aplikasi relatif sederhana; rollback skema lokal setelah data ditulis hampir mustahil.
 
 Yang masih perlu ditambahkan ke `001-initial.sql` sebelum dipakai produksi:
-- Tabel `stock_snapshot` + index `ix_mv_hlc` (lihat ERD § 16 — hasil pengukuran)
 - Tabel `sync_checkpoint`
