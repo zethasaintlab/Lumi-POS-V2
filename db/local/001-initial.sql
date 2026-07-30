@@ -105,7 +105,8 @@ CREATE TABLE stock_movement (
 -- ix_mv_hlc di bawah sudah diukur, lihat prototypes/01-sqlite-sizing/FINDINGS.md §5.
 CREATE TABLE stock_snapshot (
   tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL, variation_id TEXT NOT NULL,
-  balance INTEGER NOT NULL, checkpoint_hlc INTEGER NOT NULL,
+  balance INTEGER NOT NULL, -- x1000
+  checkpoint_hlc INTEGER NOT NULL,
   PRIMARY KEY (tenant_id, outlet_id, variation_id)
 ) WITHOUT ROWID;
 

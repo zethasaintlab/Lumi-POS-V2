@@ -13,8 +13,7 @@ Aturan wajib setiap migrasi (`product/ERD-lumi-pos-v1.md` § 17):
 
 ## `local/` — SQLite di perangkat
 
-`001-initial.sql` diturunkan dari ERD dan **sudah divalidasi** lewat `prototypes/01-sqlite-sizing/`:
-19 tabel, 14 index, terukur ≈3,0 KB per order.
+`001-initial.sql` diturunkan dari ERD. Bentuk yang **divalidasi** lewat `prototypes/01-sqlite-sizing/` adalah 19 tabel + 14 index (terukur ≈3,0 KB per order); file ini sekarang 20 tabel + 15 index karena `stock_snapshot` + `ix_mv_hlc` ditambahkan di atasnya sesuai FINDINGS §5 — angka ≈3,0 KB/order diukur sebelum `ix_mv_hlc` ada.
 
 **Migrasi lokal wajib aditif-saja** sampai beberapa versi berlalu. Rollback aplikasi relatif sederhana; rollback skema lokal setelah data ditulis hampir mustahil.
 

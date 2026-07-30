@@ -12,6 +12,12 @@ Yang harus dibuktikan:
 
 Tiga cara RLS jadi ilusi keamanan ada di `product/ERD-lumi-pos-v1.md` § 14. Ketiganya gagal **diam-diam** — karena itu test ini wajib, bukan opsional.
 
+## `sqlite-local/` — SQLite local schema validation
+
+Test skema SQLite lokal (`db/local/001-initial.sql`): memastikan file memuat tanpa kesalahan dan bahwa tabel `stock_snapshot` + index `ix_mv_hlc` memiliki bentuk tepatnya sesuai hasil pengukuran di `prototypes/01-sqlite-sizing/FINDINGS.md` §5.
+
+Jalankan dengan: `npm run test:sqlite-local`.
+
 ## `dst/` — Deterministic Simulation Testing
 
 Harness referensi: `prototypes/02-dst-sinkronisasi/sim.py`.
