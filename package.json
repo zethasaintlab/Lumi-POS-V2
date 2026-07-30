@@ -7,7 +7,12 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "lint:ds": "oxlint --config ds-bundle/_adherence.oxlintrc.json apps packages",
-    "test:isolation": "echo 'GATE F0 — belum diimplementasikan. Lihat tests/README.md' && exit 1",
+    "db:bootstrap": "node --env-file=.env db/bootstrap.js",
+    "db:migrate": "node --env-file=.env db/migrate.js",
+    "test:isolation": "node --env-file=.env --test \"tests/isolation/*.test.js\"",
     "test:dst": "echo 'Belum diimplementasikan. Referensi: prototypes/02-dst-sinkronisasi/sim.py' && exit 1"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
   }
 }

@@ -11,10 +11,20 @@ Status per 27 Juli 2026. Centang saat selesai.
 
 ## Gate F0 — semua harus hijau sebelum F1
 
-- [ ] Skema PostgreSQL berjalan dari `db/migrations/`
-- [ ] **Test isolasi lintas-tenant hijau untuk setiap tabel** ← gate utama
-- [ ] `FORCE ROW LEVEL SECURITY` aktif di setiap tabel
-- [ ] `app.tenant_id` di-`SET LOCAL` per transaksi, terbukti tidak bocor antar request
+- [x] Skema PostgreSQL berjalan dari `db/migrations/` (0001–0014, diverifikasi 31 Juli 2026)
+- [x] **Test isolasi lintas-tenant hijau untuk setiap tabel** ← gate utama — `npm run test:isolation`, 189/189 hijau, stabil di 3× run berturut-turut
+- [x] `FORCE ROW LEVEL SECURITY` aktif di setiap tabel — dibuktikan `tests/isolation/roles-and-force-rls.test.js`
+- [x] `app.tenant_id` di-`SET LOCAL` per transaksi, terbukti tidak bocor antar request — dibuktikan `tests/isolation/set-local-per-transaction.test.js` (termasuk kontrol negatif)
+
+  Open item (bukan lupa, dikonfirmasi 31 Juli 2026): ERD §11 menyebut tabel
+  `subscription`, `usage_metric` (modul `tenancy`) dan `support_session`
+  (modul `identity`) tanpa daftar kolom — hanya "sesuai spec modul komersial
+  dan operasional". Tidak ada spec lain yang mendefinisikan kolomnya, jadi
+  ketiganya **sengaja tidak dibuat di F0** untuk menghindari menebak skema.
+  Ditunda ke F1 setelah spec modul terkait ditulis — menambah tabel baru
+  nanti murah, tidak seperti menambah kolom ke tabel besar yang sudah berisi
+  data.
+
 - [ ] Skema SQLite lokal berjalan (`db/local/001-initial.sql` + `stock_snapshot` + `ix_mv_hlc`)
 - [ ] Font Inter di-self-host, `@import` Google Fonts dihapus
 - [ ] Header COOP/COEP di-set; SQLite WASM+OPFS berjalan di browser
