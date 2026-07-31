@@ -1,0 +1,23 @@
+{
+  "name": "server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^5.11.0",
+    "fastify-openapi-glue": "^4.11.3",
+    "pg": "^8.22.0",
+    "js-yaml": "^4.1.0",
+    "contracts": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/pg": "^8.20.0",
+    "@types/node": "^22.0.0",
+    "@types/js-yaml": "^4.0.9"
+  }
+}
