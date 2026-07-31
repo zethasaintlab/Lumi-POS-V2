@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { createPool, type Pool } from './db.ts';
+import { HttpError } from './http-error.ts';
+import { createCatalogHandlers } from './modules/catalog/index.ts';
 
 const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
 
@@ -40,22 +42,34 @@ function assertAllOperationsImplemented(specPath: string, serviceHandlers: Recor
   }
 }
 
-const serviceHandlers = {
-  async getHealth() {
-    return { status: 'ok' };
-  },
-};
-
 export async function buildApp(): Promise<FastifyInstance> {
+  const pool = createPool();
+
+  const serviceHandlers = {
+    async getHealth() {
+      return { status: 'ok' };
+    },
+    ...createCatalogHandlers(pool),
+  };
+
   assertAllOperationsImplemented(OPENAPI_SPEC_PATH, serviceHandlers);
 
   const app = Fastify();
+
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof HttpError) {
+      reply.code(err.statusCode).send({ error: { code: err.code, message: err.message } });
+      return;
+    }
+    req.log.error(err);
+    reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'Terjadi kesalahan internal.' } });
+  });
+
   await app.register(openapiGlue, {
     specification: OPENAPI_SPEC_PATH,
     serviceHandlers,
   });
 
-  const pool = createPool();
   app.decorate('pool', pool);
   app.addHook('onClose', async () => {
     await pool.end();
