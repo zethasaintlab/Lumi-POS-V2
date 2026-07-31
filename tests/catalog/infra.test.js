@@ -25,3 +25,12 @@ test('GET /health masih jalan tanpa X-Tenant-Id (bukan hook global)', async () =
   assert.equal(res.statusCode, 200);
   await app.close();
 });
+
+test('getTenantId: header > 64 karakter ditolak', async () => {
+  const { getTenantId } = await import('../../apps/server/src/tenant-context.ts');
+  const { HttpError } = await import('../../apps/server/src/http-error.ts');
+  assert.throws(
+    () => getTenantId({ headers: { 'x-tenant-id': 'x'.repeat(65) } }),
+    (err) => err instanceof HttpError && err.statusCode === 400
+  );
+});
