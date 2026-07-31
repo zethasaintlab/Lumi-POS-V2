@@ -2,9 +2,9 @@
    persis, KECUALI tokens/fonts.css (yang @import Google Fonts, tidak bisa
    dipakai offline). Baris font diganti @fontsource/inter (self-hosted,
    di-bundle Vite ke output build). ds-bundle sendiri tidak diubah. */
-@import '@fontsource/inter/400.css';
-@import '@fontsource/inter/500.css';
-@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-600.css';
 @import '../../ds-bundle/tokens/colors.css';
 @import '../../ds-bundle/tokens/typography.css';
 @import '../../ds-bundle/tokens/spacing.css';
