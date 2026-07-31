@@ -45,6 +45,19 @@ test('fixture pelanggaran: hex, px, prop tak dikenal, enum salah, deep import --
   assert.match(result.output, /Import design-system components from 'index\.js'/);
 });
 
+test('export...from ke ds-bundle/ (idiom yang dipakai packages/ds/index.ts) juga ketangkap, bukan cuma import biasa', () => {
+  const result = runOxlint([path.join(FIXTURES_DIR, 'violations')]);
+  assert.equal(result.exitCode, 1, 'oxlint harus exit 1 saat ada pelanggaran (--deny-warnings)');
+  // Bad.jsx punya `export { CartRow } from '.../ds-bundle/components/pos/CartRow.jsx'`
+  // di baris 3. Sebelum fix, ExportNamedDeclaration tidak divisit sama sekali, jadi
+  // baris ini lolos tanpa diagnostik apa pun -- bypass total pada idiom yang sama
+  // dipakai packages/ds/index.ts.
+  assert.match(
+    result.output,
+    /Bad\.jsx:3:\d+: warning ds-adherence\(no-restricted-imports\): Import design-system components from 'index\.js'/
+  );
+});
+
 test('fixture patuh: tidak ada pelanggaran sama sekali', () => {
   const result = runOxlint([path.join(FIXTURES_DIR, 'compliant')]);
   assert.equal(result.exitCode, 0, 'oxlint harus exit 0 pada kode yang patuh');

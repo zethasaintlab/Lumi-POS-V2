@@ -89,21 +89,36 @@ function globToRegex(glob) {
   return new RegExp('^' + escaped.replace(/\*\*/g, '.*') + '$');
 }
 
+// Shared by ImportDeclaration, ExportNamedDeclaration ("export ... from") and
+// ExportAllDeclaration ("export * from") -- all three carry the imported/
+// re-exported path on `node.source` (a Literal, or null for a plain
+// `export { x }` with no `from` clause, which has no path to check).
+function checkImportSource(context, sourceNode) {
+  if (!sourceNode) return;
+  const specifier = sourceNode.value;
+  if (typeof specifier !== 'string' || !specifier.includes('ds-bundle/')) return;
+  const afterDsBundle = specifier.slice(specifier.indexOf('ds-bundle/') + 'ds-bundle/'.length);
+  for (const pattern of importPatterns) {
+    for (const glob of pattern.group) {
+      if (globToRegex(glob).test(afterDsBundle)) {
+        context.report({ message: pattern.message, node: sourceNode });
+        return;
+      }
+    }
+  }
+}
+
 const noRestrictedImports = {
   create(context) {
     return {
       ImportDeclaration(node) {
-        const specifier = node.source.value;
-        if (!specifier.includes('ds-bundle/')) return;
-        const afterDsBundle = specifier.slice(specifier.indexOf('ds-bundle/') + 'ds-bundle/'.length);
-        for (const pattern of importPatterns) {
-          for (const glob of pattern.group) {
-            if (globToRegex(glob).test(afterDsBundle)) {
-              context.report({ message: pattern.message, node: node.source });
-              return;
-            }
-          }
-        }
+        checkImportSource(context, node.source);
+      },
+      ExportNamedDeclaration(node) {
+        checkImportSource(context, node.source);
+      },
+      ExportAllDeclaration(node) {
+        checkImportSource(context, node.source);
       },
     };
   },
