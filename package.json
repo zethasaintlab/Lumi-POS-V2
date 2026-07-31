@@ -6,14 +6,18 @@
   "workspaces": ["apps/*", "packages/*"],
   "engines": { "node": ">=22" },
   "scripts": {
-    "lint:ds": "oxlint --config ds-bundle/_adherence.oxlintrc.json apps packages",
+    "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
     "test:isolation": "node --env-file=.env --test \"tests/isolation/*.test.js\"",
     "test:sqlite-local": "node --experimental-sqlite --test \"tests/sqlite-local/*.test.js\"",
+    "test:oxlint-ds-adherence": "node --test \"tests/oxlint-ds-adherence/*.test.js\"",
     "test:dst": "echo 'Belum diimplementasikan. Referensi: prototypes/02-dst-sinkronisasi/sim.py' && exit 1"
   },
   "dependencies": {
     "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "oxlint": "1.76.0"
   }
 }
