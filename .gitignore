@@ -3,6 +3,7 @@ dist/
 build/
 target/
 .oxlintrc.generated.json
+packages/contracts/types.d.ts
 .env
 .env.*
 !.env.example
