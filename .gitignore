@@ -16,3 +16,6 @@ coverage/
 src-tauri/target/
 __pycache__/
 *.pyc
+
+# Superpowers SDD scratch (ledger + brief + review package)
+.superpowers/
