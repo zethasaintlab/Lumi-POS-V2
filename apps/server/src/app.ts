@@ -2,11 +2,16 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import openapiGlue from 'fastify-openapi-glue';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import yaml from 'js-yaml';
+import { createPool, type Pool } from './db.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPENAPI_SPEC_PATH = path.join(__dirname, '..', '..', '..', 'packages', 'contracts', 'openapi.yaml');
+const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    pool: Pool;
+  }
+}
 
 interface OpenApiOperation {
   operationId?: string;
@@ -49,5 +54,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     specification: OPENAPI_SPEC_PATH,
     serviceHandlers,
   });
+
+  const pool = createPool();
+  app.decorate('pool', pool);
+  app.addHook('onClose', async () => {
+    await pool.end();
+  });
+
   return app;
 }

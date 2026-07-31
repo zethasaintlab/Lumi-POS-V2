@@ -67,3 +67,28 @@ test('withTenantTransaction: error di tengah transaksi di-ROLLBACK, tidak bocor 
   });
   assert.deepEqual(rows, [], 'setelah ROLLBACK, pemanggilan pool berikutnya tidak boleh melihat sisa konteks tenant A');
 });
+
+test('withTenantTransaction: fn yang menelan error query internal harus tetap melempar, bukan diam-diam sukses', async () => {
+  const { withTenantTransaction } = await import('../../apps/server/src/db.ts');
+  await assert.rejects(
+    withTenantTransaction(pool, tenantA.id, async (client) => {
+      try {
+        await client.query('SELECT * FROM tabel_yang_tidak_ada');
+      } catch {
+        // sengaja ditelan -- ini yang harus tetap terdeteksi sebagai kegagalan
+      }
+      return 'sukses palsu';
+    }),
+    /ROLLBACK/
+  );
+});
+
+test('withTenantTransaction: panggilan bersarang harus langsung gagal, bukan diam-diam pecah jadi dua transaksi', async () => {
+  const { withTenantTransaction } = await import('../../apps/server/src/db.ts');
+  await assert.rejects(
+    withTenantTransaction(pool, tenantA.id, async () => {
+      return withTenantTransaction(pool, tenantB.id, async () => 'nested');
+    }),
+    /bersarang/
+  );
+});

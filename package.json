@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "Point-of-sale offline-first untuk kafe 2-20 outlet di Indonesia",
   "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.18" },
   "scripts": {
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
