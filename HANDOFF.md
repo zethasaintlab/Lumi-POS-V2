@@ -25,11 +25,12 @@ Status per 27 Juli 2026. Centang saat selesai.
   nanti murah, tidak seperti menambah kolom ke tabel besar yang sudah berisi
   data.
 
-- [ ] Skema SQLite lokal berjalan (`db/local/001-initial.sql` + `stock_snapshot` + `ix_mv_hlc`)
-- [ ] Font Inter di-self-host, `@import` Google Fonts dihapus
-- [ ] Header COOP/COEP di-set; SQLite WASM+OPFS berjalan di browser
-- [ ] `npm run lint:ds` hijau dan masuk CI
-- [ ] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
+- [x] Skema SQLite lokal berjalan (`db/local/001-initial.sql` + `stock_snapshot` + `ix_mv_hlc`) — `npm run test:sqlite-local` hijau
+- [x] Font Inter di-self-host, `@import` Google Fonts dihapus — lewat `packages/ds` (wrapper, `ds-bundle` tidak diubah), `@fontsource/inter` subset latin saja (400/500/600), diverifikasi tidak ada request ke `fonts.googleapis.com` di build output
+- [x] Header COOP/COEP di-set — `apps/kasir/vite.config.ts` (server + preview) dan `apps/kasir/src-tauri/tauri.conf.json`, diverifikasi benar-benar terkirim (`vite preview` + `curl`)
+- [ ] SQLite WASM+OPFS berjalan di browser — belum dibangun/diuji (COOP/COEP baru jadi prasyarat, jalur OPFS sendiri belum ada kode)
+- [ ] `npm run lint:ds` hijau dan masuk CI — **terblokir**: `oxlint 1.76` menolak `ds-bundle/_adherence.oxlintrc.json` (`unknown field x-omelette`). Config ini final/tidak boleh diubah (CLAUDE.md); perlu versi oxlint yang cocok atau config generated yang membuang field itu sebelum masuk CI. Baru ketahuan sekarang karena branch Tauri ini yang pertama menghasilkan kode di `apps/`+`packages/` untuk dilint.
+- [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang — `npm run tauri dev` dari `apps/kasir` dikonfirmasi jalan lancar 31 Juli 2026 (window "Lumi POS — Kasir" + AppShell dari design system)
 
 ## Keputusan produk yang perlu dikonfirmasi sebelum F1
 
