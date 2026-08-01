@@ -141,6 +141,15 @@ test('tidak ada DELETE SQL pada tabel katalog di modules/catalog, kecuali item_m
 // withTenantTransaction, bukan pool.query/pool.connect langsung.
 test('tidak ada pool.query / pool.connect langsung di modules/catalog', async () => {
   const files = await collectTsFiles(CATALOG_MODULE_DIR);
+  // Sentinel yang sama seperti guard DELETE di atas: kalau collectTsFiles
+  // pernah mengembalikan daftar kosong (rename direktori, .ts -> .mts,
+  // checkout parsial), loop di bawah tidak menegaskan apa pun dan test ini
+  // lulus tanpa benar-benar memeriksa sesuatu -- guard yang lulus secara
+  // vakum lebih buruk daripada tidak ada guard sama sekali.
+  assert.ok(
+    files.length > 0,
+    'tidak ada file .ts ditemukan di bawah modules/catalog -- guard ini akan lulus vakum, cek CATALOG_MODULE_DIR'
+  );
   for (const file of files) {
     const src = await readFile(file, 'utf8');
     assert.equal(/pool\.(query|connect)\s*\(/.test(src), false, `akses pool langsung di ${file}`);
@@ -152,6 +161,15 @@ test('tidak ada pool.query / pool.connect langsung di modules/catalog', async ()
 // kontrak OpenAPI publik.
 test('image_url tidak pernah muncul di kode modul maupun kontrak OpenAPI', async () => {
   const files = await collectTsFiles(CATALOG_MODULE_DIR);
+  // Sentinel yang sama seperti dua guard di atas -- separuh kode-modul dari
+  // test ini juga loop atas `files`, jadi rentan lulus vakum dengan cara
+  // yang sama persis kalau collectTsFiles kembali kosong. Separuh
+  // openapi.yaml di bawah TIDAK butuh sentinel ini: dia baca file spec
+  // tanpa syarat, jadi tidak bisa iterasi nol.
+  assert.ok(
+    files.length > 0,
+    'tidak ada file .ts ditemukan di bawah modules/catalog -- guard ini akan lulus vakum, cek CATALOG_MODULE_DIR'
+  );
   for (const file of files) {
     assert.equal((await readFile(file, 'utf8')).includes('image_url'), false, `image_url di ${file}`);
   }
