@@ -22,11 +22,25 @@ before(() => {
   });
 });
 
+// `--format=unix` di-pin eksplisit, bukan dibiarkan dipilih oxlint sendiri.
+// Ditemukan lewat CI run pertama (PR #1): oxlint mendeteksi variabel
+// GITHUB_ACTIONS dan otomatis beralih ke format anotasi GitHub
+// (`::warning file=...,line=3,...::pesan`), sementara assertion di bawah
+// mencocokkan format satu-baris-per-diagnostik (`Bad.jsx:3:25: warning ...`).
+// Akibatnya suite ini hijau di mesin developer dan merah di CI -- padahal
+// linter-nya sendiri berperilaku identik di keduanya dan menangkap keenam
+// pelanggaran yang sama. Test yang meng-assert bentuk output harus menuntut
+// bentuk itu, bukan mewarisinya dari lingkungan.
+//
+// Catatan: format yang dicocokkan assertion ini bernama `unix`, BUKAN
+// `default` -- `default` justru format grafis multi-baris dengan kutipan
+// sumber dan penanda ^^^^. Dikonfirmasi dengan menjalankan keduanya, bukan
+// ditebak dari namanya.
 function runOxlint(targets) {
   try {
     const output = execFileSync(
       process.execPath,
-      [OXLINT_ENTRY, '--config', GENERATED_CONFIG, '--deny-warnings', ...targets],
+      [OXLINT_ENTRY, '--config', GENERATED_CONFIG, '--format=unix', '--deny-warnings', ...targets],
       { cwd: REPO_ROOT, encoding: 'utf8' }
     );
     return { exitCode: 0, output };
@@ -52,9 +66,13 @@ test('export...from ke ds-bundle/ (idiom yang dipakai packages/ds/index.ts) juga
   // di baris 3. Sebelum fix, ExportNamedDeclaration tidak divisit sama sekali, jadi
   // baris ini lolos tanpa diagnostik apa pun -- bypass total pada idiom yang sama
   // dipakai packages/ds/index.ts.
+  // Format `unix`: `file:baris:kolom: pesan [Warning/rule]` -- nama rule di
+  // akhir dalam kurung siku, bukan di tengah seperti format implisit lama.
+  // Yang diuji tetap sama persis: baris 3 (export...from) ditandai oleh rule
+  // no-restricted-imports, bukan sekadar "ada diagnostik di suatu tempat".
   assert.match(
     result.output,
-    /Bad\.jsx:3:\d+: warning ds-adherence\(no-restricted-imports\): Import design-system components from 'index\.js'/
+    /Bad\.jsx:3:\d+: Import design-system components from 'index\.js'[^\n]*\[Warning\/ds-adherence\(no-restricted-imports\)\]/
   );
 });
 
