@@ -202,8 +202,13 @@ async function fetchItemOrThrow(client: PoolClient, itemId: string): Promise<Ite
 }
 
 async function fetchVariations(client: PoolClient, itemId: string): Promise<VariationRow[]> {
+  // FIX 6 (whole-branch review): `, id` tie-breaker -- insertVariation always
+  // assigns a unique MAX(sort_order)+1 today, so a tie can't occur through
+  // this handler, but this stays deterministic (rather than relying on
+  // whatever order Postgres's scan happens to produce) if that ever changes,
+  // same as every other ORDER BY in this module.
   const { rows } = await client.query<VariationRow>(
-    'SELECT * FROM item_variation WHERE item_id = $1 ORDER BY sort_order',
+    'SELECT * FROM item_variation WHERE item_id = $1 ORDER BY sort_order, id',
     [itemId]
   );
   return rows;
@@ -386,7 +391,10 @@ export function createItemHandlers(pool: Pool) {
           conditions.push(`category_id = $${params.length}`);
         }
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-        const { rows } = await client.query<ItemRow>(`SELECT * FROM item ${where} ORDER BY sort_order`, params);
+        // FIX 6 (whole-branch review): `, id` tie-breaker -- sort_order
+        // DEFAULTs to 0, so a fresh catalog with no explicit ordering set
+        // returns rows in arbitrary, run-to-run-unstable order without it.
+        const { rows } = await client.query<ItemRow>(`SELECT * FROM item ${where} ORDER BY sort_order, id`, params);
         // FIX 5 N+1 guard: modifierLists for every row in this result set are
         // fetched with a FIXED number of extra queries (see
         // fetchModifierListsForItems), not one per item -- computed once

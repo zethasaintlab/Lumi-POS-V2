@@ -209,11 +209,15 @@ export function createCategoryHandlers(pool: Pool) {
     async listCategories(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const query = req.query as { includeArchived?: boolean };
+      // FIX 6 (whole-branch review): `, id` tie-breaker -- sort_order DEFAULTs
+      // to 0, so a fresh catalog with no explicit ordering set returns rows
+      // in arbitrary, run-to-run-unstable order without it. Real defect on a
+      // POS grid where cashier speed is muscle memory.
       const rows = await withTenantTransaction(pool, tenantId, async (client) => {
         const { rows } = await client.query<CategoryRow>(
           query.includeArchived
-            ? 'SELECT * FROM category ORDER BY sort_order'
-            : 'SELECT * FROM category WHERE archived_at IS NULL ORDER BY sort_order'
+            ? 'SELECT * FROM category ORDER BY sort_order, id'
+            : 'SELECT * FROM category WHERE archived_at IS NULL ORDER BY sort_order, id'
         );
         return rows;
       });

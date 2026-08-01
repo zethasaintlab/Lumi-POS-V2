@@ -87,6 +87,32 @@ test('createItem: variations kosong ditolak 400 VALIDATION_ERROR lewat minItems 
   assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
 });
 
+// createItemVariation always computes MAX(sort_order)+1, so a genuine tie
+// can't be produced through the public API today -- insert a second
+// variation directly with the SAME sort_order as the first, to prove
+// fetchVariations's ORDER BY is deterministic once a tie DOES occur (a
+// future data correction, import, or any path other than this handler).
+test('getItem: variation dengan sortOrder sama urut deterministic berdasarkan id (tie-breaker, dipaksa lewat SQL langsung)', async () => {
+  const itemId = crypto.randomUUID();
+  const varA = crypto.randomUUID();
+  await req('POST', '/items', { id: itemId, name: 'TieVar', variations: [{ id: varA, price: 1000 }] });
+
+  const varB = crypto.randomUUID();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(
+    `INSERT INTO item_variation (id, tenant_id, item_id, name, price, sort_order) VALUES ($1, $2, $3, 'Tied', 1000, 0)`,
+    [varB, tenant.id, itemId]
+  );
+  await appSetup.query('COMMIT');
+
+  const expectedOrder = [varA, varB].sort();
+  const res = await req('GET', `/items/${itemId}`);
+  assert.equal(res.statusCode, 200);
+  const returnedOrder = JSON.parse(res.body).variations.map((v) => v.id);
+  assert.deepEqual(returnedOrder, expectedOrder, 'urutan variation dengan sortOrder sama harus deterministic (id ascending)');
+});
+
 test('createItemVariation: variation kedua mendapat sortOrder 1', async () => {
   const itemId = crypto.randomUUID();
   await req('POST', '/items', { id: itemId, name: 'Teh', variations: [{ id: crypto.randomUUID(), price: 10000 }] });
@@ -115,6 +141,27 @@ test('createItemVariation: barcode duplikat ditolak dengan BARCODE_DUPLICATE', a
 // retrying a variation create with the same id (no barcode collision at all)
 // got sent hunting a barcode conflict that did not exist. This must be
 // distinguished by err.constraint, not treated as one bucket.
+// Whole-branch review FIX 6: ORDER BY sort_order with no tie-breaker means a
+// fresh catalog (sort_order DEFAULT 0 for everyone who doesn't set it) comes
+// back in arbitrary, run-to-run-unstable order -- a real defect on a POS
+// grid where cashier speed is muscle memory. `, id` makes ties deterministic.
+test('listItems: item dengan sortOrder sama (default 0) urut deterministic berdasarkan id (tie-breaker)', async () => {
+  const ids = [];
+  for (let i = 0; i < 4; i += 1) {
+    const id = crypto.randomUUID();
+    ids.push(id);
+    await req('POST', '/items', { id, name: `Tie ${i}`, variations: [{ id: crypto.randomUUID(), price: 1000 }] });
+  }
+  const expectedOrder = [...ids].sort();
+
+  const res = await req('GET', '/items');
+  assert.equal(res.statusCode, 200);
+  // seedTenantBase juga menyisipkan item ('Kopi Susu', 'Kopi Hitam') di
+  // beforeEach -- filter ke ids yang dibuat test ini saja.
+  const returnedOrder = JSON.parse(res.body).items.map((it) => it.id).filter((id) => ids.includes(id));
+  assert.deepEqual(returnedOrder, expectedOrder, 'urutan item dengan sortOrder sama harus deterministic (id ascending)');
+});
+
 test('createItem: item id yang sama dikirim ulang (retry offline) ditolak 409 ID_ALREADY_EXISTS, bukan 500', async () => {
   const itemId = crypto.randomUUID();
   const body = { id: itemId, name: 'Kopi', variations: [{ id: crypto.randomUUID(), price: 10000 }] };

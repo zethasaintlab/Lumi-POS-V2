@@ -257,6 +257,31 @@ test('updateCategory: parentId string kosong ditolak dengan error klien, bukan 5
 // PK never got a client-facing error at all. Retrying the EXACT same create
 // (same id, same body) must be recognized as "this already happened", not an
 // internal server error.
+// Whole-branch review FIX 6: ORDER BY sort_order with no tie-breaker means a
+// fresh catalog (sort_order DEFAULT 0 for everyone who doesn't set it) comes
+// back in arbitrary, run-to-run-unstable order -- a real defect on a POS
+// grid where cashier speed is muscle memory. `, id` makes ties deterministic
+// instead of leaving them to whatever order Postgres's scan happens to
+// produce (typically physical/insertion order, which for random UUIDv7 ids
+// has no relationship to id-ascending order at all).
+test('listCategories: kategori dengan sortOrder sama (default 0) urut deterministic berdasarkan id (tie-breaker)', async () => {
+  const ids = [];
+  for (let i = 0; i < 4; i += 1) {
+    const id = crypto.randomUUID();
+    ids.push(id);
+    await post('/categories', { id, name: `Tie ${i}` });
+  }
+  const expectedOrder = [...ids].sort();
+
+  const res = await get('/categories');
+  assert.equal(res.statusCode, 200);
+  // seedTenantBase juga menyisipkan satu category ('Minuman', sort_order 0)
+  // di beforeEach -- filter ke ids yang dibuat test ini saja, supaya
+  // assersi urutan tidak terganggu baris lain yang kebetulan sama-sama 0.
+  const returnedOrder = JSON.parse(res.body).items.map((c) => c.id).filter((id) => ids.includes(id));
+  assert.deepEqual(returnedOrder, expectedOrder, 'urutan kategori dengan sortOrder sama harus deterministic (id ascending)');
+});
+
 test('createCategory: id yang sama dikirim ulang (retry offline) ditolak 409 ID_ALREADY_EXISTS, bukan 500', async () => {
   const id = crypto.randomUUID();
   const first = await post('/categories', { id, name: 'Minuman' });

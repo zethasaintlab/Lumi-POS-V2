@@ -284,6 +284,52 @@ test('getModifierList: modifier yang diarsipkan tetap muncul di array modifiers 
   assert.notEqual(body.modifiers[0].archivedAt, null);
 });
 
+// Whole-branch review FIX 6: ORDER BY name with no tie-breaker means two
+// ModifierLists sharing a name come back in arbitrary, run-to-run-unstable
+// order -- a real defect on a POS grid where cashier speed is muscle memory.
+// `, id` makes ties deterministic instead of leaving them to whatever order
+// Postgres's scan happens to produce.
+test('listModifierLists: dua list dengan name sama urut deterministic berdasarkan id (tie-breaker)', async () => {
+  const idA = crypto.randomUUID();
+  const idB = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: idA, name: 'Sama Persis', selectionType: 'single' });
+  await req('POST', '/modifier-lists', { id: idB, name: 'Sama Persis', selectionType: 'single' });
+  const expectedOrder = [idA, idB].sort();
+
+  const res = await req('GET', '/modifier-lists');
+  assert.equal(res.statusCode, 200);
+  const returnedOrder = JSON.parse(res.body).items
+    .map((l) => l.id)
+    .filter((id) => [idA, idB].includes(id));
+  assert.deepEqual(returnedOrder, expectedOrder, 'urutan list dengan name sama harus deterministic (id ascending)');
+});
+
+// createModifier always computes MAX(sort_order)+1, so a genuine tie can't
+// be produced through the public API today -- insert a second modifier
+// directly with the SAME sort_order as the first, to prove fetchModifiers's
+// ORDER BY is deterministic once a tie DOES occur.
+test('getModifierList: modifier dengan sortOrder sama urut deterministic berdasarkan id (tie-breaker, dipaksa lewat SQL langsung)', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: listId, name: 'TieMod', selectionType: 'multi' });
+  const modA = crypto.randomUUID();
+  await req('POST', `/modifier-lists/${listId}/modifiers`, { id: modA, name: 'A', price: 0 });
+
+  const modB = crypto.randomUUID();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(
+    `INSERT INTO modifier (id, tenant_id, modifier_list_id, name, price, sort_order) VALUES ($1, $2, $3, 'Tied', 0, 0)`,
+    [modB, tenant.id, listId]
+  );
+  await appSetup.query('COMMIT');
+
+  const expectedOrder = [modA, modB].sort();
+  const res = await req('GET', `/modifier-lists/${listId}`);
+  assert.equal(res.statusCode, 200);
+  const returnedOrder = JSON.parse(res.body).modifiers.map((m) => m.id);
+  assert.deepEqual(returnedOrder, expectedOrder, 'urutan modifier dengan sortOrder sama harus deterministic (id ascending)');
+});
+
 // Whole-branch review FIX 2: id is client-generated and offline retry is a
 // core premise of this system (CLAUDE.md konvensi data). Before this fix, a
 // retried createModifierList / createModifier with the same id fell through

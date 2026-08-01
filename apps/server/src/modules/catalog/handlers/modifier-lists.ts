@@ -164,8 +164,14 @@ async function fetchModifierListOrThrow(client: PoolClient, modifierListId: stri
 // includeArchived pada listItems hanya mengontrol Item, bukan variation di
 // dalamnya.
 async function fetchModifiers(client: PoolClient, modifierListId: string): Promise<ModifierRow[]> {
+  // FIX 6 (whole-branch review): `, id` tie-breaker -- createModifier always
+  // assigns a unique MAX(sort_order)+1 today, so a tie can't occur through
+  // this handler, but this stays deterministic if that ever changes, same as
+  // every other ORDER BY in this module (and matches fetchModifiersForLists'
+  // `ORDER BY sort_order, id` below, which does the same batched job for
+  // items.ts's FIX 5).
   const { rows } = await client.query<ModifierRow>(
-    'SELECT * FROM modifier WHERE modifier_list_id = $1 ORDER BY sort_order',
+    'SELECT * FROM modifier WHERE modifier_list_id = $1 ORDER BY sort_order, id',
     [modifierListId]
   );
   return rows;
@@ -262,10 +268,13 @@ export function createModifierListHandlers(pool: Pool) {
       const tenantId = getTenantId(req);
       const query = req.query as { includeArchived?: boolean };
       const items = await withTenantTransaction(pool, tenantId, async (client) => {
+        // FIX 6 (whole-branch review): `, id` tie-breaker -- two lists can
+        // easily share a `name` (nothing enforces uniqueness), so without
+        // this, ties come back in arbitrary, run-to-run-unstable order.
         const { rows } = await client.query<ModifierListRow>(
           query.includeArchived
-            ? 'SELECT * FROM modifier_list ORDER BY name'
-            : 'SELECT * FROM modifier_list WHERE archived_at IS NULL ORDER BY name'
+            ? 'SELECT * FROM modifier_list ORDER BY name, id'
+            : 'SELECT * FROM modifier_list WHERE archived_at IS NULL ORDER BY name, id'
         );
         const result = [];
         for (const row of rows) {
