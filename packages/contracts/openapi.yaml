@@ -885,6 +885,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /items/{itemId}/modifier-lists/{modifierListId}:
+    post:
+      operationId: attachModifierList
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sortOrder: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [itemId, modifierListId, sortOrder]
+                properties:
+                  itemId: { type: string }
+                  modifierListId: { type: string }
+                  sortOrder: { type: integer }
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            Item atau ModifierList tidak ditemukan atau bukan milik tenant
+            pemanggil (RLS menyembunyikan baris tenant lain, bukan hanya
+            menolak akses -- FK ke item(id)/modifier_list(id) tidak tunduk
+            RLS, jadi visibilitas dicek eksplisit sebelum INSERT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: detachModifierList
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: >-
+            No content. Dikembalikan tanpa syarat -- pasangan ada atau tidak,
+            milik tenant pemanggil atau tenant lain -- supaya tidak jadi
+            oracle keberadaan lintas tenant. RLS (tenant_delete policy) sudah
+            memastikan DELETE hanya pernah mengenai baris milik tenant
+            pemanggil.
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   schemas:
     Category:
