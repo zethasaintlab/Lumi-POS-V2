@@ -5,7 +5,11 @@ import { getTenantId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
-interface ModifierListRow {
+// Exported (not just used internally) so items.ts's FIX 5 (nesting
+// modifierLists into the Item response) can build the exact same shape for
+// an attached ModifierList without duplicating this table's row-to-response
+// mapping a second time.
+export interface ModifierListRow {
   id: string;
   name: string;
   selection_type: string;
@@ -16,7 +20,7 @@ interface ModifierListRow {
   archived_at: string | null;
 }
 
-interface ModifierRow {
+export interface ModifierRow {
   id: string;
   modifier_list_id: string;
   name: string;
@@ -35,7 +39,7 @@ interface ModifierRow {
 // ini pada 10 operasi -- tapi menyarangkan `modifiers` ke response
 // ModifierList, pola yang SAMA PERSIS dengan toItem(row, variations) di
 // items.ts untuk relasi 1:N yang identik bentuknya (Item -> ItemVariation).
-function toModifierList(row: ModifierListRow, modifiers: ModifierRow[]) {
+export function toModifierList(row: ModifierListRow, modifiers: ModifierRow[]) {
   return {
     id: row.id,
     name: row.name,
@@ -176,6 +180,38 @@ async function fetchModifierOrThrow(client: PoolClient, modifierListId: string, 
     throw new HttpError(404, 'NOT_FOUND', `Modifier ${modifierId} tidak ditemukan untuk list ${modifierListId}.`);
   }
   return rows[0];
+}
+
+// FIX 5 (whole-branch review) support -- batched counterparts of
+// fetchModifierListOrThrow/fetchModifiers, taking a SET of ids instead of
+// one, so items.ts can build item.modifierLists for every item in a
+// listItems result with a FIXED number of extra queries (2, regardless of
+// how many items or how many attached lists there are) instead of one
+// modifier_list SELECT + one modifier SELECT per attached list. Exported for
+// that cross-file use; not used by this file's own handlers.
+export async function fetchModifierListsByIds(client: PoolClient, ids: string[]): Promise<Map<string, ModifierListRow>> {
+  if (ids.length === 0) return new Map();
+  const { rows } = await client.query<ModifierListRow>('SELECT * FROM modifier_list WHERE id = ANY($1)', [ids]);
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+// `, id` tie-breaker included from the start (this is a brand-new query, not
+// one of the pre-existing ORDER BYs this whole-branch review's FIX 6
+// addresses) -- with sort_order DEFAULT 0, a fresh set of modifiers would
+// otherwise come back in arbitrary, run-to-run-unstable order.
+export async function fetchModifiersForLists(client: PoolClient, modifierListIds: string[]): Promise<Map<string, ModifierRow[]>> {
+  if (modifierListIds.length === 0) return new Map();
+  const { rows } = await client.query<ModifierRow>(
+    'SELECT * FROM modifier WHERE modifier_list_id = ANY($1) ORDER BY sort_order, id',
+    [modifierListIds]
+  );
+  const byListId = new Map<string, ModifierRow[]>();
+  for (const row of rows) {
+    const bucket = byListId.get(row.modifier_list_id) ?? [];
+    bucket.push(row);
+    byListId.set(row.modifier_list_id, bucket);
+  }
+  return byListId;
 }
 
 export function createModifierListHandlers(pool: Pool) {

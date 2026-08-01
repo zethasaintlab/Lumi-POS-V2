@@ -236,6 +236,102 @@ test('attachModifierList: itemId lintas tenant ditolak 404, dan tidak ada baris 
 // pasangannya tidak ada) menjadi oracle keberadaan lintas tenant yang justru
 // TIDAK diinginkan -- 204 tanpa syarat (ada atau tidak ada, milik sendiri
 // atau bukan) tidak membocorkan informasi apa pun ke penyerang.
+// --- Whole-branch review FIX 5: attachModifierList/detachModifierList
+// existed and the bridge stored sort_order, but no endpoint ever returned an
+// item's attached modifier lists -- getItem/listItems returned `variations`
+// only, so a client could write the relation and never read it back. K-04
+// "Pilih Modifier (modal)" (product/IA-lumi-pos-v1.md) needs to know which
+// lists apply to the item being rung up, so item.modifierLists nests the
+// FULL ModifierList shape (toModifierList's own toModifier() output,
+// including modifiers) -- not just ids -- the same way ModifierList already
+// nests `modifiers`. Consistent with fetchVariations/fetchModifiers: archived
+// attached lists are NOT filtered out here either, they just carry their own
+// archivedAt. ---
+
+test('getItem: menyertakan modifierLists yang sudah di-attach, lengkap dengan modifiers bertingkat', async () => {
+  const itemId = await createItem();
+  const listId = await createModifierList();
+  const modId = crypto.randomUUID();
+  await req('POST', `/modifier-lists/${listId}/modifiers`, { id: modId, name: 'Oat Milk', price: 8000 });
+  await req('POST', `/items/${itemId}/modifier-lists/${listId}`, { sortOrder: 0 });
+
+  const res = await req('GET', `/items/${itemId}`);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.modifierLists.length, 1);
+  assert.equal(body.modifierLists[0].id, listId);
+  assert.equal(body.modifierLists[0].modifiers.length, 1);
+  assert.equal(body.modifierLists[0].modifiers[0].id, modId);
+});
+
+test('getItem: item tanpa modifierList yang di-attach punya modifierLists array kosong', async () => {
+  const itemId = await createItem();
+  const res = await req('GET', `/items/${itemId}`);
+  assert.deepEqual(JSON.parse(res.body).modifierLists, []);
+});
+
+test('detachModifierList lalu getItem: modifierLists tidak lagi berisi list yang di-detach', async () => {
+  const itemId = await createItem();
+  const listId = await createModifierList();
+  await req('POST', `/items/${itemId}/modifier-lists/${listId}`, {});
+  await req('DELETE', `/items/${itemId}/modifier-lists/${listId}`);
+
+  const res = await req('GET', `/items/${itemId}`);
+  assert.deepEqual(JSON.parse(res.body).modifierLists, []);
+});
+
+test('getItem: modifierList yang diarsipkan tetap muncul di item.modifierLists (archivedAt terisi, konsisten dengan fetchVariations/fetchModifiers)', async () => {
+  const itemId = await createItem();
+  const listId = await createModifierList();
+  await req('POST', `/items/${itemId}/modifier-lists/${listId}`, {});
+  await req('POST', `/modifier-lists/${listId}/archive`);
+
+  const res = await req('GET', `/items/${itemId}`);
+  const body = JSON.parse(res.body);
+  assert.equal(body.modifierLists.length, 1);
+  assert.notEqual(body.modifierLists[0].archivedAt, null);
+});
+
+test('updateItem: response tetap menyertakan modifierLists yang sudah di-attach', async () => {
+  const itemId = await createItem();
+  const listId = await createModifierList();
+  await req('POST', `/items/${itemId}/modifier-lists/${listId}`, {});
+
+  const res = await req('PATCH', `/items/${itemId}`, { name: 'Kopi Ganti Nama' });
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.modifierLists.length, 1);
+  assert.equal(body.modifierLists[0].id, listId);
+});
+
+// N+1 guard (correctness, not query counting): listItems must fetch bridge
+// rows for ALL items in one query and group them in code, not one query per
+// item (brief FIX 5 -- "do not make it two per item"). This test can't count
+// SQL round-trips from HTTP, but it DOES prove the grouping logic doesn't mix
+// up which modifierLists belong to which item -- the failure mode a naive
+// "wrong join / wrong grouping key" implementation of that batching would
+// actually produce (each item ending up with the wrong list, or every item's
+// list, instead of its own).
+test('listItems: setiap item menyertakan modifierLists miliknya sendiri, tidak tertukar antar item', async () => {
+  const itemA = await createItem();
+  const itemB = await createItem();
+  const listX = await createModifierList();
+  const listY = await createModifierList();
+
+  await req('POST', `/items/${itemA}/modifier-lists/${listX}`, {});
+  await req('POST', `/items/${itemB}/modifier-lists/${listY}`, {});
+
+  const res = await req('GET', '/items');
+  assert.equal(res.statusCode, 200);
+  const items = JSON.parse(res.body).items;
+  const foundA = items.find((i) => i.id === itemA);
+  const foundB = items.find((i) => i.id === itemB);
+  assert.ok(foundA, 'itemA harus muncul di listItems');
+  assert.ok(foundB, 'itemB harus muncul di listItems');
+  assert.deepEqual(foundA.modifierLists.map((l) => l.id), [listX]);
+  assert.deepEqual(foundB.modifierLists.map((l) => l.id), [listY]);
+});
+
 test('detachModifierList: tenant lain tidak bisa menghapus pasangan attach milik tenant lain', async () => {
   const otherBase = await seedTenantBase(appSetup, { suffix: 'AttachTestOtherC' });
   const attackerTenantId = otherBase.tenant.id;

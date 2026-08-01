@@ -3,6 +3,7 @@ import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
+import { toModifierList, fetchModifierListsByIds, fetchModifiersForLists } from './modifier-lists.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface ItemRow {
@@ -61,7 +62,17 @@ function toVariation(row: VariationRow) {
   };
 }
 
-function toItem(row: ItemRow, variations: VariationRow[]) {
+// FIX 5 (whole-branch review): attachModifierList/detachModifierList existed
+// and the bridge stored sort_order, but no endpoint ever returned an item's
+// attached modifier lists back -- a client could write the relation and
+// never read it back, and the sortOrder it wrote was unobservable. K-04
+// "Pilih Modifier (modal)" (product/IA-lumi-pos-v1.md) needs to know which
+// lists apply to the item being rung up -- and, to render the modal's
+// choices, what THOSE lists' own modifiers are -- so `modifierLists` nests
+// the full toModifierList() shape (including its own `modifiers`), not just
+// ids. Same reasoning that already justified nesting `modifiers` into
+// ModifierList one level down.
+function toItem(row: ItemRow, variations: VariationRow[], modifierLists: ReturnType<typeof toModifierList>[]) {
   return {
     id: row.id,
     name: row.name,
@@ -70,6 +81,7 @@ function toItem(row: ItemRow, variations: VariationRow[]) {
     sortOrder: row.sort_order,
     archivedAt: row.archived_at,
     variations: variations.map(toVariation),
+    modifierLists,
   };
 }
 
@@ -197,6 +209,65 @@ async function fetchVariations(client: PoolClient, itemId: string): Promise<Vari
   return rows;
 }
 
+interface ItemModifierListBridgeRow {
+  item_id: string;
+  modifier_list_id: string;
+  sort_order: number;
+}
+
+// FIX 5 (whole-branch review) N+1 guard: listItems already issues one
+// fetchVariations query per item (pre-existing, out of scope to fix here per
+// brief). Adding modifierLists must NOT make that two queries per item -- so
+// this fetches the item_modifier_list bridge rows for ALL given itemIds in
+// ONE query, then the modifier_list rows and modifier rows for the union of
+// attached list ids in one query each (fetchModifierListsByIds /
+// fetchModifiersForLists, modifier-lists.ts). Total added cost for a
+// listItems call is 3 queries FIXED, never per-item, regardless of how many
+// items or attached lists there are. Used both here (batched, N items) and
+// by fetchModifierListsForItem below (single item, itemIds = [itemId]) so
+// getItem/updateItem/archiveItem/restoreItem share the exact same code path
+// instead of a second, easier-to-drift implementation for the singular case.
+//
+// `, modifier_list_id` tie-breaker included from the start (this is a
+// brand-new query, not one of the pre-existing ORDER BYs this whole-branch
+// review's FIX 6 addresses).
+async function fetchModifierListsForItems(
+  client: PoolClient,
+  itemIds: string[]
+): Promise<Map<string, ReturnType<typeof toModifierList>[]>> {
+  const result = new Map<string, ReturnType<typeof toModifierList>[]>();
+  if (itemIds.length === 0) return result;
+
+  const { rows: bridgeRows } = await client.query<ItemModifierListBridgeRow>(
+    'SELECT item_id, modifier_list_id, sort_order FROM item_modifier_list WHERE item_id = ANY($1) ORDER BY sort_order, modifier_list_id',
+    [itemIds]
+  );
+  if (bridgeRows.length === 0) return result;
+
+  const listIds = [...new Set(bridgeRows.map((row) => row.modifier_list_id))];
+  const listsById = await fetchModifierListsByIds(client, listIds);
+  const modifiersByListId = await fetchModifiersForLists(client, listIds);
+
+  for (const bridge of bridgeRows) {
+    const listRow = listsById.get(bridge.modifier_list_id);
+    // Defensive only: under FK + RLS this can't actually miss (the bridge
+    // row's modifier_list_id can only reference a list visible to this same
+    // tenant transaction) -- skip rather than crash the whole Item response
+    // if it ever does.
+    if (!listRow) continue;
+    const nested = toModifierList(listRow, modifiersByListId.get(listRow.id) ?? []);
+    const forItem = result.get(bridge.item_id) ?? [];
+    forItem.push(nested);
+    result.set(bridge.item_id, forItem);
+  }
+  return result;
+}
+
+async function fetchModifierListsForItem(client: PoolClient, itemId: string): Promise<ReturnType<typeof toModifierList>[]> {
+  const byItem = await fetchModifierListsForItems(client, [itemId]);
+  return byItem.get(itemId) ?? [];
+}
+
 async function fetchVariationOrThrow(client: PoolClient, itemId: string, variationId: string): Promise<VariationRow> {
   const { rows } = await client.query<VariationRow>(
     'SELECT * FROM item_variation WHERE id = $1 AND item_id = $2',
@@ -292,7 +363,13 @@ export function createItemHandlers(pool: Pool) {
         return { item, variations };
       });
       reply.code(201);
-      return toItem(item, variations);
+      // Item baru dibuat tanpa modifierLists -- createItem tidak menerima
+      // attachment bersarang di body (attach terjadi lewat operasi terpisah,
+      // attachModifierList), jadi array kosong pasti benar tanpa perlu SELECT
+      // tambahan (tidak ada bridge row yang bisa sudah menunjuk ke item yang
+      // baru saja di-INSERT dalam transaksi yang sama). Pola identik dengan
+      // createModifierList's `return toModifierList(row, [])`.
+      return toItem(item, variations, []);
     },
 
     async listItems(req: FastifyRequest) {
@@ -310,9 +387,15 @@ export function createItemHandlers(pool: Pool) {
         }
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
         const { rows } = await client.query<ItemRow>(`SELECT * FROM item ${where} ORDER BY sort_order`, params);
+        // FIX 5 N+1 guard: modifierLists for every row in this result set are
+        // fetched with a FIXED number of extra queries (see
+        // fetchModifierListsForItems), not one per item -- computed once
+        // outside the loop below, which still does one fetchVariations call
+        // per item (pre-existing N+1, out of scope to fix here per brief).
+        const modifierListsByItemId = await fetchModifierListsForItems(client, rows.map((row) => row.id));
         const result = [];
         for (const row of rows) {
-          result.push(toItem(row, await fetchVariations(client, row.id)));
+          result.push(toItem(row, await fetchVariations(client, row.id), modifierListsByItemId.get(row.id) ?? []));
         }
         return result;
       });
@@ -322,19 +405,20 @@ export function createItemHandlers(pool: Pool) {
     async getItem(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const { itemId } = req.params as { itemId: string };
-      const { item, variations } = await withTenantTransaction(pool, tenantId, async (client) => {
+      const { item, variations, modifierLists } = await withTenantTransaction(pool, tenantId, async (client) => {
         const item = await fetchItemOrThrow(client, itemId);
         const variations = await fetchVariations(client, itemId);
-        return { item, variations };
+        const modifierLists = await fetchModifierListsForItem(client, itemId);
+        return { item, variations, modifierLists };
       });
-      return toItem(item, variations);
+      return toItem(item, variations, modifierLists);
     },
 
     async updateItem(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const { itemId } = req.params as { itemId: string };
       const body = req.body as { name?: string; categoryId?: string | null; description?: string | null; sortOrder?: number };
-      const { item, variations } = await withTenantTransaction(pool, tenantId, async (client) => {
+      const { item, variations, modifierLists } = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchItemOrThrow(client, itemId);
         // Sama seperti createItem: hanya divalidasi kalau body benar-benar
         // mengirim categoryId non-null (clearing ke null lewat `categoryId:
@@ -362,37 +446,49 @@ export function createItemHandlers(pool: Pool) {
             body.sortOrder ?? null,
           ]
         );
-        return { item: rows[0], variations: await fetchVariations(client, itemId) };
+        return {
+          item: rows[0],
+          variations: await fetchVariations(client, itemId),
+          modifierLists: await fetchModifierListsForItem(client, itemId),
+        };
       });
-      return toItem(item, variations);
+      return toItem(item, variations, modifierLists);
     },
 
     async archiveItem(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const { itemId } = req.params as { itemId: string };
-      const { item, variations } = await withTenantTransaction(pool, tenantId, async (client) => {
+      const { item, variations, modifierLists } = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchItemOrThrow(client, itemId);
         const { rows } = await client.query<ItemRow>(
           'UPDATE item SET archived_at = now() WHERE id = $1 RETURNING *',
           [itemId]
         );
-        return { item: rows[0], variations: await fetchVariations(client, itemId) };
+        return {
+          item: rows[0],
+          variations: await fetchVariations(client, itemId),
+          modifierLists: await fetchModifierListsForItem(client, itemId),
+        };
       });
-      return toItem(item, variations);
+      return toItem(item, variations, modifierLists);
     },
 
     async restoreItem(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const { itemId } = req.params as { itemId: string };
-      const { item, variations } = await withTenantTransaction(pool, tenantId, async (client) => {
+      const { item, variations, modifierLists } = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchItemOrThrow(client, itemId);
         const { rows } = await client.query<ItemRow>(
           'UPDATE item SET archived_at = NULL WHERE id = $1 RETURNING *',
           [itemId]
         );
-        return { item: rows[0], variations: await fetchVariations(client, itemId) };
+        return {
+          item: rows[0],
+          variations: await fetchVariations(client, itemId),
+          modifierLists: await fetchModifierListsForItem(client, itemId),
+        };
       });
-      return toItem(item, variations);
+      return toItem(item, variations, modifierLists);
     },
 
     async createItemVariation(req: FastifyRequest, reply: FastifyReply) {

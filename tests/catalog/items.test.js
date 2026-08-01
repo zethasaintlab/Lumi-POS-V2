@@ -63,6 +63,24 @@ test('createItem: item dengan 1 variation berhasil, image_url tidak muncul di re
 // braces shape as translateConstraintError's DB CHECK backstops elsewhere in
 // this module) -- it would still catch this case if the schema constraint
 // were ever removed or bypassed, just not via this particular HTTP call.
+// Whole-branch review FIX 5: attachModifierList/detachModifierList existed
+// and the bridge stored sort_order, but no endpoint ever returned an item's
+// attached modifier lists back -- getItem/listItems returned `variations`
+// only. A client could write the relation and never read it back. Item.
+// modifierLists is nested the same way ModifierList.modifiers already is
+// (toItem/toModifierList pattern) -- a freshly created item has no
+// attachments yet (createItem doesn't accept them in its body), so this must
+// be an empty array without any extra query.
+test('createItem: item baru punya modifierLists array kosong', async () => {
+  const res = await req('POST', '/items', {
+    id: crypto.randomUUID(),
+    name: 'Baru',
+    variations: [{ id: crypto.randomUUID(), price: 5000 }],
+  });
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(JSON.parse(res.body).modifierLists, []);
+});
+
 test('createItem: variations kosong ditolak 400 VALIDATION_ERROR lewat minItems (AJV)', async () => {
   const res = await req('POST', '/items', { id: crypto.randomUUID(), name: 'Kosong', variations: [] });
   assert.equal(res.statusCode, 400);

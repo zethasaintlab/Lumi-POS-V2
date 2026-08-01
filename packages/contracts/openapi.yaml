@@ -1020,7 +1020,7 @@ components:
         archivedAt: { type: string, format: date-time, nullable: true }
     Item:
       type: object
-      required: [id, name, variations]
+      required: [id, name, variations, modifierLists]
       properties:
         id: { type: string }
         name: { type: string }
@@ -1032,6 +1032,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ItemVariation'
+        # FIX 5 (whole-branch review): attachModifierList/detachModifierList
+        # existed with no way to read the relation back. Nests the full
+        # ModifierList shape (including its own `modifiers`) -- K-04 "Pilih
+        # Modifier (modal)" needs both which lists apply AND what each list's
+        # choices are. Archived attached lists are not filtered out (same as
+        # `variations` on this schema and `modifiers` on ModifierList) -- they
+        # carry their own archivedAt instead of disappearing from this array.
+        modifierLists:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModifierList'
     ItemVariationInput:
       type: object
       required: [id, price]
