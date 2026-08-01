@@ -217,3 +217,81 @@ test('getModifierList: 404 untuk id yang tidak ada', async () => {
   const res = await req('GET', `/modifier-lists/${crypto.randomUUID()}`);
   assert.equal(res.statusCode, 404);
 });
+
+// --- Review finding (post-Task-4): ModifierList tidak bisa dibaca balik
+// modifier-nya -- tidak ada listModifiers/getModifier, dan toModifierList
+// tidak menyarangkan apa pun. K-04 "Pilih Modifier (modal)" (P0, offline-
+// replicated) dan B-09 "Modifier List" di IA-lumi-pos-v1.md sama-sama butuh
+// enumerasi modifier milik satu list. Perbaikannya BUKAN operasi ke-11,
+// tapi menyarangkan array `modifiers` ke response ModifierList -- pola yang
+// SAMA PERSIS dengan toItem/fetchVariations di items.ts (Item ↔
+// ItemVariation adalah relasi 1:N yang identik bentuknya, satu task lebih
+// awal, modul yang sama). ---
+
+test('createModifierList: list baru punya modifiers array kosong', async () => {
+  const listId = crypto.randomUUID();
+  const res = await req('POST', '/modifier-lists', { id: listId, name: 'Baru', selectionType: 'single' });
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(JSON.parse(res.body).modifiers, []);
+});
+
+test('getModifierList: menyertakan modifiers bertingkat', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: listId, name: 'Gula', selectionType: 'single' });
+  const mod1 = crypto.randomUUID();
+  const mod2 = crypto.randomUUID();
+  await req('POST', `/modifier-lists/${listId}/modifiers`, { id: mod1, name: 'Normal', price: 0 });
+  await req('POST', `/modifier-lists/${listId}/modifiers`, { id: mod2, name: 'Kurang Manis', price: 0 });
+
+  const res = await req('GET', `/modifier-lists/${listId}`);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.modifiers.length, 2);
+  assert.deepEqual(body.modifiers.map((m) => m.id).sort(), [mod1, mod2].sort());
+});
+
+test('listModifierLists: setiap item menyertakan modifiers bertingkat', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: listId, name: 'Gula', selectionType: 'single' });
+  const modId = crypto.randomUUID();
+  await req('POST', `/modifier-lists/${listId}/modifiers`, { id: modId, name: 'Normal', price: 0 });
+
+  const res = await req('GET', '/modifier-lists');
+  const body = JSON.parse(res.body);
+  const found = body.items.find((l) => l.id === listId);
+  assert.ok(found, 'list yang baru dibuat harus muncul di listModifierLists');
+  assert.equal(found.modifiers.length, 1);
+  assert.equal(found.modifiers[0].id, modId);
+});
+
+// Konsisten dengan items.ts: archiveItemVariation TIDAK menyembunyikan
+// variation dari GET item -- fetchVariations tidak pernah memfilter
+// archived_at, jadi variation yang diarsipkan tetap muncul di body.variations
+// dengan archivedAt-nya sendiri terisi. Modifier mengikuti pola yang sama
+// persis: modifier yang diarsipkan tetap muncul di array modifiers milik
+// ModifierList, statusnya terlihat lewat archivedAt, bukan disembunyikan
+// dari daftar.
+test('getModifierList: modifier yang diarsipkan tetap muncul di array modifiers (archivedAt terisi)', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: listId, name: 'Gula', selectionType: 'single' });
+  const modId = crypto.randomUUID();
+  await req('POST', `/modifier-lists/${listId}/modifiers`, { id: modId, name: 'Normal', price: 0 });
+  await req('POST', `/modifier-lists/${listId}/modifiers/${modId}/archive`);
+
+  const res = await req('GET', `/modifier-lists/${listId}`);
+  const body = JSON.parse(res.body);
+  assert.equal(body.modifiers.length, 1);
+  assert.notEqual(body.modifiers[0].archivedAt, null);
+});
+
+test('archiveModifierList: ModifierList yang diarsipkan tetap menyertakan modifiers-nya', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: listId, name: 'Gula', selectionType: 'single' });
+  const modId = crypto.randomUUID();
+  await req('POST', `/modifier-lists/${listId}/modifiers`, { id: modId, name: 'Normal', price: 0 });
+
+  const res = await req('POST', `/modifier-lists/${listId}/archive`);
+  const body = JSON.parse(res.body);
+  assert.equal(body.modifiers.length, 1);
+  assert.equal(body.modifiers[0].id, modId);
+});

@@ -25,7 +25,16 @@ interface ModifierRow {
   archived_at: string | null;
 }
 
-function toModifierList(row: ModifierListRow) {
+// Review finding (post-Task-4): sebelumnya ModifierList tidak bisa dibaca
+// balik modifier-nya sama sekali -- tidak ada listModifiers/getModifier, dan
+// fungsi ini tidak menyarangkan apa pun. K-04 "Pilih Modifier (modal)" (P0,
+// offline-replicated) dan B-09 "Modifier List" di product/IA-lumi-pos-v1.md
+// sama-sama butuh enumerasi modifier milik satu list. Perbaikannya BUKAN
+// operasi ke-11 (listModifiers/getModifier) -- brief tetap membatasi modul
+// ini pada 10 operasi -- tapi menyarangkan `modifiers` ke response
+// ModifierList, pola yang SAMA PERSIS dengan toItem(row, variations) di
+// items.ts untuk relasi 1:N yang identik bentuknya (Item -> ItemVariation).
+function toModifierList(row: ModifierListRow, modifiers: ModifierRow[]) {
   return {
     id: row.id,
     name: row.name,
@@ -35,6 +44,7 @@ function toModifierList(row: ModifierListRow) {
     allowDuplicate: row.allow_duplicate,
     isRequired: row.is_required,
     archivedAt: row.archived_at,
+    modifiers: modifiers.map(toModifier),
   };
 }
 
@@ -114,6 +124,23 @@ async function fetchModifierListOrThrow(client: PoolClient, modifierListId: stri
   return rows[0];
 }
 
+// Sengaja TIDAK memfilter archived_at -- konsisten dengan fetchVariations di
+// items.ts, yang juga tidak pernah menyaring variation yang diarsipkan dari
+// Item induknya. archiveItemVariation membuktikan pola itu: variation yang
+// diarsipkan tetap muncul di body.variations, statusnya terlihat lewat
+// archivedAt-nya sendiri, bukan disembunyikan dari daftar induk. Modifier
+// mengikuti bentuk yang sama persis -- includeArchived hanya mengontrol
+// apakah ModifierList itu SENDIRI muncul di listModifierLists, sama seperti
+// includeArchived pada listItems hanya mengontrol Item, bukan variation di
+// dalamnya.
+async function fetchModifiers(client: PoolClient, modifierListId: string): Promise<ModifierRow[]> {
+  const { rows } = await client.query<ModifierRow>(
+    'SELECT * FROM modifier WHERE modifier_list_id = $1 ORDER BY sort_order',
+    [modifierListId]
+  );
+  return rows;
+}
+
 async function fetchModifierOrThrow(client: PoolClient, modifierListId: string, modifierId: string): Promise<ModifierRow> {
   const { rows } = await client.query<ModifierRow>(
     'SELECT * FROM modifier WHERE id = $1 AND modifier_list_id = $2',
@@ -162,28 +189,40 @@ export function createModifierListHandlers(pool: Pool) {
         }
       });
       reply.code(201);
-      return toModifierList(row);
+      // List baru dibuat tanpa modifiers -- API createModifierList tidak
+      // menerima modifier bersarang di body, jadi array kosong pasti benar
+      // tanpa perlu SELECT tambahan (tidak ada apa pun yang bisa sudah
+      // menunjuk ke list yang baru saja di-INSERT dalam transaksi yang sama).
+      return toModifierList(row, []);
     },
 
     async listModifierLists(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const query = req.query as { includeArchived?: boolean };
-      const rows = await withTenantTransaction(pool, tenantId, async (client) => {
+      const items = await withTenantTransaction(pool, tenantId, async (client) => {
         const { rows } = await client.query<ModifierListRow>(
           query.includeArchived
             ? 'SELECT * FROM modifier_list ORDER BY name'
             : 'SELECT * FROM modifier_list WHERE archived_at IS NULL ORDER BY name'
         );
-        return rows;
+        const result = [];
+        for (const row of rows) {
+          result.push(toModifierList(row, await fetchModifiers(client, row.id)));
+        }
+        return result;
       });
-      return { items: rows.map(toModifierList) };
+      return { items };
     },
 
     async getModifierList(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const { modifierListId } = req.params as { modifierListId: string };
-      const row = await withTenantTransaction(pool, tenantId, (client) => fetchModifierListOrThrow(client, modifierListId));
-      return toModifierList(row);
+      const { list, modifiers } = await withTenantTransaction(pool, tenantId, async (client) => {
+        const list = await fetchModifierListOrThrow(client, modifierListId);
+        const modifiers = await fetchModifiers(client, modifierListId);
+        return { list, modifiers };
+      });
+      return toModifierList(list, modifiers);
     },
 
     async updateModifierList(req: FastifyRequest) {
@@ -204,7 +243,7 @@ export function createModifierListHandlers(pool: Pool) {
       if ('selectionType' in body) {
         assertSelectionTypeValid(body.selectionType);
       }
-      const row = await withTenantTransaction(pool, tenantId, async (client) => {
+      const { list, modifiers } = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchModifierListOrThrow(client, modifierListId);
         try {
           const { rows } = await client.query<ModifierListRow>(
@@ -228,40 +267,40 @@ export function createModifierListHandlers(pool: Pool) {
               body.isRequired ?? null,
             ]
           );
-          return rows[0];
+          return { list: rows[0], modifiers: await fetchModifiers(client, modifierListId) };
         } catch (err) {
           translateConstraintError(err);
         }
       });
-      return toModifierList(row);
+      return toModifierList(list, modifiers);
     },
 
     async archiveModifierList(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const { modifierListId } = req.params as { modifierListId: string };
-      const row = await withTenantTransaction(pool, tenantId, async (client) => {
+      const { list, modifiers } = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchModifierListOrThrow(client, modifierListId);
         const { rows } = await client.query<ModifierListRow>(
           'UPDATE modifier_list SET archived_at = now() WHERE id = $1 RETURNING *',
           [modifierListId]
         );
-        return rows[0];
+        return { list: rows[0], modifiers: await fetchModifiers(client, modifierListId) };
       });
-      return toModifierList(row);
+      return toModifierList(list, modifiers);
     },
 
     async restoreModifierList(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const { modifierListId } = req.params as { modifierListId: string };
-      const row = await withTenantTransaction(pool, tenantId, async (client) => {
+      const { list, modifiers } = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchModifierListOrThrow(client, modifierListId);
         const { rows } = await client.query<ModifierListRow>(
           'UPDATE modifier_list SET archived_at = NULL WHERE id = $1 RETURNING *',
           [modifierListId]
         );
-        return rows[0];
+        return { list: rows[0], modifiers: await fetchModifiers(client, modifierListId) };
       });
-      return toModifierList(row);
+      return toModifierList(list, modifiers);
     },
 
     async createModifier(req: FastifyRequest, reply: FastifyReply) {

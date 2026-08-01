@@ -944,7 +944,7 @@ components:
         trackStock: { type: boolean }
     ModifierList:
       type: object
-      required: [id, name, selectionType, minSelections]
+      required: [id, name, selectionType, minSelections, modifiers]
       properties:
         id: { type: string }
         name: { type: string }
@@ -954,6 +954,10 @@ components:
         allowDuplicate: { type: boolean }
         isRequired: { type: boolean }
         archivedAt: { type: string, format: date-time, nullable: true }
+        modifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Modifier'
     Modifier:
       type: object
       required: [id, modifierListId, name, price, sortOrder]
