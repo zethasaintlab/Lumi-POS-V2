@@ -190,6 +190,42 @@ test('updateCategory: dua PATCH bersamaan yang saling menukar induk (A<->B) tida
   assert.equal(isCycle, false, 'A dan B tidak boleh berakhir saling menjadi induk satu sama lain');
 });
 
+test('createCategory dan updateCategory bersamaan (C jadi anak X, X direparent ke Y) tidak membentuk tingkat ketiga tersembunyi', async () => {
+  const idX = crypto.randomUUID();
+  await post('/categories', { id: idX, name: 'X' });
+  const idY = crypto.randomUUID();
+  await post('/categories', { id: idY, name: 'Y' });
+  const idC = crypto.randomUUID();
+
+  const [resCreateC, resReparentX] = await Promise.all([
+    post('/categories', { id: idC, name: 'C', parentId: idX }),
+    patch(`/categories/${idX}`, { parentId: idY }),
+  ]);
+
+  const createSucceeded = resCreateC.statusCode === 201;
+  const reparentSucceeded = resReparentX.statusCode === 200;
+  assert.notEqual(
+    createSucceeded,
+    reparentSucceeded,
+    'tepat satu dari createCategory(C, parentId:X) / updateCategory(X, parentId:Y) boleh berhasil, tidak dua-duanya dan tidak nol-duanya'
+  );
+
+  const loserRes = createSucceeded ? resReparentX : resCreateC;
+  assert.equal(loserRes.statusCode, 409);
+  assert.equal(JSON.parse(loserRes.body).error.code, 'CATEGORY_DEPTH_EXCEEDED');
+
+  const catX = JSON.parse((await get(`/categories/${idX}`)).body);
+  if (createSucceeded) {
+    // C berhasil jadi anak X -> X sendiri harus TETAP top-level (reparent ke Y ditolak).
+    assert.equal(catX.parentId, null, 'X tidak boleh punya induk sendiri kalau C berhasil jadi anaknya');
+  } else {
+    // X berhasil direparent ke Y -> C TIDAK BOLEH pernah tercipta di bawah X.
+    assert.equal(catX.parentId, idY);
+    const getC = await get(`/categories/${idC}`);
+    assert.equal(getC.statusCode, 404, 'C tidak boleh tercipta kalau X sudah direparent ke Y (akan jadi Y->X->C)');
+  }
+});
+
 test('updateCategory: parentId string kosong ditolak dengan error klien, bukan 500', async () => {
   const topId = crypto.randomUUID();
   await post('/categories', { id: topId, name: 'Top' });
