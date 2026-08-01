@@ -270,9 +270,14 @@ test('createItemVariation: variation ke-251 ditolak VARIATION_LIMIT_EXCEEDED', a
 test('createItem: categoryId lintas tenant ditolak 404 (FK tidak boleh jadi jalan pintas RLS)', async () => {
   const otherBase = await seedTenantBase(appSetup, { suffix: 'ItemTestOther' });
   const foreignCategoryId = otherBase.category.id;
+  // itemId dipilih klien SEBELUM memanggil createItem (konsisten dengan
+  // aturan id client-generated di seluruh sistem ini) -- supaya baris
+  // pembuktian DB di bawah bisa jalan TANPA SYARAT, tidak bergantung pada
+  // mem-parsing id dari body respons createItem itu sendiri.
+  const itemId = crypto.randomUUID();
 
   const res = await req('POST', '/items', {
-    id: crypto.randomUUID(),
+    id: itemId,
     name: 'Nyelundup',
     categoryId: foreignCategoryId,
     variations: [{ id: crypto.randomUUID(), price: 5000 }],
@@ -280,18 +285,25 @@ test('createItem: categoryId lintas tenant ditolak 404 (FK tidak boleh jadi jala
   assert.equal(res.statusCode, 404);
   assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
 
-  // Bukti tambahan langsung ke DB: kalau request di atas ternyata (bug) balik
-  // 201, item TIDAK BOLEH benar-benar tersimpan dengan category_id milik
-  // tenant lain -- ini menutup celah "response salah tapi datanya juga rusak".
-  if (res.statusCode === 201) {
-    const itemId = JSON.parse(res.body).id;
-    const getRes = await req('GET', `/items/${itemId}`);
-    assert.notEqual(
-      JSON.parse(getRes.body).categoryId,
-      foreignCategoryId,
-      'item tidak boleh tersimpan dengan categoryId milik tenant lain'
-    );
-  }
+  // Whole-branch review FIX 7: this proof used to be wrapped in
+  // `if (res.statusCode === 201) { ... }`, which could NEVER be true here --
+  // the `assert.equal(res.statusCode, 404)` immediately above already threw
+  // (aborting the test) for any response that wasn't 404, so by the time
+  // execution reached that line res.statusCode was provably 404, never 201.
+  // That made this the ONLY cross-tenant test in this branch with no actual
+  // database-level proof -- its three sibling tests (updateItem's version
+  // right below, and both attachModifierList lintas-tenant tests in
+  // item-modifier-lists.test.js) all run their DB-level check unconditionally,
+  // against an id known ahead of time rather than parsed from the attempted
+  // write's own response. Bukti tambahan langsung ke DB: item TIDAK BOLEH
+  // benar-benar tersimpan dengan category_id milik tenant lain -- ini
+  // menutup celah "response salah tapi datanya juga rusak".
+  const getRes = await req('GET', `/items/${itemId}`);
+  assert.notEqual(
+    JSON.parse(getRes.body).categoryId,
+    foreignCategoryId,
+    'item tidak boleh tersimpan dengan categoryId milik tenant lain'
+  );
 });
 
 test('updateItem: categoryId lintas tenant ditolak 404 (FK tidak boleh jadi jalan pintas RLS)', async () => {
