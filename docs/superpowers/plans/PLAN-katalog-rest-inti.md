@@ -77,10 +77,10 @@ Kontrak yang mengikat:
 | `db/local/*` (SQLite) | Jalur turun katalog milik PowerSync (F2) |
 | `product/`, `research/`, `docs/superpowers/specs/` | Terlarang per instruksi |
 
-Dua hal berikut **awalnya** di luar scope, lalu **dimasukkan** atas keputusan user (§ 8 Q4/Q5) sebagai Task 8 dan Task 9 — dikerjakan setelah endpoint selesai, sebagai commit terpisah:
+Dua hal berikut **awalnya** di luar scope, lalu **dimasukkan** atas keputusan user (§ 8 Q4/Q5) sebagai **Task 7** dan **Task 8** — dikerjakan setelah endpoint selesai, sebagai commit terpisah:
 
-- PostgreSQL service container di CI (Task 8)
-- Perbaikan `CLAUDE.md` + `README.md` yang menyatakan fase yang salah (Task 9)
+- PostgreSQL service container di CI (**Task 7**)
+- Perbaikan `CLAUDE.md` + `README.md` yang menyatakan fase yang salah (**Task 8**)
 
 ---
 

@@ -2,7 +2,7 @@
 
 Point-of-sale untuk kafe takeaway 2–20 outlet di Indonesia. Offline-first, multi-vertikal, dijual sebagai lisensi berlangganan per outlet.
 
-**Status:** pra-produksi selesai · **Fase berikutnya:** F0 (fondasi) · **Belum ada kode aplikasi**
+**Status:** F0 (fondasi) selesai · **Fase berjalan:** F1 (inti transaksi) — Modul A (Katalog), sub-project 1: 28 endpoint REST katalog, 68 test katalog + 189 test isolasi hijau
 
 > 🤖 **Coding agent mulai dari [`CLAUDE.md`](CLAUDE.md)**, bukan dari file ini.
 
@@ -109,8 +109,7 @@ Angka di sini **mengalahkan** estimasi di dokumen lain.
 
 ## Yang belum selesai
 
-**Memblokir F0:**
-- Test isolasi lintas-tenant belum ada (PostgreSQL tidak tersedia saat riset — ini pekerjaan pertama)
+**F0 tertutup:** seluruh gate hijau, termasuk test isolasi lintas-tenant (`npm run test:isolation`, 189/189) — rincian per item di [`HANDOFF.md`](HANDOFF.md). Satu item tersisa yang tidak memblokir F0/F1: SQLite WASM+OPFS di browser belum dibangun — memblokir F2.
 
 **Memblokir F1:**
 - OQ-09 profil vertikal per tenant atau outlet · OQ-15 QRIS statis · ambang otorisasi default

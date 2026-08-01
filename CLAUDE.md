@@ -125,18 +125,31 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: F0 — Fondasi.** Belum ada kode aplikasi.
+**Fase: F1 — Inti transaksi, Modul A (Katalog), sub-project 1 (endpoint REST inti).** Gate F0 tertutup — rincian per item ada di `HANDOFF.md`.
 
-Gate F0 untuk lanjut ke F1:
-- [ ] Skema PostgreSQL + RLS berjalan
-- [ ] **Test isolasi lintas-tenant hijau untuk setiap tabel** ← gate utama, belum tertutup
-- [ ] Skema SQLite lokal berjalan (`prototypes/01-sqlite-sizing/schema.sql` sebagai titik awal)
-- [ ] Font Inter di-self-host (mengganti `@import` Google Fonts — prasyarat offline)
-- [ ] Header COOP/COEP di-set (prasyarat OPFS)
-- [ ] `_adherence.oxlintrc.json` masuk CI
-- [ ] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
+Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
+- [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)
+- [x] **Test isolasi lintas-tenant hijau untuk setiap tabel** — `npm run test:isolation`, 189/189
+- [x] Skema SQLite lokal berjalan (`db/local/001-initial.sql`) — `npm run test:sqlite-local` hijau
+- [x] Font Inter di-self-host (mengganti `@import` Google Fonts)
+- [x] Header COOP/COEP di-set (`apps/kasir/vite.config.ts` + `tauri.conf.json`)
+- [x] `_adherence.oxlintrc.json` masuk CI — `npm run lint:ds` hijau, `.github/workflows/lint-ds.yml`
+- [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
+- [ ] **SQLite WASM+OPFS berjalan di browser — belum dibangun/diuji.** Server-side saja, jadi tidak memblokir F1. **Memblokir F2.**
+
+Status F1 sekarang: modul Katalog (Modul A) sub-project 1 — endpoint REST inti — selesai. 28 operasi REST atas `category`, `item`/`item_variation`, `modifier_list`/`modifier`, `item_modifier_list`; 68 test katalog + 189 test isolasi hijau (`docs/superpowers/plans/PLAN-katalog-rest-inti.md`). Sengaja belum digarap di sub-project ini: FR-A7 (harga + `price_history`), FR-A3/A5 (aturan pemilihan modifier — UI kasir), FR-A8 (import katalog, P1). Modul B (Kasir & Order) dan C (Pembayaran & Pajak) belum disentuh.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
+
+---
+
+## Temuan F1: FK PostgreSQL tidak tunduk RLS
+
+Ditemukan empiris saat membangun modul Katalog, bukan dari dokumentasi: sebelum diperbaiki, `createItem` menerima dan **benar-benar menyimpan** item yang mereferensi `category` milik tenant lain, lalu mengembalikan `201`. Foreign key constraint PostgreSQL dicek dengan privilese owner tabel yang direferensikan — **tidak tunduk `FORCE ROW LEVEL SECURITY`**. Constraint FK hanya membuktikan baris itu ada di *suatu* tenant, bukan tenant yang benar.
+
+**Konsekuensi:** setiap FK yang nilainya disuplai klien ke tabel ber-`tenant_id` wajib divalidasi lewat `SELECT` yang tunduk RLS sebelum dipercaya. Modul Katalog menegakkannya lewat `assertCategoryVisible` (`apps/server/src/modules/catalog/handlers/items.ts`), `fetchModifierListOrThrow` (`modifier-lists.ts`), dan kedua guard di `item-modifier-lists.ts`. Modul B, C, dan E akan punya paparan yang sama (`order_line.variation_id`, `payment.order_id`, `stock_movement.variation_id`, dst) — cek ini di setiap FK klien-suplai baru.
+
+**Batas temuan ini:** suite isolasi 189 test (invariant #8) menguji akses tabel langsung dan itu tetap benar dan hijau — RLS bekerja sesuai spesifikasi. Yang tidak diuji suite itu adalah kelas ini: aplikasi menulis ke tabelnya sendiri, dengan `tenant_id` sendiri, lewat RLS yang berjalan benar, sambil menunjuk baris tenant lain lewat FK. RLS tidak pernah dilanggar di sini — FK-lah pintunya.
 
 ---
 

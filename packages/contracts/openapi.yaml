@@ -17,3 +17,1082 @@ paths:
                 properties:
                   status:
                     type: string
+  /categories:
+    post:
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                parentId: { type: string, nullable: true }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+                colorHint: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, parentId tidak valid (mis. string
+            kosong), atau X-Tenant-Id tidak dikenal (UNKNOWN_TENANT -- FK ke
+            tenant(id) gagal)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: parentId merujuk ke kategori yang tidak ada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Kategori tingkat ketiga ditolak, atau id sudah dipakai kategori
+            lain (ID_ALREADY_EXISTS -- retry offline dengan id yang sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listCategories
+      parameters:
+        - name: includeArchived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /categories/{categoryId}:
+    get:
+      operationId: getCategory
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateCategory
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                parentId: { type: string, nullable: true }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+                colorHint: { type: string, nullable: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          description: Header X-Tenant-Id hilang, atau parentId tidak valid (mis. string kosong)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Kategori tingkat ketiga ditolak, atau kategori dijadikan induk dirinya sendiri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /categories/{categoryId}/archive:
+    post:
+      operationId: archiveCategory
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /categories/{categoryId}/restore:
+    post:
+      operationId: restoreCategory
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items:
+    post:
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, variations]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                categoryId: { type: string, nullable: true }
+                description: { type: string, nullable: true }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+                variations:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/ItemVariationInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, item tanpa variation (ITEM_NO_VARIATION),
+            harga/cost variation tidak valid (VALIDATION_ERROR), atau
+            X-Tenant-Id tidak dikenal (UNKNOWN_TENANT -- FK ke tenant(id) gagal)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            categoryId tidak ditemukan atau bukan milik tenant pemanggil (RLS
+            menyembunyikan kategori tenant lain, bukan hanya menolak akses)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Barcode duplikat, batas 250 variation per item tercapai, atau id
+            (item atau variation pertamanya) sudah dipakai (ID_ALREADY_EXISTS
+            -- retry offline dengan id yang sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listItems
+      parameters:
+        - name: includeArchived
+          in: query
+          schema: { type: boolean, default: false }
+        - name: categoryId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}:
+    get:
+      operationId: getItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                categoryId: { type: string, nullable: true }
+                description: { type: string, nullable: true }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            Item tidak ditemukan, atau categoryId tidak ditemukan/bukan milik
+            tenant pemanggil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/archive:
+    post:
+      operationId: archiveItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/restore:
+    post:
+      operationId: restoreItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations:
+    post:
+      operationId: createItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemVariationInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang, atau harga/cost tidak valid (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Item tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Batas 250 variation per item tercapai, barcode duplikat, atau id
+            sudah dipakai variation lain (ID_ALREADY_EXISTS -- retry offline
+            dengan id yang sama, dibedakan dari BARCODE_DUPLICATE lewat
+            err.constraint di server)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}:
+    patch:
+      operationId: updateItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                sku: { type: string, nullable: true }
+                barcode: { type: string, nullable: true }
+                trackStock: { type: boolean }
+                stockingUnit: { type: string }
+                sellingUnit: { type: string }
+                conversionFactor: { type: number }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Barcode duplikat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}/archive:
+    post:
+      operationId: archiveItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}/restore:
+    post:
+      operationId: restoreItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists:
+    post:
+      operationId: createModifierList
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, selectionType]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                selectionType: { type: string, enum: [single, multi] }
+                minSelections: { type: integer }
+                maxSelections: { type: integer, nullable: true }
+                allowDuplicate: { type: boolean }
+                isRequired: { type: boolean }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, selectionType tidak valid (harus
+            'single' atau 'multi', VALIDATION_ERROR), atau X-Tenant-Id tidak
+            dikenal (UNKNOWN_TENANT -- FK ke tenant(id) gagal)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            id sudah dipakai ModifierList lain (ID_ALREADY_EXISTS -- retry
+            offline dengan id yang sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listModifierLists
+      parameters:
+        - name: includeArchived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}:
+    get:
+      operationId: getModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                selectionType: { type: string, enum: [single, multi] }
+                minSelections: { type: integer }
+                maxSelections: { type: integer, nullable: true }
+                allowDuplicate: { type: boolean }
+                isRequired: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau selectionType tidak valid (harus
+            'single' atau 'multi', VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/archive:
+    post:
+      operationId: archiveModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/restore:
+    post:
+      operationId: restoreModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers:
+    post:
+      operationId: createModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                price: { type: integer, minimum: 0 }
+                isDefault: { type: boolean }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau harga tidak valid (bilangan bulat
+            rupiah >= 0, VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            ModifierList tidak ditemukan atau bukan milik tenant pemanggil
+            (RLS menyembunyikan list tenant lain, bukan hanya menolak akses)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            id sudah dipakai Modifier lain (ID_ALREADY_EXISTS -- retry
+            offline dengan id yang sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers/{modifierId}:
+    patch:
+      operationId: updateModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                price: { type: integer, minimum: 0 }
+                isDefault: { type: boolean }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau harga tidak valid (bilangan bulat
+            rupiah >= 0, VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers/{modifierId}/archive:
+    post:
+      operationId: archiveModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers/{modifierId}/restore:
+    post:
+      operationId: restoreModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/modifier-lists/{modifierListId}:
+    post:
+      operationId: attachModifierList
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [itemId, modifierListId, sortOrder]
+                properties:
+                  itemId: { type: string }
+                  modifierListId: { type: string }
+                  sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            Item atau ModifierList tidak ditemukan atau bukan milik tenant
+            pemanggil (RLS menyembunyikan baris tenant lain, bukan hanya
+            menolak akses -- FK ke item(id)/modifier_list(id) tidak tunduk
+            RLS, jadi visibilitas dicek eksplisit sebelum INSERT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: detachModifierList
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: >-
+            No content. Dikembalikan tanpa syarat -- pasangan ada atau tidak,
+            milik tenant pemanggil atau tenant lain -- supaya tidak jadi
+            oracle keberadaan lintas tenant. RLS (tenant_delete policy) sudah
+            memastikan DELETE hanya pernah mengenai baris milik tenant
+            pemanggil.
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Category:
+      type: object
+      required: [id, name, sortOrder]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        parentId: { type: string, nullable: true }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+        colorHint: { type: string, nullable: true }
+        archivedAt: { type: string, format: date-time, nullable: true }
+    ItemVariation:
+      type: object
+      required: [id, itemId, name, price, sortOrder]
+      properties:
+        id: { type: string }
+        itemId: { type: string }
+        name: { type: string }
+        sku: { type: string, nullable: true }
+        barcode: { type: string, nullable: true }
+        price: { type: integer, minimum: 0 }
+        cost: { type: integer, minimum: 0 }
+        stockingUnit: { type: string }
+        sellingUnit: { type: string }
+        conversionFactor: { type: number }
+        trackStock: { type: boolean }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+        archivedAt: { type: string, format: date-time, nullable: true }
+    Item:
+      type: object
+      required: [id, name, variations, modifierLists]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        categoryId: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        variations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemVariation'
+        # FIX 5 (whole-branch review): attachModifierList/detachModifierList
+        # existed with no way to read the relation back. Nests the full
+        # ModifierList shape (including its own `modifiers`) -- K-04 "Pilih
+        # Modifier (modal)" needs both which lists apply AND what each list's
+        # choices are. Archived attached lists are not filtered out (same as
+        # `variations` on this schema and `modifiers` on ModifierList) -- they
+        # carry their own archivedAt instead of disappearing from this array.
+        modifierLists:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModifierList'
+    ItemVariationInput:
+      type: object
+      required: [id, price]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        sku: { type: string, nullable: true }
+        barcode: { type: string, nullable: true }
+        price: { type: integer, minimum: 0 }
+        cost: { type: integer, minimum: 0 }
+        stockingUnit: { type: string }
+        sellingUnit: { type: string }
+        conversionFactor: { type: number }
+        trackStock: { type: boolean }
+    ModifierList:
+      type: object
+      required: [id, name, selectionType, minSelections, modifiers]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        selectionType: { type: string, enum: [single, multi] }
+        minSelections: { type: integer }
+        maxSelections: { type: integer, nullable: true }
+        allowDuplicate: { type: boolean }
+        isRequired: { type: boolean }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        modifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Modifier'
+    Modifier:
+      type: object
+      required: [id, modifierListId, name, price, sortOrder]
+      properties:
+        id: { type: string }
+        modifierListId: { type: string }
+        name: { type: string }
+        price: { type: integer, minimum: 0 }
+        isDefault: { type: boolean }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
+        archivedAt: { type: string, format: date-time, nullable: true }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
