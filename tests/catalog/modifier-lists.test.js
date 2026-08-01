@@ -368,3 +368,102 @@ test('archiveModifierList: ModifierList yang diarsipkan tetap menyertakan modifi
   assert.equal(body.modifiers.length, 1);
   assert.equal(body.modifiers[0].id, modId);
 });
+
+// --- Keputusan produk user (1 Agu 2026): minSelections/maxSelections yang
+// tidak masuk akal harus DITOLAK, bukan diterima diam-diam.
+//
+// Konsekuensinya nyata, bukan kerapian: product/IA-lumi-pos-v1.md § K-04
+// menyatakan tombol konfirmasi dialog modifier nonaktif sampai min_selections
+// terpenuhi. Jadi min > max (mis. min 5, max 2) menghasilkan dialog yang
+// tombolnya TIDAK AKAN PERNAH bisa aktif -- item itu tidak bisa dijual sama
+// sekali, dan kasir tidak punya jalan keluar dari layar itu. Nilai negatif
+// punya bentuk kegagalan yang sama.
+//
+// spec-a-katalog.md FR-A3 tidak punya acceptance criteria untuk ini; aturannya
+// ditetapkan user secara eksplisit, bukan ditebak. Skema juga tidak punya CHECK
+// untuk keduanya, jadi ini murni tanggung jawab application layer. ---
+
+test('createModifierList: minSelections > maxSelections ditolak 400 VALIDATION_ERROR', async () => {
+  const res = await req('POST', '/modifier-lists', {
+    id: crypto.randomUUID(), name: 'Mustahil', selectionType: 'multi', minSelections: 5, maxSelections: 2,
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('createModifierList: minSelections negatif ditolak 400 VALIDATION_ERROR', async () => {
+  const res = await req('POST', '/modifier-lists', {
+    id: crypto.randomUUID(), name: 'Negatif', selectionType: 'multi', minSelections: -1,
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('createModifierList: maxSelections negatif ditolak 400 VALIDATION_ERROR', async () => {
+  const res = await req('POST', '/modifier-lists', {
+    id: crypto.randomUUID(), name: 'Negatif', selectionType: 'multi', maxSelections: -3,
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('createModifierList: minSelections == maxSelections diterima (batas inklusif)', async () => {
+  const res = await req('POST', '/modifier-lists', {
+    id: crypto.randomUUID(), name: 'Tepat Dua', selectionType: 'multi', minSelections: 2, maxSelections: 2,
+  });
+  assert.equal(res.statusCode, 201);
+  const body = JSON.parse(res.body);
+  assert.equal(body.minSelections, 2);
+  assert.equal(body.maxSelections, 2);
+});
+
+test('createModifierList: maxSelections null (tanpa batas atas) tetap diterima dengan minSelections > 0', async () => {
+  const res = await req('POST', '/modifier-lists', {
+    id: crypto.randomUUID(), name: 'Tanpa Batas Atas', selectionType: 'multi', minSelections: 3,
+  });
+  assert.equal(res.statusCode, 201);
+  assert.equal(JSON.parse(res.body).maxSelections, null);
+});
+
+// Update harus divalidasi terhadap nilai EFEKTIF setelah patch, bukan hanya
+// terhadap field yang dikirim -- PATCH yang hanya mengirim salah satu sisi
+// tetap bisa menghasilkan kombinasi mustahil bersama nilai yang sudah ada.
+test('updateModifierList: menaikkan minSelections melewati maxSelections yang sudah ada ditolak', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', {
+    id: listId, name: 'Extra', selectionType: 'multi', minSelections: 1, maxSelections: 3,
+  });
+  const res = await req('PATCH', `/modifier-lists/${listId}`, { minSelections: 4 });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('updateModifierList: menurunkan maxSelections di bawah minSelections yang sudah ada ditolak', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', {
+    id: listId, name: 'Extra', selectionType: 'multi', minSelections: 3, maxSelections: 5,
+  });
+  const res = await req('PATCH', `/modifier-lists/${listId}`, { maxSelections: 2 });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('updateModifierList: minSelections negatif ditolak 400 VALIDATION_ERROR', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: listId, name: 'Extra', selectionType: 'multi' });
+  const res = await req('PATCH', `/modifier-lists/${listId}`, { minSelections: -1 });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('updateModifierList: mengosongkan maxSelections ke null melepas batas atas, bukan ditolak', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', {
+    id: listId, name: 'Extra', selectionType: 'multi', minSelections: 3, maxSelections: 5,
+  });
+  const res = await req('PATCH', `/modifier-lists/${listId}`, { maxSelections: null });
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.maxSelections, null);
+  assert.equal(body.minSelections, 3);
+});

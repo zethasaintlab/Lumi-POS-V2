@@ -90,6 +90,49 @@ function assertSelectionTypeValid(selectionType: unknown): void {
   }
 }
 
+// Keputusan produk user (1 Agu 2026), bukan tebakan: min/max yang tidak masuk
+// akal ditolak. spec-a-katalog.md FR-A3 tidak punya acceptance criteria untuk
+// ini dan skema tidak punya CHECK-nya, jadi ini murni application layer.
+//
+// Alasannya bukan kerapian. IA-lumi-pos-v1.md § K-04 menyatakan tombol
+// konfirmasi dialog modifier nonaktif sampai min_selections terpenuhi -- jadi
+// min > max menghasilkan dialog yang tombolnya tidak akan pernah bisa aktif,
+// dan item itu tidak bisa dijual sama sekali. Nilai negatif punya bentuk
+// kegagalan yang sama. Keduanya hanya bisa diperbaiki dari back-office, yang
+// online-only, sehingga sebuah kesalahan konfigurasi bisa menghentikan
+// penjualan di outlet yang sedang offline.
+//
+// maxSelections null berarti "tanpa batas atas" dan selalu sah berapa pun
+// minSelections-nya. Batas min == max juga sah (inklusif) -- itu cara
+// menyatakan "pilih tepat N".
+function assertSelectionBoundsValid(minSelections: unknown, maxSelections: unknown): void {
+  if (minSelections !== undefined && minSelections !== null) {
+    if (typeof minSelections !== 'number' || !Number.isInteger(minSelections) || minSelections < 0) {
+      throw new HttpError(400, 'VALIDATION_ERROR', 'minSelections harus bilangan bulat >= 0.');
+    }
+  }
+  if (maxSelections !== undefined && maxSelections !== null) {
+    if (typeof maxSelections !== 'number' || !Number.isInteger(maxSelections) || maxSelections < 0) {
+      throw new HttpError(
+        400,
+        'VALIDATION_ERROR',
+        'maxSelections harus bilangan bulat >= 0, atau null untuk tanpa batas atas.'
+      );
+    }
+  }
+  if (
+    typeof minSelections === 'number' &&
+    typeof maxSelections === 'number' &&
+    minSelections > maxSelections
+  ) {
+    throw new HttpError(
+      400,
+      'VALIDATION_ERROR',
+      'minSelections tidak boleh lebih besar dari maxSelections -- dialog modifier tidak akan pernah bisa dikonfirmasi.'
+    );
+  }
+}
+
 // K2 dari items.ts (assertPriceValid) -- bentuknya dipakai ulang, bukan
 // ditulis ulang dengan cara yang berbeda: typeof dan Number.isInteger dicek
 // eksplisit (bukan hanya `< 0`) supaya string, float pecahan (mis. 100.5),
@@ -234,6 +277,9 @@ export function createModifierListHandlers(pool: Pool) {
         isRequired?: boolean;
       };
       assertSelectionTypeValid(body.selectionType);
+      // Nilai efektif yang benar-benar tersimpan, bukan hanya yang dikirim --
+      // default create (0 / null) ikut divalidasi seperti nilai eksplisit.
+      assertSelectionBoundsValid(body.minSelections ?? 0, body.maxSelections ?? null);
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
         try {
           const { rows } = await client.query<ModifierListRow>(
@@ -315,7 +361,17 @@ export function createModifierListHandlers(pool: Pool) {
         assertSelectionTypeValid(body.selectionType);
       }
       const { list, modifiers } = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchModifierListOrThrow(client, modifierListId);
+        const current = await fetchModifierListOrThrow(client, modifierListId);
+        // Divalidasi terhadap nilai EFEKTIF setelah patch, bukan hanya terhadap
+        // field yang dikirim: PATCH yang cuma mengirim satu sisi tetap bisa
+        // menghasilkan kombinasi mustahil bersama nilai yang sudah tersimpan.
+        // Kedua ekspresi di bawah harus mencerminkan semantik SQL di bawahnya --
+        // COALESCE untuk min (tidak dikirim = biarkan), CASE WHEN ... IN untuk
+        // max (dikirim null = kosongkan, artinya tanpa batas atas).
+        assertSelectionBoundsValid(
+          body.minSelections ?? current.min_selections,
+          'maxSelections' in body ? body.maxSelections : current.max_selections
+        );
         try {
           const { rows } = await client.query<ModifierListRow>(
             `UPDATE modifier_list SET
