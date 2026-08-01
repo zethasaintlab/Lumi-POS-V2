@@ -195,6 +195,29 @@ async function fetchVariationOrThrow(client: PoolClient, itemId: string, variati
   return rows[0];
 }
 
+// Review finding (post-Task-3): item.category_id REFERENCES category(id) proves
+// only that the category exists *somewhere* -- PostgreSQL's own foreign-key
+// referential-integrity check runs as the referenced table's owner, NOT subject
+// to RLS, so it cannot tell a category belonging to the calling tenant apart
+// from one belonging to a different tenant. Confirmed empirically before this
+// guard existed: an HTTP createItem with a categoryId seeded under a different
+// tenant returned 201, and the FK happily accepted it.
+//
+// Same shape as categories.ts's assertParentAllowsChild (RLS-scoped SELECT
+// before trusting a client-supplied id that crosses into another row), applied
+// here to item -> category instead of category -> category. Deliberately a
+// plain, unlocked SELECT -- no FOR UPDATE -- since row locking for this module
+// is explicitly deferred to the whole-branch concurrency pass, and unlike
+// categories.ts's pair-lock (which guards against a *concurrent write* to the
+// same two rows), there is nothing here for two transactions to race over: a
+// category's tenant_id is set once at creation and never reassigned.
+async function assertCategoryVisible(client: PoolClient, categoryId: string): Promise<void> {
+  const { rows } = await client.query('SELECT 1 FROM category WHERE id = $1', [categoryId]);
+  if (rows.length === 0) {
+    throw new HttpError(404, 'NOT_FOUND', `Category ${categoryId} tidak ditemukan.`);
+  }
+}
+
 export function createItemHandlers(pool: Pool) {
   return {
     async createItem(req: FastifyRequest, reply: FastifyReply) {
@@ -216,6 +239,9 @@ export function createItemHandlers(pool: Pool) {
         throw new HttpError(400, 'ITEM_NO_VARIATION', 'Item harus punya minimal satu variation.');
       }
       const { item, variations } = await withTenantTransaction(pool, tenantId, async (client) => {
+        if (body.categoryId !== null && body.categoryId !== undefined) {
+          await assertCategoryVisible(client, body.categoryId);
+        }
         const { rows } = await client.query<ItemRow>(
           `INSERT INTO item (id, tenant_id, name, category_id, description, sort_order)
            VALUES ($1, $2, $3, $4, $5, $6)
@@ -274,6 +300,14 @@ export function createItemHandlers(pool: Pool) {
       const body = req.body as { name?: string; categoryId?: string | null; description?: string | null; sortOrder?: number };
       const { item, variations } = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchItemOrThrow(client, itemId);
+        // Sama seperti createItem: hanya divalidasi kalau body benar-benar
+        // mengirim categoryId non-null (clearing ke null lewat `categoryId:
+        // null` tidak perlu divalidasi -- tidak ada apa pun untuk dicek
+        // keberadaannya). Guard yang identik di kedua path (create & update)
+        // supaya keduanya tidak bisa diam-diam berbeda perilaku.
+        if ('categoryId' in body && body.categoryId !== null && body.categoryId !== undefined) {
+          await assertCategoryVisible(client, body.categoryId);
+        }
         const { rows } = await client.query<ItemRow>(
           `UPDATE item SET
              name = COALESCE($2, name),

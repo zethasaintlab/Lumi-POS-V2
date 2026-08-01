@@ -242,6 +242,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            categoryId tidak ditemukan atau bukan milik tenant pemanggil (RLS
+            menyembunyikan kategori tenant lain, bukan hanya menolak akses)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '409':
           description: Barcode duplikat, atau batas 250 variation per item tercapai
           content:
@@ -335,7 +343,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Not found
+          description: >-
+            Item tidak ditemukan, atau categoryId tidak ditemukan/bukan milik
+            tenant pemanggil
           content:
             application/json:
               schema:

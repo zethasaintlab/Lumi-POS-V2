@@ -7,7 +7,7 @@ const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
 const { seedTenantBase } = require('../isolation/helpers/seed');
 
-let owner, appSetup, app, tenant;
+let owner, appSetup, app, tenant, base;
 
 before(async () => {
   owner = await connectAsOwner();
@@ -23,7 +23,7 @@ after(async () => {
 
 beforeEach(async () => {
   await resetAll(owner);
-  const base = await seedTenantBase(appSetup, { suffix: 'ItemTest' });
+  base = await seedTenantBase(appSetup, { suffix: 'ItemTest' });
   tenant = base.tenant;
   const { buildApp } = await import('../../apps/server/src/app.ts');
   if (app) await app.close();
@@ -147,4 +147,96 @@ test('createItemVariation: variation ke-251 ditolak VARIATION_LIMIT_EXCEEDED', a
   const res251 = await req('POST', `/items/${itemId}/variations`, { id: crypto.randomUUID(), price: 1000 });
   assert.equal(res251.statusCode, 409);
   assert.equal(JSON.parse(res251.body).error.code, 'VARIATION_LIMIT_EXCEEDED');
+});
+
+// --- categoryId: harus RLS-visible bagi tenant pemanggil, bukan hanya "ada
+// di suatu tempat" (temuan review Task 3: FK ke category(id) TIDAK tunduk
+// RLS -- PostgreSQL menjalankan pengecekan referential integrity dengan hak
+// pemilik tabel, bukan peran yang dibatasi RLS). ---
+
+test('createItem: categoryId lintas tenant ditolak 404 (FK tidak boleh jadi jalan pintas RLS)', async () => {
+  const otherBase = await seedTenantBase(appSetup, { suffix: 'ItemTestOther' });
+  const foreignCategoryId = otherBase.category.id;
+
+  const res = await req('POST', '/items', {
+    id: crypto.randomUUID(),
+    name: 'Nyelundup',
+    categoryId: foreignCategoryId,
+    variations: [{ id: crypto.randomUUID(), price: 5000 }],
+  });
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
+
+  // Bukti tambahan langsung ke DB: kalau request di atas ternyata (bug) balik
+  // 201, item TIDAK BOLEH benar-benar tersimpan dengan category_id milik
+  // tenant lain -- ini menutup celah "response salah tapi datanya juga rusak".
+  if (res.statusCode === 201) {
+    const itemId = JSON.parse(res.body).id;
+    const getRes = await req('GET', `/items/${itemId}`);
+    assert.notEqual(
+      JSON.parse(getRes.body).categoryId,
+      foreignCategoryId,
+      'item tidak boleh tersimpan dengan categoryId milik tenant lain'
+    );
+  }
+});
+
+test('updateItem: categoryId lintas tenant ditolak 404 (FK tidak boleh jadi jalan pintas RLS)', async () => {
+  const otherBase = await seedTenantBase(appSetup, { suffix: 'ItemTestOther2' });
+  const foreignCategoryId = otherBase.category.id;
+
+  const itemId = crypto.randomUUID();
+  await req('POST', '/items', { id: itemId, name: 'Aman', variations: [{ id: crypto.randomUUID(), price: 5000 }] });
+
+  const res = await req('PATCH', `/items/${itemId}`, { categoryId: foreignCategoryId });
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
+
+  const getRes = await req('GET', `/items/${itemId}`);
+  assert.notEqual(
+    JSON.parse(getRes.body).categoryId,
+    foreignCategoryId,
+    'item tidak boleh berpindah categoryId ke milik tenant lain'
+  );
+});
+
+test('createItem: categoryId milik tenant sendiri berhasil, nilai round-trip', async () => {
+  const itemId = crypto.randomUUID();
+  const res = await req('POST', '/items', {
+    id: itemId,
+    name: 'Latte',
+    categoryId: base.category.id,
+    variations: [{ id: crypto.randomUUID(), price: 22000 }],
+  });
+  assert.equal(res.statusCode, 201);
+  assert.equal(JSON.parse(res.body).categoryId, base.category.id);
+});
+
+test('createItem: categoryId tidak ditemukan ditolak 404', async () => {
+  const res = await req('POST', '/items', {
+    id: crypto.randomUUID(),
+    name: 'Ngawang',
+    categoryId: crypto.randomUUID(),
+    variations: [{ id: crypto.randomUUID(), price: 5000 }],
+  });
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
+});
+
+test('updateItem: categoryId milik tenant sendiri berhasil, nilai round-trip', async () => {
+  const itemId = crypto.randomUUID();
+  await req('POST', '/items', { id: itemId, name: 'Mocha', variations: [{ id: crypto.randomUUID(), price: 24000 }] });
+
+  const res = await req('PATCH', `/items/${itemId}`, { categoryId: base.category.id });
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).categoryId, base.category.id);
+});
+
+test('updateItem: categoryId tidak ditemukan ditolak 404', async () => {
+  const itemId = crypto.randomUUID();
+  await req('POST', '/items', { id: itemId, name: 'Cappuccino', variations: [{ id: crypto.randomUUID(), price: 26000 }] });
+
+  const res = await req('PATCH', `/items/${itemId}`, { categoryId: crypto.randomUUID() });
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
 });
