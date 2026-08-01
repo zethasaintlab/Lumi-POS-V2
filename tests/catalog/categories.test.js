@@ -167,6 +167,29 @@ test('updateCategory: memindahkan kategori yang sudah punya anak menjadi anak ka
   assert.equal(body.error.code, 'CATEGORY_DEPTH_EXCEEDED');
 });
 
+test('updateCategory: dua PATCH bersamaan yang saling menukar induk (A<->B) tidak membentuk siklus', async () => {
+  const idA = crypto.randomUUID();
+  await post('/categories', { id: idA, name: 'A' });
+  const idB = crypto.randomUUID();
+  await post('/categories', { id: idB, name: 'B' });
+
+  const [resAtoB, resBtoA] = await Promise.all([
+    patch(`/categories/${idA}`, { parentId: idB }),
+    patch(`/categories/${idB}`, { parentId: idA }),
+  ]);
+
+  const statuses = [resAtoB.statusCode, resBtoA.statusCode].sort();
+  assert.deepEqual(statuses, [200, 409], 'tepat satu PATCH berhasil, satu lagi ditolak -- bukan dua-duanya sukses');
+
+  const loser = resAtoB.statusCode === 409 ? resAtoB : resBtoA;
+  assert.equal(JSON.parse(loser.body).error.code, 'CATEGORY_DEPTH_EXCEEDED');
+
+  const catA = JSON.parse((await get(`/categories/${idA}`)).body);
+  const catB = JSON.parse((await get(`/categories/${idB}`)).body);
+  const isCycle = catA.parentId === idB && catB.parentId === idA;
+  assert.equal(isCycle, false, 'A dan B tidak boleh berakhir saling menjadi induk satu sama lain');
+});
+
 test('updateCategory: parentId string kosong ditolak dengan error klien, bukan 500', async () => {
   const topId = crypto.randomUUID();
   await post('/categories', { id: topId, name: 'Top' });

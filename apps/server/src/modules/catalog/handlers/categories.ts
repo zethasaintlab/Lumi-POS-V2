@@ -41,6 +41,33 @@ async function assertParentAllowsChild(client: PoolClient, parentId: string): Pr
   }
 }
 
+// Locks the category being updated and its proposed new parent together, in ONE
+// statement, sorted by id -- before either row is read for the reparent checks.
+// Two concurrent PATCHes that both touch the same pair of ids (e.g. A->B and B->A)
+// will therefore always request their locks in the same order (sorted, not
+// request order), so neither can wait on a lock the other already holds while
+// holding one the other wants: no deadlock. The second transaction to arrive
+// simply blocks on this statement until the first COMMITs, then -- under
+// PostgreSQL's default READ COMMITTED, which withTenantTransaction runs at (see
+// db.ts: a bare `BEGIN`, no explicit isolation level) -- a blocked FOR UPDATE
+// that unblocks re-reads the row as of the most recently committed version, not
+// the snapshot from when the statement was first issued. That's what makes this
+// a real fix and not just a performance detail: without it, both transactions
+// read parent_id as it was at transaction start (both null), both pass, both
+// commit, and the result is a two-node cycle (A.parent_id=B, B.parent_id=A).
+// With it, the second transaction's read reflects the first transaction's write.
+async function lockCategoryPair(
+  client: PoolClient,
+  categoryId: string,
+  parentId: string
+): Promise<Map<string, string | null>> {
+  const { rows } = await client.query<{ id: string; parent_id: string | null }>(
+    'SELECT id, parent_id FROM category WHERE id = ANY($1) ORDER BY id FOR UPDATE',
+    [[categoryId, parentId]]
+  );
+  return new Map(rows.map((row) => [row.id, row.parent_id]));
+}
+
 // Guards the two-level cap for updateCategory specifically (createCategory can't
 // violate either check it adds: a brand-new row can't equal its own not-yet-inserted
 // id, and it can't already have children referencing an id that didn't exist before
@@ -49,6 +76,13 @@ async function assertParentAllowsChild(client: PoolClient, parentId: string): Pr
 //   1. self-parenting: parentId === the category being updated
 //   2. reparenting a category that already has children under a new (even top-level)
 //      parent, which would produce a third level below the new parent
+//
+// Known residual gap (not fixed here, out of scope for this specific race): the
+// children-check below is a plain, unlocked SELECT. It closes the two-party swap
+// race above, but a *different* race remains between this PATCH and a concurrent
+// createCategory that inserts a brand-new child under `categoryId` mid-transaction
+// -- same failure shape (a hidden third level), different trigger. Flagged for the
+// whole-branch review rather than fixed speculatively here.
 async function assertCanReparent(client: PoolClient, categoryId: string, parentId: string): Promise<void> {
   if (parentId === categoryId) {
     throw new HttpError(
@@ -57,7 +91,18 @@ async function assertCanReparent(client: PoolClient, categoryId: string, parentI
       'Kategori tidak boleh menjadi induk dirinya sendiri.'
     );
   }
-  await assertParentAllowsChild(client, parentId);
+  const locked = await lockCategoryPair(client, categoryId, parentId);
+  const parentParentId = locked.get(parentId);
+  if (parentParentId === undefined) {
+    throw new HttpError(404, 'NOT_FOUND', `Category induk ${parentId} tidak ditemukan.`);
+  }
+  if (parentParentId !== null) {
+    throw new HttpError(
+      409,
+      'CATEGORY_DEPTH_EXCEEDED',
+      'Kategori yang sudah punya induk tidak boleh menjadi induk kategori lain (maksimal dua tingkat).'
+    );
+  }
   const { rows } = await client.query('SELECT 1 FROM category WHERE parent_id = $1 LIMIT 1', [categoryId]);
   if (rows.length > 0) {
     throw new HttpError(
