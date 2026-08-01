@@ -262,6 +262,96 @@ test('createItemVariation: variation ke-251 ditolak VARIATION_LIMIT_EXCEEDED', a
   assert.equal(JSON.parse(res251.body).error.code, 'VARIATION_LIMIT_EXCEEDED');
 });
 
+// --- Whole-branch review FIX 8: conversionFactor had no validation at all --
+// 0, negative, or non-finite values all passed straight through to the DB.
+// conversion_factor = 0 is a latent divide-by-zero for Module E (inventory,
+// not built yet) whenever it computes stocking-unit quantities from
+// selling-unit quantities by dividing by this value. FR-A9 says nothing in
+// v1 ever changes conversion_factor after creation, so a strict `> 0` check
+// is safe. Infinity is reached via `1e400` -- JSON has no literal for it, but
+// JSON.parse('1e400') overflows to Infinity in JS, and AJV's `type: number`
+// schema check does not reject Infinity (typeof Infinity === 'number'), so
+// this is a genuinely reachable HTTP request, not a synthetic in-process
+// value. ---
+
+test('createItem: conversionFactor 0 ditolak 400 VALIDATION_ERROR (divide-by-zero laten di Module E)', async () => {
+  const res = await req('POST', '/items', {
+    id: crypto.randomUUID(),
+    name: 'Rusak',
+    variations: [{ id: crypto.randomUUID(), price: 1000, conversionFactor: 0 }],
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('createItem: conversionFactor negatif ditolak 400 VALIDATION_ERROR', async () => {
+  const res = await req('POST', '/items', {
+    id: crypto.randomUUID(),
+    name: 'Rusak',
+    variations: [{ id: crypto.randomUUID(), price: 1000, conversionFactor: -2 }],
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('createItem: conversionFactor non-finite (Infinity lewat 1e400) ditolak 400 VALIDATION_ERROR', async () => {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/items',
+    headers: { 'x-tenant-id': tenant.id, 'content-type': 'application/json' },
+    payload: JSON.stringify({
+      id: crypto.randomUUID(),
+      name: 'Rusak',
+      variations: [{ id: crypto.randomUUID(), price: 1000, conversionFactor: 1e400 }],
+    }),
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('createItemVariation: conversionFactor 0 ditolak 400 VALIDATION_ERROR', async () => {
+  const itemId = crypto.randomUUID();
+  await req('POST', '/items', { id: itemId, name: 'Aman', variations: [{ id: crypto.randomUUID(), price: 1000 }] });
+  const res = await req('POST', `/items/${itemId}/variations`, {
+    id: crypto.randomUUID(),
+    price: 1000,
+    conversionFactor: 0,
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+test('updateItemVariation: conversionFactor 0 ditolak 400 VALIDATION_ERROR (sama dengan create)', async () => {
+  const itemId = crypto.randomUUID();
+  const varId = crypto.randomUUID();
+  await req('POST', '/items', { id: itemId, name: 'Aman', variations: [{ id: varId, price: 1000, conversionFactor: 2 }] });
+  const res = await req('PATCH', `/items/${itemId}/variations/${varId}`, { conversionFactor: 0 });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+});
+
+// Nilai bulat sengaja dipakai di sini (bukan pecahan seperti 0.5, yang
+// adalah kasus pakai utama kolom ini -- "0.5 kg" per CLAUDE.md konvensi
+// data). Ditemukan SAAT menulis fix ini: conversionFactor pecahan APA PUN
+// selalu 500 lewat createItem -- bug lain, sudah ada sebelum whole-branch
+// review ini, di luar scope FIX 8 (yang hanya diminta menolak 0/negatif/
+// non-finite). Root cause dikonfirmasi lewat query SQL langsung: INSERT
+// item_variation memakai `COALESCE($11, 1)` tanpa parameter type eksplisit
+// -- literal `1` yang untyped membuat Postgres MENYIMPULKAN tipe parameter
+// $11 sebagai integer (mengikuti tipe COALESCE lainnya), bukan numeric
+// (tipe kolom conversion_factor sebenarnya), jadi 0.5 gagal di-bind dengan
+// "invalid input syntax for type integer: 0.5" (22P02) -- 500 mentah,
+// bukan 400. Dilaporkan terpisah, TIDAK diperbaiki di sini.
+test('createItem: conversionFactor positif (bilangan bulat) legal, round-trip', async () => {
+  const res = await req('POST', '/items', {
+    id: crypto.randomUUID(),
+    name: 'Sirup',
+    variations: [{ id: crypto.randomUUID(), price: 1000, conversionFactor: 3 }],
+  });
+  assert.equal(res.statusCode, 201);
+  assert.equal(JSON.parse(res.body).variations[0].conversionFactor, 3);
+});
+
 // --- categoryId: harus RLS-visible bagi tenant pemanggil, bukan hanya "ada
 // di suatu tempat" (temuan review Task 3: FK ke category(id) TIDAK tunduk
 // RLS -- PostgreSQL menjalankan pengecekan referential integrity dengan hak

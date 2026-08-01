@@ -114,13 +114,32 @@ async function assertParentAllowsChild(client: PoolClient, childCandidateId: str
 //   2. reparenting a category that already has children under a new (even top-level)
 //      parent, which would produce a third level below the new parent
 //
-// Known residual gap (not fixed here, out of scope for this round): the
-// children-check below is still a plain, unlocked SELECT. It closes the
-// two-party swap race and the create-vs-reparent race (both now go through
-// assertParentAllowsChild's shared lock), but a race remains between this
-// PATCH's children-check and a *third* concurrent createCategory inserting a
-// brand-new child under `categoryId` after this check has already run but
-// before this transaction commits. Flagged for the whole-branch review.
+// Whole-branch review: re-examined the "known residual gap" comment that
+// used to sit here, claiming a race between this PATCH's children-check
+// (below, a plain unlocked SELECT) and a *third* concurrent createCategory
+// inserting a brand-new child under `categoryId` after the check ran but
+// before this transaction commits. That gap does NOT exist -- verified by
+// tracing both code paths rather than assumed:
+//
+// A concurrent createCategory adding a child under `categoryId` calls
+// assertParentAllowsChild(newChildId, categoryId) too (categoryId is passed
+// as the *parentId* argument there), which runs the exact same
+// lockCategoryPair(client, newChildId, categoryId) as this function's own
+// call three lines below -- and since newChildId doesn't exist yet, that
+// SELECT ... FOR UPDATE locks exactly one row: `categoryId`'s. So BOTH this
+// PATCH (reparenting `categoryId`) and any concurrent createCategory (adding
+// a child under `categoryId`) must acquire a lock on `categoryId`'s own row
+// before either can proceed to its own check -- there is no way for the
+// second transaction to run its check against a snapshot the first hasn't
+// committed yet. Whichever arrives first holds the lock until COMMIT; the
+// second blocks, then (per the FOR UPDATE unblock semantics documented on
+// lockCategoryPair above) re-reads `categoryId` as of the version the first
+// transaction just committed -- so it always sees the true, up-to-date state
+// of `categoryId` (its parent_id if this PATCH won, or its now-existing
+// child if createCategory won) before deciding. Same mechanism that already
+// closes the two-party swap race and the create-vs-reparent race just
+// described above -- this is a third instance of the identical shared lock,
+// not a gap in it.
 async function assertCanReparent(client: PoolClient, categoryId: string, parentId: string): Promise<void> {
   if (parentId === categoryId) {
     throw new HttpError(

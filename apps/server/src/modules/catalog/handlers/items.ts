@@ -100,6 +100,21 @@ function assertPriceValid(input: VariationInput): void {
   }
 }
 
+// Whole-branch review FIX 8: conversion_factor sebelumnya tanpa validasi sama
+// sekali -- 0, negatif, dan non-finite semuanya lolos apa adanya ke DB.
+// conversion_factor = 0 adalah divide-by-zero laten untuk Module E (inventori,
+// belum dibangun) saat menghitung kuantitas stocking-unit dari selling-unit.
+// FR-A9 menyatakan tidak ada UI di v1 yang mengubah nilai ini setelah dibuat,
+// jadi syarat ketat `> 0` aman dan tidak memblokir alur mana pun yang ada.
+// Number.isFinite juga menolak Infinity, yang lolos AJV `type: number`
+// (typeof Infinity === 'number') dan bisa dicapai lewat JSON literal 1e400.
+function assertConversionFactorValid(value: number | undefined): void {
+  if (value === undefined) return;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'conversionFactor harus angka lebih besar dari 0.');
+  }
+}
+
 // K1 -- batas 250 ditegakkan dengan COUNT di transaksi yang sama, BUKAN
 // mengandalkan CHECK (sort_order <= 250): sort_order mulai dari 0, jadi CHECK
 // itu baru menolak variation ke-252 (sort_order 251). spec-a-katalog.md § A.7
@@ -164,6 +179,7 @@ async function insertVariation(
   input: VariationInput
 ): Promise<VariationRow> {
   assertPriceValid(input);
+  assertConversionFactorValid(input.conversionFactor);
   await assertVariationSlotAvailable(client, itemId);
   try {
     const { rows } = await client.query<VariationRow>(
@@ -527,6 +543,9 @@ export function createItemHandlers(pool: Pool) {
         sellingUnit?: string;
         conversionFactor?: number;
       };
+      // Validasi yang sama dengan jalur create -- perilaku yang berbeda antara
+      // create dan update untuk input yang sama adalah cacat (pelajaran Task 2).
+      assertConversionFactorValid(body.conversionFactor);
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchVariationOrThrow(client, itemId, variationId);
         try {

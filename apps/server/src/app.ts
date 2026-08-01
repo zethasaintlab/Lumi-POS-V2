@@ -42,9 +42,35 @@ function assertAllOperationsImplemented(specPath: string, serviceHandlers: Recor
   }
 }
 
-export async function buildApp(): Promise<FastifyInstance> {
-  const pool = createPool();
+// `overrides` is a test-only seam (defaults reproduce the real production
+// call `buildApp()` with no arguments exactly). specPath lets a test force
+// assertAllOperationsImplemented to throw deterministically (a spec path
+// that doesn't exist) without needing a real broken serviceHandlers set;
+// pool lets a test hold a reference to the exact Pool instance buildApp
+// creates internally, to assert on `pool.ended` after a forced failure --
+// see tests/server/build-app-lifecycle.test.js (whole-branch review FIX 8).
+export async function buildApp(overrides: { pool?: Pool; specPath?: string } = {}): Promise<FastifyInstance> {
+  const pool = overrides.pool ?? createPool();
+  const specPath = overrides.specPath ?? OPENAPI_SPEC_PATH;
 
+  // Whole-branch review FIX 8: `pool` above is a real pg Pool -- if anything
+  // between here and `app.addHook('onClose', ...)` below throws (the
+  // originally-flagged case: assertAllOperationsImplemented finding a
+  // missing operationId; but the same leak shape applies to any other throw
+  // in this range, e.g. a bad openapi-glue registration), buildApp used to
+  // return/reject without ever calling pool.end(), leaking the Pool's
+  // connections/handles. The `onClose` hook below only exists to close the
+  // pool once the app itself is closed -- it can't help if the app is never
+  // successfully built in the first place.
+  try {
+    return await buildAppInner(pool, specPath);
+  } catch (err) {
+    await pool.end();
+    throw err;
+  }
+}
+
+async function buildAppInner(pool: Pool, specPath: string): Promise<FastifyInstance> {
   const serviceHandlers = {
     async getHealth() {
       return { status: 'ok' };
@@ -52,7 +78,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     ...createCatalogHandlers(pool),
   };
 
-  assertAllOperationsImplemented(OPENAPI_SPEC_PATH, serviceHandlers);
+  assertAllOperationsImplemented(specPath, serviceHandlers);
 
   const app = Fastify();
 
@@ -98,7 +124,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(openapiGlue, {
-    specification: OPENAPI_SPEC_PATH,
+    specification: specPath,
     serviceHandlers,
   });
 

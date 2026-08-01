@@ -1,7 +1,15 @@
 name: test
 
+# Whole-branch review FIX 8: `push:` (any branch) + `pull_request:` together
+# double-ran this workflow on every commit pushed to an open PR branch --
+# once for the `push` event, once for the PR's `synchronize` event, both
+# checking out the identical commit. `push` is restricted to `main` (so a
+# merge/direct-push to main still gets its own run) and `pull_request` keeps
+# covering feature-branch commits via the PR's own synchronize event -- one
+# run per commit either way, not two.
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
