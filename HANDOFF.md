@@ -39,9 +39,9 @@ Status per 27 Juli 2026. Centang saat selesai.
 Semuanya menyentuh skema — murah sekarang, mahal nanti.
 
 - [ ] Tanggal bisnis berakhir saat tutup shift (default 04:00), bukan tengah malam
-- [ ] `VerticalProfile` per **outlet** dengan default dari tenant (OQ-09)
-- [ ] QRIS statis konfirmasi manual didukung (OQ-15)
-- [ ] Ambang otorisasi default: diskon >20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale >3×/shift
+- [x] `VerticalProfile` per **outlet** dengan default dari tenant (OQ-09) — diputuskan 1 Agu 2026, diterapkan `db/migrations/0015` (`is_tenant_default` + partial unique index). Test: `npm run test:schema`
+- [x] QRIS statis konfirmasi manual didukung (OQ-15) — diputuskan 1 Agu 2026: **ya**, bersama QRIS dinamis lewat Midtrans. Statis berfungsi offline dan wajib disertai kontrol anti-fraud di `spec-c`
+- [x] Ambang otorisasi default: diskon >20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale >3×/shift — diputuskan 1 Agu 2026. **Ditambah:** void **tanpa** PIN manajer (alasan + audit + restock otomatis), refund tetap PIN manajer. Angkanya `[ASUMSI]`, belum divalidasi ke merchant
 - [ ] Batas kredensial offline (OQ-08)
 
 ## Proses eksternal — mulai sekarang, lead time di luar kendali

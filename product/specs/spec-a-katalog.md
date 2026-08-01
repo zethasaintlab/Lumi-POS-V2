@@ -368,7 +368,7 @@ THEN produk muncul dengan penanda dan tombol "Pulihkan"
 |---|---|---|
 | — | Apakah gambar produk didukung di v1? Design system melarang imagery di layar kasir, tetapi grid produk kompetitor umumnya memakainya | Implementasi FR-A1 |
 | — | Batas jumlah produk per tier (tier Gratis 200, Standar 5.000) — dihitung per variation atau per item? | Implementasi kuota, Modul komersial |
-| OQ-09 | Profil vertikal di tingkat tenant atau outlet? Memengaruhi apakah katalog dibagi antar outlet dengan vertikal berbeda | Implementasi skema |
+| ~~OQ-09~~ | ✅ **Terjawab 1 Agu 2026 — per outlet dengan default tenant.** Konsekuensi untuk modul ini: katalog tetap **milik tenant** (`category`/`item`/`item_variation` ber-`tenant_id`, bukan `outlet_id`), jadi ia dibagi ke seluruh outlet apa pun profil vertikalnya. Yang berbeda per outlet adalah *perilaku* (mis. `allow_negative_stock`), bukan isi katalognya | — |
 
 ---
 

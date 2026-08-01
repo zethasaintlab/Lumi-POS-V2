@@ -111,8 +111,7 @@ Angka di sini **mengalahkan** estimasi di dokumen lain.
 
 **F0 tertutup:** seluruh gate hijau, termasuk test isolasi lintas-tenant (`npm run test:isolation`, 189/189) — rincian per item di [`HANDOFF.md`](HANDOFF.md). Satu item tersisa yang tidak memblokir F0/F1: SQLite WASM+OPFS di browser belum dibangun — memblokir F2.
 
-**Memblokir F1:**
-- OQ-09 profil vertikal per tenant atau outlet · OQ-15 QRIS statis · ambang otorisasi default
+**Memblokir F1:** — ✅ tidak ada lagi. Ketiganya diputuskan 1 Agustus 2026: OQ-09 (profil vertikal **per outlet, mewarisi default tenant**) · OQ-15 (QRIS statis **dan** dinamis, keduanya didukung) · ambang otorisasi default (termasuk **void tanpa PIN manajer**). Rinciannya di [`CLAUDE.md`](CLAUDE.md) dan [PRD § 14](product/PRD-lumi-pos-v1.md).
 
 **Tidak memblokir kode, tapi lead time-nya panjang — mulai sekarang:**
 - Konsultasi pajak (OQ-04, OQ-05) · konfirmasi lisensi PowerSync · program partner GoFood/GrabFood · beli 5–8 model printer uji · daftar akun Midtrans

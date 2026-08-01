@@ -112,7 +112,7 @@ Lokal-only:   OutboxLocal · DeviceConfig · SyncCheckpoint
 | `rounding_increment` | int | Default `100` |
 | `rounding_mode` | text | `half_up`·`up`·`down` |
 | `service_charge_rate` | numeric(6,4) | Default `0` |
-| `vertical_profile_id` | ulid FK | |
+| `vertical_profile_id` | ulid FK **nullable** | Terisi = outlet ini **override** profil pusat. `NULL` = **warisi** profil default tenant (`vertical_profile.is_tenant_default`). Lihat § `vertical_profile` [OQ-09 terjawab] |
 | `archived_at` | timestamptz | |
 
 ### `user`
@@ -154,9 +154,20 @@ Satu pengguna dapat memiliki keduanya (mis. manajer outlet yang juga membuka lap
 | `name` | text | `fnb`·`retail` |
 | `modules_enabled` | jsonb | `["table","kds","recipe",...]` |
 | `default_channel` | text | `dine_in`·`takeaway` |
-| `allow_negative_stock` | bool | Default `true` untuk F&B |
+| `allow_negative_stock` | bool | Default `true` untuk F&B. **FR-E4** — setting bisnis, bukan asumsi hardcoded. Karena profil melekat di outlet, setting ini efektif **per outlet** |
 | `requires_barcode_flow` | bool | Default `false` untuk F&B |
 | `default_tax_type` | text | `pbjt`·`ppn` |
+| `is_tenant_default` | bool | Default `false`. Profil yang diwarisi outlet ber-`vertical_profile_id` NULL. **Maksimal satu per tenant**, ditegakkan partial unique index `ux_vertical_profile_tenant_default ON vertical_profile(tenant_id) WHERE is_tenant_default` — bukan oleh aplikasi [OQ-09 terjawab, `db/migrations/0015`] |
+
+**Resolusi profil sebuah outlet** — satu `COALESCE`, tanpa cabang di kode aplikasi:
+
+```sql
+COALESCE(profil_outlet.<kolom>, profil_default_tenant.<kolom>)
+-- profil_outlet        : vertical_profile WHERE id = outlet.vertical_profile_id
+-- profil_default_tenant: vertical_profile WHERE tenant_id = outlet.tenant_id AND is_tenant_default
+```
+
+Sengaja **bukan** `tenant.default_vertical_profile_id`: itu membuat siklus FK `tenant → vertical_profile → tenant` yang mempersulit urutan `INSERT` dan restore dump, tanpa memberi jaminan tambahan apa pun.
 
 ---
 
@@ -602,7 +613,7 @@ Ditolak: `closed → open` · `voided → *` · `refunded → paid`
 |---|---|---|
 | ~~Kuantitas `numeric` atau integer ×1000?~~ | ✅ **Terjawab** — `INTEGER ×1000`, lihat §13 | — |
 | ~~OQ-07 jendela riwayat lokal~~ | ✅ **Terjawab** — 90 hari = 39–130 MB, aman. Lihat `/prototypes/01-sqlite-sizing/FINDINGS.md` | — |
-| OQ-09 | `VerticalProfile` per tenant atau outlet — ERD mengasumsikan **per outlet dengan default tenant** | Implementasi skema |
+| ~~OQ-09~~ | ✅ **Terjawab 1 Agu 2026 — per outlet dengan default tenant**, persis seperti yang ERD asumsikan sejak awal. Diterapkan `db/migrations/0015`: kolom `is_tenant_default` + partial unique index. `outlet.vertical_profile_id` dan `allow_negative_stock` sudah ada sejak `0002_tenancy.sql`; keputusan ini mengonfirmasi asumsinya, bukan menggantinya | — |
 | — | Apakah `check` benar-benar dipertahankan di v1, mengingat split bill tidak dirilis? Menghapusnya menyederhanakan; mempertahankannya menghindari migrasi | Implementasi skema |
 | — | Retensi `order_line` dan `stock_movement` — kapan diarsipkan ke cold storage? | Setelah 12 bulan produksi |
 | — | Apakah data pelanggan (nama, telepon) disimpan sebagai entitas terpisah atau field di order? UU PDP menuntut minimalisasi dan retensi terbatas | Implementasi modul pelanggan |

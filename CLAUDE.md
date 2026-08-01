@@ -160,10 +160,15 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 | # | Pertanyaan | Memblokir |
 |---|---|---|
 | OQ-08 | Batas kredensial offline vs janji offline tak terbatas | F2 |
-| OQ-09 | `VerticalProfile` per tenant atau outlet? **Diasumsikan per outlet** | F1 |
 | OQ-14 | Prototipe Tauri Android — printer Bluetooth + scanner HID | Rencana mobile |
-| OQ-15 | QRIS statis konfirmasi manual — didukung? **Diasumsikan ya** | F1 |
-| — | Ambang otorisasi default (diskon >20%/Rp50k, selisih kas >Rp20k) | F1 — konfigurasi, tidak memblokir |
+
+**Sudah diputuskan 1 Agustus 2026 — jangan tanyakan ulang, jangan perlakukan sebagai asumsi:**
+
+| # | Keputusan |
+|---|---|
+| OQ-09 | `VerticalProfile` **per outlet, mewarisi default tenant**. Pusat menetapkan standar, cabang boleh override. `vertical_profile.is_tenant_default` + partial unique index (`db/migrations/0015`); resolusi = `COALESCE(profil_outlet, profil_default_tenant)` |
+| OQ-15 | QRIS statis **dan** dinamis sama-sama didukung. Dinamis lewat API Midtrans + webhook (online-only); statis lewat QR cetak merchant + konfirmasi manual (**berfungsi offline**, wajib disertai kontrol anti-fraud di `spec-c`) |
+| — | Ambang otorisasi: diskon >20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale wajib alasan, PIN di atas 3×/shift · refund PIN manajer (tidak dapat diubah) · **void TANPA PIN manajer** — cukup alasan daftar tertutup + audit + restock otomatis. Baris void adalah **override eksplisit** terhadap `research/08` §3; konsekuensinya laporan exception FR-G5 naik jadi wajib. Angkanya `[ASUMSI]`, belum divalidasi ke merchant |
 | — | MFA wajib Owner v1 atau v1.1? | F5 |
 | OQ-04/05 | Kewajiban fiskal & pajak dine-in vs takeaway | **Merchant berbayar pertama**, bukan kode |
 
