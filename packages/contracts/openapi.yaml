@@ -556,6 +556,335 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /modifier-lists:
+    post:
+      operationId: createModifierList
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, selectionType]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                selectionType: { type: string }
+                minSelections: { type: integer }
+                maxSelections: { type: integer, nullable: true }
+                allowDuplicate: { type: boolean }
+                isRequired: { type: boolean }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau selectionType tidak valid (harus
+            'single' atau 'multi', VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listModifierLists
+      parameters:
+        - name: includeArchived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}:
+    get:
+      operationId: getModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                selectionType: { type: string }
+                minSelections: { type: integer }
+                maxSelections: { type: integer, nullable: true }
+                allowDuplicate: { type: boolean }
+                isRequired: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau selectionType tidak valid (harus
+            'single' atau 'multi', VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/archive:
+    post:
+      operationId: archiveModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/restore:
+    post:
+      operationId: restoreModifierList
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModifierList'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers:
+    post:
+      operationId: createModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                price: { type: integer }
+                isDefault: { type: boolean }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau harga tidak valid (bilangan bulat
+            rupiah >= 0, VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            ModifierList tidak ditemukan atau bukan milik tenant pemanggil
+            (RLS menyembunyikan list tenant lain, bukan hanya menolak akses)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers/{modifierId}:
+    patch:
+      operationId: updateModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                price: { type: integer }
+                isDefault: { type: boolean }
+                sortOrder: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau harga tidak valid (bilangan bulat
+            rupiah >= 0, VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers/{modifierId}/archive:
+    post:
+      operationId: archiveModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /modifier-lists/{modifierListId}/modifiers/{modifierId}/restore:
+    post:
+      operationId: restoreModifier
+      parameters:
+        - name: modifierListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: modifierId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Modifier'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   schemas:
     Category:
@@ -613,6 +942,29 @@ components:
         sellingUnit: { type: string }
         conversionFactor: { type: number }
         trackStock: { type: boolean }
+    ModifierList:
+      type: object
+      required: [id, name, selectionType, minSelections]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        selectionType: { type: string, enum: [single, multi] }
+        minSelections: { type: integer }
+        maxSelections: { type: integer, nullable: true }
+        allowDuplicate: { type: boolean }
+        isRequired: { type: boolean }
+        archivedAt: { type: string, format: date-time, nullable: true }
+    Modifier:
+      type: object
+      required: [id, modifierListId, name, price, sortOrder]
+      properties:
+        id: { type: string }
+        modifierListId: { type: string }
+        name: { type: string }
+        price: { type: integer }
+        isDefault: { type: boolean }
+        sortOrder: { type: integer }
+        archivedAt: { type: string, format: date-time, nullable: true }
     Error:
       type: object
       required: [error]
