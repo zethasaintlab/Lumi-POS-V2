@@ -88,7 +88,14 @@ export function createCategoryHandlers(pool: Pool) {
         colorHint?: string | null;
       };
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
-        if (body.parentId) {
+        // Explicit presence-and-non-null test (not `if (body.parentId)`, which is
+        // truthy and lets an empty string silently skip this guard and fall through
+        // to an unhandled FK-violation 500 at the INSERT below) -- same shape as the
+        // equivalent guard in updateCategory, for a consistent client-facing error.
+        if (body.parentId !== null && body.parentId !== undefined) {
+          if (body.parentId === '') {
+            throw new HttpError(400, 'INVALID_PARENT_ID', 'parentId tidak boleh string kosong.');
+          }
           await assertParentAllowsChild(client, body.parentId);
         }
         const { rows } = await client.query<CategoryRow>(

@@ -69,6 +69,14 @@ test('createCategory: kategori tingkat ketiga ditolak dengan CATEGORY_DEPTH_EXCE
   assert.equal(body.error.code, 'CATEGORY_DEPTH_EXCEEDED');
 });
 
+test('createCategory: parentId string kosong ditolak dengan error klien, bukan 500', async () => {
+  const id = crypto.randomUUID();
+  const res = await post('/categories', { id, name: 'Top', parentId: '' });
+  assert.ok(res.statusCode >= 400 && res.statusCode < 500, `expected 4xx, got ${res.statusCode}`);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error.code, 'INVALID_PARENT_ID');
+});
+
 test('archiveCategory lalu restoreCategory: archivedAt terisi lalu null lagi', async () => {
   const id = crypto.randomUUID();
   await post('/categories', { id, name: 'Snack' });
