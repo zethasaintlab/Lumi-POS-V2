@@ -24,27 +24,40 @@ function toCategory(row: CategoryRow) {
   };
 }
 
-// Locks two category ids together, in ONE statement, sorted by id -- before
-// either row is read by any of the callers below. This is the single shared
-// locking primitive for every "is parentId allowed to become X's parent"
-// check in this file (createCategory's own guard, and updateCategory's
+// Locks two category ids together, in ONE statement -- before either row is
+// read by any of the callers below. This is the single shared locking
+// primitive for every "is parentId allowed to become X's parent" check in
+// this file (createCategory's own guard, and updateCategory's
 // assertCanReparent) -- deliberately not duplicated, so the two write paths
 // can never drift into locking the same relationship two different ways.
 //
-// Two concurrent requests that both touch the same pair of ids (e.g.
-// updateCategory A->B racing updateCategory B->A) will therefore always
-// request their locks in the same order (sorted, not request/arrival order),
-// so neither can wait on a lock the other already holds while holding one the
-// other wants: no deadlock between two *pair* lockers. The second transaction
-// to arrive simply blocks on this statement until the first COMMITs, then --
-// under PostgreSQL's default READ COMMITTED, which withTenantTransaction runs
-// at (see db.ts: a bare `BEGIN`, no explicit isolation level) -- a blocked FOR
-// UPDATE that unblocks re-reads the row as of the most recently committed
-// version, not the snapshot from when the statement was first issued. That's
-// what makes this a real fix and not just a performance detail: without it,
-// concurrent transactions read stale parent_id values, all pass, all commit,
-// and invariants that depend on serialized reads (no cycles, no hidden third
-// levels) silently break.
+// Why two concurrent pair-lockers (e.g. updateCategory A->B racing
+// updateCategory B->A) can't deadlock against each other: NOT because of the
+// `ORDER BY id` below. `FOR UPDATE` locks rows as they're produced by the
+// scan, which can happen before the sort step runs -- so `ORDER BY` controls
+// the order rows are *returned* to the caller, not necessarily the order
+// their locks are *acquired*. The real reason is that both transactions
+// execute the identical query text (`SELECT ... WHERE id = ANY($1) ...`)
+// against the same table with the same two-element id set, just possibly
+// passed as [A,B] vs [B,A] -- `= ANY(...)` doesn't care about array element
+// order, so both calls produce the exact same query plan (almost certainly
+// an index scan on the category PK), and an index scan visits matching rows
+// in the index's own key order regardless of which id the caller happened to
+// list first. So both transactions' scans -- and therefore their lock
+// acquisitions -- walk the same two rows in the same order no matter which
+// caller asked for which id first. `ORDER BY id` is left in as belt-and-
+// braces on the *output* ordering (harmless, occasionally convenient for
+// debugging), not as the mechanism that prevents deadlock.
+//
+// The second transaction to arrive simply blocks on this statement until the
+// first COMMITs, then -- under PostgreSQL's default READ COMMITTED, which
+// withTenantTransaction runs at (see db.ts: a bare `BEGIN`, no explicit
+// isolation level) -- a blocked FOR UPDATE that unblocks re-reads the row as
+// of the most recently committed version, not the snapshot from when the
+// statement was first issued. That's what makes this a real fix and not just
+// a performance detail: without it, concurrent transactions read stale
+// parent_id values, all pass, all commit, and invariants that depend on
+// serialized reads (no cycles, no hidden third levels) silently break.
 //
 // createCategory calls this with (body.id, parentId) where body.id is the
 // client-supplied id of a row that does not exist yet -- the INSERT hasn't
@@ -56,7 +69,7 @@ function toCategory(row: CategoryRow) {
 // holding a *different* resource the other transaction needs, and
 // createCategory's transaction never holds anything else concurrently while
 // it waits for this one lock. So createCategory's single-row lock is safe
-// against updateCategory's sorted two-row lock regardless of arrival order.
+// against updateCategory's pair lock regardless of arrival order.
 async function lockCategoryPair(
   client: PoolClient,
   idA: string,

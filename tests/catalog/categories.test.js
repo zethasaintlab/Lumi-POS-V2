@@ -190,6 +190,22 @@ test('updateCategory: dua PATCH bersamaan yang saling menukar induk (A<->B) tida
   assert.equal(isCycle, false, 'A dan B tidak boleh berakhir saling menjadi induk satu sama lain');
 });
 
+// Catatan jujur soal determinisme test ini (diverifikasi lewat sabotase manual,
+// bukan diasumsikan): melawan kode yang benar, test ini lulus deterministik.
+// Tapi sabotase naif (kembalikan createCategory ke assertParentAllowsChild versi
+// lama tanpa lock) TIDAK reliable membuat test ini merah di harness lokal ini --
+// createCategory selesai (SELECT+INSERT+COMMIT) jauh lebih cepat daripada
+// updateCategory sempat mencapai children-check-nya sendiri, jadi children-check
+// updateCategory (yang memang sudah ada, terpisah) kebetulan menangkap child yang
+// baru dibuat lewat READ COMMITTED biasa -- bukan karena lock createCategory.
+// Race sungguhan HANYA terbukti lewat sabotase yang sengaja diperlebar (delay
+// buatan antara pengecekan createCategory dan INSERT-nya, meniru DB/koneksi
+// yang lebih lambat) -- pada kondisi itu Y->X->C nyata terbentuk tanpa lock
+// createCategory, dan test ini benar-benar gagal seperti seharusnya. Jadi:
+// test ini adalah regression guard yang sungguhan untuk lock createCategory
+// (bukan cuma dokumentasi niat), tapi mutasi paling naif yang menghapus lock
+// itu tidak selalu tertangkap pada timing lokal biasa -- lihat report Task 2
+// Addendum 6 untuk transkrip lengkap kedua sabotase.
 test('createCategory dan updateCategory bersamaan (C jadi anak X, X direparent ke Y) tidak membentuk tingkat ketiga tersembunyi', async () => {
   const idX = crypto.randomUUID();
   await post('/categories', { id: idX, name: 'X' });
