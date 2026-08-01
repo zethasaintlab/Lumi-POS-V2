@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
-import { isPrimaryKeyViolation } from './pg-error.ts';
+import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface ModifierListRow {
@@ -109,7 +109,10 @@ function assertModifierPriceValid(price: unknown): void {
 // assertSelectionTypeValid, ini menangkapnya dan tetap memetakan ke kode
 // yang sama, bukan 500 mentah. Pola identik dengan translateConstraintError
 // di items.ts.
-function translateConstraintError(err: unknown): never {
+// `tenantId` is only used to build the UNKNOWN_TENANT message below -- both
+// callers (createModifierList, updateModifierList) already have it in scope,
+// so it's threaded through as a parameter instead of re-deriving it here.
+function translateConstraintError(err: unknown, tenantId: string): never {
   const pgErr = err as { code?: string };
   if (pgErr.code === '23514') {
     throw new HttpError(400, 'VALIDATION_ERROR', "selectionType harus 'single' atau 'multi'.");
@@ -125,6 +128,16 @@ function translateConstraintError(err: unknown): never {
   // silently diverge if one gains a unique index later.
   if (isPrimaryKeyViolation(err)) {
     throw new HttpError(409, 'ID_ALREADY_EXISTS', 'Baris dengan id ini sudah ada.');
+  }
+  // Unknown tenant (FIX 3): only reachable from createModifierList in
+  // practice -- there is no preceding tenant-scoped SELECT before that
+  // INSERT, unlike updateModifierList (fetchModifierListOrThrow already
+  // returns 404 for an unknown tenant before its UPDATE runs, and the UPDATE
+  // itself never touches tenant_id anyway). Checked here regardless so the
+  // two callers can't silently diverge if that ever changes. See pg-error.ts
+  // for why 400 (not 404) was chosen.
+  if (isTenantForeignKeyViolation(err)) {
+    throw new HttpError(400, 'UNKNOWN_TENANT', `Tenant ${tenantId} tidak dikenal.`);
   }
   throw err;
 }
@@ -198,7 +211,7 @@ export function createModifierListHandlers(pool: Pool) {
           );
           return rows[0];
         } catch (err) {
-          translateConstraintError(err);
+          translateConstraintError(err, tenantId);
         }
       });
       reply.code(201);
@@ -282,7 +295,7 @@ export function createModifierListHandlers(pool: Pool) {
           );
           return { list: rows[0], modifiers: await fetchModifiers(client, modifierListId) };
         } catch (err) {
-          translateConstraintError(err);
+          translateConstraintError(err, tenantId);
         }
       });
       return toModifierList(list, modifiers);

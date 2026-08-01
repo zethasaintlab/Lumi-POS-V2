@@ -19,3 +19,21 @@ export function isPrimaryKeyViolation(err: unknown): boolean {
   const pgErr = err as { code?: string; constraint?: string };
   return pgErr.code === '23505' && typeof pgErr.constraint === 'string' && pgErr.constraint.endsWith('_pkey');
 }
+
+// Whole-branch review FIX 3: tenant_id is taken verbatim from X-Tenant-Id
+// (tenant-context.ts -- an explicit placeholder for real auth, not a
+// security mechanism) and inserted into every row. An unknown tenant id
+// raises 23503 (FK violation on tenant(id)) on any create* whose INSERT
+// isn't already gated by a preceding tenant-scoped SELECT (createCategory
+// without parentId, createItem without categoryId, createModifierList) --
+// untranslated, this fell through to a raw 500, while a *read* with the same
+// unknown header returns a clean empty 200 (RLS just matches 0 rows, with no
+// way to distinguish "tenant doesn't exist" from "tenant exists but has no
+// data yet" -- and that's fine for reads). Same naming-convention approach as
+// isPrimaryKeyViolation: Postgres names an unnamed FK constraint
+// `<table>_<column>_fkey` by default, and none of the tenant_id FKs in
+// db/migrations/0004_catalog.sql override that.
+export function isTenantForeignKeyViolation(err: unknown): boolean {
+  const pgErr = err as { code?: string; constraint?: string };
+  return pgErr.code === '23503' && typeof pgErr.constraint === 'string' && pgErr.constraint.endsWith('_tenant_id_fkey');
+}

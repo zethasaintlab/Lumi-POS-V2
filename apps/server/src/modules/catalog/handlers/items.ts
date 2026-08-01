@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
-import { isPrimaryKeyViolation } from './pg-error.ts';
+import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface ItemRow {
@@ -273,6 +273,15 @@ export function createItemHandlers(pool: Pool) {
           // index of its own to disambiguate from -- only the PK can 23505.
           if (isPrimaryKeyViolation(err)) {
             throw new HttpError(409, 'ID_ALREADY_EXISTS', `Item dengan id ${body.id} sudah ada.`);
+          }
+          // Unknown tenant (FIX 3): reachable here specifically when
+          // categoryId is absent -- there is no earlier tenant-scoped SELECT
+          // to catch it first (compare: when categoryId IS given,
+          // assertCategoryVisible's RLS-scoped SELECT already returns 0 rows
+          // for an unknown tenant and throws 404 before this INSERT runs).
+          // See pg-error.ts for why 400 (not 404) was chosen.
+          if (isTenantForeignKeyViolation(err)) {
+            throw new HttpError(400, 'UNKNOWN_TENANT', `Tenant ${tenantId} tidak dikenal.`);
           }
           throw err;
         }

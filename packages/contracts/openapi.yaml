@@ -41,7 +41,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Category'
         '400':
-          description: Header X-Tenant-Id hilang, atau parentId tidak valid (mis. string kosong)
+          description: >-
+            Header X-Tenant-Id hilang, parentId tidak valid (mis. string
+            kosong), atau X-Tenant-Id tidak dikenal (UNKNOWN_TENANT -- FK ke
+            tenant(id) gagal)
           content:
             application/json:
               schema:
@@ -240,7 +243,8 @@ paths:
         '400':
           description: >-
             Header X-Tenant-Id hilang, item tanpa variation (ITEM_NO_VARIATION),
-            atau harga/cost variation tidak valid (VALIDATION_ERROR)
+            harga/cost variation tidak valid (VALIDATION_ERROR), atau
+            X-Tenant-Id tidak dikenal (UNKNOWN_TENANT -- FK ke tenant(id) gagal)
           content:
             application/json:
               schema:
@@ -593,8 +597,9 @@ paths:
                 $ref: '#/components/schemas/ModifierList'
         '400':
           description: >-
-            Header X-Tenant-Id hilang, atau selectionType tidak valid (harus
-            'single' atau 'multi', VALIDATION_ERROR)
+            Header X-Tenant-Id hilang, selectionType tidak valid (harus
+            'single' atau 'multi', VALIDATION_ERROR), atau X-Tenant-Id tidak
+            dikenal (UNKNOWN_TENANT -- FK ke tenant(id) gagal)
           content:
             application/json:
               schema:

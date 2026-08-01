@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
-import { isPrimaryKeyViolation } from './pg-error.ts';
+import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface CategoryRow {
@@ -188,6 +188,16 @@ export function createCategoryHandlers(pool: Pool) {
           // items.ts/modifier-lists.ts so the three don't silently diverge).
           if (isPrimaryKeyViolation(err)) {
             throw new HttpError(409, 'ID_ALREADY_EXISTS', `Category dengan id ${body.id} sudah ada.`);
+          }
+          // Unknown tenant (FIX 3): reachable here specifically because this
+          // INSERT is the FIRST statement to touch the database when
+          // parentId is absent -- there is no earlier tenant-scoped SELECT to
+          // catch it first (compare: when parentId IS given,
+          // assertParentAllowsChild's RLS-scoped SELECT already returns 0
+          // rows for an unknown tenant and throws 404 before this INSERT ever
+          // runs). See pg-error.ts for why 400 (not 404) was chosen.
+          if (isTenantForeignKeyViolation(err)) {
+            throw new HttpError(400, 'UNKNOWN_TENANT', `Tenant ${tenantId} tidak dikenal.`);
           }
           throw err;
         }
