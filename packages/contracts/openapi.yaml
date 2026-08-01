@@ -31,7 +31,7 @@ paths:
                 id: { type: string }
                 name: { type: string }
                 parentId: { type: string, nullable: true }
-                sortOrder: { type: integer }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
                 colorHint: { type: string, nullable: true }
       responses:
         '201':
@@ -126,7 +126,7 @@ paths:
               properties:
                 name: { type: string }
                 parentId: { type: string, nullable: true }
-                sortOrder: { type: integer }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
                 colorHint: { type: string, nullable: true }
       responses:
         '200':
@@ -222,9 +222,10 @@ paths:
                 name: { type: string }
                 categoryId: { type: string, nullable: true }
                 description: { type: string, nullable: true }
-                sortOrder: { type: integer }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
                 variations:
                   type: array
+                  minItems: 1
                   items:
                     $ref: '#/components/schemas/ItemVariationInput'
       responses:
@@ -328,7 +329,7 @@ paths:
                 name: { type: string }
                 categoryId: { type: string, nullable: true }
                 description: { type: string, nullable: true }
-                sortOrder: { type: integer }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
       responses:
         '200':
           description: OK
@@ -569,7 +570,7 @@ paths:
               properties:
                 id: { type: string }
                 name: { type: string }
-                selectionType: { type: string }
+                selectionType: { type: string, enum: [single, multi] }
                 minSelections: { type: integer }
                 maxSelections: { type: integer, nullable: true }
                 allowDuplicate: { type: boolean }
@@ -656,7 +657,7 @@ paths:
               type: object
               properties:
                 name: { type: string }
-                selectionType: { type: string }
+                selectionType: { type: string, enum: [single, multi] }
                 minSelections: { type: integer }
                 maxSelections: { type: integer, nullable: true }
                 allowDuplicate: { type: boolean }
@@ -754,7 +755,7 @@ paths:
               properties:
                 id: { type: string }
                 name: { type: string }
-                price: { type: integer }
+                price: { type: integer, minimum: 0 }
                 isDefault: { type: boolean }
       responses:
         '201':
@@ -799,9 +800,9 @@ paths:
               type: object
               properties:
                 name: { type: string }
-                price: { type: integer }
+                price: { type: integer, minimum: 0 }
                 isDefault: { type: boolean }
-                sortOrder: { type: integer }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
       responses:
         '200':
           description: OK
@@ -904,7 +905,7 @@ paths:
             schema:
               type: object
               properties:
-                sortOrder: { type: integer }
+                sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
       responses:
         '200':
           description: OK
@@ -916,7 +917,7 @@ paths:
                 properties:
                   itemId: { type: string }
                   modifierListId: { type: string }
-                  sortOrder: { type: integer }
+                  sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
         '400':
           description: Header X-Tenant-Id hilang
           content:
@@ -967,7 +968,7 @@ components:
         id: { type: string }
         name: { type: string }
         parentId: { type: string, nullable: true }
-        sortOrder: { type: integer }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
         colorHint: { type: string, nullable: true }
         archivedAt: { type: string, format: date-time, nullable: true }
     ItemVariation:
@@ -979,13 +980,13 @@ components:
         name: { type: string }
         sku: { type: string, nullable: true }
         barcode: { type: string, nullable: true }
-        price: { type: integer }
-        cost: { type: integer }
+        price: { type: integer, minimum: 0 }
+        cost: { type: integer, minimum: 0 }
         stockingUnit: { type: string }
         sellingUnit: { type: string }
         conversionFactor: { type: number }
         trackStock: { type: boolean }
-        sortOrder: { type: integer }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
         archivedAt: { type: string, format: date-time, nullable: true }
     Item:
       type: object
@@ -995,7 +996,7 @@ components:
         name: { type: string }
         categoryId: { type: string, nullable: true }
         description: { type: string, nullable: true }
-        sortOrder: { type: integer }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
         archivedAt: { type: string, format: date-time, nullable: true }
         variations:
           type: array
@@ -1009,8 +1010,8 @@ components:
         name: { type: string }
         sku: { type: string, nullable: true }
         barcode: { type: string, nullable: true }
-        price: { type: integer }
-        cost: { type: integer }
+        price: { type: integer, minimum: 0 }
+        cost: { type: integer, minimum: 0 }
         stockingUnit: { type: string }
         sellingUnit: { type: string }
         conversionFactor: { type: number }
@@ -1038,9 +1039,9 @@ components:
         id: { type: string }
         modifierListId: { type: string }
         name: { type: string }
-        price: { type: integer }
+        price: { type: integer, minimum: 0 }
         isDefault: { type: boolean }
-        sortOrder: { type: integer }
+        sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
         archivedAt: { type: string, format: date-time, nullable: true }
     Error:
       type: object

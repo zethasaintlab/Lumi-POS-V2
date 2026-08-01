@@ -52,10 +52,21 @@ test('createItem: item dengan 1 variation berhasil, image_url tidak muncul di re
   assert.equal('image_url' in body, false);
 });
 
-test('createItem: tanpa variation ditolak dengan ITEM_NO_VARIATION', async () => {
+// Whole-branch review FIX 1: openapi.yaml's createItem.variations now
+// declares `minItems: 1` (restored -- it was deliberately omitted before
+// app.ts's error handler honoured AJV's err.validation, since an unhandled
+// AJV rejection used to fall through to a raw 500). AJV now rejects an empty
+// `variations: []` array before the request ever reaches createItem's own
+// body.variations.length === 0 check, so the code that comes back is AJV's
+// VALIDATION_ERROR, not the handler's ITEM_NO_VARIATION. The handler's own
+// check is deliberately left in place as a second layer (same belt-and-
+// braces shape as translateConstraintError's DB CHECK backstops elsewhere in
+// this module) -- it would still catch this case if the schema constraint
+// were ever removed or bypassed, just not via this particular HTTP call.
+test('createItem: variations kosong ditolak 400 VALIDATION_ERROR lewat minItems (AJV)', async () => {
   const res = await req('POST', '/items', { id: crypto.randomUUID(), name: 'Kosong', variations: [] });
   assert.equal(res.statusCode, 400);
-  assert.equal(JSON.parse(res.body).error.code, 'ITEM_NO_VARIATION');
+  assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
 });
 
 test('createItemVariation: variation kedua mendapat sortOrder 1', async () => {
