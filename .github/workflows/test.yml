@@ -1,0 +1,67 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          # Superuser for the throwaway CI container only — never a production
+          # credential. Bootstrap connects with this to create the lumi_owner /
+          # lumi_app roles and the lumi database (CLAUDE.md invariant #8).
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # The db:* and test:* npm scripts hard-code `--env-file=.env` (see
+    # package.json), so they read a .env file rather than process env vars.
+    # This step writes that file before any script runs. Passwords below are
+    # literal values for a throwaway service container that lives only for
+    # this job — not production secrets.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+
+      - name: Tulis .env untuk CI
+        run: |
+          cat <<'EOF' > .env
+          NODE_ENV=test
+          PORT=3000
+          DATABASE_URL=postgres://lumi_app:lumi_app_ci@localhost:5432/lumi
+          DATABASE_MIGRATION_URL=postgres://lumi_owner:lumi_owner_ci@localhost:5432/lumi
+          DATABASE_ADMIN_URL=postgres://postgres:postgres@localhost:5432/postgres
+          TENANT_MODE=multi
+          LICENSE=cloud
+          TELEMETRY=off
+          POWERSYNC_URL=http://localhost:8080
+          POWERSYNC_TOKEN=
+          MIDTRANS_SERVER_KEY=
+          MIDTRANS_CLIENT_KEY=
+          MIDTRANS_ENV=sandbox
+          EOF
+
+      - run: npm run db:bootstrap
+      - run: npm run db:migrate
+
+      - run: npm run test:isolation
+      - run: npm run test:server
+      - run: npm run test:catalog
+
+      - run: npm run test:sqlite-local
+      - run: npm run test:oxlint-ds-adherence
