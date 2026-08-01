@@ -10,6 +10,7 @@
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
     "test:isolation": "node --env-file=.env --test \"tests/isolation/*.test.js\"",
+    "test:schema": "node --env-file=.env --test --test-concurrency=1 \"tests/schema/*.test.js\"",
     "test:server": "node --env-file=.env --test \"tests/server/*.test.js\"",
     "test:catalog": "node --env-file=.env --test --test-concurrency=1 \"tests/catalog/*.test.js\"",
     "test:sqlite-local": "node --experimental-sqlite --test \"tests/sqlite-local/*.test.js\"",

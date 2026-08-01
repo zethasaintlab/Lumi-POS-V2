@@ -68,6 +68,7 @@ jobs:
       - run: npm run db:migrate
 
       - run: npm run test:isolation
+      - run: npm run test:schema
       - run: npm run test:server
       - run: npm run test:catalog
 
