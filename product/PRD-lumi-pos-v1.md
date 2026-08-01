@@ -96,7 +96,7 @@ Bagian ini mengikat. Setiap item punya alasan agar tidak kembali lewat scope cre
 | Non-goal | Alasan |
 |---|---|
 | **Pemrosesan data kartu di dalam POS** | Menempatkan setiap tablet merchant di dalam PCI CDE. Kartu ditangani terminal EDC bersertifikat; POS hanya menerima approval code, 4 digit terakhir, dan referensi [KEP-29] |
-| **Pembayaran QRIS saat offline** | Mustahil secara teknis — alur QRIS dinamis butuh konfirmasi issuer [Fase 6 § 4] |
+| **Pembayaran QRIS *dinamis* saat offline** | Mustahil secara teknis — alur QRIS dinamis butuh konfirmasi issuer [Fase 6 § 4]. **Batas ini khusus QRIS dinamis.** QRIS *statis* (QR cetak milik merchant, konfirmasi manual kasir) berfungsi offline dan **didukung** [OQ-15 terjawab] — lihat FR-C2 dan § 8.2 |
 | **Pencegahan oversell saat offline** | Konsekuensi teorema CAP, bukan kekurangan implementasi. Diganti **deteksi & pelaporan** pasca-sinkronisasi [KEP-23] |
 | **Dukungan browser Firefox untuk aplikasi kasir** | `[FAKTA]` OPFS belum didukung Firefox; SQLite lokal tidak berjalan. Dashboard owner tetap didukung [KEP-11] |
 
@@ -282,7 +282,8 @@ Prioritas: **P0** = tanpa ini tidak bisa rilis · **P1** = rilis mungkin tapi me
 | FR-B5 | P0 | Nomor struk berformat `K1-20260726-0007`; prefiks device dialokasikan sekali saat provisioning; counter direset harian dan disimpan lokal |
 | FR-B6 | P0 | Sistem menolak provisioning device kedua dengan kode yang sudah dipakai di outlet yang sama |
 | FR-B7 | P0 | **Void** dan **refund** adalah dua operasi terpisah dengan prasyarat berbeda; keduanya menghasilkan record baru dan tidak pernah mengubah record asli [KEP-17] |
-| FR-B8 | P0 | Diskon di atas ambang memicu otorisasi step-up: PIN manajer + alasan dari **daftar tertutup**; "Lainnya" wajib catatan |
+| FR-B7b | P0 | **Void tidak memerlukan persetujuan manajer** — kasir dapat membatalkan transaksi sendiri. Sebagai gantinya, empat hal wajib menyertainya: (1) alasan dari **daftar tertutup** (FR-F11), "Lainnya" wajib catatan; (2) transaksi ditandai `VOIDED`, record asli tidak diubah; (3) audit event dipancarkan (FR-F6); (4) stok dikembalikan otomatis lewat `stock_movement` bertipe void dalam transaksi yang sama (FR-E2, FR-E3). **Refund tetap memerlukan PIN manajer** — keputusan ini hanya menyangkut void. ⚠️ Ini **override eksplisit** terhadap `/research/08` § 3, yang menandai "void seluruh order → butuh PIN manajer, tidak dapat diubah". Konsekuensinya: laporan exception FR-G5 (#1 void per kasir vs rata-rata, #2 void mendekati/sesudah tutup shift) menjadi **satu-satunya kontrol** terhadap penyalahgunaan void, sehingga naik dari P1 menjadi wajib ada sebelum merchant berbayar pertama |
+| FR-B8 | P0 | Diskon di atas ambang memicu otorisasi step-up: PIN manajer + alasan dari **daftar tertutup**; "Lainnya" wajib catatan. **Ambang default: diskon > 20% atau > Rp50.000** (dapat diubah merchant) |
 | FR-B9 | P0 | Otorisasi step-up **tidak memutus sesi kasir** — kasir tetap memegang layar |
 | FR-B10 | P0 | Setiap operasi mutasi membawa **idempotency key yang di-generate klien**; retensi 30 hari [KEP-16] |
 | FR-B11 | P1 | Cetak ulang struk tersedia dari riwayat transaksi |
@@ -293,7 +294,7 @@ Prioritas: **P0** = tanpa ini tidak bisa rilis · **P1** = rilis mungkin tapi me
 | ID | P | Requirement |
 |---|---|---|
 | FR-C1 | P0 | Satu order dapat memiliki **banyak payment** (tunai + QRIS dalam satu transaksi adalah alur harian) |
-| FR-C2 | P0 | Metode v1: tunai · QRIS dinamis (gateway) · **QRIS statis (konfirmasi manual)** · kartu via EDC (input manual) |
+| FR-C2 | P0 | Metode v1: tunai · QRIS dinamis (gateway) · **QRIS statis (konfirmasi manual)** · kartu via EDC (input manual). **Keduanya didukung [OQ-15 terjawab]:** QRIS **dinamis** di-generate lewat API **Midtrans** dan dikonfirmasi lewat webhook (sandbox + simulator webhook Midtrans untuk pengembangan dan pengujian) — online-only. QRIS **statis** memakai QR cetak milik merchant sendiri dan dikonfirmasi manual oleh kasir — **berfungsi offline**, dan karena itu wajib disertai kontrol anti-fraud di `spec-c-pembayaran-pajak.md` § "QRIS statis": field referensi wajib, `confirmed_manually = true`, penanda di struk, dan masuk laporan exception per kasir |
 | FR-C3 | P0 | QRIS dinamis dinonaktifkan saat offline dengan pesan yang menjelaskan alasannya |
 | FR-C4 | P0 | Pembayaran EDC menyimpan `terminal_reference`, `approval_code`, `card_last4`, `acquirer` — diisi manual di v1, siap diisi otomatis saat integrasi ECR [KEP-26] |
 | FR-C5 | P0 | **Tidak ada** penyimpanan PAN, CVV, PIN kartu, atau data track — di kolom mana pun [KEP-29] |
@@ -314,10 +315,10 @@ Prioritas: **P0** = tanpa ini tidak bisa rilis · **P1** = rilis mungkin tapi me
 | FR-D1 | P0 | **Buka shift berfungsi penuh saat offline** — pembeda utama versus Toast dan Odoo [KEP-23] |
 | FR-D2 | P0 | Tutup kas menegakkan urutan: kasir memasukkan hitungan fisik → sistem menampilkan angka terhitung dan selisih |
 | FR-D3 | P0 | Sistem menyimpan angka kasir dan angka terhitung sebagai **dua field terpisah** |
-| FR-D4 | P0 | Selisih di atas ambang memicu PIN manajer + catatan wajib |
+| FR-D4 | P0 | Selisih di atas ambang memicu PIN manajer + catatan wajib. **Ambang default: selisih > Rp20.000** (dapat diubah merchant). Ambang bersifat **inklusif** — `>=` memicu otorisasi (lihat § 10.6) |
 | FR-D5 | P0 | `CashMovement` mencatat: penjualan tunai, refund tunai, paid-in, paid-out. Invariant: saldo laci = `SUM(cash_movement)` [KEP-18] |
 | FR-D6 | P0 | `CashMovement` menyimpan `counterpart_type` sejak v1 meskipun sisi lawan belum dibukukan — menjaga jalur ke double-entry penuh |
-| FR-D7 | P0 | **No-sale** (buka laci tanpa transaksi) adalah operasi berotorisasi dengan alasan wajib, tercatat di audit trail |
+| FR-D7 | P0 | **No-sale** (buka laci tanpa transaksi) adalah operasi berotorisasi dengan alasan wajib, tercatat di audit trail. **Ambang default: alasan wajib selalu; PIN manajer di atas 3× per shift** (dapat diubah merchant) |
 | FR-D8 | P0 | Tutup kas berfungsi penuh saat offline |
 
 ### Modul E — Inventori (`spec-e-inventori.md`)
@@ -410,7 +411,8 @@ Tabel ini adalah **acceptance criteria**, bukan aspirasi. Baris ❌ sama mengika
 | Tutup kas / tutup shift | ✅ |
 | Laporan device ini | ✅ |
 | Durasi offline untuk penjualan tunai | **Tidak dibatasi** (dibatasi kapasitas storage) |
-| Pembayaran QRIS | ❌ mustahil secara teknis |
+| Pembayaran QRIS **dinamis** (gateway Midtrans) | ❌ mustahil secara teknis — butuh konfirmasi issuer |
+| Pembayaran QRIS **statis** (konfirmasi manual kasir) | ✅ — QR cetak milik merchant; wajib field referensi + `confirmed_manually` + masuk laporan exception |
 | Pencegahan oversell | ❌ tidak dijanjikan; deteksi pasca-sinkronisasi |
 | Loyalty, voucher, gift card | ❌ |
 | Melihat order dari device lain di outlet | ❌ tidak di v1 |
@@ -685,9 +687,10 @@ Kapasitas: penuh waktu, tanpa tenggat keras. Milestone mengikuti **dependensi te
 | OQ-09 | Profil vertikal di tingkat tenant atau outlet? | Dimas | F1 — menentukan skema `VerticalProfile` |
 | OQ-14 | Prototipe Tauri Android: printer Bluetooth + scanner HID | Dimas | Sebelum desain mobile dikunci (setelah v1) |
 | OQ-11 | Validasi harga Rp349.000/Rp699.000 terhadap kemauan bayar | Dimas | F5 (Komersial) |
-| OQ-15 | QRIS statis dengan konfirmasi manual — didukung atau tidak? | Dimas | F1 — menentukan FR-C2 |
+| ~~OQ-15~~ | ✅ **Terjawab 1 Agu 2026 — YA, didukung, bersama QRIS dinamis.** Dinamis lewat API Midtrans + konfirmasi webhook (online-only). Statis lewat QR cetak merchant + konfirmasi manual kasir (berfungsi offline), **wajib** disertai kontrol anti-fraud di `spec-c` § "QRIS statis". Lihat FR-C2, § 4.2, § 8.2 | Dimas | — |
 | OQ-03b | Konfirmasi tertulis lisensi PowerSync untuk redistribusi on-premise | PowerSync | Kontrak on-premise pertama (bukan v1) |
-| — | Ambang default: diskon, void, refund, no-sale, selisih kas | Dimas + 3 merchant | F1 — angka usulan ada di `/research/08` § 3 |
+| ~~—~~ | ✅ **Terjawab 1 Agu 2026 — ambang default ditetapkan.** Diskon > 20% atau > Rp50.000 → PIN manajer (FR-B8) · Selisih kas > Rp20.000 → PIN manajer + catatan (FR-D4) · No-sale → alasan wajib selalu, PIN di atas 3×/shift (FR-D7) · Refund → PIN manajer + alasan, tidak dapat diubah · **Void → TANPA PIN manajer**, cukup alasan daftar tertutup + audit + restock otomatis (FR-B7b). Semua dapat diubah merchant kecuali refund. ⚠️ Baris void adalah **override eksplisit** terhadap `/research/08` § 3 yang menandainya "tidak dapat diubah" — konsekuensinya laporan exception FR-G5 naik jadi wajib | Dimas | — |
+| — | Validasi ketiga ambang di atas ke 3 merchant nyata — angkanya diadopsi dari usulan riset, **belum divalidasi lapangan** `[ASUMSI]` | Dimas + 3 merchant | Sebelum merchant berbayar pertama |
 | — | Apakah `Akuntan` (read-only) benar-benar dibutuhkan di v1? | Dimas | F3 |
 
 Daftar lengkap 16 pertanyaan beserta cara menjawabnya ada di `/research/12-OPEN-QUESTIONS.md`; enam yang sudah diputuskan ada di `/research/13-DECISION-LOG.md`.
