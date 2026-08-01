@@ -41,7 +41,7 @@ async function assertParentAllowsChild(client: PoolClient, parentId: string): Pr
   }
 }
 
-async function fetchCategoryOrThrow(client: PoolClient, tenantId: string, categoryId: string): Promise<CategoryRow> {
+async function fetchCategoryOrThrow(client: PoolClient, categoryId: string): Promise<CategoryRow> {
   const { rows } = await client.query<CategoryRow>('SELECT * FROM category WHERE id = $1', [categoryId]);
   if (rows.length === 0) {
     throw new HttpError(404, 'NOT_FOUND', `Category ${categoryId} tidak ditemukan.`);
@@ -94,7 +94,7 @@ export function createCategoryHandlers(pool: Pool) {
       const tenantId = getTenantId(req);
       const { categoryId } = req.params as { categoryId: string };
       const row = await withTenantTransaction(pool, tenantId, (client) =>
-        fetchCategoryOrThrow(client, tenantId, categoryId)
+        fetchCategoryOrThrow(client, categoryId)
       );
       return toCategory(row);
     },
@@ -104,7 +104,7 @@ export function createCategoryHandlers(pool: Pool) {
       const { categoryId } = req.params as { categoryId: string };
       const body = req.body as { name?: string; parentId?: string | null; sortOrder?: number; colorHint?: string | null };
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchCategoryOrThrow(client, tenantId, categoryId);
+        await fetchCategoryOrThrow(client, categoryId);
         if (body.parentId) {
           await assertParentAllowsChild(client, body.parentId);
         }
@@ -135,7 +135,7 @@ export function createCategoryHandlers(pool: Pool) {
       const tenantId = getTenantId(req);
       const { categoryId } = req.params as { categoryId: string };
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchCategoryOrThrow(client, tenantId, categoryId);
+        await fetchCategoryOrThrow(client, categoryId);
         const { rows } = await client.query<CategoryRow>(
           'UPDATE category SET archived_at = now() WHERE id = $1 RETURNING *',
           [categoryId]
@@ -149,7 +149,7 @@ export function createCategoryHandlers(pool: Pool) {
       const tenantId = getTenantId(req);
       const { categoryId } = req.params as { categoryId: string };
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchCategoryOrThrow(client, tenantId, categoryId);
+        await fetchCategoryOrThrow(client, categoryId);
         const { rows } = await client.query<CategoryRow>(
           'UPDATE category SET archived_at = NULL WHERE id = $1 RETURNING *',
           [categoryId]

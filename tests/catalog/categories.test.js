@@ -109,3 +109,28 @@ test('getCategory: 404 untuk id yang tidak ada', async () => {
   const res = await get(`/categories/${crypto.randomUUID()}`);
   assert.equal(res.statusCode, 404);
 });
+
+test('updateCategory: parentId eksplisit null menghapus induk yang sudah ada', async () => {
+  const topId = crypto.randomUUID();
+  await post('/categories', { id: topId, name: 'Top' });
+  const childId = crypto.randomUUID();
+  await post('/categories', { id: childId, name: 'Child', parentId: topId });
+
+  const res = await patch(`/categories/${childId}`, { parentId: null });
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).parentId, null);
+});
+
+test('updateCategory: field yang tidak dikirim (parentId, colorHint) tidak berubah', async () => {
+  const topId = crypto.randomUUID();
+  await post('/categories', { id: topId, name: 'Top' });
+  const childId = crypto.randomUUID();
+  await post('/categories', { id: childId, name: 'Child', parentId: topId, colorHint: '#ff0000' });
+
+  const res = await patch(`/categories/${childId}`, { sortOrder: 5 });
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.parentId, topId);
+  assert.equal(body.colorHint, '#ff0000');
+  assert.equal(body.sortOrder, 5);
+});
