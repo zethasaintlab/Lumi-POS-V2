@@ -156,10 +156,29 @@ test('tidak ada pool.query / pool.connect langsung di modules/catalog', async ()
   }
 });
 
-// CLAUDE.md -- larangan kolom image_url (tidak ada di konvensi data / design
-// system Lumi POS). Harus tidak pernah bocor ke kode modul maupun ke
-// kontrak OpenAPI publik.
-test('image_url tidak pernah muncul di kode modul maupun kontrak OpenAPI', async () => {
+// Whole-branch review FIX 4: the attribution this guard used to carry
+// ("CLAUDE.md -- larangan kolom image_url") was wrong. CLAUDE.md contains no
+// such rule -- its only nearby text is design-system rule 8 ("tanpa
+// gambar/gradien/tekstur"), which governs UI chrome, not the data model.
+// image_url IS a real Item field: db/migrations/0004_catalog.sql:24,
+// product/ERD-lumi-pos-v1.md's Item fields, and spec-a-katalog.md § FR-A1
+// all list it.
+//
+// What's actually true: docs/superpowers/specs/2026-07-31-catalog-module-
+// design.md ("Konteks" section) records a real, agreed SCOPE decision for
+// this sub-project specifically -- "tanpa gambar produk (image_url tetap di
+// skema, dihilangkan total dari permukaan API)". That's a boundary for what
+// this branch builds, not a permanent prohibition on the column ever
+// reaching the API. Whether product images ship in v1 at all is still an
+// explicit OPEN QUESTION -- spec-a-katalog.md § A.9: "Apakah gambar produk
+// didukung di v1? ... blocking Implementasi FR-A1" -- and this guard must
+// not be read as having pre-answered that question.
+//
+// This test enforces the current sub-project's scope boundary and should be
+// deleted (not adapted) the day § A.9 is answered and image_url support is
+// implemented -- keeping it past that point would fail the very commit that
+// closes FR-A1 for images.
+test('image_url tidak muncul di permukaan API modul ini (batas scope sub-project, lihat komentar di atas -- BUKAN larangan permanen)', async () => {
   const files = await collectTsFiles(CATALOG_MODULE_DIR);
   // Sentinel yang sama seperti dua guard di atas -- separuh kode-modul dari
   // test ini juga loop atas `files`, jadi rentan lulus vakum dengan cara
