@@ -207,6 +207,345 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /items:
+    post:
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, variations]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                categoryId: { type: string, nullable: true }
+                description: { type: string, nullable: true }
+                sortOrder: { type: integer }
+                variations:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ItemVariationInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, item tanpa variation (ITEM_NO_VARIATION),
+            atau harga/cost variation tidak valid (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Barcode duplikat, atau batas 250 variation per item tercapai
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listItems
+      parameters:
+        - name: includeArchived
+          in: query
+          schema: { type: boolean, default: false }
+        - name: categoryId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}:
+    get:
+      operationId: getItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                categoryId: { type: string, nullable: true }
+                description: { type: string, nullable: true }
+                sortOrder: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/archive:
+    post:
+      operationId: archiveItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/restore:
+    post:
+      operationId: restoreItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations:
+    post:
+      operationId: createItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemVariationInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang, atau harga/cost tidak valid (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Item tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Batas 250 variation per item tercapai, atau barcode duplikat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}:
+    patch:
+      operationId: updateItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                sku: { type: string, nullable: true }
+                barcode: { type: string, nullable: true }
+                trackStock: { type: boolean }
+                stockingUnit: { type: string }
+                sellingUnit: { type: string }
+                conversionFactor: { type: number }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Barcode duplikat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}/archive:
+    post:
+      operationId: archiveItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}/restore:
+    post:
+      operationId: restoreItemVariation
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVariation'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   schemas:
     Category:
@@ -219,6 +558,51 @@ components:
         sortOrder: { type: integer }
         colorHint: { type: string, nullable: true }
         archivedAt: { type: string, format: date-time, nullable: true }
+    ItemVariation:
+      type: object
+      required: [id, itemId, name, price, sortOrder]
+      properties:
+        id: { type: string }
+        itemId: { type: string }
+        name: { type: string }
+        sku: { type: string, nullable: true }
+        barcode: { type: string, nullable: true }
+        price: { type: integer }
+        cost: { type: integer }
+        stockingUnit: { type: string }
+        sellingUnit: { type: string }
+        conversionFactor: { type: number }
+        trackStock: { type: boolean }
+        sortOrder: { type: integer }
+        archivedAt: { type: string, format: date-time, nullable: true }
+    Item:
+      type: object
+      required: [id, name, variations]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        categoryId: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        sortOrder: { type: integer }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        variations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemVariation'
+    ItemVariationInput:
+      type: object
+      required: [id, price]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        sku: { type: string, nullable: true }
+        barcode: { type: string, nullable: true }
+        price: { type: integer }
+        cost: { type: integer }
+        stockingUnit: { type: string }
+        sellingUnit: { type: string }
+        conversionFactor: { type: number }
+        trackStock: { type: boolean }
     Error:
       type: object
       required: [error]
