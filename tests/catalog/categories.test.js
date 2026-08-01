@@ -134,3 +134,35 @@ test('updateCategory: field yang tidak dikirim (parentId, colorHint) tidak berub
   assert.equal(body.colorHint, '#ff0000');
   assert.equal(body.sortOrder, 5);
 });
+
+test('updateCategory: menjadikan diri sendiri sebagai induk ditolak', async () => {
+  const topId = crypto.randomUUID();
+  await post('/categories', { id: topId, name: 'Top' });
+
+  const res = await patch(`/categories/${topId}`, { parentId: topId });
+  assert.equal(res.statusCode, 409);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error.code, 'CATEGORY_SELF_PARENT');
+});
+
+test('updateCategory: memindahkan kategori yang sudah punya anak menjadi anak kategori lain ditolak', async () => {
+  const topX = crypto.randomUUID();
+  await post('/categories', { id: topX, name: 'X' });
+  const childC = crypto.randomUUID();
+  await post('/categories', { id: childC, name: 'C', parentId: topX });
+  const topY = crypto.randomUUID();
+  await post('/categories', { id: topY, name: 'Y' });
+
+  const res = await patch(`/categories/${topX}`, { parentId: topY });
+  assert.equal(res.statusCode, 409);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error.code, 'CATEGORY_DEPTH_EXCEEDED');
+});
+
+test('updateCategory: parentId string kosong ditolak dengan error klien, bukan 500', async () => {
+  const topId = crypto.randomUUID();
+  await post('/categories', { id: topId, name: 'Top' });
+
+  const res = await patch(`/categories/${topId}`, { parentId: '' });
+  assert.ok(res.statusCode >= 400 && res.statusCode < 500, `expected 4xx, got ${res.statusCode}`);
+});

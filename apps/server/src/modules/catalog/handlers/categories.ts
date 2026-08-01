@@ -41,6 +41,33 @@ async function assertParentAllowsChild(client: PoolClient, parentId: string): Pr
   }
 }
 
+// Guards the two-level cap for updateCategory specifically (createCategory can't
+// violate either check it adds: a brand-new row can't equal its own not-yet-inserted
+// id, and it can't already have children referencing an id that didn't exist before
+// this call). assertParentAllowsChild alone -- checking only the proposed parent's
+// own parent_id -- misses two ways to still blow the cap through PATCH:
+//   1. self-parenting: parentId === the category being updated
+//   2. reparenting a category that already has children under a new (even top-level)
+//      parent, which would produce a third level below the new parent
+async function assertCanReparent(client: PoolClient, categoryId: string, parentId: string): Promise<void> {
+  if (parentId === categoryId) {
+    throw new HttpError(
+      409,
+      'CATEGORY_SELF_PARENT',
+      'Kategori tidak boleh menjadi induk dirinya sendiri.'
+    );
+  }
+  await assertParentAllowsChild(client, parentId);
+  const { rows } = await client.query('SELECT 1 FROM category WHERE parent_id = $1 LIMIT 1', [categoryId]);
+  if (rows.length > 0) {
+    throw new HttpError(
+      409,
+      'CATEGORY_DEPTH_EXCEEDED',
+      'Kategori yang sudah punya anak tidak boleh dipindahkan menjadi anak kategori lain (maksimal dua tingkat).'
+    );
+  }
+}
+
 async function fetchCategoryOrThrow(client: PoolClient, categoryId: string): Promise<CategoryRow> {
   const { rows } = await client.query<CategoryRow>('SELECT * FROM category WHERE id = $1', [categoryId]);
   if (rows.length === 0) {
@@ -105,8 +132,14 @@ export function createCategoryHandlers(pool: Pool) {
       const body = req.body as { name?: string; parentId?: string | null; sortOrder?: number; colorHint?: string | null };
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchCategoryOrThrow(client, categoryId);
-        if (body.parentId) {
-          await assertParentAllowsChild(client, body.parentId);
+        // Explicit presence-and-non-null test (not `if (body.parentId)`, which is
+        // truthy and lets an empty string silently skip this guard and fall through
+        // to an unhandled FK-violation 500 at the UPDATE below).
+        if ('parentId' in body && body.parentId !== null && body.parentId !== undefined) {
+          if (body.parentId === '') {
+            throw new HttpError(400, 'INVALID_PARENT_ID', 'parentId tidak boleh string kosong.');
+          }
+          await assertCanReparent(client, categoryId, body.parentId);
         }
         const { rows } = await client.query<CategoryRow>(
           `UPDATE category SET
