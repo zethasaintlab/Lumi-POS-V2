@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
+import { isPrimaryKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface CategoryRow {
@@ -169,13 +170,27 @@ export function createCategoryHandlers(pool: Pool) {
           }
           await assertParentAllowsChild(client, body.id, body.parentId);
         }
-        const { rows } = await client.query<CategoryRow>(
-          `INSERT INTO category (id, tenant_id, name, parent_id, sort_order, color_hint)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [body.id, tenantId, body.name, body.parentId ?? null, body.sortOrder ?? 0, body.colorHint ?? null]
-        );
-        return rows[0];
+        try {
+          const { rows } = await client.query<CategoryRow>(
+            `INSERT INTO category (id, tenant_id, name, parent_id, sort_order, color_hint)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING *`,
+            [body.id, tenantId, body.name, body.parentId ?? null, body.sortOrder ?? 0, body.colorHint ?? null]
+          );
+          return rows[0];
+        } catch (err) {
+          // Offline retry (FIX 2): id is client-generated, so a client
+          // re-sending the same createCategory after a lost response must get
+          // a clean 409 it can recognize, not a raw 500. See pg-error.ts for
+          // why this checks err.constraint instead of treating every 23505
+          // on this table the same way (category has no other unique
+          // constraint today, but the check is written the same way as
+          // items.ts/modifier-lists.ts so the three don't silently diverge).
+          if (isPrimaryKeyViolation(err)) {
+            throw new HttpError(409, 'ID_ALREADY_EXISTS', `Category dengan id ${body.id} sudah ada.`);
+          }
+          throw err;
+        }
       });
       reply.code(201);
       return toCategory(row);

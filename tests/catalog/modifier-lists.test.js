@@ -284,6 +284,33 @@ test('getModifierList: modifier yang diarsipkan tetap muncul di array modifiers 
   assert.notEqual(body.modifiers[0].archivedAt, null);
 });
 
+// Whole-branch review FIX 2: id is client-generated and offline retry is a
+// core premise of this system (CLAUDE.md konvensi data). Before this fix, a
+// retried createModifierList / createModifier with the same id fell through
+// translateConstraintError's `if (pgErr.code === '23514')` check (only the
+// CHECK constraint was handled) straight to a raw 500 on the PK's 23505.
+test('createModifierList: id yang sama dikirim ulang (retry offline) ditolak 409 ID_ALREADY_EXISTS, bukan 500', async () => {
+  const listId = crypto.randomUUID();
+  const first = await req('POST', '/modifier-lists', { id: listId, name: 'Extra', selectionType: 'single' });
+  assert.equal(first.statusCode, 201);
+
+  const retry = await req('POST', '/modifier-lists', { id: listId, name: 'Extra', selectionType: 'single' });
+  assert.equal(retry.statusCode, 409);
+  assert.equal(JSON.parse(retry.body).error.code, 'ID_ALREADY_EXISTS');
+});
+
+test('createModifier: id yang sama dikirim ulang (retry offline) ditolak 409 ID_ALREADY_EXISTS, bukan 500', async () => {
+  const listId = crypto.randomUUID();
+  await req('POST', '/modifier-lists', { id: listId, name: 'Extra', selectionType: 'single' });
+  const modId = crypto.randomUUID();
+  const first = await req('POST', `/modifier-lists/${listId}/modifiers`, { id: modId, name: 'Extra Shot', price: 5000 });
+  assert.equal(first.statusCode, 201);
+
+  const retry = await req('POST', `/modifier-lists/${listId}/modifiers`, { id: modId, name: 'Extra Shot', price: 5000 });
+  assert.equal(retry.statusCode, 409);
+  assert.equal(JSON.parse(retry.body).error.code, 'ID_ALREADY_EXISTS');
+});
+
 test('archiveModifierList: ModifierList yang diarsipkan tetap menyertakan modifiers-nya', async () => {
   const listId = crypto.randomUUID();
   await req('POST', '/modifier-lists', { id: listId, name: 'Gula', selectionType: 'single' });

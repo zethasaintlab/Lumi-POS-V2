@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
+import { isPrimaryKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface ModifierListRow {
@@ -112,6 +113,18 @@ function translateConstraintError(err: unknown): never {
   const pgErr = err as { code?: string };
   if (pgErr.code === '23514') {
     throw new HttpError(400, 'VALIDATION_ERROR', "selectionType harus 'single' atau 'multi'.");
+  }
+  // FIX 2 (whole-branch review, offline retry): id is client-generated --
+  // a client re-sending the same createModifierList/createModifier after a
+  // lost response must get a clean 409 it can recognize, not a raw 500.
+  // Checked here (this function is shared by both createModifierList's and
+  // updateModifierList's catch blocks) via err.constraint (see pg-error.ts)
+  // rather than a bare `code === '23505'`, even though neither
+  // modifier_list nor modifier has a second unique constraint today --
+  // written the same defensive way as items.ts so the two files can't
+  // silently diverge if one gains a unique index later.
+  if (isPrimaryKeyViolation(err)) {
+    throw new HttpError(409, 'ID_ALREADY_EXISTS', 'Baris dengan id ini sudah ada.');
   }
   throw err;
 }
@@ -323,14 +336,28 @@ export function createModifierListHandlers(pool: Pool) {
         // di-INSERT dengan FK yang menunjuk ke situ. Pola identik dengan
         // assertCategoryVisible di items.ts.
         await fetchModifierListOrThrow(client, modifierListId);
-        const { rows } = await client.query<ModifierRow>(
-          `INSERT INTO modifier (id, tenant_id, modifier_list_id, name, price, is_default, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6,
-             (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM modifier WHERE modifier_list_id = $3))
-           RETURNING *`,
-          [body.id, tenantId, modifierListId, body.name, body.price ?? 0, body.isDefault ?? false]
-        );
-        return rows[0];
+        try {
+          const { rows } = await client.query<ModifierRow>(
+            `INSERT INTO modifier (id, tenant_id, modifier_list_id, name, price, is_default, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6,
+               (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM modifier WHERE modifier_list_id = $3))
+             RETURNING *`,
+            [body.id, tenantId, modifierListId, body.name, body.price ?? 0, body.isDefault ?? false]
+          );
+          return rows[0];
+        } catch (err) {
+          // FIX 2 (whole-branch review, offline retry): this INSERT previously
+          // had no try/catch at all -- a retried createModifier with the same
+          // id fell straight through to a raw 500. Handled directly here
+          // (rather than reusing translateConstraintError above) because that
+          // function's 23514 branch is specific to modifier_list.selection_type
+          // and would produce a misleading message if ever reached from this
+          // table, which has no CHECK constraint of its own.
+          if (isPrimaryKeyViolation(err)) {
+            throw new HttpError(409, 'ID_ALREADY_EXISTS', `Modifier dengan id ${body.id} sudah ada.`);
+          }
+          throw err;
+        }
       });
       reply.code(201);
       return toModifier(row);

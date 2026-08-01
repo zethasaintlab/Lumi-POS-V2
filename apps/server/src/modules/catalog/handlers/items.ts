@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
+import { isPrimaryKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface ItemRow {
@@ -126,6 +127,18 @@ function translateConstraintError(err: unknown): never {
   if (pgErr.code === '23514') {
     throw new HttpError(409, 'VARIATION_LIMIT_EXCEEDED', `Batas ${MAX_VARIATIONS_PER_ITEM} variation per item sudah tercapai.`);
   }
+  // FIX 2 (whole-branch review): item_variation has TWO unique constraints --
+  // the PK on `id` and `ux_variation_barcode` -- and a bare `code === '23505'`
+  // check can't tell them apart. Before this, a client retrying a variation
+  // create with the SAME id (offline retry, no barcode involved at all) got
+  // "Barcode sudah dipakai variation lain", sending a merchant hunting a
+  // barcode conflict that never existed. isPrimaryKeyViolation checks
+  // err.constraint (see pg-error.ts) to route the two cases to distinct
+  // codes; this MUST be checked before the generic 23505 branch below, since
+  // a PK violation is also `code === '23505'`.
+  if (isPrimaryKeyViolation(err)) {
+    throw new HttpError(409, 'ID_ALREADY_EXISTS', 'Variation dengan id ini sudah ada.');
+  }
   if (pgErr.code === '23505') {
     throw new HttpError(409, 'BARCODE_DUPLICATE', 'Barcode sudah dipakai variation lain.');
   }
@@ -242,13 +255,27 @@ export function createItemHandlers(pool: Pool) {
         if (body.categoryId !== null && body.categoryId !== undefined) {
           await assertCategoryVisible(client, body.categoryId);
         }
-        const { rows } = await client.query<ItemRow>(
-          `INSERT INTO item (id, tenant_id, name, category_id, description, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [body.id, tenantId, body.name, body.categoryId ?? null, body.description ?? null, body.sortOrder ?? 0]
-        );
-        const item = rows[0];
+        let item: ItemRow;
+        try {
+          const { rows } = await client.query<ItemRow>(
+            `INSERT INTO item (id, tenant_id, name, category_id, description, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING *`,
+            [body.id, tenantId, body.name, body.categoryId ?? null, body.description ?? null, body.sortOrder ?? 0]
+          );
+          item = rows[0];
+        } catch (err) {
+          // Offline retry (FIX 2): id is client-generated -- a client
+          // re-sending the same createItem after a lost response must get a
+          // clean 409 it can recognize, not a raw 500. Same isPrimaryKeyViolation
+          // check as insertVariation's translateConstraintError below, kept
+          // separate here because this INSERT (into `item`) has no unique
+          // index of its own to disambiguate from -- only the PK can 23505.
+          if (isPrimaryKeyViolation(err)) {
+            throw new HttpError(409, 'ID_ALREADY_EXISTS', `Item dengan id ${body.id} sudah ada.`);
+          }
+          throw err;
+        }
         const variations: VariationRow[] = [];
         for (const v of body.variations) {
           variations.push(await insertVariation(client, tenantId, body.id, v));

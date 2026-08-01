@@ -249,3 +249,20 @@ test('updateCategory: parentId string kosong ditolak dengan error klien, bukan 5
   const res = await patch(`/categories/${topId}`, { parentId: '' });
   assert.ok(res.statusCode >= 400 && res.statusCode < 500, `expected 4xx, got ${res.statusCode}`);
 });
+
+// Whole-branch review FIX 2: id is client-generated (ULID/UUIDv7) and offline
+// retry is a core premise of this system (CLAUDE.md konvensi data), yet
+// before this fix a retried createCategory with the same id fell through
+// translateConstraintError-less code straight to a raw 500 -- a 23505 on the
+// PK never got a client-facing error at all. Retrying the EXACT same create
+// (same id, same body) must be recognized as "this already happened", not an
+// internal server error.
+test('createCategory: id yang sama dikirim ulang (retry offline) ditolak 409 ID_ALREADY_EXISTS, bukan 500', async () => {
+  const id = crypto.randomUUID();
+  const first = await post('/categories', { id, name: 'Minuman' });
+  assert.equal(first.statusCode, 201);
+
+  const retry = await post('/categories', { id, name: 'Minuman' });
+  assert.equal(retry.statusCode, 409);
+  assert.equal(JSON.parse(retry.body).error.code, 'ID_ALREADY_EXISTS');
+});

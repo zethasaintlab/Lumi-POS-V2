@@ -53,7 +53,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Kategori tingkat ketiga ditolak
+          description: >-
+            Kategori tingkat ketiga ditolak, atau id sudah dipakai kategori
+            lain (ID_ALREADY_EXISTS -- retry offline dengan id yang sama)
           content:
             application/json:
               schema:
@@ -252,7 +254,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Barcode duplikat, atau batas 250 variation per item tercapai
+          description: >-
+            Barcode duplikat, batas 250 variation per item tercapai, atau id
+            (item atau variation pertamanya) sudah dipakai (ID_ALREADY_EXISTS
+            -- retry offline dengan id yang sama)
           content:
             application/json:
               schema:
@@ -439,7 +444,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Batas 250 variation per item tercapai, atau barcode duplikat
+          description: >-
+            Batas 250 variation per item tercapai, barcode duplikat, atau id
+            sudah dipakai variation lain (ID_ALREADY_EXISTS -- retry offline
+            dengan id yang sama, dibedakan dari BARCODE_DUPLICATE lewat
+            err.constraint di server)
           content:
             application/json:
               schema:
@@ -586,6 +595,14 @@ paths:
           description: >-
             Header X-Tenant-Id hilang, atau selectionType tidak valid (harus
             'single' atau 'multi', VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            id sudah dipakai ModifierList lain (ID_ALREADY_EXISTS -- retry
+            offline dengan id yang sama)
           content:
             application/json:
               schema:
@@ -776,6 +793,14 @@ paths:
           description: >-
             ModifierList tidak ditemukan atau bukan milik tenant pemanggil
             (RLS menyembunyikan list tenant lain, bukan hanya menolak akses)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            id sudah dipakai Modifier lain (ID_ALREADY_EXISTS -- retry
+            offline dengan id yang sama)
           content:
             application/json:
               schema:

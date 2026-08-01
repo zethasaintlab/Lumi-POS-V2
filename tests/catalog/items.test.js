@@ -89,6 +89,43 @@ test('createItemVariation: barcode duplikat ditolak dengan BARCODE_DUPLICATE', a
   assert.equal(JSON.parse(res.body).error.code, 'BARCODE_DUPLICATE');
 });
 
+// Whole-branch review FIX 2: id is client-generated and offline retry is a
+// core premise of this system (CLAUDE.md konvensi data). Before this fix,
+// insertVariation wrapped its INSERT in translateConstraintError, which
+// mapped ANY 23505 to 409 BARCODE_DUPLICATE -- but item_variation has TWO
+// unique constraints (the PK on id, and ux_variation_barcode). A client
+// retrying a variation create with the same id (no barcode collision at all)
+// got sent hunting a barcode conflict that did not exist. This must be
+// distinguished by err.constraint, not treated as one bucket.
+test('createItem: item id yang sama dikirim ulang (retry offline) ditolak 409 ID_ALREADY_EXISTS, bukan 500', async () => {
+  const itemId = crypto.randomUUID();
+  const body = { id: itemId, name: 'Kopi', variations: [{ id: crypto.randomUUID(), price: 10000 }] };
+  const first = await req('POST', '/items', body);
+  assert.equal(first.statusCode, 201);
+
+  const retryBody = { id: itemId, name: 'Kopi', variations: [{ id: crypto.randomUUID(), price: 10000 }] };
+  const retry = await req('POST', '/items', retryBody);
+  assert.equal(retry.statusCode, 409);
+  assert.equal(JSON.parse(retry.body).error.code, 'ID_ALREADY_EXISTS');
+});
+
+test('createItemVariation: variation id yang sama dikirim ulang ditolak 409 ID_ALREADY_EXISTS, BUKAN BARCODE_DUPLICATE', async () => {
+  const itemId = crypto.randomUUID();
+  const varId = crypto.randomUUID();
+  await req('POST', '/items', { id: itemId, name: 'Teh', variations: [{ id: varId, price: 10000 }] });
+
+  // Retry createItemVariation dengan id yang SAMA seperti variation pertama
+  // (yang sudah tersimpan lewat createItem), tanpa barcode sama sekali --
+  // satu-satunya konflik nyata di sini adalah PK id, bukan barcode apa pun.
+  const retry = await req('POST', `/items/${itemId}/variations`, { id: varId, price: 10000 });
+  assert.equal(retry.statusCode, 409);
+  assert.equal(
+    JSON.parse(retry.body).error.code,
+    'ID_ALREADY_EXISTS',
+    'konflik PK id harus dibedakan dari konflik unique index barcode'
+  );
+});
+
 test('updateItemVariation: tidak menerima field price sama sekali (skema tidak mendeklarasikannya)', async () => {
   const itemId = crypto.randomUUID();
   const varId = crypto.randomUUID();
