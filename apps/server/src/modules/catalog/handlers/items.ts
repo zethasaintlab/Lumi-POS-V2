@@ -289,7 +289,10 @@ async function fetchModifierListsForItem(client: PoolClient, itemId: string): Pr
   return byItem.get(itemId) ?? [];
 }
 
-async function fetchVariationOrThrow(client: PoolClient, itemId: string, variationId: string): Promise<VariationRow> {
+// Exported so prices.ts (sub-project 2, FR-A7) can reuse the exact same
+// RLS-scoped lookup instead of duplicating it -- a variation lintas tenant
+// harus 404 di jalur harga persis seperti di jalur PATCH/archive di sini.
+export async function fetchVariationOrThrow(client: PoolClient, itemId: string, variationId: string): Promise<VariationRow> {
   const { rows } = await client.query<VariationRow>(
     'SELECT * FROM item_variation WHERE id = $1 AND item_id = $2',
     [variationId, itemId]

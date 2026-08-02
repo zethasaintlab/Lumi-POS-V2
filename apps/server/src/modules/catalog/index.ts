@@ -3,6 +3,7 @@ import { createCategoryHandlers } from './handlers/categories.ts';
 import { createItemHandlers } from './handlers/items.ts';
 import { createModifierListHandlers } from './handlers/modifier-lists.ts';
 import { createItemModifierListHandlers } from './handlers/item-modifier-lists.ts';
+import { createPriceHandlers } from './handlers/prices.ts';
 
 export function createCatalogHandlers(pool: Pool): Record<string, unknown> {
   return {
@@ -10,5 +11,6 @@ export function createCatalogHandlers(pool: Pool): Record<string, unknown> {
     ...createItemHandlers(pool),
     ...createModifierListHandlers(pool),
     ...createItemModifierListHandlers(pool),
+    ...createPriceHandlers(pool),
   };
 }

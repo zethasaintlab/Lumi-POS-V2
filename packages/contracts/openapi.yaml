@@ -570,6 +570,97 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}/prices:
+    post:
+      operationId: createPrice
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Price'
+        '400':
+          description: >-
+            Header X-Tenant-Id atau X-Actor-Id hilang, atau price tidak valid
+            (bilangan bulat rupiah >= 0, tidak melebihi
+            Number.MAX_SAFE_INTEGER -- VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            Variation tidak ditemukan (NOT_FOUND), aktor tidak ditemukan atau
+            tidak aktif (ACTOR_NOT_FOUND), atau outlet tidak ditemukan
+            (OUTLET_NOT_FOUND) -- ketiganya divalidasi lewat SELECT yang
+            tunduk RLS, bukan FK (FK PostgreSQL tidak tunduk RLS, temuan F1
+            di CLAUDE.md)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            id sudah dipakai baris riwayat harga lain (ID_ALREADY_EXISTS --
+            retry offline dengan id yang sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listPrices
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: >-
+            Riwayat harga, terurut effectiveFrom DESC lalu id DESC
+            (tie-breaker deterministic)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Price'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Variation tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /modifier-lists:
     post:
       operationId: createModifierList
@@ -1057,6 +1148,34 @@ components:
         sellingUnit: { type: string }
         conversionFactor: { type: number }
         trackStock: { type: boolean }
+    Price:
+      type: object
+      required: [id, variationId, price, effectiveFrom, changedBy]
+      properties:
+        id: { type: string }
+        variationId: { type: string }
+        outletId: { type: string, nullable: true }
+        price: { type: integer, minimum: 0 }
+        effectiveFrom: { type: string, format: date-time }
+        changedBy: { type: string }
+        reason: { type: string, nullable: true }
+    PriceInput:
+      type: object
+      required: [id, price]
+      properties:
+        id: { type: string }
+        # price SENGAJA tidak diberi `type`/`minimum` di sini -- assertPriceValid
+        # (apps/server/src/modules/catalog/handlers/prices.ts) adalah
+        # satu-satunya sumber kebenaran untuk kode error ini, termasuk kasus
+        # yang tidak bisa dinyatakan lewat JSON Schema (di atas
+        # Number.MAX_SAFE_INTEGER). Pola sama dengan selectionType di
+        # modifier-lists.ts: AJV/fastify-openapi-glue tidak diam-diam
+        # menolak nilai salah lebih dulu lewat jalur error yang tidak
+        # menghasilkan envelope {error:{code,message}} yang konsisten.
+        price: {}
+        outletId: { type: string, nullable: true }
+        effectiveFrom: { type: string, format: date-time }
+        reason: { type: string, nullable: true }
     ModifierList:
       type: object
       required: [id, name, selectionType, minSelections, modifiers]
