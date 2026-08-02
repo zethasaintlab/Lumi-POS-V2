@@ -109,14 +109,14 @@ Setiap task: test merah dulu → konfirmasi merah karena alasan yang benar → i
 
 Prasyarat — tiga hal harus ada sebelum satu baris order pun bisa ditulis (keputusan Q1–Q3):
 
-- [ ] **T0a** — `packages/domain`: generator HLC dengan **clock di-inject**, fungsi murni. Test: monotonik walau clock mundur; dua panggilan pada milidetik sama menghasilkan nilai berbeda dan naik; clock palsu mengendalikan hasil sepenuhnya (tanpa itu, harness DST F2 mustahil).
-- [ ] **T0b** — Modul `identity`: `POST /devices` (FR-B6). Test: kode duplikat di outlet yang sama ditolak dan **pesannya menyebut device yang memakainya**; kode dapat dipakai ulang setelah `revoked_at` terisi; kode sama di outlet berbeda diterima; device lintas tenant tidak terlihat.
-- [ ] **T0c** — Modul `cash`: `POST /shifts` (buka shift saja). Test: shift terbuka menghasilkan `shift_id` sah; `device_id` dan `outlet_id` divalidasi lewat SELECT tunduk RLS; dua shift terbuka bersamaan untuk satu device ditolak.
+- [x] **T0a** — `packages/domain`: generator HLC dengan **clock di-inject**, fungsi murni. Test: monotonik walau clock mundur; dua panggilan pada milidetik sama menghasilkan nilai berbeda dan naik; clock palsu mengendalikan hasil sepenuhnya (tanpa itu, harness DST F2 mustahil).
+- [x] **T0b** — Modul `identity`: `POST /devices` (FR-B6). Test: kode duplikat di outlet yang sama ditolak dan **pesannya menyebut device yang memakainya**; kode dapat dipakai ulang setelah `revoked_at` terisi; kode sama di outlet berbeda diterima; device lintas tenant tidak terlihat.
+- [x] **T0c** — Modul `cash`: `POST /shifts` (buka shift saja). Test: shift terbuka menghasilkan `shift_id` sah; `device_id` dan `outlet_id` divalidasi lewat SELECT tunduk RLS; dua shift terbuka bersamaan untuk satu device ditolak.
 
 Inti:
 
-- [ ] **T1** — `packages/domain`: tabel transisi + `assertTransition`. **Property test**: untuk setiap pasangan (from, to) dari seluruh status, hasil sesuai tabel FR-B1. Termasuk yang ditolak eksplisit: `CLOSED`→`OPEN`, `VOIDED`→apa pun, `REFUNDED`→`PAID`.
-- [ ] **T2** — `packages/domain`: perhitungan `line_total` dan total order. **Property test**: uang selalu `bigint`, pembulatan half-up, tidak pernah float.
+- [x] **T1** — `packages/domain`: tabel transisi + `assertTransition`. **Property test**: untuk setiap pasangan (from, to) dari seluruh status, hasil sesuai tabel FR-B1. Termasuk yang ditolak eksplisit: `CLOSED`→`OPEN`, `VOIDED`→apa pun, `REFUNDED`→`PAID`.
+- [x] **T2** — `packages/domain`: perhitungan `line_total` dan total order. **Property test**: uang selalu `bigint`, pembulatan half-up, tidak pernah float.
 - [ ] **T3** — `POST /orders` jalur bahagia: order + check + line + modifier tersimpan, status `open`, `201`.
 - [ ] **T4** — Atomisitas (FR-B2): injeksi kegagalan di tiap tahap penulisan → **nol baris tersisa di semua tabel**. Bukan hanya order yang hilang — check dan line juga.
 - [ ] **T5** — Snapshot (FR-B3): skenario `spec-b:132-139` sebagai test — ubah harga, rename item, arsipkan, lalu baca order lama; harus menampilkan nilai saat transaksi.
