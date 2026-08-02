@@ -3,6 +3,14 @@ import { createCategoryHandlers } from './handlers/categories.ts';
 import { createItemHandlers } from './handlers/items.ts';
 import { createModifierListHandlers } from './handlers/modifier-lists.ts';
 import { createItemModifierListHandlers } from './handlers/item-modifier-lists.ts';
+import { createPriceHandlers } from './handlers/prices.ts';
+
+// Permukaan publik FR-A7 untuk modul lain (invariant #4, CLAUDE.md).
+// order_line.unit_price (Modul B) adalah SNAPSHOT hasil resolvePrice --
+// Modul B WAJIB memanggil ini, bukan menghitung ulang tangga resolusi
+// sendiri atau mengakses price_history/item_variation langsung.
+export { resolvePrice } from './handlers/prices.ts';
+export type { ResolvedPrice } from './handlers/prices.ts';
 
 export function createCatalogHandlers(pool: Pool): Record<string, unknown> {
   return {
@@ -10,5 +18,6 @@ export function createCatalogHandlers(pool: Pool): Record<string, unknown> {
     ...createItemHandlers(pool),
     ...createModifierListHandlers(pool),
     ...createItemModifierListHandlers(pool),
+    ...createPriceHandlers(pool),
   };
 }
