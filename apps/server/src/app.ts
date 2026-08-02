@@ -8,6 +8,8 @@ import { HttpError } from './http-error.ts';
 import { createCatalogHandlers } from './modules/catalog/index.ts';
 import { createIdentityHandlers } from './modules/identity/index.ts';
 import { createCashHandlers } from './modules/cash/index.ts';
+import { createOrderingHandlers } from './modules/ordering/index.ts';
+import { createHlc } from '../../../packages/domain/src/hlc.ts';
 
 const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
 
@@ -73,6 +75,14 @@ export async function buildApp(overrides: { pool?: Pool; specPath?: string } = {
 }
 
 async function buildAppInner(pool: Pool, specPath: string): Promise<FastifyInstance> {
+  // Satu instance Hlc per proses server (keputusan Q3, PLAN-ordering-fondasi.md
+  // §8.0), dibuat di sini -- BUKAN di dalam modul ordering -- dengan clock
+  // nyata (Date.now) di-inject di batas ini persis. packages/domain tetap
+  // murni; ketidakmurnian (waktu nyata) hanya hidup di tepi aplikasi, sama
+  // seperti createPool() di atas. Prasyarat harness DST F2
+  // (packages/domain/src/hlc.ts, komentar "Kenapa clock di-inject").
+  const hlc = createHlc({ now: () => Date.now() });
+
   const serviceHandlers = {
     async getHealth() {
       return { status: 'ok' };
@@ -80,6 +90,7 @@ async function buildAppInner(pool: Pool, specPath: string): Promise<FastifyInsta
     ...createCatalogHandlers(pool),
     ...createIdentityHandlers(pool),
     ...createCashHandlers(pool),
+    ...createOrderingHandlers(pool, hlc),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);

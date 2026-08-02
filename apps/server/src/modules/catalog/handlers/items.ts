@@ -303,6 +303,45 @@ export async function fetchVariationOrThrow(client: PoolClient, itemId: string, 
   return rows[0];
 }
 
+export interface VariationSnapshotRow {
+  itemName: string;
+  variationName: string;
+  cost: string; // bigint comes back as string from node-postgres
+}
+
+// T5 (PLAN-ordering-fondasi.md §T5/T6) -- diekspor lewat catalog/index.ts
+// (invariant #4, CLAUDE.md): modul ordering TIDAK BOLEH query item/
+// item_variation langsung, jadi ia butuh SATU titik masuk terkontrol untuk
+// mengambil nilai-nilai yang di-SALIN ke order_line sebagai snapshot
+// (item_name, variation_name, cost_at_sale -- FR-B3). `client` WAJIB berasal
+// dari transaksi pemanggil yang sudah men-SET LOCAL app.tenant_id, persis
+// seperti resolvePrice di prices.ts -- baru begitu SELECT ini tunduk RLS.
+//
+// Mengembalikan `null`, BUKAN melempar 404, dengan sengaja: fungsi ini tidak
+// tahu error code/pesan apa yang cocok untuk konteks pemanggil ("variation
+// tidak ditemukan" berarti sesuatu yang berbeda buat createOrder dibanding
+// buat endpoint katalog sendiri) -- sama seperti pemanggil resolvePrice yang
+// memvalidasi variationId lebih dulu lewat guard miliknya sendiri, bukan
+// mengandalkan bentuk error fungsi katalog.
+//
+// Sengaja TIDAK memfilter archived_at IS NULL -- sama seperti
+// fetchVariationOrThrow di atas, "ada" dan "aktif" adalah dua pertanyaan
+// berbeda, dan sub-project ini tidak diminta menjawab yang kedua (lihat
+// brief §"Batasan keras": jangan memperluas scope).
+export async function getVariationSnapshot(client: PoolClient, variationId: string): Promise<VariationSnapshotRow | null> {
+  const { rows } = await client.query<{ item_name: string; variation_name: string; cost: string }>(
+    `SELECT i.name AS item_name, iv.name AS variation_name, iv.cost AS cost
+     FROM item_variation iv
+     JOIN item i ON i.id = iv.item_id
+     WHERE iv.id = $1`,
+    [variationId]
+  );
+  if (rows.length === 0) {
+    return null;
+  }
+  return { itemName: rows[0].item_name, variationName: rows[0].variation_name, cost: rows[0].cost };
+}
+
 // Review finding (post-Task-3): item.category_id REFERENCES category(id) proves
 // only that the category exists *somewhere* -- PostgreSQL's own foreign-key
 // referential-integrity check runs as the referenced table's owner, NOT subject

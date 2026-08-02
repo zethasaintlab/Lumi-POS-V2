@@ -117,18 +117,18 @@ Inti:
 
 - [x] **T1** — `packages/domain`: tabel transisi + `assertTransition`. **Property test**: untuk setiap pasangan (from, to) dari seluruh status, hasil sesuai tabel FR-B1. Termasuk yang ditolak eksplisit: `CLOSED`→`OPEN`, `VOIDED`→apa pun, `REFUNDED`→`PAID`.
 - [x] **T2** — `packages/domain`: perhitungan `line_total` dan total order. **Property test**: uang selalu `bigint`, pembulatan half-up, tidak pernah float.
-- [ ] **T3** — `POST /orders` jalur bahagia: order + check + line + modifier tersimpan, status `open`, `201`.
+- [x] **T3** — `POST /orders` jalur bahagia: order + check + line + modifier tersimpan, status `open`, `201`.
 - [ ] **T4** — Atomisitas (FR-B2): injeksi kegagalan di tiap tahap penulisan → **nol baris tersisa di semua tabel**. Bukan hanya order yang hilang — check dan line juga.
-- [ ] **T5** — Snapshot (FR-B3): skenario `spec-b:132-139` sebagai test — ubah harga, rename item, arsipkan, lalu baca order lama; harus menampilkan nilai saat transaksi.
-- [ ] **T6** — Snapshot tidak menyentuh katalog: baca order tidak menghasilkan query ke tabel katalog (grep guard + test perilaku).
-- [ ] **T7** — Guard FK klien-suplai lintas tenant untuk `variation_id`, `outlet_id`, `device_id`, `shift_id` → `404`, **dan buktikan tidak ada baris tersimpan**. Pola yang sama dengan FR-A7; ini empat FK baru sekaligus.
+- [x] **T5** — Snapshot (FR-B3): skenario `spec-b:132-139` sebagai test — ubah harga, rename item, arsipkan, lalu baca order lama; harus menampilkan nilai saat transaksi.
+- [x] **T6** — Snapshot tidak menyentuh katalog: baca order tidak menghasilkan query ke tabel katalog (grep guard + test perilaku).
+- [x] **T7** — Guard FK klien-suplai lintas tenant untuk `variation_id`, `outlet_id`, `device_id`, `shift_id` → `404`, **dan buktikan tidak ada baris tersimpan**. Pola yang sama dengan FR-A7; ini empat FK baru sekaligus.
 - [ ] **T8** — Quantity (FR-B4): `0.5` dapat disimpan dan dibaca kembali utuh. Bentuk tergantung Q4.
-- [ ] **T9** — Nomor struk (FR-B5): bentrok `(device_id, business_date, sequence)` ditolak dengan error yang bisa ditindaklanjuti, bukan `500`. Dua device berbeda dengan sequence sama diterima.
+- [x] **T9** — Nomor struk (FR-B5): bentrok `(device_id, business_date, sequence)` ditolak dengan error yang bisa ditindaklanjuti, bukan `500`. Dua device berbeda dengan sequence sama diterima.
 - [ ] **T10** — Idempotency: ketiga aturan §3.5, masing-masing satu test.
 - [ ] **T11** — Idempotency konkuren: dua request bersamaan dengan key sama → tepat satu `201`, satu `409`, **tepat satu order tersimpan**.
 - [ ] **T12** — Idempotency stress: kirim request sama 100× → tepat satu penjualan (AC `spec-b:360`).
 - [ ] **T13** — `outbox` ditulis dalam transaksi yang sama; rollback menghapusnya juga.
-- [ ] **T14** — `check` dikunci 1:1 (FR-B12): order kedua tidak bisa memakai `check` yang sama.
+- [x] **T14** — `check` dikunci 1:1 (FR-B12): order kedua tidak bisa memakai `check` yang sama.
 - [ ] **T15** — Kontrak OpenAPI.
 - [ ] **T16** — Perbarui `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`. **Tidak menyentuh `product/`, `research/`, `docs/superpowers/specs/`.**
 
