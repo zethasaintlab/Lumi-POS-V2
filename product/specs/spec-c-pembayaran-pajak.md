@@ -239,7 +239,7 @@ THEN amount_due = 93.555
 |---|---|---|---|
 | **Tunai** | ✅ | ✅ | Selalu tersedia |
 | **QRIS dinamis** | ✅ | ❌ | Via gateway; butuh konfirmasi issuer |
-| **QRIS statis (konfirmasi manual)** | ✅ | ✅ | Merchant memakai QR statis dari banknya sendiri; kasir mengonfirmasi manual — **lihat OQ-15** |
+| **QRIS statis (konfirmasi manual)** | ✅ | ✅ | Merchant memakai QR statis dari banknya sendiri; kasir mengonfirmasi manual. **Dikonfirmasi didukung [OQ-15 terjawab 1 Agu 2026]** — satu-satunya metode pembayaran digital yang berfungsi offline, karena itu kontrol di bawah wajib |
 | **Kartu via EDC** | ✅ | ✅ | Input manual di v1; field siap untuk integrasi ECR |
 | **Lainnya** | ✅ | ✅ | Voucher fisik, transfer, dll — dengan catatan wajib |
 
@@ -538,7 +538,7 @@ TaxBreakdown
 |---|---|---|
 | OQ-04 | Adakah kewajiban fiscalization bagi penyedia POS di Indonesia? | Merchant berbayar pertama |
 | OQ-05 | Pajak dine-in versus takeaway — sama atau berbeda? | Merchant berbayar pertama |
-| OQ-15 | QRIS statis dengan konfirmasi manual — didukung atau tidak? | Implementasi FR-C2 |
+| ~~OQ-15~~ | ✅ **Terjawab 1 Agu 2026 — YA, didukung, bersama QRIS dinamis.** Dinamis lewat API Midtrans + konfirmasi webhook (online-only); statis lewat QR cetak merchant + konfirmasi manual (berfungsi offline). Konsekuensinya kontrol anti-fraud di § "QRIS statis" di atas **wajib dibangun**, bukan opsional | — |
 | — | Default `rounding_increment`: Rp 100 atau Rp 500? | Implementasi FR-C9 — tanya 3 merchant |
 | — | Apakah service charge kena pajak di semua daerah? | Verifikasi konsultan pajak bersama OQ-05 |
 

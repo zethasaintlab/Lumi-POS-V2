@@ -438,7 +438,7 @@ Hilang otomatis setelah semua selesai. Bukan modal, bukan wizard — kartu di da
 | — | Apakah gambar produk ditampilkan di grid K-03? DS melarang imagery, tetapi kompetitor memakainya dan merchant mungkin mengharapkannya | Desain K-03 |
 | — | Apakah `Akuntan` punya navigasi sendiri yang disederhanakan, atau back-office penuh dengan menu tersembunyi? | Implementasi B-20 |
 | — | Owner mobile: PWA yang dapat dipasang, atau situs biasa? PWA memberi ikon di home screen — relevan untuk Goal G4 (owner membuka ≥4×/bulan) | Implementasi M-01 |
-| OQ-09 | Profil vertikal per tenant atau per outlet — IA mengasumsikan **per outlet** | Implementasi B-24 |
+| ~~OQ-09~~ | ✅ **Terjawab 1 Agu 2026 — per outlet dengan default tenant**, sesuai asumsi IA. B-24 karena itu mengedit profil **milik outlet**, dengan indikator apakah nilainya diwarisi dari pusat atau di-override cabang | — |
 
 ---
 

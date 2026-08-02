@@ -328,7 +328,7 @@ Prioritas: **P0** = tanpa ini tidak bisa rilis · **P1** = rilis mungkin tapi me
 | FR-E1 | P0 | Stok **tidak memiliki kolom quantity**. Stok saat ini = `SUM(stock_movement.delta)` per (outlet, variation) [KEP-07] |
 | FR-E2 | P0 | Tipe movement: penjualan, void, refund, penerimaan, penyesuaian, opname |
 | FR-E3 | P0 | Stock cutting otomatis saat penjualan tersimpan, dalam transaksi yang sama |
-| FR-E4 | P0 | Perilaku "stok boleh negatif" adalah **setting per profil vertikal** dengan default yang dinyatakan, bukan perilaku implisit |
+| FR-E4 | P0 | Perilaku "stok boleh negatif" adalah **setting per profil vertikal** dengan default yang dinyatakan, bukan perilaku implisit. Kolomnya `vertical_profile.allow_negative_stock` (default `true` untuk F&B per `spec-e` § FR-E4). Karena profil melekat di **outlet** dengan warisan dari tenant [OQ-09 terjawab], setting ini efektif **per outlet**: satu cabang boleh memblokir stok negatif sementara cabang lain mengizinkannya |
 | FR-E5 | P0 | Penandaan sold-out manual oleh kasir (barista tahu kopi habis sebelum sistem tahu) |
 | FR-E6 | P0 | **Deteksi oversell pasca-sinkronisasi**: sistem mendeteksi stok negatif akibat penjualan offline paralel, mencatat konteksnya (device, waktu), dan menampilkannya ke manajer [KEP-23] |
 | FR-E7 | P1 | Stock opname dengan pencatatan selisih |
@@ -684,7 +684,7 @@ Kapasitas: penuh waktu, tanpa tenggat keras. Milestone mengikuti **dependensi te
 | OQ-08 | Batas kredensial offline versus janji offline tak terbatas | Dimas | F2 — menentukan FR-F3 |
 | OQ-04 | Adakah kewajiban fiscalization bagi penyedia POS di Indonesia? | Konsultan pajak | **Merchant berbayar pertama** (bukan F1) |
 | OQ-05 | Pajak dine-in versus takeaway — sama atau berbeda? | Konsultan pajak + 3 merchant | Merchant berbayar pertama |
-| OQ-09 | Profil vertikal di tingkat tenant atau outlet? | Dimas | F1 — menentukan skema `VerticalProfile` |
+| ~~OQ-09~~ | ✅ **Terjawab 1 Agu 2026 — per OUTLET, mewarisi default dari TENANT.** Pusat menetapkan standar, cabang boleh override. Diterapkan `db/migrations/0015`: `vertical_profile.is_tenant_default` + partial unique index (tepat satu default per tenant, ditegakkan database). Resolusi: `COALESCE(profil_outlet, profil_default_tenant)` — `outlet.vertical_profile_id` terisi = override, NULL = warisi. Kolom `outlet.vertical_profile_id` dan `vertical_profile.allow_negative_stock` (FR-E4) sudah ada sejak F0 di bawah penanda `[ASUMSI]`; keputusan ini mengonfirmasinya, bukan menggantinya | Dimas | — |
 | OQ-14 | Prototipe Tauri Android: printer Bluetooth + scanner HID | Dimas | Sebelum desain mobile dikunci (setelah v1) |
 | OQ-11 | Validasi harga Rp349.000/Rp699.000 terhadap kemauan bayar | Dimas | F5 (Komersial) |
 | ~~OQ-15~~ | ✅ **Terjawab 1 Agu 2026 — YA, didukung, bersama QRIS dinamis.** Dinamis lewat API Midtrans + konfirmasi webhook (online-only). Statis lewat QR cetak merchant + konfirmasi manual kasir (berfungsi offline), **wajib** disertai kontrol anti-fraud di `spec-c` § "QRIS statis". Lihat FR-C2, § 4.2, § 8.2 | Dimas | — |
