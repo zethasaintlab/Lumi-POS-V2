@@ -727,6 +727,49 @@ test('listOutletPrices: outlet B tanpa override jatuh ke default tenant, outlet 
   assert.equal(rowB.source, 'tenant');
 });
 
+// --- Satu jam, bukan dua ---
+//
+// Bug nyata, ditemukan 2 Agu 2026 lewat kegagalan intermiten 4 dari 12 run:
+//
+//   tulis  -> effective_from = now() ....... jam PostgreSQL
+//   baca   -> at default     = new Date() .. jam Node
+//
+// Jeda antara keduanya di test hanya ~2 ms (app.inject in-process, DB lokal),
+// sementara skew PG-vs-Node terukur ±2 ms. Ketika PG kebetulan di depan,
+// `effective_from > at`, harga yang BARU SAJA ditulis dianggap belum berlaku,
+// dan resolusi jatuh ke anak tangga di bawahnya.
+//
+// Di produksi keduanya mesin terpisah dan skew puluhan milidetik itu normal.
+// Akibatnya bukan test yang rewel: merchant menaikkan harga, order berikutnya
+// masih memungut harga lama. Untuk POS itu uang yang salah dicetak di struk.
+//
+// Perbaikannya bukan menambah toleransi, tapi menghapus jam keduanya: `at`
+// default diambil dari jam DATABASE, sama dengan yang menstempel
+// effective_from. `now()` adalah transaction_timestamp() -- tetap sepanjang
+// satu transaksi -- jadi ketiga anak tangga melihat nilai yang sama persis.
+//
+// Diulang 20x: dengan bug, peluang lolos semua ~0,03%.
+test('harga yang baru ditulis langsung terselesaikan -- at default memakai jam database, bukan jam aplikasi', async () => {
+  const ITERASI = 20;
+  for (let i = 0; i < ITERASI; i++) {
+    const { itemId, variationId } = await createVariation(5000);
+    await seedPrice(itemId, variationId, { outletId: null, price: 13000 });
+    await seedPrice(itemId, variationId, { outletId: base.outlet.id, price: 16000 });
+
+    const res = await req('GET', outletPricesUrl(base.outlet.id));
+    const row = JSON.parse(res.body).items.find((it) => it.variationId === variationId);
+    assert.equal(
+      row.price,
+      16000,
+      `iterasi ${i}: override outlet yang baru ditulis tidak terlihat (source=${row.source}) -- ` +
+      'gejala dua jam berbeda antara penulisan effective_from dan pembacaan at'
+    );
+
+    const single = await req('GET', `${priceUrl(itemId, variationId)}?outletId=${base.outlet.id}`);
+    assert.equal(JSON.parse(single.body).price, 16000, `iterasi ${i}: jalur resolvePrice juga harus konsisten`);
+  }
+});
+
 // Pengikat: apa pun isi katalog, listOutletPrices WAJIB setuju dengan
 // resolvePrice untuk setiap variation. Ini yang mencegah kedua salinan tangga
 // menyimpang di kemudian hari -- test presedensi di atas menutup lubang yang

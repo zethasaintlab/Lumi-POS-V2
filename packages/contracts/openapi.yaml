@@ -1169,8 +1169,164 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /devices:
+    post:
+      operationId: createDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, outletId, code]
+              properties:
+                id: { type: string }
+                outletId: { type: string }
+                code: { type: string }
+                name: { type: string, nullable: true }
+                platform: { type: string, nullable: true }
+                appVersion: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            outletId tidak ditemukan atau bukan milik tenant pemanggil
+            (OUTLET_NOT_FOUND) -- divalidasi lewat SELECT yang tunduk RLS,
+            bukan FK (FK PostgreSQL tidak tunduk RLS, temuan F1 di CLAUDE.md)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Kode device sudah dipakai device aktif lain di outlet yang sama
+            (CODE_TAKEN -- pesan menyebut device pemakai kode, dari SELECT
+            tunduk RLS bukan detail error PostgreSQL), atau id sudah dipakai
+            device lain (ID_ALREADY_EXISTS -- retry offline dengan id yang
+            sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/revoke:
+    post:
+      operationId: revokeDevice
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /shifts:
+    post:
+      operationId: openShift
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, outletId, deviceId, businessDate, openingFloat]
+              properties:
+                id: { type: string }
+                outletId: { type: string }
+                deviceId: { type: string }
+                businessDate: { type: string, format: date }
+                # openingFloat SENGAJA tidak diberi `type`/`minimum` -- sama
+                # seperti PriceInput.price di catalog, assertOpeningFloatValid
+                # (apps/server/src/modules/cash/handlers/shifts.ts) adalah
+                # satu-satunya sumber kebenaran untuk kode error ini.
+                openingFloat: {}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shift'
+        '400':
+          description: >-
+            Header X-Tenant-Id atau X-Actor-Id hilang, atau openingFloat
+            tidak valid (bilangan bulat rupiah >= 0, tidak melebihi
+            Number.MAX_SAFE_INTEGER -- VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            outletId tidak ditemukan (OUTLET_NOT_FOUND), deviceId tidak
+            ditemukan atau sudah dicabut (DEVICE_NOT_FOUND), atau aktor
+            tidak ditemukan/tidak aktif (ACTOR_NOT_FOUND) -- ketiganya
+            divalidasi lewat SELECT yang tunduk RLS, bukan FK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Device ini sudah punya shift yang masih terbuka
+            (SHIFT_ALREADY_OPEN -- ux_shift_one_open_per_device), atau id
+            sudah dipakai shift lain (ID_ALREADY_EXISTS -- retry offline
+            dengan id yang sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   schemas:
+    Device:
+      type: object
+      required: [id, outletId, code]
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        code: { type: string }
+        name: { type: string, nullable: true }
+        platform: { type: string, nullable: true }
+        appVersion: { type: string, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+    Shift:
+      type: object
+      required: [id, outletId, deviceId, businessDate, status, openingFloat, openedBy, openedAt]
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        deviceId: { type: string }
+        businessDate: { type: string, format: date }
+        status: { type: string, enum: [open, counting, closed] }
+        openingFloat: { type: integer, minimum: 0 }
+        openedBy: { type: string }
+        openedAt: { type: string, format: date-time }
     Category:
       type: object
       required: [id, name, sortOrder]

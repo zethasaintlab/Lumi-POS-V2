@@ -6,6 +6,8 @@ import yaml from 'js-yaml';
 import { createPool, type Pool } from './db.ts';
 import { HttpError } from './http-error.ts';
 import { createCatalogHandlers } from './modules/catalog/index.ts';
+import { createIdentityHandlers } from './modules/identity/index.ts';
+import { createCashHandlers } from './modules/cash/index.ts';
 
 const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
 
@@ -76,6 +78,8 @@ async function buildAppInner(pool: Pool, specPath: string): Promise<FastifyInsta
       return { status: 'ok' };
     },
     ...createCatalogHandlers(pool),
+    ...createIdentityHandlers(pool),
+    ...createCashHandlers(pool),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);

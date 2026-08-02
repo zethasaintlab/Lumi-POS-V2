@@ -64,6 +64,11 @@ jobs:
           MIDTRANS_ENV=sandbox
           EOF
 
+      # Tanpa database dan tanpa I/O -- dijalankan lebih dulu supaya kesalahan
+      # logika domain (state machine, aritmetika uang, HLC) gagal dalam
+      # hitungan detik, bukan setelah menunggu seluruh suite ber-database.
+      - run: npm run test:domain
+
       - run: npm run db:bootstrap
       - run: npm run db:migrate
 
@@ -71,6 +76,7 @@ jobs:
       - run: npm run test:schema
       - run: npm run test:server
       - run: npm run test:catalog
+      - run: npm run test:ordering
 
       - run: npm run test:sqlite-local
       - run: npm run test:oxlint-ds-adherence

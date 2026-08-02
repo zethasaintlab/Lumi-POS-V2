@@ -70,29 +70,51 @@ interface PriceLadderRow {
   outlet_price: string | null;
   tenant_price: string | null;
   variation_price: string | null;
+  at_used: string;
 }
 
 // Query resolusi FR-A7 (spec-a-katalog.md:202-209), satu round-trip lewat
 // tiga scalar subquery -- BUKAN tiga query terpisah, dan BUKAN satu predikat
 // `outlet_id IS NOT DISTINCT FROM $2` (lihat komentar migrasi 0016: operator
 // itu tidak indexable, EXPLAIN membuktikannya muncul sebagai Filter, bukan
-// Index Cond). `$3::timestamptz` di-cast eksplisit -- temuan tertunda di repo
-// ini soal inferensi tipe parameter PostgreSQL (COALESCE tanpa cast bisa
-// menyimpulkan tipe salah secara diam-diam).
+// Index Cond).
 //
 // `outlet_id = $2` dengan $2 = NULL secara semantik SQL tidak pernah match
 // baris apa pun (NULL = apa pun selalu UNKNOWN, bukan TRUE) -- jadi anak
 // tangga 1 otomatis terlewati kalau caller tidak memberi outletId, tanpa
 // perlu bentuk SQL bercabang untuk kasus itu.
+//
+// `at` default diambil dari jam DATABASE (`now()`), BUKAN dari `new Date()` di
+// Node. Ini bukan detail gaya -- ia memperbaiki bug nyata.
+//
+// Jalur tulis menstempel `effective_from` dengan `now()` PostgreSQL. Kalau
+// jalur baca memakai jam Node, dua jam berbeda mengatur satu instan yang sama,
+// dan setiap skew di antaranya membuat harga yang BARU SAJA ditulis dianggap
+// belum berlaku -- resolusi diam-diam jatuh ke anak tangga di bawahnya.
+// Terukur 2 Agu 2026: skew ±2 ms cukup untuk menggagalkan 4 dari 12 run test.
+// Di produksi app server dan database adalah mesin terpisah; skew puluhan
+// milidetik itu normal, dan akibatnya adalah harga lama tercetak di struk
+// setelah merchant menaikkan harga.
+//
+// `now()` adalah `transaction_timestamp()` -- TETAP sepanjang satu transaksi.
+// Jadi ketiga anak tangga di bawah melihat nilai `at` yang sama persis, bukan
+// tiga pembacaan jam yang berbeda. Itu jaminan PostgreSQL, bukan kebetulan.
+//
+// `$3::timestamptz` di-cast eksplisit: temuan tertunda di repo ini
+// menunjukkan `COALESCE` tanpa cast bisa membuat PostgreSQL menyimpulkan tipe
+// parameter yang salah secara diam-diam.
+const AT_EXPR = 'COALESCE($3::timestamptz, now())';
+
 const PRICE_LADDER_SQL = `
   SELECT
     (SELECT price FROM price_history
-       WHERE variation_id = $1 AND outlet_id = $2 AND effective_from <= $3::timestamptz
+       WHERE variation_id = $1 AND outlet_id = $2 AND effective_from <= ${AT_EXPR}
        ORDER BY effective_from DESC, id DESC LIMIT 1) AS outlet_price,
     (SELECT price FROM price_history
-       WHERE variation_id = $1 AND outlet_id IS NULL AND effective_from <= $3::timestamptz
+       WHERE variation_id = $1 AND outlet_id IS NULL AND effective_from <= ${AT_EXPR}
        ORDER BY effective_from DESC, id DESC LIMIT 1) AS tenant_price,
-    (SELECT price FROM item_variation WHERE id = $1) AS variation_price
+    (SELECT price FROM item_variation WHERE id = $1) AS variation_price,
+    ${AT_EXPR} AS at_used
 `;
 
 // Diekspor lewat catalog/index.ts (invariant #4 CLAUDE.md) supaya Modul B
@@ -106,20 +128,29 @@ const PRICE_LADDER_SQL = `
 // SEBELUM memanggil resolvePrice -- fungsi ini sendiri tidak mengulang
 // validasi itu, hanya menjaga diri lewat guard variation_price null di bawah
 // untuk pemanggil yang lalai.
+// `at === null` berarti "sekarang menurut database". Sengaja BUKAN
+// `at = new Date()` sebagai default parameter: itu justru menghidupkan lagi
+// jam kedua yang baru saja dihapus. Modul B nanti memanggil fungsi ini untuk
+// menghasilkan snapshot `order_line.unit_price`, dan ia harus mewarisi
+// jaminan satu-jam yang sama.
 export async function resolvePrice(
   client: PoolClient,
   variationId: string,
   outletId: string | null,
-  at: Date
+  at: Date | null
 ): Promise<ResolvedPrice> {
-  const atIso = at.toISOString();
-  const { rows } = await client.query<PriceLadderRow>(PRICE_LADDER_SQL, [variationId, outletId, atIso]);
+  const atParam = at === null ? null : at.toISOString();
+  const { rows } = await client.query<PriceLadderRow>(PRICE_LADDER_SQL, [variationId, outletId, atParam]);
   const row = rows[0];
+  // `at` yang dilaporkan adalah yang BENAR-BENAR dipakai query, dibaca balik
+  // dari database -- bukan tebakan sisi aplikasi. Tanpa ini, respons bisa
+  // menyebut waktu yang berbeda dari waktu yang menentukan hasilnya.
+  const atUsed = new Date(row.at_used).toISOString();
   if (row.outlet_price !== null) {
-    return { price: Number(row.outlet_price), source: 'outlet', outletId, at: atIso };
+    return { price: Number(row.outlet_price), source: 'outlet', outletId, at: atUsed };
   }
   if (row.tenant_price !== null) {
-    return { price: Number(row.tenant_price), source: 'tenant', outletId, at: atIso };
+    return { price: Number(row.tenant_price), source: 'tenant', outletId, at: atUsed };
   }
   if (row.variation_price === null) {
     // Hanya tercapai kalau pemanggil TIDAK memvalidasi variationId lebih
@@ -127,7 +158,7 @@ export async function resolvePrice(
     // konsisten, bukan celah baru.
     throw new HttpError(404, 'NOT_FOUND', `Variation ${variationId} tidak ditemukan.`);
   }
-  return { price: Number(row.variation_price), source: 'variation', outletId, at: atIso };
+  return { price: Number(row.variation_price), source: 'variation', outletId, at: atUsed };
 }
 
 // Query T10 (GET /outlets/{outletId}/prices) -- bentuk LATERAL yang sama
@@ -136,6 +167,13 @@ export async function resolvePrice(
 // bukan N+1). `iv.archived_at IS NULL` menegakkan "seluruh item_variation
 // aktif" (PLAN §T10); RLS pada item_variation dan price_history menegakkan
 // isolasi tenant tanpa predikat tenant_id eksplisit di sini.
+// `$2` di sini memakai AT_EXPR yang sama dengan PRICE_LADDER_SQL (jam
+// database saat `at` tidak dikirim). Dua salinan tangga resolusi ini sudah
+// pernah menyimpang diam-diam sekali -- urutan COALESCE-nya terbalik dan
+// seluruh suite tetap hijau. Sejak itu keduanya diikat test konsistensi;
+// jaminan satu-jam ini juga harus berlaku di kedua salinan.
+const OUTLET_AT_EXPR = 'COALESCE($2::timestamptz, now())';
+
 const OUTLET_PRICES_SQL = `
   SELECT
     iv.id AS variation_id,
@@ -144,16 +182,17 @@ const OUTLET_PRICES_SQL = `
       WHEN op.price IS NOT NULL THEN 'outlet'
       WHEN tp.price IS NOT NULL THEN 'tenant'
       ELSE 'variation'
-    END AS source
+    END AS source,
+    ${OUTLET_AT_EXPR} AS at_used
   FROM item_variation iv
   LEFT JOIN LATERAL (
     SELECT price FROM price_history
-     WHERE variation_id = iv.id AND outlet_id = $1 AND effective_from <= $2::timestamptz
+     WHERE variation_id = iv.id AND outlet_id = $1 AND effective_from <= ${OUTLET_AT_EXPR}
      ORDER BY effective_from DESC, id DESC LIMIT 1
   ) op ON true
   LEFT JOIN LATERAL (
     SELECT price FROM price_history
-     WHERE variation_id = iv.id AND outlet_id IS NULL AND effective_from <= $2::timestamptz
+     WHERE variation_id = iv.id AND outlet_id IS NULL AND effective_from <= ${OUTLET_AT_EXPR}
      ORDER BY effective_from DESC, id DESC LIMIT 1
   ) tp ON true
   WHERE iv.archived_at IS NULL
@@ -164,11 +203,14 @@ interface OutletPriceRow {
   variation_id: string;
   price: string;
   source: 'outlet' | 'tenant' | 'variation';
+  at_used: string;
 }
 
-function parseAtQuery(at: string | undefined): Date {
+// null = "sekarang menurut database". Lihat komentar AT_EXPR di atas: memakai
+// `new Date()` di sini akan menghidupkan lagi jam kedua yang jadi sumber bug.
+function parseAtQuery(at: string | undefined): Date | null {
   if (at === undefined) {
-    return new Date();
+    return null;
   }
   const parsed = new Date(at);
   if (Number.isNaN(parsed.getTime())) {
@@ -292,19 +334,24 @@ export function createPriceHandlers(pool: Pool) {
       const { outletId } = req.params as { outletId: string };
       const query = req.query as { at?: string };
       const at = parseAtQuery(query.at);
-      const atIso = at.toISOString();
+      const atParam = at === null ? null : at.toISOString();
       const rows = await withTenantTransaction(pool, tenantId, async (client) => {
         await assertOutletVisible(client, outletId);
-        const { rows } = await client.query<OutletPriceRow>(OUTLET_PRICES_SQL, [outletId, atIso]);
+        const { rows } = await client.query<OutletPriceRow>(OUTLET_PRICES_SQL, [outletId, atParam]);
         return rows;
       });
+      // Katalog kosong tetap harus melaporkan `at` yang dipakai, dan nilainya
+      // tidak bisa dibaca dari baris yang tidak ada. Fallback ke parameter
+      // klien; kalau klien juga tidak mengirimnya, `at` null dan itu jujur --
+      // lebih baik daripada mengarang stempel waktu dari jam aplikasi.
+      const atUsed = rows.length > 0 ? new Date(rows[0].at_used).toISOString() : atParam;
       return {
         items: rows.map((row) => ({
           variationId: row.variation_id,
           price: Number(row.price),
           source: row.source,
           outletId,
-          at: atIso,
+          at: atUsed,
         })),
       };
     },
