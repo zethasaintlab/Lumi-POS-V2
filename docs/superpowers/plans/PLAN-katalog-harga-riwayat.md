@@ -122,12 +122,12 @@ Setiap task: test merah dulu → konfirmasi merah karena alasan yang benar → i
 - [x] **T4** — Guard `variationId` lintas tenant: variation milik tenant lain → `404`, dan **tidak ada baris tersimpan**.
 - [x] **T5** — Guard `outletId` lintas tenant: outlet milik tenant lain → `404`, dan **tidak ada baris tersimpan**. (Kelas bug yang sama dengan temuan F1 — diuji dengan bukti tulis, bukan hanya status code.)
 - [x] **T6** — `GET .../prices`: riwayat terurut `effective_from DESC, id DESC`, isolasi tenant.
-- [ ] **T7** — Resolver: ladder tiga tingkat. **Property test** — untuk sembarang kombinasi (ada/tidak override outlet) × (ada/tidak default tenant) × (waktu sebelum/sesudah `effective_from`), hasil selalu sesuai tangga. Ini yang dimaksud "invariant finansial diuji sebagai property" di Definition of Done.
-- [ ] **T8** — `GET .../price`: endpoint resolusi, termasuk parameter `at` (waktu transaksi) dan `outletId`.
-- [ ] **T9** — Append-only: ubah harga dua kali → dua baris, baris lama byte-identik dengan sebelumnya. Menegakkan invariant #2 dan AC FR-A7 #1.
-- [ ] **T10** — `GET /outlets/{outletId}/prices`: harga efektif seluruh variation aktif di satu outlet, satu query.
-- [ ] **T11** — Kontrak OpenAPI + regenerasi/validasi glue.
-- [ ] **T12** — Perbarui `CLAUDE.md`, `README.md`, `HANDOFF.md`, `apps/server/src/modules/README.md` bila status berubah. **Tidak menyentuh `/product/`, `/research/`, `/docs/superpowers/specs/`.**
+- [x] **T7** — Resolver: ladder tiga tingkat. **Property test** — untuk sembarang kombinasi (ada/tidak override outlet) × (ada/tidak default tenant) × (waktu sebelum/sesudah `effective_from`), hasil selalu sesuai tangga. Ini yang dimaksud "invariant finansial diuji sebagai property" di Definition of Done.
+- [x] **T8** — `GET .../price`: endpoint resolusi, termasuk parameter `at` (waktu transaksi) dan `outletId`.
+- [x] **T9** — Append-only: ubah harga dua kali → dua baris, baris lama byte-identik dengan sebelumnya. Menegakkan invariant #2 dan AC FR-A7 #1.
+- [x] **T10** — `GET /outlets/{outletId}/prices`: harga efektif seluruh variation aktif di satu outlet, satu query.
+- [x] **T11** — Kontrak OpenAPI + regenerasi/validasi glue.
+- [x] **T12** — Perbarui `CLAUDE.md`, `README.md`, `HANDOFF.md`, `apps/server/src/modules/README.md` bila status berubah. **Tidak menyentuh `/product/`, `/research/`, `/docs/superpowers/specs/`.**
 
 ---
 
@@ -147,17 +147,32 @@ Test lintas tenant untuk T4/T5 harus membuktikan **tidak ada baris tersimpan**, 
 
 ## 7. Definition of done
 
-- [ ] Invariant harga diuji sebagai **property**, bukan contoh (T7)
-- [ ] Idempotensi: `id` klien-generate, POST ulang dengan `id` sama → `409` atau no-op idempoten (perilaku dipilih, diuji, didokumentasikan)
-- [ ] Isolasi tenant diuji untuk keempat endpoint baru
-- [ ] Append-only terbukti — tidak ada jalur `UPDATE`/`DELETE`
-- [ ] Migrasi memakai `lock_timeout`, mengikuti pola `0015`
-- [ ] Kompatibilitas klien N-1: endpoint baru bersifat aditif, endpoint lama tidak berubah bentuk
-- [ ] Empty state: variation tanpa riwayat harga mengembalikan `item_variation.price`, bukan error
-- [ ] Seluruh suite hijau, output ditempel apa adanya
-- [ ] Checklist di file ini diperbarui seiring task selesai
+- [x] Invariant harga diuji sebagai **property**, bukan contoh (T7) — matriks kasus, dibuktikan tidak kosong lewat sabotase
+- [x] Idempotensi: POST ulang dengan `id` sama → `409 ID_ALREADY_EXISTS`, dan tepat satu baris tersimpan. Retry dengan `price` berbeda juga `409`, harga pertama tidak tertimpa
+- [x] Isolasi tenant diuji untuk keempat endpoint baru
+- [x] Append-only terbukti — tidak ada jalur `UPDATE`/`DELETE`; baris pertama dibandingkan utuh (bukan hanya `price`) sebelum dan sesudah perubahan kedua
+- [x] Migrasi memakai `lock_timeout`, mengikuti pola `0015`
+- [x] Kompatibilitas klien N-1: keempat operasi bersifat aditif; tidak ada endpoint lama yang berubah bentuk
+- [x] Empty state: variation tanpa riwayat harga mengembalikan `item_variation.price` dengan `source: 'variation'`, bukan error
+- [x] Seluruh suite hijau: catalog 139 · isolation 189 · schema 10 · server 14 · sqlite-local 3 · oxlint-ds 10 · `lint:ds` exit 0
+- [x] Checklist di file ini diperbarui seiring task selesai
 
 Yang **tidak** bisa dicentang di sub-project ini dan alasannya sudah di §4: audit event (Modul F belum ada), perilaku offline (F2), metrik & alarm (F6), runbook (F6).
+
+### Yang ditemukan lewat sabotase, bukan lewat test yang lolos
+
+Tiga guard/aturan dinonaktifkan satu per satu untuk membuktikan testnya bukan hiasan:
+
+| Yang disabotase | Hasil |
+|---|---|
+| `assertOutletVisible` di `createPrice` | **`201` + baris benar-benar tersimpan** menunjuk outlet tenant lain. FK ke `outlet(id)` tidak menghentikannya — konfirmasi ketiga temuan FK-bukan-RLS |
+| Filter `effective_from <= at` di anak tangga 1 | Matriks T7 gagal pada kasus "override terjadwal masa depan" |
+| Presedensi outlet-vs-tenant di `resolvePrice` | Matriks T7 gagal pada kasus "override menang atas default" |
+| Urutan `COALESCE` di `listOutletPrices` | **Awalnya LOLOS — 133/133 hijau.** Lubang nyata: tidak ada satu pun kasus dengan override outlet DAN default tenant sekaligus, yaitu satu-satunya kombinasi yang membedakan anak tangga 1 dari 2. Ditutup dengan tiga test presedensi + satu test yang mengikat `listOutletPrices` ke `resolvePrice` supaya kedua salinan tangga tidak bisa menyimpang |
+
+### Satu hal yang belum tuntas
+
+Satu run `test:catalog` gagal 1 test (dari 139) dan **tidak pernah tereproduksi lagi** dalam 7 run serial berikutnya. Nama testnya tidak sempat tertangkap. Sebagian besar kegagalan acak selama sub-project ini terbukti berasal dari menjalankan dua suite bersamaan ke satu database (dicatat di `HANDOFF.md`), tapi run yang satu ini tidak bisa saya kaitkan ke sana dengan pasti. Dicatat di sini apa adanya, bukan dianggap selesai.
 
 ---
 

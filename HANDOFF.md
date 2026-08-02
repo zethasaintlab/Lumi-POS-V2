@@ -44,6 +44,25 @@ Semuanya menyentuh skema — murah sekarang, mahal nanti.
 - [x] Ambang otorisasi default: diskon >20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale >3×/shift — diputuskan 1 Agu 2026. **Ditambah:** void **tanpa** PIN manajer (alasan + audit + restock otomatis), refund tetap PIN manajer. Angkanya `[ASUMSI]`, belum divalidasi ke merchant
 - [ ] Batas kredensial offline (OQ-08)
 
+## Menjalankan test — satu database, satu suite pada satu waktu
+
+**Seluruh suite berbagi satu database dan setiap `beforeEach` menjalankan
+`TRUNCATE` lewat `resetAll`.** Menjalankan dua suite bersamaan — dua terminal,
+atau satu suite di latar belakang sambil menjalankan yang lain — membuat suite
+saling menghapus data di tengah jalan.
+
+Gejalanya menipu: kegagalan berpindah-pindah setiap run, menyentuh test lama
+yang tidak disentuh perubahan apa pun, dan errornya berbunyi
+`UNKNOWN_TENANT: Tenant ... tidak dikenal` atau `404` di jalur yang jelas-jelas
+benar. Terlihat seperti bug produk atau race condition di kode. Bukan.
+
+Diamati 2 Agustus 2026: `npm run test:catalog` dijalankan bersamaan dengan
+dirinya sendiri menghasilkan 15 kegagalan; dijalankan sendirian, 137/137 hijau
+dua kali berturut-turut.
+
+CI aman — `.github/workflows/test.yml` menjalankan suite secara berurutan.
+Batasan ini hanya menggigit di mesin lokal.
+
 ## Proses eksternal — mulai sekarang, lead time di luar kendali
 
 - [ ] Konsultasi pajak: kewajiban penyedia POS pasca-Coretax (OQ-04) + pajak dine-in vs takeaway (OQ-05)

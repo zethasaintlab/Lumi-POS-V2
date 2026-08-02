@@ -661,6 +661,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /items/{itemId}/variations/{variationId}/price:
+    get:
+      operationId: getResolvedPrice
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: variationId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: outletId
+          in: query
+          schema: { type: string }
+        - name: at
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: >-
+            Harga terselesaikan lewat tangga tiga tingkat
+            (spec-a-katalog.md:202-209): (variation, outlet) terbaru <= at,
+            lalu (variation, outlet=NULL), lalu item_variation.price.
+            `source` menyebutkan anak tangga mana yang dipakai --
+            diagnosabilitas di lapangan tanpa membaca database langsung.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedPrice'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau parameter at bukan timestamp
+            ISO 8601 valid (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            Variation tidak ditemukan (NOT_FOUND), atau outlet tidak
+            ditemukan (OUTLET_NOT_FOUND) kalau outletId dikirim -- keduanya
+            divalidasi lewat SELECT yang tunduk RLS, bukan FK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /outlets/{outletId}/prices:
+    get:
+      operationId: listOutletPrices
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: at
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: >-
+            Harga efektif seluruh item_variation aktif (archived_at IS NULL)
+            di tenant, diselesaikan untuk outlet ini dalam satu query --
+            dibutuhkan klien POS saat sinkron turun. Urutan deterministik
+            (variationId ASC).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OutletResolvedPrice'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, atau parameter at bukan timestamp
+            ISO 8601 valid (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Outlet tidak ditemukan (OUTLET_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /modifier-lists:
     post:
       operationId: createModifierList
@@ -1176,6 +1265,25 @@ components:
         outletId: { type: string, nullable: true }
         effectiveFrom: { type: string, format: date-time }
         reason: { type: string, nullable: true }
+    ResolvedPrice:
+      type: object
+      required: [price, source, outletId, at]
+      properties:
+        price: { type: integer, minimum: 0 }
+        # anak tangga yang menghasilkan `price` -- 'outlet' (tangga 1),
+        # 'tenant' (tangga 2, default tenant/outlet=NULL), 'variation'
+        # (tangga 3, item_variation.price beku). Lihat resolvePrice di
+        # apps/server/src/modules/catalog/handlers/prices.ts.
+        source: { type: string, enum: [outlet, tenant, variation] }
+        outletId: { type: string, nullable: true }
+        at: { type: string, format: date-time }
+    OutletResolvedPrice:
+      allOf:
+        - $ref: '#/components/schemas/ResolvedPrice'
+        - type: object
+          required: [variationId]
+          properties:
+            variationId: { type: string }
     ModifierList:
       type: object
       required: [id, name, selectionType, minSelections, modifiers]

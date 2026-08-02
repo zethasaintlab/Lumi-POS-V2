@@ -125,7 +125,7 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: F1 — Inti transaksi, Modul A (Katalog), sub-project 1 (endpoint REST inti).** Gate F0 tertutup — rincian per item ada di `HANDOFF.md`.
+**Fase: F1 — Inti transaksi, Modul A (Katalog), sub-project 2 (harga & riwayat).** Gate F0 tertutup — rincian per item ada di `HANDOFF.md`.
 
 Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)
@@ -137,7 +137,22 @@ Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
 - [ ] **SQLite WASM+OPFS berjalan di browser — belum dibangun/diuji.** Server-side saja, jadi tidak memblokir F1. **Memblokir F2.**
 
-Status F1 sekarang: modul Katalog (Modul A) sub-project 1 — endpoint REST inti — selesai. 28 operasi REST atas `category`, `item`/`item_variation`, `modifier_list`/`modifier`, `item_modifier_list`; 68 test katalog + 189 test isolasi hijau (`docs/superpowers/plans/PLAN-katalog-rest-inti.md`). Sengaja belum digarap di sub-project ini: FR-A7 (harga + `price_history`), FR-A3/A5 (aturan pemilihan modifier — UI kasir), FR-A8 (import katalog, P1). Modul B (Kasir & Order) dan C (Pembayaran & Pajak) belum disentuh.
+Status F1 sekarang:
+
+- **Sub-project 1 — endpoint REST inti: selesai.** 28 operasi REST atas `category`, `item`/`item_variation`, `modifier_list`/`modifier`, `item_modifier_list` (`docs/superpowers/plans/PLAN-katalog-rest-inti.md`). Menutup FR-A1/A2/A4/A6/A9 di sisi backend.
+- **Sub-project 2 — FR-A7 harga per outlet dan riwayatnya: selesai sebagian** (`docs/superpowers/plans/PLAN-katalog-harga-riwayat.md`). 4 operasi REST atas `price_history`, resolver tangga tiga tingkat diekspor lewat `catalog/index.ts` untuk dipakai Modul B, migrasi `0016` (index resolusi).
+
+**FR-A7 belum tertutup penuh, dan itu disengaja.** Dua dari empat acceptance criteria-nya tidak bisa diuji sekarang: `cost_at_sale` butuh `order_line` (Modul B), dan "device mana yang belum menerima perubahan harga" butuh sync (F2) + laporan (Modul G). Jangan tandai FR-A7 selesai sampai keduanya ada.
+
+Sengaja belum digarap: FR-A3/A5 (aturan pemilihan modifier — UI kasir), FR-A8 (import katalog, P1). Modul B (Kasir & Order) dan C (Pembayaran & Pajak) belum disentuh.
+
+**Keputusan produk yang mengikat kode katalog:**
+
+- `item_variation.price` **beku setelah variation dibuat** — ia adalah harga awal, anak tangga paling bawah resolusi. Semua perubahan harga lewat `price_history`. `updateItemVariation` tidak menerima `price`, dan itu permanen, bukan penundaan.
+- **Harga terjadwal masa depan diizinkan.** `effective_from` boleh di masa depan; resolusi `effective_from <= at` yang menentukan kapan ia berlaku.
+- Aktor perubahan dibaca dari header **`X-Actor-Id`** (`getActorId`), divalidasi ke tabel `"user"` lewat SELECT yang tunduk RLS. Placeholder sampai modul identity ada — satu titik yang nanti diganti ekstraksi token, sejajar dengan `X-Tenant-Id`.
+
+**Modul `tenancy` dan `identity` sudah punya kode**, masing-masing satu guard (`assertOutletVisible`, `assertUserVisible`). Lahir karena invariant #4: `price_history.outlet_id` dan `changed_by` menunjuk tabel milik modul lain, jadi katalog tidak boleh meng-query keduanya langsung.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
@@ -147,7 +162,11 @@ Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±1
 
 Ditemukan empiris saat membangun modul Katalog, bukan dari dokumentasi: sebelum diperbaiki, `createItem` menerima dan **benar-benar menyimpan** item yang mereferensi `category` milik tenant lain, lalu mengembalikan `201`. Foreign key constraint PostgreSQL dicek dengan privilese owner tabel yang direferensikan — **tidak tunduk `FORCE ROW LEVEL SECURITY`**. Constraint FK hanya membuktikan baris itu ada di *suatu* tenant, bukan tenant yang benar.
 
-**Konsekuensi:** setiap FK yang nilainya disuplai klien ke tabel ber-`tenant_id` wajib divalidasi lewat `SELECT` yang tunduk RLS sebelum dipercaya. Modul Katalog menegakkannya lewat `assertCategoryVisible` (`apps/server/src/modules/catalog/handlers/items.ts`), `fetchModifierListOrThrow` (`modifier-lists.ts`), dan kedua guard di `item-modifier-lists.ts`. Modul B, C, dan E akan punya paparan yang sama (`order_line.variation_id`, `payment.order_id`, `stock_movement.variation_id`, dst) — cek ini di setiap FK klien-suplai baru.
+**Konsekuensi:** setiap FK yang nilainya disuplai klien ke tabel ber-`tenant_id` wajib divalidasi lewat `SELECT` yang tunduk RLS sebelum dipercaya. Modul Katalog menegakkannya lewat `assertCategoryVisible` (`apps/server/src/modules/catalog/handlers/items.ts`), `fetchModifierListOrThrow` (`modifier-lists.ts`), kedua guard di `item-modifier-lists.ts`, dan `assertOutletVisible`/`assertUserVisible` di `prices.ts`. Modul B, C, dan E akan punya paparan yang sama (`order_line.variation_id`, `payment.order_id`, `stock_movement.variation_id`, dst) — cek ini di setiap FK klien-suplai baru.
+
+**Dikonfirmasi ulang 2 Agustus 2026 di `price_history.outlet_id`,** lewat sabotase yang disengaja: `assertOutletVisible` dinonaktifkan, request yang menunjuk outlet tenant lain mengembalikan `201` dan barisnya benar-benar tersimpan. FK ke `outlet(id)` tidak menghentikannya. Ini bukan pengulangan bug yang sama — ini FK yang berbeda, di tabel yang berbeda, di modul yang berbeda. Polanya berulang setiap kali FK klien-suplai baru muncul.
+
+**Kasus yang lebih buruk: kolom tanpa FK sama sekali.** `price_history.changed_by` adalah `text NOT NULL` tanpa FK ke `"user"` — database tidak akan menangkap id karangan apa pun. Kolom audit finansial yang isinya tidak dijamin siapa-siapa lebih berbahaya daripada FK yang tidak tunduk RLS, karena tidak ada apa pun yang terlihat menjaganya. `assertUserVisible` adalah satu-satunya yang berdiri di sana.
 
 **Batas temuan ini:** suite isolasi 189 test (invariant #8) menguji akses tabel langsung dan itu tetap benar dan hijau — RLS bekerja sesuai spesifikasi. Yang tidak diuji suite itu adalah kelas ini: aplikasi menulis ke tabelnya sendiri, dengan `tenant_id` sendiri, lewat RLS yang berjalan benar, sambil menunjuk baris tenant lain lewat FK. RLS tidak pernah dilanggar di sini — FK-lah pintunya.
 

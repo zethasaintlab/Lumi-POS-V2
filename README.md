@@ -2,7 +2,7 @@
 
 Point-of-sale untuk kafe takeaway 2–20 outlet di Indonesia. Offline-first, multi-vertikal, dijual sebagai lisensi berlangganan per outlet.
 
-**Status:** F0 (fondasi) selesai · **Fase berjalan:** F1 (inti transaksi) — Modul A (Katalog), sub-project 1: 28 endpoint REST katalog, 68 test katalog + 189 test isolasi hijau
+**Status:** F0 (fondasi) selesai · **Fase berjalan:** F1 (inti transaksi) — Modul A (Katalog): 32 endpoint REST (katalog inti + harga per outlet FR-A7), 137 test katalog + 189 test isolasi + 10 test skema hijau
 
 > 🤖 **Coding agent mulai dari [`CLAUDE.md`](CLAUDE.md)**, bukan dari file ini.
 
