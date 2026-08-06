@@ -20,6 +20,7 @@
     "test:server": "node --env-file=.env --test \"tests/server/*.test.js\"",
     "test:catalog": "node --env-file=.env --test --test-concurrency=1 \"tests/catalog/*.test.js\"",
     "test:ordering": "node --env-file=.env --test --test-concurrency=1 \"tests/ordering/*.test.js\"",
+    "test:payment": "node --env-file=.env --test --test-concurrency=1 \"tests/payment/*.test.js\"",
     "test:sqlite-local": "node --experimental-sqlite --test \"tests/sqlite-local/*.test.js\"",
     "test:oxlint-ds-adherence": "node --test \"tests/oxlint-ds-adherence/*.test.js\"",
     "test:dst": "echo 'Belum diimplementasikan. Referensi: prototypes/02-dst-sinkronisasi/sim.py' && exit 1"
