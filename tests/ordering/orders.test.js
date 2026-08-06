@@ -48,12 +48,24 @@ function orderUrl(orderId) {
   return `/orders/${orderId}`;
 }
 
+// T10 (PLAN-ordering-fondasi.md) -- Idempotency-Key kini WAJIB untuk
+// POST /orders. Default di sini adalah crypto.randomUUID() BARU per
+// panggilan (bukan konstanta) supaya test-test T3/T5/T7/T9/T14 di berkas
+// ini -- yang masing-masing membuat BEBERAPA order berbeda per test, dan
+// TIDAK menguji idempotency -- tidak diam-diam saling tabrak lewat
+// request_hash yang berbeda di key yang sama (422) atau dianggap retry.
+// Test yang MEMANG menguji idempotency (tests/ordering/idempotency.test.js)
+// mengoper headernya sendiri secara eksplisit, meng-override default ini.
 function req(method, url, payload, headers = {}) {
+  const defaultHeaders = { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id };
+  if (method === 'POST' && url === ordersUrl() && headers['idempotency-key'] === undefined) {
+    defaultHeaders['idempotency-key'] = crypto.randomUUID();
+  }
   return app.inject({
     method,
     url,
     payload,
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers },
+    headers: { ...defaultHeaders, ...headers },
   });
 }
 

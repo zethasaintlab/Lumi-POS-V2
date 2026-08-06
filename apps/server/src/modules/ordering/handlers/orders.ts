@@ -1,13 +1,22 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
+import { computeRequestHash } from './request-hash.ts';
 import { assertDeviceVisible, assertUserVisible } from '../../identity/index.ts';
 import { getOutletSettings } from '../../tenancy/index.ts';
 import { getVariationSnapshot, resolvePrice } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
 import { assertShiftOpen } from '../../cash/index.ts';
+import {
+  findIdempotencyKey,
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  insertOutboxEvent,
+  IdempotencyKeyConflictError,
+} from '../../sync/index.ts';
 import { computeLineTotal, computeOrderTotals } from '../../../../../../packages/domain/src/money.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -17,6 +26,10 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 // order_line_modifier dalam SATU withTenantTransaction (invariant #1,
 // CLAUDE.md). Pajak nol di seluruh jalur ini -- invariant #7, TaxCalculator
 // adalah Modul C dan belum ada (keputusan Q5, PLAN §8.0).
+//
+// T10-T13 menambah: idempotency (header Idempotency-Key + tabel
+// idempotency_key) dan outbox, keduanya lewat modules/sync/index.ts
+// (invariant #4 -- ordering tidak boleh query kedua tabel itu langsung).
 
 // --- baris DB (snake_case, bigint datang sebagai string dari node-postgres) ---
 
@@ -158,6 +171,21 @@ function assertHlcValid(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !HLC_PATTERN.test(value)) {
     throw new HttpError(400, 'VALIDATION_ERROR', 'hlc harus string berisi bilangan bulat desimal.');
   }
+}
+
+// T10 (spec-b:318-361) -- Idempotency-Key WAJIB untuk POST /orders. Sama
+// pola dengan getTenantId/getActorId (tenant-context.ts): dibaca manual dari
+// header, TIDAK dideklarasikan di openapi.yaml (T15 belum digarap sub-
+// project ini) -- pola yang sama seperti X-Tenant-Id/X-Actor-Id, yang juga
+// tidak pernah muncul di `parameters:` operasi mana pun.
+const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+function getIdempotencyKeyHeader(req: FastifyRequest): string {
+  const header = req.headers['idempotency-key'];
+  const value = Array.isArray(header) ? header[0] : header;
+  if (!value || value.length === 0 || value.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    throw new HttpError(400, 'MISSING_IDEMPOTENCY_KEY', 'Header Idempotency-Key wajib diisi.');
+  }
+  return value;
 }
 
 // --- error PostgreSQL -> HttpError bersih ---
@@ -434,7 +462,14 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
     async createOrder(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);
+      const idempotencyKey = getIdempotencyKeyHeader(req);
       const body = req.body as OrderInput;
+      // T10 -- SHA-256 hex dari body request YANG DIKANONIKALISASI (key
+      // objek diurutkan rekursif). Dihitung SEKALI di sini, dari body MENTAH
+      // -- terlepas dari apakah body-nya lolos validasi di bawah, supaya
+      // retry dengan body persis sama (termasuk yang gagal validasi) tetap
+      // menghasilkan hash yang sama.
+      const requestHash = computeRequestHash(body);
 
       // Validasi fail-fast SEBELUM transaksi dibuka -- pola sama dengan
       // createItem (body.variations kosong) dan createPrice (assertPriceValid).
@@ -462,6 +497,62 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
       const hlcValue = body.hlc !== undefined ? hlc.update(BigInt(body.hlc)) : hlc.tick();
 
       const result = await withTenantTransaction(pool, tenantId, async (client) => {
+        // T10-T12 (spec-b:333-348, modules/sync/index.ts): idempotency
+        // dicek DAN diklaim DI DALAM transaksi yang sama dengan penulisan
+        // order (spec-b:350) -- bukan pre-check di luar transaksi lalu
+        // INSERT terpisah, itu balapan di READ COMMITTED (lihat komentar
+        // claimIdempotencyKey).
+        const existing = await findIdempotencyKey(client, idempotencyKey);
+        if (existing !== null) {
+          if (existing.requestHash !== requestHash) {
+            // spec-b:333-348 -- key dipakai ulang dengan body BERBEDA
+            // adalah bug klien, bukan cache hit. JANGAN kembalikan respons
+            // order lain.
+            throw new HttpError(
+              422,
+              'IDEMPOTENCY_KEY_HASH_MISMATCH',
+              `Idempotency-Key ${idempotencyKey} sudah dipakai untuk request dengan body yang berbeda.`
+            );
+          }
+          // Cache hit -- request identik (key+hash sama) sudah pernah
+          // sukses. JANGAN diproses ulang: kembalikan response_body/
+          // response_status yang TERSIMPAN, tidak ada order kedua.
+          //
+          // KETEGANGAN SPEC (dilaporkan, bukan diputuskan sendiri):
+          // spec-b:336 menulis "status 200" untuk kasus ini, tapi deskripsi
+          // FR-B10 (spec-b:325) menulis server "mengembalikan respons
+          // asli", dan skema menyediakan kolom response_status justru untuk
+          // menyimpannya. Keduanya tidak sepenuhnya sejalan. Diimplementasi-
+          // kan di sini: kembalikan response_status TERSIMPAN (201 untuk
+          // order yang sukses dibuat) -- konsisten dengan "respons asli" dan
+          // dengan alasan kolom itu ada. Ini interpretasi, bukan fakta.
+          return { status: existing.responseStatus, body: existing.responseBody };
+        }
+
+        // Klaim key SEBELUM menulis order/check/line apa pun (T11) -- lihat
+        // komentar claimIdempotencyKey (modules/sync/index.ts) untuk alasan
+        // urutan ini: order/check/line punya PK client-generated sendiri
+        // yang sama persis pada retry, jadi kalau idempotency_key baru
+        // ditulis PALING AKHIR, dua request bersamaan akan lebih dulu
+        // balapan di order_pkey dan menghasilkan 409 ID_ALREADY_EXISTS,
+        // BUKAN 409 idempotency dengan instruksi retry yang diminta AC.
+        try {
+          await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
+        } catch (err) {
+          if (err instanceof IdempotencyKeyConflictError) {
+            // T11: dua request bersamaan, key sama -- transaksi kedua
+            // memblokir di unique index idempotency_key sampai yang
+            // pertama commit, lalu kena unique violation di sini, SEBELUM
+            // pernah menyentuh order/check/line/modifier sama sekali.
+            throw new HttpError(
+              409,
+              'IDEMPOTENCY_KEY_CONFLICT',
+              `Request dengan Idempotency-Key ${idempotencyKey} sedang diproses request lain, coba lagi.`
+            );
+          }
+          throw err;
+        }
+
         // T7: empat FK klien-suplai, semua divalidasi lewat SELECT yang
         // tunduk RLS SEBELUM INSERT apa pun (FK PostgreSQL tidak tunduk RLS,
         // temuan F1 CLAUDE.md). Urutan: outlet (dan rounding_increment-nya
@@ -519,11 +610,28 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
           translateMoneyError(err);
         }
 
-        return insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals);
+        const written = await insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals);
+        const responseBody = toOrder(written.order, written.check, written.lines);
+
+        // T13 (FR-B2, invariant #1): satu baris outbox DALAM transaksi yang
+        // sama. Kegagalan apa pun setelah titik ini me-rollback baris ini
+        // juga -- termasuk klaim idempotency_key di atas.
+        await insertOutboxEvent(client, {
+          id: randomUUID(),
+          tenantId,
+          aggregateType: 'order',
+          aggregateId: written.order.id,
+          eventType: 'order.created',
+          payload: responseBody,
+        });
+
+        await completeIdempotencyKey(client, { key: idempotencyKey, responseStatus: 201, responseBody });
+
+        return { status: 201, body: responseBody as unknown };
       });
 
-      reply.code(201);
-      return toOrder(result.order, result.check, result.lines);
+      reply.code(result.status);
+      return result.body;
     },
 
     // T5/T14: dibutuhkan untuk membaca kembali snapshot order_line utuh
