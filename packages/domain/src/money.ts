@@ -49,13 +49,16 @@ export interface OrderTotalsInput {
   serviceChargeAmount: bigint;
   /** Sudah dihitung TaxCalculator (Modul C). Modul ini tidak menghitungnya. */
   taxAmount: bigint;
-  /** `outlet.rounding_increment`, default 100 di skema. `1` = tanpa pembulatan. */
-  roundingIncrement: bigint;
 }
 
 export interface OrderTotals {
+  /** Langkah 6: SUM(line_total). */
   subtotal: bigint;
-  roundingAdjustment: bigint;
+  /** Langkah 8: subtotal - order_discount. */
+  base: bigint;
+  /** Langkah 10: base + service_charge. Service charge KENA pajak. */
+  taxBase: bigint;
+  /** Langkah 12: tax_base + tax_amount. **Tidak dibulatkan.** */
   total: bigint;
 }
 
@@ -81,16 +84,32 @@ function divRoundHalfUp(numerator: bigint, denominator: bigint): bigint {
 }
 
 /**
- * `line_total` untuk satu `order_line`.
+ * `line_total` untuk satu `order_line` — langkah 1–5 FR-C8.
+ *
+ * ```
+ * 1. line_subtotal    = unit_price x quantity                 -> bulatkan
+ * 2. line_modifiers   = SUM(modifier.price x modifier.qty)    -> bulatkan
+ * 3. line_before_disc = 1 + 2
+ * 4. line_discount    = diskon tingkat baris
+ * 5. line_total       = 3 - 4
+ * ```
  *
  * Modifier melekat PER UNIT lalu ikut dikalikan kuantitas baris: 2 kopi
  * dengan extra shot = 2 x (harga kopi + harga shot). Ini semantik POS yang
  * lazim, dan `order_line_modifier.quantity` (default `1000` = 1) memungkinkan
  * "2 extra shot pada 1 kopi" secara terpisah.
  *
- * Pembulatan dilakukan **sekali di akhir**, bukan di setiap langkah. Membulatkan
- * per modifier lalu menjumlahkannya akan mengakumulasi galat yang, pada order
- * besar, muncul sebagai selisih beberapa rupiah yang tidak bisa ditelusuri.
+ * ## Pembulatan dilakukan PER LANGKAH
+ *
+ * `spec-c-pembayaran-pajak.md:126` mewajibkannya, dengan alasan yang tertulis:
+ * "menyimpan pecahan lalu membulatkan di akhir menghasilkan total yang tidak
+ * sama dengan jumlah baris yang tercetak di struk — dan merchant akan
+ * menemukannya."
+ *
+ * Versi pertama fungsi ini membulatkan sekali di akhir dan komentarnya justru
+ * membenarkan kebalikannya. Itu keliru. Selisihnya nyata pada kuantitas
+ * pecahan: `unit_price` 3.333 qty 0,5 dengan modifier 3.333 menghasilkan
+ * 3.334 menurut spec, 3.333 dengan pembulatan tunggal.
  */
 export function computeLineTotal(input: LineInput): bigint {
   assertBigint(input.unitPrice, 'unitPrice');
@@ -107,8 +126,14 @@ export function computeLineTotal(input: LineInput): bigint {
     throw new RangeError('discountAmount tidak boleh negatif.');
   }
 
-  // Satuan: rupiah x1000 (karena quantityMilli modifier berskala 1000).
-  let perUnitScaled = input.unitPrice * MILLI;
+  // Langkah 1 -- unit_price x quantity, dibulatkan.
+  const lineSubtotal = divRoundHalfUp(input.unitPrice * input.quantityMilli, MILLI);
+
+  // Langkah 2 -- SUM(modifier.price x modifier.qty), dibulatkan. `qty` di sini
+  // adalah kuantitas EFEKTIF: kuantitas modifier dikali kuantitas baris. Itu
+  // yang dipakai contoh terhitung spec-c:137 (Extra Shot 5.000 x 2 kopi =
+  // 10.000), bukan kuantitas modifier saja.
+  let modifiersScaled = 0n;
   for (const m of input.modifiers) {
     assertBigint(m.price, 'modifier.price');
     assertBigint(m.quantityMilli, 'modifier.quantityMilli');
@@ -118,11 +143,12 @@ export function computeLineTotal(input: LineInput): bigint {
     if (m.quantityMilli < 0n) {
       throw new RangeError('modifier.quantityMilli tidak boleh negatif.');
     }
-    perUnitScaled += m.price * m.quantityMilli;
+    modifiersScaled += m.price * m.quantityMilli * input.quantityMilli;
   }
+  const lineModifiers = divRoundHalfUp(modifiersScaled, LINE_SCALE);
 
-  // Satuan: rupiah x1e6. Satu-satunya titik pembulatan.
-  const gross = divRoundHalfUp(perUnitScaled * input.quantityMilli, LINE_SCALE);
+  // Langkah 3 -- penjumlahan dua bigint yang sudah dibulatkan, eksak.
+  const gross = lineSubtotal + lineModifiers;
 
   if (input.discountAmount > gross) {
     // Baris dengan total negatif bukan diskon, itu data rusak. Menjepitnya ke
@@ -135,28 +161,45 @@ export function computeLineTotal(input: LineInput): bigint {
 }
 
 /**
- * Total order, termasuk pembulatan tunai Indonesia.
+ * Total order — langkah 6–12 FR-C8.
  *
- * Pecahan di bawah Rp 100 praktis tidak beredar, jadi
- * `outlet.rounding_increment` (default `100`) membulatkan total akhir.
- * Selisihnya **dicatat** sebagai `roundingAdjustment`, bukan dihilangkan --
- * tanpa itu, laporan kas tidak akan berimbang dan tidak ada yang bisa
- * menjelaskan ke mana rupiahnya pergi.
+ * ```
+ * 6.  subtotal   = SUM(line_total)
+ * 7.  order_discount
+ * 8.  base       = subtotal - order_discount
+ * 9.  service_charge = base x service_charge_rate   (diterima sudah dihitung)
+ * 10. tax_base   = base + service_charge            <- service charge KENA pajak
+ * 11. tax_amount = tax_base x tax_rate              (dari TaxCalculator)
+ * 12. total      = tax_base + tax_amount
+ * ```
+ *
+ * ## `total` TIDAK dibulatkan — ini sengaja
+ *
+ * Versi pertama fungsi ini membulatkan `total` ke kelipatan
+ * `rounding_increment`. Itu keliru terhadap FR-C8: yang dibulatkan adalah
+ * **`amount_due`** (langkah 13–14), bukan `total`.
+ *
+ * `total` adalah nilai transaksi — dipakai laporan penjualan dan dasar
+ * pelaporan pajak. Membulatkannya menggeser angka itu. Pada contoh terhitung
+ * `spec-c:145-147`, `total` adalah 93.555 sementara yang dibayar 93.600.
+ *
+ * Lebih jauh, FR-C9 menetapkan pembulatan hanya berlaku **bila ada pembayaran
+ * tunai**; order yang dibayar 100% QRIS punya `rounding_adjustment = 0`.
+ * Karena itu pembulatan mustahil dihitung di sini: saat order dibuat, belum
+ * ada pembayaran apa pun. Ia hidup di jalur pembayaran, bukan di sini —
+ * makanya `roundingIncrement` tidak lagi jadi parameter, bukan sekadar
+ * diabaikan.
  *
  * Invariant yang dijamin fungsi ini:
  *
- *   subtotal - orderDiscount + serviceCharge + tax + roundingAdjustment == total
- *   total % roundingIncrement == 0
+ *   base     == subtotal - orderDiscount
+ *   taxBase  == base + serviceChargeAmount
+ *   total    == taxBase + taxAmount
  */
 export function computeOrderTotals(input: OrderTotalsInput): OrderTotals {
   assertBigint(input.orderDiscount, 'orderDiscount');
   assertBigint(input.serviceChargeAmount, 'serviceChargeAmount');
   assertBigint(input.taxAmount, 'taxAmount');
-  assertBigint(input.roundingIncrement, 'roundingIncrement');
-
-  if (input.roundingIncrement <= 0n) {
-    throw new RangeError('roundingIncrement harus lebih besar dari 0.');
-  }
 
   let subtotal = 0n;
   for (const lineTotal of input.lineTotals) {
@@ -170,17 +213,13 @@ export function computeOrderTotals(input: OrderTotalsInput): OrderTotals {
     );
   }
 
-  const beforeRounding =
-    subtotal - input.orderDiscount + input.serviceChargeAmount + input.taxAmount;
-  const total =
-    divRoundHalfUp(beforeRounding, input.roundingIncrement) * input.roundingIncrement;
+  const base = subtotal - input.orderDiscount;
+  const taxBase = base + input.serviceChargeAmount;
 
   return {
     subtotal,
-    // Diturunkan dari selisih, bukan dihitung terpisah -- dengan begitu
-    // invariant keberimbangan di atas benar secara konstruksi, bukan karena
-    // dua perhitungan kebetulan cocok.
-    roundingAdjustment: total - beforeRounding,
-    total,
+    base,
+    taxBase,
+    total: taxBase + input.taxAmount,
   };
 }

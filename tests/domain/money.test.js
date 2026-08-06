@@ -210,55 +210,96 @@ test('subtotal order = jumlah line_total', async () => {
     orderDiscount: 0n,
     serviceChargeAmount: 0n,
     taxAmount: 0n,
-    roundingIncrement: 1n,
   });
   assert.equal(t.subtotal, 64167n);
   assert.equal(t.total, 64167n);
-  assert.equal(t.roundingAdjustment, 0n);
 });
 
-// Pembulatan tunai Indonesia: pecahan di bawah Rp 100 tidak beredar lagi.
-// `outlet.rounding_increment` default 100 (0002_tenancy.sql).
-test('pembulatan ke kelipatan 100 menghasilkan rounding_adjustment yang menjelaskan selisihnya', async () => {
+// --- FR-C8: `total` TIDAK dibulatkan ---
+//
+// Ini koreksi, bukan fitur baru. Versi pertama modul ini membulatkan `total`
+// ke kelipatan rounding_increment, dan test-testnya mengunci perilaku itu.
+// Keduanya salah terhadap spec:
+//
+//   spec-c-pembayaran-pajak.md:113-116
+//     12. total              = tax_base + tax_amount
+//     13. rounding_adjustment = pembulatan (HANYA bila ada pembayaran tunai)
+//     14. amount_due         = total + rounding_adjustment
+//
+// Yang dibulatkan adalah `amount_due`, bukan `total` -- dan hanya bila ada
+// pembayaran tunai. `total` adalah nilai transaksi yang dipakai laporan
+// penjualan dan dasar pelaporan pajak; membulatkannya menggeser angka itu.
+//
+// FR-C9 mempertegas: order yang dibayar 100% non-tunai punya
+// rounding_adjustment = 0 dan amount_due = total.
+//
+// Karena pembulatan bergantung pada METODE PEMBAYARAN, ia tidak bisa
+// dihitung saat order dibuat -- order baru belum punya pembayaran apa pun.
+// Karena itu `roundingIncrement` dikeluarkan sepenuhnya dari fungsi ini dan
+// pindah ke jalur pembayaran (Modul C sub-project 1), bukan disimpan
+// menganggur di sini.
+
+test('FR-C8: total tidak dibulatkan, berapa pun nilainya', async () => {
   const { computeOrderTotals } = await import(MOD);
   const t = computeOrderTotals({
-    lineTotals: [64167n],
-    orderDiscount: 0n,
-    serviceChargeAmount: 0n,
-    taxAmount: 0n,
-    roundingIncrement: 100n,
+    lineTotals: [90000n],
+    orderDiscount: 9000n,
+    serviceChargeAmount: 4050n,
+    taxAmount: 8505n,
   });
-  assert.equal(t.total, 64200n, '64167 -> 64200 (half-up ke kelipatan 100)');
-  assert.equal(t.roundingAdjustment, 33n, 'selisihnya harus tercatat, bukan hilang');
+  assert.equal(t.total, 93555n, 'total = tax_base + tax_amount, apa adanya');
 });
 
-test('pembulatan ke bawah menghasilkan rounding_adjustment negatif', async () => {
-  const { computeOrderTotals } = await import(MOD);
+// Contoh terhitung spec-c:133-147, angka per angka (AC FR-C8 pertama).
+// Pesanan: 2x Kopi Susu @25.000 (+ Extra Shot 5.000), 1x Croissant @30.000.
+// Diskon order 10%. Service charge 5%. PBJT 10% eksklusif.
+test('FR-C8: contoh terhitung spec, angka per angka', async () => {
+  const { computeLineTotal, computeOrderTotals } = await import(MOD);
+
+  const baris1 = computeLineTotal({
+    unitPrice: 25000n,
+    quantityMilli: 2000n,
+    modifiers: [{ price: 5000n, quantityMilli: 1000n }],
+    discountAmount: 0n,
+  });
+  assert.equal(baris1, 60000n, 'baris 1: 50.000 + 10.000');
+
+  const baris2 = computeLineTotal({
+    unitPrice: 30000n,
+    quantityMilli: 1000n,
+    modifiers: [],
+    discountAmount: 0n,
+  });
+  assert.equal(baris2, 30000n, 'baris 2');
+
   const t = computeOrderTotals({
-    lineTotals: [64120n],
-    orderDiscount: 0n,
-    serviceChargeAmount: 0n,
-    taxAmount: 0n,
-    roundingIncrement: 100n,
+    lineTotals: [baris1, baris2],
+    orderDiscount: 9000n,
+    serviceChargeAmount: 4050n,
+    taxAmount: 8505n,
   });
-  assert.equal(t.total, 64100n);
-  assert.equal(t.roundingAdjustment, -20n);
+
+  assert.equal(t.subtotal, 90000n, 'subtotal');
+  assert.equal(t.base, 81000n, 'base = subtotal - diskon order');
+  assert.equal(t.taxBase, 85050n, 'dasar pajak = base + service charge');
+  assert.equal(t.total, 93555n, 'total = dasar pajak + pajak, TANPA pembulatan');
 });
 
-// Invariant yang harus selalu benar, apa pun pembulatannya. Kalau ini pernah
-// gagal, angka di struk tidak bisa dijelaskan ke pelanggan maupun auditor.
-test('property: subtotal - discount + service + tax + rounding_adjustment == total, selalu', async () => {
+// Invariant yang harus selalu benar. Kalau ini pernah gagal, angka di struk
+// tidak bisa dijelaskan ke pelanggan maupun auditor.
+//
+// Perhatikan `rounding_adjustment` TIDAK muncul di sini lagi: ia bukan bagian
+// dari `total` (FR-C8 langkah 12), melainkan bagian dari `amount_due`
+// (langkah 14) yang dihitung di jalur pembayaran.
+test('property: subtotal - discount + service + tax == total, selalu', async () => {
   const { computeOrderTotals } = await import(MOD);
   const kasus = [];
-  // Ruang uji sengaja diperbesar: `disc > sub` membuang sebagian kombinasi,
-  // dan penjaga `diperiksa >= 100` di bawah harus terpenuhi oleh kasus yang
-  // BENAR-BENAR dijalankan, bukan oleh kasus yang direncanakan.
   for (const sub of [0n, 1n, 99n, 100n, 64167n, 64120n, 1_000_000n]) {
     for (const disc of [0n, 1n, 50n, 99n]) {
       for (const svc of [0n, 1n, 3208n]) {
-        for (const inc of [1n, 5n, 100n, 1000n]) {
+        for (const tax of [0n, 1n, 8505n, 11000n]) {
           if (disc > sub) continue;
-          kasus.push({ sub, disc, svc, inc });
+          kasus.push({ sub, disc, svc, tax });
         }
       }
     }
@@ -269,15 +310,13 @@ test('property: subtotal - discount + service + tax + rounding_adjustment == tot
       lineTotals: [k.sub],
       orderDiscount: k.disc,
       serviceChargeAmount: k.svc,
-      taxAmount: 0n,
-      roundingIncrement: k.inc,
+      taxAmount: k.tax,
     });
-    assert.equal(
-      t.subtotal - k.disc + k.svc + 0n + t.roundingAdjustment,
-      t.total,
-      `tidak berimbang untuk ${JSON.stringify(k, (_, v) => (typeof v === 'bigint' ? String(v) : v))}`
-    );
-    assert.equal(t.total % k.inc, 0n, 'total harus kelipatan roundingIncrement');
+    const nama = JSON.stringify(k, (_, v) => (typeof v === 'bigint' ? String(v) : v));
+    assert.equal(t.subtotal, k.sub, `subtotal untuk ${nama}`);
+    assert.equal(t.base, k.sub - k.disc, `base = subtotal - diskon untuk ${nama}`);
+    assert.equal(t.taxBase, t.base + k.svc, `dasar pajak = base + service untuk ${nama}`);
+    assert.equal(t.total, t.taxBase + k.tax, `total = dasar pajak + pajak untuk ${nama}`);
     diperiksa += 1;
   }
   assert.ok(diperiksa >= 100, `ruang uji terlalu kecil: ${diperiksa}`);
@@ -291,7 +330,6 @@ test('order discount melebihi subtotal ditolak', async () => {
       orderDiscount: 20000n,
       serviceChargeAmount: 0n,
       taxAmount: 0n,
-      roundingIncrement: 100n,
     }),
     /discount/i
   );
@@ -304,11 +342,9 @@ test('order kosong menghasilkan nol, bukan error -- keranjang kosong bukan kesal
     orderDiscount: 0n,
     serviceChargeAmount: 0n,
     taxAmount: 0n,
-    roundingIncrement: 100n,
   });
   assert.equal(t.subtotal, 0n);
   assert.equal(t.total, 0n);
-  assert.equal(t.roundingAdjustment, 0n);
 });
 
 // Invariant #7: tidak ada angka pajak di luar TaxCalculator. Modul ini
@@ -321,7 +357,55 @@ test('taxAmount diteruskan apa adanya, modul ini tidak pernah menghitung pajak',
     orderDiscount: 0n,
     serviceChargeAmount: 0n,
     taxAmount: 11000n,
-    roundingIncrement: 1n,
   });
   assert.equal(t.total, 111000n);
+});
+
+// --- FR-C8: pembulatan PER LANGKAH ---
+//
+// spec-c:126 -- "Semua nilai uang dibulatkan ke rupiah utuh (bigint) pada
+// SETIAP langkah, memakai half-up. Alasan: menyimpan pecahan lalu membulatkan
+// di akhir menghasilkan total yang tidak sama dengan jumlah baris yang
+// tercetak di struk -- dan merchant akan menemukannya."
+//
+// Versi pertama modul ini membulatkan sekali di akhir, dengan komentar yang
+// justru membenarkan kebalikannya. Selisihnya nyata pada kuantitas pecahan.
+//
+// Langkah 1 dan 2 FR-C8 adalah dua nilai TERPISAH yang masing-masing
+// dibulatkan sebelum dijumlahkan di langkah 3:
+//   1. line_subtotal  = unit_price x quantity
+//   2. line_modifiers = SUM(modifier.price x modifier.qty)
+//   3. line_before_disc = 1 + 2
+test('FR-C8: langkah 1 dan 2 dibulatkan terpisah sebelum dijumlahkan', async () => {
+  const { computeLineTotal } = await import(MOD);
+  // unit_price 3.333 x 0,5 = 1.666,5 -> 1.667
+  // modifier   3.333 x 0,5 = 1.666,5 -> 1.667   (qty modifier 1 x qty baris 0,5)
+  // line_total = 1.667 + 1.667 = 3.334
+  //
+  // Membulatkan sekali di akhir menghasilkan 3.333 -- satu rupiah lebih
+  // rendah, dan tidak cocok dengan angka yang tercetak per baris di struk.
+  assert.equal(
+    computeLineTotal({
+      unitPrice: 3333n,
+      quantityMilli: 500n,
+      modifiers: [{ price: 3333n, quantityMilli: 1000n }],
+      discountAmount: 0n,
+    }),
+    3334n
+  );
+});
+
+test('FR-C8: pembulatan per langkah tidak mengubah hasil untuk kuantitas bulat', async () => {
+  const { computeLineTotal } = await import(MOD);
+  // Jaring pengaman: koreksi pembulatan tidak boleh menggeser kasus F&B
+  // sehari-hari, yang seluruhnya berkuantitas bulat.
+  assert.equal(
+    computeLineTotal({
+      unitPrice: 25000n,
+      quantityMilli: 2000n,
+      modifiers: [{ price: 5000n, quantityMilli: 1000n }],
+      discountAmount: 0n,
+    }),
+    60000n
+  );
 });

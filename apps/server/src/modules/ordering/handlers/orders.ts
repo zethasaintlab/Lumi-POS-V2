@@ -315,7 +315,7 @@ const INSERT_ORDER_SQL = `
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     'open', $9, $10, 0, 0, 0,
-    $11, $12, $12, $13, COALESCE($14::timestamptz, now()), $15
+    0, $11, $11, $12, COALESCE($13::timestamptz, now()), $14
   )
   RETURNING *
 `;
@@ -379,7 +379,11 @@ async function insertOrderTree(
       body.sequence,
       body.channel,
       totals.subtotal.toString(),
-      totals.roundingAdjustment.toString(),
+      // rounding_adjustment ditulis 0 langsung di SQL, bukan lewat parameter:
+      // pembulatan bergantung pada METODE PEMBAYARAN (FR-C9 -- hanya berlaku
+      // bila ada pembayaran tunai), dan order yang baru dibuat belum punya
+      // pembayaran apa pun. amount_due karena itu sama dengan total, dan
+      // keduanya memakai $11 yang sama.
       totals.total.toString(),
       actorId,
       body.occurredAt ?? null,
@@ -555,10 +559,17 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
 
         // T7: empat FK klien-suplai, semua divalidasi lewat SELECT yang
         // tunduk RLS SEBELUM INSERT apa pun (FK PostgreSQL tidak tunduk RLS,
-        // temuan F1 CLAUDE.md). Urutan: outlet (dan rounding_increment-nya
-        // sekaligus) -> device -> aktor -> shift (butuh device sudah valid
-        // untuk pengecekan kecocokan device di dalamnya).
-        const outletSettings = await getOutletSettings(client, body.outletId);
+        // temuan F1 CLAUDE.md). Urutan: outlet -> device -> aktor -> shift
+        // (yang terakhir butuh device sudah valid untuk pengecekan kecocokan
+        // device di dalamnya).
+        //
+        // Nilai kembalian getOutletSettings sengaja TIDAK dipakai di sini:
+        // rounding_increment dan service_charge_rate baru dibutuhkan di jalur
+        // pembayaran (Modul C, FR-C9), sementara order yang baru dibuat belum
+        // punya pembayaran apa pun. Yang dipakai sekarang adalah efek
+        // sampingnya -- SELECT yang tunduk RLS, satu-satunya yang membuktikan
+        // outlet ini milik tenant pemanggil.
+        await getOutletSettings(client, body.outletId);
         await assertDeviceVisible(client, body.deviceId);
         await assertUserVisible(client, actorId);
         await assertShiftOpen(client, body.shiftId, body.deviceId);
@@ -604,7 +615,6 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
             orderDiscount: 0n,
             serviceChargeAmount: 0n,
             taxAmount: 0n,
-            roundingIncrement: outletSettings.roundingIncrement,
           });
         } catch (err) {
           translateMoneyError(err);

@@ -150,6 +150,54 @@ async function assertNoOrderRowsSaved(callerTenantId, orderId, checkId) {
   assert.equal(lineRows.length, 0, 'tidak boleh ada baris order_line tersimpan untuk request yang ditolak');
 }
 
+// Variation dengan harga yang TIDAK bulat ke kelipatan 100 -- dibutuhkan
+// untuk membuktikan `total` tidak dibulatkan (FR-C8).
+async function createVariation(price) {
+  const itemId = crypto.randomUUID();
+  const variationId = crypto.randomUUID();
+  const res = await app.inject({
+    method: 'POST',
+    url: '/items',
+    payload: { id: itemId, name: `Produk ${variationId.slice(0, 8)}`, variations: [{ id: variationId, price }] },
+    headers: { 'x-tenant-id': tenant.id },
+  });
+  assert.equal(res.statusCode, 201, `gagal membuat variation persiapan test: ${res.body}`);
+  return { itemId, variationId };
+}
+
+// --- FR-C8/C9: total tidak dibulatkan, amount_due mengikuti ---
+//
+// Koreksi terhadap versi pertama modul ini, yang membulatkan `total` ke
+// kelipatan outlet.rounding_increment lalu menulis nilai yang SAMA ke
+// `order.total` dan `order.amount_due`.
+//
+// spec-c-pembayaran-pajak.md:113-116 menetapkan yang dibulatkan adalah
+// `amount_due` (langkah 14), bukan `total` (langkah 12). Dan FR-C9
+// menetapkan pembulatan hanya berlaku bila ada pembayaran TUNAI.
+//
+// Order yang baru dibuat belum punya pembayaran apa pun, jadi yang benar di
+// sini adalah: rounding_adjustment = 0 dan amount_due = total, keduanya
+// tanpa pembulatan. Pembulatan masuk bersama pembayaran (Modul C).
+test('FR-C8: total tidak dibulatkan ke rounding_increment outlet', async () => {
+  const { device, shift } = await setupDeviceAndShift();
+  // 64.167 bukan kelipatan 100. Versi lama akan menulis 64.200.
+  const { variationId } = await createVariation(64167);
+  const payload = orderPayload({
+    deviceId: device.id,
+    shiftId: shift.id,
+    lines: [{ id: crypto.randomUUID(), variationId, quantityMilli: 1000, discountAmount: 0 }],
+  });
+
+  const res = await req('POST', ordersUrl(), payload);
+  assert.equal(res.statusCode, 201, res.body);
+  const body = JSON.parse(res.body);
+
+  assert.equal(body.subtotal, 64167);
+  assert.equal(body.total, 64167, 'total adalah nilai transaksi -- tidak boleh digeser pembulatan');
+  assert.equal(body.roundingAdjustment, 0, 'belum ada pembayaran tunai, jadi belum ada pembulatan');
+  assert.equal(body.amountDue, 64167, 'tanpa pembayaran tunai, amount_due = total');
+});
+
 // ============================================================
 // T3 -- jalur bahagia
 // ============================================================
