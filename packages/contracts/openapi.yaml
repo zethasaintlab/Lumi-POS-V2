@@ -1169,8 +1169,395 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /devices:
+    post:
+      operationId: createDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, outletId, code]
+              properties:
+                id: { type: string }
+                outletId: { type: string }
+                code: { type: string }
+                name: { type: string, nullable: true }
+                platform: { type: string, nullable: true }
+                appVersion: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            outletId tidak ditemukan atau bukan milik tenant pemanggil
+            (OUTLET_NOT_FOUND) -- divalidasi lewat SELECT yang tunduk RLS,
+            bukan FK (FK PostgreSQL tidak tunduk RLS, temuan F1 di CLAUDE.md)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Kode device sudah dipakai device aktif lain di outlet yang sama
+            (CODE_TAKEN -- pesan menyebut device pemakai kode, dari SELECT
+            tunduk RLS bukan detail error PostgreSQL), atau id sudah dipakai
+            device lain (ID_ALREADY_EXISTS -- retry offline dengan id yang
+            sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/revoke:
+    post:
+      operationId: revokeDevice
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /shifts:
+    post:
+      operationId: openShift
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, outletId, deviceId, businessDate, openingFloat]
+              properties:
+                id: { type: string }
+                outletId: { type: string }
+                deviceId: { type: string }
+                businessDate: { type: string, format: date }
+                # openingFloat SENGAJA tidak diberi `type`/`minimum` -- sama
+                # seperti PriceInput.price di catalog, assertOpeningFloatValid
+                # (apps/server/src/modules/cash/handlers/shifts.ts) adalah
+                # satu-satunya sumber kebenaran untuk kode error ini.
+                openingFloat: {}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shift'
+        '400':
+          description: >-
+            Header X-Tenant-Id atau X-Actor-Id hilang, atau openingFloat
+            tidak valid (bilangan bulat rupiah >= 0, tidak melebihi
+            Number.MAX_SAFE_INTEGER -- VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            outletId tidak ditemukan (OUTLET_NOT_FOUND), deviceId tidak
+            ditemukan atau sudah dicabut (DEVICE_NOT_FOUND), atau aktor
+            tidak ditemukan/tidak aktif (ACTOR_NOT_FOUND) -- ketiganya
+            divalidasi lewat SELECT yang tunduk RLS, bukan FK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Device ini sudah punya shift yang masih terbuka
+            (SHIFT_ALREADY_OPEN -- ux_shift_one_open_per_device), atau id
+            sudah dipakai shift lain (ID_ALREADY_EXISTS -- retry offline
+            dengan id yang sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /orders:
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, outletId, deviceId, shiftId, receiptNumber, businessDate, sequence, channel, checkId, lines]
+              properties:
+                id: { type: string }
+                outletId: { type: string }
+                deviceId: { type: string }
+                shiftId: { type: string }
+                receiptNumber:
+                  type: string
+                  pattern: '^[A-Za-z0-9]+-\d{8}-\d+$'
+                businessDate: { type: string, format: date }
+                sequence: { type: integer, minimum: 1 }
+                channel: { type: string, enum: [dine_in, takeaway] }
+                # hlc SENGAJA type: string, bukan integer -- ia bilangan
+                # 57-bit (packages/domain/src/hlc.ts) yang melebihi presisi
+                # double JSON/JS. assertHlcValid (handlers/orders.ts) adalah
+                # satu-satunya sumber kebenaran untuk bentuknya.
+                hlc: { type: string, nullable: true }
+                occurredAt: { type: string, format: date-time, nullable: true }
+                checkId: { type: string }
+                lines:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/OrderLineInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: >-
+            Header X-Tenant-Id atau X-Actor-Id hilang; lines kosong (order
+            DRAFT tidak pernah tersimpan, minItems: 1); quantityMilli,
+            discountAmount, atau harga/quantityMilli modifier tidak valid;
+            hlc bukan string bilangan bulat desimal; receiptNumber tidak
+            cocok format PREFIX-YYYYMMDD-URUTAN; atau sequence bukan
+            bilangan bulat positif (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            outletId tidak ditemukan (OUTLET_NOT_FOUND), deviceId tidak
+            ditemukan/sudah dicabut (DEVICE_NOT_FOUND), aktor tidak
+            ditemukan/tidak aktif (ACTOR_NOT_FOUND), shiftId tidak ditemukan
+            (SHIFT_NOT_FOUND), atau variationId salah satu baris tidak
+            ditemukan (VARIATION_NOT_FOUND) -- kelimanya divalidasi lewat
+            SELECT yang tunduk RLS, bukan FK (FK PostgreSQL tidak tunduk
+            RLS, temuan F1 di CLAUDE.md)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            shiftId ditemukan tapi sudah tidak berstatus open
+            (SHIFT_NOT_OPEN), shiftId bukan milik deviceId yang dikirim
+            (SHIFT_DEVICE_MISMATCH), nomor struk bentrok untuk device dan
+            tanggal bisnis yang sama (RECEIPT_SEQUENCE_TAKEN), atau id
+            (order/check/salah satu line/salah satu modifier) sudah dipakai
+            baris lain (ID_ALREADY_EXISTS -- termasuk checkId yang sudah
+            dipakai order lain, FR-B12)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: >-
+            Order beserta check, seluruh order_line (snapshot item_name/
+            variation_name/unit_price/cost_at_sale -- FR-B3, tidak
+            terpengaruh perubahan katalog setelahnya), dan modifier
+            bertingkat per line.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tax-rates:
+    post:
+      operationId: createTaxRate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxRateInput'
+      responses:
+        '201':
+          description: >-
+            Tarif pajak dibuat. FR-C6 -- tarif adalah entitas berdata, bukan
+            konstanta; perubahan perda menghasilkan record baru, yang lama
+            diakhiri lewat POST /tax-rates/{id}/end.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxRate'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Outlet, item, atau kategori yang dirujuk tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Id sudah ada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listTaxRates
+      responses:
+        '200':
+          description: Seluruh tarif pajak tenant, termasuk yang sudah diakhiri
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaxRate'
+
+  /tax-rates/{taxRateId}/end:
+    post:
+      operationId: endTaxRate
+      parameters:
+        - name: taxRateId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: >-
+            effective_to diisi. Barisnya TIDAK dihapus (invariant #2) --
+            transaksi historis tetap benar lewat snapshot di order_line.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxRate'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   schemas:
+    TaxRate:
+      type: object
+      required: [id, name, type, rate, isInclusive, phase, channel, appliesTo, appliesToIds, effectiveFrom]
+      properties:
+        id: { type: string }
+        outletId: { type: string, nullable: true }
+        name: { type: string }
+        type: { type: string, enum: [pbjt, ppn, service_charge, none] }
+        # `rate` adalah STRING desimal, bukan number. numeric(6,4) dikirim dan
+        # diterima sebagai teks supaya tidak pernah melewati IEEE754 double di
+        # sisi klien maupun server -- lihat packages/domain/src/numeric.ts.
+        rate: { type: string }
+        isInclusive: { type: boolean }
+        phase: { type: string, enum: [subtotal, total] }
+        jurisdiction: { type: string, nullable: true }
+        channel: { type: string, enum: [all, dine_in, takeaway] }
+        appliesTo: { type: string, enum: [all_items, category, item] }
+        appliesToIds:
+          type: array
+          items: { type: string }
+        effectiveFrom: { type: string, format: date-time }
+        effectiveTo: { type: string, format: date-time, nullable: true }
+    TaxRateInput:
+      type: object
+      required: [id, name, type, rate]
+      properties:
+        id: { type: string }
+        outletId: { type: string, nullable: true }
+        name: { type: string }
+        type: { type: string }
+        # SENGAJA tanpa `type` di sini: assertRateValid (lewat
+        # parseRateToScaled) adalah satu-satunya sumber kebenaran, dan ia harus
+        # bisa MENOLAK number. Mendeklarasikan `type: string` membuat AJV
+        # menolaknya lebih dulu dengan jalur error yang berbeda; pola sama
+        # dengan PriceInput.price.
+        rate: {}
+        isInclusive: { type: boolean }
+        phase: { type: string }
+        jurisdiction: { type: string, nullable: true }
+        channel: { type: string }
+        appliesTo: { type: string }
+        appliesToIds:
+          type: array
+          items: { type: string }
+        effectiveFrom: { type: string, format: date-time }
+    Device:
+      type: object
+      required: [id, outletId, code]
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        code: { type: string }
+        name: { type: string, nullable: true }
+        platform: { type: string, nullable: true }
+        appVersion: { type: string, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+    Shift:
+      type: object
+      required: [id, outletId, deviceId, businessDate, status, openingFloat, openedBy, openedAt]
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        deviceId: { type: string }
+        businessDate: { type: string, format: date }
+        status: { type: string, enum: [open, counting, closed] }
+        openingFloat: { type: integer, minimum: 0 }
+        openedBy: { type: string }
+        openedAt: { type: string, format: date-time }
     Category:
       type: object
       required: [id, name, sortOrder]
@@ -1311,6 +1698,143 @@ components:
         isDefault: { type: boolean }
         sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
         archivedAt: { type: string, format: date-time, nullable: true }
+    OrderLineModifierInput:
+      type: object
+      required: [id, name, price]
+      properties:
+        id: { type: string }
+        modifierId: { type: string, nullable: true }
+        name: { type: string }
+        # price/quantityMilli SENGAJA tanpa `type` -- assertModifierPriceValid/
+        # assertModifierQuantityMilliValid (handlers/orders.ts) satu-satunya
+        # sumber kebenaran, pola sama dengan PriceInput.price.
+        price: {}
+        quantityMilli: {}
+    OrderLineInput:
+      type: object
+      required: [id, variationId, quantityMilli]
+      properties:
+        id: { type: string }
+        variationId: { type: string }
+        quantityMilli: {}
+        discountAmount: {}
+        modifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLineModifierInput'
+    OrderLineModifier:
+      type: object
+      required: [id, name, price, quantityMilli]
+      properties:
+        id: { type: string }
+        modifierId: { type: string, nullable: true }
+        name: { type: string }
+        price: { type: integer }
+        quantityMilli: { type: integer }
+    OrderLine:
+      type: object
+      required:
+        - id
+        - variationId
+        - itemName
+        - variationName
+        - unitPrice
+        - quantityMilli
+        - modifierSnapshot
+        - discountAmount
+        - taxRate
+        - taxAmount
+        - isTaxInclusive
+        - costAtSale
+        - lineTotal
+        - createdBy
+        - occurredAt
+        - recordedAt
+        - hlc
+        - modifiers
+      properties:
+        id: { type: string }
+        variationId: { type: string }
+        # SALINAN NILAI (FR-B3) -- item_name/variation_name/unitPrice/
+        # costAtSale diambil saat order dibuat lewat getVariationSnapshot +
+        # resolvePrice (catalog/index.ts), TIDAK diperbarui lagi meski
+        # katalog berubah setelahnya.
+        itemName: { type: string }
+        variationName: { type: string }
+        unitPrice: { type: integer }
+        quantityMilli: { type: integer }
+        modifierSnapshot:
+          type: array
+          items: {}
+        discountAmount: { type: integer }
+        taxRateId: { type: string, nullable: true }
+        taxRate: { type: string }
+        taxAmount: { type: integer }
+        isTaxInclusive: { type: boolean }
+        costAtSale: { type: integer }
+        lineTotal: { type: integer }
+        createdBy: { type: string }
+        occurredAt: { type: string, format: date-time }
+        recordedAt: { type: string, format: date-time }
+        # bigint 57-bit -- lihat komentar hlc di createOrder request body.
+        hlc: { type: string }
+        modifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLineModifier'
+    Order:
+      type: object
+      required:
+        - id
+        - outletId
+        - deviceId
+        - shiftId
+        - receiptNumber
+        - businessDate
+        - sequence
+        - status
+        - channel
+        - subtotal
+        - orderDiscount
+        - serviceChargeAmount
+        - taxAmount
+        - roundingAdjustment
+        - total
+        - amountDue
+        - createdBy
+        - occurredAt
+        - recordedAt
+        - hlc
+        - checkId
+        - lines
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        deviceId: { type: string }
+        shiftId: { type: string }
+        receiptNumber: { type: string }
+        businessDate: { type: string, format: date }
+        sequence: { type: integer }
+        status: { type: string, enum: [open, paid, closed, voided, refunded, abandoned] }
+        channel: { type: string, enum: [dine_in, takeaway] }
+        subtotal: { type: integer }
+        orderDiscount: { type: integer }
+        serviceChargeAmount: { type: integer }
+        # Selalu 0 di sub-project ini -- invariant #7, TaxCalculator adalah
+        # Modul C dan belum ada (keputusan Q5, PLAN-ordering-fondasi.md §8.0).
+        taxAmount: { type: integer }
+        roundingAdjustment: { type: integer }
+        total: { type: integer }
+        amountDue: { type: integer }
+        createdBy: { type: string }
+        occurredAt: { type: string, format: date-time }
+        recordedAt: { type: string, format: date-time }
+        hlc: { type: string }
+        checkId: { type: string }
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
     Error:
       type: object
       required: [error]

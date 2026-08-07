@@ -1,0 +1,752 @@
+import { randomUUID } from 'node:crypto';
+import type { Pool, PoolClient } from '../../../db.ts';
+import { withTenantTransaction } from '../../../db.ts';
+import { HttpError } from '../../../http-error.ts';
+import { getTenantId, getActorId } from '../../../tenant-context.ts';
+import { isPrimaryKeyViolation } from './pg-error.ts';
+import { computeRequestHash } from './request-hash.ts';
+import { assertDeviceVisible, assertUserVisible } from '../../identity/index.ts';
+import { getOutletSettings } from '../../tenancy/index.ts';
+import { getVariationSnapshot, resolvePrice } from '../../catalog/index.ts';
+import type { VariationSnapshotRow } from '../../catalog/index.ts';
+import { assertShiftOpen } from '../../cash/index.ts';
+import { fetchEffectiveTaxRates } from '../../payment/index.ts';
+import { formatScaledRate } from '../../../../../../packages/domain/src/numeric.ts';
+import {
+  findIdempotencyKey,
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  insertOutboxEvent,
+  IdempotencyKeyConflictError,
+} from '../../sync/index.ts';
+import { computeLineTotal, computeOrderTotals } from '../../../../../../packages/domain/src/money.ts';
+import { calculateTax } from '../../../../../../packages/domain/src/tax.ts';
+import type { TaxBreakdown } from '../../../../../../packages/domain/src/tax.ts';
+import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+
+// T3, T5, T6, T7, T9, T14 (docs/superpowers/plans/PLAN-ordering-fondasi.md).
+// POST /orders menulis order + check + SELURUH order_line + SELURUH
+// order_line_modifier dalam SATU withTenantTransaction (invariant #1,
+// CLAUDE.md).
+//
+// T12 (PLAN-pembayaran-pajak.md) menyambungkan TaxCalculator: pajak kini
+// SUNGGUHAN, bukan nol. Tapi tidak ada aritmetika pajak di berkas ini --
+// invariant #7. Modul ini mengambil kandidat tarif lewat permukaan publik
+// modul payment, memanggil calculateTax, dan menyimpan hasilnya apa adanya.
+//
+// T10-T13 menambah: idempotency (header Idempotency-Key + tabel
+// idempotency_key) dan outbox, keduanya lewat modules/sync/index.ts
+// (invariant #4 -- ordering tidak boleh query kedua tabel itu langsung).
+
+// --- baris DB (snake_case, bigint datang sebagai string dari node-postgres) ---
+
+interface OrderRow {
+  id: string;
+  outlet_id: string;
+  device_id: string;
+  shift_id: string;
+  receipt_number: string;
+  business_date: string;
+  sequence: number;
+  status: string;
+  channel: string;
+  subtotal: string;
+  order_discount: string;
+  service_charge_amount: string;
+  tax_amount: string;
+  rounding_adjustment: string;
+  total: string;
+  amount_due: string;
+  created_by: string;
+  occurred_at: Date;
+  recorded_at: string;
+  hlc: string;
+}
+
+interface CheckRow {
+  id: string;
+  order_id: string;
+  label: string | null;
+  subtotal: string;
+  total: string;
+}
+
+interface OrderLineRow {
+  id: string;
+  order_id: string;
+  check_id: string;
+  variation_id: string;
+  item_name: string;
+  variation_name: string;
+  unit_price: string;
+  quantity: string;
+  modifier_snapshot: unknown;
+  discount_amount: string;
+  tax_rate_id: string | null;
+  tax_rate: string;
+  tax_amount: string;
+  is_tax_inclusive: boolean;
+  cost_at_sale: string;
+  line_total: string;
+  created_by: string;
+  occurred_at: string;
+  recorded_at: string;
+  hlc: string;
+}
+
+interface OrderLineModifierRow {
+  id: string;
+  order_line_id: string;
+  modifier_id: string | null;
+  name: string;
+  price: string;
+  quantity: string;
+}
+
+// --- input (camelCase, dari body JSON) ---
+
+interface OrderLineModifierInput {
+  id: string;
+  modifierId?: string | null;
+  name: string;
+  price: unknown;
+  quantityMilli?: unknown;
+}
+
+interface OrderLineInput {
+  id: string;
+  variationId: string;
+  quantityMilli: unknown;
+  discountAmount?: unknown;
+  modifiers?: OrderLineModifierInput[];
+}
+
+interface OrderInput {
+  id: string;
+  outletId: string;
+  deviceId: string;
+  shiftId: string;
+  receiptNumber: string;
+  businessDate: string;
+  sequence: number;
+  channel: string;
+  hlc?: string;
+  occurredAt?: string;
+  checkId: string;
+  lines: OrderLineInput[];
+}
+
+// --- validasi uang/kuantitas: sama pola dengan assertPriceValid (prices.ts)
+// dan assertOpeningFloatValid (shifts.ts) -- typeof + Number.isInteger dicek
+// eksplisit, bukan hanya `< 0`, supaya string, float pecahan, null, dan
+// NaN/Infinity semuanya ditolak. Sengaja TIDAK dinyatakan lewat JSON Schema
+// (lihat openapi.yaml: quantityMilli/discountAmount/price di sini tidak
+// diberi `type`) -- fungsi-fungsi ini satu-satunya sumber kebenaran, pola
+// yang sama dengan PriceInput.price. ---
+
+function assertQuantityMilliValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'quantityMilli harus bilangan bulat > 0 (kuantitas x1000).');
+  }
+}
+
+function assertDiscountAmountValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'discountAmount harus bilangan bulat rupiah >= 0.');
+  }
+}
+
+function assertModifierPriceValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'Harga modifier harus bilangan bulat rupiah >= 0.');
+  }
+}
+
+function assertModifierQuantityMilliValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'quantityMilli modifier harus bilangan bulat > 0 (x1000).');
+  }
+}
+
+// hlc adalah string desimal (bigint 57-bit melebihi Number.MAX_SAFE_INTEGER --
+// packages/domain/src/hlc.ts, komentar "Pengemasan"), jadi TIDAK bisa
+// divalidasi lewat JSON Schema `type: integer` (yang berbasis IEEE754 double
+// dan akan diam-diam kehilangan presisi via AJV/JS number). Pemeriksaan
+// bentuknya harus di sini.
+const HLC_PATTERN = /^\d+$/;
+function assertHlcValid(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || !HLC_PATTERN.test(value)) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'hlc harus string berisi bilangan bulat desimal.');
+  }
+}
+
+// T10 (spec-b:318-361) -- Idempotency-Key WAJIB untuk POST /orders. Sama
+// pola dengan getTenantId/getActorId (tenant-context.ts): dibaca manual dari
+// header, TIDAK dideklarasikan di openapi.yaml (T15 belum digarap sub-
+// project ini) -- pola yang sama seperti X-Tenant-Id/X-Actor-Id, yang juga
+// tidak pernah muncul di `parameters:` operasi mana pun.
+const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+function getIdempotencyKeyHeader(req: FastifyRequest): string {
+  const header = req.headers['idempotency-key'];
+  const value = Array.isArray(header) ? header[0] : header;
+  if (!value || value.length === 0 || value.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    throw new HttpError(400, 'MISSING_IDEMPOTENCY_KEY', 'Header Idempotency-Key wajib diisi.');
+  }
+  return value;
+}
+
+// --- error PostgreSQL -> HttpError bersih ---
+
+// order_device_id_business_date_sequence_key: nama constraint default
+// PostgreSQL untuk `UNIQUE (device_id, business_date, sequence)` inline di
+// CREATE TABLE (dikonfirmasi lewat pg_constraint, bukan ditebak -- lihat
+// migrasi 0007_ordering.sql). FR-B5: bentrok nomor struk untuk device+tanggal
+// bisnis yang sama harus 409 yang bisa ditindaklanjuti klien, bukan 500.
+const RECEIPT_SEQUENCE_CONSTRAINT = 'order_device_id_business_date_sequence_key';
+
+function translateConstraintError(err: unknown): never {
+  if (isPrimaryKeyViolation(err)) {
+    // Mencakup order_pkey, check_pkey, order_line_pkey, dan
+    // order_line_modifier_pkey sekaligus -- keempatnya id client-generated
+    // (ULID/UUIDv7, CLAUDE.md), jadi retry offline (id yang sama dikirim
+    // ulang) HARUS dibedakan dari error lain dengan kode yang sama persis
+    // di semua tabel milik modul ini. Ini juga yang menutup T14: order kedua
+    // yang memakai checkId sudah dipakai order lain menabrak check_pkey di
+    // sini, bukan 500 mentah.
+    throw new HttpError(409, 'ID_ALREADY_EXISTS', 'Baris dengan id ini sudah ada.');
+  }
+  const pgErr = err as { code?: string; constraint?: string };
+  if (pgErr.code === '23505' && pgErr.constraint === RECEIPT_SEQUENCE_CONSTRAINT) {
+    throw new HttpError(
+      409,
+      'RECEIPT_SEQUENCE_TAKEN',
+      'Nomor struk ini sudah dipakai untuk device dan tanggal bisnis yang sama.'
+    );
+  }
+  throw err;
+}
+
+// packages/domain/src/money.ts sengaja melempar RangeError/TypeError polos
+// (modul murni, tanpa pengetahuan HTTP) untuk input yang secara matematis
+// tidak masuk akal (mis. discountAmount melebihi subtotal baris) -- baru
+// diterjemahkan ke HttpError di sini, di tepi HTTP.
+function translateMoneyError(err: unknown): never {
+  if (err instanceof RangeError || err instanceof TypeError) {
+    throw new HttpError(400, 'VALIDATION_ERROR', err.message);
+  }
+  throw err;
+}
+
+// --- serialisasi respons ---
+
+function toOrderLineModifier(row: OrderLineModifierRow) {
+  return {
+    id: row.id,
+    modifierId: row.modifier_id,
+    name: row.name,
+    price: Number(row.price),
+    quantityMilli: Number(row.quantity),
+  };
+}
+
+function toOrderLine(row: OrderLineRow, modifiers: OrderLineModifierRow[]) {
+  return {
+    id: row.id,
+    variationId: row.variation_id,
+    itemName: row.item_name,
+    variationName: row.variation_name,
+    unitPrice: Number(row.unit_price),
+    quantityMilli: Number(row.quantity),
+    modifierSnapshot: row.modifier_snapshot,
+    discountAmount: Number(row.discount_amount),
+    taxRateId: row.tax_rate_id,
+    // STRING, bukan Number(). `order_line.tax_rate` adalah numeric(6,4), dan
+    // mengubahnya jadi number di batas API mengembalikan float ke permukaan
+    // yang justru dibersihkan dari float -- klien akan menyalinnya apa adanya
+    // ke perhitungan. Konsisten dengan TaxRate.rate di modul payment.
+    taxRate: row.tax_rate,
+    taxAmount: Number(row.tax_amount),
+    isTaxInclusive: row.is_tax_inclusive,
+    costAtSale: Number(row.cost_at_sale),
+    lineTotal: Number(row.line_total),
+    createdBy: row.created_by,
+    occurredAt: row.occurred_at,
+    recordedAt: row.recorded_at,
+    hlc: row.hlc,
+    modifiers: modifiers.map(toOrderLineModifier),
+  };
+}
+
+interface LineWithModifiers {
+  line: OrderLineRow;
+  modifiers: OrderLineModifierRow[];
+}
+
+function toOrder(order: OrderRow, check: CheckRow, lines: LineWithModifiers[]) {
+  return {
+    id: order.id,
+    outletId: order.outlet_id,
+    deviceId: order.device_id,
+    shiftId: order.shift_id,
+    receiptNumber: order.receipt_number,
+    businessDate: order.business_date,
+    sequence: order.sequence,
+    status: order.status,
+    channel: order.channel,
+    subtotal: Number(order.subtotal),
+    orderDiscount: Number(order.order_discount),
+    serviceChargeAmount: Number(order.service_charge_amount),
+    taxAmount: Number(order.tax_amount),
+    roundingAdjustment: Number(order.rounding_adjustment),
+    total: Number(order.total),
+    amountDue: Number(order.amount_due),
+    createdBy: order.created_by,
+    occurredAt: order.occurred_at,
+    recordedAt: order.recorded_at,
+    hlc: order.hlc,
+    checkId: check.id,
+    lines: lines.map((l) => toOrderLine(l.line, l.modifiers)),
+  };
+}
+
+// --- SQL ---
+
+// `$14::timestamptz` dicast eksplisit -- temuan tertunda di repo ini
+// (komentar AT_EXPR, catalog/handlers/prices.ts) menunjukkan COALESCE tanpa
+// cast bisa membuat PostgreSQL menyimpulkan tipe parameter yang salah secara
+// diam-diam. `now()` di sini adalah transaction_timestamp(), TETAP sepanjang
+// satu transaksi -- order_line di bawah memakai NILAI YANG SAMA (dibaca balik
+// dari RETURNING occurred_at), bukan memanggil now()/COALESCE lagi, supaya
+// order dan seluruh baris order_line-nya berbagi satu jam yang identik.
+const INSERT_ORDER_SQL = `
+  INSERT INTO "order" (
+    id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+    status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
+    rounding_adjustment, total, amount_due, created_by, occurred_at, hlc
+  ) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8,
+    'open', $9, $10, 0, 0, $11,
+    0, $12, $12, $13, COALESCE($14::timestamptz, now()), $15
+  )
+  RETURNING *
+`;
+
+const INSERT_CHECK_SQL = `
+  INSERT INTO "check" (id, tenant_id, order_id, label, subtotal, total)
+  VALUES ($1, $2, $3, NULL, $4, $5)
+  RETURNING *
+`;
+
+// T12 (PLAN-pembayaran-pajak.md) -- kolom pajak kini SNAPSHOT dari hasil
+// calculateTax (FR-B3), bukan literal nol. Nilainya dihitung TaxCalculator
+// dan diteruskan apa adanya ke sini; tidak ada aritmetika pajak di berkas ini
+// (invariant #7). Baris yang tidak kena tarif apa pun tetap menyimpan
+// tax_rate_id NULL dan nol -- itu "tidak ada pajak", berbeda dari tarif 0%
+// yang punya tax_rate_id.
+const INSERT_LINE_SQL = `
+  INSERT INTO order_line (
+    id, tenant_id, outlet_id, device_id, order_id, check_id, variation_id,
+    item_name, variation_name, unit_price, quantity, modifier_snapshot, discount_amount,
+    tax_rate_id, tax_rate, tax_amount, is_tax_inclusive, cost_at_sale, line_total,
+    created_by, occurred_at, hlc
+  ) VALUES (
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, $12, $13,
+    $14, $15::numeric, $16, $17, $18, $19,
+    $20, $21, $22
+  )
+  RETURNING *
+`;
+
+const INSERT_LINE_MODIFIER_SQL = `
+  INSERT INTO order_line_modifier (id, tenant_id, order_line_id, modifier_id, name, price, quantity)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)
+  RETURNING *
+`;
+
+interface LineComputation {
+  input: OrderLineInput;
+  snapshot: VariationSnapshotRow;
+  unitPrice: bigint;
+  lineTotal: bigint;
+}
+
+async function insertOrderTree(
+  client: PoolClient,
+  tenantId: string,
+  actorId: string,
+  body: OrderInput,
+  hlcValue: bigint,
+  lineCalcs: LineComputation[],
+  totals: { subtotal: bigint; total: bigint },
+  breakdown: TaxBreakdown
+): Promise<{ order: OrderRow; check: CheckRow; lines: LineWithModifiers[] }> {
+  try {
+    const { rows: orderRows } = await client.query<OrderRow>(INSERT_ORDER_SQL, [
+      body.id,
+      tenantId,
+      body.outletId,
+      body.deviceId,
+      body.shiftId,
+      body.receiptNumber,
+      body.businessDate,
+      body.sequence,
+      body.channel,
+      totals.subtotal.toString(),
+      // order.tax_amount = totalTax (SELURUH pajak, inklusif maupun
+      // eksklusif) -- itu yang dicetak di struk dan dilaporkan. Yang MENAMBAH
+      // total hanya totalTaxExclusive, dan itu sudah masuk lewat
+      // computeOrderTotals di pemanggil. Menukar keduanya akan menggandakan
+      // pajak inklusif di total.
+      breakdown.totalTax.toString(),
+      // rounding_adjustment ditulis 0 langsung di SQL, bukan lewat parameter:
+      // pembulatan bergantung pada METODE PEMBAYARAN (FR-C9 -- hanya berlaku
+      // bila ada pembayaran tunai), dan order yang baru dibuat belum punya
+      // pembayaran apa pun. amount_due karena itu sama dengan total, dan
+      // keduanya memakai $12 yang sama.
+      totals.total.toString(),
+      actorId,
+      body.occurredAt ?? null,
+      hlcValue.toString(),
+    ]);
+    const orderRow = orderRows[0];
+
+    const { rows: checkRows } = await client.query<CheckRow>(INSERT_CHECK_SQL, [
+      body.checkId,
+      tenantId,
+      orderRow.id,
+      totals.subtotal.toString(),
+      totals.total.toString(),
+    ]);
+    const checkRow = checkRows[0];
+
+    const lines: LineWithModifiers[] = [];
+    // Indeks perLine sekali di luar loop -- lookup per baris, bukan pencarian
+    // linear berulang.
+    const taxByLineId = new Map(breakdown.perLine.map((p) => [p.lineId, p]));
+
+    for (const calc of lineCalcs) {
+      const taxForLine = taxByLineId.get(calc.input.id);
+      const modifiersInput = calc.input.modifiers ?? [];
+      // modifier_snapshot (jsonb) -- SALINAN NILAI redundan di kolom
+      // order_line, terpisah dari baris order_line_modifier anaknya (FR-B3).
+      // JSON.stringify eksplisit, BUKAN mengoper array JS mentah: node-postgres
+      // menyerialisasi array lewat encoding literal-array PostgreSQL
+      // (`{a,b,c}`), bukan JSON, untuk parameter bertipe Array -- yang salah
+      // bentuk untuk kolom jsonb begitu Postgres meng-cast teksnya.
+      const modifierSnapshot = modifiersInput.map((m) => ({
+        id: m.id,
+        modifierId: m.modifierId ?? null,
+        name: m.name,
+        price: Number(m.price),
+        quantityMilli: Number(m.quantityMilli ?? 1000),
+      }));
+
+      const { rows: lineRows } = await client.query<OrderLineRow>(INSERT_LINE_SQL, [
+        calc.input.id,
+        tenantId,
+        body.outletId,
+        body.deviceId,
+        orderRow.id,
+        checkRow.id,
+        calc.input.variationId,
+        calc.snapshot.itemName,
+        calc.snapshot.variationName,
+        calc.unitPrice.toString(),
+        String(BigInt(calc.input.quantityMilli as number)),
+        JSON.stringify(modifierSnapshot),
+        String(BigInt((calc.input.discountAmount as number | undefined) ?? 0)),
+        // Snapshot pajak per baris (FR-B3), diambil dari breakdown -- BUKAN
+        // dihitung ulang di sini (invariant #7). Baris yang tidak kena tarif
+        // apa pun tidak muncul di perLine, dan menyimpan NULL/0/false: itu
+        // "tidak ada pajak", berbeda dari tarif 0% yang punya tax_rate_id.
+        taxForLine?.taxRateId ?? null,
+        formatScaledRate(taxForLine?.rateScaled ?? 0n),
+        (taxForLine?.amount ?? 0n).toString(),
+        taxForLine?.isInclusive ?? false,
+        calc.snapshot.cost,
+        calc.lineTotal.toString(),
+        actorId,
+        orderRow.occurred_at,
+        hlcValue.toString(),
+      ]);
+      const lineRow = lineRows[0];
+
+      const modifierRows: OrderLineModifierRow[] = [];
+      for (const m of modifiersInput) {
+        const { rows: modRows } = await client.query<OrderLineModifierRow>(INSERT_LINE_MODIFIER_SQL, [
+          m.id,
+          tenantId,
+          lineRow.id,
+          m.modifierId ?? null,
+          m.name,
+          String(BigInt(m.price as number)),
+          String(BigInt((m.quantityMilli as number | undefined) ?? 1000)),
+        ]);
+        modifierRows.push(modRows[0]);
+      }
+      lines.push({ line: lineRow, modifiers: modifierRows });
+    }
+
+    return { order: orderRow, check: checkRow, lines };
+  } catch (err) {
+    translateConstraintError(err);
+  }
+}
+
+export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
+  return {
+    async createOrder(req: FastifyRequest, reply: FastifyReply) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const idempotencyKey = getIdempotencyKeyHeader(req);
+      const body = req.body as OrderInput;
+      // T10 -- SHA-256 hex dari body request YANG DIKANONIKALISASI (key
+      // objek diurutkan rekursif). Dihitung SEKALI di sini, dari body MENTAH
+      // -- terlepas dari apakah body-nya lolos validasi di bawah, supaya
+      // retry dengan body persis sama (termasuk yang gagal validasi) tetap
+      // menghasilkan hash yang sama.
+      const requestHash = computeRequestHash(body);
+
+      // Validasi fail-fast SEBELUM transaksi dibuka -- pola sama dengan
+      // createItem (body.variations kosong) dan createPrice (assertPriceValid).
+      for (const line of body.lines) {
+        assertQuantityMilliValid(line.quantityMilli);
+        if (line.discountAmount !== undefined) {
+          assertDiscountAmountValid(line.discountAmount);
+        }
+        for (const m of line.modifiers ?? []) {
+          assertModifierPriceValid(m.price);
+          if (m.quantityMilli !== undefined) {
+            assertModifierQuantityMilliValid(m.quantityMilli);
+          }
+        }
+      }
+      if (body.hlc !== undefined) {
+        assertHlcValid(body.hlc);
+      }
+
+      // HLC -- keputusan desain PLAN §"HLC": klien kirim -> update() (menghormati
+      // kausalitas klien SEKALIGUS menjaga monotonisitas server); klien tidak
+      // kirim -> tick(). Dipanggil SEKALI di sini, di luar transaksi -- hlc
+      // adalah jam server, bukan bagian data yang boleh diulang kalau
+      // transaksi retry/rollback.
+      const hlcValue = body.hlc !== undefined ? hlc.update(BigInt(body.hlc)) : hlc.tick();
+
+      const result = await withTenantTransaction(pool, tenantId, async (client) => {
+        // T10-T12 (spec-b:333-348, modules/sync/index.ts): idempotency
+        // dicek DAN diklaim DI DALAM transaksi yang sama dengan penulisan
+        // order (spec-b:350) -- bukan pre-check di luar transaksi lalu
+        // INSERT terpisah, itu balapan di READ COMMITTED (lihat komentar
+        // claimIdempotencyKey).
+        const existing = await findIdempotencyKey(client, idempotencyKey);
+        if (existing !== null) {
+          if (existing.requestHash !== requestHash) {
+            // spec-b:333-348 -- key dipakai ulang dengan body BERBEDA
+            // adalah bug klien, bukan cache hit. JANGAN kembalikan respons
+            // order lain.
+            throw new HttpError(
+              422,
+              'IDEMPOTENCY_KEY_HASH_MISMATCH',
+              `Idempotency-Key ${idempotencyKey} sudah dipakai untuk request dengan body yang berbeda.`
+            );
+          }
+          // Cache hit -- request identik (key+hash sama) sudah pernah
+          // sukses. JANGAN diproses ulang: kembalikan response_body/
+          // response_status yang TERSIMPAN, tidak ada order kedua.
+          //
+          // KETEGANGAN SPEC (dilaporkan, bukan diputuskan sendiri):
+          // spec-b:336 menulis "status 200" untuk kasus ini, tapi deskripsi
+          // FR-B10 (spec-b:325) menulis server "mengembalikan respons
+          // asli", dan skema menyediakan kolom response_status justru untuk
+          // menyimpannya. Keduanya tidak sepenuhnya sejalan. Diimplementasi-
+          // kan di sini: kembalikan response_status TERSIMPAN (201 untuk
+          // order yang sukses dibuat) -- konsisten dengan "respons asli" dan
+          // dengan alasan kolom itu ada. Ini interpretasi, bukan fakta.
+          return { status: existing.responseStatus, body: existing.responseBody };
+        }
+
+        // Klaim key SEBELUM menulis order/check/line apa pun (T11) -- lihat
+        // komentar claimIdempotencyKey (modules/sync/index.ts) untuk alasan
+        // urutan ini: order/check/line punya PK client-generated sendiri
+        // yang sama persis pada retry, jadi kalau idempotency_key baru
+        // ditulis PALING AKHIR, dua request bersamaan akan lebih dulu
+        // balapan di order_pkey dan menghasilkan 409 ID_ALREADY_EXISTS,
+        // BUKAN 409 idempotency dengan instruksi retry yang diminta AC.
+        try {
+          await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
+        } catch (err) {
+          if (err instanceof IdempotencyKeyConflictError) {
+            // T11: dua request bersamaan, key sama -- transaksi kedua
+            // memblokir di unique index idempotency_key sampai yang
+            // pertama commit, lalu kena unique violation di sini, SEBELUM
+            // pernah menyentuh order/check/line/modifier sama sekali.
+            throw new HttpError(
+              409,
+              'IDEMPOTENCY_KEY_CONFLICT',
+              `Request dengan Idempotency-Key ${idempotencyKey} sedang diproses request lain, coba lagi.`
+            );
+          }
+          throw err;
+        }
+
+        // T7: empat FK klien-suplai, semua divalidasi lewat SELECT yang
+        // tunduk RLS SEBELUM INSERT apa pun (FK PostgreSQL tidak tunduk RLS,
+        // temuan F1 CLAUDE.md). Urutan: outlet -> device -> aktor -> shift
+        // (yang terakhir butuh device sudah valid untuk pengecekan kecocokan
+        // device di dalamnya).
+        //
+        // Nilai kembalian getOutletSettings sengaja TIDAK dipakai di sini:
+        // rounding_increment dan service_charge_rate baru dibutuhkan di jalur
+        // pembayaran (Modul C, FR-C9), sementara order yang baru dibuat belum
+        // punya pembayaran apa pun. Yang dipakai sekarang adalah efek
+        // sampingnya -- SELECT yang tunduk RLS, satu-satunya yang membuktikan
+        // outlet ini milik tenant pemanggil.
+        await getOutletSettings(client, body.outletId);
+        await assertDeviceVisible(client, body.deviceId);
+        await assertUserVisible(client, actorId);
+        await assertShiftOpen(client, body.shiftId, body.deviceId);
+
+        const lineCalcs: LineComputation[] = [];
+        for (const line of body.lines) {
+          const snapshot = await getVariationSnapshot(client, line.variationId);
+          if (snapshot === null) {
+            throw new HttpError(404, 'VARIATION_NOT_FOUND', `Variation ${line.variationId} tidak ditemukan.`);
+          }
+          // unit_price = resolvePrice(..., null) -- null berarti "sekarang
+          // menurut jam DATABASE" (catalog/handlers/prices.ts, komentar
+          // AT_EXPR). BUKAN new Date() di Node: itu menghidupkan lagi jam
+          // kedua yang sudah terbukti menyebabkan bug (skew ±2ms menggagalkan
+          // resolusi harga yang baru saja ditulis).
+          const resolved = await resolvePrice(client, line.variationId, body.outletId, null);
+          const unitPrice = BigInt(resolved.price);
+          const modifiers = (line.modifiers ?? []).map((m) => ({
+            price: BigInt(m.price as number),
+            quantityMilli: BigInt((m.quantityMilli as number | undefined) ?? 1000),
+          }));
+          let lineTotal: bigint;
+          try {
+            lineTotal = computeLineTotal({
+              unitPrice,
+              quantityMilli: BigInt(line.quantityMilli as number),
+              modifiers,
+              discountAmount: BigInt((line.discountAmount as number | undefined) ?? 0),
+            });
+          } catch (err) {
+            translateMoneyError(err);
+          }
+          lineCalcs.push({ input: line, snapshot, unitPrice, lineTotal });
+        }
+
+        // T12 (PLAN-pembayaran-pajak.md) -- pajak dihitung TaxCalculator,
+        // tidak pernah di sini (invariant #7). Modul ini hanya mengambil
+        // kandidat tarif lewat permukaan publik modul payment (invariant #4)
+        // dan meneruskannya; resolusi mana yang menang ada di calculateTax,
+        // supaya klien offline menerapkan aturan yang sama persis.
+        const taxRates = await fetchEffectiveTaxRates(client, body.outletId);
+        const breakdown = calculateTax({
+          lines: lineCalcs.map((l) => ({
+            lineId: l.input.id,
+            itemId: l.snapshot.itemId,
+            categoryId: l.snapshot.categoryId,
+            amount: l.lineTotal,
+          })),
+          // Keduanya 0 di sub-project ini; diskon order dan biaya layanan
+          // belum punya jalur masuk (PLAN-ordering-fondasi.md §3.6).
+          serviceChargeAmount: 0n,
+          orderDiscount: 0n,
+          taxRates,
+          channel: body.channel as 'dine_in' | 'takeaway',
+          outletId: body.outletId,
+        });
+
+        let totals: { subtotal: bigint; total: bigint };
+        try {
+          totals = computeOrderTotals({
+            lineTotals: lineCalcs.map((l) => l.lineTotal),
+            orderDiscount: 0n,
+            serviceChargeAmount: 0n,
+            // totalTaxExclusive, BUKAN totalTax. Pajak inklusif sudah ada di
+            // dalam harga baris; memakai totalTax di sini akan menggandakannya
+            // (lihat komentar TaxBreakdown di packages/domain/src/tax.ts).
+            taxAmount: breakdown.totalTaxExclusive,
+          });
+        } catch (err) {
+          translateMoneyError(err);
+        }
+
+        const written = await insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown);
+        const responseBody = toOrder(written.order, written.check, written.lines);
+
+        // T13 (FR-B2, invariant #1): satu baris outbox DALAM transaksi yang
+        // sama. Kegagalan apa pun setelah titik ini me-rollback baris ini
+        // juga -- termasuk klaim idempotency_key di atas.
+        await insertOutboxEvent(client, {
+          id: randomUUID(),
+          tenantId,
+          aggregateType: 'order',
+          aggregateId: written.order.id,
+          eventType: 'order.created',
+          payload: responseBody,
+        });
+
+        await completeIdempotencyKey(client, { key: idempotencyKey, responseStatus: 201, responseBody });
+
+        return { status: 201, body: responseBody as unknown };
+      });
+
+      reply.code(result.status);
+      return result.body;
+    },
+
+    // T5/T14: dibutuhkan untuk membaca kembali snapshot order_line utuh
+    // (item_name/variation_name/unit_price/cost_at_sale) terlepas dari
+    // perubahan katalog setelahnya.
+    async getOrder(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const { orderId } = req.params as { orderId: string };
+      const result = await withTenantTransaction(pool, tenantId, async (client) => {
+        const { rows: orderRows } = await client.query<OrderRow>('SELECT * FROM "order" WHERE id = $1', [orderId]);
+        if (orderRows.length === 0) {
+          throw new HttpError(404, 'NOT_FOUND', `Order ${orderId} tidak ditemukan.`);
+        }
+        const order = orderRows[0];
+
+        const { rows: checkRows } = await client.query<CheckRow>('SELECT * FROM "check" WHERE order_id = $1', [orderId]);
+        const check = checkRows[0];
+
+        // `, id` tie-breaker -- dua baris order_line dari INSERT berurutan
+        // dalam satu transaksi BISA berbagi occurred_at yang identik persis
+        // (transaction_timestamp() tetap sepanjang transaksi), jadi urutan
+        // tanpa tie-breaker tidak deterministik. Pola sama dengan
+        // ORDER BY effective_from DESC, id DESC di catalog/handlers/prices.ts.
+        const { rows: lineRows } = await client.query<OrderLineRow>(
+          'SELECT * FROM order_line WHERE order_id = $1 ORDER BY occurred_at, id',
+          [orderId]
+        );
+
+        const lineIds = lineRows.map((l) => l.id);
+        const modifiersByLine = new Map<string, OrderLineModifierRow[]>();
+        if (lineIds.length > 0) {
+          const { rows: modRows } = await client.query<OrderLineModifierRow>(
+            'SELECT * FROM order_line_modifier WHERE order_line_id = ANY($1) ORDER BY id',
+            [lineIds]
+          );
+          for (const m of modRows) {
+            const forLine = modifiersByLine.get(m.order_line_id) ?? [];
+            forLine.push(m);
+            modifiersByLine.set(m.order_line_id, forLine);
+          }
+        }
+
+        const lines: LineWithModifiers[] = lineRows.map((line) => ({
+          line,
+          modifiers: modifiersByLine.get(line.id) ?? [],
+        }));
+        return { order, check, lines };
+      });
+      return toOrder(result.order, result.check, result.lines);
+    },
+  };
+}

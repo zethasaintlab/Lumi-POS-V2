@@ -303,6 +303,103 @@ export async function fetchVariationOrThrow(client: PoolClient, itemId: string, 
   return rows[0];
 }
 
+export interface VariationSnapshotRow {
+  itemName: string;
+  variationName: string;
+  cost: string; // bigint comes back as string from node-postgres
+  // T12 (PLAN-pembayaran-pajak.md) -- calculateTax meresolusi tarif per baris
+  // lewat itemId dan categoryId (FR-C6: item > category > all_items). Modul
+  // ordering tidak boleh query item/category langsung, jadi keduanya ikut di
+  // sini alih-alih lewat SELECT kedua.
+  itemId: string;
+  categoryId: string | null;
+}
+
+// T5 (PLAN-ordering-fondasi.md §T5/T6) -- diekspor lewat catalog/index.ts
+// (invariant #4, CLAUDE.md): modul ordering TIDAK BOLEH query item/
+// item_variation langsung, jadi ia butuh SATU titik masuk terkontrol untuk
+// mengambil nilai-nilai yang di-SALIN ke order_line sebagai snapshot
+// (item_name, variation_name, cost_at_sale -- FR-B3). `client` WAJIB berasal
+// dari transaksi pemanggil yang sudah men-SET LOCAL app.tenant_id, persis
+// seperti resolvePrice di prices.ts -- baru begitu SELECT ini tunduk RLS.
+//
+// Mengembalikan `null`, BUKAN melempar 404, dengan sengaja: fungsi ini tidak
+// tahu error code/pesan apa yang cocok untuk konteks pemanggil ("variation
+// tidak ditemukan" berarti sesuatu yang berbeda buat createOrder dibanding
+// buat endpoint katalog sendiri) -- sama seperti pemanggil resolvePrice yang
+// memvalidasi variationId lebih dulu lewat guard miliknya sendiri, bukan
+// mengandalkan bentuk error fungsi katalog.
+//
+// Sengaja TIDAK memfilter archived_at IS NULL -- sama seperti
+// fetchVariationOrThrow di atas, "ada" dan "aktif" adalah dua pertanyaan
+// berbeda, dan sub-project ini tidak diminta menjawab yang kedua (lihat
+// brief §"Batasan keras": jangan memperluas scope).
+export async function getVariationSnapshot(client: PoolClient, variationId: string): Promise<VariationSnapshotRow | null> {
+  const { rows } = await client.query<{
+    item_name: string; variation_name: string; cost: string;
+    item_id: string; category_id: string | null;
+  }>(
+    `SELECT i.name AS item_name, iv.name AS variation_name, iv.cost AS cost
+     FROM item_variation iv
+     JOIN item i ON i.id = iv.item_id
+     WHERE iv.id = $1`,
+    [variationId]
+  );
+  if (rows.length === 0) {
+    return null;
+  }
+  return {
+    itemName: rows[0].item_name,
+    variationName: rows[0].variation_name,
+    cost: rows[0].cost,
+    itemId: rows[0].item_id,
+    categoryId: rows[0].category_id,
+  };
+}
+
+// T8 (PLAN-pembayaran-pajak.md) -- diekspor lewat catalog/index.ts untuk modul
+// payment, yang menyimpan `tax_rate.applies_to_ids`.
+//
+// Kolom itu `text[]` **TANPA FK sama sekali**. Bukan sekadar FK yang tidak
+// tunduk RLS (temuan F1) -- di sini tidak ada apa pun di database yang
+// menolak id karangan, apalagi id milik tenant lain. Ia kelas yang sama
+// dengan `price_history.changed_by`: kolom yang isinya tidak dijamin
+// siapa-siapa, dan justru lebih berbahaya karena tidak ada yang TERLIHAT
+// menjaganya.
+//
+// Memvalidasi SELURUH daftar dalam satu SELECT, bukan satu per satu:
+// menerima sebagian akan menyimpan tarif yang separuh menunjuk data tenant
+// lain -- terlihat berhasil, dan itu bentuk kegagalan yang lebih buruk
+// daripada ditolak.
+//
+// Mengembalikan id yang TIDAK terlihat (bukan boolean) supaya pemanggil bisa
+// menyebutkan mana yang gagal di pesan errornya.
+async function findInvisibleIds(
+  client: PoolClient,
+  table: 'item' | 'category',
+  ids: ReadonlyArray<string>
+): Promise<string[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+  // Nama tabel berasal dari union tipe di atas, bukan dari input pemanggil --
+  // tidak ada jalur interpolasi string yang bisa disuplai klien.
+  const { rows } = await client.query<{ id: string }>(
+    `SELECT id FROM "${table}" WHERE id = ANY($1::text[])`,
+    [[...ids]]
+  );
+  const terlihat = new Set(rows.map((r) => r.id));
+  return [...new Set(ids)].filter((id) => !terlihat.has(id));
+}
+
+export async function findInvisibleItemIds(client: PoolClient, ids: ReadonlyArray<string>): Promise<string[]> {
+  return findInvisibleIds(client, 'item', ids);
+}
+
+export async function findInvisibleCategoryIds(client: PoolClient, ids: ReadonlyArray<string>): Promise<string[]> {
+  return findInvisibleIds(client, 'category', ids);
+}
+
 // Review finding (post-Task-3): item.category_id REFERENCES category(id) proves
 // only that the category exists *somewhere* -- PostgreSQL's own foreign-key
 // referential-integrity check runs as the referenced table's owner, NOT subject
