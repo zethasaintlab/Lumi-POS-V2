@@ -342,6 +342,49 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
   return { itemName: rows[0].item_name, variationName: rows[0].variation_name, cost: rows[0].cost };
 }
 
+// T8 (PLAN-pembayaran-pajak.md) -- diekspor lewat catalog/index.ts untuk modul
+// payment, yang menyimpan `tax_rate.applies_to_ids`.
+//
+// Kolom itu `text[]` **TANPA FK sama sekali**. Bukan sekadar FK yang tidak
+// tunduk RLS (temuan F1) -- di sini tidak ada apa pun di database yang
+// menolak id karangan, apalagi id milik tenant lain. Ia kelas yang sama
+// dengan `price_history.changed_by`: kolom yang isinya tidak dijamin
+// siapa-siapa, dan justru lebih berbahaya karena tidak ada yang TERLIHAT
+// menjaganya.
+//
+// Memvalidasi SELURUH daftar dalam satu SELECT, bukan satu per satu:
+// menerima sebagian akan menyimpan tarif yang separuh menunjuk data tenant
+// lain -- terlihat berhasil, dan itu bentuk kegagalan yang lebih buruk
+// daripada ditolak.
+//
+// Mengembalikan id yang TIDAK terlihat (bukan boolean) supaya pemanggil bisa
+// menyebutkan mana yang gagal di pesan errornya.
+async function findInvisibleIds(
+  client: PoolClient,
+  table: 'item' | 'category',
+  ids: ReadonlyArray<string>
+): Promise<string[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+  // Nama tabel berasal dari union tipe di atas, bukan dari input pemanggil --
+  // tidak ada jalur interpolasi string yang bisa disuplai klien.
+  const { rows } = await client.query<{ id: string }>(
+    `SELECT id FROM "${table}" WHERE id = ANY($1::text[])`,
+    [[...ids]]
+  );
+  const terlihat = new Set(rows.map((r) => r.id));
+  return [...new Set(ids)].filter((id) => !terlihat.has(id));
+}
+
+export async function findInvisibleItemIds(client: PoolClient, ids: ReadonlyArray<string>): Promise<string[]> {
+  return findInvisibleIds(client, 'item', ids);
+}
+
+export async function findInvisibleCategoryIds(client: PoolClient, ids: ReadonlyArray<string>): Promise<string[]> {
+  return findInvisibleIds(client, 'category', ids);
+}
+
 // Review finding (post-Task-3): item.category_id REFERENCES category(id) proves
 // only that the category exists *somewhere* -- PostgreSQL's own foreign-key
 // referential-integrity check runs as the referenced table's owner, NOT subject

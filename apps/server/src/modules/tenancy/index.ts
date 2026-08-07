@@ -1,5 +1,6 @@
 import type { PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
+import { parseRateToScaled } from '../../../../../packages/domain/src/numeric.ts';
 
 // Permukaan publik modul tenancy (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul catalog DILARANG query `outlet`
@@ -26,7 +27,16 @@ export async function assertOutletVisible(client: PoolClient, outletId: string):
 
 export interface OutletSettings {
   roundingIncrement: bigint;
-  serviceChargeRate: number;
+  /**
+   * `numeric(6,4)` berskala 10.000 — 5% = `500n`. Bukan `number`.
+   *
+   * Awalnya kolom ini dibaca lewat `Number()`. Itu keliru untuk alasan yang
+   * sama dengan tarif pajak: ia masuk perhitungan uang (FR-C8 langkah 9,
+   * `service_charge = base x service_charge_rate`), dan jalur uang tidak
+   * menyentuh float. Konversinya dibagi lewat `packages/domain/src/numeric.ts`
+   * supaya tenancy dan payment tidak punya dua salinan aturan yang sama.
+   */
+  serviceChargeRateScaled: bigint;
 }
 
 // T3 (PLAN-ordering-fondasi.md) -- dipakai modul ordering di jalur createOrder
@@ -39,9 +49,7 @@ export interface OutletSettings {
 // `rounding_increment` bertipe `int` di skema (db/migrations/0002_tenancy.sql)
 // -- pg mengembalikannya sebagai JS number, aman di-BigInt() langsung.
 // `service_charge_rate` bertipe `numeric(6,4)` -- pg mengembalikannya sebagai
-// string (presisi penuh), jadi Number() di sini, BUKAN karena diabaikan:
-// sub-project ini menulis service_charge_amount = 0 di order (§3.6 PLAN),
-// nilainya belum dipakai tapi bentuknya sudah benar untuk B-2.
+// string berpresisi penuh, dan diubah lewat parseRateToScaled, bukan Number().
 export async function getOutletSettings(client: PoolClient, outletId: string): Promise<OutletSettings> {
   const { rows } = await client.query<{ rounding_increment: number; service_charge_rate: string }>(
     'SELECT rounding_increment, service_charge_rate FROM outlet WHERE id = $1 AND archived_at IS NULL',
@@ -52,6 +60,6 @@ export async function getOutletSettings(client: PoolClient, outletId: string): P
   }
   return {
     roundingIncrement: BigInt(rows[0].rounding_increment),
-    serviceChargeRate: Number(rows[0].service_charge_rate),
+    serviceChargeRateScaled: parseRateToScaled(rows[0].service_charge_rate),
   };
 }

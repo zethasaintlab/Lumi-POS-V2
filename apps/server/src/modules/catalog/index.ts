@@ -18,6 +18,11 @@ export type { ResolvedPrice } from './handlers/prices.ts';
 export { getVariationSnapshot } from './handlers/items.ts';
 export type { VariationSnapshotRow } from './handlers/items.ts';
 
+// T8 (PLAN-pembayaran-pajak.md) -- modul payment menyimpan
+// `tax_rate.applies_to_ids`, `text[]` TANPA FK. Validasinya harus lewat sini
+// (invariant #4); lihat komentar di handlers/items.ts.
+export { findInvisibleItemIds, findInvisibleCategoryIds } from './handlers/items.ts';
+
 export function createCatalogHandlers(pool: Pool): Record<string, unknown> {
   return {
     ...createCategoryHandlers(pool),

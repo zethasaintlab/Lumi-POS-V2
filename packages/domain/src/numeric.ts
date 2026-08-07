@@ -1,14 +1,22 @@
 /**
- * Jembatan antara `tax_rate.rate` (`numeric(6,4)` di PostgreSQL) dan
- * representasi domain (`bigint` berskala 10.000).
+ * Jembatan antara kolom `numeric(6,4)` di PostgreSQL dan representasi domain
+ * (`bigint` berskala 10.000).
  *
- * ## Kenapa ini file tersendiri
+ * Dipakai untuk `tax_rate.rate` dan `outlet.service_charge_rate` — dua kolom
+ * `numeric(6,4)` yang keduanya masuk perhitungan uang.
+ *
+ * ## Kenapa di packages/domain, bukan di modul server
+ *
+ * Klien SQLite menyimpan tarif yang sama dan menghitung total yang sama saat
+ * offline. Kalau konversinya hidup di satu modul server, modul lain harus
+ * menduplikasinya — dan dua salinan aturan pembulatan adalah persis cara
+ * angka di layar kasir mulai berbeda dari angka yang tersimpan.
  *
  * node-postgres mengembalikan `numeric` sebagai **string** (`"0.1000"`),
  * bukan `number` — justru supaya presisinya tidak hilang. `calculateTax`
  * menerima `rateScaled: bigint`. Konversi di antara keduanya adalah
  * satu-satunya titik di mana presisi bisa bocor, jadi ia berdiri sendiri dan
- * diuji sendiri, terpisah dari database.
+ * diuji sendiri, tanpa database.
  *
  * ## Kenapa string, padahal float TERBUKTI aman di skala ini
  *

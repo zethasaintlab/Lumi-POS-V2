@@ -28,7 +28,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const MOD = '../../apps/server/src/modules/payment/handlers/numeric.ts';
+const MOD = '../../packages/domain/src/numeric.ts';
 
 test('parseRateToScaled: bentuk yang datang dari PostgreSQL', async () => {
   const { parseRateToScaled } = await import(MOD);

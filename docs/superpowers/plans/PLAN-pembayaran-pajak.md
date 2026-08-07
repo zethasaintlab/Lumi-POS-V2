@@ -159,7 +159,7 @@ Lalu pajak:
 - [x] **T5** — `TaxCalculator` di `packages/domain`: fungsi murni, `TaxBreakdown`. Property test: eksklusif menambah total, **inklusif tidak menambah total** (AC FR-C8 ketiga).
 - [x] **T6** — Pajak inklusif dan eksklusif dalam satu order dihitung terpisah lalu dijumlahkan (AC FR-C8 keempat).
 - [x] **T7** — Guard invariant #7: regex atas angka tarif di luar modul pajak, dengan sentinel.
-- [ ] **T8** — REST `tax_rate`: buat, daftar, arsip lewat `effective_to`. Guard FK klien-suplai lintas tenant untuk `outlet_id` dan `applies_to_ids` — **dengan bukti tidak ada baris tersimpan.**
+- [x] **T8** — REST `tax_rate`: buat, daftar, arsip lewat `effective_to`. Guard FK klien-suplai lintas tenant untuk `outlet_id` dan `applies_to_ids` — **dengan bukti tidak ada baris tersimpan.**
 - [ ] **T9** — Resolusi FR-C6: `item` > `category` > `all_items`, `outlet_id` menang atas `null`. Property test atas matriks kombinasi.
 - [ ] **T10** — Resolusi FR-C7: channel spesifik menang atas `all`.
 - [ ] **T11** — Tarif 0% berbeda dari tidak-ada-tarif (AC FR-C6 kelima) — yang pertama menghasilkan baris `TaxBreakdown`, yang kedua tidak.

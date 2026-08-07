@@ -1411,8 +1411,130 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /tax-rates:
+    post:
+      operationId: createTaxRate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxRateInput'
+      responses:
+        '201':
+          description: >-
+            Tarif pajak dibuat. FR-C6 -- tarif adalah entitas berdata, bukan
+            konstanta; perubahan perda menghasilkan record baru, yang lama
+            diakhiri lewat POST /tax-rates/{id}/end.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxRate'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Outlet, item, atau kategori yang dirujuk tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Id sudah ada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listTaxRates
+      responses:
+        '200':
+          description: Seluruh tarif pajak tenant, termasuk yang sudah diakhiri
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaxRate'
+
+  /tax-rates/{taxRateId}/end:
+    post:
+      operationId: endTaxRate
+      parameters:
+        - name: taxRateId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: >-
+            effective_to diisi. Barisnya TIDAK dihapus (invariant #2) --
+            transaksi historis tetap benar lewat snapshot di order_line.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxRate'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   schemas:
+    TaxRate:
+      type: object
+      required: [id, name, type, rate, isInclusive, phase, channel, appliesTo, appliesToIds, effectiveFrom]
+      properties:
+        id: { type: string }
+        outletId: { type: string, nullable: true }
+        name: { type: string }
+        type: { type: string, enum: [pbjt, ppn, service_charge, none] }
+        # `rate` adalah STRING desimal, bukan number. numeric(6,4) dikirim dan
+        # diterima sebagai teks supaya tidak pernah melewati IEEE754 double di
+        # sisi klien maupun server -- lihat packages/domain/src/numeric.ts.
+        rate: { type: string }
+        isInclusive: { type: boolean }
+        phase: { type: string, enum: [subtotal, total] }
+        jurisdiction: { type: string, nullable: true }
+        channel: { type: string, enum: [all, dine_in, takeaway] }
+        appliesTo: { type: string, enum: [all_items, category, item] }
+        appliesToIds:
+          type: array
+          items: { type: string }
+        effectiveFrom: { type: string, format: date-time }
+        effectiveTo: { type: string, format: date-time, nullable: true }
+    TaxRateInput:
+      type: object
+      required: [id, name, type, rate]
+      properties:
+        id: { type: string }
+        outletId: { type: string, nullable: true }
+        name: { type: string }
+        type: { type: string }
+        # SENGAJA tanpa `type` di sini: assertRateValid (lewat
+        # parseRateToScaled) adalah satu-satunya sumber kebenaran, dan ia harus
+        # bisa MENOLAK number. Mendeklarasikan `type: string` membuat AJV
+        # menolaknya lebih dulu dengan jalur error yang berbeda; pola sama
+        # dengan PriceInput.price.
+        rate: {}
+        isInclusive: { type: boolean }
+        phase: { type: string }
+        jurisdiction: { type: string, nullable: true }
+        channel: { type: string }
+        appliesTo: { type: string }
+        appliesToIds:
+          type: array
+          items: { type: string }
+        effectiveFrom: { type: string, format: date-time }
     Device:
       type: object
       required: [id, outletId, code]

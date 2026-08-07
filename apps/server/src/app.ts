@@ -9,6 +9,7 @@ import { createCatalogHandlers } from './modules/catalog/index.ts';
 import { createIdentityHandlers } from './modules/identity/index.ts';
 import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
+import { createPaymentHandlers } from './modules/payment/index.ts';
 import { createHlc } from '../../../packages/domain/src/hlc.ts';
 
 const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
@@ -91,6 +92,7 @@ async function buildAppInner(pool: Pool, specPath: string): Promise<FastifyInsta
     ...createIdentityHandlers(pool),
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
+    ...createPaymentHandlers(pool),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);
