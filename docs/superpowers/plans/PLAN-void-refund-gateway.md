@@ -175,6 +175,47 @@ Refund:
 
 ---
 
+## 5.7 Task breakdown C-2 — urutan TDD
+
+Sama seperti B-3: test merah dulu → konfirmasi merah karena alasan yang benar → implementasi minimum → suite penuh hijau → `npm run typecheck` → `npm run lint:ds`. Setiap aturan disabotase untuk membuktikan testnya tidak kosong.
+
+Fondasi:
+
+- [x] **G1** — Port `PaymentProvider` + fake in-memory. Dipilih di `buildApp` lewat environment variable, **bukan** `if (isProduction)` (invariant #5). Test: seluruh suite memakai fake; fake menghitung panggilan supaya G5 dapat membuktikan tidak ada transaksi gateway kedua.
+- [x] **G2** — Adapter Midtrans memakai `fetch` global. **Tidak ada test yang memanggil jaringan** — CI mengisi key dengan string kosong. Yang diuji: bentuk request/respons lewat `fetch` yang di-inject.
+
+QRIS dinamis (FR-C2, FR-C14):
+
+- [x] **G3** — `method: 'qris_dynamic'` → payment `pending_confirmation`, **tidak pernah** langsung `confirmed` (`spec-c:320`). Respons memuat `qrString` dan `expiresAt`.
+- [x] **G4** — Order **tidak dapat** ditutup `PAID` selama ada payment `pending_confirmation` (`spec-c:321`). `sumConfirmed` sudah mengecualikannya; yang diuji adalah perilakunya, bukan implementasinya.
+- [ ] **G5** — Cek status: memanggil `pollStatus`, memperbarui payment. `confirmed` → order `PAID` → `CLOSED`. `failed`/`expired` → payment `failed`, order tetap `OPEN`.
+- [x] **G6** — Retry memakai idempotency key yang **sama** tidak membuat transaksi gateway baru (AC FR-C14 pertama) — dibuktikan lewat penghitung panggilan di fake.
+- [x] **G7** — Gateway timeout/error saat `initiate` → payment **tetap** `pending_confirmation`, bukan hilang. Ini inti FR-C14: pelanggan mungkin sudah membayar.
+
+QRIS statis dan EDC:
+
+- [ ] **G8** — QRIS statis: field referensi **wajib**; `confirmed_manually = true`. Berfungsi tanpa gateway.
+- [ ] **G9** — EDC: `approval_code` **wajib**; `card_last4` maksimal 4 (CHECK database sudah ada — diuji bahwa ia sungguh menolak).
+
+FR-C5 — larangan data kartu:
+
+- [ ] **G10** — Redaksi log: payload berisi 13–19 digit berurutan tidak muncul utuh di log. Diuji dengan menangkap keluaran logger.
+- [ ] **G11** — `MIDTRANS_SERVER_KEY` tidak pernah muncul di log, pesan error, maupun respons API. Diuji.
+
+Webhook (keputusan Q4):
+
+- [ ] **G12** — `POST /webhooks/midtrans` + verifikasi signature. Payload buatan, tanpa jaringan. Signature salah → ditolak **sebelum** menyentuh database.
+- [ ] **G13** — Webhook idempoten: notifikasi yang sama dua kali tidak mengubah apa pun untuk kedua kalinya.
+
+Penutup:
+
+- [ ] **G14** — Kontrak OpenAPI.
+- [ ] **G15** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
+
+**Di luar scope C-2, ditegaskan ulang:** penjadwalan polling (2 detik / 5 menit) adalah perilaku klien — server hanya menyediakan endpoint cek status. Laporan "Perlu diperiksa" > 24 jam adalah Modul G; datanya tersedia, laporannya tidak dibangun. FR-C3 tidak dapat ditegakkan server dan menunggu klien + F2.
+
+---
+
 ## 6. Non-scope
 
 | Hal | Alasan |

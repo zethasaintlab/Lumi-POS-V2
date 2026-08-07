@@ -15,6 +15,7 @@ import {
 import { computeCashRounding } from '../../../../../../packages/domain/src/money.ts';
 import { assertTransition } from '../../../../../../packages/domain/src/order-state.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
+import type { PaymentProvider, InitiateResult } from '../providers/index.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // T13-T17 (docs/superpowers/plans/PLAN-pembayaran-pajak.md) -- pembayaran
@@ -80,7 +81,12 @@ function toPayment(row: PaymentRow) {
 // (FR-C2: field referensi, confirmed_manually, penanda di struk, laporan
 // exception) dan QRIS dinamis butuh gateway -- keduanya C-2. Menerimanya
 // sekarang berarti membangun separuh FR-C2 tanpa kontrol yang menyertainya.
-const SUPPORTED_METHODS = new Set(['cash']);
+const SUPPORTED_METHODS = new Set(['cash', 'qris_dynamic']);
+
+// QRIS dinamis tidak menerima `tenderedAmount` -- tidak ada uang yang
+// diserahkan di tangan. Yang dikirim klien adalah `amount`, nominal yang
+// diminta ke gateway.
+const GATEWAY_METHODS = new Set(['qris_dynamic']);
 
 function assertMethodSupported(method: string): void {
   if (!SUPPORTED_METHODS.has(method)) {
@@ -111,6 +117,17 @@ function assertTenderedAmountValid(value: unknown): asserts value is number {
   }
 }
 
+function assertGatewayAmountValid(value: unknown): asserts value is number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value <= 0 ||
+    value > Number.MAX_SAFE_INTEGER
+  ) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'amount harus bilangan bulat rupiah > 0.');
+  }
+}
+
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 function getIdempotencyKeyHeader(req: FastifyRequest): string {
   const header = req.headers['idempotency-key'];
@@ -132,7 +149,233 @@ async function sumConfirmed(client: PoolClient, orderId: string): Promise<bigint
   return rows[0].total === null ? 0n : BigInt(rows[0].total);
 }
 
-export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc) {
+
+interface GatewayDeps {
+  pool: Pool;
+  hlc: Hlc;
+  provider: PaymentProvider;
+}
+
+interface GatewayCtx {
+  req: FastifyRequest;
+  reply: FastifyReply;
+  tenantId: string;
+  actorId: string;
+  idempotencyKey: string;
+  orderId: string;
+  method: string;
+}
+
+const INSERT_GATEWAY_PAYMENT_SQL = `
+  INSERT INTO payment (
+    id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
+    status, provider, confirmed_manually, tendered_at, created_by, occurred_at, hlc
+  )
+  SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
+         'pending_confirmation', $6, false,
+         now(), $7, COALESCE($8::timestamptz, now()), $9
+    FROM "order" o WHERE o.id = $10
+  RETURNING *
+`;
+
+/**
+ * QRIS dinamis (FR-C2, FR-C14).
+ *
+ * ## Kenapa DUA transaksi, bukan satu
+ *
+ * Ini satu-satunya jalur di repo ini yang sengaja memecah penulisannya, dan
+ * alasannya adalah FR-C14 sendiri:
+ *
+ * > "Kelas bug yang paling sering menghasilkan uang hilang di POS: POS
+ * > meminta QR, gateway timeout, pelanggan **sudah membayar**, POS tidak
+ * > tahu."
+ *
+ * Kalau panggilan gateway ada di DALAM transaksi, kegagalannya me-rollback
+ * baris `payment` -- dan POS kehilangan satu-satunya catatan bahwa QR pernah
+ * diminta. Pelanggan yang terlanjur membayar tidak akan punya jejak apa pun
+ * di sistem.
+ *
+ * Karena itu urutannya: **tulis payment `pending_confirmation` dan commit
+ * lebih dulu**, baru panggil gateway. Gateway gagal berarti payment tetap
+ * ada, tetap `pending_confirmation`, dan dapat dicek ulang -- persis cabang
+ * "Timeout/error" di diagram `spec-c:293-316`.
+ *
+ * Alasan kedua yang berdiri sendiri: panggilan jaringan di dalam transaksi
+ * database menahan koneksi pool selama gateway berpikir.
+ *
+ * Ini **tidak** melanggar invariant #1. Yang dituntut invariant itu adalah
+ * satu PENJUALAN = satu transaksi; inisiasi QRIS bukan penjualan yang
+ * selesai -- order belum berpindah status, dan `sumConfirmed` mengabaikan
+ * payment `pending_confirmation` sepenuhnya.
+ *
+ * ## Idempotency
+ *
+ * Key diklaim di transaksi pertama dan baru DISELESAIKAN setelah gateway
+ * menjawab. Retry yang datang di tengah menemukan key terklaim tapi
+ * `completed === false`, lalu menjalankan ulang panggilan gateway dengan key
+ * yang SAMA. Gateway yang mendedup key itu (AC FR-C14 pertama) mengembalikan
+ * transaksi yang sama, bukan membuat yang baru.
+ */
+async function initiateGatewayPayment(deps: GatewayDeps, ctx: GatewayCtx) {
+  const { pool, hlc, provider } = deps;
+  const { req, reply, tenantId, actorId, idempotencyKey, orderId, method } = ctx;
+  const body = req.body as PaymentInput & { amount?: unknown };
+
+  assertGatewayAmountValid(body.amount);
+  const amount = BigInt(body.amount);
+  const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc));
+
+  // --- transaksi 1: klaim key + tulis payment pending_confirmation ---
+  const awal = await withTenantTransaction(pool, tenantId, async (client) => {
+    const existing = await findIdempotencyKey(client, idempotencyKey);
+    if (existing !== null && existing.completed) {
+      return { kind: 'cached' as const, record: existing };
+    }
+    if (existing === null) {
+      await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash: `${orderId}:${body.id}` });
+    }
+
+    const { rows: orderRows } = await client.query<OrderStateRow>(
+      `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id, c.id AS check_id
+         FROM "order" o JOIN "check" c ON c.order_id = o.id
+        WHERE o.id = $1 FOR UPDATE OF o`,
+      [orderId]
+    );
+    if (orderRows.length === 0) {
+      throw new HttpError(404, 'ORDER_NOT_FOUND', `Order ${orderId} tidak ditemukan.`);
+    }
+    const order = orderRows[0];
+
+    // Order yang sudah lunas tidak menerima pembayaran lagi. Sama seperti
+    // jalur tunai, ini ditegakkan state machine domain, bukan `if` di sini.
+    try {
+      assertTransition(order.status, 'paid');
+    } catch (err) {
+      throw new HttpError(409, 'ORDER_NOT_PAYABLE', (err as Error).message);
+    }
+
+    // Baris dari percobaan sebelumnya dipakai ulang -- retry TIDAK boleh
+    // menghasilkan payment kedua.
+    const { rows: sudahAda } = await client.query<PaymentRow>(
+      'SELECT * FROM payment WHERE id = $1',
+      [body.id]
+    );
+    if (sudahAda.length > 0) {
+      return { kind: 'fresh' as const, payment: sudahAda[0], order };
+    }
+
+    let paymentRow: PaymentRow;
+    try {
+      const { rows } = await client.query<PaymentRow>(INSERT_GATEWAY_PAYMENT_SQL, [
+        body.id, tenantId, order.check_id, method, amount.toString(),
+        provider.name, actorId, body.occurredAt ?? null, hlcValue.toString(), orderId,
+      ]);
+      paymentRow = rows[0];
+    } catch (err) {
+      if (isPrimaryKeyViolation(err)) {
+        throw new HttpError(409, 'ID_ALREADY_EXISTS', `Payment dengan id ${body.id} sudah ada.`);
+      }
+      throw err;
+    }
+
+    await insertOutboxEvent(client, {
+      id: randomUUID(),
+      tenantId,
+      aggregateType: 'payment',
+      aggregateId: paymentRow.id,
+      eventType: 'payment.initiated',
+      payload: { orderId, amount: amount.toString(), method },
+    });
+
+    return { kind: 'fresh' as const, payment: paymentRow, order };
+  }).catch((err) => {
+    if (err instanceof IdempotencyKeyConflictError) {
+      throw new HttpError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Permintaan dengan key ini sedang diproses. Coba lagi.');
+    }
+    throw err;
+  });
+
+  if (awal.kind === 'cached') {
+    reply.code(awal.record.responseStatus);
+    return awal.record.responseBody;
+  }
+
+  // --- panggilan gateway, DI LUAR transaksi ---
+  let hasil: InitiateResult | null = null;
+  let gatewayReachable = true;
+  try {
+    hasil = await provider.initiate({ orderId, paymentId: body.id, amount, idempotencyKey });
+  } catch {
+    // TIDAK dilempar ke klien sebagai kegagalan. Payment sudah tersimpan
+    // `pending_confirmation`, dan itu memang jawaban yang benar menurut
+    // FR-C14: pelanggan mungkin sudah membayar. Klien menampilkan tombol
+    // "Cek status", bukan pesan "pembayaran gagal".
+    //
+    // Pesan galat sengaja TIDAK diteruskan ke respons: ia bisa memuat detail
+    // gateway yang tidak berguna bagi kasir, dan permukaan respons API bukan
+    // tempat untuk isi error pihak ketiga (FR-C5).
+    gatewayReachable = false;
+  }
+
+  // --- transaksi 2: catat referensi gateway, selesaikan idempotency key ---
+  const responseBody = await withTenantTransaction(pool, tenantId, async (client) => {
+    if (hasil !== null) {
+      await client.query(
+        'UPDATE payment SET provider_reference = $2 WHERE id = $1 AND provider_reference IS NULL',
+        [body.id, hasil.providerReference]
+      );
+    }
+
+    // Sisa tagihan dihitung dari payment `confirmed` SAJA. QRIS yang baru
+    // diinisiasi tidak menguranginya sedikit pun -- spec-c:320, sistem tidak
+    // pernah menganggap lunas tanpa konfirmasi gateway.
+    const total = BigInt(awal.order.total);
+    const sudahDibayar = await sumConfirmed(client, orderId);
+
+    const rb = {
+      payment: {
+        ...toPayment(awal.payment),
+        status: 'pending_confirmation',
+        provider: provider.name,
+        providerReference: hasil === null ? null : hasil.providerReference,
+      },
+      // Kosong saat gateway tidak menjawab -- klien tidak dapat menampilkan
+      // QR, tapi payment-nya ada dan dapat dicek ulang.
+      qrString: hasil === null ? null : hasil.qrString,
+      expiresAt: hasil === null || hasil.expiresAt === null ? null : hasil.expiresAt.toISOString(),
+      gatewayReachable,
+      order: {
+        id: orderId,
+        status: awal.order.status,
+        total: Number(total),
+        taxAmount: Number(awal.order.tax_amount),
+        // Pembulatan tunai (FR-C9) tidak berlaku di sini: ia hanya muncul
+        // saat ada pembayaran TUNAI, dan order ini belum tentu punya.
+        roundingAdjustment: 0,
+        amountDue: Number(total),
+      },
+      outstanding: Number(total - sudahDibayar),
+    };
+    // Key diselesaikan HANYA bila gateway menjawab.
+    //
+    // Kalau ia diselesaikan juga saat gateway gagal, retry dengan key yang
+    // sama akan menerima respons "tanpa QR" dari cache SELAMANYA -- kasir
+    // tidak akan pernah mendapat QR-nya, padahal FR-C14 justru menyuruh
+    // klien memakai key yang sama ("JANGAN buat request baru"). Dibiarkan
+    // terklaim-belum-selesai, retry berikutnya menjalankan ulang panggilan
+    // gateway dengan key yang SAMA, dan gateway yang mendedup key itu
+    // mengembalikan transaksi yang sama alih-alih membuat yang baru.
+    if (hasil !== null) {
+      await completeIdempotencyKey(client, { key: idempotencyKey, responseStatus: 201, responseBody: rb });
+    }
+    return rb;
+  });
+
+  reply.code(201);
+  return responseBody;
+}
+
+export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: PaymentProvider) {
   return {
     async createPayment(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
@@ -143,6 +386,14 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc) {
 
       const method = body.method ?? 'cash';
       assertMethodSupported(method);
+
+      if (GATEWAY_METHODS.has(method)) {
+        return await initiateGatewayPayment(
+          { pool, hlc, provider },
+          { req, reply, tenantId, actorId, idempotencyKey, orderId, method }
+        );
+      }
+
       assertTenderedAmountValid(body.tenderedAmount);
 
       const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc));

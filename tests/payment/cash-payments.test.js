@@ -244,17 +244,25 @@ test('tenderedAmount bukan bilangan bulat positif ditolak 400', async () => {
   assert.equal(await hitungPayment(order.id), 0);
 });
 
-// Metode selain tunai butuh kontrol anti-fraud (QRIS statis) atau gateway
-// (QRIS dinamis) yang ada di sub-project C-2. Menerimanya sekarang berarti
-// membangun separuh FR-C2 tanpa kontrol wajibnya.
-test('metode selain cash ditolak dengan pesan yang menyebut alasannya', async () => {
+// DIPERBARUI di sub-project C-2: `qris_dynamic` kini didukung (lihat
+// tests/payment/qris-dynamic.test.js). Yang MASIH ditolak adalah metode yang
+// kontrol wajibnya belum dibangun -- menerimanya berarti membangun separuh
+// FR-C2 tanpa pengaman yang menyertainya:
+//
+//   qris_static : field referensi wajib + confirmed_manually + laporan
+//                 exception (satu-satunya metode digital yang jalan OFFLINE,
+//                 jadi kontrolnya bukan pelengkap)
+//   card_edc    : approval_code wajib, card_last4 maksimal 4 digit
+//   other       : catatan wajib
+test('metode yang kontrolnya belum dibangun ditolak dengan pesan yang menyebut alasannya', async () => {
   await akhiriTarifSeed();
   const fx = await setupDeviceAndShift();
-  const order = await buatOrder(fx, await buatVariation(25000));
-  const res = await bayar(order.id, { method: 'qris_dynamic', tenderedAmount: 25000 });
-  assert.equal(res.statusCode, 400, res.body);
-  assert.match(JSON.parse(res.body).error.message, /tunai|cash/i);
-  assert.equal(await hitungPayment(order.id), 0);
+  for (const method of ['qris_static', 'card_edc', 'other']) {
+    const order = await buatOrder(fx, await buatVariation(25000));
+    const res = await bayar(order.id, { method, tenderedAmount: 25000 });
+    assert.equal(res.statusCode, 400, `${method}: ${res.body}`);
+    assert.equal(await hitungPayment(order.id), 0);
+  }
 });
 
 // --- guard lintas tenant ---

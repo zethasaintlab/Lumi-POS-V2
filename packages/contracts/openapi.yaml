@@ -1589,17 +1589,35 @@ paths:
           application/json:
             schema:
               type: object
-              required: [id, tenderedAmount]
+              # Hanya `id` yang wajib di KONTRAK. Field mana lagi yang wajib
+              # bergantung pada METODE, dan JSON Schema tidak bisa menyatakan
+              # "wajib bila method = X" tanpa oneOf yang justru mengaburkan
+              # pesan errornya. Tunai menuntut tenderedAmount; QRIS dinamis
+              # menuntut amount. Keduanya divalidasi di handler, pola yang
+              # sama dengan POST /orders/{orderId}/cancel.
+              required: [id]
               properties:
                 id: { type: string }
-                method: { type: string }
-                # tenderedAmount = uang yang DISERAHKAN pelanggan, bukan yang
-                # terpakai. Server yang menghitung amount dan changeAmount,
-                # karena keduanya bergantung pada pembulatan tunai (FR-C9)
-                # yang ditentukan rounding_increment/rounding_mode outlet.
-                # Tanpa  -- assertTenderedAmountValid satu-satunya
-                # sumber kebenaran, pola sama dengan PriceInput.price.
+                method:
+                  type: string
+                  # Daftar TERTUTUP, tapi sengaja hanya memuat yang sudah
+                  # dibangun. qris_static dan card_edc menyusul di sub-project
+                  # yang sama; sampai kontrolnya ada, menerimanya berarti
+                  # membangun separuh FR-C2 tanpa pengaman yang menyertainya.
+                  enum: [cash, qris_dynamic]
+                  default: cash
+                # tenderedAmount = uang yang DISERAHKAN pelanggan (tunai
+                # saja), bukan yang terpakai. Server yang menghitung amount
+                # dan changeAmount, karena keduanya bergantung pada pembulatan
+                # tunai (FR-C9) yang ditentukan rounding_increment/
+                # rounding_mode outlet. Tanpa `type` -- assertTenderedAmountValid
+                # satu-satunya sumber kebenaran, pola sama dengan
+                # PriceInput.price.
                 tenderedAmount: {}
+                # amount = nominal yang diminta ke gateway (QRIS dinamis).
+                # Tidak ada uang yang diserahkan di tangan, jadi tidak ada
+                # tendered maupun kembalian.
+                amount: {}
                 occurredAt: { type: string, format: date-time }
                 hlc: { type: string }
       responses:
@@ -1626,6 +1644,25 @@ paths:
                       roundingAdjustment: { type: integer }
                       amountDue: { type: integer }
                   outstanding: { type: integer }
+                  # --- QRIS dinamis saja (FR-C2, FR-C14) ---
+                  # Wajib dideklarasikan di sini: serializer Fastify MEMBUANG
+                  # properti yang tidak ada di skema, jadi field yang lupa
+                  # ditulis akan hilang diam-diam dari respons -- bukan gagal,
+                  # yang jauh lebih sulit dilacak.
+                  #
+                  # Kosong untuk pembayaran tunai.
+                  qrString:
+                    type: string
+                    nullable: true
+                    description: >-
+                      Isi QR untuk dirender klien. `null` bila gateway tidak
+                      dapat dihubungi — payment tetap tercatat
+                      `pending_confirmation` (FR-C14).
+                  expiresAt: { type: string, nullable: true }
+                  # `false` berarti QR gagal diambil, BUKAN berarti pembayaran
+                  # gagal. Pelanggan mungkin sudah membayar; klien menampilkan
+                  # "Cek status", bukan "pembayaran gagal".
+                  gatewayReachable: { type: boolean }
         '400':
           description: Validation error, metode belum didukung, atau Idempotency-Key hilang
           content:
@@ -1735,6 +1772,12 @@ components:
         changeAmount: { type: integer, nullable: true }
         status: { type: string }
         confirmedManually: { type: boolean }
+        # Terisi hanya untuk metode yang lewat gateway (QRIS dinamis).
+        # `providerReference` bisa NULL walau provider terisi: payment ditulis
+        # SEBELUM gateway dipanggil, supaya ia tetap ada bila gateway tidak
+        # menjawab (FR-C14).
+        provider: { type: string, nullable: true }
+        providerReference: { type: string, nullable: true }
         tenderedAt: { type: string, format: date-time }
         createdBy: { type: string }
         occurredAt: { type: string, format: date-time }
