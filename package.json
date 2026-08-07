@@ -6,7 +6,8 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "prototypes/03-sqlite-opfs"
+    "prototypes/03-sqlite-opfs",
+    "prototypes/04-powersync-raw-tables"
   ],
   "engines": {
     "node": ">=22.18"

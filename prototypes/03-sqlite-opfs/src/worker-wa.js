@@ -31,7 +31,7 @@ function persentil(arr, p) {
   return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))];
 }
 
-// Jalur tulis IDENTIK dengan worker.js: 10 baris di 9 tabel, satu transaksi
+// Jalur tulis IDENTIK dengan worker.js: 10 baris di 8 tabel, satu transaksi
 // (invariant #1). Membandingkan dua driver dengan beban yang berbeda tidak
 // menghasilkan perbandingan apa pun.
 function sqlPenjualan(n) {
@@ -104,7 +104,7 @@ async function ukur(sqlite3, namaVfs, db) {
       await sqlite3.exec(db, sqlPenjualan(i));
       durasi.push(performance.now() - a);
     }
-    catat(`${label} tulis 1 penjualan (10 baris, 9 tabel) p50`, `${persentil(durasi, 50).toFixed(2)} ms`);
+    catat(`${label} tulis 1 penjualan (10 baris, 8 tabel) p50`, `${persentil(durasi, 50).toFixed(2)} ms`);
     catat(`${label} tulis 1 penjualan p95`, `${persentil(durasi, 95).toFixed(2)} ms`);
     catat(`${label} tulis 1 penjualan p99`, `${persentil(durasi, 99).toFixed(2)} ms`);
     catat(`${label} throughput`, `${(1000 / (durasi.reduce((a, b) => a + b, 0) / N)).toFixed(0)} penjualan/detik`);

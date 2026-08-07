@@ -137,7 +137,7 @@ async function ukur(sqlite3, namaVfs, bukaDb) {
       tulisSatuPenjualan(db, i);
       durasi.push(performance.now() - a);
     }
-    catat(`${label} tulis 1 penjualan (10 baris, 9 tabel) p50`, `${persentil(durasi, 50).toFixed(2)} ms`);
+    catat(`${label} tulis 1 penjualan (10 baris, 8 tabel) p50`, `${persentil(durasi, 50).toFixed(2)} ms`);
     catat(`${label} tulis 1 penjualan p95`, `${persentil(durasi, 95).toFixed(2)} ms`);
     catat(`${label} tulis 1 penjualan p99`, `${persentil(durasi, 99).toFixed(2)} ms`);
     catat(`${label} throughput`, `${(1000 / (durasi.reduce((a, b) => a + b, 0) / N)).toFixed(0)} penjualan/detik`);

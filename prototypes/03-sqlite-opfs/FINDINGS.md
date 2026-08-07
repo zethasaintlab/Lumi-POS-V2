@@ -16,13 +16,13 @@
 | **Dua tab tidak dapat sama-sama menulis** — `NoModificationAllowedError` | Pola "hanya tab aktif yang menulis" bukan optimasi, melainkan **keharusan** |
 | **`navigator.storage.persisted()` = `false`** | Data lokal dapat dihapus browser saat ruang menipis. Untuk POS offline-first ini bahaya nyata, dan belum ada yang menanganinya |
 | OPFS dan `crossOriginIsolated` keduanya aktif dengan konfigurasi `apps/kasir` apa adanya | Header COOP/COEP dari F0 sudah benar |
-| **Driver PowerSync (`wa-sqlite`) TIDAK lebih lambat — ia sedikit lebih cepat** (3,25 ms vs 3,97 ms per penjualan) | Kekhawatiran bahwa memberikan kepemilikan DB ke PowerSync akan membayar performa **tidak terbukti** |
+| **Driver PowerSync (`wa-sqlite`) TIDAK lebih lambat — ia sedikit lebih cepat** (3,25 ms vs 3,97 ms per penjualan) | Berlaku untuk **VFS**-nya saja. Lewat `@powersync/web` utuh, penjualan yang sama 12,33 ms — lihat koreksi di §5b dan prototipe 04 §6 |
 
 ---
 
 ## 1. Yang diukur
 
-Bukan `INSERT` tunggal. Yang diukur adalah **satu penjualan = satu transaksi** (invariant #1) dalam bentuk sebenarnya: 10 baris di 9 tabel — `order` + `check` + 2× `order_line` + `order_line_modifier` + `payment` + 2× `stock_movement` + `audit_event` + `outbox_local`.
+Bukan `INSERT` tunggal. Yang diukur adalah **satu penjualan = satu transaksi** (invariant #1) dalam bentuk sebenarnya: 10 baris di 8 tabel — `order` + `check` + 2× `order_line` + `order_line_modifier` + `payment` + 2× `stock_movement` + `audit_event` + `outbox_local`.
 
 Skema dibaca langsung dari `db/local/001-initial.sql`, bukan salinan — 20 tabel, `journal_mode=WAL`, `foreign_keys=ON`.
 
@@ -69,6 +69,8 @@ tab 2: tab ini memegang pool → GAGAL — NoModificationAllowedError:
 
 **Konsekuensi arsitektur:** klien kasir **wajib** memakai pola "hanya satu penulis" — persis yang dilakukan Notion menurut `research/03`:185, dengan tab lain merutekan penulisan lewat `SharedWorker` ke tab aktif. Ini bukan optimasi yang bisa ditunda; tanpanya, tab kedua yang tidak sengaja dibuka kasir membuat aplikasi **gagal membuka database sama sekali**.
 
+> **Koreksi, 7 Agustus 2026 — prototipe 04 §7.** Keharusan itu tetap berlaku, tapi **bukan kita yang memenuhinya**. Dengan PowerSync memegang database dan `enableMultiTabs: true`, dua tab berhasil menulis bersamaan dan saling melihat baris masing-masing. Batas OPFS di atas tidak hilang — SharedWorker PowerSync-lah yang menjadi satu-satunya penulis, dan tab merutekan lewatnya.
+
 Catatan penting soal cara mengukurnya: dua koneksi di dalam **satu** worker dilaporkan "diizinkan", dan itu menyesatkan — keduanya berbagi pool yang sama. Pertanyaan yang benar hanya terjawab dengan dua tab sungguhan.
 
 Efek samping yang perlu diketahui: pool yang **tidak dilepas** memblokir run berikutnya dengan error yang sama. Selama pengembangan, kegagalan itu terbaca seperti "OPFS rusak" padahal hanya handle yang tertinggal.
@@ -114,7 +116,7 @@ Diverifikasi 7 Agustus 2026: `@powersync/web@2.1.1` bergantung pada `@journeyapp
 
 Itu akan menjadi soal ukuran bundle saja — kalau bukan karena §3: **dua koneksi independen ke berkas OPFS yang sama mustahil.** Konsekuensinya salah satu harus **memiliki** database lokal: PowerSync, atau kode kita. Kalau PowerSync yang memilikinya, seluruh angka di §2 tidak berlaku, karena ia berjalan di atas driver dan VFS yang berbeda.
 
-Jalur tulis yang diukur **identik**: 10 baris di 9 tabel, satu transaksi, skema yang sama dari `db/local/001-initial.sql`. Membandingkan dua driver dengan beban berbeda tidak menghasilkan perbandingan apa pun.
+Jalur tulis yang diukur **identik**: 10 baris di 8 tabel, satu transaksi, skema yang sama dari `db/local/001-initial.sql`. Membandingkan dua driver dengan beban berbeda tidak menghasilkan perbandingan apa pun.
 
 ### Hasil
 
@@ -135,6 +137,9 @@ Jalur tulis yang diukur **identik**: 10 baris di 9 tabel, satu transaksi, skema 
 ### Yang berubah karena angka ini
 
 Kekhawatiran yang mendorong pengukuran ini — bahwa memberikan kepemilikan database ke PowerSync berarti membayar performa — **tidak terbukti**. Ketiga VFS sinkron berada di kelas yang sama, dan yang dipakai PowerSync justru sedikit paling cepat.
+
+> **Koreksi, 7 Agustus 2026 — `prototypes/04-powersync-raw-tables/FINDINGS.md` §6.**
+> Kalimat di atas benar tentang **VFS**, dan hanya itu. Kesimpulan yang ditarik darinya — bahwa performa "dicoret sebagai pertimbangan" — **terlalu jauh**. VFS bukan yang dibayar; yang dibayar seluruh lapisan di atasnya. Lewat `@powersync/web`, penjualan yang sama memakan **12,33 ms**, bukan 3,25 ms — **3,8× lebih lambat**. Masih jauh di bawah ambang yang terlihat kasir, tapi bukan "tanpa biaya". Yang terbukti tidak membebani apa pun adalah keputusan memakai **raw table** (prototipe 04 T5e).
 
 Yang tersisa sebagai selisih nyata hanya **ukuran WASM**: `wa-sqlite` 260 kB lebih besar (1,12 MB vs 865 kB mentah). Untuk aplikasi yang di-install sekali di tablet kasir, itu bukan angka yang menentukan.
 
@@ -221,9 +226,9 @@ Raw table tidak menghasilkan view dan tidak menghasilkan tabel `ps_data__` sama 
 ## 6. Rekomendasi
 
 1. **Jangan pakai VFS `opfs` (SharedArrayBuffer) di driver mana pun.** 71× lebih lambat daripada VFS sinkron, dan 282 ms per penjualan adalah jeda yang terlihat kasir.
-2. **Performa tidak lagi menjadi alasan memilih antara kedua driver** (§5b), dan §5c menutup dua keberatan arsitektural yang tersisa. Rekomendasi: **PowerSync memegang database lokal, dengan seluruh 20 tabel kami sebagai raw table.** Alasannya bukan kelebihan PowerSync melainkan kekurangan alternatifnya — kalau kode kita yang memegang DB, jalur turun harus dibangun sendiri, dan `research/03` memilih PowerSync justru untuk tidak membangunnya. Syarat yang mengikat ada di §5c; keputusan ini belum diuji dengan menjalankan kode.
+2. **PowerSync memegang database lokal, seluruh 20 tabel kami sebagai raw table** — direkomendasikan di sini, disetujui user 7 Agustus 2026, lalu **dibuktikan dengan menjalankan kode** di `prototypes/04-powersync-raw-tables/FINDINGS.md`. Alasannya bukan kelebihan PowerSync melainkan kekurangan alternatifnya: kalau kode kita yang memegang DB, jalur turun harus dibangun sendiri, dan `research/03` memilih PowerSync justru untuk tidak membangunnya. Harganya terukur — 12,33 ms vs 3,25 ms per penjualan — dan dibayar untuk lapisannya, bukan untuk raw table-nya.
 3. **Header COOP/COEP tetap dipertahankan** di `apps/kasir` — ia tidak merugikan, dan mempertahankannya menjaga pintu ke VFS `opfs` tetap terbuka bila SAHPool bermasalah di platform tertentu. Tapi dashboard owner **tidak perlu** membayarnya.
-4. **Pola satu-penulis wajib dibangun sejak awal.** Ia bukan penyempurnaan; tanpanya tab kedua mematikan aplikasi.
+4. ~~**Pola satu-penulis wajib dibangun sejak awal.**~~ **Tidak perlu kita bangun** — dibuktikan 7 Agustus 2026 (prototipe 04 §7). Keharusannya tetap nyata; yang berubah adalah siapa yang memenuhinya. Dengan `enableMultiTabs: true`, SharedWorker PowerSync sudah melakukannya: dua tab menulis bersamaan dan saling melihat barisnya, tempat prototipe ini mendapat `NoModificationAllowedError`. Biayanya terukur ~2,3 ms per penjualan.
 5. **`navigator.storage.persist()` harus dipanggil**, dan perilaku saat ditolak didefinisikan.
 
 ---
