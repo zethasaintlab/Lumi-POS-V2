@@ -51,6 +51,23 @@ export interface OrderTotalsInput {
   taxAmount: bigint;
 }
 
+export type RoundingMode = 'half_up' | 'up' | 'down';
+
+export interface CashRoundingInput {
+  /** Sisa yang akan dibayar tunai — bukan `total` order. */
+  outstanding: bigint;
+  /** `outlet.rounding_increment`, default 100. `1` = tanpa pembulatan. */
+  roundingIncrement: bigint;
+  /** `outlet.rounding_mode`. */
+  roundingMode: string;
+}
+
+export interface CashRounding {
+  roundedOutstanding: bigint;
+  /** `roundedOutstanding - outstanding`. Bisa negatif. */
+  roundingAdjustment: bigint;
+}
+
 export interface OrderTotals {
   /** Langkah 6: SUM(line_total). */
   subtotal: bigint;
@@ -222,4 +239,65 @@ export function computeOrderTotals(input: OrderTotalsInput): OrderTotals {
     taxBase,
     total: taxBase + input.taxAmount,
   };
+}
+
+/**
+ * Pembulatan tunai Indonesia (FR-C9).
+ *
+ * Pecahan di bawah Rp 100 praktis tidak beredar, jadi jumlah yang dibayar
+ * tunai dibulatkan ke `outlet.rounding_increment`.
+ *
+ * ## Yang dibulatkan bukan `total`
+ *
+ * `spec-c-pembayaran-pajak.md:162` — "Pembulatan mengubah **jumlah yang
+ * dibayar tunai**, bukan nilai transaksi dan bukan dasar pengenaan pajak."
+ *
+ * Karena itu fungsi ini menerima `outstanding` (sisa yang akan dibayar
+ * tunai), bukan `total`. Untuk pembayaran campuran, `spec-c:181` menegaskan
+ * yang dibulatkan adalah sisa tunai setelah pembayaran non-tunai: total
+ * 93.555 dengan QRIS 50.000 membulatkan 43.555 menjadi 43.600, bukan
+ * membulatkan 93.555.
+ *
+ * Konsekuensinya pembulatan mustahil dihitung saat order dibuat — order baru
+ * belum punya pembayaran apa pun, dan `computeOrderTotals` karena itu tidak
+ * menerima `roundingIncrement` sama sekali.
+ *
+ * `roundingAdjustment` DITURUNKAN dari selisih, bukan dihitung terpisah,
+ * sehingga `rounded === outstanding + adjustment` benar secara konstruksi.
+ * Tanpa itu, laporan kas tidak akan berimbang dan tidak ada yang bisa
+ * menjelaskan ke mana rupiahnya pergi.
+ */
+export function computeCashRounding(input: CashRoundingInput): CashRounding {
+  assertBigint(input.outstanding, 'outstanding');
+  assertBigint(input.roundingIncrement, 'roundingIncrement');
+
+  if (input.roundingIncrement <= 0n) {
+    throw new RangeError('roundingIncrement harus lebih besar dari 0.');
+  }
+  if (input.outstanding < 0n) {
+    throw new RangeError('outstanding tidak boleh negatif.');
+  }
+
+  const inc = input.roundingIncrement;
+  const sisa = input.outstanding % inc;
+
+  let rounded: bigint;
+  if (sisa === 0n) {
+    rounded = input.outstanding;
+  } else if (input.roundingMode === 'half_up') {
+    rounded = divRoundHalfUp(input.outstanding, inc) * inc;
+  } else if (input.roundingMode === 'up') {
+    rounded = input.outstanding - sisa + inc;
+  } else if (input.roundingMode === 'down') {
+    rounded = input.outstanding - sisa;
+  } else {
+    // Jatuh diam-diam ke half_up untuk mode yang tidak dikenal akan membuat
+    // outlet yang salah konfigurasi menagih berbeda dari yang diharapkan
+    // merchant, tanpa gejala apa pun.
+    throw new RangeError(
+      `rounding_mode "${input.roundingMode}" tidak dikenal. Pilihannya: half_up, up, down.`
+    );
+  }
+
+  return { roundedOutstanding: rounded, roundingAdjustment: rounded - input.outstanding };
 }
