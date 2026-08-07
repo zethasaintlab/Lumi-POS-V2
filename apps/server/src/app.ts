@@ -92,7 +92,7 @@ async function buildAppInner(pool: Pool, specPath: string): Promise<FastifyInsta
     ...createIdentityHandlers(pool),
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
-    ...createPaymentHandlers(pool),
+    ...createPaymentHandlers(pool, hlc),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);

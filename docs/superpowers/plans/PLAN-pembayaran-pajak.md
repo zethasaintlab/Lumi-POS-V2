@@ -1,6 +1,6 @@
 # PLAN — F1 Modul C (Pembayaran & Pajak), sub-project 1: TaxCalculator, urutan hitung, pembayaran tunai
 
-Status: **menunggu persetujuan.** Belum ada kode yang ditulis. Empat keputusan di §8, satu di antaranya menyangkut kode yang sudah ada di PR #5.
+Status: **selesai.** Empat keputusan di §8 sudah dijawab user — lihat §8.0. T1–T4 dikerjakan di PR #5 (keputusan Q1).
 
 ---
 
@@ -167,13 +167,13 @@ Lalu pajak:
 
 Lalu pembayaran tunai:
 
-- [ ] **T13** — `POST /orders/{id}/payments` tunai, dalam satu transaksi bersama perubahan status order.
-- [ ] **T14** — `OPEN` → `PAID` hanya bila `SUM(confirmed) >= amount_due`; kurang bayar tetap `OPEN`.
-- [ ] **T15** — Lebih bayar tunai → `change_amount`; lebih bayar non-tunai ditolak.
-- [ ] **T16** — Transisi ilegal ditolak lewat `assertTransition`, bukan `if` di handler.
-- [ ] **T17** — Idempotency untuk pembayaran — retry tidak boleh menghasilkan pembayaran ganda.
-- [ ] **T18** — Kontrak OpenAPI.
-- [ ] **T19** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
+- [x] **T13** — `POST /orders/{id}/payments` tunai, dalam satu transaksi bersama perubahan status order.
+- [x] **T14** — `OPEN` → `PAID` hanya bila `SUM(confirmed) >= amount_due`; kurang bayar tetap `OPEN`.
+- [x] **T15** — Lebih bayar tunai → `change_amount`; lebih bayar non-tunai ditolak.
+- [x] **T16** — Transisi ilegal ditolak lewat `assertTransition`, bukan `if` di handler.
+- [x] **T17** — Idempotency untuk pembayaran — retry tidak boleh menghasilkan pembayaran ganda.
+- [x] **T18** — Kontrak OpenAPI.
+- [x] **T19** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
 
 ---
 
