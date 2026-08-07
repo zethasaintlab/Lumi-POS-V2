@@ -329,7 +329,10 @@ export interface VariationSnapshotRow {
 // berbeda, dan sub-project ini tidak diminta menjawab yang kedua (lihat
 // brief §"Batasan keras": jangan memperluas scope).
 export async function getVariationSnapshot(client: PoolClient, variationId: string): Promise<VariationSnapshotRow | null> {
-  const { rows } = await client.query<{ item_name: string; variation_name: string; cost: string }>(
+  const { rows } = await client.query<{
+    item_name: string; variation_name: string; cost: string;
+    item_id: string; category_id: string | null;
+  }>(
     `SELECT i.name AS item_name, iv.name AS variation_name, iv.cost AS cost
      FROM item_variation iv
      JOIN item i ON i.id = iv.item_id
@@ -339,7 +342,13 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
   if (rows.length === 0) {
     return null;
   }
-  return { itemName: rows[0].item_name, variationName: rows[0].variation_name, cost: rows[0].cost };
+  return {
+    itemName: rows[0].item_name,
+    variationName: rows[0].variation_name,
+    cost: rows[0].cost,
+    itemId: rows[0].item_id,
+    categoryId: rows[0].category_id,
+  };
 }
 
 // T8 (PLAN-pembayaran-pajak.md) -- diekspor lewat catalog/index.ts untuk modul

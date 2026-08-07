@@ -69,8 +69,32 @@ export interface TaxBreakdownLine {
   isInclusive: boolean;
 }
 
+/**
+ * Snapshot pajak untuk satu `order_line` (FR-B3).
+ *
+ * `TaxBreakdownLine` dikelompokkan per TARIF karena itu yang dicetak di
+ * struk. `order_line` menyimpan per BARIS supaya struk lama kebal perubahan
+ * tarif. Keduanya dibutuhkan, dan keduanya harus berasal dari sini —
+ * menghitung pajak per baris di handler melanggar invariant #7.
+ */
+export interface TaxPerLine {
+  lineId: string;
+  taxRateId: string;
+  rateScaled: bigint;
+  amount: bigint;
+  isInclusive: boolean;
+}
+
 export interface TaxBreakdown {
   lines: TaxBreakdownLine[];
+  /**
+   * Snapshot per `order_line`. Baris yang tidak kena tarif apa pun **tidak**
+   * muncul di sini.
+   *
+   * `SUM(perLine.amount)` untuk satu tarif sama persis dengan `amount` tarif
+   * itu — dijamin lewat alokasi, bukan lewat penjumlahan pembulatan terpisah.
+   */
+  perLine: TaxPerLine[];
   /** Seluruh pajak, inklusif maupun eksklusif — untuk dicetak di struk. */
   totalTax: bigint;
   /**
@@ -202,7 +226,14 @@ export function calculateTax(input: TaxCalculationInput): TaxBreakdown {
 
   // Map dipakai supaya urutan baris breakdown mengikuti urutan tarif pertama
   // kali muncul — stabil antar run, bukan bergantung iterasi objek.
-  const perRate = new Map<string, { rate: TaxRateSpec; base: bigint }>();
+  //
+  // `members` menyimpan baris mana saja yang menyumbang ke tiap tarif, beserta
+  // dasarnya masing-masing. Dibutuhkan untuk membagi kembali pajak per tarif
+  // ke `perLine` di bawah.
+  const perRate = new Map<
+    string,
+    { rate: TaxRateSpec; base: bigint; members: { lineId: string; base: bigint }[] }
+  >();
 
   for (let i = 0; i < input.lines.length; i++) {
     const line = input.lines[i];
@@ -212,17 +243,19 @@ export function calculateTax(input: TaxCalculationInput): TaxBreakdown {
     const base = line.amount - discountPerLine[i] + servicePerLine[i];
     const existing = perRate.get(rate.id);
     if (existing === undefined) {
-      perRate.set(rate.id, { rate, base });
+      perRate.set(rate.id, { rate, base, members: [{ lineId: line.lineId, base }] });
     } else {
       existing.base += base;
+      existing.members.push({ lineId: line.lineId, base });
     }
   }
 
   const lines: TaxBreakdownLine[] = [];
+  const perLine: TaxPerLine[] = [];
   let totalTax = 0n;
   let totalTaxExclusive = 0n;
 
-  for (const { rate, base } of perRate.values()) {
+  for (const { rate, base, members } of perRate.values()) {
     // FR-C8 langkah 11 / 11':
     //   eksklusif : tax = base x rate
     //   inklusif  : tax = base - (base / (1 + rate))
@@ -238,11 +271,29 @@ export function calculateTax(input: TaxCalculationInput): TaxBreakdown {
       amount,
       isInclusive: rate.isInclusive,
     });
+
+    // Pajak per baris DIALOKASIKAN dari `amount` yang sudah dihitung atas
+    // dasar agregat -- bukan dihitung ulang per baris lalu dijumlahkan.
+    // Bedanya menentukan: menghitung tiap baris sendiri-sendiri bisa meleset
+    // satu-dua rupiah dari pajak yang tercetak di struk, dan struk yang tidak
+    // berjumlah adalah persis yang spec-c:126 peringatkan akan ditemukan
+    // merchant. allocateProportionally menjamin SUM(perLine) === amount.
+    const bagian = allocateProportionally(amount, members.map((m) => m.base));
+    for (let i = 0; i < members.length; i++) {
+      perLine.push({
+        lineId: members[i].lineId,
+        taxRateId: rate.id,
+        rateScaled: rate.rateScaled,
+        amount: bagian[i],
+        isInclusive: rate.isInclusive,
+      });
+    }
+
     totalTax += amount;
     if (!rate.isInclusive) {
       totalTaxExclusive += amount;
     }
   }
 
-  return { lines, totalTax, totalTaxExclusive };
+  return { lines, perLine, totalTax, totalTaxExclusive };
 }

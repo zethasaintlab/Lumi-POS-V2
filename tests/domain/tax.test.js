@@ -327,6 +327,98 @@ test('property: pajak inklusif tidak pernah melebihi dasarnya', async () => {
   assert.equal(diperiksa, 20);
 });
 
+// --- perLine: snapshot pajak per order_line (FR-B3) ---
+//
+// TaxBreakdown.lines dikelompokkan PER TARIF, karena itu yang dicetak di
+// struk. Tapi `order_line` menyimpan snapshot pajak PER BARIS
+// (tax_rate_id, tax_rate, tax_amount, is_tax_inclusive) supaya struk lama
+// kebal perubahan tarif.
+//
+// Menghitung pajak per baris di handler akan melanggar invariant #7, jadi
+// kalkulator ini yang menyediakannya.
+//
+// Yang menentukan benar-salahnya: SUM(perLine.amount) untuk satu tarif harus
+// SAMA PERSIS dengan amount tarif itu. Menghitung tiap baris sendiri-sendiri
+// lalu menjumlahkannya bisa meleset satu-dua rupiah dari pajak yang dihitung
+// atas dasar agregat -- dan struk yang tidak berjumlah adalah persis yang
+// spec-c:126 peringatkan akan ditemukan merchant.
+
+test('perLine: setiap baris kena pajak mendapat snapshot tarifnya', async () => {
+  const { calculateTax } = await import(MOD);
+  const b = calculateTax({
+    lines: [baris('a', 60000n), baris('b', 30000n)],
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates: [PBJT_10],
+    channel: 'takeaway',
+    outletId: 'outlet-1',
+  });
+  assert.equal(b.perLine.length, 2);
+  for (const p of b.perLine) {
+    assert.equal(p.taxRateId, 'rate-pbjt-10');
+    assert.equal(p.rateScaled, 1000n);
+    assert.equal(p.isInclusive, false);
+  }
+  assert.deepEqual(b.perLine.map((p) => p.lineId).sort(), ['a', 'b']);
+});
+
+test('perLine: jumlah per tarif sama persis dengan amount tarif itu', async () => {
+  const { calculateTax } = await import(MOD);
+  // 33.333 + 33.333 + 33.334 = 100.000; pajak 10% = 10.000. Pembagian ke tiga
+  // baris tidak habis, jadi ini kasus yang membedakan alokasi yang benar dari
+  // penjumlahan tiga pembulatan terpisah.
+  const b = calculateTax({
+    lines: [baris('a', 33333n), baris('b', 33333n), baris('c', 33334n)],
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates: [PBJT_10],
+    channel: 'takeaway',
+    outletId: 'outlet-1',
+  });
+  const perTarif = b.lines[0].amount;
+  const jumlahBaris = b.perLine.reduce((s, p) => s + p.amount, 0n);
+  assert.equal(jumlahBaris, perTarif, 'SUM(perLine) harus sama dengan amount tarif, tanpa rupiah hilang');
+  assert.equal(perTarif, 10000n);
+});
+
+test('perLine: baris tanpa tarif yang cocok tidak muncul', async () => {
+  const { calculateTax } = await import(MOD);
+  const hanyaA = { ...PBJT_10, appliesTo: 'item', appliesToIds: ['item-a'] };
+  const b = calculateTax({
+    lines: [baris('a', 50000n), baris('b', 50000n)],
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates: [hanyaA],
+    channel: 'takeaway',
+    outletId: 'outlet-1',
+  });
+  assert.equal(b.perLine.length, 1, 'baris b tidak kena pajak, jadi tidak punya snapshot');
+  assert.equal(b.perLine[0].lineId, 'a');
+});
+
+test('property: SUM(perLine.amount) selalu sama dengan totalTax', async () => {
+  const { calculateTax } = await import(MOD);
+  let diperiksa = 0;
+  for (const rateScaled of [0n, 1n, 1000n, 1100n, 2500n]) {
+    for (const isInclusive of [false, true]) {
+      for (const nilai of [[1n], [1n, 1n, 1n], [33333n, 33333n, 33334n], [999n, 1n]]) {
+        const b = calculateTax({
+          lines: nilai.map((v, i) => baris(String(i), v)),
+          serviceChargeAmount: 0n,
+          orderDiscount: 0n,
+          taxRates: [{ ...PBJT_10, rateScaled, isInclusive }],
+          channel: 'all',
+          outletId: 'o',
+        });
+        const jumlah = b.perLine.reduce((s, p) => s + p.amount, 0n);
+        assert.equal(jumlah, b.totalTax, `tidak berjumlah untuk ${rateScaled}/${isInclusive}/${nilai}`);
+        diperiksa += 1;
+      }
+    }
+  }
+  assert.equal(diperiksa, 40);
+});
+
 test('nilai number (bukan bigint) ditolak -- float tidak boleh masuk jalur pajak', async () => {
   const { calculateTax } = await import(MOD);
   assert.throws(

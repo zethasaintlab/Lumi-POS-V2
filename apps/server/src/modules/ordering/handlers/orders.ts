@@ -10,6 +10,8 @@ import { getOutletSettings } from '../../tenancy/index.ts';
 import { getVariationSnapshot, resolvePrice } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
 import { assertShiftOpen } from '../../cash/index.ts';
+import { fetchEffectiveTaxRates } from '../../payment/index.ts';
+import { formatScaledRate } from '../../../../../../packages/domain/src/numeric.ts';
 import {
   findIdempotencyKey,
   claimIdempotencyKey,
@@ -18,14 +20,20 @@ import {
   IdempotencyKeyConflictError,
 } from '../../sync/index.ts';
 import { computeLineTotal, computeOrderTotals } from '../../../../../../packages/domain/src/money.ts';
+import { calculateTax } from '../../../../../../packages/domain/src/tax.ts';
+import type { TaxBreakdown } from '../../../../../../packages/domain/src/tax.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // T3, T5, T6, T7, T9, T14 (docs/superpowers/plans/PLAN-ordering-fondasi.md).
 // POST /orders menulis order + check + SELURUH order_line + SELURUH
 // order_line_modifier dalam SATU withTenantTransaction (invariant #1,
-// CLAUDE.md). Pajak nol di seluruh jalur ini -- invariant #7, TaxCalculator
-// adalah Modul C dan belum ada (keputusan Q5, PLAN §8.0).
+// CLAUDE.md).
+//
+// T12 (PLAN-pembayaran-pajak.md) menyambungkan TaxCalculator: pajak kini
+// SUNGGUHAN, bukan nol. Tapi tidak ada aritmetika pajak di berkas ini --
+// invariant #7. Modul ini mengambil kandidat tarif lewat permukaan publik
+// modul payment, memanggil calculateTax, dan menyimpan hasilnya apa adanya.
 //
 // T10-T13 menambah: idempotency (header Idempotency-Key + tabel
 // idempotency_key) dan outbox, keduanya lewat modules/sync/index.ts
@@ -253,7 +261,11 @@ function toOrderLine(row: OrderLineRow, modifiers: OrderLineModifierRow[]) {
     modifierSnapshot: row.modifier_snapshot,
     discountAmount: Number(row.discount_amount),
     taxRateId: row.tax_rate_id,
-    taxRate: Number(row.tax_rate),
+    // STRING, bukan Number(). `order_line.tax_rate` adalah numeric(6,4), dan
+    // mengubahnya jadi number di batas API mengembalikan float ke permukaan
+    // yang justru dibersihkan dari float -- klien akan menyalinnya apa adanya
+    // ke perhitungan. Konsisten dengan TaxRate.rate di modul payment.
+    taxRate: row.tax_rate,
     taxAmount: Number(row.tax_amount),
     isTaxInclusive: row.is_tax_inclusive,
     costAtSale: Number(row.cost_at_sale),
@@ -314,8 +326,8 @@ const INSERT_ORDER_SQL = `
     rounding_adjustment, total, amount_due, created_by, occurred_at, hlc
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    'open', $9, $10, 0, 0, 0,
-    0, $11, $11, $12, COALESCE($13::timestamptz, now()), $14
+    'open', $9, $10, 0, 0, $11,
+    0, $12, $12, $13, COALESCE($14::timestamptz, now()), $15
   )
   RETURNING *
 `;
@@ -326,10 +338,12 @@ const INSERT_CHECK_SQL = `
   RETURNING *
 `;
 
-// tax_rate_id NULL, tax_rate 0, tax_amount 0, is_tax_inclusive false --
-// invariant #7 (CLAUDE.md): tidak ada angka pajak di luar TaxCalculator
-// (Modul C, belum ada), jadi kolom pajak literal nol/false/NULL di sini,
-// bukan dihitung.
+// T12 (PLAN-pembayaran-pajak.md) -- kolom pajak kini SNAPSHOT dari hasil
+// calculateTax (FR-B3), bukan literal nol. Nilainya dihitung TaxCalculator
+// dan diteruskan apa adanya ke sini; tidak ada aritmetika pajak di berkas ini
+// (invariant #7). Baris yang tidak kena tarif apa pun tetap menyimpan
+// tax_rate_id NULL dan nol -- itu "tidak ada pajak", berbeda dari tarif 0%
+// yang punya tax_rate_id.
 const INSERT_LINE_SQL = `
   INSERT INTO order_line (
     id, tenant_id, outlet_id, device_id, order_id, check_id, variation_id,
@@ -339,8 +353,8 @@ const INSERT_LINE_SQL = `
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13,
-    NULL, 0, 0, false, $14, $15,
-    $16, $17, $18
+    $14, $15::numeric, $16, $17, $18, $19,
+    $20, $21, $22
   )
   RETURNING *
 `;
@@ -365,7 +379,8 @@ async function insertOrderTree(
   body: OrderInput,
   hlcValue: bigint,
   lineCalcs: LineComputation[],
-  totals: { subtotal: bigint; roundingAdjustment: bigint; total: bigint }
+  totals: { subtotal: bigint; total: bigint },
+  breakdown: TaxBreakdown
 ): Promise<{ order: OrderRow; check: CheckRow; lines: LineWithModifiers[] }> {
   try {
     const { rows: orderRows } = await client.query<OrderRow>(INSERT_ORDER_SQL, [
@@ -379,11 +394,17 @@ async function insertOrderTree(
       body.sequence,
       body.channel,
       totals.subtotal.toString(),
+      // order.tax_amount = totalTax (SELURUH pajak, inklusif maupun
+      // eksklusif) -- itu yang dicetak di struk dan dilaporkan. Yang MENAMBAH
+      // total hanya totalTaxExclusive, dan itu sudah masuk lewat
+      // computeOrderTotals di pemanggil. Menukar keduanya akan menggandakan
+      // pajak inklusif di total.
+      breakdown.totalTax.toString(),
       // rounding_adjustment ditulis 0 langsung di SQL, bukan lewat parameter:
       // pembulatan bergantung pada METODE PEMBAYARAN (FR-C9 -- hanya berlaku
       // bila ada pembayaran tunai), dan order yang baru dibuat belum punya
       // pembayaran apa pun. amount_due karena itu sama dengan total, dan
-      // keduanya memakai $11 yang sama.
+      // keduanya memakai $12 yang sama.
       totals.total.toString(),
       actorId,
       body.occurredAt ?? null,
@@ -401,7 +422,12 @@ async function insertOrderTree(
     const checkRow = checkRows[0];
 
     const lines: LineWithModifiers[] = [];
+    // Indeks perLine sekali di luar loop -- lookup per baris, bukan pencarian
+    // linear berulang.
+    const taxByLineId = new Map(breakdown.perLine.map((p) => [p.lineId, p]));
+
     for (const calc of lineCalcs) {
+      const taxForLine = taxByLineId.get(calc.input.id);
       const modifiersInput = calc.input.modifiers ?? [];
       // modifier_snapshot (jsonb) -- SALINAN NILAI redundan di kolom
       // order_line, terpisah dari baris order_line_modifier anaknya (FR-B3).
@@ -431,6 +457,14 @@ async function insertOrderTree(
         String(BigInt(calc.input.quantityMilli as number)),
         JSON.stringify(modifierSnapshot),
         String(BigInt((calc.input.discountAmount as number | undefined) ?? 0)),
+        // Snapshot pajak per baris (FR-B3), diambil dari breakdown -- BUKAN
+        // dihitung ulang di sini (invariant #7). Baris yang tidak kena tarif
+        // apa pun tidak muncul di perLine, dan menyimpan NULL/0/false: itu
+        // "tidak ada pajak", berbeda dari tarif 0% yang punya tax_rate_id.
+        taxForLine?.taxRateId ?? null,
+        formatScaledRate(taxForLine?.rateScaled ?? 0n),
+        (taxForLine?.amount ?? 0n).toString(),
+        taxForLine?.isInclusive ?? false,
         calc.snapshot.cost,
         calc.lineTotal.toString(),
         actorId,
@@ -605,22 +639,44 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
           lineCalcs.push({ input: line, snapshot, unitPrice, lineTotal });
         }
 
-        let totals: { subtotal: bigint; roundingAdjustment: bigint; total: bigint };
+        // T12 (PLAN-pembayaran-pajak.md) -- pajak dihitung TaxCalculator,
+        // tidak pernah di sini (invariant #7). Modul ini hanya mengambil
+        // kandidat tarif lewat permukaan publik modul payment (invariant #4)
+        // dan meneruskannya; resolusi mana yang menang ada di calculateTax,
+        // supaya klien offline menerapkan aturan yang sama persis.
+        const taxRates = await fetchEffectiveTaxRates(client, body.outletId);
+        const breakdown = calculateTax({
+          lines: lineCalcs.map((l) => ({
+            lineId: l.input.id,
+            itemId: l.snapshot.itemId,
+            categoryId: l.snapshot.categoryId,
+            amount: l.lineTotal,
+          })),
+          // Keduanya 0 di sub-project ini; diskon order dan biaya layanan
+          // belum punya jalur masuk (PLAN-ordering-fondasi.md §3.6).
+          serviceChargeAmount: 0n,
+          orderDiscount: 0n,
+          taxRates,
+          channel: body.channel as 'dine_in' | 'takeaway',
+          outletId: body.outletId,
+        });
+
+        let totals: { subtotal: bigint; total: bigint };
         try {
           totals = computeOrderTotals({
             lineTotals: lineCalcs.map((l) => l.lineTotal),
-            // order_discount dan service_charge_amount = 0 di sub-project
-            // ini (PLAN §3.6) -- diskon order dan biaya layanan bukan scope
-            // fondasi order, dan taxAmount = 0 (invariant #7).
             orderDiscount: 0n,
             serviceChargeAmount: 0n,
-            taxAmount: 0n,
+            // totalTaxExclusive, BUKAN totalTax. Pajak inklusif sudah ada di
+            // dalam harga baris; memakai totalTax di sini akan menggandakannya
+            // (lihat komentar TaxBreakdown di packages/domain/src/tax.ts).
+            taxAmount: breakdown.totalTaxExclusive,
           });
         } catch (err) {
           translateMoneyError(err);
         }
 
-        const written = await insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals);
+        const written = await insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown);
         const responseBody = toOrder(written.order, written.check, written.lines);
 
         // T13 (FR-B2, invariant #1): satu baris outbox DALAM transaksi yang

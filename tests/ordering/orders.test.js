@@ -215,9 +215,20 @@ test('createOrder: jalur bahagia, 201, status open, total dihitung packages/doma
   assert.equal(body.status, 'open');
   assert.equal(body.channel, 'takeaway');
   assert.equal(body.checkId, payload.checkId);
-  assert.equal(body.taxAmount, 0, 'invariant #7 -- pajak nol di sub-project ini');
   assert.equal(body.subtotal, 20000, 'base.item_variation.price = 20000 (seedTenantBase)');
-  assert.equal(body.total, 20000);
+
+  // T12 (PLAN-pembayaran-pajak.md) -- pajak kini SUNGGUHAN, bukan nol.
+  //
+  // seedTenantBase menyemai satu tax_rate: PB1 10% INKLUSIF, outlet ini,
+  // all_items. Karena inklusif, pajaknya diekstrak dari DALAM harga:
+  //
+  //   20.000 - pembulatan(20.000 / 1,1) = 20.000 - 18.182 = 1.818
+  //
+  // dan total TIDAK bertambah (FR-C8 langkah 12'). Kalau angka ini pernah
+  // berubah jadi 22.000, artinya totalTax dipakai di tempat yang seharusnya
+  // totalTaxExclusive -- pajak inklusif tergandakan.
+  assert.equal(body.taxAmount, 1818, 'pajak inklusif diekstrak dari harga, bukan ditambahkan');
+  assert.equal(body.total, 20000, 'pajak inklusif tidak menambah total');
   assert.equal(body.amountDue, 20000, 'belum ada pembayaran -- amount_due = total');
   assert.equal(body.createdBy, base.user.id);
   assert.ok(body.occurredAt);
@@ -229,8 +240,13 @@ test('createOrder: jalur bahagia, 201, status open, total dihitung packages/doma
   assert.equal(body.lines[0].itemName, 'Kopi Susu');
   assert.equal(body.lines[0].variationName, 'Regular');
   assert.equal(body.lines[0].costAtSale, 8000);
-  assert.equal(body.lines[0].taxAmount, 0);
-  assert.equal(body.lines[0].isTaxInclusive, false);
+  // Snapshot pajak per baris (FR-B3). Untuk order satu baris, seluruh pajak
+  // tarif itu jatuh ke baris ini -- SUM(baris) selalu sama dengan
+  // order.tax_amount, dijamin lewat alokasi di calculateTax.
+  assert.equal(body.lines[0].taxAmount, 1818);
+  assert.equal(body.lines[0].isTaxInclusive, true, 'tarif yang di-seed inklusif');
+  assert.equal(body.lines[0].taxRate, '0.1000', 'tarif disnapshot sebagai string, presisi penuh');
+  assert.ok(body.lines[0].taxRateId, 'tax_rate_id disnapshot supaya struk lama kebal perubahan tarif');
 });
 
 test('createOrder: DRAFT (lines kosong) ditolak 400, tidak pernah tersimpan', async () => {
