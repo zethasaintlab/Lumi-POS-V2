@@ -100,6 +100,8 @@ Setiap task: test merah dulu → konfirmasi merah karena alasan yang benar → i
 - [x] **H6** — Property test: apa pun yang dikirim klien, **angka yang tersimpan selalu angka server**. Klien tidak dipercaya, dan itu harus jadi invariant yang diuji, bukan slogan.
 - [x] **H7** — Kontrak OpenAPI + dokumen.
 
+- [x] **D1** — Harness DST di repo: `npm run test:dst`, delapan invariant, lima mode cacat permanen, gate 10.000 iterasi, masuk CI.
+
 **Yang TIDAK dibangun di sini:** laporan "Perlu diperiksa" (Modul G — datanya tersedia, laporannya tidak), dan tiga FR lain yang menuntutnya tetap menunggu modul itu.
 
 ---

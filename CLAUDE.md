@@ -135,6 +135,7 @@ Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Header COOP/COEP di-set (`apps/kasir/vite.config.ts` + `tauri.conf.json`)
 - [x] `_adherence.oxlintrc.json` masuk CI — `npm run lint:ds` hijau, `.github/workflows/lint-ds.yml`
 - [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
+- [x] **Harness DST ada dan gate-nya hijau** — `npm run test:dst`, 10.000 iterasi fault injection, nol pelanggaran. Delapan invariant (I1–I8) dari `prototypes/02-dst-sinkronisasi/FINDINGS.md`; kelima mode cacat tinggal permanen sebagai bukti invariantnya tidak kosong
 - [ ] **SQLite WASM+OPFS berjalan di browser — belum dibangun/diuji.** Server-side saja, jadi tidak memblokir F1. **Memblokir F2.**
 
 Status F1 sekarang:
