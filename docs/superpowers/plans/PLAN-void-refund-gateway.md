@@ -152,8 +152,8 @@ Prasyarat:
 
 Domain:
 
-- [ ] **T4** — `packages/domain`: `decideCancellation(status)` → `'void' | 'refund'`, dan validasi alasan daftar tertutup. **Property test** atas seluruh status × kedua daftar alasan. Murni, tanpa I/O — klien harus memutuskan hal yang sama saat offline.
-- [ ] **T5** — `packages/domain`: batas refund kumulatif. Property test: `SUM(refund) ≤ total` selalu, termasuk refund parsial berulang.
+- [x] **T4** — `packages/domain`: `decideCancellation(status)` → `'void' | 'refund'`, dan validasi alasan daftar tertutup. **Property test** atas seluruh status × kedua daftar alasan. Murni, tanpa I/O — klien harus memutuskan hal yang sama saat offline.
+- [x] **T5** — `packages/domain`: batas refund kumulatif. Property test: `SUM(refund) ≤ total` selalu, termasuk refund parsial berulang.
 
 Void:
 
