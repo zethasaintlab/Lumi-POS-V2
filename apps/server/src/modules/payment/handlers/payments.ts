@@ -81,12 +81,17 @@ function toPayment(row: PaymentRow) {
 // (FR-C2: field referensi, confirmed_manually, penanda di struk, laporan
 // exception) dan QRIS dinamis butuh gateway -- keduanya C-2. Menerimanya
 // sekarang berarti membangun separuh FR-C2 tanpa kontrol yang menyertainya.
-const SUPPORTED_METHODS = new Set(['cash', 'qris_dynamic']);
+const SUPPORTED_METHODS = new Set(['cash', 'qris_dynamic', 'qris_static', 'card_edc']);
 
 // QRIS dinamis tidak menerima `tenderedAmount` -- tidak ada uang yang
 // diserahkan di tangan. Yang dikirim klien adalah `amount`, nominal yang
 // diminta ke gateway.
 const GATEWAY_METHODS = new Set(['qris_dynamic']);
+
+// Metode yang dikonfirmasi MANUSIA, bukan sistem. Tidak ada gateway yang
+// ditanyai -- kontrol wajibnya (referensi untuk QRIS statis, approval code
+// untuk EDC) adalah satu-satunya yang berdiri di sana.
+const MANUAL_METHODS = new Set(['qris_static', 'card_edc']);
 
 function assertMethodSupported(method: string): void {
   if (!SUPPORTED_METHODS.has(method)) {
@@ -125,6 +130,71 @@ function assertGatewayAmountValid(value: unknown): asserts value is number {
     value > Number.MAX_SAFE_INTEGER
   ) {
     throw new HttpError(400, 'VALIDATION_ERROR', 'amount harus bilangan bulat rupiah > 0.');
+  }
+}
+
+
+/**
+ * Menolak apa pun yang berbentuk nomor kartu.
+ *
+ * AC FR-C5 keempat: "Tidak ada field bebas (`notes`, `reference`) yang
+ * divalidasi menerima 13-19 digit berurutan tanpa peringatan."
+ *
+ * Pemisah (spasi dan tanda hubung) dibuang lebih dulu, karena `4111 1111 1111
+ * 1111` adalah bentuk yang paling mungkin diketik orang -- memeriksa digit
+ * berurutan saja akan meloloskannya.
+ *
+ * Ambangnya 13, bukan 12: referensi bank dan nominal rupiah rutin mencapai 12
+ * digit, dan kontrol yang menolak referensi sah akan dimatikan orang pertama
+ * yang terhalang olehnya. 13 adalah panjang PAN terpendek yang beredar.
+ */
+const KEMUNGKINAN_PAN = /\d{13,19}/;
+
+function assertBukanNomorKartu(value: string, label: string): void {
+  const tanpaPemisah = value.replace(/[\s-]/g, '');
+  if (KEMUNGKINAN_PAN.test(tanpaPemisah)) {
+    throw new HttpError(
+      400,
+      'POSSIBLE_CARD_NUMBER',
+      `${label} tampak memuat nomor kartu. Data kartu tidak boleh masuk ke POS (FR-C5).`
+    );
+  }
+}
+
+const MIN_REFERENCE_LENGTH = 3;
+
+function assertReferenceValid(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || value.trim().length < MIN_REFERENCE_LENGTH) {
+    // Kontrol anti-fraud FR-C2, bukan formalitas: QRIS statis dikonfirmasi
+    // kasir TANPA verifikasi sistem apa pun, dan berfungsi offline. Tanpa
+    // referensi, "sudah dibayar" hanyalah pernyataan kasir tanpa jejak.
+    throw new HttpError(
+      400,
+      'VALIDATION_ERROR',
+      `reference wajib untuk QRIS statis (minimal ${MIN_REFERENCE_LENGTH} karakter): nominal + 4 digit terakhir nomor referensi, atau catatan.`
+    );
+  }
+  assertBukanNomorKartu(value, 'reference');
+}
+
+function assertApprovalCodeValid(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'approvalCode wajib untuk pembayaran EDC (FR-C4).');
+  }
+  assertBukanNomorKartu(value, 'approvalCode');
+}
+
+/**
+ * `card_last4` maksimal 4 DIGIT.
+ *
+ * Database sudah punya `CHECK (length(card_last4) <= 4)`, dan test menulis
+ * langsung ke tabel untuk membuktikan ia sungguh menolak. Pemeriksaan di sini
+ * lebih ketat: ia menuntut DIGIT, sehingga tidak ada jalan sepotong data lain
+ * menyelinap ke kolom yang namanya menjanjikan empat digit terakhir kartu.
+ */
+function assertCardLast4Valid(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || !/^\d{1,4}$/.test(value)) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'cardLast4 harus 1-4 digit angka (FR-C4: tidak pernah lebih).');
   }
 }
 
@@ -348,6 +418,176 @@ async function ringkasan(
       outstanding: Number(total - sudahDibayar),
     };
   });
+}
+
+
+// --- G8-G9: QRIS statis dan EDC ---
+
+interface ManualDeps {
+  pool: Pool;
+  hlc: Hlc;
+}
+
+const INSERT_MANUAL_PAYMENT_SQL = `
+  INSERT INTO payment (
+    id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
+    status, confirmed_manually, provider_reference, approval_code, card_last4,
+    acquirer, terminal_reference, tendered_at, created_by, occurred_at, hlc
+  )
+  SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
+         'confirmed', $6, $7, $8, $9,
+         $10, $11, now(), $12, COALESCE($13::timestamptz, now()), $14
+    FROM "order" o WHERE o.id = $15
+  RETURNING *
+`;
+
+/**
+ * Pembayaran yang dikonfirmasi MANUSIA (FR-C2 QRIS statis, FR-C4 EDC).
+ *
+ * Satu transaksi, sama seperti tunai: tidak ada panggilan jaringan yang perlu
+ * dijaga di luarnya, jadi tidak ada alasan memecahnya seperti jalur gateway.
+ *
+ * ## `confirmed` langsung -- dan kenapa itu BUKAN pelanggaran spec-c:320
+ *
+ * Aturan mutlak itu berbunyi "tidak pernah menandai lunas tanpa konfirmasi
+ * dari GATEWAY", dan berlaku untuk pembayaran yang punya gateway. QRIS statis
+ * dan EDC tidak punya: yang mengonfirmasi adalah orang yang melihat notifikasi
+ * bank atau struk terminal. Karena itu `confirmed_manually` ada -- ia menandai
+ * bahwa tidak ada sistem yang memverifikasi, dan FR-G5 memakainya untuk
+ * laporan exception per kasir.
+ *
+ * `provider` sengaja dibiarkan NULL: tidak ada penyedia yang terlibat.
+ * Mengisinya akan membuat laporan mengira transaksi ini pernah diverifikasi.
+ */
+async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
+  const { pool, hlc } = deps;
+  const { req, reply, tenantId, actorId, idempotencyKey, orderId, method } = ctx;
+  const body = req.body as PaymentInput & {
+    amount?: unknown;
+    reference?: unknown;
+    approvalCode?: unknown;
+    cardLast4?: unknown;
+    acquirer?: unknown;
+    terminalReference?: unknown;
+  };
+
+  assertGatewayAmountValid(body.amount);
+
+  let reference: string | null = null;
+  let approvalCode: string | null = null;
+  let cardLast4: string | null = null;
+
+  if (method === 'qris_static') {
+    assertReferenceValid(body.reference);
+    reference = body.reference.trim();
+  } else {
+    assertApprovalCodeValid(body.approvalCode);
+    approvalCode = body.approvalCode.trim();
+    if (body.cardLast4 !== undefined && body.cardLast4 !== null) {
+      assertCardLast4Valid(body.cardLast4);
+      cardLast4 = body.cardLast4;
+    }
+  }
+
+  const acquirer = typeof body.acquirer === 'string' ? body.acquirer : null;
+  const terminalReference = typeof body.terminalReference === 'string' ? body.terminalReference : null;
+  if (terminalReference !== null) {
+    assertBukanNomorKartu(terminalReference, 'terminalReference');
+  }
+
+  const amount = BigInt(body.amount);
+  const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc));
+
+  const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
+    const existing = await findIdempotencyKey(client, idempotencyKey);
+    if (existing !== null && existing.completed) {
+      return { kind: 'cached' as const, record: existing };
+    }
+    await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash: `${orderId}:${body.id}` });
+
+    const { rows: orderRows } = await client.query<OrderStateRow>(
+      `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id, c.id AS check_id
+         FROM "order" o JOIN "check" c ON c.order_id = o.id
+        WHERE o.id = $1 FOR UPDATE OF o`,
+      [orderId]
+    );
+    if (orderRows.length === 0) {
+      throw new HttpError(404, 'ORDER_NOT_FOUND', `Order ${orderId} tidak ditemukan.`);
+    }
+    const order = orderRows[0];
+    try {
+      assertTransition(order.status, 'paid');
+    } catch (err) {
+      throw new HttpError(409, 'ORDER_NOT_PAYABLE', (err as Error).message);
+    }
+
+    let paymentRow: PaymentRow;
+    try {
+      const { rows } = await client.query<PaymentRow>(INSERT_MANUAL_PAYMENT_SQL, [
+        body.id, tenantId, order.check_id, method, amount.toString(),
+        method === 'qris_static', reference, approvalCode, cardLast4,
+        acquirer, terminalReference, actorId, body.occurredAt ?? null, hlcValue.toString(), orderId,
+      ]);
+      paymentRow = rows[0];
+    } catch (err) {
+      if (isPrimaryKeyViolation(err)) {
+        throw new HttpError(409, 'ID_ALREADY_EXISTS', `Payment dengan id ${body.id} sudah ada.`);
+      }
+      throw err;
+    }
+
+    const total = BigInt(order.total);
+    const sudahDibayar = await sumConfirmed(client, orderId);
+    let statusBaru = order.status;
+    if (sudahDibayar >= total) {
+      assertTransition(order.status, 'paid');
+      assertTransition('paid', 'closed');
+      // rounding_adjustment TIDAK disentuh: pembulatan FR-C9 hanya berlaku
+      // pada sisa yang dibayar TUNAI, dan tidak ada tunai di sini.
+      await client.query(`UPDATE "order" SET status = 'closed', amount_due = total WHERE id = $1`, [orderId]);
+      statusBaru = 'closed';
+    }
+
+    await insertOutboxEvent(client, {
+      id: randomUUID(),
+      tenantId,
+      aggregateType: 'payment',
+      aggregateId: paymentRow.id,
+      eventType: 'payment.recorded',
+      payload: { orderId, amount: amount.toString(), method },
+    });
+
+    const responseBody = {
+      payment: {
+        ...toPayment(paymentRow),
+        provider: null,
+        providerReference: reference,
+      },
+      order: {
+        id: orderId,
+        status: statusBaru,
+        total: Number(total),
+        taxAmount: Number(order.tax_amount),
+        roundingAdjustment: 0,
+        amountDue: Number(total),
+      },
+      outstanding: Number(sudahDibayar >= total ? 0n : total - sudahDibayar),
+    };
+    await completeIdempotencyKey(client, { key: idempotencyKey, responseStatus: 201, responseBody });
+    return { kind: 'fresh' as const, body: responseBody };
+  }).catch((err) => {
+    if (err instanceof IdempotencyKeyConflictError) {
+      throw new HttpError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Permintaan dengan key ini sedang diproses. Coba lagi.');
+    }
+    throw err;
+  });
+
+  if (hasil.kind === 'cached') {
+    reply.code(hasil.record.responseStatus);
+    return hasil.record.responseBody;
+  }
+  reply.code(201);
+  return hasil.body;
 }
 
 interface GatewayDeps {
@@ -590,6 +830,13 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: Payme
       if (GATEWAY_METHODS.has(method)) {
         return await initiateGatewayPayment(
           { pool, hlc, provider },
+          { req, reply, tenantId, actorId, idempotencyKey, orderId, method }
+        );
+      }
+
+      if (MANUAL_METHODS.has(method)) {
+        return await recordManualPayment(
+          { pool, hlc },
           { req, reply, tenantId, actorId, idempotencyKey, orderId, method }
         );
       }

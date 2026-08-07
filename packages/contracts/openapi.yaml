@@ -1672,11 +1672,11 @@ paths:
                 id: { type: string }
                 method:
                   type: string
-                  # Daftar TERTUTUP, tapi sengaja hanya memuat yang sudah
-                  # dibangun. qris_static dan card_edc menyusul di sub-project
-                  # yang sama; sampai kontrolnya ada, menerimanya berarti
-                  # membangun separuh FR-C2 tanpa pengaman yang menyertainya.
-                  enum: [cash, qris_dynamic]
+                  # Daftar TERTUTUP. `other` (voucher fisik, transfer) belum
+                  # dibangun -- FR-C2 menuntut catatan wajib untuknya, dan
+                  # menerimanya sebelum itu ada berarti membangun separuh
+                  # FR-C2 tanpa pengaman yang menyertainya.
+                  enum: [cash, qris_dynamic, qris_static, card_edc]
                   default: cash
                 # tenderedAmount = uang yang DISERAHKAN pelanggan (tunai
                 # saja), bukan yang terpakai. Server yang menghitung amount
@@ -1690,6 +1690,23 @@ paths:
                 # Tidak ada uang yang diserahkan di tangan, jadi tidak ada
                 # tendered maupun kembalian.
                 amount: {}
+                # --- QRIS statis (FR-C2) ---
+                # WAJIB. Kontrol anti-fraud, bukan formalitas: QRIS statis
+                # dikonfirmasi kasir TANPA verifikasi sistem apa pun, dan
+                # berfungsi offline. Isinya nominal + 4 digit terakhir nomor
+                # referensi, atau catatan.
+                #
+                # Ditolak bila memuat 13-19 digit berurutan (AC FR-C5 keempat)
+                # -- itu bentuk nomor kartu.
+                reference: { type: string, nullable: true }
+                # --- EDC (FR-C4) ---
+                # approvalCode WAJIB; cardLast4 opsional dan maksimal 4 DIGIT.
+                # Tidak ada field mana pun di kontrak ini yang menerima nomor
+                # kartu lengkap, dan itu permanen.
+                approvalCode: { type: string, nullable: true }
+                cardLast4: { type: string, nullable: true, maxLength: 4 }
+                acquirer: { type: string, nullable: true }
+                terminalReference: { type: string, nullable: true }
                 occurredAt: { type: string, format: date-time }
                 hlc: { type: string }
       responses:

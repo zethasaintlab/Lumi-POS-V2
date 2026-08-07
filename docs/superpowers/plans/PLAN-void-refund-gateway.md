@@ -194,8 +194,8 @@ QRIS dinamis (FR-C2, FR-C14):
 
 QRIS statis dan EDC:
 
-- [ ] **G8** — QRIS statis: field referensi **wajib**; `confirmed_manually = true`. Berfungsi tanpa gateway.
-- [ ] **G9** — EDC: `approval_code` **wajib**; `card_last4` maksimal 4 (CHECK database sudah ada — diuji bahwa ia sungguh menolak).
+- [x] **G8** — QRIS statis: field referensi **wajib**; `confirmed_manually = true`. Berfungsi tanpa gateway.
+- [x] **G9** — EDC: `approval_code` **wajib**; `card_last4` maksimal 4 (CHECK database sudah ada — diuji bahwa ia sungguh menolak).
 
 FR-C5 — larangan data kartu:
 
