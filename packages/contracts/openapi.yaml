@@ -1123,8 +1123,16 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [itemId, modifierListId, sortOrder]
+                required: [id, itemId, modifierListId, sortOrder]
                 properties:
+                  # Surrogate key yang dituntut PowerSync untuk raw table
+                  # (migrasi 0018). Di-generate server -- tabel ini tidak
+                  # pernah ditulis offline. Kunci alaminya tetap pasangan
+                  # (itemId, modifierListId), dan URL endpoint ini tetap
+                  # di-key oleh pasangan itu, bukan oleh id.
+                  #
+                  # Attach ulang mengembalikan id yang SAMA.
+                  id: { type: string }
                   itemId: { type: string }
                   modifierListId: { type: string }
                   sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }

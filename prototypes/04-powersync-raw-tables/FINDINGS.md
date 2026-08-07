@@ -18,7 +18,7 @@ Prototipe 03 §5c menjawab dua pertanyaan penentu dari **pembacaan kode**, dan m
 | Jalur naik tetap milik `outbox_local` | **YA** — `ps_crud` tetap kosong, dan T4b membuktikan mekanismenya memang bekerja bila dipasang |
 | Dua tab dapat menulis bersamaan (§7) | **YA** — dan ini membalik temuan prototipe 03 §3 |
 | Tulis 1 penjualan | **12,3 ms** p50 — **3,8× lebih lambat** daripada 3,25 ms di prototipe 03 |
-| `item_modifier_list` dapat jadi raw table | **TIDAK** — tidak punya kolom `id`. **Diputuskan user 7 Agu 2026: kolom `id` ditambahkan** (§5) |
+| `item_modifier_list` dapat jadi raw table | Semula **TIDAK** — tidak punya kolom `id`. **Sudah diperbaiki** (migrasi `0018`); kini raw table biasa, dan subjek uji itu pindah ke `stock_snapshot` (§5) |
 
 ---
 
@@ -96,16 +96,17 @@ Tiga arah diajukan, semuanya perubahan skema dan karena itu keputusan pemilik pr
 2. Turunkan relasinya sebagai bagian dari dokumen `item`, bukan tabel sendiri.
 3. Biarkan ia tabel PowerSync biasa (JSON + view) dengan **nama berbeda** dari tabel lokal kami.
 
-**Diputuskan user 7 Agustus 2026: arah 1 — kolom `id` (`TEXT PRIMARY KEY`) ditambahkan.**
+**Diputuskan user 7 Agustus 2026: arah 1 — kolom `id` ditambahkan. Sudah dikerjakan** (`docs/superpowers/plans/PLAN-item-modifier-list-id.md`):
 
-Yang menyusul dari keputusan itu, dan belum dikerjakan:
-
-- Migrasi PostgreSQL **baru** (`0018`), bukan penyuntingan `0004_catalog.sql` — expand-contract. Primary key berubah dari `(item_id, modifier_list_id)` menjadi `id`, dengan **unique constraint** atas pasangan lama supaya relasi ganda tetap mustahil.
+- Migrasi PostgreSQL **baru** `0018`, bukan penyuntingan `0004_catalog.sql`. Primary key pindah ke `id`, dan `ux_item_modifier_list_pair` menggantikan jaminan pasangan unik yang hilang bersamanya.
 - `db/local/001-initial.sql` menyusul bentuk yang sama.
-- `item_modifier_list` naik dari `TABEL_TANPA_ID` ke `TABEL_RAW` di `src/skema.js`, dan T1g kehilangan subjeknya — ia harus diarahkan ke `stock_snapshot`, yang tetap tanpa `id` dan memang tidak perlu turun.
-- `product/ERD-lumi-pos-v1.md` §15 menyimpan bentuk lama. **Penyuntingan dokumen produk bukan kewenangan agent** — diangkat, tidak dikerjakan.
+- `item_modifier_list` naik ke `TABEL_RAW`. **T1g tidak dihapus bersama masalahnya** — ia diarahkan ke `stock_snapshot`, yang tetap tanpa `id` dan memang tidak perlu turun. Uji itu yang menjaga syarat "raw table wajib punya `id`" tetap terbukti, bukan sekadar diingat.
+- `product/ERD-lumi-pos-v1.md` menyimpan bentuk lama. **Penyuntingan dokumen produk bukan kewenangan agent** — diangkat di `HANDOFF.md`, tidak dikerjakan.
 
-`stock_snapshot` juga tanpa `id`, dan itu **dibiarkan**: ia cache lokal hasil agregasi `stock_movement`, tidak pernah naik maupun turun.
+Dua hal yang ditemukan saat mengerjakannya, keduanya oleh test dan bukan oleh review:
+
+- **Backfill `UPDATE` di migrasi tertahan RLS.** `FORCE ROW LEVEL SECURITY` berlaku untuk pemilik tabel juga (invariant #8 bekerja persis seperti seharusnya), jadi `UPDATE ... SET id = ...` gagal atas `unrecognized configuration parameter "app.tenant_id"`. Yang berbahaya bukan kegagalannya melainkan perbaikan yang menggoda — `SET LOCAL app.tenant_id` akan membuat migrasi berhasil sambil hanya mengisi baris satu tenant. Jalan keluarnya DDL: `ADD COLUMN ... DEFAULT gen_random_uuid()::text` dievaluasi per baris dan tidak tunduk RLS sama sekali.
+- **SQLite menerima NULL di kolom `PRIMARY KEY`** pada tabel rowid — bug lama yang dipertahankan demi kompatibilitas. `id TEXT PRIMARY KEY` saja karena itu **tidak** setara dengan PostgreSQL; `NOT NULL` harus ditulis eksplisit, atau baris ber-id NULL diterima di perangkat sementara server menolaknya.
 
 **Catatan cara uji ini nyaris hampa.** Versi pertamanya menerima error apa pun sebagai "ditolak", dan ia lulus — atas `unexpected write type insert`, karena parameter write type saya tulis huruf kecil sementara core menuntut `INSERT`. Uji yang lulus atas kegagalan yang salah tidak membuktikan apa pun tentang kolom `id`. Sekarang ia menuntut pesan yang menyebut `id column`. Yang mengungkapnya bukan review, melainkan T4b yang gagal dengan pesan yang sama.
 
@@ -136,6 +137,12 @@ Yang menyusul dari keputusan itu, dan belum dikerjakan:
 T5e menjawab pertanyaan yang paling penting bagi keputusan: menulis ke tabel yang terdaftar sebagai raw table **tidak lebih mahal** daripada menulis ke tabel yang PowerSync tidak tahu keberadaannya — malah sedikit lebih murah. Biaya tambahan itu melekat pada koneksi PowerSync secara umum, **bukan pada keputusan memakai raw table**.
 
 Sekitar 6–7 ms tetap **tidak dapat saya atribusikan**. Bukan RPC per pernyataan (T5b), bukan SharedWorker (T5d), bukan raw table (T5e). Saya tidak menebak sisanya.
+
+### Varians yang perlu diketahui sebelum angka ini dipakai
+
+Dijalankan ulang setelah `item_modifier_list` naik jadi raw table (17 raw table, bukan 16): **13,99 ms** — tidak berubah berarti. Menambah raw table tidak menambah biaya per penjualan, konsisten dengan T5e.
+
+Tapi satu run **sesaat setelah suite database berat dijalankan** menghasilkan **28,05 ms** — dua kali lipat, dengan kode yang sama persis. Angka di tabel ini karena itu berlaku untuk mesin yang sedang tidak sibuk, dan **selisih 2× dari beban mesin lebih besar daripada seluruh selisih yang diatribusikan di atas**. Siapa pun yang memakai angka ini untuk membandingkan sesuatu harus menjalankan pembandingnya di kondisi yang sama.
 
 ### Apakah 12 ms cukup
 

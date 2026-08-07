@@ -32,10 +32,22 @@ CREATE TABLE modifier (
   price INTEGER NOT NULL DEFAULT 0, is_default INTEGER DEFAULT 0,
   sort_order INTEGER DEFAULT 0, archived_at TEXT
 );
+-- `id` ada karena PowerSync menolak raw table tanpanya ("Table X has no id
+-- column"), bukan karena kunci alaminya berubah. Kunci alaminya tetap
+-- pasangan (item_id, modifier_list_id), dan ux_item_modifier_list_pair yang
+-- menjaganya sejak primary key pindah. Sejajar dengan migrasi PostgreSQL 0018;
+-- bentuk lokal dan server HARUS sama, karena baris ini turun lewat sync.
+-- `NOT NULL` ditulis eksplisit, dan itu BUKAN redundan: di tabel rowid,
+-- SQLite mengizinkan NULL pada kolom PRIMARY KEY -- bug lama yang
+-- dipertahankan demi kompatibilitas. Tanpa baris ini, baris ber-id NULL
+-- diterima di perangkat sementara PostgreSQL menolaknya, dan selisih itu baru
+-- terlihat saat sync. Ditemukan oleh test, bukan oleh review.
 CREATE TABLE item_modifier_list (
-  item_id TEXT NOT NULL, modifier_list_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0,
-  PRIMARY KEY (item_id, modifier_list_id)
+  id TEXT PRIMARY KEY NOT NULL,
+  item_id TEXT NOT NULL, modifier_list_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0
 );
+CREATE UNIQUE INDEX ux_item_modifier_list_pair
+  ON item_modifier_list(item_id, modifier_list_id);
 CREATE TABLE tax_rate (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, outlet_id TEXT,
   name TEXT NOT NULL, type TEXT NOT NULL, rate INTEGER NOT NULL, -- rate x10000

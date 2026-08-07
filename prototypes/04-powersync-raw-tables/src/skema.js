@@ -30,15 +30,19 @@ export function pernyataanSkema() {
 //   `powersync_replace_schema` tidak akan pernah menyentuhnya.
 // - `outbox_local` juga lokal, dan ia justru JANTUNG jalur naik kami. Ia harus
 //   tetap tidak terlihat oleh PowerSync.
-// - `item_modifier_list` MASALAH SUNGGUHAN: ia katalog, harus turun, tapi
-//   primary key-nya komposit dan ia tidak punya kolom `id`. Diuji terpisah di
-//   T1b, bukan disembunyikan.
+//
+// `item_modifier_list` DULU ada di daftar TABEL_TANPA_ID: ia katalog, harus
+// turun, tapi primary key-nya komposit dan tidak ada kolom `id`. Migrasi
+// PostgreSQL 0018 menambahkannya, jadi ia kini raw table biasa. Yang menjaga
+// syarat "raw table wajib punya id" tetap terbukti sekarang `stock_snapshot`
+// (lihat TABEL_TANPA_ID) -- uji itu tidak dihapus bersama masalahnya.
 export const TABEL_RAW = [
   'category',
   'item',
   'item_variation',
   'modifier_list',
   'modifier',
+  'item_modifier_list',
   'tax_rate',
   'order',
   'check',
@@ -52,8 +56,16 @@ export const TABEL_RAW = [
   'audit_event',
 ];
 
-export const TABEL_LOKAL_SAJA = ['stock_snapshot', 'outbox_local', 'device_config'];
-export const TABEL_TANPA_ID = ['item_modifier_list'];
+export const TABEL_LOKAL_SAJA = ['outbox_local', 'device_config'];
+
+// Subjek T1g. `stock_snapshot` juga murni lokal -- ia cache hasil agregasi
+// `stock_movement`, tidak pernah naik maupun turun -- jadi ia TIDAK perlu
+// kolom `id`, dan justru itu yang membuatnya subjek yang benar: ia tetap ada
+// sebagai bukti hidup bahwa PowerSync menolak raw table tanpa `id`.
+//
+// Kalau suatu hari ia diberi `id` juga, T1g kehilangan subjeknya lagi dan
+// harus dipindahkan, bukan dihapus.
+export const TABEL_TANPA_ID = ['stock_snapshot'];
 
 export const SEMUA_TABEL_KAMI = [
   ...TABEL_RAW,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
@@ -5,6 +6,7 @@ import { getTenantId } from '../../../tenant-context.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface BridgeRow {
+  id: string;
   item_id: string;
   modifier_list_id: string;
   sort_order: number;
@@ -51,20 +53,45 @@ export function createItemModifierListHandlers(pool: Pool) {
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
         await assertItemVisible(client, itemId);
         await assertModifierListVisible(client, modifierListId);
-        // Idempotent by design: PRIMARY KEY (item_id, modifier_list_id) --
-        // attaching an already-attached pair updates sort_order instead of
-        // erroring, which is friendlier than forcing detach-then-reattach
-        // just to reorder.
+        // Idempotent by design: attaching an already-attached pair updates
+        // sort_order instead of erroring, which is friendlier than forcing
+        // detach-then-reattach just to reorder.
+        //
+        // The conflict target is `ux_item_modifier_list_pair`, NOT the primary
+        // key. Migration 0018 moved the PK to a surrogate `id` (PowerSync
+        // rejects raw tables without an `id` column) and added that unique
+        // constraint as the replacement guarantee -- without it this ON
+        // CONFLICT clause has no arbiter and Postgres rejects the statement
+        // outright.
+        //
+        // `id` is generated HERE and deliberately absent from DO UPDATE. If it
+        // were reissued on re-attach, a row already synced to devices would
+        // look like a *different* row: PowerSync would delete the old one and
+        // insert a new one, and every device would re-download a relation that
+        // did not actually change. The generated value is therefore discarded
+        // on the conflict path -- RETURNING yields the id the row has always
+        // had.
+        //
+        // Server-generated, unlike the client-generated ULIDs the rest of the
+        // schema uses. That convention exists for rows written OFFLINE; this
+        // table is catalog, administered online-only, and replicated downward
+        // as read data. Do not carry the exception to tables born on a device.
         const { rows } = await client.query<BridgeRow>(
-          `INSERT INTO item_modifier_list (tenant_id, item_id, modifier_list_id, sort_order)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (item_id, modifier_list_id) DO UPDATE SET sort_order = EXCLUDED.sort_order
-           RETURNING item_id, modifier_list_id, sort_order`,
-          [tenantId, itemId, modifierListId, body.sortOrder ?? 0]
+          `INSERT INTO item_modifier_list (id, tenant_id, item_id, modifier_list_id, sort_order)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT ON CONSTRAINT ux_item_modifier_list_pair
+             DO UPDATE SET sort_order = EXCLUDED.sort_order
+           RETURNING id, item_id, modifier_list_id, sort_order`,
+          [randomUUID(), tenantId, itemId, modifierListId, body.sortOrder ?? 0]
         );
         return rows[0];
       });
-      return { itemId: row.item_id, modifierListId: row.modifier_list_id, sortOrder: row.sort_order };
+      return {
+        id: row.id,
+        itemId: row.item_id,
+        modifierListId: row.modifier_list_id,
+        sortOrder: row.sort_order,
+      };
     },
 
     // Deliberately does NOT call assertItemVisible/assertModifierListVisible

@@ -105,10 +105,14 @@ async function t1Koeksistensi(db) {
   );
 
   // Tabel lokal-saja tidak dideklarasikan ke PowerSync sama sekali.
-  const lokalHilang = TABEL_LOKAL_SAJA.filter((t) => !namaTabel.includes(t));
+  // `stock_snapshot` ikut di sini meski ia tinggal di TABEL_TANPA_ID: ia
+  // sama-sama murni lokal, dan yang membedakannya hanya perannya sebagai
+  // subjek T1g.
+  const lokalSaja = [...TABEL_LOKAL_SAJA, ...TABEL_TANPA_ID];
+  const lokalHilang = lokalSaja.filter((t) => !namaTabel.includes(t));
   catat(
     'T1f tabel lokal-saja utuh meski tak dikenal PowerSync',
-    lokalHilang.length === 0 ? TABEL_LOKAL_SAJA.join(', ') : `HILANG: ${lokalHilang.join(', ')}`,
+    lokalHilang.length === 0 ? lokalSaja.join(', ') : `HILANG: ${lokalHilang.join(', ')}`,
     lokalHilang.length === 0
   );
 }
