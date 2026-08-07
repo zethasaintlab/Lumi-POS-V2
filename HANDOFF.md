@@ -44,6 +44,14 @@ Semuanya menyentuh skema — murah sekarang, mahal nanti.
 - [x] Ambang otorisasi default: diskon >20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale >3×/shift — diputuskan 1 Agu 2026. **Ditambah:** void **tanpa** PIN manajer (alasan + audit + restock otomatis), refund tetap PIN manajer. Angkanya `[ASUMSI]`, belum divalidasi ke merchant
 - [ ] Batas kredensial offline (OQ-08)
 
+## Setiap suite ber-database WAJIB `--test-concurrency=1`
+
+Bukan preferensi. Setiap file test yang menyentuh database memanggil `resetAll` (`TRUNCATE`) di `beforeEach`. Dua file dalam satu suite yang berjalan bersamaan akan saling menghapus data di tengah jalan, sama seperti dua suite yang berjalan bersamaan.
+
+Gejalanya sama menipunya: `violates foreign key constraint "..._tenant_id_fkey"` diikuti rentetan `current transaction is aborted`. Terlihat seperti bug skema atau bug produk. Bukan.
+
+`test:isolation` dan `test:server` sempat tidak punya flag ini dan lolos berbulan-bulan karena keberuntungan timing — lalu gagal di runner CI 2-core, 7 Agu 2026. **Suite baru yang menyentuh database harus menyalin flag ini.** `test:domain` tidak butuh (murni, tanpa I/O) dan justru lebih cepat tanpa.
+
 ## Menjalankan test — satu database, satu suite pada satu waktu
 
 **Seluruh suite berbagi satu database dan setiap `beforeEach` menjalankan
