@@ -11,6 +11,7 @@ import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
 import { selectPaymentProvider } from './modules/payment/providers/index.ts';
+import { createRedactingLogMethod, redactSensitive, registerSecretValues } from './log-redaction.ts';
 import type { PaymentProvider } from './modules/payment/providers/index.ts';
 import { createHlc } from '../../../packages/domain/src/hlc.ts';
 
@@ -57,7 +58,12 @@ function assertAllOperationsImplemented(specPath: string, serviceHandlers: Recor
 // creates internally, to assert on `pool.ended` after a forced failure --
 // see tests/server/build-app-lifecycle.test.js (whole-branch review FIX 8).
 export async function buildApp(
-  overrides: { pool?: Pool; specPath?: string; paymentProvider?: PaymentProvider } = {}
+  overrides: {
+    pool?: Pool;
+    specPath?: string;
+    paymentProvider?: PaymentProvider;
+    logger?: { level: string; stream: NodeJS.WritableStream };
+  } = {}
 ): Promise<FastifyInstance> {
   const pool = overrides.pool ?? createPool();
   const specPath = overrides.specPath ?? OPENAPI_SPEC_PATH;
@@ -84,7 +90,7 @@ export async function buildApp(
   // pool once the app itself is closed -- it can't help if the app is never
   // successfully built in the first place.
   try {
-    return await buildAppInner(pool, specPath, paymentProvider);
+    return await buildAppInner(pool, specPath, paymentProvider, overrides.logger);
   } catch (err) {
     await pool.end();
     throw err;
@@ -94,7 +100,8 @@ export async function buildApp(
 async function buildAppInner(
   pool: Pool,
   specPath: string,
-  paymentProvider: PaymentProvider
+  paymentProvider: PaymentProvider,
+  loggerOverride?: { level: string; stream: NodeJS.WritableStream }
 ): Promise<FastifyInstance> {
   // Satu instance Hlc per proses server (keputusan Q3, PLAN-ordering-fondasi.md
   // §8.0), dibuat di sini -- BUKAN di dalam modul ordering -- dengan clock
@@ -117,7 +124,43 @@ async function buildAppInner(
 
   assertAllOperationsImplemented(specPath, serviceHandlers);
 
-  const app = Fastify();
+  // ## Logger, dan kenapa redaksinya ada DI SINI
+  //
+  // AC FR-C5 ketiga menuntut "LAPISAN LOGGING meredaksi payload pembayaran
+  // secara otomatis". Kata itu menentukan tempatnya: `logMethod` menyaring
+  // setiap baris log yang lewat, siapa pun penulisnya -- termasuk modul yang
+  // belum ditulis hari ini. Redaksi yang bergantung pada pemanggil mengingat
+  // untuk memakainya akan bocor lewat jalur yang lupa.
+  //
+  // Level dibaca dari environment variable, bukan dari `if (isProduction)`
+  // (invariant #5). Default `silent` menjaga perilaku yang sudah ada -- sampai
+  // sekarang aplikasi ini memang tidak menulis log sama sekali, dan itu utang
+  // tersendiri yang dicatat di HANDOFF.md, bukan sesuatu yang diam-diam
+  // kuubah di sub-project pembayaran.
+  //
+  // `loggerOverride` adalah seam TEST: ia memberi test sebuah stream untuk
+  // diperiksa, dan tanpa itu AC di atas tidak dapat diverifikasi sama sekali.
+  // Nilai rahasia didaftarkan SEBELUM logger dibuat. Penyaringan berbasis nama
+  // field tidak menangkap kunci yang menyelinap ke dalam pesan error -- di sana
+  // ia teks bebas tanpa nama apa pun.
+  registerSecretValues([process.env.MIDTRANS_SERVER_KEY, process.env.MIDTRANS_CLIENT_KEY]);
+
+  const logConfig = {
+    level: loggerOverride?.level ?? process.env.LOG_LEVEL ?? 'silent',
+    hooks: { logMethod: createRedactingLogMethod() },
+    ...(loggerOverride ? { stream: loggerOverride.stream } : {}),
+  };
+  const app = Fastify({ logger: logConfig });
+
+  // Payload pembayaran dicatat -- SUDAH tersaring lapisan logger di atas.
+  // Tanpa baris ini, "log tidak memuat nomor kartu" akan hijau hanya karena
+  // tidak ada payload yang pernah di-log sama sekali: benar, tapi tidak
+  // membuktikan apa pun.
+  app.addHook('preHandler', async (req) => {
+    if (req.method === 'POST' && req.url.includes('/payments')) {
+      req.log.info({ body: req.body, url: req.url }, 'pembayaran diterima');
+    }
+  });
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) {
@@ -156,7 +199,7 @@ async function buildAppInner(
       });
       return;
     }
-    req.log.error(err);
+    req.log.error({ err, body: redactSensitive(req.body), url: req.url }, 'permintaan gagal');
     reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'Terjadi kesalahan internal.' } });
   });
 

@@ -199,8 +199,8 @@ QRIS statis dan EDC:
 
 FR-C5 — larangan data kartu:
 
-- [ ] **G10** — Redaksi log: payload berisi 13–19 digit berurutan tidak muncul utuh di log. Diuji dengan menangkap keluaran logger.
-- [ ] **G11** — `MIDTRANS_SERVER_KEY` tidak pernah muncul di log, pesan error, maupun respons API. Diuji.
+- [x] **G10** — Redaksi log: payload berisi 13–19 digit berurutan tidak muncul utuh di log. Diuji dengan menangkap keluaran logger.
+- [x] **G11** — `MIDTRANS_SERVER_KEY` tidak pernah muncul di log, pesan error, maupun respons API. Diuji.
 
 Webhook (keputusan Q4):
 
