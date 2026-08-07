@@ -54,3 +54,24 @@ export function getTenantId(req: FastifyRequest): string {
 export function getActorId(req: FastifyRequest): string {
   return readIdHeader(req, 'x-actor-id', 'MISSING_ACTOR_ID', 'X-Actor-Id');
 }
+
+/**
+ * Penyetuju operasi yang menuntut otorisasi manajer — refund selalu, dan
+ * kelak diskon di atas ambang (FR-B8/B9).
+ *
+ * `spec-b-kasir-order.md:278` menandai refund sebagai "PIN manajer, **tidak
+ * dapat diubah**". Sampai modul identity ada, penyetuju dibaca dari header
+ * seperti `X-Actor-Id` — keputusan Q2 di
+ * `docs/superpowers/plans/PLAN-void-refund-gateway.md`.
+ *
+ * Fungsi ini TIDAK memeriksa bahwa penyetuju berbeda dari aktor. Itu
+ * ditegakkan `CHECK (approver_user_id IS NULL OR actor_user_id <>
+ * approver_user_id)` di `audit_event` — database yang menjaganya, bukan
+ * hanya aplikasi, jadi jalur mana pun yang lupa memeriksanya tetap gagal.
+ *
+ * Void **tidak** memakai ini: keputusan user 1 Agustus 2026 menetapkan void
+ * berjalan tanpa PIN manajer, cukup alasan daftar tertutup + audit + restock.
+ */
+export function getApproverId(req: FastifyRequest): string {
+  return readIdHeader(req, 'x-approver-id', 'MISSING_APPROVER_ID', 'X-Approver-Id');
+}

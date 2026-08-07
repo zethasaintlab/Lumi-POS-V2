@@ -83,3 +83,41 @@ test('getActorId: header duplikat memakai nilai pertama', async () => {
   const result = getActorId({ headers: { 'x-actor-id': ['user-1', 'user-2'] } });
   assert.equal(result, 'user-1');
 });
+
+// --- T1: penyetuju (keputusan Q2 di PLAN-void-refund-gateway.md) ---
+//
+// Refund SELALU butuh persetujuan manajer (spec-b:278, ditandai tidak dapat
+// diubah). Modul identity belum ada, jadi penyetuju dibaca dari header
+// X-Approver-Id dengan pola yang persis sama dengan X-Actor-Id.
+//
+// Bahwa penyetuju BERBEDA dari aktor tidak diurus di sini -- itu ditegakkan
+// CHECK di audit_event (db/migrations/0011_audit.sql:23), jadi database yang
+// menjaganya, bukan hanya aplikasi.
+
+test('getApproverId: header hilang melempar HttpError 400', async () => {
+  const { getApproverId } = await import('../../apps/server/src/tenant-context.ts');
+  const { HttpError } = await import('../../apps/server/src/http-error.ts');
+  assert.throws(
+    () => getApproverId({ headers: {} }),
+    (err) => err instanceof HttpError && err.statusCode === 400 && err.code === 'MISSING_APPROVER_ID'
+  );
+});
+
+test('getApproverId: header valid dikembalikan apa adanya', async () => {
+  const { getApproverId } = await import('../../apps/server/src/tenant-context.ts');
+  assert.equal(getApproverId({ headers: { 'x-approver-id': 'manajer-1' } }), 'manajer-1');
+});
+
+test('getApproverId: header > 64 karakter ditolak', async () => {
+  const { getApproverId } = await import('../../apps/server/src/tenant-context.ts');
+  const { HttpError } = await import('../../apps/server/src/http-error.ts');
+  assert.throws(
+    () => getApproverId({ headers: { 'x-approver-id': 'x'.repeat(65) } }),
+    (err) => err instanceof HttpError && err.statusCode === 400 && err.code === 'MISSING_APPROVER_ID'
+  );
+});
+
+test('getApproverId: header duplikat memakai nilai pertama', async () => {
+  const { getApproverId } = await import('../../apps/server/src/tenant-context.ts');
+  assert.equal(getApproverId({ headers: { 'x-approver-id': ['m-1', 'm-2'] } }), 'm-1');
+});

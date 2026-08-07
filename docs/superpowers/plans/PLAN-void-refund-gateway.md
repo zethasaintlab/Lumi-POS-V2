@@ -146,9 +146,9 @@ Setiap task: test merah dulu → konfirmasi merah karena alasan yang benar → i
 
 Prasyarat:
 
-- [ ] **T1** — `getApproverId(req)` di `tenant-context.ts` (keputusan Q2), sejajar `getActorId`. Test: header hilang → `400`; > 64 karakter → `400`; header duplikat memakai yang pertama.
-- [ ] **T2** — Modul `audit`: `recordAuditEvent(client, event)`. Test: aktor lintas tenant → `404`; penyetuju sama dengan aktor → ditolak **oleh CHECK database**, bukan hanya aplikasi.
-- [ ] **T3** — Modul `inventory`: `recordStockMovements(client, movements)`. Test: `variation_id` lintas tenant → `404` dan tidak ada baris tersimpan; delta ×1000 bertanda.
+- [x] **T1** — `getApproverId(req)` di `tenant-context.ts` (keputusan Q2), sejajar `getActorId`. Test: header hilang → `400`; > 64 karakter → `400`; header duplikat memakai yang pertama.
+- [x] **T2** — Modul `audit`: `recordAuditEvent(client, event)`. Test: aktor lintas tenant → `404`; penyetuju sama dengan aktor → ditolak **oleh CHECK database**, bukan hanya aplikasi.
+- [x] **T3** — Modul `inventory`: `recordStockMovements(client, movements)`. Test: `variation_id` lintas tenant → `404` dan tidak ada baris tersimpan; delta ×1000 bertanda.
 
 Domain:
 
