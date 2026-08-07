@@ -15,7 +15,7 @@ import {
 import { computeCashRounding } from '../../../../../../packages/domain/src/money.ts';
 import { assertTransition } from '../../../../../../packages/domain/src/order-state.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
-import type { PaymentProvider, InitiateResult } from '../providers/index.ts';
+import type { PaymentProvider, InitiateResult, GatewayStatus } from '../providers/index.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // T13-T17 (docs/superpowers/plans/PLAN-pembayaran-pajak.md) -- pembayaran
@@ -149,6 +149,206 @@ async function sumConfirmed(client: PoolClient, orderId: string): Promise<bigint
   return rows[0].total === null ? 0n : BigInt(rows[0].total);
 }
 
+
+
+// --- G5: cek status pembayaran gateway (FR-C14) ---
+
+interface GatewayPaymentRow extends PaymentRow {
+  provider: string | null;
+  provider_reference: string | null;
+  order_id: string;
+}
+
+/**
+ * Status gateway -> status kolom `payment.status`.
+ *
+ * `expired` dipetakan ke `failed`, bukan ke status tersendiri: kolomnya hanya
+ * mengenal empat nilai (`0008_payment.sql`), dan `voided` di sana berarti
+ * dibatalkan oleh TINDAKAN ORANG -- QR yang kedaluwarsa bukan itu. Sebab
+ * aslinya tidak hilang: respons tetap memuat `gatewayStatus` apa adanya,
+ * sehingga klien dapat mengatakan "QR kedaluwarsa" alih-alih "pembayaran
+ * gagal". `[ASUMSI]` -- spec-c:293-316 hanya menulis "Batalkan payment" untuk
+ * keduanya tanpa menyebut status simpanannya.
+ */
+const GATEWAY_TO_PAYMENT_STATUS: Readonly<Record<string, string>> = {
+  pending: 'pending_confirmation',
+  confirmed: 'confirmed',
+  failed: 'failed',
+  expired: 'failed',
+};
+
+export function createPaymentStatusHandlers(pool: Pool, provider: PaymentProvider) {
+  return {
+    /**
+     * `POST /payments/{paymentId}/check-status`.
+     *
+     * POST, bukan GET: ia mengubah keadaan. Konfirmasi gateway di sini adalah
+     * SATU-SATUNYA jalan sebuah payment QRIS menjadi `confirmed` -- spec-c:320
+     * melarang sistem menandai lunas tanpa konfirmasi, dan tidak ada jalur
+     * lain yang boleh melakukannya.
+     *
+     * Penjadwalan polling (tiap 2 detik, maksimal 5 menit) adalah perilaku
+     * KLIEN. Server hanya menyediakan pintunya; menaruh penjadwal di sini
+     * berarti server menebak kapan kasir masih menunggu di depan layar.
+     */
+    async checkPaymentStatus(req: FastifyRequest, reply: FastifyReply) {
+      const tenantId = getTenantId(req);
+      const { paymentId } = req.params as { paymentId: string };
+
+      // --- baca payment lewat SELECT yang tunduk RLS ---
+      const awal = await withTenantTransaction(pool, tenantId, async (client) => {
+        const { rows } = await client.query<GatewayPaymentRow>(
+          'SELECT * FROM payment WHERE id = $1',
+          [paymentId]
+        );
+        if (rows.length === 0) {
+          throw new HttpError(404, 'PAYMENT_NOT_FOUND', `Payment ${paymentId} tidak ditemukan.`);
+        }
+        const payment = rows[0];
+        if (!GATEWAY_METHODS.has(payment.method)) {
+          // Pembayaran tunai tidak punya gateway untuk ditanyai. Menjawabnya
+          // dengan memanggil provider berarti mengirim referensi kosong ke
+          // Midtrans.
+          throw new HttpError(
+            409,
+            'PAYMENT_NOT_GATEWAY',
+            `Payment ${paymentId} bermetode ${payment.method}; tidak ada gateway untuk dicek.`
+          );
+        }
+        const { rows: orderRows } = await client.query<OrderStateRow>(
+          `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id, c.id AS check_id
+             FROM "order" o JOIN "check" c ON c.order_id = o.id
+            WHERE o.id = $1`,
+          [payment.order_id]
+        );
+        return { payment, order: orderRows[0] };
+      });
+
+      // Payment yang sudah final tidak ditanyakan lagi. Klien mem-polling tiap
+      // 2 detik; tanpa penjagaan ini satu order menghasilkan puluhan panggilan
+      // yang tidak mengubah apa pun -- boros kuota, dan menaikkan peluang kena
+      // rate limit justru saat pembayaran LAIN sedang berlangsung.
+      if (awal.payment.status !== 'pending_confirmation') {
+        reply.code(200);
+        return await ringkasan(pool, tenantId, awal.payment, awal.order.id, null);
+      }
+
+      // --- tanya gateway, DI LUAR transaksi ---
+      //
+      // Referensi bisa NULL bila initiate gagal sebelum sempat mendapatkannya
+      // -- dan justru keadaan itu yang paling butuh dicek (FR-C14: pelanggan
+      // mungkin sudah membayar). Midtrans menerima `order_id` di endpoint yang
+      // sama, dan `order_id` yang kita kirim saat charge adalah id payment.
+      const referensi = awal.payment.provider_reference ?? paymentId;
+      let gatewayStatus: GatewayStatus;
+      try {
+        gatewayStatus = await provider.pollStatus(referensi);
+      } catch {
+        // Gateway tidak dapat dihubungi bukan berarti pembayaran gagal.
+        // Statusnya tetap pending_confirmation dan klien dapat mencoba lagi.
+        reply.code(200);
+        return await ringkasan(pool, tenantId, awal.payment, awal.order.id, 'pending');
+      }
+
+      const statusBaru = GATEWAY_TO_PAYMENT_STATUS[gatewayStatus] ?? 'pending_confirmation';
+
+      const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
+        // Dikunci ulang: dua polling bersamaan tidak boleh sama-sama menutup
+        // order.
+        const { rows } = await client.query<GatewayPaymentRow>(
+          'SELECT * FROM payment WHERE id = $1 FOR UPDATE',
+          [paymentId]
+        );
+        const payment = rows[0];
+        if (payment.status !== 'pending_confirmation') {
+          return payment;
+        }
+
+        await client.query(
+          `UPDATE payment
+              SET status = $2,
+                  provider_reference = COALESCE(provider_reference, $3)
+            WHERE id = $1`,
+          [paymentId, statusBaru, awal.payment.provider_reference ?? referensi]
+        );
+
+        if (statusBaru === 'confirmed') {
+          const { rows: orderRows } = await client.query<OrderStateRow>(
+            `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id, c.id AS check_id
+               FROM "order" o JOIN "check" c ON c.order_id = o.id
+              WHERE o.id = $1 FOR UPDATE OF o`,
+            [payment.order_id]
+          );
+          const order = orderRows[0];
+          const total = BigInt(order.total);
+          const sudahDibayar = await sumConfirmed(client, payment.order_id);
+
+          if (sudahDibayar >= total && order.status === 'open') {
+            // Perpindahan status ditegakkan state machine domain, sama
+            // seperti jalur tunai -- bukan `if` di sini.
+            assertTransition(order.status, 'paid');
+            assertTransition('paid', 'closed');
+            // rounding_adjustment TIDAK disentuh: pembulatan FR-C9 hanya
+            // berlaku bila ada pembayaran TUNAI, dan order ini dilunasi QRIS.
+            await client.query(
+              `UPDATE "order" SET status = 'closed', amount_due = total WHERE id = $1`,
+              [payment.order_id]
+            );
+          }
+        }
+
+        await insertOutboxEvent(client, {
+          id: randomUUID(),
+          tenantId,
+          aggregateType: 'payment',
+          aggregateId: paymentId,
+          eventType: `payment.${statusBaru}`,
+          payload: { orderId: payment.order_id, gatewayStatus },
+        });
+
+        const { rows: setelah } = await client.query<GatewayPaymentRow>(
+          'SELECT * FROM payment WHERE id = $1',
+          [paymentId]
+        );
+        return setelah[0];
+      });
+
+      reply.code(200);
+      return await ringkasan(pool, tenantId, hasil, awal.order.id, gatewayStatus);
+    },
+  };
+}
+
+async function ringkasan(
+  pool: Pool,
+  tenantId: string,
+  payment: GatewayPaymentRow,
+  orderId: string,
+  gatewayStatus: GatewayStatus | null
+) {
+  return await withTenantTransaction(pool, tenantId, async (client) => {
+    const { rows } = await client.query<OrderStateRow>(
+      'SELECT id, status, total, tax_amount, outlet_id, id AS check_id FROM "order" WHERE id = $1',
+      [orderId]
+    );
+    const order = rows[0];
+    const total = BigInt(order.total);
+    const sudahDibayar = await sumConfirmed(client, orderId);
+    return {
+      payment: {
+        ...toPayment(payment),
+        provider: payment.provider,
+        providerReference: payment.provider_reference,
+      },
+      // Status gateway apa adanya, terpisah dari status payment. `expired`
+      // dan `failed` sama-sama tersimpan sebagai `failed`, tapi klien tetap
+      // dapat mengatakan "QR kedaluwarsa" alih-alih "pembayaran gagal".
+      gatewayStatus,
+      order: { id: orderId, status: order.status, total: Number(total) },
+      outstanding: Number(total - sudahDibayar),
+    };
+  });
+}
 
 interface GatewayDeps {
   pool: Pool;

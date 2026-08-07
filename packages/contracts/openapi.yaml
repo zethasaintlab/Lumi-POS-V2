@@ -1412,6 +1412,78 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /payments/{paymentId}/check-status:
+    post:
+      operationId: checkPaymentStatus
+      summary: Tanyakan status pembayaran ke gateway
+      description: >-
+        FR-C14. Ini SATU-SATUNYA jalan sebuah payment QRIS menjadi
+        `confirmed` — spec-c:320 melarang sistem menandai lunas tanpa
+        konfirmasi gateway, dan tidak ada jalur lain yang boleh melakukannya.
+
+
+        POST, bukan GET: memanggilnya mengubah keadaan (status payment, dan
+        — bila pembayaran melunasi — status order).
+
+
+        Penjadwalan polling (tiap 2 detik, maksimal 5 menit) adalah perilaku
+        KLIEN. Server hanya menyediakan pintunya. Payment yang statusnya sudah
+        final dijawab tanpa menyentuh gateway sama sekali.
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: >-
+            Keadaan payment setelah ditanyakan. `gatewayStatus` adalah jawaban
+            gateway apa adanya dan `null` bila gateway tidak ditanyai;
+            `expired` dan `failed` sama-sama tersimpan sebagai payment
+            `failed`, jadi field ini yang memungkinkan klien mengatakan "QR
+            kedaluwarsa" alih-alih "pembayaran gagal".
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payment, order, outstanding]
+                properties:
+                  payment: { $ref: '#/components/schemas/Payment' }
+                  gatewayStatus:
+                    type: string
+                    nullable: true
+                    enum: [pending, confirmed, failed, expired]
+                  order:
+                    type: object
+                    required: [id, status, total]
+                    properties:
+                      id: { type: string }
+                      status: { type: string }
+                      total: { type: integer }
+                  outstanding: { type: integer }
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            paymentId tidak ditemukan (PAYMENT_NOT_FOUND) — lewat SELECT yang
+            tunduk RLS, jadi payment milik tenant lain juga menjawab ini
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Payment bukan metode gateway (PAYMENT_NOT_GATEWAY). Pembayaran
+            tunai tidak punya gateway untuk ditanyai.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /orders/{orderId}/cancel:
     post:
       operationId: cancelOrder

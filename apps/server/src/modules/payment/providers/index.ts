@@ -64,9 +64,17 @@ export interface PaymentProvider {
 
 export interface FakePaymentProvider extends PaymentProvider {
   initiateCalls(): number;
+  /**
+   * Berapa kali gateway ditanyai statusnya. Klien mem-polling tiap 2 detik
+   * (spec-c:293-316), jadi "tidak menanyai gateway untuk payment yang sudah
+   * final" bukan optimasi -- ia yang menjaga satu order tidak menghasilkan
+   * puluhan panggilan yang tidak mengubah apa pun.
+   */
+  pollCalls(): number;
   gatewayTransactions(): number;
   setStatus(providerReference: string, status: GatewayStatus): void;
   failNextInitiate(err: Error): void;
+  failNextPoll(err: Error): void;
   reset(): void;
 }
 
@@ -102,7 +110,9 @@ const FAKE_EXPIRY = new Date('2099-12-31T23:59:59.000Z');
  */
 export function createFakeProvider(): FakePaymentProvider {
   let calls = 0;
+  let polls = 0;
   let gagalBerikutnya: Error | null = null;
+  let gagalPollBerikutnya: Error | null = null;
   const byKey = new Map<string, string>();
   const status = new Map<string, GatewayStatus>();
   let urutan = 0;
@@ -133,17 +143,27 @@ export function createFakeProvider(): FakePaymentProvider {
     },
 
     async pollStatus(providerReference: string): Promise<GatewayStatus> {
+      polls += 1;
+      if (gagalPollBerikutnya !== null) {
+        const err = gagalPollBerikutnya;
+        gagalPollBerikutnya = null;
+        throw err;
+      }
       return status.get(providerReference) ?? 'pending';
     },
 
     initiateCalls: () => calls,
+    pollCalls: () => polls,
     gatewayTransactions: () => byKey.size,
     setStatus: (ref, s) => { status.set(ref, s); },
     failNextInitiate: (err) => { gagalBerikutnya = err; },
+    failNextPoll: (err) => { gagalPollBerikutnya = err; },
     reset: () => {
       calls = 0;
+      polls = 0;
       urutan = 0;
       gagalBerikutnya = null;
+      gagalPollBerikutnya = null;
       byKey.clear();
       status.clear();
     },

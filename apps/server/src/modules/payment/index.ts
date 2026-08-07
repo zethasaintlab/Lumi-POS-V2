@@ -1,6 +1,6 @@
 import type { Pool } from '../../db.ts';
 import { createTaxRateHandlers } from './handlers/tax-rates.ts';
-import { createPaymentEntryHandlers } from './handlers/payments.ts';
+import { createPaymentEntryHandlers, createPaymentStatusHandlers } from './handlers/payments.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import type { PaymentProvider } from './providers/index.ts';
 
@@ -33,5 +33,6 @@ export function createPaymentHandlers(
   return {
     ...createTaxRateHandlers(pool),
     ...createPaymentEntryHandlers(pool, hlc, provider),
+    ...createPaymentStatusHandlers(pool, provider),
   };
 }

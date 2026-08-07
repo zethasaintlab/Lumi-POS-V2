@@ -188,7 +188,7 @@ QRIS dinamis (FR-C2, FR-C14):
 
 - [x] **G3** — `method: 'qris_dynamic'` → payment `pending_confirmation`, **tidak pernah** langsung `confirmed` (`spec-c:320`). Respons memuat `qrString` dan `expiresAt`.
 - [x] **G4** — Order **tidak dapat** ditutup `PAID` selama ada payment `pending_confirmation` (`spec-c:321`). `sumConfirmed` sudah mengecualikannya; yang diuji adalah perilakunya, bukan implementasinya.
-- [ ] **G5** — Cek status: memanggil `pollStatus`, memperbarui payment. `confirmed` → order `PAID` → `CLOSED`. `failed`/`expired` → payment `failed`, order tetap `OPEN`.
+- [x] **G5** — Cek status: memanggil `pollStatus`, memperbarui payment. `confirmed` → order `PAID` → `CLOSED`. `failed`/`expired` → payment `failed`, order tetap `OPEN`.
 - [x] **G6** — Retry memakai idempotency key yang **sama** tidak membuat transaksi gateway baru (AC FR-C14 pertama) — dibuktikan lewat penghitung panggilan di fake.
 - [x] **G7** — Gateway timeout/error saat `initiate` → payment **tetap** `pending_confirmation`, bukan hilang. Ini inti FR-C14: pelanggan mungkin sudah membayar.
 
