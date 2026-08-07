@@ -150,7 +150,19 @@ Sisa Modul B, belum digarap: **FR-B8/B9** (otorisasi step-up — butuh PIN, Modu
 
 **Modul C sub-project 1 selesai** (`docs/superpowers/plans/PLAN-pembayaran-pajak.md`): `TaxCalculator`, REST `tax_rate`, dan pembayaran tunai. `OPEN` → `PAID` → `CLOSED` kini hidup. Menutup FR-C6, C7, C8, C9, C11, dan FR-C1/C2 untuk tunai.
 
-Sisa Modul C: **C-2** — QRIS dinamis lewat Midtrans + webhook, QRIS statis, EDC, FR-C14. **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
+**Modul C sub-project 2 — gateway: selesai** (`docs/superpowers/plans/PLAN-void-refund-gateway.md` §5.7). QRIS dinamis lewat port `PaymentProvider`, QRIS statis, EDC, endpoint cek status, dan webhook Midtrans. Menutup sisa FR-C2, FR-C4, FR-C5, dan FR-C14.
+
+**Keputusan yang mengikat kode gateway:**
+
+- **Port `PaymentProvider` wajib, bukan pilihan gaya.** CI mengisi `MIDTRANS_SERVER_KEY` dengan string kosong, jadi **tidak ada satu pun test yang boleh menyentuh jaringan**. Adapter dipilih di `buildApp` lewat `PAYMENT_PROVIDER` (invariant #5); `midtrans` dengan kunci kosong **gagal saat boot**, bukan saat pelanggan pertama membayar.
+- **Status gateway tak dikenal → `pending`, tidak pernah `confirmed`.** `spec-c:320` melarang sistem menandai lunas tanpa konfirmasi; menebak ke arah lain berarti menandai lunas berdasarkan kata yang tidak dimengerti.
+- **QRIS dinamis memakai DUA transaksi** — satu-satunya jalur di repo ini yang begitu. Payment `pending_confirmation` ditulis dan di-commit **sebelum** gateway dipanggil, karena kegagalan gateway di dalam transaksi akan me-rollback satu-satunya jejak bahwa QR pernah diminta — sementara pelanggan mungkin sudah membayar (FR-C14). Ini tidak melanggar invariant #1: inisiasi QRIS bukan penjualan yang selesai, dan `sumConfirmed` mengabaikan payment `pending_confirmation` sepenuhnya.
+- **Idempotency key gateway hanya diselesaikan bila gateway menjawab.** Kalau ia diselesaikan juga saat gateway gagal, retry dengan key yang sama menerima respons "tanpa QR" dari cache selamanya. Ini yang membuat `IdempotencyRecord.completed` perlu ada — `response_status ?? 200` membuat klaim yang belum selesai tidak dapat dibedakan dari sukses ber-body kosong.
+- **QRIS statis dan EDC langsung `confirmed`, dan itu bukan pelanggaran `spec-c:320`** — aturan itu berbunyi "tanpa konfirmasi dari **gateway**" dan berlaku untuk pembayaran yang punya gateway. Yang mengonfirmasi keduanya adalah orang. `confirmed_manually` menandai bahwa tidak ada sistem yang memverifikasi (FR-G5 memakainya), dan diisi `true` hanya untuk `qris_static`.
+- **Webhook adalah satu-satunya endpoint tanpa `X-Tenant-Id`.** Signature diverifikasi sebelum satu query pun jalan; tenant dibaca dari `custom_field1` lalu dipakai sebagai `app.tenant_id`, sehingga pencariannya tetap tunduk RLS. Kunci kosong → `503`, bukan diterima apa adanya.
+- **Redaksi log dipasang di lapisan logging** (`logMethod` pino), bukan dipanggil dari tiap handler — AC FR-C5 ketiga menuntut kata itu. Ia menyaring bentuk nomor kartu **dan** nilai rahasia yang didaftarkan saat boot; penyaringan berbasis nama field saja tidak menangkap kunci yang menyelinap ke pesan error.
+
+Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
 
 **Keputusan produk yang mengikat kode katalog:**
 
@@ -192,7 +204,7 @@ Sisa Modul C: **C-2** — QRIS dinamis lewat Midtrans + webhook, QRIS statis, ED
 - **Refund sebagian wajib menyebut `lines`.** Tanpa itu server harus menebak apakah barang fisik kembali ke rak. `lines: []` berarti uang kembali tanpa barang kembali.
 - **Void berjalan tanpa `X-Approver-Id`; refund selalu menuntutnya.** Header itu diabaikan pada jalur void. Bahwa penyetuju berbeda dari aktor ditegakkan `CHECK` di `audit_event` — **database**, bukan aplikasi.
 
-**Exit criteria F1 — "satu penjualan tersimpan atomik dengan pajak benar" — terpenuhi untuk jalur tunai, dan koreksinya (void & refund) kini ada.** Tapi F1 belum bisa disebut tutup: `ARCH:395` menuntut modul `payment`, dan QRIS serta EDC (C-2) belum ada.
+**Exit criteria F1 terpenuhi.** Satu penjualan tersimpan atomik dengan pajak benar, dapat dibayar tunai/QRIS/EDC, dan dapat dikoreksi lewat void & refund. `ARCH:395` menuntut modul `payment` — ia ada, beserta port gateway-nya. Yang tersisa di Modul C adalah C-3 (rekonsiliasi dan ekspor, keduanya P1).
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 

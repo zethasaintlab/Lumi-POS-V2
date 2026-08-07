@@ -93,6 +93,10 @@ Karena itu ada `npm run typecheck`. **Jalankan sebelum menyatakan apa pun selesa
 - [ ] **Batas restock refund adalah per (order, variation), bukan per baris order**: `stock_movement` tidak punya kolom `line_id`. Untuk order dengan dua baris atas variation yang sama, keduanya berbagi satu jatah pengembalian. Itu batas yang lebih benar untuk stok, tapi berarti laporan tidak dapat menjawab "baris mana yang dikembalikan" dari `stock_movement` saja.
 - [ ] **Refund sebagian menuntut `lines` eksplisit**: tanpa itu server harus menebak apakah barang fisik kembali ke rak, dan tebakannya baru ketahuan saat stock opname. `lines: []` berarti uang kembali tanpa barang kembali. Tidak ada AC yang menyatakan ini — ia muncul dari test yang menyingkap bahwa refund uang parsial akan mengembalikan seluruh stok order.
 
+- [ ] **Produksi belum menyalakan log**: `LOG_LEVEL` default `silent`, meneruskan perilaku yang sudah ada — sampai C-2, aplikasi ini memang tidak pernah punya logger sama sekali (`Fastify()` dipanggil tanpa opsi, jadi `req.log.error` menulis ke logger no-op). Redaksinya sudah terpasang dan teruji; yang belum diputuskan adalah level dan tujuan log di produksi.
+- [ ] **`expired` gateway disimpan sebagai payment `failed` `[ASUMSI]`**: kolom `payment.status` hanya mengenal empat nilai, dan `voided` di sana berarti dibatalkan oleh tindakan orang. Sebab aslinya tidak hilang — respons memuat `gatewayStatus` apa adanya. `spec-c:293-316` hanya menulis "Batalkan payment" untuk `failed` maupun `expired` tanpa menyebut status simpanannya.
+- [ ] **Perbandingan signature timing-safe tidak dapat diuji**: `verifyMidtransSignature` memakai `timingSafeEqual`, tapi menggantinya dengan `===` **tidak** membuat satu test pun merah — saluran samping waktu tidak terlihat dari test fungsional. Ia benar karena alasannya benar, bukan karena ada yang menjaganya.
+- [ ] **Idempotency key gateway pada balapan dua request bersamaan belum diuji**: pada jalur berurutan, yang mencegah transaksi gateway kedua adalah baris `idempotency_key` dan baris `payment` yang dipakai ulang. Key yang diteruskan ke gateway penting untuk dua request yang berbarengan, dan untuk itu belum ada test. Bahwa header `X-Idempotency-Key` sungguh dikirim diuji di tingkat adapter, bukan ujung ke ujung.
 - [ ] **Drift `quantity` `[ASUMSI]`**: `spec-b:151,159` menulis `numeric`; skema dan `CLAUDE.md` memakai `bigint ×1000` dengan alasan hasil pengukuran. Maksudnya terpenuhi (`0.5` disimpan sebagai `500`, diuji), tapi AC-nya tidak bisa dicentang apa adanya.
 
 ## Proses eksternal — mulai sekarang, lead time di luar kendali
@@ -101,7 +105,7 @@ Karena itu ada `npm run typecheck`. **Jalankan sebelum menyatakan apa pun selesa
 - [ ] Email konfirmasi lisensi ke hello@powersync.com untuk redistribusi on-premise (OQ-03b)
 - [ ] Cek persyaratan program partner GoFood & GrabFood (OQ-06) — menentukan tanggal v1.1
 - [x] Daftar akun sandbox Midtrans — key ada di `.env` lokal (tidak pernah ter-commit)
-- [ ] **Verifikasi webhook Midtrans end-to-end**: butuh URL publik (tunnel). Jalur kodenya akan diuji penuh dengan payload buatan (keputusan Q4), tapi jabat tangan sungguhannya hanya bisa dibuktikan manual. Gap yang diketahui, bukan lupa
+- [ ] **Verifikasi webhook Midtrans end-to-end**: butuh URL publik (tunnel). Jalur kodenya **sudah** diuji penuh dengan payload buatan — signature, tenant, idempotensi, dan penolakan saat kunci kosong (`tests/payment/webhook.test.js`). Yang belum dibuktikan adalah jabat tangan sungguhannya: bahwa Midtrans benar-benar mengirim `custom_field1` kembali apa adanya, dan bahwa rumus signature-nya cocok dengan yang dikirim server produksi. Itu langkah manual, dan sampai dijalankan, integrasi ini **belum boleh disebut terbukti**
 - [ ] Beli 5–8 model printer thermal paling umum untuk program "Diuji dengan Lumi POS" (< Rp5 juta)
 
 ## Prototipe yang masih perlu dijalankan

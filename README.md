@@ -2,7 +2,7 @@
 
 Point-of-sale untuk kafe takeaway 2–20 outlet di Indonesia. Offline-first, multi-vertikal, dijual sebagai lisensi berlangganan per outlet.
 
-**Status:** F0 (fondasi) selesai · **Fase berjalan:** F1 (inti transaksi) — Modul A selesai, Modul B fondasi + void/refund selesai, Modul C sub-project 1 selesai: **penjualan tersimpan atomik dengan pajak benar, dibayar tunai, dan dapat dibatalkan**. QRIS/EDC (C-2) belum ada. 606 test hijau
+**Status:** F0 (fondasi) selesai · **Fase berjalan:** F1 (inti transaksi) — Modul A, B, dan C selesai: **penjualan tersimpan atomik dengan pajak benar, dibayar tunai/QRIS/EDC, dan dapat dibatalkan atau direfund**. Sisa Modul C hanya rekonsiliasi dan ekspor (P1). 686 test hijau
 
 > 🤖 **Coding agent mulai dari [`CLAUDE.md`](CLAUDE.md)**, bukan dari file ini.
 

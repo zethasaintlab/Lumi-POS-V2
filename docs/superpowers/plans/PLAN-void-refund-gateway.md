@@ -1,6 +1,6 @@
 # PLAN — Sisa F1: void & refund (FR-B7) dan pembayaran gateway (C-2)
 
-Status: **B-3 disetujui, dalam pengerjaan.** Empat keputusan di §7 sudah dijawab user — lihat §7.0. C-2 menyusul setelah B-3.
+Status: **B-3 dan C-2 selesai.** Seluruh task T1–T17 dan G1–G15 hijau. B-3 ada di PR #7; C-2 di branch `f1-gateway-c2`.
 
 ---
 
@@ -210,7 +210,7 @@ Webhook (keputusan Q4):
 Penutup:
 
 - [x] **G14** — Kontrak OpenAPI.
-- [ ] **G15** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
+- [x] **G15** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
 
 **Di luar scope C-2, ditegaskan ulang:** penjadwalan polling (2 detik / 5 menit) adalah perilaku klien — server hanya menyediakan endpoint cek status. Laporan "Perlu diperiksa" > 24 jam adalah Modul G; datanya tersedia, laporannya tidak dibangun. FR-C3 tidak dapat ditegakkan server dan menunggu klien + F2.
 

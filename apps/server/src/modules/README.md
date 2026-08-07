@@ -32,7 +32,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `ordering` | Penulisan penjualan, void & refund | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` |
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
-| `payment` | Tarif pajak dan pembayaran tunai | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `fetchEffectiveTaxRates` |
+| `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` |
 | `tenancy` | Tidak punya endpoint | `assertOutletVisible` · `getOutletSettings` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
 | `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
@@ -49,6 +49,23 @@ Perhitungan stok (`SUM(delta)`), stocktake, oversell, sold-out tetap Modul E pen
 `tenancy`, `identity`, dan `sync` sebagian besar berisi satu-dua fungsi, dan itu disengaja. Aturan 2 melarang sebuah modul meng-query tabel milik modul lain, sementara jalur penjualan menunjuk ke mana-mana: `order.shift_id` → `cash`, `order.device_id` → `identity`, `order.outlet_id` → `tenancy`, `order_line.variation_id` → `catalog`, `idempotency_key` → `sync`.
 
 Alternatifnya adalah `ordering` meng-query enam tabel milik lima modul lain. Fungsi kecil yang diekspor lewat `index.ts` adalah harga yang dibayar untuk menjaga batas itu tetap nyata, bukan sekadar tertulis.
+
+## Port keluar: `PaymentProvider`
+
+`ARCH:197` mendefinisikannya, tapi yang membuatnya **wajib** adalah CI: `.github/workflows/test.yml` mengisi `MIDTRANS_SERVER_KEY` dengan string kosong. Test yang memanggil API sungguhan akan gagal di sana, lambat, dan bergantung pada layanan pihak ketiga yang bisa down saat tidak ada yang melihat.
+
+Konsekuensinya mutlak: **tidak ada satu pun test yang boleh menyentuh jaringan.** Adapter Midtrans menerima `fetch` sebagai dependensi; adapter dipilih di `buildApp` lewat `PAYMENT_PROVIDER`, bukan `if (isProduction)` di kode aplikasi (invariant #5).
+
+`PAYMENT_PROVIDER=midtrans` dengan kunci kosong **gagal saat boot**, bukan saat pelanggan pertama membayar.
+
+## Webhook: satu-satunya endpoint tanpa `X-Tenant-Id`
+
+Midtrans tidak tahu apa-apa soal tenant kami. Karena itu `POST /webhooks/midtrans` berbeda dari seluruh endpoint lain:
+
+1. **Signature diverifikasi lebih dulu**, sebelum satu query pun dijalankan.
+2. **Tenant dibaca dari `custom_field1`** yang kami titipkan sendiri saat charge, lalu dipakai sebagai `app.tenant_id` — sehingga pencarian payment tetap tunduk RLS. Notifikasi bertanda tangan sah tapi bertenant salah dijawab `404`.
+
+Alternatifnya adalah query yang melewati RLS, dan itu melanggar invariant #8.
 
 ## Guard lintas modul: SELECT, bukan foreign key
 
