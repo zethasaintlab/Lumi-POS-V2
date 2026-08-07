@@ -32,10 +32,11 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `ordering` | Penulisan penjualan | `POST /orders` · `GET /orders/{id}` |
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
+| `payment` | Tarif pajak dan pembayaran tunai | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `fetchEffectiveTaxRates` |
 | `tenancy` | Tidak punya endpoint | `assertOutletVisible` · `getOutletSettings` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
 
-Belum ada kode: `payment`, `inventory`, `reporting`, `peripheral`, `audit`.
+Belum ada kode: `inventory`, `reporting`, `peripheral`, `audit`.
 
 ## Kenapa modul-modul kecil itu ada
 

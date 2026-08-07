@@ -146,7 +146,11 @@ Status F1 sekarang:
 
 Sengaja belum digarap: FR-A3/A5 (aturan pemilihan modifier — UI kasir), FR-A8 (import katalog, P1).
 
-Sisa Modul B, belum digarap: **FR-B7** (void & refund), **FR-B8/B9** (otorisasi step-up — butuh PIN, Modul F), FR-B11 (cetak ulang struk, P1, butuh printer F4). Separuh state machine (`OPEN` → `PAID` → `CLOSED`) menunggu pembayaran. **Modul C (Pembayaran & Pajak) belum disentuh.**
+Sisa Modul B, belum digarap: **FR-B7** (void & refund), **FR-B8/B9** (otorisasi step-up — butuh PIN, Modul F), FR-B11 (cetak ulang struk, P1, butuh printer F4).
+
+**Modul C sub-project 1 selesai** (`docs/superpowers/plans/PLAN-pembayaran-pajak.md`): `TaxCalculator`, REST `tax_rate`, dan pembayaran tunai. `OPEN` → `PAID` → `CLOSED` kini hidup. Menutup FR-C6, C7, C8, C9, C11, dan FR-C1/C2 untuk tunai.
+
+Sisa Modul C: **C-2** — QRIS dinamis lewat Midtrans + webhook, QRIS statis, EDC, FR-C14. **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
 
 **Keputusan produk yang mengikat kode katalog:**
 
@@ -168,7 +172,15 @@ Sisa Modul B, belum digarap: **FR-B7** (void & refund), **FR-B8/B9** (otorisasi 
 - **Idempotency**: key di-*claim* lebih dulu (INSERT `response_status = NULL`), order ditulis, lalu key di-*complete*. Urutan ini penting — kalau key ditulis terakhir, PK milik `order` sendiri yang memenangkan balapan dan klien menerima `ID_ALREADY_EXISTS`, bukan `409` idempotency dengan instruksi retry.
 - **Cache hit mengembalikan `response_status` yang tersimpan** (jadi `201`), bukan `200`. `spec-b:336` menulis "status 200" sementara `spec-b:325` menulis "mengembalikan respons asli" dan skema menyediakan kolom `response_status` justru untuk itu. **`[ASUMSI]` — belum kamu putuskan.**
 
-**Pajak ditulis nol di seluruh kolom order.** Exit criteria F1 menuntut "pajak benar"; `TaxCalculator` adalah Modul C dan belum dibangun. **F1 belum tertutup.**
+**Keputusan yang mengikat kode pajak dan pembayaran:**
+
+- **Tarif tidak pernah float.** `tax_rate.rate` dan `outlet.service_charge_rate` adalah `numeric(6,4)`; di domain keduanya `bigint` berskala 10.000 (10% → `1000n`). Konversinya di `packages/domain/src/numeric.ts`, dibagi server dan klien. Float **terbukti aman** di skala ini — diuji atas seluruh 1.000.000 nilai — jadi alasannya bukan presisi, melainkan agar aturan "jalur uang tidak menyentuh float" tidak punya pengecualian yang akan disalin ke kolom lain.
+- **`total` tidak pernah dibulatkan.** Yang dibulatkan `amount_due`, dan hanya **saat ada pembayaran tunai** (FR-C9). Pembulatan karena itu mustahil dihitung saat order dibuat, dan `computeOrderTotals` tidak menerima `roundingIncrement` sama sekali.
+- **Pembulatan uang dilakukan per langkah** FR-C8, bukan sekali di akhir.
+- **`order.tax_amount` = `totalTax`** (seluruh pajak, untuk struk); yang **menambah** total hanya `totalTaxExclusive`. Menukar keduanya menggandakan pajak inklusif.
+- **`payment` PK-nya `(id, occurred_at)`**, bukan `id` saja — tabelnya dipartisi. Berbeda dari `order`. Yang melindungi retry pembayaran adalah **Idempotency-Key**, bukan primary key: satu lapisan lebih sedikit daripada yang dimiliki order.
+
+**Exit criteria F1 — "satu penjualan tersimpan atomik dengan pajak benar" — kini terpenuhi untuk jalur tunai.** Tapi F1 belum bisa disebut tutup: `ARCH:395` menuntut modul `payment`, dan QRIS serta EDC (C-2) belum ada. Jangan tandai F1 selesai sampai itu dan FR-B7 (void & refund) ada.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 

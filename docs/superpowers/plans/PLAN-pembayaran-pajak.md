@@ -1,6 +1,6 @@
 # PLAN — F1 Modul C (Pembayaran & Pajak), sub-project 1: TaxCalculator, urutan hitung, pembayaran tunai
 
-Status: **menunggu persetujuan.** Belum ada kode yang ditulis. Empat keputusan di §8, satu di antaranya menyangkut kode yang sudah ada di PR #5.
+Status: **selesai.** Empat keputusan di §8 sudah dijawab user — lihat §8.0. T1–T4 dikerjakan di PR #5 (keputusan Q1).
 
 ---
 
@@ -173,7 +173,7 @@ Lalu pembayaran tunai:
 - [x] **T16** — Transisi ilegal ditolak lewat `assertTransition`, bukan `if` di handler.
 - [x] **T17** — Idempotency untuk pembayaran — retry tidak boleh menghasilkan pembayaran ganda.
 - [x] **T18** — Kontrak OpenAPI.
-- [ ] **T19** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
+- [x] **T19** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
 
 ---
 
