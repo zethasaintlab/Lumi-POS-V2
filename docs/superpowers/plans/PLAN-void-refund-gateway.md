@@ -69,7 +69,7 @@ Respons menyebutkan operasi mana yang dilakukan, supaya UI bisa menjelaskannya k
 ### 4.2 Void
 
 - Record asli **tidak berubah** (invariant #2, AC FR-B7 pertama)
-- `order.voided_by_order_id` menunjuk order pembatal
+- `order.voided_by_order_id` menunjuk order pembatal — **arahnya terbalik dari yang kutulis di sini, dan itu dipaksa invariant, bukan dipilih.** Kolom ini ada di baris order **pembatal** dan menunjuk order yang dibatalkan; menaruhnya di order asli menuntut `UPDATE` pada order asli (pembatalnya belum ada saat asli ditulis), dan AC FR-B7 pertama melarangnya. Namanya jadi terbaca terbalik — dicatat sebagai temuan di `HANDOFF.md`, bukan diubah sendiri
 - Alasan dari **daftar tertutup**: `salah_input` · `pelanggan_batal` · `item_habis` · `uji_coba` · `lainnya`. `lainnya` wajib catatan ≥ 10 karakter (`spec-b:292`)
 - `stock_movement` type `void`, delta positif per baris
 - `audit_event` dengan aktor, reason_code, reason_note
@@ -157,10 +157,10 @@ Domain:
 
 Void:
 
-- [ ] **T6** — `POST /orders/{id}/cancel` pada order `open`/`paid` → void. Order asli **tidak berubah**; order baru `voided`; `voided_by_order_id` terisi.
-- [ ] **T7** — Void menulis `stock_movement` type `void` (delta positif) + `audit_event`, **dalam transaksi yang sama** (invariant #1). Test injeksi kegagalan: nol baris di semua tabel.
-- [ ] **T8** — Alasan wajib dari daftar tertutup; `lainnya` menuntut catatan ≥ 10 karakter.
-- [ ] **T9** — Void **tanpa** PIN manajer (keputusanmu 1 Agu) — test membuktikan tidak ada `X-Approver-Id` yang dituntut.
+- [x] **T6** — `POST /orders/{id}/cancel` pada order `open`/`paid` → void. Order asli **tidak berubah**; order baru `voided`; `voided_by_order_id` terisi.
+- [x] **T7** — Void menulis `stock_movement` type `void` (delta positif) + `audit_event`, **dalam transaksi yang sama** (invariant #1). Test injeksi kegagalan: nol baris di semua tabel.
+- [x] **T8** — Alasan wajib dari daftar tertutup; `lainnya` menuntut catatan ≥ 10 karakter.
+- [x] **T9** — Void **tanpa** PIN manajer (keputusanmu 1 Agu) — test membuktikan tidak ada `X-Approver-Id` yang dituntut.
 
 Refund:
 
