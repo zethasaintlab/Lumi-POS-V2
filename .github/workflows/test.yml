@@ -82,6 +82,10 @@ jobs:
       - run: npm run test:server
       - run: npm run test:catalog
       - run: npm run test:ordering
+      # DST terhadap server + database SUNGGUHAN. Iterasinya jauh lebih sedikit
+      # daripada gate 10.000 di test:dst -- yang dicari di sini adalah IKATAN:
+      # bahwa implementasi mengikuti protokol yang sudah dibuktikan benar.
+      - run: npm run test:dst-server
       - run: npm run test:payment
 
       - run: npm run test:sqlite-local
