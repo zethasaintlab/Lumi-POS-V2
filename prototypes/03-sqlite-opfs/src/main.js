@@ -15,7 +15,13 @@ function baris(nama, nilai) {
   tabel.append(tr);
 }
 
-const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+// ?driver=wa -- ukur @journeyapps/wa-sqlite (driver PowerSync) alih-alih
+// @sqlite.org/sqlite-wasm. Dua worker terpisah, bukan satu yang bercabang:
+// keduanya memuat build WASM sendiri, dan menyatukannya berarti mengukur
+// bundle yang tidak akan pernah dikirim ke siapa pun.
+const params = new URLSearchParams(location.search);
+const berkasWorker = params.get('driver') === 'wa' ? './worker-wa.js' : './worker.js';
+const worker = new Worker(new URL(berkasWorker, import.meta.url), { type: 'module' });
 
 worker.onmessage = (ev) => {
   const d = ev.data;
@@ -38,6 +44,6 @@ worker.onerror = (e) => {
 };
 
 // ?tahan=1 -- buka pool dan tahan, supaya tab lain dapat mencoba merebutnya.
-const perintah = new URLSearchParams(location.search).has('tahan') ? 'tahan' : 'jalankan';
+const perintah = params.has('tahan') ? 'tahan' : 'jalankan';
 status.textContent = perintah === 'tahan' ? 'menahan pool…' : 'menjalankan…';
 worker.postMessage(perintah);

@@ -33,7 +33,12 @@ export default defineConfig({
   },
   // `@sqlite.org/sqlite-wasm` memuat berkas .wasm-nya sendiri saat runtime;
   // pre-bundling Vite mengacaukan resolusi path-nya.
+  // KEDUA driver dikecualikan dari pre-bundling. Masing-masing memuat berkas
+  // .wasm-nya sendiri saat runtime, relatif terhadap URL modulnya; Vite yang
+  // memindahkannya ke .vite/deps membuat resolusi itu meleset, dan .wasm-nya
+  // dijawab HTML fallback. Gejalanya sama persis untuk keduanya:
+  // "WebAssembly.instantiate(): expected magic word".
   optimizeDeps: {
-    exclude: ['@sqlite.org/sqlite-wasm'],
+    exclude: ['@sqlite.org/sqlite-wasm', '@journeyapps/wa-sqlite'],
   },
 });

@@ -9,7 +9,8 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@sqlite.org/sqlite-wasm": "^3.53.0-build1"
+    "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
+    "@journeyapps/wa-sqlite": "2.0.1"
   },
   "devDependencies": {
     "vite": "^7.0.4"
