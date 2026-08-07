@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool } from '../../../db.ts';
+import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
-import { getTenantId, getActorId } from '../../../tenant-context.ts';
+import { getTenantId, getActorId, getApproverId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import { computeRequestHash } from './request-hash.ts';
-import { assertUserVisible } from '../../identity/index.ts';
+import { assertUserVisible, assertApproverVisible } from '../../identity/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { recordStockMovements } from '../../inventory/index.ts';
 import type { StockMovementInput } from '../../inventory/index.ts';
@@ -19,6 +19,7 @@ import {
 import {
   decideCancellation,
   assertCancellationReason,
+  assertRefundWithinLimit,
 } from '../../../../../../packages/domain/src/cancellation.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -57,12 +58,28 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 // bukan efek samping yang boleh menyusul: keputusan user 1 Agustus 2026
 // menghapus PIN manajer dari void, jadi keduanya adalah kontrol yang tersisa.
 
+interface RefundLineInput {
+  lineId: string;
+  quantityMilli: unknown;
+}
+
+// Satu bentuk body untuk dua operasi, karena endpoint-nya satu (spec-b:235 --
+// kasir menekan satu tombol). Field mana yang wajib bergantung pada operasi
+// yang DIPILIH SERVER, jadi kontrak OpenAPI hanya mewajibkan `id` dan
+// `reasonCode`; sisanya divalidasi di sini. Pola yang sama dengan seluruh
+// validasi uang/kuantitas di repo ini -- JSON Schema tidak bisa menyatakan
+// "wajib bila server memutuskan X".
 interface CancelInput {
   id: string;
-  receiptNumber: string;
-  sequence: number;
   reasonCode: string;
   reasonNote?: string | null;
+  /** Void saja: nomor struk dan urutan order pembatal. */
+  receiptNumber?: string;
+  sequence?: number;
+  /** Refund saja: nominal yang dikembalikan, rupiah utuh. */
+  amount?: unknown;
+  /** Refund parsial: baris mana yang dikembalikan. Kosong = seluruh order. */
+  lines?: RefundLineInput[];
   hlc?: string;
   occurredAt?: string;
 }
@@ -99,10 +116,27 @@ interface LineRow {
   cost_at_sale: string;
 }
 
+interface RefundRow {
+  id: string;
+  order_id: string;
+  amount: string;
+  reason_code: string;
+  reason_note: string | null;
+  created_by: string;
+  approved_by: string;
+  occurred_at: Date;
+  recorded_at: Date;
+  hlc: string;
+}
+
 // Bentuk sama dengan assertHlcValid di handlers/orders.ts -- hlc adalah
 // bilangan 57-bit yang melebihi presisi double JSON, jadi ia string dan
 // bentuknya tidak bisa divalidasi lewat JSON Schema.
 const HLC_PATTERN = /^\d+$/;
+
+// Sama dengan pola receiptNumber di openapi.yaml untuk POST /orders. Diperiksa
+// di sini karena field ini hanya wajib pada jalur void.
+const RECEIPT_NUMBER_PATTERN = /^[A-Za-z0-9]+-\d{8}-\d+$/;
 
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 function getIdempotencyKeyHeader(req: FastifyRequest): string {
@@ -189,6 +223,277 @@ function toCancelledOrder(row: OrderRow) {
   };
 }
 
+// Baris yang akan dikembalikan stoknya, sudah dipetakan ke variation.
+interface RestockPlan {
+  variationId: string;
+  quantityMilli: bigint;
+  unitCost: bigint;
+}
+
+function assertRefundAmountValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'amount harus bilangan bulat rupiah > 0.');
+  }
+}
+
+function assertRefundQuantityValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'quantityMilli baris refund harus bilangan bulat > 0 (x1000).');
+  }
+}
+
+/**
+ * Menyusun rencana restock refund, dan menolak yang mengembalikan lebih banyak
+ * daripada yang pernah terjual.
+ *
+ * ## Kenapa batasnya per VARIATION, bukan per baris
+ *
+ * `stock_movement` tidak punya kolom `line_id` (0010_inventory.sql) -- yang
+ * ada hanya `order_id` dan `variation_id`. Kumulatif yang bisa dihitung dari
+ * data yang tersimpan karena itu per (order, variation), dan kebetulan itu
+ * juga batas yang lebih benar: stok adalah SUM(delta) per variation, bukan
+ * per baris order. Dua baris order atas variation yang sama berbagi satu
+ * jatah, dan memang seharusnya begitu.
+ *
+ * Tanpa batas ini, dua refund parsial yang masing-masing sah bisa
+ * bersama-sama mengembalikan lebih banyak daripada yang terjual. Bentuk
+ * kegagalannya sama dengan batas uang: stok mengembang diam-diam, dan baru
+ * ketahuan saat stock opname.
+ */
+async function planRestock(
+  client: PoolClient,
+  orderId: string,
+  requested: RefundLineInput[] | undefined
+): Promise<RestockPlan[]> {
+  const { rows: lines } = await client.query<LineRow>(
+    'SELECT id, variation_id, quantity, cost_at_sale FROM order_line WHERE order_id = $1 ORDER BY occurred_at, id',
+    [orderId]
+  );
+
+  let rencana: RestockPlan[];
+  if (requested === undefined) {
+    // Daftar baris dikosongkan = seluruh order kembali. Pemanggil sudah
+    // dipastikan meminta refund PENUH sebelum sampai ke sini (lihat
+    // tulisRefund) -- refund uang parsial tanpa daftar baris akan
+    // mengembalikan seluruh stok padahal pelanggan hanya menerima sebagian
+    // uangnya, dan barang yang tidak pernah kembali akan tercatat ada.
+    rencana = lines.map((l) => ({
+      variationId: l.variation_id,
+      quantityMilli: BigInt(l.quantity),
+      unitCost: BigInt(l.cost_at_sale),
+    }));
+  } else {
+    const byId = new Map(lines.map((l) => [l.id, l]));
+    rencana = requested.map((r) => {
+      const line = byId.get(r.lineId);
+      if (line === undefined) {
+        // Termasuk baris milik order LAIN: `order_line.id` unik global, jadi
+        // id yang sah pun tidak ditemukan di sini bila ia bukan milik order
+        // ini. FK tidak menjaga ini -- lineId datang dari body.
+        throw new HttpError(404, 'ORDER_LINE_NOT_FOUND', `Baris ${r.lineId} bukan milik order ${orderId}.`);
+      }
+      assertRefundQuantityValid(r.quantityMilli);
+      return {
+        variationId: line.variation_id,
+        quantityMilli: BigInt(r.quantityMilli),
+        unitCost: BigInt(line.cost_at_sale),
+      };
+    });
+  }
+
+  // Terjual per variation, dari order ini.
+  const terjual = new Map<string, bigint>();
+  for (const l of lines) {
+    terjual.set(l.variation_id, (terjual.get(l.variation_id) ?? 0n) + BigInt(l.quantity));
+  }
+
+  // Sudah dikembalikan sebelumnya (refund parsial berulang, atau void).
+  const { rows: sebelumnya } = await client.query<{ variation_id: string; total: string }>(
+    `SELECT variation_id, SUM(delta)::text AS total
+       FROM stock_movement
+      WHERE order_id = $1 AND type IN ('refund','void')
+      GROUP BY variation_id`,
+    [orderId]
+  );
+  const dikembalikan = new Map(sebelumnya.map((r) => [r.variation_id, BigInt(r.total)]));
+
+  const diminta = new Map<string, bigint>();
+  for (const r of rencana) {
+    diminta.set(r.variationId, (diminta.get(r.variationId) ?? 0n) + r.quantityMilli);
+  }
+  for (const [variationId, jumlah] of diminta) {
+    const batas = terjual.get(variationId) ?? 0n;
+    const sudah = dikembalikan.get(variationId) ?? 0n;
+    if (sudah + jumlah > batas) {
+      throw new HttpError(
+        409,
+        'RESTOCK_EXCEEDS_SOLD',
+        `Kuantitas yang dikembalikan melebihi yang terjual. Terjual ${batas}, sudah dikembalikan ${sudah}, diminta ${jumlah} (x1000).`
+      );
+    }
+  }
+  return rencana;
+}
+
+const INSERT_REFUND_SQL = `
+  INSERT INTO refund (
+    id, tenant_id, order_id, amount, reason_code, reason_note,
+    created_by, approved_by, occurred_at, hlc
+  ) VALUES (
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, COALESCE($9::timestamptz, now()), $10
+  )
+  RETURNING *
+`;
+
+function toRefund(row: RefundRow) {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    amount: Number(row.amount),
+    reasonCode: row.reason_code,
+    reasonNote: row.reason_note,
+    createdBy: row.created_by,
+    approvedBy: row.approved_by,
+    occurredAt: row.occurred_at,
+    recordedAt: row.recorded_at,
+    hlc: row.hlc,
+  };
+}
+
+interface RefundContext {
+  tenantId: string;
+  actorId: string;
+  approverId: string;
+  orderId: string;
+  asli: OrderRow;
+  body: CancelInput;
+  hlcValue: bigint;
+}
+
+/**
+ * Menulis refund: baris `refund` + `stock_movement` balik + `audit_event`.
+ *
+ * ## Tidak ada payment negatif — keputusan user 7 Agustus 2026
+ *
+ * `spec-b:230` menulis refund membuat "payment negatif", tapi
+ * `payment.amount` punya `CHECK (amount > 0)` (`0008_payment.sql:17`) dan
+ * `refund.amount` tidak punya CHECK sama sekali. Keduanya tidak dapat benar
+ * bersamaan. Keputusan user: pakai baris `refund`, jangan sentuh skema
+ * payment — tabel `refund` memang dibuat untuk aliran data ini, dan
+ * mempertahankan `amount > 0` menjaga konsistensi laporan keuangan.
+ */
+async function tulisRefund(client: PoolClient, ctx: RefundContext): Promise<Record<string, unknown>> {
+  const { tenantId, actorId, approverId, orderId, asli, body, hlcValue } = ctx;
+
+  assertRefundAmountValid(body.amount);
+
+  // Penyetuju divalidasi lewat SELECT yang tunduk RLS. `refund.approved_by`
+  // adalah `text NOT NULL` TANPA FK (0007_ordering.sql:106) -- kolom otorisasi
+  // finansial yang isinya tidak dijamin siapa-siapa, kelas yang sama dengan
+  // `price_history.changed_by`. Ini satu-satunya yang berdiri di sana.
+  await assertApproverVisible(client, approverId);
+
+  const { rows: sebelumnya } = await client.query<{ total: string }>(
+    'SELECT COALESCE(SUM(amount), 0)::text AS total FROM refund WHERE order_id = $1',
+    [orderId]
+  );
+  const alreadyRefunded = BigInt(sebelumnya[0].total);
+  const orderTotal = BigInt(asli.total);
+  const requested = BigInt(body.amount);
+  try {
+    // AC FR-B7 ketiga. Batasnya di domain supaya klien offline menegakkan
+    // angka yang sama; server tetap memeriksanya ulang karena klien tidak
+    // dipercaya.
+    assertRefundWithinLimit({ orderTotal, alreadyRefunded, requested });
+  } catch (err) {
+    // Pesan domain sudah memuat sisa yang tersedia (spec-b:271: "ditolak;
+    // maksimum yang tersisa Rp 33.600") -- kasir perlu angkanya tanpa
+    // menebak, jadi ia diteruskan apa adanya, bukan diganti pesan umum.
+    throw new HttpError(409, 'REFUND_EXCEEDS_TOTAL', (err as Error).message);
+  }
+
+  // Daftar baris boleh dikosongkan HANYA untuk refund penuh atas order yang
+  // belum pernah direfund. Di luar itu pemanggil harus menyebutkan barang mana
+  // yang kembali -- termasuk menyebut daftar KOSONG bila uangnya dikembalikan
+  // tanpa barang kembali (kompensasi keluhan, kelebihan bayar). Menebak di
+  // sini berarti menebak apakah barang fisik kembali ke rak, dan tebakannya
+  // hanya ketahuan saat stock opname.
+  if (body.lines === undefined && !(alreadyRefunded === 0n && requested === orderTotal)) {
+    throw new HttpError(
+      400,
+      'REFUND_LINES_REQUIRED',
+      'Refund sebagian harus menyebutkan `lines` — daftar baris yang barangnya kembali. Kirim `lines: []` bila tidak ada barang yang kembali.'
+    );
+  }
+
+  const rencana = await planRestock(client, orderId, body.lines);
+
+  let refundRow: RefundRow;
+  try {
+    const { rows } = await client.query<RefundRow>(INSERT_REFUND_SQL, [
+      body.id,
+      tenantId,
+      orderId,
+      requested.toString(),
+      body.reasonCode,
+      body.reasonNote ?? null,
+      actorId,
+      approverId,
+      body.occurredAt ?? null,
+      hlcValue.toString(),
+    ]);
+    refundRow = rows[0];
+  } catch (err) {
+    if (isPrimaryKeyViolation(err)) {
+      throw new HttpError(409, 'ID_ALREADY_EXISTS', `Refund dengan id ${body.id} sudah ada.`);
+    }
+    throw err;
+  }
+
+  await recordStockMovements(
+    client,
+    rencana.map((r) => ({
+      id: randomUUID(),
+      tenantId,
+      outletId: asli.outlet_id,
+      deviceId: asli.device_id,
+      variationId: r.variationId,
+      type: 'refund' as const,
+      delta: r.quantityMilli,
+      orderId,
+      reasonCode: body.reasonCode,
+      note: body.reasonNote ?? null,
+      unitCost: r.unitCost,
+      createdBy: actorId,
+      hlc: hlcValue,
+      occurredAt: refundRow.occurred_at.toISOString(),
+    }))
+  );
+
+  // Aktor DAN penyetuju. Bahwa keduanya berbeda ditegakkan CHECK di
+  // audit_event, bukan sebuah if di sini -- database tidak pernah lupa.
+  await recordAuditEvent(client, {
+    id: randomUUID(),
+    tenantId,
+    outletId: asli.outlet_id,
+    deviceId: asli.device_id,
+    actorUserId: actorId,
+    approverUserId: approverId,
+    eventType: 'order.refunded',
+    entityType: 'order',
+    entityId: orderId,
+    reasonCode: body.reasonCode,
+    reasonNote: body.reasonNote ?? null,
+    before: { total: Number(asli.total), alreadyRefunded: Number(alreadyRefunded) },
+    after: { refundId: refundRow.id, amount: Number(requested) },
+    hlc: hlcValue,
+    occurredAt: refundRow.occurred_at.toISOString(),
+  });
+
+  return { operation: 'refund', cancelledOrderId: orderId, refund: toRefund(refundRow) };
+}
+
 export function createCancelHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
     async cancelOrder(req: FastifyRequest, reply: FastifyReply) {
@@ -253,13 +558,6 @@ export function createCancelHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
         } catch (err) {
           throw new HttpError(409, 'ORDER_NOT_CANCELLABLE', (err as Error).message);
         }
-        if (operation === 'refund') {
-          // T10-T13 -- belum digarap. Menolak dengan jelas lebih baik daripada
-          // diam-diam mem-void order yang sudah CLOSED, yang akan mengeluarkan
-          // penjualan sah dari omzet.
-          throw new HttpError(501, 'NOT_IMPLEMENTED', 'Refund belum tersedia; order ini sudah CLOSED.');
-        }
-
         try {
           assertCancellationReason(operation, body.reasonCode, body.reasonNote);
         } catch (err) {
@@ -267,6 +565,26 @@ export function createCancelHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
         }
 
         await assertUserVisible(client, actorId);
+
+        if (operation === 'refund') {
+          const responseBody = await tulisRefund(client, {
+            tenantId, actorId, orderId, asli, body, hlcValue,
+            // Dibaca DI SINI, bukan di awal handler: void harus berjalan tanpa
+            // header ini (keputusan user 1 Agu 2026), dan operasinya baru
+            // diketahui setelah status order dibaca.
+            approverId: getApproverId(req),
+          });
+          await insertOutboxEvent(client, {
+            id: randomUUID(),
+            tenantId,
+            aggregateType: 'order',
+            aggregateId: orderId,
+            eventType: 'order.refunded',
+            payload: responseBody,
+          });
+          await completeIdempotencyKey(client, { key: idempotencyKey, responseStatus: 201, responseBody });
+          return { status: 201, body: responseBody as unknown };
+        }
 
         // Order asli TETAP `open` setelah di-void (tidak ada UPDATE), jadi
         // tidak ada apa pun di statusnya yang menolak void kedua. Yang
@@ -279,6 +597,16 @@ export function createCancelHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
         );
         if (sudah.length > 0) {
           throw new HttpError(409, 'ORDER_ALREADY_VOIDED', `Order ${orderId} sudah dibatalkan.`);
+        }
+
+        // Wajib untuk void, tidak berlaku untuk refund -- karena itu diperiksa
+        // di sini, bukan di JSON Schema. Kontrak tidak bisa menyatakan "wajib
+        // bila server memutuskan operasinya void".
+        if (typeof body.receiptNumber !== 'string' || !RECEIPT_NUMBER_PATTERN.test(body.receiptNumber)) {
+          throw new HttpError(400, 'VALIDATION_ERROR', 'receiptNumber wajib untuk void, format PREFIX-YYYYMMDD-URUTAN.');
+        }
+        if (typeof body.sequence !== 'number' || !Number.isInteger(body.sequence) || body.sequence < 1) {
+          throw new HttpError(400, 'VALIDATION_ERROR', 'sequence wajib untuk void, bilangan bulat >= 1.');
         }
 
         let voidOrder: OrderRow;

@@ -258,6 +258,60 @@ test('order yang tidak ada -> 404 NOT_FOUND', async () => {
 });
 
 // ============================================================
+// T15 -- guard lintas tenant
+// ============================================================
+
+// `orderId` datang dari PATH, jadi tidak ada FK apa pun yang menyentuhnya --
+// bukan sekadar FK yang tidak tunduk RLS (temuan F1), tapi tidak ada FK sama
+// sekali. Satu-satunya yang berdiri di sini adalah SELECT yang tunduk RLS.
+//
+// Kalau ia bocor, satu tenant dapat MEMBATALKAN penjualan tenant lain dan
+// mengembalikan stoknya -- bentuk kegagalan yang jauh lebih buruk daripada
+// sekadar membaca data orang lain.
+test('membatalkan order milik tenant lain -> 404, tidak ada baris tersimpan', async () => {
+  const fx = await setupDeviceAndShift();
+  const v = await buatVariation(10000);
+  const order = await buatOrder(fx, [await baris(v)]);
+
+  const lain = await seedTenantBase(appSetup, { suffix: 'VoidOther' });
+  const payload = batalkanPayload();
+  const res = await app.inject({
+    method: 'POST',
+    url: `/orders/${order.id}/cancel`,
+    payload,
+    headers: {
+      'x-tenant-id': lain.tenant.id, // tenant LAIN yang meminta
+      'x-actor-id': lain.user.id,
+      'idempotency-key': crypto.randomUUID(),
+    },
+  });
+  assert.equal(res.statusCode, 404, res.body);
+  assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
+
+  // Diperiksa dari sisi tenant PEMILIK: ordernya harus utuh, tanpa pembatal,
+  // tanpa pergerakan stok.
+  const orders = await query('SELECT id, status, voided_by_order_id FROM "order"');
+  assert.equal(orders.length, 1, 'tidak ada order pembatal yang lahir');
+  assert.equal(orders[0].status, 'open');
+  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+  assert.equal((await query('SELECT id FROM audit_event')).length, 0);
+});
+
+test('aktor milik tenant lain -> 404, tidak ada baris tersimpan', async () => {
+  const fx = await setupDeviceAndShift();
+  const v = await buatVariation(10000);
+  const order = await buatOrder(fx, [await baris(v)]);
+  const lain = await seedTenantBase(appSetup, { suffix: 'VoidActorOther' });
+
+  const payload = batalkanPayload();
+  const res = await batalkan(order.id, payload, { 'x-actor-id': lain.user.id });
+  assert.equal(res.statusCode, 404, res.body);
+  assert.equal(JSON.parse(res.body).error.code, 'ACTOR_NOT_FOUND');
+  assert.equal((await query('SELECT id FROM "order" WHERE id = $1', [payload.id])).length, 0);
+  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+});
+
+// ============================================================
 // T7 -- restock + audit, dalam SATU transaksi (invariant #1)
 // ============================================================
 

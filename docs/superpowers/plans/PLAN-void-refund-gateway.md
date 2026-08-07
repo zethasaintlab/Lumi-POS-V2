@@ -164,14 +164,14 @@ Void:
 
 Refund:
 
-- [ ] **T10** — Cancel pada order `closed` → refund, bukan void. Sistem yang memilih, bukan klien (AC FR-B7 kedua).
-- [ ] **T11** — `approved_by` wajib; aktor ≠ penyetuju ditegakkan database.
-- [ ] **T12** — Refund parsial; kumulatif melebihi total ditolak dengan sisa yang tersedia disebut (AC FR-B7 ketiga).
-- [ ] **T13** — `stock_movement` type `refund` + `audit_event` dengan aktor **dan** penyetuju.
-- [ ] **T14** — Idempotency: retry tidak menghasilkan void/refund ganda.
-- [ ] **T15** — Guard FK klien-suplai lintas tenant, **dengan bukti tidak ada baris tersimpan**. Dibuktikan lewat sabotase.
-- [ ] **T16** — Kontrak OpenAPI.
-- [ ] **T17** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
+- [x] **T10** — Cancel pada order `closed` → refund, bukan void. Sistem yang memilih, bukan klien (AC FR-B7 kedua).
+- [x] **T11** — `approved_by` wajib; aktor ≠ penyetuju ditegakkan database.
+- [x] **T12** — Refund parsial; kumulatif melebihi total ditolak dengan sisa yang tersedia disebut (AC FR-B7 ketiga).
+- [x] **T13** — `stock_movement` type `refund` + `audit_event` dengan aktor **dan** penyetuju.
+- [x] **T14** — Idempotency: retry tidak menghasilkan void/refund ganda.
+- [x] **T15** — Guard FK klien-suplai lintas tenant, **dengan bukti tidak ada baris tersimpan**. Dibuktikan lewat sabotase.
+- [x] **T16** — Kontrak OpenAPI.
+- [x] **T17** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
 
 ---
 
