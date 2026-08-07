@@ -146,7 +146,7 @@ Status F1 sekarang:
 
 Sengaja belum digarap: FR-A3/A5 (aturan pemilihan modifier — UI kasir), FR-A8 (import katalog, P1).
 
-Sisa Modul B, belum digarap: **FR-B7** (void & refund), **FR-B8/B9** (otorisasi step-up — butuh PIN, Modul F), FR-B11 (cetak ulang struk, P1, butuh printer F4).
+Sisa Modul B, belum digarap: **FR-B8/B9** (otorisasi step-up — butuh PIN, Modul F), FR-B11 (cetak ulang struk, P1, butuh printer F4).
 
 **Modul C sub-project 1 selesai** (`docs/superpowers/plans/PLAN-pembayaran-pajak.md`): `TaxCalculator`, REST `tax_rate`, dan pembayaran tunai. `OPEN` → `PAID` → `CLOSED` kini hidup. Menutup FR-C6, C7, C8, C9, C11, dan FR-C1/C2 untuk tunai.
 
@@ -162,7 +162,7 @@ Sisa Modul C: **C-2** — QRIS dinamis lewat Midtrans + webhook, QRIS statis, ED
 
 `packages/domain` akhirnya berisi kode: state machine order, aritmetika uang, generator HLC — semuanya **fungsi murni tanpa I/O**, dibagi server dan klien supaya keduanya tidak pernah menghitung total yang berbeda.
 
-**Enam modul kini punya kode**: `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
+**Delapan modul kini punya kode**: `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
 
 **Keputusan yang mengikat kode ordering:**
 
@@ -180,7 +180,19 @@ Sisa Modul C: **C-2** — QRIS dinamis lewat Midtrans + webhook, QRIS statis, ED
 - **`order.tax_amount` = `totalTax`** (seluruh pajak, untuk struk); yang **menambah** total hanya `totalTaxExclusive`. Menukar keduanya menggandakan pajak inklusif.
 - **`payment` PK-nya `(id, occurred_at)`**, bukan `id` saja — tabelnya dipartisi. Berbeda dari `order`. Yang melindungi retry pembayaran adalah **Idempotency-Key**, bukan primary key: satu lapisan lebih sedikit daripada yang dimiliki order.
 
-**Exit criteria F1 — "satu penjualan tersimpan atomik dengan pajak benar" — kini terpenuhi untuk jalur tunai.** Tapi F1 belum bisa disebut tutup: `ARCH:395` menuntut modul `payment`, dan QRIS serta EDC (C-2) belum ada. Jangan tandai F1 selesai sampai itu dan FR-B7 (void & refund) ada.
+**Modul B sub-project 3 — void & refund (FR-B7): selesai** (`docs/superpowers/plans/PLAN-void-refund-gateway.md`). Satu endpoint `POST /orders/{id}/cancel`; **server** yang memilih operasi dari status order, bukan kasir (`spec-b:235`). Void dan refund menulis order pembatal / baris `refund` + `stock_movement` + `audit_event` + outbox + idempotency_key dalam **satu transaksi**.
+
+`inventory` dan `audit` lahir sebagai irisan minimal, masing-masing satu fungsi — keputusan 1 Agustus menghapus PIN dari void, jadi restock dan audit adalah kontrol yang tersisa untuknya, bukan pelengkap.
+
+**Keputusan yang mengikat kode void & refund:**
+
+- **`voided_by_order_id` ada di order PEMBATAL**, menunjuk order yang dibatalkan. Arahnya **dipaksa** AC FR-B7 pertama ("tidak ada `UPDATE` pada order asli") — pembatalnya belum ada saat order asli ditulis, jadi tidak ada arah lain yang mungkin. Namanya terbaca terbalik; itu utang yang dicatat di `HANDOFF.md`, bukan kekeliruan implementasi.
+- **Order yang sudah di-void tetap berstatus `open`.** Konsekuensi langsung dari aturan di atas. Yang menolak void kedua adalah `SELECT` di aplikasi **dan** index unik `ux_order_voided_by` (migrasi `0017`). Jangan pernah menyimpulkan "order ini sah" dari `status = 'open'` saja.
+- **Refund tidak membuat `payment` negatif** (keputusan user 7 Agustus 2026). `payment.amount` punya `CHECK (amount > 0)` dan itu dipertahankan; arah berlawanan dinyatakan lewat baris `refund`. `spec-b:230` yang menulis "payment negatif" karena itu tidak akurat terhadap kode.
+- **Refund sebagian wajib menyebut `lines`.** Tanpa itu server harus menebak apakah barang fisik kembali ke rak. `lines: []` berarti uang kembali tanpa barang kembali.
+- **Void berjalan tanpa `X-Approver-Id`; refund selalu menuntutnya.** Header itu diabaikan pada jalur void. Bahwa penyetuju berbeda dari aktor ditegakkan `CHECK` di `audit_event` — **database**, bukan aplikasi.
+
+**Exit criteria F1 — "satu penjualan tersimpan atomik dengan pajak benar" — terpenuhi untuk jalur tunai, dan koreksinya (void & refund) kini ada.** Tapi F1 belum bisa disebut tutup: `ARCH:395` menuntut modul `payment`, dan QRIS serta EDC (C-2) belum ada.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
@@ -195,6 +207,8 @@ Ditemukan empiris saat membangun modul Katalog, bukan dari dokumentasi: sebelum 
 **Dikonfirmasi ulang 2 Agustus 2026 di `price_history.outlet_id`,** lewat sabotase yang disengaja: `assertOutletVisible` dinonaktifkan, request yang menunjuk outlet tenant lain mengembalikan `201` dan barisnya benar-benar tersimpan. FK ke `outlet(id)` tidak menghentikannya. Ini bukan pengulangan bug yang sama — ini FK yang berbeda, di tabel yang berbeda, di modul yang berbeda. Polanya berulang setiap kali FK klien-suplai baru muncul.
 
 **Dikonfirmasi keempat kalinya di `order.shift_id`** (Modul B): `assertShiftOpen` dinonaktifkan, dan satu order **utuh** — order + check + seluruh baris — tersimpan menunjuk shift milik tenant lain, `201`. Empat kali, empat FK berbeda, empat modul berbeda. Berhenti menganggap ini kejadian; ini sifat PostgreSQL. **Anggap setiap FK klien-suplai baru terpapar sampai kamu membuktikan sebaliknya lewat sabotase.**
+
+**Bentuk kelima, ditemukan 7 Agustus 2026 saat membangun refund: guard yang tidak dapat DIBEDAKAN dari luar adalah guard yang tidak teruji.** Penyetuju refund divalidasi dua kali — sekali eksplisit di jalur refund, sekali lagi di dalam `recordAuditEvent`. Karena keduanya menjawab dengan status dan kode yang sama persis, guard pertama bisa **dimatikan sepenuhnya** tanpa satu test pun merah. Perbaikannya bukan menghapus salah satunya (`refund.approved_by` ditulis sebelum audit berjalan, dan kolom itu tanpa FK), melainkan memisahkan pesannya: `assertApproverVisible` dengan kode `APPROVER_NOT_FOUND`. Itu sekaligus menutup cacat yang lebih nyata — manajer yang penyetujuannya ditolak sebelumnya diberi tahu bahwa **kasir**-nya yang tidak ditemukan.
 
 **Kasus yang lebih buruk: kolom tanpa FK sama sekali.** `price_history.changed_by` adalah `text NOT NULL` tanpa FK ke `"user"` — database tidak akan menangkap id karangan apa pun. Kolom audit finansial yang isinya tidak dijamin siapa-siapa lebih berbahaya daripada FK yang tidak tunduk RLS, karena tidak ada apa pun yang terlihat menjaganya. `assertUserVisible` adalah satu-satunya yang berdiri di sana.
 

@@ -29,14 +29,20 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | Modul | Isi | Permukaan publik |
 |---|---|---|
 | `catalog` | Kategori, item/variation, modifier, harga per outlet | 32 operasi REST · `resolvePrice` · `getVariationSnapshot` |
-| `ordering` | Penulisan penjualan | `POST /orders` · `GET /orders/{id}` |
-| `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertDeviceVisible` |
+| `ordering` | Penulisan penjualan, void & refund | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` |
+| `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
 | `payment` | Tarif pajak dan pembayaran tunai | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `fetchEffectiveTaxRates` |
 | `tenancy` | Tidak punya endpoint | `assertOutletVisible` · `getOutletSettings` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
+| `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
+| `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
 
-Belum ada kode: `inventory`, `reporting`, `peripheral`, `audit`.
+Belum ada kode: `reporting`, `peripheral`.
+
+`inventory` dan `audit` lahir masing-masing dengan **satu fungsi**, dan itu bukan penundaan yang malas. Keputusan produk 1 Agustus 2026 menetapkan void berjalan **tanpa PIN manajer**, dengan syarat alasan daftar tertutup + audit + restock otomatis — jadi keduanya bukan pelengkap void, melainkan kontrol yang tersisa untuknya. Invariant #1 menuntut keduanya ditulis dalam transaksi yang sama, dan aturan 2 melarang `ordering` menyentuh `stock_movement` maupun `audit_event` langsung.
+
+Perhitungan stok (`SUM(delta)`), stocktake, oversell, sold-out tetap Modul E penuh. RBAC, PIN, sesi, dan seluruh permukaan query/laporan audit tetap Modul F penuh.
 
 ## Kenapa modul-modul kecil itu ada
 
@@ -53,3 +59,11 @@ FK PostgreSQL dicek dengan privilese owner tabel yang direferensikan dan **tidak
 Ini bukan teori. Dibuktikan **empat kali** di repo ini lewat sabotase yang disengaja, tiap kali di FK berbeda dan modul berbeda: `item.category_id`, `price_history.outlet_id`, dan terakhir `order.shift_id` — semuanya menghasilkan `201` dengan baris yang **benar-benar tersimpan** menunjuk tenant lain. Rinciannya di `CLAUDE.md` § "Temuan F1".
 
 Anggap setiap FK klien-suplai baru terpapar sampai kamu membuktikan sebaliknya.
+
+### Dan guard yang tidak dapat DIBEDAKAN adalah guard yang tidak teruji
+
+Ditemukan saat membangun refund (7 Agustus 2026). Penyetuju refund divalidasi di dua tempat: guard eksplisit di jalur refund, dan lagi di dalam `recordAuditEvent` beberapa langkah kemudian. Keduanya memakai pesan yang sama, jadi saat guard pertama **dimatikan sepenuhnya**, seluruh suite tetap hijau — yang kedua menjawab dengan status dan kode yang sama persis.
+
+Perbaikannya bukan menghapus salah satunya: `refund.approved_by` ditulis **sebelum** audit berjalan, dan kolom itu tidak punya FK sama sekali. Yang diperbaiki adalah pesannya — `assertApproverVisible` lahir dengan kode `APPROVER_NOT_FOUND`, terpisah dari `ACTOR_NOT_FOUND`. Itu sekaligus memperbaiki cacat yang lebih nyata: manajer yang penyetujuannya ditolak sebelumnya diberi tahu bahwa **kasir**-nya yang tidak ditemukan.
+
+Aturannya: bila dua lapisan menjaga hal yang sama, pastikan keduanya dapat dibedakan dari luar. Kalau tidak, salah satunya bisa hilang tanpa ada yang tahu.

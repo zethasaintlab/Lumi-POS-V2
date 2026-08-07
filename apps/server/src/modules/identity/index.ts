@@ -21,6 +21,33 @@ export async function assertUserVisible(client: PoolClient, userId: string): Pro
   }
 }
 
+/**
+ * Sama persis dengan `assertUserVisible`, KECUALI pesannya.
+ *
+ * Terpisah karena pesan yang salah di sini menimpa orang yang salah: refund
+ * menuntut penyetuju (`spec-b:278`), dan bila penyetujunya tidak sah,
+ * `ACTOR_NOT_FOUND` memberi tahu manajer bahwa KASIR-nya yang tidak
+ * ditemukan. Manajer itu sedang berdiri di kasir dengan pelanggan menunggu;
+ * ia akan mencari masalah di tempat yang keliru.
+ *
+ * Alasan kedua, yang menentukan: selama pesannya sama, tidak ada test yang
+ * dapat membedakan guard ini dari validasi yang dilakukan `recordAuditEvent`
+ * beberapa langkah kemudian — sabotase membuktikannya, guard ini dimatikan
+ * dan seluruh suite tetap hijau. Guard yang tidak dapat dibedakan adalah
+ * guard yang tidak teruji.
+ *
+ * `refund.approved_by` adalah `text NOT NULL` TANPA FK
+ * (`0007_ordering.sql:106`) — kelas yang sama dengan
+ * `price_history.changed_by`. Ini satu-satunya yang berdiri di sana pada saat
+ * baris `refund` ditulis.
+ */
+export async function assertApproverVisible(client: PoolClient, userId: string): Promise<void> {
+  const { rows } = await client.query('SELECT id FROM "user" WHERE id = $1 AND is_active = true', [userId]);
+  if (rows.length === 0) {
+    throw new HttpError(404, 'APPROVER_NOT_FOUND', `Penyetuju ${userId} tidak ditemukan atau tidak aktif.`);
+  }
+}
+
 // T0c (PLAN-ordering-fondasi.md §T0c) -- guard BARU, sama alasan dengan
 // assertOutletVisible/assertUserVisible di atas: modul cash BARU
 // (cash_drawer_shift.device_id) menunjuk device(id) lintas modul (invariant

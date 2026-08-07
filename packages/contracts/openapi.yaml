@@ -1412,6 +1412,169 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Batalkan transaksi — sistem menentukan void atau refund
+      description: >-
+        FR-B7. Kasir tidak memilih "void" atau "refund" (spec-b:235) —
+        body TIDAK memuat nama operasi sama sekali. Server membacanya dari
+        status order lewat `decideCancellation` (packages/domain), dan
+        menyebutkan hasilnya di field `operation` supaya UI dapat
+        menjelaskannya ke kasir.
+
+
+        Order asli TIDAK di-UPDATE (AC FR-B7 pertama). Void menambah baris
+        `order` berstatus `voided` yang `voidedByOrderId`-nya menunjuk order
+        yang dibatalkan.
+
+
+        Void berjalan TANPA X-Approver-Id — keputusan produk 1 Agustus 2026,
+        override eksplisit terhadap research/08 §3. Header itu diabaikan bila
+        dikirim. Refund (order CLOSED) akan menuntutnya, dan belum tersedia.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              # Hanya `id` dan `reasonCode` yang wajib di KONTRAK. Field mana
+              # lagi yang wajib bergantung pada operasi yang DIPILIH SERVER
+              # dari status order, dan JSON Schema tidak bisa menyatakan
+              # "wajib bila server memutuskan X". Void menuntut
+              # receiptNumber + sequence; refund menuntut amount + header
+              # X-Approver-Id. Keduanya divalidasi di handler, pola yang sama
+              # dengan seluruh validasi uang/kuantitas di repo ini.
+              required: [id, reasonCode]
+              properties:
+                id:
+                  type: string
+                  description: >-
+                    Id order PEMBATAL (void) atau id baris `refund` (refund),
+                    di-generate klien (ULID/UUIDv7).
+                receiptNumber:
+                  type: string
+                  pattern: '^[A-Za-z0-9]+-\d{8}-\d+$'
+                  description: Void saja.
+                sequence: { type: integer, minimum: 1, description: Void saja. }
+                amount:
+                  description: >-
+                    Refund saja — nominal rupiah utuh yang dikembalikan.
+                    Sengaja tanpa `type`: assertRefundAmountValid (handler)
+                    satu-satunya sumber kebenaran, sama seperti
+                    quantityMilli/discountAmount di POST /orders.
+                lines:
+                  type: array
+                  description: >-
+                    Refund parsial — baris mana yang dikembalikan stoknya
+                    (spec-b:233). Dikosongkan berarti seluruh order.
+                  items:
+                    type: object
+                    required: [lineId, quantityMilli]
+                    properties:
+                      lineId: { type: string }
+                      quantityMilli: {}
+                # Daftar TERTUTUP (spec-b:290) -- free text tidak dapat
+                # diagregasi menjadi laporan fraud.
+                #
+                # Enum di sini adalah GABUNGAN daftar void dan refund, dan itu
+                # sengaja lebih longgar daripada aturan sebenarnya: endpoint-nya
+                # satu, sementara operasinya baru diketahui server dari status
+                # order. Yang menolak `barang_rusak` pada void dan
+                # `salah_input` pada refund adalah assertCancellationReason
+                # (packages/domain) -- satu-satunya sumber kebenaran, dan yang
+                # juga berlaku saat klien offline.
+                reasonCode:
+                  type: string
+                  enum:
+                    - salah_input
+                    - pelanggan_batal
+                    - item_habis
+                    - uji_coba
+                    - barang_rusak
+                    - pesanan_salah
+                    - pelanggan_tidak_puas
+                    - kelebihan_bayar
+                    - lainnya
+                # Wajib >= 10 karakter bila reasonCode = lainnya (spec-b:296).
+                # Aturan bersyarat itu tidak dinyatakan di sini -- ia ada di
+                # domain, sama seperti seluruh validasi uang/kuantitas di repo
+                # ini.
+                reasonNote: { type: string, nullable: true }
+                hlc: { type: string, nullable: true }
+                occurredAt: { type: string, format: date-time, nullable: true }
+      responses:
+        '201':
+          description: >-
+            Order pembatal dibuat. `operation` menyebut operasi yang
+            DIPILIH SERVER.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation, cancelledOrderId]
+                properties:
+                  # `operation` menentukan field mana yang ada: `order` untuk
+                  # void (baris order pembatal), `refund` untuk refund (baris
+                  # refund). Refund TIDAK membuat order baru, dan TIDAK
+                  # membuat payment negatif -- keputusan user 7 Agu 2026.
+                  operation: { type: string, enum: [void, refund] }
+                  cancelledOrderId: { type: string }
+                  order: { $ref: '#/components/schemas/CancelledOrder' }
+                  refund: { $ref: '#/components/schemas/Refund' }
+        '400':
+          description: >-
+            Header X-Tenant-Id/X-Actor-Id atau Idempotency-Key hilang;
+            reasonCode di luar daftar tertutup; reasonCode `lainnya` tanpa
+            catatan minimal 10 karakter; atau hlc bukan string bilangan bulat
+            desimal (VALIDATION_ERROR)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            orderId tidak ditemukan (NOT_FOUND) atau aktor tidak
+            ditemukan/tidak aktif (ACTOR_NOT_FOUND) — keduanya lewat SELECT
+            yang tunduk RLS, bukan FK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Order sudah pernah dibatalkan (ORDER_ALREADY_VOIDED); status
+            order tidak mengizinkan pembatalan (ORDER_NOT_CANCELLABLE);
+            nomor struk pembatal bentrok (RECEIPT_SEQUENCE_TAKEN); id
+            pembatal sudah dipakai (ID_ALREADY_EXISTS); atau request dengan
+            Idempotency-Key yang sama sedang diproses (IDEMPOTENCY_KEY_CONFLICT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            Idempotency-Key sudah dipakai untuk body yang berbeda
+            (IDEMPOTENCY_KEY_HASH_MISMATCH)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: >-
+            Order berstatus CLOSED, jadi operasinya refund — belum tersedia
+            (NOT_IMPLEMENTED). Menolak lebih baik daripada mem-void
+            penjualan sah dan mengeluarkannya dari omzet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /orders/{orderId}/payments:
     post:
       operationId: createPayment
@@ -1868,6 +2031,97 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OrderLineModifier'
+    # Baris `refund` (FR-B7). Ia yang menyatakan arah berlawanan dari sebuah
+    # penjualan — BUKAN payment negatif. `payment.amount` punya
+    # CHECK (amount > 0) dan itu dipertahankan (keputusan user 7 Agu 2026),
+    # sehingga laporan keuangan tidak perlu membedakan payment yang menambah
+    # dari yang mengurangi.
+    Refund:
+      type: object
+      required:
+        - id
+        - orderId
+        - amount
+        - reasonCode
+        - reasonNote
+        - createdBy
+        - approvedBy
+        - occurredAt
+        - recordedAt
+        - hlc
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        amount: { type: integer }
+        reasonCode:
+          type: string
+          enum: [barang_rusak, pesanan_salah, pelanggan_tidak_puas, kelebihan_bayar, lainnya]
+        reasonNote: { type: string, nullable: true }
+        createdBy: { type: string }
+        # Selalu terisi dan selalu BERBEDA dari createdBy — refund menuntut
+        # persetujuan manajer (spec-b:278, tidak dapat diubah). Yang menegakkan
+        # perbedaannya adalah CHECK di audit_event, bukan aplikasi.
+        approvedBy: { type: string }
+        occurredAt: { type: string, format: date-time }
+        recordedAt: { type: string, format: date-time }
+        hlc: { type: string }
+
+    # Order PEMBATAL (FR-B7). Bentuknya sengaja BUKAN $ref ke Order: ia tidak
+    # punya `checkId` maupun `lines`, karena void tidak menjual apa pun. Nilai
+    # uangnya disalin dari order yang dibatalkan supaya baris ini terbaca
+    # sendirian ("penjualan sebesar sekian dibatalkan"); laporan penjualan
+    # mengecualikannya lewat status = voided, bukan lewat nilai nol.
+    CancelledOrder:
+      type: object
+      required:
+        - id
+        - outletId
+        - deviceId
+        - shiftId
+        - receiptNumber
+        - businessDate
+        - sequence
+        - status
+        - channel
+        - subtotal
+        - orderDiscount
+        - serviceChargeAmount
+        - taxAmount
+        - roundingAdjustment
+        - total
+        - amountDue
+        - voidedByOrderId
+        - createdBy
+        - occurredAt
+        - recordedAt
+        - hlc
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        deviceId: { type: string }
+        shiftId: { type: string }
+        receiptNumber: { type: string }
+        businessDate: { type: string, format: date }
+        sequence: { type: integer }
+        status: { type: string, enum: [voided, refunded] }
+        channel: { type: string, enum: [dine_in, takeaway] }
+        subtotal: { type: integer }
+        orderDiscount: { type: integer }
+        serviceChargeAmount: { type: integer }
+        taxAmount: { type: integer }
+        roundingAdjustment: { type: integer }
+        total: { type: integer }
+        amountDue: { type: integer }
+        # Menunjuk order yang DIBATALKAN. Arah ini dipaksa AC FR-B7 pertama:
+        # kolom di order asli menunjuk pembatalnya menuntut UPDATE pada order
+        # asli, dan itu dilarang. Namanya terbaca terbalik untuk pembacaan yang
+        # tersisa ini -- lihat HANDOFF.md.
+        voidedByOrderId: { type: string }
+        createdBy: { type: string }
+        occurredAt: { type: string, format: date-time }
+        recordedAt: { type: string, format: date-time }
+        hlc: { type: string }
+
     Order:
       type: object
       required:

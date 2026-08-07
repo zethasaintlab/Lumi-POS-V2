@@ -87,6 +87,12 @@ Karena itu ada `npm run typecheck`. **Jalankan sebelum menyatakan apa pun selesa
 - [ ] **Alokasi service charge ke dasar pajak `[ASUMSI]`**: AC FR-C8 kelima mewajibkan **diskon order** didistribusikan proporsional ke baris. `calculateTax` menerapkan prinsip yang sama ke **service charge**, karena langkah 10 menetapkan service charge masuk dasar pajak dan proporsional adalah satu-satunya pembagian yang menjaga langkah itu benar saat satu order punya beberapa tarif. Spec tidak menyatakannya eksplisit. Ditandai di `packages/domain/src/tax.ts`.
 - [ ] **`payment` PK `(id, occurred_at)`, bukan `id`**: tabelnya dipartisi, jadi id yang sama dengan `occurred_at` berbeda menghasilkan baris kedua. Yang melindungi retry pembayaran adalah Idempotency-Key, bukan primary key — satu lapisan lebih sedikit daripada `order`. Perilakunya didokumentasikan test; kalau ini perlu diperketat, itu keputusan produk.
 - [ ] **Status cache hit idempotency `[ASUMSI]`**: `spec-b:336` menulis "status 200", `spec-b:325` menulis "mengembalikan respons asli", dan skema menyediakan kolom `response_status`. Diimplementasikan sebagai "kembalikan status tersimpan" (`201`). Perlu keputusan; kalau `200` yang benar, `spec-b` dan kode harus disamakan.
+- [ ] **`voided_by_order_id` terbaca terbalik**: kolomnya ada di baris order **pembatal** dan menunjuk order yang dibatalkan. Arah itu **dipaksa**, bukan dipilih — AC FR-B7 pertama melarang `UPDATE` pada order asli, dan pembatalnya belum ada saat order asli ditulis, jadi tidak ada arah lain yang mungkin. Namanya menyarankan sebaliknya. Kalau nanti diganti (`voids_order_id`), itu rename kolom + migrasi expand-contract, dan itu keputusan produk.
+- [ ] **Order yang sudah di-void tetap berstatus `open`**: konsekuensi langsung dari "tidak ada UPDATE pada order asli". Tidak ada apa pun di status order yang menolak void kedua; yang menolaknya adalah `SELECT` di aplikasi **dan** index unik `ux_order_voided_by` (migrasi `0017`). Laporan mana pun yang menyimpulkan "order ini sah" dari `status = 'open'` akan salah — yang benar adalah memeriksa apakah ada order pembatal yang menunjuknya.
+- [ ] **Refund tanpa payment negatif `[ASUMSI ditutup — keputusan user 7 Agu 2026]`**: `spec-b:230` menulis refund membuat "payment negatif", tapi `payment.amount` punya `CHECK (amount > 0)`. Keputusan: pakai baris `refund` saja, skema payment tidak disentuh. `spec-b:230` karena itu **tidak akurat** terhadap kode; kalau spec ingin disamakan, itu penyuntingan dokumen dan bukan kewenanganku.
+- [ ] **Batas restock refund adalah per (order, variation), bukan per baris order**: `stock_movement` tidak punya kolom `line_id`. Untuk order dengan dua baris atas variation yang sama, keduanya berbagi satu jatah pengembalian. Itu batas yang lebih benar untuk stok, tapi berarti laporan tidak dapat menjawab "baris mana yang dikembalikan" dari `stock_movement` saja.
+- [ ] **Refund sebagian menuntut `lines` eksplisit**: tanpa itu server harus menebak apakah barang fisik kembali ke rak, dan tebakannya baru ketahuan saat stock opname. `lines: []` berarti uang kembali tanpa barang kembali. Tidak ada AC yang menyatakan ini — ia muncul dari test yang menyingkap bahwa refund uang parsial akan mengembalikan seluruh stok order.
+
 - [ ] **Drift `quantity` `[ASUMSI]`**: `spec-b:151,159` menulis `numeric`; skema dan `CLAUDE.md` memakai `bigint ×1000` dengan alasan hasil pengukuran. Maksudnya terpenuhi (`0.5` disimpan sebagai `500`, diuji), tapi AC-nya tidak bisa dicentang apa adanya.
 
 ## Proses eksternal — mulai sekarang, lead time di luar kendali
@@ -94,7 +100,8 @@ Karena itu ada `npm run typecheck`. **Jalankan sebelum menyatakan apa pun selesa
 - [ ] Konsultasi pajak: kewajiban penyedia POS pasca-Coretax (OQ-04) + pajak dine-in vs takeaway (OQ-05)
 - [ ] Email konfirmasi lisensi ke hello@powersync.com untuk redistribusi on-premise (OQ-03b)
 - [ ] Cek persyaratan program partner GoFood & GrabFood (OQ-06) — menentukan tanggal v1.1
-- [ ] Daftar akun sandbox Midtrans
+- [x] Daftar akun sandbox Midtrans — key ada di `.env` lokal (tidak pernah ter-commit)
+- [ ] **Verifikasi webhook Midtrans end-to-end**: butuh URL publik (tunnel). Jalur kodenya akan diuji penuh dengan payload buatan (keputusan Q4), tapi jabat tangan sungguhannya hanya bisa dibuktikan manual. Gap yang diketahui, bukan lupa
 - [ ] Beli 5–8 model printer thermal paling umum untuk program "Diuji dengan Lumi POS" (< Rp5 juta)
 
 ## Prototipe yang masih perlu dijalankan
