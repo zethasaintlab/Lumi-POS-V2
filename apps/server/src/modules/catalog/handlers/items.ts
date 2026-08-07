@@ -307,6 +307,12 @@ export interface VariationSnapshotRow {
   itemName: string;
   variationName: string;
   cost: string; // bigint comes back as string from node-postgres
+  // T12 (PLAN-pembayaran-pajak.md) -- calculateTax meresolusi tarif per baris
+  // lewat itemId dan categoryId (FR-C6: item > category > all_items). Modul
+  // ordering tidak boleh query item/category langsung, jadi keduanya ikut di
+  // sini alih-alih lewat SELECT kedua.
+  itemId: string;
+  categoryId: string | null;
 }
 
 // T5 (PLAN-ordering-fondasi.md §T5/T6) -- diekspor lewat catalog/index.ts

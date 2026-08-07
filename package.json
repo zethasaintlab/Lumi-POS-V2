@@ -11,6 +11,7 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit --project apps/server",
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
