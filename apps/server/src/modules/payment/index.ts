@@ -1,7 +1,9 @@
 import type { Pool } from '../../db.ts';
 import { createTaxRateHandlers } from './handlers/tax-rates.ts';
-import { createPaymentEntryHandlers } from './handlers/payments.ts';
+import { createPaymentEntryHandlers, createPaymentStatusHandlers } from './handlers/payments.ts';
+import { createWebhookHandlers } from './handlers/webhook.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
+import type { PaymentProvider } from './providers/index.ts';
 
 // Permukaan publik modul payment (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul ini memiliki `payment` dan `tax_rate`.
@@ -14,9 +16,26 @@ import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 // packages/domain/src/tax.ts yang menghitung pajak.
 export { fetchEffectiveTaxRates } from './handlers/tax-rates.ts';
 
-export function createPaymentHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
+// Port gateway (ARCH:197). Adapter-nya dipilih di buildApp lewat environment
+// variable, bukan di sini -- modul ini menerima port yang sudah jadi.
+export {
+  selectPaymentProvider,
+  createFakeProvider,
+  createMidtransProvider,
+  mapGatewayStatus,
+} from './providers/index.ts';
+export type { PaymentProvider, GatewayStatus, FakePaymentProvider } from './providers/index.ts';
+
+export function createPaymentHandlers(
+  pool: Pool,
+  hlc: Hlc,
+  provider: PaymentProvider,
+  webhookSecret: string
+): Record<string, unknown> {
   return {
     ...createTaxRateHandlers(pool),
-    ...createPaymentEntryHandlers(pool, hlc),
+    ...createPaymentEntryHandlers(pool, hlc, provider),
+    ...createPaymentStatusHandlers(pool, provider),
+    ...createWebhookHandlers(pool, webhookSecret),
   };
 }

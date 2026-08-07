@@ -16,6 +16,23 @@ export interface IdempotencyRecord {
   requestHash: string;
   responseStatus: number;
   responseBody: unknown;
+  /**
+   * `false` bila key sudah DIKLAIM tapi belum diselesaikan
+   * (`response_status IS NULL`).
+   *
+   * Untuk jalur yang mengklaim dan menyelesaikan dalam satu transaksi
+   * (createOrder, pembayaran tunai) keadaan ini tidak pernah terlihat oleh
+   * request lain -- yang belum commit tidak kelihatan. Ia menjadi nyata pada
+   * jalur gateway: klaim di-commit LEBIH DULU supaya payment tetap ada
+   * walaupun gateway tidak menjawab (FR-C14 -- pelanggan mungkin sudah
+   * membayar), jadi ada jendela sah di mana key ada tanpa respons.
+   *
+   * Tanpa flag ini, `responseStatus ?? 200` di bawah membuat klaim yang belum
+   * selesai TIDAK DAPAT DIBEDAKAN dari request sukses yang mengembalikan 200
+   * dengan body kosong -- dan retry akan menerima "berhasil" untuk sesuatu
+   * yang belum pernah selesai.
+   */
+  completed: boolean;
 }
 
 interface IdempotencyKeyRow {
@@ -44,6 +61,7 @@ export async function findIdempotencyKey(client: PoolClient, key: string): Promi
     requestHash: rows[0].request_hash,
     responseStatus: rows[0].response_status ?? 200,
     responseBody: rows[0].response_body,
+    completed: rows[0].response_status !== null,
   };
 }
 
