@@ -142,16 +142,86 @@ Yang tersisa sebagai selisih nyata hanya **ukuran WASM**: `wa-sqlite` 260 kB leb
 
 ### Yang TIDAK terjawab pengukuran ini
 
-- Apakah PowerSync mengizinkan penulisan SQL sembarang ke database lokalnya dengan transaksi yang kita kendalikan sendiri — **invariant #1 menuntutnya** (satu penjualan = satu transaksi). Belum diverifikasi.
-- Apakah skema kami (`db/local/001-initial.sql`, 20 tabel) dapat hidup berdampingan dengan tabel internal PowerSync di database yang sama.
+- Apakah PowerSync mengizinkan penulisan SQL sembarang ke database lokalnya dengan transaksi yang kita kendalikan sendiri — **invariant #1 menuntutnya** (satu penjualan = satu transaksi). → **dijawab di §5c**
+- Apakah skema kami (`db/local/001-initial.sql`, 20 tabel) dapat hidup berdampingan dengan tabel internal PowerSync di database yang sama. → **dijawab di §5c**
 - Perilaku `OPFSCoopSyncVFS` saat dua tab dibuka. §3 mengukur `opfs-sahpool`; VFS ini punya nama "Coop" yang menyiratkan penanganan berbeda, dan itu **belum diukur**.
+
+---
+
+## 5c. Kepemilikan database lokal: dua pertanyaan penentu
+
+Ditelusuri 7 Agustus 2026 dari **kode sumber**, bukan dari dokumentasi saja — dokumentasi menjelaskan yang dimaksud penulisnya, kode menunjukkan yang berjalan. Berkas yang dibaca:
+
+- `@powersync/web@2.1.1`, `@powersync/common@1.57.3` dan `@2.0.0` (tarball npm, dibongkar di luar repo)
+- `powersync-sqlite-core` — ekstensi Rust yang menjadi isi `.wasm`: `crates/core/src/schema/{management,inspection,table_info}.rs`
+
+**Tidak ada yang dipasang ke repo.** Yang berikut adalah pembacaan kode, **bukan hasil pengukuran** — bedanya penting, dan §5c ini tidak berhak atas otoritas yang dimiliki §2.
+
+### Pertanyaan 1 — kontrol transaksi (invariant #1): **YA**
+
+`writeTransaction` bukan abstraksi di atas antrean; ia transaksi SQLite sungguhan:
+
+```
+// @powersync/common — src/db/DBAdapter.ts:331 (1.57.3) / :262 (2.0.0)
+await ctx.execute(useBeginImmediate ? 'BEGIN IMMEDIATE' : 'BEGIN');
+const result = await fn(tx);
+await tx.commit();          // -> ctx.execute('COMMIT')
+// catch -> tx.rollback()   // -> ctx.execute('ROLLBACK')
+```
+
+Tiga hal yang menyusul dari kode itu:
+
+1. **`BEGIN IMMEDIATE`, bukan `BEGIN` biasa.** Kunci tulis diambil di awal, bukan pada pernyataan pertama. Ini yang kita mau untuk jalur penjualan.
+2. **SQL diteruskan apa adanya.** `tx.execute(sql, params)` turun ke `RawSqliteConnection.execute` → `executeSingleStatementRaw` → wa-sqlite. Tidak ada parsing, tidak ada daftar putih, tidak ada penulisan ulang. DDL pun jalan — `CREATE TABLE` termasuk.
+3. **Kuncinya global.** Dokumentasi kelasnya sendiri: hanya satu transaksi tulis boleh berjalan pada satu waktu. Artinya penulisan jalur turun PowerSync **tidak bisa menyelinap ke tengah** transaksi penjualan kita; ia menunggu.
+
+Satu batasan bentuk, bukan kemampuan: `execute` menjalankan **satu pernyataan** per panggilan. Order + line + payment + stock + audit + outbox berarti sekitar sepuluh `tx.execute` di dalam satu `writeTransaction` — persis bentuk kode server kita sekarang, bukan satu string `BEGIN;…;COMMIT;` seperti di `worker.js` prototipe ini.
+
+**Invariant #1 tidak terhalang.**
+
+### Pertanyaan 2 — koeksistensi skema: **YA, dengan satu syarat yang mengikat**
+
+Yang menentukan ada di cara ekstensi core **menghitung** objek miliknya. `powersync_replace_schema` hanya menyentuh apa yang cocok dengan dua filter ini:
+
+```sql
+-- inspection.rs, ExistingTable::list
+SELECT name FROM sqlite_master WHERE type = 'table' AND name GLOB 'ps_data_*';
+
+-- inspection.rs, ExistingView::list
+... WHERE view.type = 'view' AND view.sql GLOB '*-- powersync-auto-generated';
+
+-- management.rs, update_indexes
+... WHERE sqlite_master.type = 'index' AND sqlite_master.name GLOB 'ps_data_*'
+```
+
+Tabel yang di-`DROP` diambil **hanya** dari daftar pertama; view yang di-`DROP` **hanya** dari daftar kedua. Dua puluh tabel kami tidak berawalan `ps_`, tidak punya view, dan index kami bernama `ix_*`. **Tidak satu pun masuk jaring itu.**
+
+**Syaratnya:** tabel kami harus dideklarasikan sebagai **raw table** (`schema.withRawTables({...})`), bukan tabel PowerSync biasa. Sebabnya mekanis, dan ada di `management.rs:update_views`: untuk setiap entri di `schema.tables`, core membuat **VIEW** bernama sama di atas `ps_data__<nama>` berisi JSON. Kalau kami mendeklarasikan `item_variation` sebagai tabel biasa sementara tabel nyata bernama sama sudah ada, `CREATE VIEW "item_variation"` bertabrakan.
+
+Tabrakan itu **gagal keras, bukan diam-diam** — dan itu kabar bagus. Yang berbahaya adalah kelas kesalahan yang lolos ke produksi, bukan yang menolak boot.
+
+Raw table tidak menghasilkan view dan tidak menghasilkan tabel `ps_data__` sama sekali; ia menyuruh PowerSync menulis ke tabel **kami** lewat pernyataan `put`/`delete` yang kami tentukan. Konsekuensi lain yang sejalan dengan `research/03`: raw table memberi kami balik **constraint, CHECK, dan index sendiri** — yang justru hilang di model JSON+view.
+
+### Yang ikut terjawab, dan tidak saya duga sebelumnya
+
+**Jalur naik tetap milik kami tanpa perlu menonaktifkan apa pun.** PowerSync menangkap tulisan lokal ke raw table **hanya** lewat trigger yang dipasang eksplisit (`powersync_create_raw_table_crud_trigger`, atau trigger buatan sendiri yang menulis ke `powersync_crud`). Tidak memasang trigger = `ps_crud` tidak pernah terisi. `outbox_local` + REST idempoten tetap satu-satunya jalur naik, persis seperti stack terkunci di `CLAUDE.md` — bukan kompromi, melainkan konfigurasi bawaan.
+
+**Pola satu-penulis mungkin tidak perlu kami bangun.** SDK web punya `enableMultiTabs`, menjalankan koneksi di SharedWorker (`worker/db/MultiDatabaseServer.ts`), dan menurut dokumentasi opsinya menyala default di browser desktop kecuali Safari. §3 dan Rekomendasi #4 menyatakan pola satu-penulis "wajib dibangun sejak awal" — kalau PowerSync memegang DB, kemungkinan besar ia sudah ada. **Belum diverifikasi** dengan membuka dua tab.
+
+### Yang TETAP tidak terjawab
+
+- Semua di atas adalah pembacaan kode. **Belum ada satu baris pun yang benar-benar dijalankan** dengan PowerSync terpasang.
+- `PRAGMA foreign_keys` tidak di-set di mana pun oleh SDK (`RawSqliteConnection` hanya menyetel `temp_store`, `key`, `cache_size`). Baris 5 `db/local/001-initial.sql` menyalakannya. Ternyata itu **tidak berakibat apa-apa hari ini** — skema lokal kami tidak punya satu pun `REFERENCES` — tapi ia akan berakibat begitu ada.
+- Perilaku `disconnectAndClear()` pada raw table: pernyataan `clear` kami yang tentukan. Salah tulis di sana menghapus data lokal.
+- Apakah versi ekstensi core yang dibundel `@powersync/web@2.1.1` benar-benar mendukung raw table.
+- Migrasi skema raw table sepenuhnya urusan kami — PowerSync tidak mengelolanya.
 
 ---
 
 ## 6. Rekomendasi
 
 1. **Jangan pakai VFS `opfs` (SharedArrayBuffer) di driver mana pun.** 71× lebih lambat daripada VFS sinkron, dan 282 ms per penjualan adalah jeda yang terlihat kasir.
-2. **Performa tidak lagi menjadi alasan memilih antara kedua driver.** Keputusan kepemilikan database lokal (PowerSync vs kode kita) harus diambil atas dasar lain — arsitektur jalur turun, dan apakah PowerSync mengizinkan transaksi yang kita kendalikan sendiri.
+2. **Performa tidak lagi menjadi alasan memilih antara kedua driver** (§5b), dan §5c menutup dua keberatan arsitektural yang tersisa. Rekomendasi: **PowerSync memegang database lokal, dengan seluruh 20 tabel kami sebagai raw table.** Alasannya bukan kelebihan PowerSync melainkan kekurangan alternatifnya — kalau kode kita yang memegang DB, jalur turun harus dibangun sendiri, dan `research/03` memilih PowerSync justru untuk tidak membangunnya. Syarat yang mengikat ada di §5c; keputusan ini belum diuji dengan menjalankan kode.
 3. **Header COOP/COEP tetap dipertahankan** di `apps/kasir` — ia tidak merugikan, dan mempertahankannya menjaga pintu ke VFS `opfs` tetap terbuka bila SAHPool bermasalah di platform tertentu. Tapi dashboard owner **tidak perlu** membayarnya.
 4. **Pola satu-penulis wajib dibangun sejak awal.** Ia bukan penyempurnaan; tanpanya tab kedua mematikan aplikasi.
 5. **`navigator.storage.persist()` harus dipanggil**, dan perilaku saat ditolak didefinisikan.
