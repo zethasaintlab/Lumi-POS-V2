@@ -63,6 +63,7 @@ export async function buildApp(
     specPath?: string;
     paymentProvider?: PaymentProvider;
     logger?: { level: string; stream: NodeJS.WritableStream };
+    webhookSecret?: string;
   } = {}
 ): Promise<FastifyInstance> {
   const pool = overrides.pool ?? createPool();
@@ -90,7 +91,11 @@ export async function buildApp(
   // pool once the app itself is closed -- it can't help if the app is never
   // successfully built in the first place.
   try {
-    return await buildAppInner(pool, specPath, paymentProvider, overrides.logger);
+    // Kunci webhook dibaca terpisah dari pemilihan adapter: webhook harus
+    // dapat memverifikasi notifikasi walau PAYMENT_PROVIDER=fake (mis. saat
+    // menguji integrasi di staging dengan adapter palsu).
+    const webhookSecret = overrides.webhookSecret ?? process.env.MIDTRANS_SERVER_KEY ?? '';
+    return await buildAppInner(pool, specPath, paymentProvider, overrides.logger, webhookSecret);
   } catch (err) {
     await pool.end();
     throw err;
@@ -101,7 +106,8 @@ async function buildAppInner(
   pool: Pool,
   specPath: string,
   paymentProvider: PaymentProvider,
-  loggerOverride?: { level: string; stream: NodeJS.WritableStream }
+  loggerOverride: { level: string; stream: NodeJS.WritableStream } | undefined,
+  webhookSecret: string
 ): Promise<FastifyInstance> {
   // Satu instance Hlc per proses server (keputusan Q3, PLAN-ordering-fondasi.md
   // §8.0), dibuat di sini -- BUKAN di dalam modul ordering -- dengan clock
@@ -119,7 +125,7 @@ async function buildAppInner(
     ...createIdentityHandlers(pool),
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
-    ...createPaymentHandlers(pool, hlc, paymentProvider),
+    ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);

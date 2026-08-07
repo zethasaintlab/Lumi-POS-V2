@@ -744,7 +744,7 @@ async function initiateGatewayPayment(deps: GatewayDeps, ctx: GatewayCtx) {
   let hasil: InitiateResult | null = null;
   let gatewayReachable = true;
   try {
-    hasil = await provider.initiate({ orderId, paymentId: body.id, amount, idempotencyKey });
+    hasil = await provider.initiate({ orderId, paymentId: body.id, amount, idempotencyKey, tenantId });
   } catch {
     // TIDAK dilempar ke klien sebagai kegagalan. Payment sudah tersimpan
     // `pending_confirmation`, dan itu memang jawaban yang benar menurut

@@ -1412,6 +1412,85 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /webhooks/midtrans:
+    post:
+      operationId: midtransNotification
+      summary: Notifikasi pembayaran dari Midtrans
+      description: >-
+        FR-C14. Satu-satunya endpoint di API ini yang TIDAK membawa
+        `X-Tenant-Id` — Midtrans tidak tahu apa-apa soal tenant kami, dan
+        tidak boleh tahu.
+
+
+        Signature diverifikasi LEBIH DULU, sebelum satu query pun dijalankan:
+        `SHA512(order_id + status_code + gross_amount + ServerKey)`. Tanpa itu
+        siapa pun yang menemukan URL ini dapat menandai order mana pun lunas.
+
+
+        Tenant dibaca dari `custom_field1` yang kami titipkan sendiri saat
+        charge, lalu dipakai sebagai `app.tenant_id` — sehingga pencarian
+        payment tetap tunduk RLS dan tenant yang dipalsukan tidak menemukan
+        apa pun.
+
+
+        Selalu dijawab `200` bila notifikasinya sah, termasuk saat tidak
+        mengubah apa pun: Midtrans mengirim ulang notifikasi yang tidak
+        dijawab 200, jadi menjawab error hanya membuatnya mengulang tanpa
+        akhir.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_id, status_code, gross_amount, signature_key]
+              properties:
+                # `order_id` di Midtrans adalah id PAYMENT kami, bukan id
+                # order: satu order dapat dibayar beberapa kali, dan memakai id
+                # order akan membuat pembayaran kedua ditolak sebagai duplikat.
+                order_id: { type: string }
+                status_code: { type: string }
+                gross_amount: { type: string }
+                signature_key: { type: string }
+                transaction_status: { type: string }
+                custom_field1: { type: string }
+      responses:
+        '200':
+          description: Notifikasi sah dan diproses (atau sudah pernah diproses).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received]
+                properties:
+                  received: { type: boolean }
+        '401':
+          description: >-
+            Signature tidak sah (INVALID_SIGNATURE). Pesannya sengaja tidak
+            menjelaskan bagian mana yang tidak cocok.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >-
+            Pembayaran tidak ditemukan (PAYMENT_NOT_FOUND). Termasuk
+            notifikasi bertanda tangan sah yang tenant-nya tidak cocok —
+            pencariannya tunduk RLS.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: >-
+            Kunci webhook tidak dikonfigurasi (WEBHOOK_NOT_CONFIGURED).
+            Endpoint yang menerima notifikasi tanpa verifikasi jauh lebih
+            berbahaya daripada endpoint yang mati.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /payments/{paymentId}/check-status:
     post:
       operationId: checkPaymentStatus

@@ -204,12 +204,12 @@ FR-C5 — larangan data kartu:
 
 Webhook (keputusan Q4):
 
-- [ ] **G12** — `POST /webhooks/midtrans` + verifikasi signature. Payload buatan, tanpa jaringan. Signature salah → ditolak **sebelum** menyentuh database.
-- [ ] **G13** — Webhook idempoten: notifikasi yang sama dua kali tidak mengubah apa pun untuk kedua kalinya.
+- [x] **G12** — `POST /webhooks/midtrans` + verifikasi signature. Payload buatan, tanpa jaringan. Signature salah → ditolak **sebelum** menyentuh database.
+- [x] **G13** — Webhook idempoten: notifikasi yang sama dua kali tidak mengubah apa pun untuk kedua kalinya.
 
 Penutup:
 
-- [ ] **G14** — Kontrak OpenAPI.
+- [x] **G14** — Kontrak OpenAPI.
 - [ ] **G15** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
 
 **Di luar scope C-2, ditegaskan ulang:** penjadwalan polling (2 detik / 5 menit) adalah perilaku klien — server hanya menyediakan endpoint cek status. Laporan "Perlu diperiksa" > 24 jam adalah Modul G; datanya tersedia, laporannya tidak dibangun. FR-C3 tidak dapat ditegakkan server dan menunggu klien + F2.

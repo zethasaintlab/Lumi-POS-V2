@@ -36,6 +36,18 @@ export type GatewayStatus = 'pending' | 'confirmed' | 'failed' | 'expired';
 export interface InitiateRequest {
   orderId: string;
   paymentId: string;
+  /**
+   * Dititipkan ke gateway lewat `custom_field1` dan dikembalikan apa adanya di
+   * notifikasi webhook.
+   *
+   * Webhook adalah satu-satunya endpoint tanpa `X-Tenant-Id` -- Midtrans tidak
+   * tahu apa-apa soal tenant kami. Tanpa titipan ini, notifikasi tidak dapat
+   * dipetakan ke tenant mana pun tanpa query yang MELEWATI RLS, dan itu
+   * melanggar invariant #8. Nilai ini tidak dipercaya begitu saja: ia dipakai
+   * sebagai `app.tenant_id`, sehingga pencarian payment-nya tetap tunduk RLS
+   * dan tenant yang dipalsukan tidak menemukan apa pun.
+   */
+  tenantId: string;
   /** Rupiah utuh. `bigint`, sama seperti seluruh jalur uang. */
   amount: bigint;
   /**
@@ -301,6 +313,7 @@ export function createMidtransProvider(options: MidtransOptions): PaymentProvide
             gross_amount: Number(req.amount),
           },
           qris: { acquirer: 'gopay' },
+          custom_field1: req.tenantId,
         }),
       }) as ChargeResponse;
 

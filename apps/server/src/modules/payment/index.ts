@@ -1,6 +1,7 @@
 import type { Pool } from '../../db.ts';
 import { createTaxRateHandlers } from './handlers/tax-rates.ts';
 import { createPaymentEntryHandlers, createPaymentStatusHandlers } from './handlers/payments.ts';
+import { createWebhookHandlers } from './handlers/webhook.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import type { PaymentProvider } from './providers/index.ts';
 
@@ -28,11 +29,13 @@ export type { PaymentProvider, GatewayStatus, FakePaymentProvider } from './prov
 export function createPaymentHandlers(
   pool: Pool,
   hlc: Hlc,
-  provider: PaymentProvider
+  provider: PaymentProvider,
+  webhookSecret: string
 ): Record<string, unknown> {
   return {
     ...createTaxRateHandlers(pool),
     ...createPaymentEntryHandlers(pool, hlc, provider),
     ...createPaymentStatusHandlers(pool, provider),
+    ...createWebhookHandlers(pool, webhookSecret),
   };
 }
