@@ -16,9 +16,9 @@ Prototipe 03 §5c menjawab dua pertanyaan penentu dari **pembacaan kode**, dan m
 | Dua puluh tabel + 15 index kami selamat dari `powersync_replace_schema` | **YA** — 20/20 dan 15/15 |
 | Raw table menghasilkan view atau tabel `ps_data__*` | **TIDAK** — nol keduanya |
 | Jalur naik tetap milik `outbox_local` | **YA** — `ps_crud` tetap kosong, dan T4b membuktikan mekanismenya memang bekerja bila dipasang |
-| Dua tab dapat menulis bersamaan | **YA** — dan ini membalik temuan prototipe 03 §3 |
+| Dua tab dapat menulis bersamaan (§7) | **YA** — dan ini membalik temuan prototipe 03 §3 |
 | Tulis 1 penjualan | **12,3 ms** p50 — **3,8× lebih lambat** daripada 3,25 ms di prototipe 03 |
-| `item_modifier_list` dapat jadi raw table | **TIDAK** — tidak punya kolom `id`. Masalah nyata, belum terpecahkan |
+| `item_modifier_list` dapat jadi raw table | **TIDAK** — tidak punya kolom `id`. **Diputuskan user 7 Agu 2026: kolom `id` ditambahkan** (§5) |
 
 ---
 
@@ -90,11 +90,22 @@ Table item_modifier_list has no id column.
 
 Raw table PowerSync **mewajibkan** kolom bernama `id` (`InferredTableStructure::read_from_database` di core). `item_modifier_list` primary key-nya komposit `(item_id, modifier_list_id)` dan tidak punya `id`. Ia katalog, jadi ia harus turun.
 
-Ini masalah nyata dan **belum terpecahkan**. Tiga arah yang terlihat, semuanya perubahan skema dan karena itu keputusan pemilik produk, bukan kewenangan agent:
+Tiga arah diajukan, semuanya perubahan skema dan karena itu keputusan pemilik produk:
 
-1. Tambahkan kolom `id` ke `item_modifier_list` (dan ke `stock_snapshot` bila kelak perlu turun).
+1. Tambahkan kolom `id` ke `item_modifier_list`.
 2. Turunkan relasinya sebagai bagian dari dokumen `item`, bukan tabel sendiri.
 3. Biarkan ia tabel PowerSync biasa (JSON + view) dengan **nama berbeda** dari tabel lokal kami.
+
+**Diputuskan user 7 Agustus 2026: arah 1 — kolom `id` (`TEXT PRIMARY KEY`) ditambahkan.**
+
+Yang menyusul dari keputusan itu, dan belum dikerjakan:
+
+- Migrasi PostgreSQL **baru** (`0018`), bukan penyuntingan `0004_catalog.sql` — expand-contract. Primary key berubah dari `(item_id, modifier_list_id)` menjadi `id`, dengan **unique constraint** atas pasangan lama supaya relasi ganda tetap mustahil.
+- `db/local/001-initial.sql` menyusul bentuk yang sama.
+- `item_modifier_list` naik dari `TABEL_TANPA_ID` ke `TABEL_RAW` di `src/skema.js`, dan T1g kehilangan subjeknya — ia harus diarahkan ke `stock_snapshot`, yang tetap tanpa `id` dan memang tidak perlu turun.
+- `product/ERD-lumi-pos-v1.md` §15 menyimpan bentuk lama. **Penyuntingan dokumen produk bukan kewenangan agent** — diangkat, tidak dikerjakan.
+
+`stock_snapshot` juga tanpa `id`, dan itu **dibiarkan**: ia cache lokal hasil agregasi `stock_movement`, tidak pernah naik maupun turun.
 
 **Catatan cara uji ini nyaris hampa.** Versi pertamanya menerima error apa pun sebagai "ditolak", dan ia lulus — atas `unexpected write type insert`, karena parameter write type saya tulis huruf kecil sementara core menuntut `INSERT`. Uji yang lulus atas kegagalan yang salah tidak membuktikan apa pun tentang kolom `id`. Sekarang ia menuntut pesan yang menyebut `id column`. Yang mengungkapnya bukan review, melainkan T4b yang gagal dengan pesan yang sama.
 
@@ -143,7 +154,9 @@ Invalid value "iife" for option "worker.format" — UMD and IIFE output
 formats are not supported for code-splitting builds.
 ```
 
-Default Vite untuk worker adalah `iife`, sementara worker PowerSync memakai code-splitting. **`apps/kasir` akan menabrak ini juga**, dan gejalanya menyesatkan karena pengembangan sehari-hari tidak pernah menunjukkannya.
+Default Vite untuk worker adalah `iife`, sementara worker PowerSync memakai code-splitting. Jebakannya bukan kegagalannya melainkan **waktunya**: ia muncul saat build rilis, jauh setelah pengembangan sehari-hari menyatakan semuanya beres.
+
+**Sudah dipasang di `apps/kasir/vite.config.ts` (7 Agu 2026), sebelum PowerSync masuk ke sana** — beserta komentar yang menjelaskan kenapa, supaya ia tidak dikira baris yang tidak terpakai dan dihapus.
 
 **Bundle mengandung EMPAT build WASM**, bukan satu:
 

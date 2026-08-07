@@ -212,6 +212,28 @@ Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktif
 
 **Exit criteria F1 terpenuhi.** Satu penjualan tersimpan atomik dengan pajak benar, dapat dibayar tunai/QRIS/EDC, dan dapat dikoreksi lewat void & refund. `ARCH:395` menuntut modul `payment` — ia ada, beserta port gateway-nya. Yang tersisa di Modul C adalah C-3 (rekonsiliasi dan ekspor, keduanya P1).
 
+---
+
+## F2 — kepemilikan database lokal, diputuskan 7 Agustus 2026
+
+**PowerSync memegang database lokal. Seluruh tabel kami yang direplikasi didaftarkan sebagai `withRawTables`, bukan tabel PowerSync biasa.** Ini memperjelas baris "DB lokal" di tabel stack; ia bukan pilihan baru, melainkan jawaban atas siapa yang memegang koneksinya.
+
+Dibuktikan dengan menjalankan kode, bukan membaca dokumentasi — `prototypes/04-powersync-raw-tables/FINDINGS.md`.
+
+**Yang mengikat kode klien:**
+
+- **Tabel kami WAJIB raw table.** Mendeklarasikannya sebagai tabel PowerSync biasa membuat core membuat VIEW bernama sama di atas `ps_data__<nama>`, dan ia bertabrakan dengan tabel nyata kami. Tabrakannya gagal keras saat boot — bukan diam-diam.
+- **Raw table wajib punya kolom `id`.** Bukan konvensi kami; core menolaknya (`Table X has no id column.`). PK komposit tidak cukup.
+- **Tabel murni lokal TIDAK didaftarkan sama sekali.** `outbox_local`, `stock_snapshot`, `device_config` aman justru karena PowerSync tidak tahu keduanya ada — `powersync_replace_schema` hanya menyentuh objek yang cocok `GLOB 'ps_data_*'` atau view bertanda `-- powersync-auto-generated`.
+- **Jangan pasang trigger CRUD PowerSync.** Penulisan lokal ke raw table ditangkap **hanya** lewat `powersync_create_raw_table_crud_trigger`. Tidak memasangnya adalah yang membuat `outbox_local` + REST idempoten tetap satu-satunya jalur naik. Memasangnya berarti membangun jalur naik kedua yang diam-diam.
+- **Satu penjualan tetap satu `writeTransaction`** — `BEGIN IMMEDIATE`/`COMMIT` sungguhan dengan kunci global. Invariant #1 tidak berubah bentuknya.
+- **`enableMultiTabs` di-set eksplisit**, tidak diandalkan pada default. Ia yang memenuhi pola satu-penulis; tanpanya tab kedua mematikan aplikasi (prototipe 03 §3).
+- **`worker: { format: 'es' }` di setiap Vite config yang memuat PowerSync.** Sudah dipasang di `apps/kasir`. `vite dev` hijau tanpanya; hanya build rilis yang gagal.
+
+**Harganya terukur, dan bukan nol:** 12,33 ms per penjualan versus 3,25 ms lewat driver mentah — 3,8×. Terbukti **bukan** karena raw table. Masih jauh di bawah ambang yang terlihat kasir, tapi angka itu dari mesin pengembangan.
+
+**Jalur turun belum pernah dijalankan.** Prototipe 04 tidak terhubung ke layanan PowerSync mana pun.
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---

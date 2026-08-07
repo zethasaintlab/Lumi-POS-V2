@@ -39,4 +39,18 @@ export default defineConfig(async () => ({
       "Cross-Origin-Embedder-Policy": "require-corp",
     },
   },
+
+  // Dipasang SEBELUM `@powersync/web` masuk, bukan sesudah.
+  //
+  // Default Vite untuk worker adalah `iife`, sementara worker PowerSync
+  // memakai code-splitting. `vite dev` berjalan hijau tanpa baris ini;
+  // yang gagal hanya `vite build`:
+  //
+  //   Invalid value "iife" for option "worker.format" — UMD and IIFE output
+  //   formats are not supported for code-splitting builds.
+  //
+  // Diukur di prototypes/04-powersync-raw-tables (FINDINGS §6b). Jebakannya
+  // bukan kegagalannya melainkan waktunya: ia muncul saat build rilis, jauh
+  // setelah pengembangan sehari-hari menyatakan semuanya beres.
+  worker: { format: "es" },
 }));
