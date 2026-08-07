@@ -1412,6 +1412,75 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /orders/{orderId}/payments:
+    post:
+      operationId: createPayment
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, tenderedAmount]
+              properties:
+                id: { type: string }
+                method: { type: string }
+                # tenderedAmount = uang yang DISERAHKAN pelanggan, bukan yang
+                # terpakai. Server yang menghitung amount dan changeAmount,
+                # karena keduanya bergantung pada pembulatan tunai (FR-C9)
+                # yang ditentukan rounding_increment/rounding_mode outlet.
+                # Tanpa  -- assertTenderedAmountValid satu-satunya
+                # sumber kebenaran, pola sama dengan PriceInput.price.
+                tenderedAmount: {}
+                occurredAt: { type: string, format: date-time }
+                hlc: { type: string }
+      responses:
+        '201':
+          description: >-
+            Pembayaran tercatat. Order berpindah ke CLOSED bila lunas
+            (OPEN -> PAID -> CLOSED); tetap OPEN bila kurang bayar, dengan
+            sisa tagihan di .
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payment, order, outstanding]
+                properties:
+                  payment: { $ref: '#/components/schemas/Payment' }
+                  order:
+                    type: object
+                    required: [id, status, total, taxAmount, roundingAdjustment, amountDue]
+                    properties:
+                      id: { type: string }
+                      status: { type: string }
+                      total: { type: integer }
+                      taxAmount: { type: integer }
+                      roundingAdjustment: { type: integer }
+                      amountDue: { type: integer }
+                  outstanding: { type: integer }
+        '400':
+          description: Validation error, metode belum didukung, atau Idempotency-Key hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Order tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Order tidak dalam status yang bisa dibayar, id sudah ada, atau key sedang diproses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /tax-rates:
     post:
       operationId: createTaxRate
@@ -1490,6 +1559,23 @@ paths:
                 $ref: '#/components/schemas/Error'
 components:
   schemas:
+    Payment:
+      type: object
+      required: [id, orderId, checkId, method, amount, status]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        checkId: { type: string }
+        method: { type: string }
+        amount: { type: integer }
+        tenderedAmount: { type: integer, nullable: true }
+        changeAmount: { type: integer, nullable: true }
+        status: { type: string }
+        confirmedManually: { type: boolean }
+        tenderedAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        occurredAt: { type: string, format: date-time }
+        hlc: { type: string }
     TaxRate:
       type: object
       required: [id, name, type, rate, isInclusive, phase, channel, appliesTo, appliesToIds, effectiveFrom]

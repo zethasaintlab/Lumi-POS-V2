@@ -37,6 +37,14 @@ export interface OutletSettings {
    * supaya tenancy dan payment tidak punya dua salinan aturan yang sama.
    */
   serviceChargeRateScaled: bigint;
+  /**
+   * `outlet.rounding_mode`: `half_up` | `up` | `down`.
+   *
+   * Diteruskan apa adanya ke `computeCashRounding`, yang MENOLAK nilai tak
+   * dikenal alih-alih diam-diam jatuh ke `half_up` — outlet yang salah
+   * konfigurasi akan menagih berbeda dari yang diharapkan merchant.
+   */
+  roundingMode: string;
 }
 
 // T3 (PLAN-ordering-fondasi.md) -- dipakai modul ordering di jalur createOrder
@@ -51,8 +59,8 @@ export interface OutletSettings {
 // `service_charge_rate` bertipe `numeric(6,4)` -- pg mengembalikannya sebagai
 // string berpresisi penuh, dan diubah lewat parseRateToScaled, bukan Number().
 export async function getOutletSettings(client: PoolClient, outletId: string): Promise<OutletSettings> {
-  const { rows } = await client.query<{ rounding_increment: number; service_charge_rate: string }>(
-    'SELECT rounding_increment, service_charge_rate FROM outlet WHERE id = $1 AND archived_at IS NULL',
+  const { rows } = await client.query<{ rounding_increment: number; rounding_mode: string; service_charge_rate: string }>(
+    'SELECT rounding_increment, rounding_mode, service_charge_rate FROM outlet WHERE id = $1 AND archived_at IS NULL',
     [outletId]
   );
   if (rows.length === 0) {
@@ -61,5 +69,6 @@ export async function getOutletSettings(client: PoolClient, outletId: string): P
   return {
     roundingIncrement: BigInt(rows[0].rounding_increment),
     serviceChargeRateScaled: parseRateToScaled(rows[0].service_charge_rate),
+    roundingMode: rows[0].rounding_mode,
   };
 }

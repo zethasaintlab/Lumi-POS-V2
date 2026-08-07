@@ -167,12 +167,12 @@ Lalu pajak:
 
 Lalu pembayaran tunai:
 
-- [ ] **T13** — `POST /orders/{id}/payments` tunai, dalam satu transaksi bersama perubahan status order.
-- [ ] **T14** — `OPEN` → `PAID` hanya bila `SUM(confirmed) >= amount_due`; kurang bayar tetap `OPEN`.
-- [ ] **T15** — Lebih bayar tunai → `change_amount`; lebih bayar non-tunai ditolak.
-- [ ] **T16** — Transisi ilegal ditolak lewat `assertTransition`, bukan `if` di handler.
-- [ ] **T17** — Idempotency untuk pembayaran — retry tidak boleh menghasilkan pembayaran ganda.
-- [ ] **T18** — Kontrak OpenAPI.
+- [x] **T13** — `POST /orders/{id}/payments` tunai, dalam satu transaksi bersama perubahan status order.
+- [x] **T14** — `OPEN` → `PAID` hanya bila `SUM(confirmed) >= amount_due`; kurang bayar tetap `OPEN`.
+- [x] **T15** — Lebih bayar tunai → `change_amount`; lebih bayar non-tunai ditolak.
+- [x] **T16** — Transisi ilegal ditolak lewat `assertTransition`, bukan `if` di handler.
+- [x] **T17** — Idempotency untuk pembayaran — retry tidak boleh menghasilkan pembayaran ganda.
+- [x] **T18** — Kontrak OpenAPI.
 - [ ] **T19** — Dokumen: `CLAUDE.md`, `README.md`, `HANDOFF.md`, `modules/README.md`.
 
 ---

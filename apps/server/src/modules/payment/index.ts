@@ -1,5 +1,7 @@
 import type { Pool } from '../../db.ts';
 import { createTaxRateHandlers } from './handlers/tax-rates.ts';
+import { createPaymentEntryHandlers } from './handlers/payments.ts';
+import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 
 // Permukaan publik modul payment (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul ini memiliki `payment` dan `tax_rate`.
@@ -12,8 +14,9 @@ import { createTaxRateHandlers } from './handlers/tax-rates.ts';
 // packages/domain/src/tax.ts yang menghitung pajak.
 export { fetchEffectiveTaxRates } from './handlers/tax-rates.ts';
 
-export function createPaymentHandlers(pool: Pool): Record<string, unknown> {
+export function createPaymentHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
     ...createTaxRateHandlers(pool),
+    ...createPaymentEntryHandlers(pool, hlc),
   };
 }
