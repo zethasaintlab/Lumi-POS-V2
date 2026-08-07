@@ -136,7 +136,7 @@ Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] `_adherence.oxlintrc.json` masuk CI — `npm run lint:ds` hijau, `.github/workflows/lint-ds.yml`
 - [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
 - [x] **Harness DST ada dan gate-nya hijau** — `npm run test:dst`, 10.000 iterasi fault injection, nol pelanggaran. Delapan invariant (I1–I8) dari `prototypes/02-dst-sinkronisasi/FINDINGS.md`; kelima mode cacat tinggal permanen sebagai bukti invariantnya tidak kosong
-- [ ] **SQLite WASM+OPFS berjalan di browser — belum dibangun/diuji.** Server-side saja, jadi tidak memblokir F1. **Memblokir F2.**
+- [x] **SQLite WASM+OPFS berjalan di browser — diukur 7 Agustus 2026** (`prototypes/03-sqlite-opfs/FINDINGS.md`). Paket `@sqlite.org/sqlite-wasm`. **Temuan yang membalik asumsi: VFS `opfs-sahpool` 71× lebih cepat menulis daripada VFS `opfs`, dan tidak butuh COOP/COEP.** Dua tab tidak dapat sama-sama menulis (`NoModificationAllowedError`) — pola satu-penulis WAJIB. `storage.persisted()` = `false`: data lokal dapat dihapus browser. Belum diukur di Android/iOS
 
 Status F1 sekarang:
 

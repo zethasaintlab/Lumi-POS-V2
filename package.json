@@ -5,7 +5,8 @@
   "description": "Point-of-sale offline-first untuk kafe 2-20 outlet di Indonesia",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "prototypes/03-sqlite-opfs"
   ],
   "engines": {
     "node": ">=22.18"

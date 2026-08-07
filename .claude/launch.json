@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "prototipe-opfs",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "prototipe-sqlite-opfs"],
+      "port": 5173
+    }
+  ]
+}

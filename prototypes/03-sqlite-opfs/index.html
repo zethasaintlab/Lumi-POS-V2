@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>Prototipe 03 — SQLite WASM + OPFS</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+      h1 { font-size: 20px; }
+      table { border-collapse: collapse; width: 100%; }
+      td { padding: 4px 10px 4px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+      td:first-child { color: #555; white-space: nowrap; }
+      td:last-child { font-variant-numeric: tabular-nums; }
+      #status { padding: 8px 0; color: #0D5C63; }
+    </style>
+  </head>
+  <body>
+    <h1>Prototipe 03 — SQLite WASM + OPFS</h1>
+    <p>
+      Pengukuran, bukan fitur. Angka di halaman ini masuk ke
+      <code>FINDINGS.md</code>, dan menurut <code>CLAUDE.md</code> angka hasil
+      pengukuran mengalahkan estimasi di dokumen mana pun.
+    </p>
+    <div id="status">menjalankan…</div>
+    <table id="hasil"></table>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
