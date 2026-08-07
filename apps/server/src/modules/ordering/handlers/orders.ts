@@ -7,9 +7,10 @@ import { isPrimaryKeyViolation } from './pg-error.ts';
 import { computeRequestHash } from './request-hash.ts';
 import { assertDeviceVisible, assertUserVisible } from '../../identity/index.ts';
 import { getOutletSettings } from '../../tenancy/index.ts';
-import { getVariationSnapshot, resolvePrice } from '../../catalog/index.ts';
+import { getVariationSnapshot, resolvePrice, wasPriceEverEffective } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
 import { assertShiftOpen } from '../../cash/index.ts';
+import { recordAuditEvent } from '../../audit/index.ts';
 import { fetchEffectiveTaxRates } from '../../payment/index.ts';
 import { formatScaledRate } from '../../../../../../packages/domain/src/numeric.ts';
 import {
@@ -43,6 +44,8 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 
 interface OrderRow {
   id: string;
+  has_calculation_variance: boolean;
+  variance_amount: string | null;
   outlet_id: string;
   device_id: string;
   shift_id: string;
@@ -120,6 +123,12 @@ interface OrderLineInput {
   quantityMilli: unknown;
   discountAmount?: unknown;
   modifiers?: OrderLineModifierInput[];
+  /**
+   * FR-H6 — harga yang DIPAKAI KLIEN saat penjualan terjadi. Opsional, dan
+   * tidak pernah dipercaya: ia hanya dibandingkan dengan hitungan server.
+   * Klien versi N-1 tidak mengirimnya, dan tidak boleh patah karenanya.
+   */
+  unitPrice?: unknown;
 }
 
 interface OrderInput {
@@ -135,6 +144,11 @@ interface OrderInput {
   occurredAt?: string;
   checkId: string;
   lines: OrderLineInput[];
+  /**
+   * FR-H6 — total yang DIHITUNG KLIEN. Opsional. Server tetap menghitung
+   * sendiri dan menyimpan hitungannya; nilai ini hanya dibandingkan.
+   */
+  total?: unknown;
 }
 
 // --- validasi uang/kuantitas: sama pola dengan assertPriceValid (prices.ts)
@@ -166,6 +180,22 @@ function assertModifierPriceValid(value: unknown): asserts value is number {
 function assertModifierQuantityMilliValid(value: unknown): asserts value is number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
     throw new HttpError(400, 'VALIDATION_ERROR', 'quantityMilli modifier harus bilangan bulat > 0 (x1000).');
+  }
+}
+
+// FR-H6 -- angka dari klien. Divalidasi bentuknya walau TIDAK dipercaya
+// nilainya: `total` yang berupa string atau pecahan bukan "selisih", melainkan
+// klien yang rusak, dan menandainya sebagai selisih akan menyembunyikan bug
+// klien di dalam laporan exception.
+function assertClientTotalValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'total harus bilangan bulat rupiah >= 0.');
+  }
+}
+
+function assertClientUnitPriceValid(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'unitPrice harus bilangan bulat rupiah >= 0.');
   }
 }
 
@@ -301,6 +331,10 @@ function toOrder(order: OrderRow, check: CheckRow, lines: LineWithModifiers[]) {
     roundingAdjustment: Number(order.rounding_adjustment),
     total: Number(order.total),
     amountDue: Number(order.amount_due),
+    // FR-H6 -- klien perlu tahu bahwa hitungannya berbeda, supaya ia dapat
+    // menampilkannya ke kasir alih-alih diam-diam menyimpan angka lain.
+    hasCalculationVariance: order.has_calculation_variance,
+    varianceAmount: order.variance_amount === null ? null : Number(order.variance_amount),
     createdBy: order.created_by,
     occurredAt: order.occurred_at,
     recordedAt: order.recorded_at,
@@ -323,11 +357,13 @@ const INSERT_ORDER_SQL = `
   INSERT INTO "order" (
     id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
     status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
-    rounding_adjustment, total, amount_due, created_by, occurred_at, hlc
+    rounding_adjustment, total, amount_due, has_calculation_variance, variance_amount,
+    created_by, occurred_at, hlc
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     'open', $9, $10, 0, 0, $11,
-    0, $12, $12, $13, COALESCE($14::timestamptz, now()), $15
+    0, $12, $12, $16, $17,
+    $13, COALESCE($14::timestamptz, now()), $15
   )
   RETURNING *
 `;
@@ -380,7 +416,8 @@ async function insertOrderTree(
   hlcValue: bigint,
   lineCalcs: LineComputation[],
   totals: { subtotal: bigint; total: bigint },
-  breakdown: TaxBreakdown
+  breakdown: TaxBreakdown,
+  variance: { flagged: boolean; amount: bigint | null }
 ): Promise<{ order: OrderRow; check: CheckRow; lines: LineWithModifiers[] }> {
   try {
     const { rows: orderRows } = await client.query<OrderRow>(INSERT_ORDER_SQL, [
@@ -409,6 +446,8 @@ async function insertOrderTree(
       actorId,
       body.occurredAt ?? null,
       hlcValue.toString(),
+      variance.flagged,
+      variance.amount === null ? null : variance.amount.toString(),
     ]);
     const orderRow = orderRows[0];
 
@@ -493,6 +532,63 @@ async function insertOrderTree(
   } catch (err) {
     translateConstraintError(err);
   }
+}
+
+
+/**
+ * Menghitung ulang total order memakai harga yang DIPAKAI KLIEN.
+ *
+ * Bukan untuk disimpan — hasilnya tidak pernah menyentuh database. Ia menjawab
+ * satu pertanyaan saja: apakah total yang dikirim klien konsisten dengan
+ * harga-harga yang klien itu sendiri pakai?
+ *
+ * Kalau ya, selisihnya murni karena harga usang, dan itu bukan anomali
+ * (`spec-h:97`). Kalau tidak, aritmetika kliennya yang salah — dan itu justru
+ * hal yang FR-H6 ada untuk ditangkap.
+ *
+ * Pajak ikut dihitung ulang: dasar pajak berubah ketika harga baris berubah,
+ * jadi memakai `taxAmount` dari hitungan server akan membandingkan dua hal
+ * yang tidak sebanding.
+ */
+function hitungTotalVersiKlien(
+  lineCalcs: LineComputation[],
+  breakdownInput: { channel: string; outletId: string },
+  taxRates: Parameters<typeof calculateTax>[0]['taxRates'],
+  body: OrderInput
+): bigint {
+  const lines = lineCalcs.map((l) => {
+    const unitPrice = BigInt(l.input.unitPrice as number);
+    return {
+      lineId: l.input.id,
+      itemId: l.snapshot.itemId,
+      categoryId: l.snapshot.categoryId,
+      amount: computeLineTotal({
+        unitPrice,
+        quantityMilli: BigInt(l.input.quantityMilli as number),
+        modifiers: (l.input.modifiers ?? []).map((m) => ({
+          price: BigInt(m.price as number),
+          quantityMilli: BigInt((m.quantityMilli as number | undefined) ?? 1000),
+        })),
+        discountAmount: BigInt((l.input.discountAmount as number | undefined) ?? 0),
+      }),
+    };
+  });
+
+  const breakdown = calculateTax({
+    lines,
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates,
+    channel: body.channel as 'dine_in' | 'takeaway',
+    outletId: body.outletId,
+  });
+
+  return computeOrderTotals({
+    lineTotals: lines.map((l) => l.amount),
+    orderDiscount: 0n,
+    serviceChargeAmount: 0n,
+    taxAmount: breakdown.totalTaxExclusive,
+  }).total;
 }
 
 export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
@@ -614,12 +710,24 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
           if (snapshot === null) {
             throw new HttpError(404, 'VARIATION_NOT_FOUND', `Variation ${line.variationId} tidak ditemukan.`);
           }
-          // unit_price = resolvePrice(..., null) -- null berarti "sekarang
-          // menurut jam DATABASE" (catalog/handlers/prices.ts, komentar
-          // AT_EXPR). BUKAN new Date() di Node: itu menghidupkan lagi jam
-          // kedua yang sudah terbukti menyebabkan bug (skew ±2ms menggagalkan
-          // resolusi harga yang baru saja ditulis).
-          const resolved = await resolvePrice(client, line.variationId, body.outletId, null);
+          // FR-H6 (spec-h:77) -- harga dihitung pada `occurred_at`, WAKTU
+          // PENJUALAN TERJADI, bukan waktu paketnya sampai di server. Order
+          // yang antre offline berjam-jam harus memakai harga saat kasir
+          // menerima uangnya; memakai harga sekarang berarti merchant yang
+          // menaikkan harga sore hari mendapati penjualan pagi ikut naik, dan
+          // struk yang sudah dipegang pelanggan tidak lagi cocok dengan yang
+          // tersimpan.
+          //
+          // `null` (klien tidak mengirim occurredAt) tetap berarti "sekarang
+          // menurut jam DATABASE" -- BUKAN new Date() di Node, yang sudah
+          // terbukti menyebabkan bug nyata di repo ini (skew ±2ms).
+          //
+          // Ini memperkenalkan jam KETIGA: jam perangkat klien. Perangkat yang
+          // jamnya salah sehari akan memilih harga yang salah. Dicatat di
+          // HANDOFF.md; spec menuntut occurred_at, dan harga saat penjualan
+          // terjadi memang yang benar.
+          const at = body.occurredAt === undefined ? null : new Date(body.occurredAt);
+          const resolved = await resolvePrice(client, line.variationId, body.outletId, at);
           const unitPrice = BigInt(resolved.price);
           const modifiers = (line.modifiers ?? []).map((m) => ({
             price: BigInt(m.price as number),
@@ -645,6 +753,7 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
         // dan meneruskannya; resolusi mana yang menang ada di calculateTax,
         // supaya klien offline menerapkan aturan yang sama persis.
         const taxRates = await fetchEffectiveTaxRates(client, body.outletId);
+        const breakdownInput = { channel: body.channel, outletId: body.outletId };
         const breakdown = calculateTax({
           lines: lineCalcs.map((l) => ({
             lineId: l.input.id,
@@ -676,7 +785,110 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
           translateMoneyError(err);
         }
 
-        const written = await insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown);
+        // ------------------------------------------------------------
+        // FR-H6 -- validasi ulang. Klien tidak dipercaya.
+        //
+        // Aturan intinya berlawanan dengan naluri, dan itu yang membuatnya
+        // layak ditulis eksplisit (spec-h:95): transaksi yang selisih TETAP
+        // DITERIMA. Menolaknya berarti kehilangan penjualan yang sudah terjadi
+        // dan uangnya sudah diterima merchant. Yang benar adalah menerima,
+        // menandai, dan melaporkan.
+        //
+        // Yang TERSIMPAN selalu hitungan server -- `totals` di atas, bukan
+        // angka klien. Angka klien hanya menghasilkan penanda.
+        // ------------------------------------------------------------
+        const at = body.occurredAt === undefined ? null : new Date(body.occurredAt);
+        let variance: { flagged: boolean; amount: bigint | null } = { flagged: false, amount: null };
+
+        if (body.total !== undefined && body.total !== null) {
+          assertClientTotalValid(body.total);
+          const clientTotal = BigInt(body.total);
+          if (clientTotal !== totals.total) {
+            // Selisih ADA. Sekarang pertanyaannya: dapatkah ia dijelaskan?
+            //
+            // spec-h:97 -- "Sumber selisih yang wajar: harga berubah setelah
+            // perangkat terakhir tersinkron. Ini bukan anomali dan tidak boleh
+            // membanjiri laporan." Perangkat yang seminggu offline memakai
+            // harga seminggu lalu; menandainya berarti setiap order dari
+            // perangkat itu masuk laporan exception, dan laporan yang penuh
+            // hal normal tidak akan dibaca siapa pun.
+            // Dua syarat, dan KEDUANYA harus terpenuhi. Memeriksa yang
+            // pertama saja adalah lubang yang ditemukan sabotase: klien yang
+            // mengirim harga per baris BENAR tapi total salah akan lolos
+            // tanpa penanda — padahal itu persis "selisih yang tidak dapat
+            // dijelaskan" yang FR-H6 ada untuk menangkapnya.
+            //
+            //   1. Setiap harga yang dipakai klien pernah benar-benar
+            //      berlaku pada-atau-sebelum `occurred_at`.
+            //   2. Total klien = total yang DIHITUNG ULANG dengan harga-harga
+            //      klien itu. Kalau tidak, aritmetika klienlah yang salah,
+            //      bukan harganya yang usang.
+            let semuaTerjelaskan = true;
+            for (const calc of lineCalcs) {
+              const hargaKlien = calc.input.unitPrice;
+              if (hargaKlien === undefined || hargaKlien === null) {
+                // Klien tidak menyebut harga per baris, jadi tidak ada yang
+                // bisa dicocokkan ke riwayat. Selisihnya tidak terjelaskan.
+                semuaTerjelaskan = false;
+                break;
+              }
+              assertClientUnitPriceValid(hargaKlien);
+              if (BigInt(hargaKlien) === calc.unitPrice) {
+                continue;
+              }
+              const pernahBerlaku = await wasPriceEverEffective(
+                client, calc.input.variationId, body.outletId, BigInt(hargaKlien), at
+              );
+              if (!pernahBerlaku) {
+                semuaTerjelaskan = false;
+                break;
+              }
+            }
+
+            if (semuaTerjelaskan) {
+              // Syarat kedua: hitung ULANG dengan harga klien. Ini "server
+              // menghitung ulang dari order_line yang dikirim" (spec-h:77)
+              // dijalankan apa adanya — hanya saja dengan harga versi klien,
+              // untuk menjawab satu pertanyaan: apakah angka klien konsisten
+              // dengan harganya sendiri?
+              const totalVersiKlien = hitungTotalVersiKlien(lineCalcs, breakdownInput, taxRates, body);
+              semuaTerjelaskan = totalVersiKlien === clientTotal;
+            }
+
+            variance = semuaTerjelaskan
+              ? { flagged: false, amount: null }
+              : { flagged: true, amount: clientTotal - totals.total };
+          }
+        }
+
+        const written = await insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown, variance);
+
+        // Audit hanya untuk selisih yang TIDAK terjelaskan. AC keempat
+        // menuntut laporan menampilkan device, waktu, dan selisih -- Modul G
+        // membacanya dari sini, jadi ketiganya harus ada.
+        if (variance.flagged) {
+          await recordAuditEvent(client, {
+            id: randomUUID(),
+            tenantId,
+            outletId: body.outletId,
+            deviceId: body.deviceId,
+            actorUserId: actorId,
+            // Bukan tindakan orang: tidak ada yang menyetujui selisih.
+            approverUserId: null,
+            eventType: 'calculation_variance',
+            entityType: 'order',
+            entityId: written.order.id,
+            reasonCode: null,
+            reasonNote: null,
+            after: {
+              clientTotal: Number(body.total),
+              serverTotal: Number(totals.total),
+              varianceAmount: Number(variance.amount),
+            },
+            hlc: hlcValue,
+            occurredAt: written.order.occurred_at.toISOString(),
+          });
+        }
         const responseBody = toOrder(written.order, written.check, written.lines);
 
         // T13 (FR-B2, invariant #1): satu baris outbox DALAM transaksi yang

@@ -255,6 +255,55 @@ async function insertPrice(
   }
 }
 
+
+/**
+ * Pernahkah `price` benar-benar berlaku untuk variation ini pada-atau-sebelum
+ * `at`?
+ *
+ * FR-H6, AC kedua: "Selisih akibat harga yang berubah setelah sinkronisasi
+ * terakhir **tidak** ditandai."
+ *
+ * Perangkat yang seminggu offline memakai harga seminggu lalu. Itu bukan
+ * anomali — itu justru cara kerja produk ini. Menandainya berarti setiap order
+ * dari perangkat itu masuk laporan exception, dan laporan yang penuh hal
+ * normal tidak akan dibaca siapa pun.
+ *
+ * Yang diperiksa adalah SELURUH tangga harga, sama seperti `resolvePrice`:
+ * riwayat per outlet, riwayat default tenant, dan `item_variation.price` yang
+ * beku. Sebuah harga dianggap dapat menjelaskan selisih bila ia pernah muncul
+ * di salah satunya dengan `effective_from <= at`.
+ *
+ * `effective_from > at` sengaja TIDAK dihitung: harga terjadwal masa depan
+ * belum pernah berlaku, jadi tidak ada perangkat yang bisa memakainya secara
+ * sah. Klien yang mengirimnya sedang melakukan sesuatu yang lain.
+ *
+ * Cast `$4::timestamptz` ditulis eksplisit dengan alasan yang sama dengan
+ * `AT_EXPR` di atas — `COALESCE` tanpa cast bisa membuat PostgreSQL
+ * menyimpulkan tipe parameter yang salah secara diam-diam. Ia tidak memakai
+ * `AT_EXPR` itu sendiri karena posisi parameternya berbeda di sini.
+ */
+export async function wasPriceEverEffective(
+  client: PoolClient,
+  variationId: string,
+  outletId: string,
+  price: bigint,
+  at: Date | null
+): Promise<boolean> {
+  const { rows } = await client.query<{ ada: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM price_history
+        WHERE variation_id = $1
+          AND (outlet_id = $2 OR outlet_id IS NULL)
+          AND price = $3
+          AND effective_from <= COALESCE($4::timestamptz, now())
+     ) OR EXISTS (
+       SELECT 1 FROM item_variation WHERE id = $1 AND price = $3
+     ) AS ada`,
+    [variationId, outletId, price.toString(), at]
+  );
+  return rows[0].ada;
+}
+
 export function createPriceHandlers(pool: Pool) {
   return {
     // Invariant #2 -- SELALU INSERT, tidak pernah UPDATE. Urutan guard di
