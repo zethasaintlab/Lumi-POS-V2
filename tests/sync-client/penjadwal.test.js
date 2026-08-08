@@ -100,7 +100,12 @@ test('T6 mulai() memulihkan item `sending` sebelum putaran pertama', async () =>
   }
 });
 
-test('T6 berjalan tiap 15 detik selama antrean tidak kosong', async () => {
+// Interval 15 detik adalah BATAS ATAS, bukan denyut tetap. Yang menentukan
+// kapan putaran berikutnya datang adalah tangga backoff spec-h:62 -- kalau
+// tidak, ketiga anak tangga di bawah 15 detik (2/4/8) tidak pernah tercapai,
+// dan penjualan yang gagal sekali karena gangguan sekejap menunggu 15 detik
+// alih-alih 2.
+test('T6 putaran berikutnya mengikuti tangga backoff, dibatasi 15 detik', async () => {
   const { buatPenjadwal, INTERVAL_MS } = await import(PENJADWAL);
   const db = buatDb();
   const timer = buatTimerPalsu();
@@ -108,15 +113,12 @@ test('T6 berjalan tiap 15 detik selama antrean tidak kosong', async () => {
     assert.equal(INTERVAL_MS, 15_000);
     await isi(db, 3);
 
-    let putaran = 0;
-    // Selalu gagal sementara, jadi antrean tidak pernah kosong.
+    // Selalu gagal sementara, jadi antrean tidak pernah kosong dan
+    // `attempts` naik satu anak tangga per putaran.
     const p = buatPenjadwal({
       db,
       now: timer.now,
-      kirim: async () => {
-        putaran += 1;
-        return { status: 503 };
-      },
+      kirim: async () => ({ status: 503 }),
       setTimer: timer.setTimer,
       clearTimer: timer.clearTimer,
     });
@@ -124,17 +126,52 @@ test('T6 berjalan tiap 15 detik selama antrean tidak kosong', async () => {
     await p.mulai();
     assert.equal(p.putaranSelesai, 1);
 
-    // 14 detik: belum. Satu detik kemudian: iya. Ambangnya diperiksa dari dua
-    // sisi -- penjadwal yang berjalan setiap tick akan lolos kalau hanya sisi
-    // "sudah jalan" yang diuji.
-    await timer.maju(14_000);
-    assert.equal(p.putaranSelesai, 1, 'berjalan sebelum 15 detik');
-    await timer.maju(1_000);
+    // attempts=1 -> 2 detik. Diperiksa dari dua sisi: penjadwal yang berjalan
+    // di setiap tick akan lolos kalau hanya sisi "sudah jalan" yang diuji.
+    await timer.maju(1_900);
+    assert.equal(p.putaranSelesai, 1, 'berjalan sebelum anak tangga pertama');
+    await timer.maju(100);
     assert.equal(p.putaranSelesai, 2);
 
-    await timer.maju(15_000);
+    // attempts=2 -> 4 detik.
+    await timer.maju(3_900);
+    assert.equal(p.putaranSelesai, 2, 'berjalan sebelum anak tangga kedua');
+    await timer.maju(100);
     assert.equal(p.putaranSelesai, 3);
-    assert.ok(putaran > 0);
+
+    p.berhenti();
+  } finally {
+    db.tutup();
+  }
+});
+
+// Batas atasnya tetap ada, dan ia yang menangani kasus "antrean tidak kosong
+// tapi tidak ada yang jatuh tempo" -- item yang tertahan dependensi, misalnya.
+// Tanpa batas ini, antrean seperti itu diam selamanya.
+test('T6 anak tangga di atas 15 detik dipotong jadi 15 detik', async () => {
+  const { buatPenjadwal } = await import(PENJADWAL);
+  const db = buatDb();
+  const timer = buatTimerPalsu();
+  try {
+    await isi(db, 1);
+    // attempts=6 -> anak tangga 60 detik.
+    await db.execute(
+      `UPDATE outbox_local SET attempts = 6, last_attempt_at = ?`,
+      [new Date(timer.now()).toISOString()]
+    );
+
+    const p = buatPenjadwal({
+      db,
+      now: timer.now,
+      kirim: async () => ({ status: 503 }),
+      setTimer: timer.setTimer,
+      clearTimer: timer.clearTimer,
+    });
+    await p.mulai();
+    const sebelum = p.putaranSelesai;
+
+    await timer.maju(15_000);
+    assert.equal(p.putaranSelesai, sebelum + 1, 'putaran tidak datang pada batas 15 detik');
     p.berhenti();
   } finally {
     db.tutup();
@@ -209,16 +246,9 @@ test('T6 koneksi kembali memicu putaran segera; backoff item tetap dihormati', a
     const [belum] = await db.getAll(`SELECT status FROM outbox_local`);
     assert.equal(belum.status, 'pending', 'backoff item dilanggar oleh pemicu online');
 
-    // Anak tangga pertama spec-h:62 adalah 2 detik, tapi putaran berikutnya
-    // baru datang pada tick 15 detik. Konsekuensinya: dengan tick tetap,
-    // ketiga anak tangga di bawah 15 detik (2/4/8) efektif menjadi 15 detik.
-    // Arahnya selalu LEBIH LAMBAT, tidak pernah lebih agresif, jadi ia tidak
-    // melanggar maksud spec -- tapi ia nyata dan diangkat, bukan disembunyikan.
+    // Anak tangga pertama spec-h:62 adalah 2 detik, dan penjadwal menepatinya:
+    // interval 15 detik adalah BATAS ATAS, bukan denyut tetap.
     await timer.maju(2_000);
-    const [masihMenunggu] = await db.getAll(`SELECT status FROM outbox_local`);
-    assert.equal(masihMenunggu.status, 'pending');
-
-    await timer.maju(13_000);
     const [sesudah] = await db.getAll(`SELECT status FROM outbox_local`);
     assert.equal(sesudah.status, 'sent');
   } finally {

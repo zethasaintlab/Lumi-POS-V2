@@ -243,7 +243,52 @@ Jangkar diperiksa lebih dulu pada setiap sabotase.
 ### Suite
 
 ```
-domain 107 · dst 10 · sync-client 52 · kasir 48 · sqlite-local 8 · oxlint-ds-adherence 10
+domain 107 · dst 10 · sync-client 59 · kasir 48 · sqlite-local 8 · oxlint-ds-adherence 10
 isolation 189 · schema 14 · server 14 · catalog 147 · ordering 117 · dst-server 10 · payment 120
-= 846 test, 0 gagal · typecheck bersih · lint:ds bersih · npm ci --dry-run exit 0
+= 853 test, 0 gagal · typecheck bersih · lint:ds bersih · npm ci --dry-run exit 0
 ```
+
+---
+
+## 11. Empat keputusan yang tertunda, diambil 8 Agustus 2026
+
+Diambil sendiri atas permintaan user ("evaluasi opsi paling valid, putuskan"). Tiga dari empat diputuskan lewat **pengukuran**, bukan argumen — `CLAUDE.md` menetapkan angka hasil pengukuran mengalahkan estimasi, dan ketiganya persis kelas itu.
+
+### 11.1 VFS — `OPFSWriteAheadVFS`
+
+Keempat kandidat diukur lewat PowerSync di `apps/kasir/harness-vfs.html`, tiga run, beban kerja **sama persis** dengan prototipe 03 §5b dan prototipe 04 (10 baris di 8 tabel, satu `writeTransaction`, 60 penjualan; berkas bebannya **diimpor**, bukan disalin). `enableMultiTabs: true` dipertahankan di semua kandidat.
+
+| VFS | pasang skema (ms) | p50 | p95 | p99 | penjualan/dtk | disimpan di |
+|---|---:|---:|---:|---:|---:|---|
+| `IDBBatchAtomicVFS` *(default paket)* | 351–396 | 26,8 / 27,5 / 28,5 | 37,6–40,0 | 40,0–41,8 | 34–37 | IndexedDB |
+| `OPFSCoopSyncVFS` | 158–236 | 9,1 / 7,0 / 9,0 | 8,5–11,9 | 8,6–12,4 | 106–139 | OPFS |
+| `AccessHandlePoolVFS` | 216–228 | 9,2 / 11,8 / 9,0 | 10,6–15,2 | 10,7–18,4 | 83–110 | OPFS |
+| **`OPFSWriteAheadVFS`** | **123–135** | **5,1 / 5,0 / 4,5** | 7,3–9,6 | 11,6–12,3 | **168–200** | OPFS |
+
+Default paket adalah yang **paling lambat, ~5,5×**. Ia juga yang diam-diam berlaku selama prototipe 04 dan 05.
+
+Dua tab diuji terpisah (`harness-dua-tab.html`): keduanya menulis 20 baris, keduanya melihat seluruh 40. Pola satu-penulis yang prototipe 04 §7 sandarkan pada `enableMultiTabs` karena itu **tetap berlaku di atas OPFS** — dan itu bukan sesuatu yang boleh diasumsikan, karena prototipe 04 mengukurnya di atas IndexedDB.
+
+Cadangan bila ekor latensi kelak jadi masalah: `AccessHandlePoolVFS`, ekor paling rapat, satu konstanta.
+
+### 11.2 Interval relay adalah batas atas, bukan denyut
+
+Versi pertama memakai 15 detik sebagai denyut tetap. Akibatnya baru terlihat saat ditulis sebagai test: ketiga anak tangga backoff di bawah 15 detik (2/4/8, `spec-h:62`) tidak pernah tercapai, jadi penjualan yang gagal sekali karena gangguan sekejap menunggu 15 detik alih-alih 2.
+
+Sekarang jeda berikutnya = waktu jatuh tempo **terdekat**, dipotong di 15 detik, dengan lantai 250 ms. Batas atasnya tetap perlu — item yang tertahan dependensi tidak punya waktu jatuh tempo, dan tanpa batas itu antrean seperti itu diam selamanya.
+
+### 11.3 Koneksi kembali TIDAK mereset backoff
+
+Ditolak. `spec-h:62` tidak menyebutnya, dan perangkat yang baru tersambung akan menembakkan 50 item ke server yang mungkin belum pulih. Pemicu `online` tetap menjalankan putaran segera; yang jatuh tempo naik, yang belum menunggu jatahnya.
+
+### 11.4 ⛔ `watch()` ~1.000 ms — indikator antrean tidak boleh bergantung padanya
+
+Diukur di browser: notifikasi `watch()` atas raw table datang **997 / 1013 / 1004 / 1004 / 998 ms** lewat `execute`, dan **1014 / 1001 / 1013 / 999 ms** lewat `writeTransaction`. `throttleMs: 20` tidak mengubahnya sama sekali. Mekanismenya tidak berhasil saya temukan di kode paket; yang mengikat adalah angkanya.
+
+`spec-h:224` menuntut *"Indikator diperbarui < 1 detik setelah perubahan status"*. Seribu milidetik bukan di bawah satu detik — ia tepat di ambang, dan separuh pengukuran melewatinya.
+
+**Keputusan:** perubahan yang lewat kode kita mengirim ISYARAT baca-ulang lewat `buatPemberitahu()`; datanya tetap dibaca dari SQLite. `watch()` **tidak diganti** — ia tetap satu-satunya yang melihat perubahan dari luar (katalog yang turun, tulisan tab lain). Yang satu instan tapi buta, yang lain lambat tapi melihat semuanya. Keputusan §3.3 utuh: database tetap satu-satunya sumber kebenaran, yang dipercepat hanya kapan seseorang tahu harus bertanya lagi.
+
+### 11.5 Satu test saya sendiri yang cacat
+
+T7 memakai `await tunggu(500)` dan **melaporkan GAGAL** saat mesinnya sibuk — `watch()` sebenarnya menyala, hanya lebih lambat dari 500 ms. Test yang gagal ke arah "produk rusak" lebih buruk daripada tidak ada test: ia mengirim orang memburu cacat yang tidak ada. Diganti `tungguSampai(syarat, batas)`, dan latensinya kini ikut dilaporkan — angka itulah yang menjadi §11.4.

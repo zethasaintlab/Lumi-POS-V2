@@ -34,6 +34,27 @@ function tunggu(ms: number) {
 }
 
 /**
+ * Menunggu sebuah syarat sampai batas waktu, bukan tidur selama waktu tetap.
+ *
+ * Versi pertama T7 memakai `await tunggu(500)` dan MELAPORKAN GAGAL saat
+ * mesinnya sedang sibuk -- `watch()` sebenarnya menyala, hanya lebih lambat
+ * dari 500 ms. Test yang gagal ke arah "produk rusak" lebih buruk daripada
+ * tidak ada test: ia mengirim orang memburu cacat yang tidak ada. Diperiksa
+ * ulang secara manual: dengan 1.500 ms, notifikasinya datang.
+ */
+async function tungguSampai(
+  syarat: () => boolean,
+  { batasMs = 5_000, tiapMs = 50 } = {}
+): Promise<boolean> {
+  const batas = performance.now() + batasMs;
+  while (performance.now() < batas) {
+    if (syarat()) return true;
+    await tunggu(tiapMs);
+  }
+  return syarat();
+}
+
+/**
  * Menghapus sisa database harness dari run sebelumnya.
  *
  * Bukan kerapian. Versi pertama harness ini memakai nama berkas tetap, dan
@@ -45,6 +66,10 @@ function tunggu(ms: number) {
  * hanya menyapu OPFS, dan ia selalu menemukan nol berkas -- karena PowerSync
  * web menyimpan databasenya di IndexedDB, bukan OPFS. Lihat `periksaPenyimpanan`.
  */
+const AWALAN_HARNESS = ['lumi-harness', 'lumi-vfs-', 'lumi-duatab-', 'lumi-probe-'];
+/** `lumi-kasir.db` adalah database aplikasi SUNGGUHAN. Ia tidak pernah disapu. */
+const sisaHarness = (n: string) => AWALAN_HARNESS.some((a) => n.startsWith(a));
+
 async function bersihkanSisaHarness(): Promise<string[]> {
   const dibuang: string[] = [];
 
@@ -52,7 +77,7 @@ async function bersihkanSisaHarness(): Promise<string[]> {
     const akar = await navigator.storage.getDirectory();
     // @ts-expect-error `entries()` belum ada di lib DOM TypeScript ini.
     for await (const [nama] of akar.entries()) {
-      if (typeof nama === 'string' && nama.startsWith('lumi-harness')) {
+      if (typeof nama === 'string' && sisaHarness(nama)) {
         await akar.removeEntry(nama, { recursive: true }).catch(() => {});
         dibuang.push(`opfs:${nama}`);
       }
@@ -60,7 +85,7 @@ async function bersihkanSisaHarness(): Promise<string[]> {
   }
 
   for (const db of await indexedDB.databases()) {
-    if (db.name?.startsWith('lumi-harness')) {
+    if (db.name && sisaHarness(db.name)) {
       await new Promise((r) => {
         const req = indexedDB.deleteDatabase(db.name as string);
         req.onsuccess = r;
@@ -104,9 +129,10 @@ async function periksaPenyimpanan(namaDb: string): Promise<string> {
   );
 }
 
-export async function jalankan(): Promise<number> {
+export async function jalankan(vfs?: string): Promise<number> {
   const dibuang = await bersihkanSisaHarness();
   const NAMA_DB = `lumi-harness-${dibuang.length}-${performance.now().toFixed(0)}.db`;
+  const opsiVfs = vfs ? { vfs: vfs as never } : {};
   let gagal = 0;
   const periksa = (nama: string, nilai: string, lulus: boolean) => {
     if (!lulus) gagal += 1;
@@ -119,7 +145,7 @@ export async function jalankan(): Promise<number> {
   // katalog -- itu sudah diukur di prototipe 05 §T5 dan butuh layanan sync.
   // Yang dibuktikan: `bukaDbLokal` mengambil keputusan yang benar di atas
   // OPFS sungguhan, dan keputusan itu STABIL pada boot kedua.
-  const pertama = await bukaDbLokal({ dbFilename: NAMA_DB });
+  const pertama = await bukaDbLokal({ dbFilename: NAMA_DB, ...opsiVfs });
   periksa(
     `T9a boot pertama memutuskan bangun ulang + bersihkan sync (${dibuang.length} sisa dibuang)`,
     JSON.stringify(pertama.keputusanMigrasi),
@@ -274,19 +300,23 @@ export async function jalankan(): Promise<number> {
     { signal: berhentiPantau.signal, tables: ['outbox_local'] }
   );
 
-  await tunggu(200);
+  // Hasil pertama datang saat berlangganan; ia ditunggu sampai muncul,
+  // supaya `awal` tidak terbaca nol hanya karena mesinnya lambat.
+  await tungguSampai(() => pemberitahuan > 0);
   const awal = pemberitahuan;
+  const t7Mulai = performance.now();
   await db.execute(
     `INSERT INTO outbox_local (id, entity_type, entity_id, operation, payload,
        idempotency_key, status, attempts, created_at)
      VALUES ('obx-h2','order','ord-h9','create','{}','key-h2','pending',0,'2026-08-08T10:00:06.000Z')`
   );
-  await tunggu(500);
+  const menyala = await tungguSampai(() => pemberitahuan > awal);
+  const t7Ms = performance.now() - t7Mulai;
   berhentiPantau.abort();
   periksa(
     'T7 watch() memicu pembaruan setelah penulisan lokal (tanpa polling)',
-    `pemberitahuan: ${awal} -> ${pemberitahuan}`,
-    pemberitahuan > awal
+    `pemberitahuan: ${awal} -> ${pemberitahuan} dalam ${t7Ms.toFixed(0)} ms`,
+    menyala
   );
 
   // --- T6 di browser: penjadwal dengan timer SUNGGUHAN --------------------
@@ -315,7 +345,7 @@ export async function jalankan(): Promise<number> {
 
   // --- Boot kedua: keputusan migrasi harus BERUBAH ------------------------
   await pertama.ps.close();
-  const kedua = await bukaDbLokal({ dbFilename: NAMA_DB });
+  const kedua = await bukaDbLokal({ dbFilename: NAMA_DB, ...opsiVfs });
   periksa(
     'T9c boot kedua: skema tidak dibangun ulang, sync tidak dibersihkan',
     JSON.stringify(kedua.keputusanMigrasi),

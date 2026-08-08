@@ -12,12 +12,43 @@
 //     milik `outbox_local` + REST idempoten. Memasang trigger itu berarti
 //     membangun jalur naik kedua yang diam-diam.
 
-import { PowerSyncDatabase, Schema } from '@powersync/web';
+import { PowerSyncDatabase, Schema, WASQLiteVFS } from '@powersync/web';
 import SKEMA_SQL from '../../../../db/local/001-initial.sql?raw';
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { adaptDbLokal } from './adapter.ts';
 import { jalankanMigrasi, type KeputusanMigrasi, type RencanaDdl } from './migrasi.ts';
 import { buatDefinisiRaw, kolomPerTabel } from './skema.ts';
+
+/**
+ * VFS yang dipakai aplikasi.
+ *
+ * ⛔ Ini BUKAN default `@powersync/web`. Defaultnya `IDBBatchAtomicVFS`
+ * (IndexedDB), dan itu ditemukan 8 Agustus 2026 saat harness pondasi berjalan
+ * -- pembersih OPFS selalu menemukan nol berkas sementara databasenya jelas
+ * ada. Konsekuensinya: seluruh angka prototipe 04 dan 05, termasuk 12,33 ms
+ * per penjualan, adalah angka IndexedDB.
+ *
+ * `OPFSWriteAheadVFS` dipilih setelah keempat kandidat diukur lewat PowerSync
+ * di `apps/kasir/harness-vfs.html`, tiga run, beban kerja yang sama persis
+ * dengan prototipe 03/04 (10 baris di 8 tabel, satu writeTransaction):
+ *
+ *   p50 per penjualan  IDBBatchAtomic 26,8-28,5 ms · OPFSCoopSync 7,0-9,1 ms
+ *                      AccessHandlePool 9,0-11,8 ms · OPFSWriteAhead 4,5-5,1 ms
+ *
+ * Ia juga satu-satunya VFS yang mendukung `additionalReaders` -- koneksi baca
+ * tambahan, yang kelak dapat dipakai grid produk K-03 tanpa menyentuh jalur
+ * tulis sama sekali.
+ *
+ * Dua tab diuji terpisah (`harness-dua-tab.html`): keduanya menulis 20 baris
+ * dan saling melihat seluruh 40. Pola satu-penulis yang disandarkan prototipe
+ * 04 §7 pada `enableMultiTabs` karena itu tetap berlaku di atas OPFS -- itu
+ * BUKAN sesuatu yang boleh diasumsikan, karena prototipe 04 mengukurnya di
+ * atas IndexedDB.
+ *
+ * Kalau kelak ekor latensi jadi masalah, `AccessHandlePoolVFS` adalah
+ * cadangan dengan ekor paling rapat, dan menggantinya satu konstanta.
+ */
+export const VFS_TERPILIH = WASQLiteVFS.OPFSWriteAheadVFS;
 
 export interface DbLokalTerbuka {
   /** Objek PowerSync mentah -- untuk `connect`, `watch`, `disconnectAndClear`. */
@@ -63,12 +94,16 @@ async function jalankanDdl(ps: PowerSyncDatabase, rencana: RencanaDdl): Promise<
 export async function bukaDbLokal({
   dbFilename = 'lumi-kasir.db',
   waktu = () => new Date(),
-}: { dbFilename?: string; waktu?: () => Date } = {}): Promise<DbLokalTerbuka> {
+  vfs = VFS_TERPILIH,
+}: { dbFilename?: string; waktu?: () => Date; vfs?: WASQLiteVFS } = {}): Promise<DbLokalTerbuka> {
   const schema = buatSchema();
   const ps = new PowerSyncDatabase({
     schema,
     database: {
       dbFilename,
+      // Disetel EKSPLISIT. Nilai default paket adalah IndexedDB, dan
+      // membiarkannya berarti memilih penyimpanan tanpa pernah memutuskannya.
+      vfs,
       // Eksplisit, bukan default. Prototipe 04 §7: dengan `true`, dua tab
       // dapat menulis bersamaan (koneksi pindah ke SharedWorker) -- tempat
       // prototipe 03 mendapat `NoModificationAllowedError`. Dokumentasi

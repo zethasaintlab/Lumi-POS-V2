@@ -19,6 +19,9 @@ export type { HasilBatch } from './relay.ts';
 export { buatPenjadwal, INTERVAL_MS } from './penjadwal.ts';
 export type { Penjadwal, DepsPenjadwal } from './penjadwal.ts';
 
+export { buatPemberitahu } from './pemberitahu.ts';
+export type { Pemberitahu } from './pemberitahu.ts';
+
 export { buatPengirimHttp } from './http.ts';
 export type { KonfigHttp } from './http.ts';
 

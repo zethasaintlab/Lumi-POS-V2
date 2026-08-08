@@ -19,8 +19,12 @@ setPelapor(({ nama, nilai, lulus }) => {
   console.log(`HASIL\t${lulus ? 'LULUS' : 'GAGAL'}\t${nama}\t${nilai}`);
 });
 
-status.textContent = 'menjalankan…';
-jalankan()
+// `?vfs=` memaksa VFS tertentu. Tanpa itu, yang dipakai adalah VFS_TERPILIH --
+// yaitu yang benar-benar dipakai aplikasi.
+const vfsDiminta = new URLSearchParams(location.search).get('vfs') ?? undefined;
+
+status.textContent = `menjalankan…${vfsDiminta ? ` (vfs=${vfsDiminta})` : ''}`;
+jalankan(vfsDiminta)
   .then((gagal) => {
     status.textContent = gagal === 0 ? 'selesai — semua uji LULUS' : `selesai — ${gagal} uji GAGAL`;
     console.log(`SELESAI\t${gagal} gagal`);
