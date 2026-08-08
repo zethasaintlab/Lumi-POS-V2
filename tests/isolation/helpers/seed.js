@@ -204,6 +204,7 @@ async function seedTenantBase(appClient, { suffix }) {
   });
 
   rows.item_modifier_list = await insertReturning(appClient, 'item_modifier_list', {
+    id: freshId(),
     tenant_id: tenantId,
     item_id: rows.item.id,
     modifier_list_id: rows.modifier_list.id,

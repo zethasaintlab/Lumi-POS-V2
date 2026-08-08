@@ -29,11 +29,28 @@ const TABLES = [
     name: 'item_modifier_list',
     module: 'catalog',
     partitioned: false,
-    whereForRow: (row) => ({ clause: 'item_id = $1 AND modifier_list_id = $2', params: [row.item_id, row.modifier_list_id] }),
-    // Bridge table has no surrogate id — reuse the spare `item2` fixture so the
-    // impersonation attempt targets a composite key that doesn't already exist
-    // (an existing-row collision would fail for the wrong reason).
-    buildImpersonationRow: (row, seededRows) => ({ ...row, item_id: seededRows.item2.id }),
+    // `whereForRow` kembali ke jalur generik (`id = $1`) sejak migrasi 0018:
+    // tabel ini kini punya surrogate id, dituntut PowerSync untuk raw table.
+    //
+    // `buildImpersonationRow` TETAP khusus, dan alasannya berubah. Dulu:
+    // "tidak ada surrogate id, jadi PK komposit akan bentrok". Sekarang id
+    // barunya memang segar, tapi 0018 memindahkan jaminan pasangan unik ke
+    // `ux_item_modifier_list_pair` -- dan baris kloningan membawa pasangan
+    // (item_id, modifier_list_id) YANG SAMA.
+    //
+    // Diuji langsung sebelum baris ini ditulis: pada PostgreSQL 17, kebijakan
+    // RLS menolak LEBIH DULU ("new row violates row-level security policy"),
+    // bukan constraint uniknya -- jadi jalur generik pun tidak akan membuat
+    // test ini hampa hari ini. `item2` dipertahankan karena urutan itu bukan
+    // jaminan yang didokumentasikan PostgreSQL; menggantungkan uji isolasi
+    // padanya berarti uji ini bisa berubah jadi hampa tanpa satu baris pun
+    // diubah. Pasangan yang berbeda membuat RLS satu-satunya yang mungkin
+    // menolak.
+    buildImpersonationRow: (row, seededRows, freshId) => ({
+      ...row,
+      id: freshId(),
+      item_id: seededRows.item2.id,
+    }),
   },
   { name: 'price_history', module: 'catalog', partitioned: false },
   { name: 'tax_rate', module: 'payment', partitioned: false },

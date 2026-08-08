@@ -1,0 +1,18 @@
+{
+  "name": "prototipe-sqlite-opfs",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Prototipe pengukuran SQLite WASM + OPFS di browser. BUKAN bagian aplikasi -- lihat FINDINGS.md.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
+    "@journeyapps/wa-sqlite": "2.0.1"
+  },
+  "devDependencies": {
+    "vite": "^7.0.4"
+  }
+}

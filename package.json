@@ -5,13 +5,16 @@
   "description": "Point-of-sale offline-first untuk kafe 2-20 outlet di Indonesia",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "prototypes/03-sqlite-opfs",
+    "prototypes/04-powersync-raw-tables",
+    "prototypes/05-powersync-jalur-turun"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit --project apps/server",
+    "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client",
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
@@ -24,7 +27,9 @@
     "test:payment": "node --env-file=.env --test --test-concurrency=1 \"tests/payment/*.test.js\"",
     "test:sqlite-local": "node --experimental-sqlite --test \"tests/sqlite-local/*.test.js\"",
     "test:oxlint-ds-adherence": "node --test \"tests/oxlint-ds-adherence/*.test.js\"",
-    "test:dst": "echo 'Belum diimplementasikan. Referensi: prototypes/02-dst-sinkronisasi/sim.py' && exit 1"
+    "test:dst": "node --experimental-strip-types --test \"tests/dst/*.test.js\"",
+    "test:dst-server": "node --env-file=.env --test --test-concurrency=1 \"tests/dst-server/*.test.js\"",
+    "test:sync-client": "node --test \"tests/sync-client/*.test.js\""
   },
   "dependencies": {
     "pg": "^8.13.1"

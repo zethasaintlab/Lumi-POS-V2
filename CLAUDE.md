@@ -135,7 +135,9 @@ Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Header COOP/COEP di-set (`apps/kasir/vite.config.ts` + `tauri.conf.json`)
 - [x] `_adherence.oxlintrc.json` masuk CI — `npm run lint:ds` hijau, `.github/workflows/lint-ds.yml`
 - [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
-- [ ] **SQLite WASM+OPFS berjalan di browser — belum dibangun/diuji.** Server-side saja, jadi tidak memblokir F1. **Memblokir F2.**
+- [x] **DST menembak server sungguhan juga** — `npm run test:dst-server`: Fastify + PostgreSQL lewat transport yang sama cacatnya, invariant diperiksa terhadap baris database. Iterasinya jauh lebih sedikit; yang dicari ikatan ke implementasi, bukan kedalaman ruang keadaan
+- [x] **Harness DST ada dan gate-nya hijau** — `npm run test:dst`, 10.000 iterasi fault injection, nol pelanggaran. Delapan invariant (I1–I8) dari `prototypes/02-dst-sinkronisasi/FINDINGS.md`; kelima mode cacat tinggal permanen sebagai bukti invariantnya tidak kosong
+- [x] **SQLite WASM+OPFS berjalan di browser — diukur 7 Agustus 2026** (`prototypes/03-sqlite-opfs/FINDINGS.md`). Paket `@sqlite.org/sqlite-wasm`. **Temuan yang membalik asumsi: VFS `opfs-sahpool` 71× lebih cepat menulis daripada VFS `opfs`, dan tidak butuh COOP/COEP.** Dua tab tidak dapat sama-sama menulis (`NoModificationAllowedError`) — pola satu-penulis WAJIB. `storage.persisted()` = `false`: data lokal dapat dihapus browser. Belum diukur di Android/iOS
 
 Status F1 sekarang:
 
@@ -178,6 +180,10 @@ Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktif
 
 **Keputusan yang mengikat kode ordering:**
 
+- **Harga diresolusi pada `occurred_at`, bukan `now()`** (FR-H6, `spec-h:77`). Order yang antre offline berjam-jam dihitung dengan harga saat penjualan terjadi. Klien yang tidak mengirim `occurredAt` tetap memakai jam database, persis seperti sebelumnya. Ini memperkenalkan **jam ketiga** — jam perangkat klien — dan risikonya dicatat di `HANDOFF.md`.
+- **Selisih hitungan klien TIDAK PERNAH menolak transaksi** (`spec-h:95`). Yang tersimpan selalu hitungan server; selisihnya ditandai `has_calculation_variance` + `variance_amount` + `audit_event` bertipe `calculation_variance`. Menolak berarti kehilangan penjualan yang uangnya sudah diterima merchant.
+- **Selisih dianggap terjelaskan hanya bila DUA syarat terpenuhi**: setiap harga yang dipakai klien pernah benar-benar berlaku pada-atau-sebelum `occurred_at`, **dan** total klien konsisten dengan harga-harganya sendiri. Memeriksa syarat pertama saja meloloskan klien yang aritmetikanya salah — ditemukan lewat sabotase, bukan review.
+
 - **`item_variation.price` beku setelah dibuat** — lihat bagian katalog di atas; `order_line.unit_price` adalah snapshot hasil `resolvePrice`, bukan pembacaan langsung.
 - **Waktu selalu dari jam database, tidak pernah `new Date()` di Node.** Dipelajari dari bug nyata: resolusi harga menstempel `effective_from` dengan jam PostgreSQL tapi membaca `at` dari jam Node — skew ±2 ms cukup membuat harga yang baru ditulis dianggap belum berlaku, 4 dari 12 run gagal. Di produksi keduanya mesin terpisah. Berlaku juga untuk `occurred_at`, `expires_at`, dan seterusnya.
 - **HLC**: satu instance dibuat di `buildApp` dengan clock di-inject di batas itu; domain tetap murni. Klien mengirim `hlc` → `update()`, tidak mengirim → `tick()`.
@@ -205,6 +211,35 @@ Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktif
 - **Void berjalan tanpa `X-Approver-Id`; refund selalu menuntutnya.** Header itu diabaikan pada jalur void. Bahwa penyetuju berbeda dari aktor ditegakkan `CHECK` di `audit_event` — **database**, bukan aplikasi.
 
 **Exit criteria F1 terpenuhi.** Satu penjualan tersimpan atomik dengan pajak benar, dapat dibayar tunai/QRIS/EDC, dan dapat dikoreksi lewat void & refund. `ARCH:395` menuntut modul `payment` — ia ada, beserta port gateway-nya. Yang tersisa di Modul C adalah C-3 (rekonsiliasi dan ekspor, keduanya P1).
+
+---
+
+## F2 — kepemilikan database lokal, diputuskan 7 Agustus 2026
+
+**PowerSync memegang database lokal. Seluruh tabel kami yang direplikasi didaftarkan sebagai `withRawTables`, bukan tabel PowerSync biasa.** Ini memperjelas baris "DB lokal" di tabel stack; ia bukan pilihan baru, melainkan jawaban atas siapa yang memegang koneksinya.
+
+Dibuktikan dengan menjalankan kode, bukan membaca dokumentasi — `prototypes/04-powersync-raw-tables/FINDINGS.md`.
+
+**Yang mengikat kode klien:**
+
+- **Tabel kami WAJIB raw table.** Mendeklarasikannya sebagai tabel PowerSync biasa membuat core membuat VIEW bernama sama di atas `ps_data__<nama>`, dan ia bertabrakan dengan tabel nyata kami. Tabrakannya gagal keras saat boot — bukan diam-diam.
+- **Raw table wajib punya kolom `id`.** Bukan konvensi kami; core menolaknya (`Table X has no id column.`). PK komposit tidak cukup.
+- **Tabel murni lokal TIDAK didaftarkan sama sekali.** `outbox_local`, `stock_snapshot`, `device_config` aman justru karena PowerSync tidak tahu keduanya ada — `powersync_replace_schema` hanya menyentuh objek yang cocok `GLOB 'ps_data_*'` atau view bertanda `-- powersync-auto-generated`.
+- **Jangan pasang trigger CRUD PowerSync.** Penulisan lokal ke raw table ditangkap **hanya** lewat `powersync_create_raw_table_crud_trigger`. Tidak memasangnya adalah yang membuat `outbox_local` + REST idempoten tetap satu-satunya jalur naik. Memasangnya berarti membangun jalur naik kedua yang diam-diam.
+- **Satu penjualan tetap satu `writeTransaction`** — `BEGIN IMMEDIATE`/`COMMIT` sungguhan dengan kunci global. Invariant #1 tidak berubah bentuknya.
+- **`enableMultiTabs` di-set eksplisit**, tidak diandalkan pada default. Ia yang memenuhi pola satu-penulis; tanpanya tab kedua mematikan aplikasi (prototipe 03 §3).
+- **`worker: { format: 'es' }` di setiap Vite config yang memuat PowerSync.** Sudah dipasang di `apps/kasir`. `vite dev` hijau tanpanya; hanya build rilis yang gagal.
+
+**Harganya terukur, dan bukan nol:** 12,33 ms per penjualan versus 3,25 ms lewat driver mentah — 3,8×. Terbukti **bukan** karena raw table. Masih jauh di bawah ambang yang terlihat kasir, tapi angka itu dari mesin pengembangan.
+
+**Jalur turun sudah dijalankan** terhadap PowerSync Open Edition self-hosted — `prototypes/05-powersync-jalur-turun/FINDINGS.md`. Katalog turun ke raw table kami, `item_modifier_list` utuh, perubahan berjalan sampai tanpa reload. Dua hal dari sana **mengikat kode klien**, dan keduanya tidak terlihat sampai diuji:
+
+- ⛔ **Sync rules adalah SATU-SATUNYA batas tenant pada jalur turun.** Role replikasi wajib `BYPASSRLS` — replikasi logis membaca WAL, dan RLS tidak berlaku di sana. Invariant #8 tidak menjaga apa pun pada jalur ini. Sabotase membuktikannya: satu `WHERE tenant_id = auth.parameter('tenant_id')` dilepas dari satu baris, dan katalog merchant lain mendarat di perangkat yang salah tanpa satu pun error. Pemeriksaan isolasi karena itu harus menyentuh **setiap tabel** — kebocoran satu tabel tidak terlihat oleh pemeriksaan pada tabel lain.
+- ⛔ **Membangun ulang raw table lokal TIDAK memicu unduh ulang.** Checkpoint PowerSync hidup di tabel `ps_*`, terpisah dari tabel kami; `waitForFirstSync()` selesai dalam 0 ms dan **melaporkan sukses** sementara katalog kosong permanen. Setiap migrasi skema lokal yang menyentuh raw table wajib diikuti `disconnectAndClear()`.
+
+- ⛔ **Setiap kolom yang tipenya berbeda antara PostgreSQL dan skema lokal wajib punya `put` raw table yang DITULIS SENDIRI.** `put` yang disimpulkan PowerSync menyalin nilai apa adanya. Terukur pada `tax_rate.rate` (`numeric(6,4)` di server, `INTEGER` ×10000 di lokal): `0.1100` mendarat sebagai `0.11` — 10.000× terlalu kecil — **dan tersimpan sebagai `real` di kolom `INTEGER`** tanpa satu pun error, karena affinity SQLite hanya mengubah nilai bila lossless. Perbaikannya `CAST(ROUND(? * 10000) AS INTEGER)` di dalam `put`. Kolomnya tetap terlihat `INTEGER` di skema dan `typeof` JavaScript tetap `number`; hanya `typeof()` SQLite yang membedakannya.
+
+Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` menerima kunci inline; di produksi ia harus **asimetris** dan dicetak server kami.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
@@ -234,7 +269,6 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 
 | # | Pertanyaan | Memblokir |
 |---|---|---|
-| OQ-08 | Batas kredensial offline vs janji offline tak terbatas | F2 |
 | OQ-14 | Prototipe Tauri Android — printer Bluetooth + scanner HID | Rencana mobile |
 
 **Sudah diputuskan 1 Agustus 2026 — jangan tanyakan ulang, jangan perlakukan sebagai asumsi:**
@@ -242,6 +276,7 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 | # | Keputusan |
 |---|---|
 | OQ-09 | `VerticalProfile` **per outlet, mewarisi default tenant**. Pusat menetapkan standar, cabang boleh override. `vertical_profile.is_tenant_default` + partial unique index (`db/migrations/0015`); resolusi = `COALESCE(profil_outlet, profil_default_tenant)` |
+| OQ-08 | **Batas kredensial offline: 30 hari** (keputusan 7 Agustus 2026, memakai kompromi `research/12` § OQ-08). Perangkat yang melewati batas tetap dapat **menyelesaikan transaksi berjalan dan menutup shift**, tapi **tidak dapat membuka shift baru** sampai terhubung. Angkanya belum divalidasi ke merchant. `research/12` dan `research/13` belum disamakan — itu penyuntingan dokumen riset, bukan kewenangan agent |
 | OQ-15 | QRIS statis **dan** dinamis sama-sama didukung. Dinamis lewat API Midtrans + webhook (online-only); statis lewat QR cetak merchant + konfirmasi manual (**berfungsi offline**, wajib disertai kontrol anti-fraud di `spec-c`) |
 | — | Ambang otorisasi: diskon >20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale wajib alasan, PIN di atas 3×/shift · refund PIN manajer (tidak dapat diubah) · **void TANPA PIN manajer** — cukup alasan daftar tertutup + audit + restock otomatis. Baris void adalah **override eksplisit** terhadap `research/08` §3; konsekuensinya laporan exception FR-G5 naik jadi wajib. Angkanya `[ASUMSI]`, belum divalidasi ke merchant |
 | — | MFA wajib Owner v1 atau v1.1? | F5 |

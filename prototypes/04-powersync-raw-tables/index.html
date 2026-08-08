@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>Prototipe 04 — PowerSync memegang DB lokal, tabel kami raw</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 66rem; }
+      h1 { font-size: 20px; }
+      table { border-collapse: collapse; width: 100%; }
+      td { padding: 4px 10px 4px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+      td:first-child { width: 1.5rem; font-weight: 700; }
+      td:nth-child(2) { color: #555; }
+      td:last-child { font-variant-numeric: tabular-nums; }
+      #status { padding: 8px 0; color: #0D5C63; }
+    </style>
+  </head>
+  <body>
+    <h1>Prototipe 04 — PowerSync memegang DB lokal, 20 tabel kami sebagai raw table</h1>
+    <p>
+      Pembuktian, bukan fitur. Prototipe 03 §5c menjawab dua pertanyaan penentu
+      dari <em>pembacaan kode</em>; halaman ini menjalankannya. Yang membuktikan
+      invariant #1 bukan T2 (penjualan berhasil ditulis) melainkan
+      <strong>T3</strong> — penjualan yang gagal di pernyataan terakhir dan
+      tidak menyisakan satu baris pun.
+    </p>
+    <div id="status">menjalankan…</div>
+    <table id="hasil"></table>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

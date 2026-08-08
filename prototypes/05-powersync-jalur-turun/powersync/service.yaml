@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://unpkg.com/@powersync/service-schema@latest/json-schema/powersync-config.json
+
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_DATA_SOURCE_URI
+      sslmode: disable
+
+# PostgreSQL, bukan MongoDB. Didukung penuh, dan membuat seluruh stack ini
+# satu jenis database.
+storage:
+  type: postgresql
+  uri: !env PS_STORAGE_SOURCE_URI
+  sslmode: disable
+
+port: !env PS_PORT
+
+sync_config:
+  path: sync-config.yaml
+
+client_auth:
+  # JWKS INLINE dengan kunci simetris HS256.
+  #
+  # Demo resmi menjalankan satu container backend hanya untuk melayani
+  # endpoint JWKS. Untuk prototipe ini itu satu bagian bergerak tanpa
+  # pertanyaan yang dijawabnya, jadi kuncinya ditanam langsung.
+  #
+  # ⛔ INI BUKAN POLA PRODUKSI, DAN JANGAN PERNAH DISALIN KE apps/.
+  # Kunci simetris berarti siapa pun yang dapat MEMVERIFIKASI token juga dapat
+  # MEMBUAT-nya. Di produksi token dicetak server Fastify kami dengan kunci
+  # asimetris (RS256/EdDSA), dan klien tidak pernah memegang bahan rahasianya.
+  # Nilai di bawah sekali-pakai dan hanya mengikat ke localhost.
+  #
+  # `k` adalah base64url dari rahasia; lihat tools/token.mjs.
+  jwks:
+    keys:
+      - kty: oct
+        kid: prototipe-05
+        alg: HS256
+        k: cHJvdG90aXBlLTA1LWxvY2FsaG9zdC1zYWphLWphbmdhbi1kaXBha2FpLWRpLXByb2R1a3Np
+
+  audience: ["powersync-dev"]
+
+api:
+  tokens:
+    - prototipe-05-admin-token

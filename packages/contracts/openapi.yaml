@@ -1123,8 +1123,16 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [itemId, modifierListId, sortOrder]
+                required: [id, itemId, modifierListId, sortOrder]
                 properties:
+                  # Surrogate key yang dituntut PowerSync untuk raw table
+                  # (migrasi 0018). Di-generate server -- tabel ini tidak
+                  # pernah ditulis offline. Kunci alaminya tetap pasangan
+                  # (itemId, modifierListId), dan URL endpoint ini tetap
+                  # di-key oleh pasangan itu, bukan oleh id.
+                  #
+                  # Attach ulang mengembalikan id yang SAMA.
+                  id: { type: string }
                   itemId: { type: string }
                   modifierListId: { type: string }
                   sortOrder: { type: integer, minimum: 0, maximum: 2147483647 }
@@ -1330,6 +1338,15 @@ paths:
                 hlc: { type: string, nullable: true }
                 occurredAt: { type: string, format: date-time, nullable: true }
                 checkId: { type: string }
+                # FR-H6 -- total yang DIHITUNG KLIEN. Opsional, dan tidak
+                # pernah dipercaya: server tetap menghitung sendiri dan
+                # menyimpan hitungannya. Nilai ini hanya dibandingkan, dan
+                # selisihnya ditandai. Sengaja tanpa `type` --
+                # assertClientTotalValid (handlers/orders.ts) satu-satunya
+                # sumber kebenaran, pola sama dengan quantityMilli.
+                #
+                # Klien versi N-1 tidak mengirimnya, dan tidak boleh patah.
+                total: {}
                 lines:
                   type: array
                   minItems: 1
@@ -2178,6 +2195,12 @@ components:
         variationId: { type: string }
         quantityMilli: {}
         discountAmount: {}
+        # FR-H6 -- harga yang DIPAKAI KLIEN saat penjualan terjadi. Opsional.
+        # Ia bukan input perhitungan: server meresolusi harganya sendiri pada
+        # `occurred_at`. Gunanya hanya satu -- membedakan klien yang belum
+        # tersinkron (memakai harga yang PERNAH berlaku) dari selisih yang
+        # tidak dapat dijelaskan.
+        unitPrice: {}
         modifiers:
           type: array
           items:
@@ -2377,6 +2400,12 @@ components:
         roundingAdjustment: { type: integer }
         total: { type: integer }
         amountDue: { type: integer }
+        # FR-H6 -- true bila total klien berbeda dari hitungan server DAN
+        # selisihnya tidak dapat dijelaskan riwayat harga. Transaksinya tetap
+        # diterima: menolaknya berarti kehilangan penjualan yang uangnya sudah
+        # diterima merchant (spec-h:95).
+        hasCalculationVariance: { type: boolean }
+        varianceAmount: { type: integer, nullable: true }
         createdBy: { type: string }
         occurredAt: { type: string, format: date-time }
         recordedAt: { type: string, format: date-time }

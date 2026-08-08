@@ -32,10 +32,22 @@ CREATE TABLE modifier (
   price INTEGER NOT NULL DEFAULT 0, is_default INTEGER DEFAULT 0,
   sort_order INTEGER DEFAULT 0, archived_at TEXT
 );
+-- `id` ada karena PowerSync menolak raw table tanpanya ("Table X has no id
+-- column"), bukan karena kunci alaminya berubah. Kunci alaminya tetap
+-- pasangan (item_id, modifier_list_id), dan ux_item_modifier_list_pair yang
+-- menjaganya sejak primary key pindah. Sejajar dengan migrasi PostgreSQL 0018;
+-- bentuk lokal dan server HARUS sama, karena baris ini turun lewat sync.
+-- `NOT NULL` ditulis eksplisit, dan itu BUKAN redundan: di tabel rowid,
+-- SQLite mengizinkan NULL pada kolom PRIMARY KEY -- bug lama yang
+-- dipertahankan demi kompatibilitas. Tanpa baris ini, baris ber-id NULL
+-- diterima di perangkat sementara PostgreSQL menolaknya, dan selisih itu baru
+-- terlihat saat sync. Ditemukan oleh test, bukan oleh review.
 CREATE TABLE item_modifier_list (
-  item_id TEXT NOT NULL, modifier_list_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0,
-  PRIMARY KEY (item_id, modifier_list_id)
+  id TEXT PRIMARY KEY NOT NULL,
+  item_id TEXT NOT NULL, modifier_list_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0
 );
+CREATE UNIQUE INDEX ux_item_modifier_list_pair
+  ON item_modifier_list(item_id, modifier_list_id);
 CREATE TABLE tax_rate (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, outlet_id TEXT,
   name TEXT NOT NULL, type TEXT NOT NULL, rate INTEGER NOT NULL, -- rate x10000
@@ -133,11 +145,23 @@ CREATE TABLE audit_event (
 );
 
 -- ---------- LOKAL-ONLY ----------
+-- FR-H1. `depends_on` menunjuk `outbox_local.id` lain, dan ia bukan
+-- kenyamanan: spec menuntut urutan dependensi dihormati (shift sebelum order)
+-- SEKALIGUS item gagal tidak memblokir item independen. Tanpa penanda ini,
+-- satu-satunya cara memenuhi keduanya adalah membiarkan item yang bergantung
+-- gagal sendiri di server -- yang MEMBAKAR counter percobaannya, dan menandai
+-- order yang sempurna sebagai `failed` permanen hanya karena shift-nya lambat.
+--
+-- Sengaja TANPA foreign key. Item yang sudah terkirim boleh dipangkas kelak,
+-- dan FK akan menahan pemangkasan itu justru saat antrean paling perlu
+-- diringankan. Relay memperlakukan dependensi yang tidak ditemukan sebagai
+-- sudah selesai.
 CREATE TABLE outbox_local (
   id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
   operation TEXT NOT NULL, payload TEXT NOT NULL, idempotency_key TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER DEFAULT 0,
-  last_error TEXT, last_attempt_at TEXT, created_at TEXT NOT NULL
+  last_error TEXT, last_attempt_at TEXT, created_at TEXT NOT NULL,
+  depends_on TEXT
 );
 CREATE TABLE device_config (
   device_code TEXT PRIMARY KEY, outlet_id TEXT NOT NULL,

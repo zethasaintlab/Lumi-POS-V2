@@ -1,0 +1,7 @@
+{
+  "name": "sync-client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "FR-H1: antrean upload persisten (outbox_local + relay). Fungsi murni dengan waktu, keacakan, dan I/O di-inject -- tidak menyentuh browser, PowerSync, maupun jaringan secara langsung."
+}

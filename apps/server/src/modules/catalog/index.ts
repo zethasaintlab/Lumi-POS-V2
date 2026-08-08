@@ -9,7 +9,7 @@ import { createPriceHandlers } from './handlers/prices.ts';
 // order_line.unit_price (Modul B) adalah SNAPSHOT hasil resolvePrice --
 // Modul B WAJIB memanggil ini, bukan menghitung ulang tangga resolusi
 // sendiri atau mengakses price_history/item_variation langsung.
-export { resolvePrice } from './handlers/prices.ts';
+export { wasPriceEverEffective, resolvePrice } from './handlers/prices.ts';
 export type { ResolvedPrice } from './handlers/prices.ts';
 
 // T5 (PLAN-ordering-fondasi.md) -- lihat komentar getVariationSnapshot di

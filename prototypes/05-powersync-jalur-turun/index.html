@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>Prototipe 05 — jalur turun PowerSync ke raw table kami</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 70rem; }
+      h1 { font-size: 20px; }
+      table { border-collapse: collapse; width: 100%; }
+      td { padding: 4px 10px 4px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+      td:first-child { width: 1.5rem; font-weight: 700; }
+      td:nth-child(2) { color: #555; }
+      td:last-child { font-variant-numeric: tabular-nums; word-break: break-all; }
+      #status { padding: 8px 0; color: #0D5C63; }
+      code { background: #f4f4f4; padding: 1px 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>Prototipe 05 — jalur turun PowerSync ke raw table kami</h1>
+    <p>
+      Terhadap layanan PowerSync Open Edition <strong>self-hosted</strong>
+      (Docker Compose lokal), bukan cloud. Tenant: <strong id="tenant"></strong>.
+    </p>
+    <p>
+      Yang diuji bukan "sync berjalan" melainkan <strong>ke mana</strong> data
+      mendarat: tabel milik kami sendiri, bukan <code>ps_data__*</code> milik
+      PowerSync — dan <strong>hanya</strong> milik tenant yang tokennya dipakai.
+      Pada jalur turun, sync rules adalah satu-satunya batas tenant; role
+      replikasinya <code>BYPASSRLS</code>.
+    </p>
+    <div id="status">menjalankan…</div>
+    <table id="hasil"></table>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

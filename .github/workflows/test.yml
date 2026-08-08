@@ -68,6 +68,17 @@ jobs:
       # logika domain (state machine, aritmetika uang, HLC) gagal dalam
       # hitungan detik, bukan setelah menunggu seluruh suite ber-database.
       - run: npm run test:domain
+      # Gate F2 (ARCH s14): 0 transaksi hilang/duplikat di bawah fault
+      # injection, 10.000 iterasi. Tanpa database dan tanpa jaringan, jadi ia
+      # berjalan lebih dulu -- kalau protokolnya rusak, sisanya tidak perlu
+      # dijalankan.
+      - run: npm run test:dst
+      # FR-H1 -- antrean upload. Sekelas test:domain dan test:dst: tanpa
+      # database dan tanpa jaringan (SQLite in-memory + pengirim yang
+      # di-inject), termasuk property test 1.000 item dengan respons yang
+      # hilang. Berjalan lebih dulu karena ia cepat dan karena antrean yang
+      # rusak membuat sisa suite tidak menarik.
+      - run: npm run test:sync-client
 
       - run: npm run db:bootstrap
       - run: npm run db:migrate
@@ -77,6 +88,10 @@ jobs:
       - run: npm run test:server
       - run: npm run test:catalog
       - run: npm run test:ordering
+      # DST terhadap server + database SUNGGUHAN. Iterasinya jauh lebih sedikit
+      # daripada gate 10.000 di test:dst -- yang dicari di sini adalah IKATAN:
+      # bahwa implementasi mengikuti protokol yang sudah dibuktikan benar.
+      - run: npm run test:dst-server
       - run: npm run test:payment
 
       - run: npm run test:sqlite-local

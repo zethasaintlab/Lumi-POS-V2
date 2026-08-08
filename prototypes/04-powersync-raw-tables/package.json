@@ -1,0 +1,17 @@
+{
+  "name": "prototipe-powersync-raw-tables",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Prototipe pembuktian: PowerSync memegang database lokal, 20 tabel kami sebagai raw table. BUKAN bagian aplikasi -- lihat FINDINGS.md.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@powersync/web": "2.1.1"
+  },
+  "devDependencies": {
+    "vite": "^7.0.4"
+  }
+}

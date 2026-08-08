@@ -100,6 +100,71 @@ test('attachModifierList: idempoten -- attach dua kali tidak error (ON CONFLICT)
   assert.equal(rows[0].sort_order, 2);
 });
 
+// --- kolom `id` (migrasi 0018, prasyarat raw table PowerSync) ---
+
+test('attachModifierList mengembalikan id, dan id itu benar-benar tersimpan', async () => {
+  const itemId = await createItem();
+  const listId = await createModifierList();
+
+  const res = await req('POST', `/items/${itemId}/modifier-lists/${listId}`, {});
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.match(
+    body.id ?? '',
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    'respons harus memuat id berbentuk UUID'
+  );
+
+  // Respons saja tidak cukup: `fastify-openapi-glue` membuang field yang tidak
+  // dideklarasikan di skema, dan sebaliknya sebuah handler bisa mengembalikan
+  // id yang tidak pernah ditulis. Barisnya dibaca ulang lewat koneksi yang
+  // tunduk RLS.
+  const { rows } = await queryAsTenant(
+    tenant.id,
+    'SELECT id FROM item_modifier_list WHERE item_id = $1 AND modifier_list_id = $2',
+    [itemId, listId]
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, body.id, 'id di respons harus id yang tersimpan');
+});
+
+// Yang paling mudah salah dan paling mahal akibatnya.
+//
+// `ON CONFLICT ... DO UPDATE` menerbitkan id BARU kalau id ikut di-SET di
+// klausa DO UPDATE, atau kalau handler melakukan DELETE-lalu-INSERT. Baris
+// yang sudah tersinkron ke perangkat akan terlihat sebagai baris BERBEDA:
+// PowerSync menghapus yang lama dan menyisipkan yang baru, dan setiap
+// perangkat mengunduh ulang relasi yang sebenarnya tidak berubah.
+test('attach ulang mempertahankan id yang SAMA -- hanya sortOrder yang berubah', async () => {
+  const itemId = await createItem();
+  const listId = await createModifierList();
+
+  const first = JSON.parse((await req('POST', `/items/${itemId}/modifier-lists/${listId}`, { sortOrder: 1 })).body);
+  const second = JSON.parse((await req('POST', `/items/${itemId}/modifier-lists/${listId}`, { sortOrder: 2 })).body);
+
+  assert.equal(second.id, first.id, 'attach ulang tidak boleh menerbitkan id baru');
+  assert.equal(second.sortOrder, 2);
+
+  const { rows } = await queryAsTenant(
+    tenant.id,
+    'SELECT id, sort_order FROM item_modifier_list WHERE item_id = $1 AND modifier_list_id = $2',
+    [itemId, listId]
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, first.id);
+  assert.equal(rows[0].sort_order, 2);
+});
+
+test('id unik antar pasangan -- dua attach berbeda tidak berbagi id', async () => {
+  const listId = await createModifierList();
+  const itemA = await createItem();
+  const itemB = await createItem();
+
+  const a = JSON.parse((await req('POST', `/items/${itemA}/modifier-lists/${listId}`, {})).body);
+  const b = JSON.parse((await req('POST', `/items/${itemB}/modifier-lists/${listId}`, {})).body);
+  assert.notEqual(a.id, b.id);
+});
+
 test('satu ModifierList bisa dipakai banyak Item (FR-A1 acceptance criteria)', async () => {
   const listId = await createModifierList();
 
