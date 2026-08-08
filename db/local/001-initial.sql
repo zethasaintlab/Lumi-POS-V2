@@ -145,11 +145,23 @@ CREATE TABLE audit_event (
 );
 
 -- ---------- LOKAL-ONLY ----------
+-- FR-H1. `depends_on` menunjuk `outbox_local.id` lain, dan ia bukan
+-- kenyamanan: spec menuntut urutan dependensi dihormati (shift sebelum order)
+-- SEKALIGUS item gagal tidak memblokir item independen. Tanpa penanda ini,
+-- satu-satunya cara memenuhi keduanya adalah membiarkan item yang bergantung
+-- gagal sendiri di server -- yang MEMBAKAR counter percobaannya, dan menandai
+-- order yang sempurna sebagai `failed` permanen hanya karena shift-nya lambat.
+--
+-- Sengaja TANPA foreign key. Item yang sudah terkirim boleh dipangkas kelak,
+-- dan FK akan menahan pemangkasan itu justru saat antrean paling perlu
+-- diringankan. Relay memperlakukan dependensi yang tidak ditemukan sebagai
+-- sudah selesai.
 CREATE TABLE outbox_local (
   id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
   operation TEXT NOT NULL, payload TEXT NOT NULL, idempotency_key TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER DEFAULT 0,
-  last_error TEXT, last_attempt_at TEXT, created_at TEXT NOT NULL
+  last_error TEXT, last_attempt_at TEXT, created_at TEXT NOT NULL,
+  depends_on TEXT
 );
 CREATE TABLE device_config (
   device_code TEXT PRIMARY KEY, outlet_id TEXT NOT NULL,

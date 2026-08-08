@@ -73,6 +73,12 @@ jobs:
       # berjalan lebih dulu -- kalau protokolnya rusak, sisanya tidak perlu
       # dijalankan.
       - run: npm run test:dst
+      # FR-H1 -- antrean upload. Sekelas test:domain dan test:dst: tanpa
+      # database dan tanpa jaringan (SQLite in-memory + pengirim yang
+      # di-inject), termasuk property test 1.000 item dengan respons yang
+      # hilang. Berjalan lebih dulu karena ia cepat dan karena antrean yang
+      # rusak membuat sisa suite tidak menarik.
+      - run: npm run test:sync-client
 
       - run: npm run db:bootstrap
       - run: npm run db:migrate

@@ -116,3 +116,34 @@ test('item_modifier_list: SQLite MENOLAK pasangan ganda dengan id berbeda', () =
     'pasangan ganda tersimpan di database lokal'
   );
 });
+
+// --- outbox_local: kolom depends_on (FR-H1) ---
+//
+// Spec menuntut dua hal yang saling menarik: urutan dependensi dihormati
+// (shift sebelum order), TAPI item gagal tidak memblokir item independen.
+//
+// Tanpa penanda dependensi, satu-satunya cara memenuhi keduanya adalah
+// membiarkan item yang bergantung gagal sendiri di server -- dan itu
+// MEMBAKAR counter percobaannya. Order yang sempurna bisa mencapai batas 20
+// percobaan dan ditandai `failed` permanen hanya karena shift-nya lambat
+// terkirim.
+
+test('outbox_local: kolom depends_on ada dan nullable', () => {
+  const cols = db.prepare('PRAGMA table_info(outbox_local)').all();
+  const byName = Object.fromEntries(cols.map((c) => [c.name, c]));
+
+  assert.ok(byName.depends_on, 'kolom depends_on harus ada');
+  assert.equal(
+    byName.depends_on.notnull,
+    0,
+    'depends_on harus nullable -- sebagian besar item tidak bergantung pada apa pun'
+  );
+});
+
+test('outbox_local: ix_outbox_status melayani pemilihan batch (status, created_at)', () => {
+  const idx = db.prepare('PRAGMA index_list(outbox_local)').all();
+  const status = idx.find((i) => i.name === 'ix_outbox_status');
+  assert.ok(status, 'ix_outbox_status harus ada');
+  const cols = db.prepare(`PRAGMA index_info("ix_outbox_status")`).all().map((c) => c.name);
+  assert.deepEqual(cols, ['status', 'created_at']);
+});
