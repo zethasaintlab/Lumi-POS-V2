@@ -19,6 +19,7 @@ Prototipe 04 menutup dengan satu kalimat: *"jalur turun belum pernah dijalankan.
 | Sinkronisasi pertama | **76–178 ms** untuk 7 baris |
 | MongoDB dibutuhkan | **TIDAK** — PostgreSQL dipakai sebagai bucket storage |
 | **Menghapus tabel lokal memicu unduh ulang** | **TIDAK — dan ini bahaya produksi.** §5 |
+| `tax_rate.rate` mendarat sesuai konvensi ×10000 | **TIDAK, sebelum diperbaiki** — 0,11 bukan 1100, dan tersimpan sebagai `real` di kolom `INTEGER`. §5b |
 
 ---
 
@@ -132,6 +133,63 @@ Yang memulihkannya hanya `disconnectAndClear()`. Karena itu setiap migrasi skema
 
 ---
 
+## 5b. ⛔ Jalur uang: `numeric(6,4)` server → `INTEGER` ×10000 lokal
+
+Diangkat sebagai "belum diuji" pada versi pertama dokumen ini. Diuji, dan **ternyata cacat**.
+
+`tax_rate.rate` adalah `numeric(6,4)` di PostgreSQL dan `INTEGER` berskala ×10000 di skema lokal (11% → `1100`). Pernyataan `put` yang **disimpulkan** PowerSync menyalin nilai apa adanya — ia tidak tahu apa pun tentang konvensi kami.
+
+Yang benar-benar mendarat, terukur:
+
+| Tarif di PostgreSQL | Seharusnya | Yang mendarat | Tipe simpan SQLite |
+|---|---|---|---|
+| `0.1100` | `1100` | `0.11` | **real** |
+| `0.1075` | `1075` | `0.1075` | **real** |
+| `0.0825` | `825` | `0.0825` | **real** |
+| `0.0001` | `1` | `0.0001` | **real** |
+
+**Dua akibat, dan yang kedua lebih buruk daripada yang pertama:**
+
+1. Tarifnya **10.000× terlalu kecil** — setiap pajak salah hitung.
+2. Jalur uang menyimpan **float**, yang dilarang di seluruh repo ini. Kolomnya dideklarasikan `INTEGER` dan SQLite tetap menerimanya **tanpa error**, karena affinity hanya mengubah nilai bila konversinya lossless.
+
+Yang kedua adalah kelas kegagalan yang lebih berbahaya: kolomnya *terlihat* `INTEGER` di skema, `typeof` JavaScript sama-sama mengatakan `number`, dan tidak ada apa pun yang mengeluh. Hanya `typeof()` SQLite yang membedakannya — dan itulah kenapa T6b ada terpisah dari T6.
+
+### Perbaikannya: `put` ditulis sendiri, bukan disimpulkan
+
+```js
+tax_rate: {
+  schema: { tableName: 'tax_rate' },
+  put: {
+    sql: `INSERT OR REPLACE INTO tax_rate (…, rate, …)
+          VALUES (…, CAST(ROUND(? * 10000) AS INTEGER), …)`,
+    params: ['Id', …, { Column: 'rate' }, …],
+  },
+  delete: { sql: 'DELETE FROM tax_rate WHERE id = ?', params: ['Id'] },
+}
+```
+
+`ROUND` diperlukan karena nilainya sudah menjadi double dalam perjalanan: `0.1075 × 10000` menghasilkan `1075.0000000000002`. Untuk `numeric(6,4)`, nilai terbesarnya `99.9999` → `999999` — jauh di dalam jangkauan integer eksak double, jadi `ROUND` selalu memulihkan angka yang benar.
+
+Setelah perbaikan, keempat tarif mendarat sebagai `1100 / 1075 / 825 / 1`, bertipe SQLite `integer`.
+
+### Yang membuat ini lebih besar dari satu kolom
+
+Konversi tipe lintas-database jarang salah hanya di satu tempat. Seluruh kolom `tax_rate` karena itu diperiksa, bukan hanya `rate` (T6c):
+
+| Kolom | PostgreSQL | Mendarat sebagai | Nilai |
+|---|---|---|---|
+| `is_inclusive` | `boolean` | `integer` | `1` ✓ |
+| `effective_from` | `timestamptz` | `text` | `2026-08-08T01:46:45.278735Z` ✓ |
+| `applies_to_ids` | `text[]` | `text` | `"[]"` — JSON, bukan array PostgreSQL |
+| `outlet_id` / `jurisdiction` | `text NULL` | `null` | ✓ |
+
+Hanya `rate` yang salah. Tapi aturannya sekarang jelas dan berlaku ke depan: **setiap kolom yang tipenya berbeda antara server dan skema lokal wajib punya `put` yang ditulis sendiri.** Yang disimpulkan hanya benar bila kedua sisi sepakat.
+
+Kolom lain yang perlu diperiksa dengan mata yang sama saat jalur turun diperluas: `item_variation.conversion_factor`, `quantity` di mana pun (×1000), dan `outlet.service_charge_rate` (×10000, sejajar dengan `tax_rate.rate`).
+
+---
+
 ## 6. Batas temuan ini
 
 - **Satu lingkungan**: Chromium desktop, Windows 11, Docker Desktop. Android/iOS belum.
@@ -140,7 +198,7 @@ Yang memulihkannya hanya `disconnectAndClear()`. Karena itu setiap migrasi skema
 - **Healthcheck container HIJAU sementara replikasi GAGAL.** Saat publication belum ada, `/probes/liveness` tetap 200 dan Compose melaporkan `healthy`. Liveness tidak mencerminkan kesehatan replikasi — jangan pakai ia sebagai sinyal kesiapan.
 - **Perilaku saat sync rules berubah pada klien yang sudah tersinkron** belum diuji secara sistematis; di sini selalu didahului `disconnectAndClear()`.
 - **Konflik tulis** tidak diuji: jalur turun kami read-only di perangkat.
-- **`tax_rate.rate`** turun sebagai `numeric` PostgreSQL ke kolom `INTEGER` lokal. Belum diperiksa apakah pembulatannya sesuai konvensi `×10000` kami. **Diangkat, bukan diuji.**
+- **Kolom lintas-tipe selain `tax_rate.rate` belum diperiksa.** Aturannya sudah jelas (§5b), tapi `conversion_factor`, `quantity`, dan `outlet.service_charge_rate` belum ikut turun di fase ini, jadi belum ada yang mengujinya.
 
 ---
 

@@ -106,12 +106,28 @@ async function seedTenant(client, t) {
      ON CONFLICT ON CONSTRAINT ux_item_modifier_list_pair DO UPDATE SET sort_order = 0`,
     [id('iml'), t.id, id('item'), id('ml')]
   );
-  await client.query(
-    `INSERT INTO tax_rate (id, tenant_id, name, type, rate, is_inclusive, effective_from)
-     VALUES ($1, $2, 'PPN', 'ppn', 0.1100, true, now())
-     ON CONFLICT (id) DO UPDATE SET rate = EXCLUDED.rate`,
-    [id('tax'), t.id]
-  );
+  // Tarif pajak, dan sengaja LEBIH DARI SATU.
+  //
+  // `tax_rate.rate` adalah `numeric(6,4)` di PostgreSQL tapi `INTEGER` di
+  // skema lokal, dengan konvensi ×10000 (11% -> 1100). Satu nilai saja tidak
+  // cukup untuk melihat apakah konversinya benar: 0.1100 bisa lolos karena
+  // kebetulan, sementara 0.1075 (empat desimal signifikan) dan 0.0825
+  // memperlihatkan pembulatan yang merusak. Ini jalur uang — pembulatan yang
+  // salah di sini mengubah pajak setiap transaksi.
+  const tarif = [
+    ['tax', 'PPN 11%', 0.11],
+    ['tax-1075', 'PBJT 10,75%', 0.1075],
+    ['tax-0825', 'Uji 8,25%', 0.0825],
+    ['tax-0001', 'Uji 0,01%', 0.0001],
+  ];
+  for (const [suffix, nama, nilai] of tarif) {
+    await client.query(
+      `INSERT INTO tax_rate (id, tenant_id, name, type, rate, is_inclusive, effective_from)
+       VALUES ($1, $2, $3, 'ppn', $4, true, now())
+       ON CONFLICT (id) DO UPDATE SET rate = EXCLUDED.rate, name = EXCLUDED.name`,
+      [id(suffix), t.id, nama, nilai]
+    );
+  }
 }
 
 async function main() {
