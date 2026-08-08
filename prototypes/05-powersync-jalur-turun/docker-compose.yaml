@@ -1,0 +1,97 @@
+# Stack PowerSync Open Edition, self-hosted dan self-contained.
+#
+# Tiga container, dan TIDAK ada MongoDB: PowerSync menerima PostgreSQL sebagai
+# bucket storage, jadi seluruh stack ini satu jenis database. Satu bagian
+# bergerak lebih sedikit untuk dipahami dan di-debug.
+#
+# Kredensial di berkas ini SENGAJA ditulis apa adanya dan SENGAJA di-commit.
+# Semuanya sekali-pakai, hanya mengikat ke localhost, dan tidak satu pun
+# dipakai di luar prototipe ini. Menaruhnya di .env justru membuat prototipe
+# ini tidak dapat dijalankan ulang oleh orang lain tanpa tebak-tebakan.
+#
+# PORT: 5432 sudah dipakai PostgreSQL pengembangan di mesin ini, jadi seluruh
+# port host digeser. Container tetap memakai 5432 di jaringan internalnya.
+
+name: lumi-prototipe-05
+
+services:
+  # Sumber replikasi -- ini yang memegang skema Lumi POS (migrasi 0001-0018).
+  pg-db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    # wal_level=logical adalah syarat replikasi logis; tanpanya PowerSync
+    # tidak dapat membuat replication slot dan gagal saat boot, bukan diam.
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=8"]
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - pg_db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lumi"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Bucket storage PowerSync. Terpisah dari sumber -- ia menyimpan data dan
+  # metadata bucket, bukan data kami.
+  pg-storage:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: powersync_storage
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg_storage_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d powersync_storage"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  powersync:
+    image: journeyapps/powersync-service:latest
+    restart: unless-stopped
+    depends_on:
+      pg-db:
+        condition: service_healthy
+      pg-storage:
+        condition: service_healthy
+    command: ["start", "-r", "unified"]
+    volumes:
+      - ./powersync:/config:ro
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      # Hostname-nya nama service Compose, bukan localhost -- container
+      # berbicara lewat jaringan Compose.
+      #
+      # `powersync_role` BUKAN superuser, tapi ia BYPASSRLS (lihat
+      # init/02-powersync-role.sql). Itu bukan kelalaian konfigurasi
+      # melainkan tuntutan replikasi logis, dan konsekuensinya diuji di T4.
+      PS_DATA_SOURCE_URI: postgres://powersync_role:powersync@pg-db:5432/lumi
+      PS_STORAGE_SOURCE_URI: postgres://postgres:postgres@pg-storage:5432/powersync_storage
+      PS_PORT: "8080"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:8080/probes/liveness').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  pg_db_data:
+  pg_storage_data:

@@ -22,6 +22,17 @@
         "prototipe-powersync-raw-tables"
       ],
       "port": 5174
+    },
+    {
+      "name": "prototipe-jalur-turun",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "prototipe-powersync-jalur-turun"
+      ],
+      "port": 5175
     }
   ]
 }

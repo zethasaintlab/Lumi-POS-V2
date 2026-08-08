@@ -232,7 +232,12 @@ Dibuktikan dengan menjalankan kode, bukan membaca dokumentasi — `prototypes/04
 
 **Harganya terukur, dan bukan nol:** 12,33 ms per penjualan versus 3,25 ms lewat driver mentah — 3,8×. Terbukti **bukan** karena raw table. Masih jauh di bawah ambang yang terlihat kasir, tapi angka itu dari mesin pengembangan.
 
-**Jalur turun belum pernah dijalankan.** Prototipe 04 tidak terhubung ke layanan PowerSync mana pun.
+**Jalur turun sudah dijalankan** terhadap PowerSync Open Edition self-hosted — `prototypes/05-powersync-jalur-turun/FINDINGS.md`. Katalog turun ke raw table kami, `item_modifier_list` utuh, perubahan berjalan sampai tanpa reload. Dua hal dari sana **mengikat kode klien**, dan keduanya tidak terlihat sampai diuji:
+
+- ⛔ **Sync rules adalah SATU-SATUNYA batas tenant pada jalur turun.** Role replikasi wajib `BYPASSRLS` — replikasi logis membaca WAL, dan RLS tidak berlaku di sana. Invariant #8 tidak menjaga apa pun pada jalur ini. Sabotase membuktikannya: satu `WHERE tenant_id = auth.parameter('tenant_id')` dilepas dari satu baris, dan katalog merchant lain mendarat di perangkat yang salah tanpa satu pun error. Pemeriksaan isolasi karena itu harus menyentuh **setiap tabel** — kebocoran satu tabel tidak terlihat oleh pemeriksaan pada tabel lain.
+- ⛔ **Membangun ulang raw table lokal TIDAK memicu unduh ulang.** Checkpoint PowerSync hidup di tabel `ps_*`, terpisah dari tabel kami; `waitForFirstSync()` selesai dalam 0 ms dan **melaporkan sukses** sementara katalog kosong permanen. Setiap migrasi skema lokal yang menyentuh raw table wajib diikuti `disconnectAndClear()`.
+
+Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` menerima kunci inline; di produksi ia harus **asimetris** dan dicetak server kami.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 

@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://unpkg.com/@powersync/service-sync-rules@latest/schema/sync_rules.json
+#
+# ⛔ BERKAS INI ADALAH SATU-SATUNYA BATAS TENANT PADA JALUR TURUN.
+#
+# `powersync_role` punya BYPASSRLS (init/02-powersync-role.sql), dan replikasi
+# logis membaca WAL — RLS tidak berlaku sama sekali di sana. Tidak ada lapisan
+# kedua di belakang berkas ini. Satu `WHERE tenant_id` yang lupa ditulis
+# mengirim katalog satu merchant ke perangkat merchant lain, dan tidak ada
+# apa pun di sistem yang akan menahannya.
+#
+# Itulah kenapa T5 di prototipe ini melepas satu klausa dengan sengaja dan
+# mengukur apa yang bocor.
+#
+# `auth.parameter('tenant_id')` membaca klaim top-level dari JWT yang SUDAH
+# diverifikasi terhadap kunci tepercaya. Klaim dari klien yang tidak
+# diverifikasi tersedia lewat `subscription.parameter(...)` — JANGAN pakai itu
+# untuk batas tenant; namanya sendiri sudah memperingatkan.
+
+config:
+  edition: 3
+
+streams:
+  # Jalur turun v1 membawa KATALOG saja. Tabel transaksi naik lewat
+  # `outbox_local` + REST idempoten dan tidak pernah turun di fase ini —
+  # memasukkannya ke sini berarti setiap penjualan melewati WAL decoding
+  # tanpa ada yang membutuhkannya.
+  katalog:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM category WHERE tenant_id = auth.parameter('tenant_id')
+      - SELECT * FROM item WHERE tenant_id = auth.parameter('tenant_id')
+      - SELECT * FROM item_variation WHERE tenant_id = auth.parameter('tenant_id')
+      - SELECT * FROM modifier_list WHERE tenant_id = auth.parameter('tenant_id')
+      - SELECT * FROM modifier WHERE tenant_id = auth.parameter('tenant_id')
+      - SELECT * FROM item_modifier_list WHERE tenant_id = auth.parameter('tenant_id')
+      - SELECT * FROM tax_rate WHERE tenant_id = auth.parameter('tenant_id')

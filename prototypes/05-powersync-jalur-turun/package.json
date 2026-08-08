@@ -1,0 +1,22 @@
+{
+  "name": "prototipe-powersync-jalur-turun",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Prototipe pembuktian jalur turun PowerSync ke raw table kami, terhadap layanan self-hosted. BUKAN bagian aplikasi -- lihat FINDINGS.md.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "stack:up": "docker compose up -d",
+    "stack:down": "docker compose down",
+    "stack:bersih": "docker compose down -v",
+    "siapkan": "node tools/siapkan.mjs"
+  },
+  "dependencies": {
+    "@powersync/web": "2.1.1"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1",
+    "vite": "^7.0.4"
+  }
+}

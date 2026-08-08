@@ -7,7 +7,8 @@
     "apps/*",
     "packages/*",
     "prototypes/03-sqlite-opfs",
-    "prototypes/04-powersync-raw-tables"
+    "prototypes/04-powersync-raw-tables",
+    "prototypes/05-powersync-jalur-turun"
   ],
   "engines": {
     "node": ">=22.18"
