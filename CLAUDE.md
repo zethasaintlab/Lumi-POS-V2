@@ -255,6 +255,16 @@ Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` mene
 - **`uploadData` connector GAGAL KERAS bila antrean CRUD PowerSync tidak kosong.** Ia seharusnya selalu kosong (trigger tidak dipasang); kalau tidak, jalur naik kedua sudah lahir tanpa disengaja.
 - **Token PowerSync tidak pernah dicetak di klien.** Ia diminta ke server (Modul F). Ada test yang memindai seluruh `apps/kasir/src` untuk operasi penandatanganan.
 - **`AppShell` bukan untuk kasir.** IA §2.1: "Kasir tidak punya sidebar." Penggantinya `ShellKasir`.
+- **`<Button>` design system TIDAK boleh menerima `onClick` atau `disabled`.** `_adherence.oxlintrc.json` membatasi propsnya ke `variant`/`critical`/`fullWidth`/`className`/`style`, dan `lint:ds` menolak sisanya — meski komponennya me-spread `...rest` dan akan bekerja. Tombol interaktif memakai `apps/kasir/src/Tombol.tsx`, yang merender `<button className="btn btn-…">` persis seperti `SyncIndicator` sendiri melakukannya.
+
+**FR-H2 & FR-H3 selesai, 8 Agustus 2026** (`docs/superpowers/plans/PLAN-status-sinkronisasi.md`). Indikator di topbar tersambung ke antrean sungguhan dan dapat diklik menuju K-14; layar K-14 menampilkan jumlah, umur tertua, daftar gagal ber-halaman, penggunaan storage, dan ekspor darurat.
+
+- **Latensi indikator 1–2 ms lewat `pemberitahu`, 980 ms lewat `watch()`** — diukur terhadap DOM sungguhan di `harness-h2.html`. AC `spec-h:224` (< 1 detik) hanya terpenuhi lewat jalur pertama.
+- **Konsol devtools tidak dapat dipakai mengukur apa pun yang menyentuh singleton modul.** `import()` dari konsol mendapat instance modul KEDUA (Vite `?t=` setelah HMR), jadi `buka()` memoisasi terpisah dan pengukurannya diam-diam berpindah ke jalur lain. Terbukti dari `jumlahPelanggan: 0`.
+- **`setTimeout` di-clamp ~1.000 ms di tab yang tidak di depan.** Setiap pengukuran latensi di browser wajib memakai `MutationObserver`, bukan poll timer — poll 10 ms melaporkan 991 ms untuk sesuatu yang sebenarnya 1 ms.
+- **Teks `failed` design system hanya lengkap bila `onRetry` diberikan.** "Coba lagi" adalah tombol di dalam komponen, bukan label; tanpanya `spec-h:216` tidak terpenuhi. Karena itu pembungkus indikator `span role="button"` — tombol di dalam tombol tidak sah.
+- **`tertuaPada` dihitung HANYA dari item yang belum terkirim.** Dari seluruh baris, satu item lama yang sudah `sent` membuat antrean sehat terbaca berumur satu hari — dan `spec-h:302` memakai umur itu sebagai ambang 4/24/72 jam.
+- **Status per-record memakai aturan terburuk-menang.** Satu order punya beberapa baris outbox (`payment` dan `order_cancel` memakai `entity_id` yang sama); order yang pembayarannya gagal terkirim tidak boleh terlihat `ok`.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 

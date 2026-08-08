@@ -22,6 +22,22 @@ export type { Penjadwal, DepsPenjadwal } from './penjadwal.ts';
 export { buatPemberitahu } from './pemberitahu.ts';
 export type { Pemberitahu } from './pemberitahu.ts';
 
+// FR-H2 & FR-H3 -- keputusan tampilan status, bukan tampilannya sendiri.
+export {
+  ringkasanAntrean,
+  keadaanIndikator,
+  teksIndikator,
+  statusRecord,
+  statusRecordBanyak,
+  pesanGagal,
+  umurRelatif,
+  daftarGagal,
+  buatEksporDarurat,
+  PER_HALAMAN,
+  formatUkuran,
+} from './status.ts';
+export type { RingkasanAntrean, KeadaanIndikator, StateIndikator, HalamanGagal } from './status.ts';
+
 export { buatPengirimHttp } from './http.ts';
 export type { KonfigHttp } from './http.ts';
 

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Icon, SyncIndicator } from 'ds';
+import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
 import { TABEL_RUTE, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
+import { useAntrean } from './konteks/useAntrean.ts';
 
 /* Kerangka aplikasi kasir.
 
@@ -26,6 +28,8 @@ interface Props {
 
 export function ShellKasir({ outlet, device, pengguna, ruteAktif, children }: Props) {
   const [menuTerbuka, setMenuTerbuka] = useState(false);
+  const { ringkasan, siap } = useAntrean();
+  const indikator = keadaanIndikator(ringkasan);
 
   return (
     <div className="kasir-shell">
@@ -38,13 +42,44 @@ export function ShellKasir({ outlet, device, pengguna, ruteAktif, children }: Pr
 
         <span className="grow" />
 
-        {/* Belum tersambung ke data antrean -- itu FR-H2, dan menyambungkannya
-            di sini berarti mengerjakannya sambil menyebutnya pondasi.
-            `offline-only` dipilih justru karena ia MENYATAKAN keadaan yang
-            sebenarnya (aturan design system #5: status tidak pernah warna
-            saja) alih-alih menampilkan "Tersinkron" yang tidak diketahui
-            siapa pun benar. */}
-        <SyncIndicator state="offline-only" reason="Status sinkronisasi belum tersambung" />
+        {/* FR-H2. `IA:114`: indikator ini adalah ENTRY POINT ke K-14, dan
+            relasinya harus eksplisit -- "indikator yang tidak dapat diklik
+            membuat kasir tidak tahu harus berbuat apa".
+
+            Selama database belum siap, yang ditampilkan `offline-only`
+            beserta alasannya: aturan design system #5 melarang status yang
+            hanya warna, dan "Tersinkron" saat kita belum bisa membaca antrean
+            adalah klaim yang tidak diketahui siapa pun benar. */}
+        {/* `span role="button"`, BUKAN `<button>`: pada state `failed`,
+            `SyncIndicator` merender tombol "Coba lagi" miliknya sendiri, dan
+            tombol di dalam tombol adalah HTML tidak sah. Keduanya menuju
+            tempat yang sama (K-14), jadi tidak ada aksi yang hilang. */}
+        <span
+          role="button"
+          tabIndex={0}
+          className="kasir-indikator"
+          aria-label="Buka Status Sinkronisasi"
+          onClick={() => navigasi('/sync')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              navigasi('/sync');
+            }
+          }}
+        >
+          {siap ? (
+            <SyncIndicator
+              state={indikator.state}
+              count={indikator.count}
+              // `spec-h:216` menuliskan teks gagal utuh: "Gagal kirim (2) ·
+              // Coba lagi". Bagian "Coba lagi" hanya muncul bila `onRetry`
+              // diberikan -- ia tombol di dalam komponen, bukan label.
+              onRetry={indikator.state === 'failed' ? () => navigasi('/sync') : undefined}
+            />
+          ) : (
+            <SyncIndicator state="offline-only" reason="Antrean belum dapat dibaca" />
+          )}
+        </span>
 
         <button
           type="button"

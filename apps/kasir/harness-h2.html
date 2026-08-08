@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Harness FR-H2 — Lumi POS</title>
+    <style>
+      #laporan { font: 14px/1.6 system-ui, sans-serif; margin: 16px; }
+      #laporan table { border-collapse: collapse; margin-top: 8px; }
+      #laporan td { border-bottom: 1px solid #ddd; padding: 3px 12px 3px 0; }
+      #laporan td:first-child { font-weight: 600; }
+      #app { border-top: 2px solid #999; }
+    </style>
+  </head>
+  <body>
+    <div id="laporan">
+      <h1 style="font-size: 16px">FR-H2 — latensi indikator (spec-h:224: &lt; 1 detik)</h1>
+      <p id="status">memuat…</p>
+      <table><tbody id="hasil"></tbody></table>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/harness/h2.tsx"></script>
+  </body>
+</html>
