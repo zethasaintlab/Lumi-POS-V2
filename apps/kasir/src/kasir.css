@@ -1,0 +1,41 @@
+/* Kerangka aplikasi kasir.
+
+   Ada di sini, bukan sebagai `style={{...}}` di komponen, karena aturan design
+   system #6 menuntut styling lewat token — dan `_adherence.oxlintrc.json`
+   menegakkannya terhadap TSX. Nilai hairline `1px` ditulis persis seperti
+   `ds-bundle/components.css` menulisnya; sisanya token.
+
+   Ini BUKAN sistem styling baru: hanya dua kelas layout untuk elemen yang
+   design system memang tidak punya, karena `AppShell` adalah kerangka
+   back-office dan IA §2.1 melarang memakainya di kasir. */
+
+.kasir-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.kasir-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex: none;
+}
+
+.kasir-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.kasir-konten {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

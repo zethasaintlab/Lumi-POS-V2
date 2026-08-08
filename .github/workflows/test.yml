@@ -79,6 +79,12 @@ jobs:
       # hilang. Berjalan lebih dulu karena ia cepat dan karena antrean yang
       # rusak membuat sisa suite tidak menarik.
       - run: npm run test:sync-client
+      # Pondasi apps/kasir. Semuanya modul murni yang dimuat langsung dengan
+      # --experimental-strip-types: tabel rute, skema raw table, keputusan
+      # migrasi lokal, adapter DbLokal. Yang TIDAK dapat diuji di sini -- OPFS,
+      # Web Worker, writeTransaction PowerSync, watch() -- dijalankan lewat
+      # harness browser (`apps/kasir/harness.html`), manual, seperti prototipe.
+      - run: npm run test:kasir
 
       - run: npm run db:bootstrap
       - run: npm run db:migrate

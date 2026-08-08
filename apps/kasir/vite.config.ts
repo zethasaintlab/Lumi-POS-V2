@@ -28,6 +28,13 @@ export default defineConfig(async () => ({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+    // `db/local/001-initial.sql` diimpor dengan `?raw` dan letaknya di akar
+    // repo, di luar root Vite. Tanpa baris ini `vite dev` menolak melayaninya
+    // dengan 403 -- dan gejalanya adalah database lokal yang tidak pernah
+    // terpasang, bukan pesan yang menyebut berkasnya.
+    fs: {
+      allow: ["../.."],
+    },
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",
@@ -53,4 +60,12 @@ export default defineConfig(async () => ({
   // bukan kegagalannya melainkan waktunya: ia muncul saat build rilis, jauh
   // setelah pengembangan sehari-hari menyatakan semuanya beres.
   worker: { format: "es" },
+
+  // Sama seperti prototipe 04/05. Tanpa ini, pre-bundling Vite menulis ulang
+  // `@powersync/web` dan worker-nya tidak lagi dapat diambil:
+  // "Failed to fetch a worker script", diikuti "[PowerSync]: Error in database
+  // or sync worker". Diamati langsung saat harness pertama kali dijalankan.
+  optimizeDeps: {
+    exclude: ["@powersync/web", "@journeyapps/wa-sqlite"],
+  },
 }));

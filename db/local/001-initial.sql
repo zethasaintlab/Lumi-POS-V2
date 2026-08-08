@@ -168,6 +168,20 @@ CREATE TABLE device_config (
   receipt_sequence INTEGER DEFAULT 0, sequence_business_date TEXT,
   hlc_state INTEGER DEFAULT 0, last_sync_at TEXT
 );
+-- Sidik jari bentuk raw table pada saat skema terakhir dipasang di perangkat
+-- ini. Ia menggantikan nomor versi yang ditulis tangan, dan alasannya bukan
+-- kerapian: nomor versi harus DIINGAT untuk dinaikkan, dan yang lupa dinaikkan
+-- menghasilkan tepat keadaan paling berbahaya di jalur turun -- tabel dibangun
+-- ulang tanpa `disconnectAndClear()`, katalog kosong permanen, dan
+-- `waitForFirstSync()` melaporkan sukses dalam 0 ms.
+--
+-- Satu baris, dipaksa oleh CHECK. Murni lokal: PowerSync tidak boleh tahu ia
+-- ada, sama seperti `outbox_local`.
+CREATE TABLE skema_lokal (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  sidik_raw_table TEXT NOT NULL,
+  dipasang_pada TEXT NOT NULL
+);
 
 -- ---------- INDEX (dari ERD §15) ----------
 CREATE INDEX ix_order_outlet_date   ON "order"(tenant_id, outlet_id, business_date);

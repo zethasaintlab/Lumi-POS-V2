@@ -241,6 +241,19 @@ Dibuktikan dengan menjalankan kode, bukan membaca dokumentasi — `prototypes/04
 
 Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` menerima kunci inline; di produksi ia harus **asimetris** dan dicetak server kami.
 
+**Pondasi `apps/kasir` berdiri, 8 Agustus 2026** (`docs/superpowers/plans/PLAN-pondasi-kasir.md`). Kerangka penuh, nol layar fitur: router buatan sendiri dari IA §7, shell kasir, skema raw table + penjaga drift, migrasi lokal, adapter `DbLokal`, dan penjadwal relay. Semuanya modul murni yang diuji `node --test`; yang hanya browser dapat buktikan dijalankan lewat `apps/kasir/harness.html`.
+
+**Yang mengikat kode klien, dan tidak terlihat sampai dijalankan:**
+
+- ⛔ **PowerSync menyimpan database lokal di IndexedDB, bukan OPFS.** `@powersync/web@2.1.1` default-nya `WASQLiteVFS.IDBBatchAtomicVFS`. Prototipe 04/05 tidak pernah menyetel `vfs`, jadi **seluruh angkanya angka IndexedDB** — termasuk 12,33 ms dan perbandingan 3,8×. Angka prototipe 03 (`opfs-sahpool`) datang dari pustaka berbeda dan **tidak sebanding**. Pilihan VFS belum diambil.
+- **Setiap raw table punya `put` yang ditulis sendiri, termasuk tabel yang seluruh kolomnya sepakat.** Kalau hanya tabel bermasalah yang punya, kolom berskala yang ditambahkan kelak ke tabel "aman" diam-diam kembali memakai jalur yang disimpulkan. Perbandingan DDL PostgreSQL vs SQLite menemukan **dua kolom lagi** berbentuk cacat yang sama dengan `tax_rate.rate`: `item_variation.conversion_factor` (`numeric` → `INTEGER` ×1000) dan `order_line.tax_rate` (`numeric(6,4)` → ×10000). Keduanya belum pernah turun; keduanya akan salah.
+- **Versi skema lokal adalah sidik jari, bukan nomor.** Dihitung dari nama + kolom raw table, disimpan di `skema_lokal`. Nomor versi harus diingat untuk dinaikkan; yang lupa dinaikkan menghasilkan tepat keadaan paling berbahaya di jalur turun.
+- **Rencana DDL tidak pernah men-drop tabel murni lokal.** `outbox_local` adalah antrean penjualan yang belum terkirim; men-drop-nya saat migrasi menghapus uang merchant yang tidak tercatat di mana pun.
+- **`disconnectAndClear()` dijalankan sebelum DDL**, mengikuti urutan yang diukur di prototipe 05 — bukan urutan yang terasa logis.
+- **`uploadData` connector GAGAL KERAS bila antrean CRUD PowerSync tidak kosong.** Ia seharusnya selalu kosong (trigger tidak dipasang); kalau tidak, jalur naik kedua sudah lahir tanpa disengaja.
+- **Token PowerSync tidak pernah dicetak di klien.** Ia diminta ke server (Modul F). Ada test yang memindai seluruh `apps/kasir/src` untuk operasi penandatanganan.
+- **`AppShell` bukan untuk kasir.** IA §2.1: "Kasir tidak punya sidebar." Penggantinya `ShellKasir`.
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---

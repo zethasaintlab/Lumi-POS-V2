@@ -6,15 +6,18 @@
 // ada `fetch`, tidak ada akses berkas. `tests/sync-client/determinisme.test.js`
 // menegakkannya terhadap kode, bukan terhadap niat.
 //
-// Yang TIDAK ada di sini, dan sengaja: pemasangan ke PowerSync, penjadwalan
-// putaran relay, dan UI apa pun (FR-H2/H3/H4). Paket ini berdiri sendiri
-// sampai pondasi klien ada.
+// Yang TIDAK ada di sini, dan sengaja: pemasangan ke PowerSync dan UI apa pun
+// (FR-H2/H3/H4). Penjadwalnya sudah ada sejak pondasi klien (PLAN-pondasi-kasir
+// §3.7) -- dengan timer di-inject, jadi ia tetap dapat diuji tanpa browser.
 
 export { enqueue, ENTITY_TYPES } from './enqueue.ts';
 export type { ItemOutbox, EntityType } from './enqueue.ts';
 
 export { kirimBatch, pulihkanSetelahMati, BATAS_BATCH } from './relay.ts';
 export type { HasilBatch } from './relay.ts';
+
+export { buatPenjadwal, INTERVAL_MS } from './penjadwal.ts';
+export type { Penjadwal, DepsPenjadwal } from './penjadwal.ts';
 
 export { buatPengirimHttp } from './http.ts';
 export type { KonfigHttp } from './http.ts';

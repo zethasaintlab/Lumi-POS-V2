@@ -14,7 +14,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client",
+    "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client && tsc --noEmit --project apps/kasir",
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
@@ -29,7 +29,8 @@
     "test:oxlint-ds-adherence": "node --test \"tests/oxlint-ds-adherence/*.test.js\"",
     "test:dst": "node --experimental-strip-types --test \"tests/dst/*.test.js\"",
     "test:dst-server": "node --env-file=.env --test --test-concurrency=1 \"tests/dst-server/*.test.js\"",
-    "test:sync-client": "node --test \"tests/sync-client/*.test.js\""
+    "test:sync-client": "node --test \"tests/sync-client/*.test.js\"",
+    "test:kasir": "node --experimental-strip-types --test \"tests/kasir/*.test.js\""
   },
   "dependencies": {
     "pg": "^8.13.1"
