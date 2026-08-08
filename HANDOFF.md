@@ -147,7 +147,9 @@ Karena itu ada `npm run typecheck`. **Jalankan sebelum menyatakan apa pun selesa
 
 - [ ] **OQ-14** — Tauri Android: printer Bluetooth + scanner HID (1–2 minggu). Menentukan apakah rencana mobile bertahan
 - [ ] Ukur ulang performa query pada perangkat kasir nyata — faktor tablet 3–5× masih asumsi
-- [ ] Tambahkan clock skew + HLC ke harness DST — FR-H5 belum divalidasi sama sekali
+- [x] ~~Tambahkan clock skew + HLC ke harness DST — FR-H5 belum divalidasi sama sekali~~ **Selesai 8 Agustus 2026** (`docs/superpowers/plans/PLAN-fr-h5-hlc.md`). Tiap perangkat kini punya jamnya sendiri, saling geser mengelilingi ambang 5 menit `spec-h:173`, dan sesekali mundur (1 detik sampai satu hari). Server mengembalikan HLC tertingginya; perangkat menggabungkannya (`spec-h:157`). Dua invariant baru: **I9 urutan kausal** dan **I10 monotonisitas per perangkat**, plus dua mode cacat permanen (`hlc_dari_jam`, `abaikan_hlc_server`). Gate 10.000 iterasi tetap hijau setelah kelencengan ditambahkan
+- [ ] **`spec-h:336` masih menandai "Urutan kausal — HLC menjaga urutan meskipun jam melenceng" sebagai *belum divalidasi prototipe*, dan daftar invariant H.5 belum memuat I9/I10.** Kodenya sudah, dokumennya belum — dan **penyuntingan `product/specs/` bukan kewenangan agent**
+- [ ] **AC ketiga FR-H5 belum tertutup**: "Selisih jam > 5 menit menghasilkan audit event" menunjuk Modul F (FR-F8). Skew-nya sudah diinjeksikan di harness; yang belum ada adalah tempat audit event itu ditulis
 
 ## Validasi pasar — sebelum F2 dimulai
 
