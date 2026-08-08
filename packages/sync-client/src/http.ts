@@ -63,11 +63,22 @@ export function buatPengirimHttp(konfig: KonfigHttp): (baris: BarisOutbox) => Pr
           // bawah kegagalan jaringan -- tidak pernah pada jalur bahagia.
           'Idempotency-Key': baris.idempotency_key,
         },
-        // Dikirim APA ADANYA. Mem-parse lalu men-stringify ulang dapat
-        // mengubah urutan kunci, dan server menghitung hash request dari body
-        // untuk mendeteksi "key sama, body berbeda"
-        // (IDEMPOTENCY_KEY_REUSED). Perjalanan bolak-balik yang tampak tidak
-        // berbahaya itu dapat mengubah retry yang sah menjadi 422 permanen.
+        // Dikirim APA ADANYA, dan itu pilihan yang disengaja: server
+        // menghitung hash request dari body untuk mendeteksi "key sama, body
+        // berbeda" (IDEMPOTENCY_KEY_REUSED), jadi apa pun yang mengubah byte
+        // body antar percobaan mengubah retry yang sah menjadi 422 permanen.
+        //
+        // ⚠ TIDAK TERUJI, dan itu dicoba. Mengganti baris ini dengan
+        // `JSON.stringify(JSON.parse(baris.payload))` tidak menjatuhkan satu
+        // pun test, termasuk yang menembak server sungguhan — perjalanan
+        // bolak-balik JSON bersifat deterministik untuk bentuk payload kami,
+        // jadi kedua percobaan tetap menghasilkan byte yang sama.
+        //
+        // Jadi ini pertahanan, bukan sesuatu yang dijaga test. Ia tetap
+        // dipertahankan karena gratis: V8 MENGURUTKAN ULANG kunci yang
+        // menyerupai integer saat parse, dan payload yang suatu hari memuat
+        // kunci seperti itu akan patah dengan cara yang hanya terlihat sebagai
+        // 422 di perangkat merchant.
         body: baris.payload,
       });
     } catch (e) {
