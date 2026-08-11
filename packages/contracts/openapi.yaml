@@ -1227,6 +1227,122 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/credentials:
+    post:
+      operationId: issueDeviceCredentials
+      summary: >-
+        FR-F12 -- menerbitkan kredensial perangkat. Secret dikembalikan SEKALI;
+        yang tersimpan hanya SHA-256-nya. Menerbitkan ulang mematikan yang lama.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, secret, expiresAt]
+                properties:
+                  deviceId: { type: string }
+                  secret:
+                    type: string
+                    description: Rahasia perangkat. Tidak dapat dibaca lagi setelah respons ini.
+                  expiresAt: { type: string, format: date-time }
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device tidak ditemukan atau sudah dicabut
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/sync-token:
+    post:
+      operationId: issueSyncToken
+      summary: >-
+        FR-F12 -- menukar kredensial perangkat dengan JWT RS256 berumur pendek
+        untuk PowerSync. `tenant_id` dan `outlet_id` adalah klaim TOP-LEVEL:
+        `auth.parameter('x')` di sync rules membaca `payload.x`.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: >-
+            'Bearer <secret perangkat>'. SENGAJA tidak `required` di skema:
+            validator akan menjawab 400 untuk header yang hilang, dan 400
+            berarti "permintaan cacat" sementara kredensial yang hilang
+            berarti "buktikan siapa kamu". Handler yang menegakkannya, dengan
+            401 -- pesan yang sama persis dengan secret yang salah, supaya
+            tidak ada yang dapat menebak id perangkat dari beda respons.
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [endpoint, token]
+                properties:
+                  endpoint: { type: string }
+                  token: { type: string }
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: >-
+            Kredensial tidak sah, perangkat dicabut, atau kredensial kedaluwarsa
+            (DEVICE_CREDENTIALS_EXPIRED). Satu pesan untuk semua sebab kecuali
+            kedaluwarsa -- membedakannya memberi tahu penebak bahwa id-nya benar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Kunci penandatangan belum diatur di server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /.well-known/jwks.json:
+    get:
+      operationId: getJwks
+      summary: >-
+        Kunci publik untuk memverifikasi token sinkronisasi. Dilayani tanpa
+        tenant dan tanpa kredensial -- ia memang publik.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        '503':
+          description: Kunci penandatangan belum diatur di server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /devices/{deviceId}/revoke:
     post:
       operationId: revokeDevice

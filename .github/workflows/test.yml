@@ -59,6 +59,10 @@ jobs:
           TELEMETRY=off
           POWERSYNC_URL=http://localhost:8080
           POWERSYNC_TOKEN=
+          # FR-F12: sengaja KOSONG. Endpoint token menjawab 503 tanpa kunci,
+          # dan test yang membutuhkannya membuat kunci RSA-nya sendiri lalu
+          # menyuntikkannya lewat buildApp({ syncJwtPrivateKey }).
+          POWERSYNC_JWT_PRIVATE_KEY=
           MIDTRANS_SERVER_KEY=
           MIDTRANS_CLIENT_KEY=
           MIDTRANS_ENV=sandbox
@@ -92,6 +96,7 @@ jobs:
       - run: npm run test:isolation
       - run: npm run test:schema
       - run: npm run test:server
+      - run: npm run test:identity
       - run: npm run test:catalog
       - run: npm run test:ordering
       # DST terhadap server + database SUNGGUHAN. Iterasinya jauh lebih sedikit

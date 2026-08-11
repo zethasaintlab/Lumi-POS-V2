@@ -266,6 +266,15 @@ Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` mene
 - **`tertuaPada` dihitung HANYA dari item yang belum terkirim.** Dari seluruh baris, satu item lama yang sudah `sent` membuat antrean sehat terbaca berumur satu hari — dan `spec-h:302` memakai umur itu sebagai ambang 4/24/72 jam.
 - **Status per-record memakai aturan terburuk-menang.** Satu order punya beberapa baris outbox (`payment` dan `order_cancel` memakai `entity_id` yang sama); order yang pembayarannya gagal terkirim tidak boleh terlihat `ok`.
 
+**FR-F12 (token perangkat) ditarik dari F3 ke F2, 8 Agustus 2026** (`docs/superpowers/plans/PLAN-fr-f12-token-perangkat.md`). **Hanya FR-F12** — bukan peran, PIN, step-up, audit, atau akses support; sisa Modul F tetap di F3. Ia ditarik karena ia satu-satunya potongan yang menutup ⛔ token PowerSync, dan karena skemanya (`device.token_hash`, `credentials_expire_at`, `last_seen_at`, `revoked_at`) sudah ada sejak F0.
+
+- **Token sinkronisasi dicetak SERVER dengan RS256**, kunci dari `POWERSYNC_JWT_PRIVATE_KEY`, JWKS di `GET /.well-known/jwks.json`. Ditandatangani `node:crypto` — nol dependensi baru. Klien tidak pernah memegang bahan rahasia; ada test yang memindai `apps/kasir/src` untuk operasi penandatanganan.
+- ⛔ **`tenant_id` dan `outlet_id` adalah klaim TOP-LEVEL, bukan di dalam objek `parameters`.** Diukur di prototipe 05: `auth.parameter('x')` membaca `payload.x`. Salah tempat berarti sync rules mencocokkan dengan `undefined`, dan yang turun bukan error melainkan **nol baris** — katalog kosong permanen tanpa satu pun keluhan.
+- **Secret perangkat di-hash SHA-256, bukan Argon2id.** Aturan Argon2id berlaku untuk password dan PIN — rahasia berentropi rendah yang dipilih manusia. Secret ini 256 bit dari CSPRNG; KDF lambat tidak membeli apa pun dan diverifikasi pada setiap permintaan token. Yang tetap berlaku: tidak pernah disimpan apa adanya, dan dibandingkan timing-safe.
+- **`POST /devices/{id}/sync-token` TETAP menuntut `X-Tenant-Id`.** Webhook Midtrans tetap satu-satunya endpoint tanpa header itu. Perangkat tahu tenant-nya sendiri, dan menyertakannya menjaga pencarian tetap tunduk RLS; berbohong hanya membuat device id-nya tidak ditemukan.
+- **Kunci kosong → 503, bukan gagal saat boot.** Berbeda dari adapter pembayaran, dan sengaja: gagal boot akan menuntut setiap test dan setiap lingkungan pengembangan menyediakan kunci RSA untuk endpoint yang tidak dipakainya.
+- **Kredensial yang hilang dijawab 401, bukan 400.** Karena itu header `Authorization` tidak ditandai `required` di OpenAPI — validator akan menjawab 400, dan 400 berarti "permintaan cacat" sementara yang dimaksud adalah "buktikan siapa kamu".
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---

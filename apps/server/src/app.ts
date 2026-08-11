@@ -7,6 +7,7 @@ import { createPool, type Pool } from './db.ts';
 import { HttpError } from './http-error.ts';
 import { createCatalogHandlers } from './modules/catalog/index.ts';
 import { createIdentityHandlers } from './modules/identity/index.ts';
+import type { KonfigToken } from './modules/identity/handlers/tokens.ts';
 import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
@@ -64,6 +65,8 @@ export async function buildApp(
     paymentProvider?: PaymentProvider;
     logger?: { level: string; stream: NodeJS.WritableStream };
     webhookSecret?: string;
+    /** FR-F12: PEM kunci privat RSA. String kosong = fitur tidak dikonfigurasi. */
+    syncJwtPrivateKey?: string;
   } = {}
 ): Promise<FastifyInstance> {
   const pool = overrides.pool ?? createPool();
@@ -95,7 +98,17 @@ export async function buildApp(
     // dapat memverifikasi notifikasi walau PAYMENT_PROVIDER=fake (mis. saat
     // menguji integrasi di staging dengan adapter palsu).
     const webhookSecret = overrides.webhookSecret ?? process.env.MIDTRANS_SERVER_KEY ?? '';
-    return await buildAppInner(pool, specPath, paymentProvider, overrides.logger, webhookSecret);
+    // FR-F12. Kunci KOSONG diperbolehkan dan berarti "fitur tidak
+    // dikonfigurasi" -- endpoint token menjawab 503. Gagal saat boot (pola
+    // adapter pembayaran) akan menuntut setiap test dan setiap lingkungan
+    // pengembangan menyediakan kunci RSA hanya untuk menjalankan endpoint
+    // yang tidak dipakainya.
+    const konfigToken = {
+      pemPrivat: overrides.syncJwtPrivateKey ?? process.env.POWERSYNC_JWT_PRIVATE_KEY ?? '',
+      powersyncUrl: process.env.POWERSYNC_URL ?? '',
+      sekarang: () => Date.now(),
+    };
+    return await buildAppInner(pool, specPath, paymentProvider, overrides.logger, webhookSecret, konfigToken);
   } catch (err) {
     await pool.end();
     throw err;
@@ -107,7 +120,8 @@ async function buildAppInner(
   specPath: string,
   paymentProvider: PaymentProvider,
   loggerOverride: { level: string; stream: NodeJS.WritableStream } | undefined,
-  webhookSecret: string
+  webhookSecret: string,
+  konfigToken: KonfigToken
 ): Promise<FastifyInstance> {
   // Satu instance Hlc per proses server (keputusan Q3, PLAN-ordering-fondasi.md
   // §8.0), dibuat di sini -- BUKAN di dalam modul ordering -- dengan clock
@@ -122,7 +136,7 @@ async function buildAppInner(
       return { status: 'ok' };
     },
     ...createCatalogHandlers(pool),
-    ...createIdentityHandlers(pool),
+    ...createIdentityHandlers(pool, konfigToken),
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),

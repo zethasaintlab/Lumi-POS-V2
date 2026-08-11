@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
 import { createDeviceHandlers } from './handlers/devices.ts';
+import { createTokenHandlers, type KonfigToken } from './handlers/tokens.ts';
 
 // Permukaan publik modul identity (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul catalog DILARANG query `"user"`
@@ -67,8 +68,9 @@ export async function assertDeviceVisible(client: PoolClient, deviceId: string):
   }
 }
 
-export function createIdentityHandlers(pool: Pool): Record<string, unknown> {
+export function createIdentityHandlers(pool: Pool, konfigToken: KonfigToken): Record<string, unknown> {
   return {
     ...createDeviceHandlers(pool),
+    ...createTokenHandlers(pool, konfigToken),
   };
 }
