@@ -15,6 +15,11 @@ const RUTE: Record<string, (entityId: string) => string> = {
 export interface KonfigHttp {
   baseUrl: string;
   tenantId: string;
+  /**
+   * Aktor CADANGAN, dipakai hanya bila barisnya tidak membawa `actor_id`
+   * sendiri. Baris yang membawa aktornya selalu menang -- lihat komentar di
+   * `enqueue`.
+   */
   actorId: string;
   /**
    * `fetch` DI-INJECT, tidak pernah dipanggil langsung. Pola yang sama dengan
@@ -54,7 +59,8 @@ export function buatPengirimHttp(konfig: KonfigHttp): (baris: BarisOutbox) => Pr
         headers: {
           'Content-Type': 'application/json',
           'X-Tenant-Id': tenantId,
-          'X-Actor-Id': actorId,
+          // Aktor BARIS menang atas aktor konfigurasi. Lihat `enqueue`.
+          'X-Actor-Id': baris.actor_id ?? actorId,
           // Diambil dari BARIS, bukan di-generate di sini.
           //
           // Kalau adapter ini yang membuatnya, setiap percobaan mengirim key

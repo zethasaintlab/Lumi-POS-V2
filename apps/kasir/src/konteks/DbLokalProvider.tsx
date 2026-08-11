@@ -5,6 +5,11 @@ import {
   buatPemberitahu,
   type Pemberitahu,
 } from '../../../../packages/sync-client/src/pemberitahu.ts';
+import {
+  bacaKonfigPerangkat,
+  siapKirim,
+} from '../../../../packages/sync-client/src/perangkat.ts';
+import { jalankanSinkronisasi, type SinkronisasiHidup } from '../sync/jalankan.ts';
 
 /* Penyedia database lokal.
 
@@ -46,6 +51,33 @@ function buka(): Promise<LokalTerpasang> {
   return pembukaan;
 }
 
+/* Sinkronisasi dinyalakan SEKALI per proses, tepat setelah database terbuka.
+
+   Ia sengaja tidak dinyalakan dari dalam komponen: `StrictMode` memasang dan
+   melepas efek dua kali di pengembangan, dan `ps.connect()` dua kali dalam
+   satu proses belum pernah kami uji.
+
+   Diam bila perangkat belum punya identitas -- menyalakannya tanpa itu berarti
+   memukul endpoint tanpa tenant, 15 detik sekali, sepanjang hari. */
+let sinkronisasi: Promise<SinkronisasiHidup | null> | null = null;
+function nyalakanSinkronisasi(lokal: LokalTerpasang): Promise<SinkronisasiHidup | null> {
+  sinkronisasi ??= bacaKonfigPerangkat(lokal.db).then((konfig) => {
+    if (!siapKirim(konfig)) return null;
+    return jalankanSinkronisasi({
+      db: lokal.db,
+      ps: lokal.ps,
+      pemberitahu: lokal.pemberitahu,
+      konfig: konfig!,
+    });
+  });
+  return sinkronisasi;
+}
+
+/** Sinkronisasi yang sedang hidup, atau `null` bila perangkat belum terhubung. */
+export function sinkronisasiSekarang(): Promise<SinkronisasiHidup | null> {
+  return sinkronisasi ?? Promise.resolve(null);
+}
+
 /**
  * Instance tunggal yang dipakai aplikasi, di luar React.
  *
@@ -64,7 +96,16 @@ export function DbLokalProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let hidup = true;
     buka().then(
-      (lokal) => hidup && setKeadaan({ tahap: 'siap', lokal }),
+      (lokal) => {
+        if (!hidup) return;
+        setKeadaan({ tahap: 'siap', lokal });
+        // Kegagalan menyalakan sinkronisasi TIDAK menjatuhkan aplikasi:
+        // penjualan offline tetap harus bisa dilakukan (I6). Ia dilaporkan
+        // ke konsol dan terlihat di K-14 sebagai antrean yang tidak bergerak.
+        void nyalakanSinkronisasi(lokal).catch((e) =>
+          console.error('Sinkronisasi tidak dapat dinyalakan:', e)
+        );
+      },
       (e: Error) => hidup && setKeadaan({ tahap: 'galat', lokal: null, pesan: e.message })
     );
     return () => {

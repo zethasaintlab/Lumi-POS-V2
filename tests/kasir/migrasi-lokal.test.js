@@ -204,3 +204,59 @@ test('T5 tanpa perubahan, DDL dan pembersihan tidak dijalankan sama sekali', asy
   assert.deepEqual(jejak, []);
   assert.equal(hasil.perluBangunUlang, false);
 });
+
+// --- migrasi ADITIF untuk tabel lokal-saja ---------------------------------
+//
+// ⛔ Ditemukan dengan menjalankan aplikasi, bukan dengan membaca kode.
+// `device_config` dan `outbox_local` mendapat kolom baru; database yang sudah
+// ada menolaknya dengan "table device_config has no column named id" -- karena
+// sidik jari hanya menghitung RAW TABLE, dan tabel lokal-saja sengaja tidak
+// pernah di-drop.
+//
+// Keduanya tidak boleh diperlakukan sama dengan raw table: `outbox_local`
+// adalah antrean penjualan yang belum terkirim, dan `device_config` menyimpan
+// `receipt_sequence` -- membangunnya ulang mereset nomor struk ke nol dan
+// melanggar I4. Jalan satu-satunya adalah ADITIF.
+
+test('T5 kolom lokal yang hilang ditambahkan lewat ALTER, bukan lewat drop', async () => {
+  const { rencanaAlterLokal } = await import(MIGRASI);
+  const aktual = {
+    outbox_local: ['id', 'entity_type', 'created_at'],
+    device_config: ['id', 'device_id'],
+    stock_snapshot: ['tenant_id'],
+    skema_lokal: ['id'],
+  };
+  const alter = rencanaAlterLokal(sql(), aktual);
+
+  assert.ok(
+    alter.some((a) => /ALTER TABLE "outbox_local" ADD COLUMN "actor_id"/.test(a)),
+    `actor_id tidak ditambahkan: ${alter.join(' | ')}`
+  );
+  assert.ok(alter.some((a) => /ALTER TABLE "device_config" ADD COLUMN "token_secret"/.test(a)));
+  assert.ok(
+    !alter.some((a) => /DROP/i.test(a)),
+    'rencana aditif memuat DROP -- antrean upload atau counter struk akan hilang'
+  );
+});
+
+test('T5 tabel lokal yang sudah lengkap tidak menghasilkan ALTER apa pun', async () => {
+  const { rencanaAlterLokal, rencanaDdl } = await import(MIGRASI);
+  const { kolomPerTabel } = await import(SKEMA);
+  const kolom = kolomPerTabel(sql());
+  const lengkap = {
+    outbox_local: kolom.outbox_local,
+    device_config: kolom.device_config,
+    stock_snapshot: kolom.stock_snapshot,
+    skema_lokal: kolom.skema_lokal,
+  };
+  assert.deepEqual(rencanaAlterLokal(sql(), lengkap), []);
+  // Dan tabel lokal tetap tidak pernah masuk daftar drop.
+  assert.ok(!rencanaDdl(sql()).drop.some((d) => d.includes('outbox_local')));
+});
+
+// Tabel yang BELUM ADA sama sekali bukan urusan ALTER -- `CREATE TABLE IF NOT
+// EXISTS` di rencana DDL yang menanganinya.
+test('T5 tabel lokal yang belum ada dilewati, bukan di-ALTER', async () => {
+  const { rencanaAlterLokal } = await import(MIGRASI);
+  assert.deepEqual(rencanaAlterLokal(sql(), {}), []);
+});

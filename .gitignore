@@ -19,3 +19,6 @@ __pycache__/
 
 # Superpowers SDD scratch (ledger + brief + review package)
 .superpowers/
+.dev-sync-key.pem
+.dev-secret.txt
+.seed-dev.mjs

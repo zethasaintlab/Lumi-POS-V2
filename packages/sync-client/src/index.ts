@@ -19,6 +19,14 @@ export type { HasilBatch } from './relay.ts';
 export { buatPenjadwal, INTERVAL_MS } from './penjadwal.ts';
 export type { Penjadwal, DepsPenjadwal } from './penjadwal.ts';
 
+export {
+  bacaKonfigPerangkat,
+  simpanKonfigPerangkat,
+  hapusSecret,
+  siapKirim,
+} from './perangkat.ts';
+export type { KonfigPerangkat } from './perangkat.ts';
+
 export { buatPemberitahu } from './pemberitahu.ts';
 export type { Pemberitahu } from './pemberitahu.ts';
 

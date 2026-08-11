@@ -30,6 +30,8 @@ export interface BarisOutbox {
   last_attempt_at: string | null;
   created_at: string;
   depends_on: string | null;
+  /** Kasir yang membuat item ini, dibekukan saat item dibuat. */
+  actor_id?: string | null;
 }
 
 /** Hasil satu panggilan HTTP, sudah dilepas dari bentuk `fetch`. */

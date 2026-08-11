@@ -63,6 +63,9 @@ jobs:
           # dan test yang membutuhkannya membuat kunci RSA-nya sendiri lalu
           # menyuntikkannya lewat buildApp({ syncJwtPrivateKey }).
           POWERSYNC_JWT_PRIVATE_KEY=
+          # Kosong = tidak ada origin browser yang diizinkan. Test CORS
+          # menyuntikkan daftarnya sendiri lewat buildApp({ corsOrigins }).
+          CORS_ORIGINS=
           MIDTRANS_SERVER_KEY=
           MIDTRANS_CLIENT_KEY=
           MIDTRANS_ENV=sandbox

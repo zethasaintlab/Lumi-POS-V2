@@ -16,8 +16,13 @@ import { PowerSyncDatabase, Schema, WASQLiteVFS } from '@powersync/web';
 import SKEMA_SQL from '../../../../db/local/001-initial.sql?raw';
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { adaptDbLokal } from './adapter.ts';
-import { jalankanMigrasi, type KeputusanMigrasi, type RencanaDdl } from './migrasi.ts';
-import { buatDefinisiRaw, kolomPerTabel } from './skema.ts';
+import {
+  jalankanMigrasi,
+  rencanaAlterLokal,
+  type KeputusanMigrasi,
+  type RencanaDdl,
+} from './migrasi.ts';
+import { TABEL_LOKAL_SAJA, buatDefinisiRaw, kolomPerTabel } from './skema.ts';
 
 /**
  * VFS yang dipakai aplikasi.
@@ -84,6 +89,17 @@ async function jalankanDdl(ps: PowerSyncDatabase, rencana: RencanaDdl): Promise<
   for (const p of rencana.buat) await ps.execute(p);
 }
 
+async function migrasiAditifLokal(ps: PowerSyncDatabase): Promise<void> {
+  const aktual: Record<string, string[]> = {};
+  for (const tabel of TABEL_LOKAL_SAJA) {
+    const kolom = await ps.getAll<{ name: string }>(`PRAGMA table_info("${tabel}")`);
+    if (kolom.length > 0) aktual[tabel] = kolom.map((k) => k.name);
+  }
+  for (const alter of rencanaAlterLokal(SKEMA_SQL, aktual)) {
+    await ps.execute(alter);
+  }
+}
+
 /**
  * Membuka database lokal, menjalankan migrasi, dan mengembalikan port.
  *
@@ -126,6 +142,17 @@ export async function bukaDbLokal({
       );
     },
   });
+
+  // ⛔ Dijalankan di SETIAP boot, bukan hanya saat sidik jari berubah.
+  //
+  // Sidik jari hanya menghitung raw table -- perubahan bentuk tabel murni
+  // lokal tidak terlihat olehnya sama sekali. Ditemukan dengan menjalankan
+  // aplikasi: `device_config` mendapat kolom baru dan database yang sudah ada
+  // menolaknya dengan "table device_config has no column named id".
+  //
+  // Aditif, tidak pernah membangun ulang: `outbox_local` memegang penjualan
+  // yang belum terkirim, dan `device_config` memegang `receipt_sequence`.
+  await migrasiAditifLokal(ps);
 
   await ps.updateSchema(schema);
 

@@ -27,6 +27,15 @@ export interface ItemOutbox {
   createdAt: string;
   /** `outbox_local.id` yang harus terkirim lebih dulu. */
   dependsOn?: string | null;
+  /**
+   * Kasir yang membuat item ini, DIBEKUKAN sekarang.
+   *
+   * ⛔ Bukan dibaca saat pengiriman. Antrean dapat terkuras berjam-jam
+   * kemudian, mungkin setelah pergantian shift: memakai "siapa yang sedang
+   * masuk" akan mencatat penjualan Sari atas nama Budi, dan audit server
+   * percaya begitu saja.
+   */
+  actorId?: string | null;
 }
 
 /**
@@ -63,8 +72,8 @@ export async function enqueue(tx: DbLokal, item: ItemOutbox): Promise<void> {
   await tx.execute(
     `INSERT INTO outbox_local
        (id, entity_type, entity_id, operation, payload, idempotency_key,
-        status, attempts, last_error, last_attempt_at, created_at, depends_on)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, ?, ?)`,
+        status, attempts, last_error, last_attempt_at, created_at, depends_on, actor_id)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, ?, ?, ?)`,
     [
       item.id,
       item.entityType,
@@ -74,6 +83,7 @@ export async function enqueue(tx: DbLokal, item: ItemOutbox): Promise<void> {
       item.idempotencyKey,
       item.createdAt,
       item.dependsOn ?? null,
+      item.actorId ?? null,
     ]
   );
 }

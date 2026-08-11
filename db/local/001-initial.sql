@@ -161,10 +161,30 @@ CREATE TABLE outbox_local (
   operation TEXT NOT NULL, payload TEXT NOT NULL, idempotency_key TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER DEFAULT 0,
   last_error TEXT, last_attempt_at TEXT, created_at TEXT NOT NULL,
-  depends_on TEXT
+  depends_on TEXT,
+  -- ⛔ Aktor dibekukan saat item DIBUAT, bukan dibaca saat item dikirim.
+  -- Antrean dapat terkuras berjam-jam kemudian, mungkin setelah pergantian
+  -- shift: memakai "siapa yang sedang masuk" akan mencatat penjualan Sari
+  -- atas nama Budi di `X-Actor-Id`, dan audit server percaya begitu saja.
+  actor_id TEXT
 );
+-- Identitas perangkat + counter lokalnya. Satu baris, dipaksa CHECK: satu
+-- pemasangan aplikasi adalah satu perangkat, dan `device_code` sebagai
+-- primary key dulu menyiratkan sebaliknya.
+--
+-- ⛔ `token_secret` disimpan APA ADANYA. AC ketiga FR-F12 menuntut database
+-- lokal terenkripsi dengan kunci di keystore OS, dan itu menunggu Tauri (F4).
+-- Sampai itu ada, siapa pun yang dapat membaca berkas database perangkat
+-- dapat menyamar jadi perangkat itu sampai kredensialnya dicabut. Dicatat di
+-- HANDOFF, bukan disembunyikan.
 CREATE TABLE device_config (
-  device_code TEXT PRIMARY KEY, outlet_id TEXT NOT NULL,
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  device_id TEXT NOT NULL,
+  device_code TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  outlet_id TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  token_secret TEXT,
   receipt_sequence INTEGER DEFAULT 0, sequence_business_date TEXT,
   hlc_state INTEGER DEFAULT 0, last_sync_at TEXT
 );

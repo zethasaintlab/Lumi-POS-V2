@@ -30,6 +30,10 @@ export interface KonfigSumberToken {
   /** Base URL server Lumi, bukan URL PowerSync. */
   baseUrl: string;
   deviceId: string;
+  /** Tenant perangkat. Dikirim sebagai `X-Tenant-Id` supaya pencarian device di server tetap tunduk RLS. */
+  tenantId: string;
+  /** Secret perangkat dari `POST /devices/{id}/credentials`. */
+  tokenSecret: string;
   fetchFn?: typeof fetch;
 }
 
@@ -44,14 +48,33 @@ export interface KonfigSumberToken {
 export function buatSumberTokenServer({
   baseUrl,
   deviceId,
+  tenantId,
+  tokenSecret,
   fetchFn = fetch,
 }: KonfigSumberToken): SumberToken {
   return {
     async ambil() {
       const res = await fetchFn(`${baseUrl}/devices/${encodeURIComponent(deviceId)}/sync-token`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // TANPA `Content-Type`: permintaan ini tidak punya body, dan
+        // menyatakan `application/json` membuat Fastify mencoba mem-parse body
+        // kosong lalu menjawab 400. Terlihat di browser sebagai "Gagal
+        // mengambil token sinkronisasi (HTTP 400)" berulang-ulang, sementara
+        // curl tanpa header itu berhasil.
+        headers: {
+          'X-Tenant-Id': tenantId,
+          Authorization: `Bearer ${tokenSecret}`,
+        },
       });
+      if (res.status === 401) {
+        throw new Error(
+          'Kredensial perangkat ditolak server: sudah dicabut, kedaluwarsa, atau salah. ' +
+            'Perangkat perlu dihubungkan ulang.'
+        );
+      }
+      if (res.status === 503) {
+        throw new Error('Server belum punya kunci penandatangan token sinkronisasi.');
+      }
       if (res.status === 404) {
         throw new Error(
           'Endpoint token sinkronisasi belum ada di server. Ia lahir bersama Modul F (identity); ' +

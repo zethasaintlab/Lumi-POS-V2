@@ -68,16 +68,35 @@ test('sumber token meminta ke server, tidak mencetak apa pun', async () => {
   const sumber = buatSumberTokenServer({
     baseUrl: 'http://server.lokal',
     deviceId: 'dev-1',
+    tenantId: 'ten-1',
+    tokenSecret: 'rahasia',
     fetchFn: async (url, opsi) => {
-      panggilan.push({ url, method: opsi.method });
+      panggilan.push({ url, method: opsi.method, headers: opsi.headers });
       return { status: 200, json: async () => ({ endpoint: 'http://sync', token: 'jwt' }) };
     },
   });
 
   assert.deepEqual(await sumber.ambil(), { endpoint: 'http://sync', token: 'jwt' });
-  assert.deepEqual(panggilan, [
-    { url: 'http://server.lokal/devices/dev-1/sync-token', method: 'POST' },
-  ]);
+  assert.equal(panggilan[0].url, 'http://server.lokal/devices/dev-1/sync-token');
+  assert.equal(panggilan[0].method, 'POST');
+  // Kredensial perangkat dikirim; `X-Tenant-Id` menjaga pencarian device di
+  // server tetap tunduk RLS (invariant #8).
+  assert.equal(panggilan[0].headers.Authorization, 'Bearer rahasia');
+  assert.equal(panggilan[0].headers['X-Tenant-Id'], 'ten-1');
+});
+
+// Kredensial yang ditolak harus terbaca sebagai "hubungkan ulang perangkat",
+// bukan sebagai gangguan jaringan yang akan hilang sendiri.
+test('401 dari server berbunyi "perlu dihubungkan ulang"', async () => {
+  const { buatSumberTokenServer } = await import(TOKEN);
+  const sumber = buatSumberTokenServer({
+    baseUrl: 'http://server.lokal',
+    deviceId: 'dev-1',
+    tenantId: 'ten-1',
+    tokenSecret: 'salah',
+    fetchFn: async () => ({ status: 401, json: async () => ({}) }),
+  });
+  await assert.rejects(sumber.ambil(), /dihubungkan ulang/i);
 });
 
 // Endpoint-nya belum ada. Yang penting bukan bahwa ia gagal, melainkan bahwa
@@ -88,6 +107,8 @@ test('endpoint token belum ada: pesannya menyebut Modul F, bukan 404 telanjang',
   const sumber = buatSumberTokenServer({
     baseUrl: 'http://server.lokal',
     deviceId: 'dev-1',
+    tenantId: 'ten-1',
+    tokenSecret: 'rahasia',
     fetchFn: async () => ({ status: 404, json: async () => ({}) }),
   });
   await assert.rejects(sumber.ambil(), /Modul F/);
@@ -98,6 +119,8 @@ test('respons tanpa token ditolak, bukan diteruskan sebagai kredensial kosong', 
   const sumber = buatSumberTokenServer({
     baseUrl: 'http://server.lokal',
     deviceId: 'dev-1',
+    tenantId: 'ten-1',
+    tokenSecret: 'rahasia',
     fetchFn: async () => ({ status: 200, json: async () => ({ endpoint: 'http://sync' }) }),
   });
   await assert.rejects(sumber.ambil(), /token/i);

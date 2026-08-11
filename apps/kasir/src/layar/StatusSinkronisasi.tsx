@@ -11,8 +11,9 @@ import {
   type HalamanGagal,
 } from '../../../../packages/sync-client/src/status.ts';
 import type { BarisOutbox } from '../../../../packages/sync-client/src/ports.ts';
+import { bacaKonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { Tombol } from '../Tombol.tsx';
-import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { sinkronisasiSekarang, useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useAntrean } from '../konteks/useAntrean.ts';
 
 /* K-14 Status Sinkronisasi (FR-H3, IA §2.2 dan §2.4).
@@ -40,6 +41,32 @@ export function StatusSinkronisasi() {
   const [gagal, setGagal] = useState<HalamanGagal>(KOSONG);
   const [penyimpanan, setPenyimpanan] = useState<Penyimpanan>({ dipakai: null, kuota: null });
   const [pesan, setPesan] = useState<string | null>(null);
+  const [terhubung, setTerhubung] = useState(false);
+  const [mengirim, setMengirim] = useState(false);
+
+  useEffect(() => {
+    let hidup = true;
+    sinkronisasiSekarang().then((s) => hidup && setTerhubung(s !== null), () => {});
+    return () => {
+      hidup = false;
+    };
+  }, []);
+
+  // `spec-h:261`: "Tombol coba lagi memicu pengiriman ulang segera."
+  // Ia memicu penjadwal yang SAMA yang berjalan di latar -- bukan putaran
+  // kedua yang berdiri sendiri, karena dua putaran bersamaan mengirim item
+  // yang sama dua kali dalam penerbangan.
+  const cobaKirim = useCallback(async () => {
+    setMengirim(true);
+    try {
+      const s = await sinkronisasiSekarang();
+      if (!s) return;
+      await s.penjadwal.picu('manual');
+      setPesan('Pengiriman dijalankan.');
+    } finally {
+      setMengirim(false);
+    }
+  }, []);
 
   const indikator = keadaanIndikator(ringkasan);
   const sekarang = Date.now();
@@ -67,9 +94,11 @@ export function StatusSinkronisasi() {
   }, []);
 
   const ekspor = useCallback(async () => {
-    // Nama perangkat belum ada sampai Modul F; `K?` menandai itu di nama
-    // berkas alih-alih berpura-pura tahu.
-    const teks = await buatEksporDarurat(db, { deviceCode: 'K?', sekarang: Date.now() });
+    const konfig = await bacaKonfigPerangkat(db);
+    const teks = await buatEksporDarurat(db, {
+      deviceCode: konfig?.deviceCode ?? 'belum-dihubungkan',
+      sekarang: Date.now(),
+    });
     const url = URL.createObjectURL(new Blob([teks], { type: 'text/plain;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
@@ -125,22 +154,29 @@ export function StatusSinkronisasi() {
         </div>
       </Card>
 
-      {/* Satu aksi utama per layar. Ia nonaktif sampai perangkat terdaftar --
-          `buatPengirimHttp` menuntut identitas tenant dan aktor, dan keduanya
-          lahir di Modul F. Yang dinonaktifkan disertai ALASANNYA, bukan
-          tombol mati tanpa keterangan. */}
+      {/* Satu aksi utama per layar. Nonaktif hanya bila perangkat belum
+          dihubungkan -- dan yang dinonaktifkan disertai ALASANNYA beserta
+          jalan keluarnya, bukan tombol mati tanpa keterangan. */}
       <div className="row" style={{ gap: 'var(--space-3)' }}>
-        <Tombol varian="primary" disabled title="Perangkat belum terdaftar">
-          Coba kirim sekarang
+        <Tombol
+          varian="primary"
+          disabled={!terhubung || mengirim}
+          title={terhubung ? undefined : 'Perangkat belum dihubungkan'}
+          onClick={cobaKirim}
+        >
+          {mengirim ? 'Mengirim…' : 'Coba kirim sekarang'}
         </Tombol>
         <Tombol varian="secondary" onClick={ekspor}>
           Ekspor darurat
         </Tombol>
       </div>
-      <p className="t-caption">
-        Pengiriman ulang belum dapat dijalankan: perangkat ini belum terdaftar ke server.
-        Ekspor darurat tetap berfungsi tanpa koneksi.
-      </p>
+      {!terhubung && (
+        <p className="t-caption">
+          Pengiriman ulang belum dapat dijalankan: perangkat ini belum dihubungkan ke
+          server. Hubungkan lewat menu Perangkat. Ekspor darurat tetap berfungsi tanpa
+          koneksi.
+        </p>
+      )}
 
       {pesan && <p className="t-caption">{pesan}</p>}
 

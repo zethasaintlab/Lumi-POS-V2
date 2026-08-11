@@ -118,6 +118,53 @@ export function putuskanMigrasi({
   return { perluBangunUlang: false, perluBersihkanSync: false, alasan: 'Skema lokal sudah mutakhir.' };
 }
 
+
+/**
+ * Migrasi ADITIF untuk tabel murni lokal.
+ *
+ * ⛔ Ditemukan dengan menjalankan aplikasi, bukan dengan membaca kode.
+ * `device_config` dan `outbox_local` mendapat kolom baru, dan database yang
+ * sudah ada menolaknya: *"table device_config has no column named id"*. Sidik
+ * jari tidak melihatnya — ia hanya menghitung raw table — dan tabel lokal-saja
+ * memang sengaja tidak pernah di-drop.
+ *
+ * Jalan keluarnya HARUS aditif, bukan bangun ulang:
+ *
+ *   - `outbox_local` adalah antrean penjualan yang belum terkirim;
+ *   - `device_config` menyimpan `receipt_sequence`, dan meresetnya ke nol
+ *     melanggar I4 (nomor struk per device+tanggal berurutan rapat).
+ *
+ * Kolom yang HILANG ditambahkan. Kolom yang berlebih dibiarkan — SQLite tidak
+ * dapat membuangnya tanpa menulis ulang tabel, dan menulis ulang tabel adalah
+ * hal yang justru dihindari di sini.
+ *
+ * @param aktual kolom yang BENAR-BENAR ada, dari `PRAGMA table_info`.
+ */
+export function rencanaAlterLokal(
+  sqlSkema: string,
+  aktual: Record<string, string[]>
+): string[] {
+  const diinginkan = kolomPerTabel(sqlSkema);
+  const alter: string[] = [];
+
+  for (const tabel of TABEL_LOKAL_SAJA) {
+    const ada = aktual[tabel];
+    // Tabel yang belum ada sama sekali bukan urusan ALTER: `CREATE TABLE IF
+    // NOT EXISTS` di rencana DDL yang menanganinya.
+    if (!ada) continue;
+    const punya = new Set(ada);
+    for (const kolom of diinginkan[tabel] ?? []) {
+      if (punya.has(kolom)) continue;
+      // Tanpa tipe dan tanpa DEFAULT: SQLite menuntut kolom yang ditambahkan
+      // ke tabel berisi data punya nilai untuk baris lama, dan NULL adalah
+      // satu-satunya yang tidak mengarang apa pun.
+      alter.push(`ALTER TABLE "${tabel}" ADD COLUMN "${kolom}"`);
+    }
+  }
+
+  return alter;
+}
+
 export interface DepsMigrasi {
   /** Isi `db/local/001-initial.sql`. Di browser di-import dengan `?raw`. */
   sqlSkema: string;

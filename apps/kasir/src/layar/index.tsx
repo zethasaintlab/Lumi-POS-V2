@@ -1,5 +1,6 @@
 import type { Rute } from '../rute/tabel.ts';
 import { BelumDibangun } from './BelumDibangun.tsx';
+import { Perangkat } from './Perangkat.tsx';
 import { StatusSinkronisasi } from './StatusSinkronisasi.tsx';
 
 /* Pemetaan kode layar IA §2.2 ke komponennya.
@@ -9,6 +10,7 @@ import { StatusSinkronisasi } from './StatusSinkronisasi.tsx';
    sini, dan tidak ada tempat lain yang perlu tahu. */
 const LAYAR: Record<string, () => React.ReactElement> = {
   'K-14': StatusSinkronisasi,
+  'K-15': Perangkat,
 };
 
 export function Layar({ rute }: { rute: Rute | null }) {

@@ -67,6 +67,8 @@ export async function buildApp(
     webhookSecret?: string;
     /** FR-F12: PEM kunci privat RSA. String kosong = fitur tidak dikonfigurasi. */
     syncJwtPrivateKey?: string;
+    /** Origin yang boleh memanggil server dari browser. Kosong = tidak ada. */
+    corsOrigins?: string[];
   } = {}
 ): Promise<FastifyInstance> {
   const pool = overrides.pool ?? createPool();
@@ -108,7 +110,21 @@ export async function buildApp(
       powersyncUrl: process.env.POWERSYNC_URL ?? '',
       sekarang: () => Date.now(),
     };
-    return await buildAppInner(pool, specPath, paymentProvider, overrides.logger, webhookSecret, konfigToken);
+    const corsOrigins =
+      overrides.corsOrigins ??
+      (process.env.CORS_ORIGINS ?? '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
+    return await buildAppInner(
+      pool,
+      specPath,
+      paymentProvider,
+      overrides.logger,
+      webhookSecret,
+      konfigToken,
+      corsOrigins
+    );
   } catch (err) {
     await pool.end();
     throw err;
@@ -121,7 +137,8 @@ async function buildAppInner(
   paymentProvider: PaymentProvider,
   loggerOverride: { level: string; stream: NodeJS.WritableStream } | undefined,
   webhookSecret: string,
-  konfigToken: KonfigToken
+  konfigToken: KonfigToken,
+  corsOrigins: string[]
 ): Promise<FastifyInstance> {
   // Satu instance Hlc per proses server (keputusan Q3, PLAN-ordering-fondasi.md
   // §8.0), dibuat di sini -- BUKAN di dalam modul ordering -- dengan clock
@@ -221,6 +238,42 @@ async function buildAppInner(
     }
     req.log.error({ err, body: redactSensitive(req.body), url: req.url }, 'permintaan gagal');
     reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'Terjadi kesalahan internal.' } });
+  });
+
+
+  /* CORS untuk aplikasi kasir.
+
+     ⛔ Ditemukan dengan menjalankan aplikasi: klien di `http://localhost:1420`
+     tidak dapat mencapai server sama sekali — *"Response to preflight request
+     doesn't pass access control check"* — meskipun seluruh test server hijau.
+     Aplikasi kasir adalah SPA di origin yang berbeda dari API, jadi ini bukan
+     kenyamanan pengembangan melainkan prasyarat agar ia berfungsi.
+
+     Ditulis tangan, bukan `@fastify/cors`: aturannya sempit (satu daftar
+     origin, tanpa kredensial cookie) dan menambah dependensi untuk sembilan
+     baris tidak sepadan.
+
+     Daftar origin datang dari `CORS_ORIGINS`, bukan dari kode (invariant #5).
+     Kosong = tidak ada yang diizinkan, dan `*` tidak pernah dijawab. */
+  const asalDiizinkan = new Set(corsOrigins);
+  const HEADER_DIIZINKAN = 'content-type, authorization, x-tenant-id, x-actor-id, x-approver-id, idempotency-key';
+
+  app.addHook('onRequest', async (req, reply) => {
+    const asal = req.headers.origin;
+    if (typeof asal !== 'string' || !asalDiizinkan.has(asal)) {
+      // Preflight dari origin asing tetap dijawab, tapi TANPA izin apa pun.
+      // Browser yang menolaknya -- itu memang pembagian kerjanya.
+      if (req.method === 'OPTIONS') reply.code(204).send();
+      return;
+    }
+    reply.header('Access-Control-Allow-Origin', asal);
+    reply.header('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      reply.header('Access-Control-Allow-Headers', HEADER_DIIZINKAN);
+      reply.header('Access-Control-Max-Age', '600');
+      reply.code(204).send();
+    }
   });
 
   await app.register(openapiGlue, {
