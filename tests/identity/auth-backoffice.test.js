@@ -208,13 +208,18 @@ test('sesi kedaluwarsa 12 jam (spec-f:176) dan dapat diakhiri', async () => {
 });
 
 test('token sesi disimpan sebagai HASH, bukan apa adanya', async () => {
-  await buatPengguna({ email: 'h@contoh.id', password: 'kopi-susu-gula-aren-2026' });
+  const id = await buatPengguna({ email: 'h@contoh.id', password: 'kopi-susu-gula-aren-2026' });
   const { token } = (await login('h@contoh.id', 'kopi-susu-gula-aren-2026')).json();
 
   // Sejajar dengan `device.token_hash` (FR-F12): siapa pun yang dapat membaca
   // tabel sesi tidak boleh dapat menyamar jadi setiap pengguna yang sedang
   // masuk.
-  const { rows } = await kueriTenant(`SELECT token_hash FROM user_session`);
+  //
+  // Disaring per `user_id`, BUKAN `SELECT * FROM user_session`: `seedTenantBase`
+  // menyisipkan satu sesi miliknya sendiri untuk suite isolasi, dan test yang
+  // menghitung seluruh tabel akan merah karena tetangganya. Ditemukan saat
+  // menjalankan suite penuh, bukan saat menulis test ini.
+  const { rows } = await kueriTenant(`SELECT token_hash FROM user_session WHERE user_id = $1`, [id]);
   assert.equal(rows.length, 1);
   assert.notEqual(rows[0].token_hash, token, 'token mentah tidak boleh tersimpan');
   assert.equal(rows[0].token_hash.includes(token), false);
