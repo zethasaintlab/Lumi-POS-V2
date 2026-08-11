@@ -301,16 +301,26 @@ di-bundle. Kasir tanpa email tidak dapat masuk — itu benar (`spec-f:184`).
       eksplisit** (`password_hash`/`mfa_secret`/`email` tidak pernah turun)
       dan **disaring per outlet** (`spec-f:250`)
 - [x] T6.2 `sesi_lokal` + `pin_lockout_lokal`, keduanya lokal-saja
-- [ ] T6.3 K-01 login PIN — **layarnya**. Logikanya selesai dan teruji;
-      yang tersisa keypad + hitung mundur
+- [x] T6.3 K-01 login PIN — keypad 6 digit, titik (bukan angka), hitung mundur.
+      **Diverifikasi di browser sungguhan**: PIN diketik lewat keypad, hash
+      dicetak `node:crypto`, diverifikasi Argon2 WASM — 33 ms, sesi terbentuk,
+      topbar menampilkan nama kasir
 - [x] T6.4 FR-F4 penguncian, persisten, per-pengguna, eskalasi 60 s → 900 s
-- [ ] T6.5 Audit event sesi ke outbox
+- [ ] T6.5 Audit event sesi ke outbox — **belum**. `login`/`logout`/`pin_failed`
+      belum masuk `outbox_local`; jalur itu menunggu penulisan order di klien
 
 ### §7–§9
-- [ ] T7.1 Dialog K-11 + sesi tidak berubah
-- [ ] T7.2 Disambungkan ke refund
-- [ ] T8.1 FR-H4
-- [ ] T9.1 `POST /auth/login` + sesi back-office
+- [x] T7.1 Dialog K-11 + **sesi tidak berubah** — `otorisasi.ts` berdiri
+      sendiri dan tidak pernah menyentuh `sesi_lokal`; sabotase tertangkap.
+      Menolak persetujuan-diri-sendiri, penyetuju tanpa hak, dan menerapkan
+      rate limiting pada PIN penyetuju
+- [ ] T7.2 Disambungkan ke refund — **menunggu K-10**, layar void/refund yang
+      belum ada. Dialognya siap dan menerima `onSetuju({ approverId, … })`
+- [x] T8.1 FR-H4 — `bolehLogout` + `keluar()`; menghitung `menunggu + gagal`,
+      bukan `menunggu` saja
+- [x] T9.1 `POST /auth/login` + `/auth/logout` + `PUT /users/{id}/password`,
+      migrasi `0020_user_session`. Satu respons 401 untuk semua sebab, dan
+      verifikasi dijalankan meski pengguna tidak ada (timing oracle)
 
 ### Penutup
 - [ ] Suite penuh, typecheck, lint:ds, build — output ditempel

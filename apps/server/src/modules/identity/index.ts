@@ -4,6 +4,7 @@ import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createDeviceHandlers } from './handlers/devices.ts';
 import { createTokenHandlers, type KonfigToken } from './handlers/tokens.ts';
 import { createUserHandlers } from './handlers/users.ts';
+import { createAuthHandlers } from './handlers/auth.ts';
 import { buatPinHasher } from './pin-hasher.ts';
 import { bolehkah } from '../../../../../packages/domain/src/rbac.ts';
 
@@ -130,5 +131,6 @@ export function createIdentityHandlers(
     ...createDeviceHandlers(pool),
     ...createTokenHandlers(pool, konfigToken),
     ...createUserHandlers(pool, hasher, hlc),
+    ...createAuthHandlers(pool, hasher),
   };
 }

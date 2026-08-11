@@ -43,7 +43,7 @@ export type HasilLogin =
   | { status: 'pin_salah'; pesan: string }
   | { status: 'terkunci'; pesan: string; detikTersisa: number };
 
-interface BarisKunci {
+export interface BarisKunci {
   gagal_berturut?: number;
   terkunci_sampai?: string | null;
   jumlah_penguncian?: number;

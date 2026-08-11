@@ -57,3 +57,114 @@
   min-height: 0;
   overflow: auto;
 }
+
+/* K-01 login PIN dan K-11 dialog otorisasi.
+
+   Seluruh nilai dari token (aturan design system #6). Target sentuh keypad
+   56px — aturan #3 untuk aksi menyangkut uang; otorisasi refund menyangkut
+   uang, dan salah ketik berarti mengulang dialog di depan pelanggan. */
+
+.kasir-login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  flex: 1;
+}
+
+.kasir-login-sub {
+  color: var(--text-muted);
+}
+
+.kasir-login-galat {
+  color: var(--danger);
+}
+
+.kasir-keypad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.kasir-pin-titik {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Titik, bukan angka: PIN tidak pernah terlihat (spec-f:19), dan perangkat
+   kasir berdiri dengan pelanggan tepat di seberang layar. */
+.kasir-titik {
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.kasir-titik.terisi {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.kasir-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.kasir-dialog-latar {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--overlay);
+}
+
+/* Dialog, bukan layar: keranjang kasir harus tetap terlihat di belakangnya.
+   Manajer datang, mengetik, pergi; kasir melanjutkan dari tempat yang sama. */
+.kasir-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  max-width: 28rem;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.kasir-alasan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: none;
+  padding: 0;
+}
+
+.kasir-alasan-opsi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+}
+
+.kasir-catatan {
+  font: inherit;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.kasir-dialog-aksi {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

@@ -1177,6 +1177,86 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      operationId: login
+      summary: >-
+        FR-F2b. Email + password untuk back-office. Kasir TIDAK dilayani di
+        sini (spec-f:150) -- pencarian menyaring password_hash IS NOT NULL,
+        jadi PIN tidak dapat dipakai sebagai password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, nullable: true }
+                password: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expiresAt, userId, roles]
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+                  userId: { type: string }
+                  roles: { type: array, items: { type: string } }
+        '401':
+          description: >-
+            Email atau password salah. SATU pesan untuk semua sebab --
+            selisih apa pun adalah oracle enumerasi email (spec-f:148).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /auth/logout:
+    post:
+      operationId: logout
+      responses:
+        '204':
+          description: Sesi diakhiri. Barisnya dihapus, bukan ditandai.
+        '401':
+          description: Sesi tidak sah atau sudah berakhir
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}/password:
+    put:
+      operationId: setUserPassword
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        '204':
+          description: Password diperbarui
+        '400':
+          description: >-
+            Kurang dari 10 karakter (PASSWORD_TOO_SHORT) atau ada di daftar
+            bocor yang di-bundle (PASSWORD_BREACHED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /users:
     post:
       operationId: createUser

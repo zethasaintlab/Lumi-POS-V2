@@ -24,6 +24,10 @@ const TABLES = [
   // ke perangkat outlet mana — kebocoran di sini mengirim kredensial staf
   // merchant lain ke perangkat yang salah.
   { name: 'user_outlet', module: 'identity', partitioned: false },
+  // Migrasi 0020. Sesi back-office (FR-F2b). Kebocoran di sini berarti token
+  // sesi satu merchant terlihat merchant lain — dan token itu memberi akses
+  // penuh ke back-office, termasuk billing.
+  { name: 'user_session', module: 'identity', partitioned: false },
   { name: 'device', module: 'identity', partitioned: false },
   { name: 'category', module: 'catalog', partitioned: false },
   { name: 'item', module: 'catalog', partitioned: false },

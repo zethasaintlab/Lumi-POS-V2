@@ -3,7 +3,9 @@ import 'ds/styles.css';
 import './kasir.css';
 import { ShellKasir } from './ShellKasir.tsx';
 import { DbLokalProvider, IsiSiap } from './konteks/DbLokalProvider.tsx';
+import { useSesi } from './konteks/useSesi.ts';
 import { Layar } from './layar/index.tsx';
+import { Login, SesiBelumSiap } from './layar/Login.tsx';
 import { cocokkanRute } from './rute/tabel.ts';
 import { jalurSekarang, langgananJalur } from './rute/navigasi.ts';
 
@@ -18,9 +20,33 @@ function useJalur(): string {
   return useSyncExternalStore(langgananJalur, jalurSekarang, () => '/');
 }
 
+/* Isi aplikasi setelah database siap.
+
+   Terpisah dari `App` karena `useSesi` membaca `sesi_lokal`, dan itu hanya
+   mungkin setelah database terbuka. Hook yang dipanggil di `App` akan
+   berjalan sebelum `DbLokalProvider` sempat membuka apa pun. */
+function Isi({ jalur }: { jalur: string }) {
+  const { rute } = cocokkanRute(jalur);
+  const { sesi, siap } = useSesi();
+
+  /* ⛔ K-15 (Perangkat) TIDAK menuntut sesi, dan itu bukan kelalaian.
+
+     Perangkat baru belum punya satu pun pengguna di database lokalnya —
+     katalog dan identitas turun SETELAH provisioning. Menuntut login lebih
+     dulu membuat perangkat baru mustahil disiapkan: tidak ada PIN yang dapat
+     diverifikasi terhadap tabel yang masih kosong. */
+  const tanpaSesi = rute?.layar === 'K-15';
+
+  if (!siap) return <SesiBelumSiap />;
+  if (!sesi && !tanpaSesi) return <Login />;
+
+  return <Layar rute={rute} />;
+}
+
 function App() {
   const jalur = useJalur();
   const { rute } = cocokkanRute(jalur);
+  const { sesi } = useSesi();
 
   return (
     // Penyedia membungkus SHELL, bukan hanya isinya: `SyncIndicator` di topbar
@@ -30,23 +56,17 @@ function App() {
     // Yang menahan render hanya ISI layar (`IsiSiap`). Topbar dan menu tetap
     // ada, kalau tidak kasir terjebak di satu layar galat tanpa jalan ke mana
     // pun.
-    //
-    // Penjadwal relay SENGAJA belum dinyalakan. `buatPengirimHttp` menuntut
-    // baseUrl, tenantId, dan actorId, dan ketiganya lahir dari pendaftaran
-    // perangkat (Modul F). Menyalakannya sekarang berarti memukul endpoint
-    // tanpa identitas, 15 detik sekali, sepanjang hari.
     <DbLokalProvider>
       <ShellKasir
-        // Nilai sementara: identitas perangkat dan sesi lahir bersama Modul F.
-        // Ditulis apa adanya alih-alih dikosongkan, supaya jelas bahwa yang
-        // belum ada adalah SUMBERNYA, bukan tempatnya di layar.
+        // Outlet dan perangkat masih menunggu K-15 mengisinya ke
+        // `device_config`; nama pengguna sekarang datang dari sesi sungguhan.
         outlet="Outlet belum dipilih"
         device="Perangkat belum terdaftar"
-        pengguna="Belum masuk"
+        pengguna={sesi ? sesi.nama : 'Belum masuk'}
         ruteAktif={rute}
       >
         <IsiSiap>
-          <Layar rute={rute} />
+          <Isi jalur={jalur} />
         </IsiSiap>
       </ShellKasir>
     </DbLokalProvider>
