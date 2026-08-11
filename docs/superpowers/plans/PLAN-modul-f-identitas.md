@@ -285,16 +285,25 @@ di-bundle. Kasir tanpa email tidak dapat masuk — itu benar (`spec-f:184`).
       memeriksa status kedua jalur
 
 ### §5 RBAC
-- [ ] T5.1 `assertBoleh` + test property "operasi di luar hak ditolak"
-- [ ] T5.2 Refund menuntut hak `approve_refund`
-- [ ] T5.3 FR-F5 — `cost` dibuang untuk peran Kasir
+- [x] T5.1 `assertBoleh` — fail-closed dua kali (tanpa peran, dan operasi tak
+      dikenal). SELECT tunduk RLS, jadi id lintas-tenant jatuh ke daftar kosong
+- [x] T5.2 Refund menuntut penyetuju ber-hak `approve_authorization`. Guard di
+      jalur refund, BUKAN di awal handler — void mengabaikan `X-Approver-Id`
+      sepenuhnya. Ditolak = tidak ada baris refund/stok/audit sama sekali
+- [ ] T5.3 FR-F5 — `cost` dibuang untuk peran Kasir. **DITUNDA, dengan alasan
+      di §12.** Dua penghalang nyata, keduanya bukan soal usaha
 
 ### §6 Klien
-- [ ] T6.0 **Keputusan T3** — Argon2 di klien
-- [ ] T6.1 Raw table `user`/`user_role`/`user_outlet` + sync rules
-- [ ] T6.2 `sesi_lokal` + `pin_lockout_lokal`
-- [ ] T6.3 K-01 login PIN
-- [ ] T6.4 FR-F4 penguncian, bertahan restart
+- [x] T6.0 **Keputusan T3 diambil user 11 Agu 2026: WASM.** `hash-wasm@4.12.0`
+      — satu-satunya dependency baru di sub-project ini. WASM disisipkan
+      base64 di bundel, jadi tidak ada aset terpisah; `vite build` hijau
+- [x] T6.1 Raw table `user`/`user_role`/`user_outlet` + sync rules **berkolom
+      eksplisit** (`password_hash`/`mfa_secret`/`email` tidak pernah turun)
+      dan **disaring per outlet** (`spec-f:250`)
+- [x] T6.2 `sesi_lokal` + `pin_lockout_lokal`, keduanya lokal-saja
+- [ ] T6.3 K-01 login PIN — **layarnya**. Logikanya selesai dan teruji;
+      yang tersisa keypad + hitung mundur
+- [x] T6.4 FR-F4 penguncian, persisten, per-pengguna, eskalasi 60 s → 900 s
 - [ ] T6.5 Audit event sesi ke outbox
 
 ### §7–§9
@@ -314,3 +323,34 @@ di-bundle. Kasir tanpa email tidak dapat masuk — itu benar (`spec-f:184`).
 
 `ERD-lumi-pos-v1.md:143` menulis constraint yang mustahil (T2).
 `product/` milik user. Perubahannya diusulkan di laporan akhir.
+
+---
+
+## 12. T5.3 (FR-F5) ditunda — dua penghalang nyata
+
+`spec-f:66` menuntut `cost` dan `cost_at_sale` **tidak ada di payload** untuk
+peran Kasir, "bukan sekadar disembunyikan di UI". Itu tidak dapat dipenuhi
+sekarang, dan menyetengahinya lebih buruk daripada menundanya.
+
+**Penghalang 1 — endpoint katalog tidak menuntut `X-Actor-Id`.**
+Menambahkannya sebagai opsional berarti kontrolnya dapat dilewati dengan
+menghapus satu header. Kontrol yang terlihat ada tapi dapat dilewati lebih
+berbahaya daripada tidak ada: ia membuat orang berhenti mencari.
+Menjadikannya wajib adalah perubahan kontrak untuk 147 test katalog dan
+setiap pemanggil yang ada — keputusan scope, bukan detail implementasi.
+
+**Penghalang 2 — ⛔ `cost` sudah turun ke SETIAP perangkat.**
+`sync-config.yaml` memakai `SELECT * FROM item_variation`, dan `cost` ikut.
+Ini paparan yang lebih besar daripada respons REST mana pun: ia data diam di
+tablet yang `spec-f:242` asumsikan suatu saat hilang.
+
+Membuangnya dari jalur turun **belum dapat diputuskan**, karena
+`order_line.cost_at_sale` untuk order yang dibuat OFFLINE harus datang dari
+suatu tempat. Hari ini ia dihitung server (`getVariationSnapshot`), dan
+`apps/kasir` belum menulis order sama sekali — jadi pertanyaannya belum
+pernah dijawab. Ada tiga jalan (perangkat tidak menyimpan `cost` dan
+`cost_at_sale` diisi server saat order naik · `cost` turun hanya ke perangkat
+yang penggunanya berhak · `cost_at_sale` dihitung dari harga, bukan HPP), dan
+memilih salah satunya diam-diam akan mengikat FR-B/FR-G.
+
+**Diangkat ke user, tidak ditebak.**

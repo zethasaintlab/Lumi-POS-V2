@@ -34,6 +34,7 @@
     "test:identity": "node --env-file=.env --test --test-concurrency=1 \"tests/identity/*.test.js\""
   },
   "dependencies": {
+    "hash-wasm": "^4.12.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {

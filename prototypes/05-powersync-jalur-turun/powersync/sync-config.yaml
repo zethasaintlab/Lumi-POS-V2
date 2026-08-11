@@ -34,3 +34,38 @@ streams:
       - SELECT * FROM modifier WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item_modifier_list WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM tax_rate WHERE tenant_id = auth.parameter('tenant_id')
+
+  # Identitas — FR-F3 (login offline). Hash PIN harus ADA di perangkat, karena
+  # verifikasinya lokal (`spec-f:124-125`).
+  #
+  # ⛔ KOLOM DIDAFTARKAN SATU PER SATU, dan itu WAJIB — bukan kerapian.
+  # `SELECT *` akan mengirim `password_hash`, `mfa_secret`, dan `email` ke
+  # setiap tablet di setiap outlet. Permukaan kasir tidak menerima login
+  # password sama sekali (`spec-f:150`), jadi ketiganya murni tambahan bahan
+  # yang hilang bersama tablet yang dicuri (`spec-f:242`).
+  #
+  # ⛔ DISARING PER OUTLET, bukan per tenant. `spec-f:250`: "Perangkat hanya
+  # mereplikasi data outletnya. Perangkat curian tidak memberi akses ke outlet
+  # lain." Tanpa join ke `user_outlet`, satu tablet memegang hash PIN seluruh
+  # staf merchant — termasuk cabang yang tidak pernah dilihatnya.
+  #
+  # Dan ingat batas yang berlaku untuk SELURUH berkas ini: sync rules adalah
+  # SATU-SATUNYA batas tenant pada jalur turun. Tidak ada RLS di belakangnya.
+  identitas:
+    auto_subscribe: true
+    queries:
+      - SELECT u.id, u.tenant_id, u.name, u.pin_hash, u.pin_algo,
+               u.pin_must_change, u.is_active
+          FROM "user" u
+          JOIN user_outlet uo ON uo.user_id = u.id
+         WHERE u.tenant_id = auth.parameter('tenant_id')
+           AND uo.outlet_id = auth.parameter('outlet_id')
+      - SELECT ur.id, ur.tenant_id, ur.user_id, ur.role, ur.scope_type, ur.scope_id
+          FROM user_role ur
+          JOIN user_outlet uo ON uo.user_id = ur.user_id
+         WHERE ur.tenant_id = auth.parameter('tenant_id')
+           AND uo.outlet_id = auth.parameter('outlet_id')
+      - SELECT id, tenant_id, user_id, outlet_id
+          FROM user_outlet
+         WHERE tenant_id = auth.parameter('tenant_id')
+           AND outlet_id = auth.parameter('outlet_id')

@@ -127,7 +127,14 @@ Lokal-only:   OutboxLocal · DeviceConfig · SyncCheckpoint
 | `pin_failed_attempts` | int | |
 | `pin_locked_until` | timestamptz nullable | Persisten, bertahan restart |
 | `pin_rotated_at` | timestamptz nullable | Untuk rotasi PIN manajer (default 90 hari) |
+| `pin_must_change` | bool | Diset saat manajer mereset PIN (`spec-f:420`). Login berikutnya wajib mengganti |
+| `pin_algo` | text nullable | `argon2id`. Parameternya sendiri ikut di dalam string PHC |
+| `pin_lockout_count` | int | Jumlah penguncian di dalam jendela satu jam — dasar eskalasi 60 s → 15 mnt (`spec-f:229`) |
+| `pin_lockout_window_start` | timestamptz nullable | Awal jendela eskalasi |
+| `birth_date` | date nullable | Menolak PIN berupa tanggal lahir (`spec-f:135`). Nullable, dan tetap — aturannya bersyarat, dan data pribadi yang tidak dibutuhkan lebih baik tidak ada |
 | `mfa_secret` | text nullable | TOTP; opsional v1, wajib Owner v1.1 |
+
+`pin_hash` disimpan dalam **format PHC** (`$argon2id$v=19$m=…,t=…,p=…$salt$tag`). Parameternya ikut di dalam string, jadi server dan klien tidak perlu menyepakati konstanta apa pun — dan menaikkan parameter kelak tidak mengunci pengguna yang sudah ada, karena hash lama tetap diverifikasi dengan parameternya sendiri.
 
 **Pembagian kredensial per permukaan** — dua mekanisme, dipilih berdasarkan permukaan bukan berdasarkan pengguna:
 
@@ -140,7 +147,41 @@ Satu pengguna dapat memiliki keduanya (mis. manajer outlet yang juga membuka lap
 | `is_active` | bool | |
 | `deactivated_at` | timestamptz | |
 
-**Constraint:** `UNIQUE(outlet_id, pin_hash)` lewat tabel jembatan — PIN unik per outlet, bukan per tenant.
+**Aturan:** PIN unik per outlet, bukan per tenant (`spec-f:126`). **Ditegakkan aplikasi, bukan constraint database** — lihat di bawah.
+
+> ⛔ **Koreksi 11 Agustus 2026.** Versi sebelumnya menulis
+> `UNIQUE(outlet_id, pin_hash)` lewat tabel jembatan. Constraint itu
+> **mustahil ditegakkan** dan dihapus setelah diukur:
+>
+> ```
+> PIN '482913' + salt A  →  hash X
+> PIN '482913' + salt B  →  hash Y        X ≠ Y
+> ```
+>
+> Argon2id memakai salt per pengguna — itu syarat yang **benar**, tanpanya
+> seluruh tabel dapat dipecahkan sekaligus. Konsekuensinya dua PIN identik
+> menghasilkan hash berbeda, jadi unique index atas `pin_hash` akan hijau
+> selamanya sambil membiarkan dua kasir seoutlet memakai PIN yang sama —
+> tepat keadaan yang aturannya larang, dan yang menghancurkan atribusi
+> (`spec-f:116`).
+>
+> Penegakannya pindah ke aplikasi: saat PIN diset, PIN baru **diverifikasi**
+> terhadap `pin_hash` setiap rekan seoutlet
+> (`assertPinBelumDipakaiDiOutlet`, `handlers/users.ts`). Biayanya n × 23 ms
+> dengan n = staf outlet, pada operasi yang jarang.
+>
+> Tabel jembatannya sendiri tetap dibangun — `user_outlet` (migrasi `0019`) —
+> karena tiga hal lain tetap membutuhkannya: cakupan keunikan PIN, pengguna
+> mana yang direplikasi ke perangkat outlet ini (`spec-f:124`), dan batas
+> visibilitas Manajer Outlet yang `spec-f:81` tuntut ditegakkan "di lapisan
+> query bukan UI".
+
+### `user_outlet`
+`id` · `tenant_id` · `outlet_id` · `user_id` · `UNIQUE(user_id, outlet_id)`
+
+Keanggotaan outlet, banyak-ke-banyak. **Bukan `user.outlet_id`:** manajer area bekerja di beberapa outlet (`spec-f:30`), dan kolom tunggal akan memaksa duplikasi baris `user` — dua baris untuk satu orang menghancurkan atribusi persis seperti PIN yang dibagi.
+
+`user_role` tidak menggantikannya: owner ber-scope tenant tidak punya baris outlet sama sekali, tapi tetap harus dapat login di perangkat.
 
 ### `role`, `user_role`
 `role`: `owner`·`area_manager`·`outlet_manager`·`cashier`·`accountant`.

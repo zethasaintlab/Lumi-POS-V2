@@ -37,6 +37,14 @@ export const TABEL_RAW = [
   'cash_drawer_shift',
   'cash_movement',
   'audit_event',
+  // §6 PLAN-modul-f-identitas.md. FR-F3 menuntut login berfungsi dengan
+  // jaringan dimatikan sepenuhnya, dan itu hanya mungkin bila hash PIN ADA
+  // di perangkat (`spec-f:124`). Ketiganya turun; kolomnya disaring sync
+  // rules, bukan SELECT * -- `password_hash` dan `mfa_secret` tidak pernah
+  // menyentuh perangkat kasir.
+  'user',
+  'user_role',
+  'user_outlet',
 ];
 
 /**
@@ -47,7 +55,18 @@ export const TABEL_RAW = [
  * atau view bertanda `-- powersync-auto-generated`. Mendaftarkannya berarti
  * membangun jalur naik kedua yang diam-diam.
  */
-export const TABEL_LOKAL_SAJA = ['stock_snapshot', 'outbox_local', 'device_config', 'skema_lokal'];
+export const TABEL_LOKAL_SAJA = [
+  'stock_snapshot',
+  'outbox_local',
+  'device_config',
+  'skema_lokal',
+  // Keduanya SENGAJA tidak didaftarkan: sesi kasir tidak punya padanan di
+  // server (`spec-f:183` -- shift yang menentukan, bukan kedaluwarsa sesi),
+  // dan penguncian PIN yang berlaku saat offline adalah milik perangkat ini
+  // sendiri.
+  'sesi_lokal',
+  'pin_lockout_lokal',
+];
 
 /**
  * Kolom yang tipenya BERBEDA antara PostgreSQL dan skema lokal, beserta
@@ -137,6 +156,15 @@ export const KOLOM_BELUM_DIUKUR = [
   'cash_drawer_shift.count_attempts',
   'audit_event.before',
   'audit_event.after',
+  // §6 PLAN-modul-f-identitas.md. Ditemukan oleh penjaga drift ini, bukan
+  // oleh review: keduanya `boolean` di PostgreSQL dan `INTEGER` di lokal --
+  // kelas divergensi yang sama persis dengan `tax_rate.is_inclusive`.
+  //
+  // `user.is_active` yang mendarat salah tidak menghasilkan error apa pun;
+  // ia menghasilkan kasir nonaktif yang tetap dapat login saat offline, atau
+  // kasir aktif yang terkunci di luar. Belum diukur lewat sync sungguhan.
+  'user.is_active',
+  'user.pin_must_change',
 ];
 
 /**

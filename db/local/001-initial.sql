@@ -57,6 +57,35 @@ CREATE TABLE tax_rate (
   effective_from TEXT NOT NULL, effective_to TEXT
 );
 
+-- ---------- IDENTITAS (direplikasi turun) ----------
+-- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
+-- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.
+--
+-- ⛔ Kolom di sini SENGAJA lebih sedikit daripada tabel servernya.
+-- `password_hash`, `mfa_secret`, dan `email` TIDAK turun: permukaan kasir
+-- tidak menerima login password (`spec-f:150`), jadi mengirimkannya hanya
+-- menambah bahan yang hilang bersama tablet yang dicuri. Sync rules yang
+-- menegakkannya -- daftar kolom eksplisit, bukan SELECT *.
+--
+-- `pin_hash` sendiri memang harus turun, dan itu diterima dengan sadar:
+-- `spec-f:242` mengasumsikan setiap tablet suatu saat berada di tangan yang
+-- salah. Yang membatasi kerusakannya adalah Argon2id (bukan hash cepat),
+-- cakupan per-outlet, dan enkripsi at-rest yang menunggu Tauri (F4).
+CREATE TABLE "user" (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
+  pin_hash TEXT, pin_algo TEXT,
+  pin_must_change INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE user_role (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  role TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL
+);
+CREATE TABLE user_outlet (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL, outlet_id TEXT NOT NULL
+);
+
 -- ---------- TRANSAKSI (dibuat lokal, naik) ----------
 CREATE TABLE "order" (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL,
@@ -202,6 +231,42 @@ CREATE TABLE skema_lokal (
   sidik_raw_table TEXT NOT NULL,
   dipasang_pada TEXT NOT NULL
 );
+
+-- Sesi kasir yang sedang berjalan. Satu baris, dipaksa CHECK: satu perangkat
+-- melayani satu kasir pada satu waktu (`IA:2.1` -- topbar menampilkan satu
+-- nama).
+--
+-- ⛔ MURNI LOKAL, dan itu bukan penyederhanaan. `spec-f:183`: "sesi
+-- back-office kedaluwarsa; sesi kasir TIDAK -- shift yang menentukan." Sesi
+-- kasir tidak punya padanan di server, tidak direplikasi, dan tidak pernah
+-- naik. Yang naik adalah `audit_event` login/logout-nya.
+CREATE TABLE sesi_lokal (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  user_id TEXT NOT NULL,
+  nama TEXT NOT NULL,
+  peran TEXT NOT NULL,              -- JSON array; sesi tidak menyimpan matriks, hanya peran
+  masuk_pada TEXT NOT NULL,
+  wajib_ganti_pin INTEGER NOT NULL DEFAULT 0
+);
+
+-- FR-F4. Penguncian PIN per PENGGUNA (`spec-f:236`), bukan per perangkat --
+-- kasir lain yang PIN-nya benar tidak boleh ikut terhalang.
+--
+-- ⛔ Tabel, bukan variabel di memori. `spec-f:226`: "perangkat di-restart ->
+-- penguncian TETAP berlaku (disimpan persisten, bukan di memori)". Penguncian
+-- yang hilang saat restart adalah penguncian yang dapat dilewati siapa pun
+-- yang dapat mematikan tablet.
+--
+-- Ia lokal-saja dan tidak pernah naik: server memegang hitungannya sendiri
+-- lewat POST /users/{id}/pin-attempts, dan yang di sini adalah yang berlaku
+-- saat offline -- keadaan yang `spec-f:221` tuntut tetap dijaga PENUH.
+CREATE TABLE pin_lockout_lokal (
+  user_id TEXT PRIMARY KEY NOT NULL,
+  gagal_berturut INTEGER NOT NULL DEFAULT 0,
+  terkunci_sampai TEXT,
+  jumlah_penguncian INTEGER NOT NULL DEFAULT 0,
+  jendela_mulai TEXT
+) WITHOUT ROWID;
 
 -- ---------- INDEX (dari ERD §15) ----------
 CREATE INDEX ix_order_outlet_date   ON "order"(tenant_id, outlet_id, business_date);

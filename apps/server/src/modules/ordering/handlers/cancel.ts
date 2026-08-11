@@ -5,7 +5,7 @@ import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId, getApproverId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import { computeRequestHash } from './request-hash.ts';
-import { assertUserVisible, assertApproverVisible } from '../../identity/index.ts';
+import { assertUserVisible, assertApproverVisible, assertBoleh } from '../../identity/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { recordStockMovements } from '../../inventory/index.ts';
 import type { StockMovementInput } from '../../inventory/index.ts';
@@ -393,6 +393,23 @@ async function tulisRefund(client: PoolClient, ctx: RefundContext): Promise<Reco
   // finansial yang isinya tidak dijamin siapa-siapa, kelas yang sama dengan
   // `price_history.changed_by`. Ini satu-satunya yang berdiri di sana.
   await assertApproverVisible(client, approverId);
+
+  // §5 PLAN-modul-f-identitas.md. `assertApproverVisible` di atas hanya
+  // membuktikan penyetujunya ADA dan AKTIF -- sebelum baris ini, kasir mana
+  // pun lolos sebagai penyetuju refund, sementara `spec-f:42` menulis
+  // "Menyetujui void/refund/diskon: Kasir ❌" dan `spec-b:278` menandai
+  // refund sebagai PIN manajer yang tidak dapat diubah.
+  //
+  // Diperiksa DI SINI, bukan di awal handler: void mengabaikan
+  // `X-Approver-Id` sepenuhnya (keputusan user 1 Agustus 2026), jadi
+  // pemeriksaan yang berjalan sebelum server memilih operasinya akan menolak
+  // void yang sah hanya karena perangkat menyertakan header nyasar.
+  //
+  // Labelnya menyebut PENYETUJU. Manajer yang berdiri di kasir dengan
+  // pelanggan menunggu akan mencari masalah di tempat yang keliru kalau
+  // pesannya menyebut kasirnya -- pelajaran yang sama yang melahirkan
+  // APPROVER_NOT_FOUND (CLAUDE.md, temuan F1 bentuk kelima).
+  await assertBoleh(client, approverId, 'approve_authorization', 'menyetujui refund');
 
   const { rows: sebelumnya } = await client.query<{ total: string }>(
     'SELECT COALESCE(SUM(amount), 0)::text AS total FROM refund WHERE order_id = $1',
