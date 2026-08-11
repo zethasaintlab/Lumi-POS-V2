@@ -19,27 +19,21 @@ sync_config:
   path: sync-config.yaml
 
 client_auth:
-  # JWKS INLINE dengan kunci simetris HS256.
+  # ⛔ DIUBAH 8 Agustus 2026: dari JWKS inline HS256 menjadi JWKS SUNGGUHAN
+  # yang dilayani server Fastify kami (FR-F12).
   #
-  # Demo resmi menjalankan satu container backend hanya untuk melayani
-  # endpoint JWKS. Untuk prototipe ini itu satu bagian bergerak tanpa
-  # pertanyaan yang dijawabnya, jadi kuncinya ditanam langsung.
+  # Versi sebelumnya menanam kunci SIMETRIS di berkas ini, dan komentarnya
+  # sendiri menyebutnya "bukan pola produksi". Sekarang tidak ada lagi bahan
+  # rahasia di sini sama sekali: PowerSync mengambil kunci PUBLIK dari server
+  # kami dan memverifikasi RS256 dengannya.
   #
-  # ⛔ INI BUKAN POLA PRODUKSI, DAN JANGAN PERNAH DISALIN KE apps/.
-  # Kunci simetris berarti siapa pun yang dapat MEMVERIFIKASI token juga dapat
-  # MEMBUAT-nya. Di produksi token dicetak server Fastify kami dengan kunci
-  # asimetris (RS256/EdDSA), dan klien tidak pernah memegang bahan rahasianya.
-  # Nilai di bawah sekali-pakai dan hanya mengikat ke localhost.
-  #
-  # `k` adalah base64url dari rahasia; lihat tools/token.mjs.
-  jwks:
-    keys:
-      - kty: oct
-        kid: prototipe-05
-        alg: HS256
-        k: cHJvdG90aXBlLTA1LWxvY2FsaG9zdC1zYWphLWphbmdhbi1kaXBha2FpLWRpLXByb2R1a3Np
+  # `host.docker.internal` -- container berbicara ke host, dan server kami
+  # harus mendengarkan di 0.0.0.0, bukan 127.0.0.1.
+  jwks_uri: http://host.docker.internal:3000/.well-known/jwks.json
 
-  audience: ["powersync-dev"]
+  # Cocok dengan klaim `aud` yang dicetak `tokens.ts`. Tidak cocok -> 401,
+  # dan pesannya tidak menyebut audience.
+  audience: ["powersync"]
 
 api:
   tokens:

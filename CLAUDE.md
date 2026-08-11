@@ -275,6 +275,14 @@ Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` mene
 - **Kunci kosong → 503, bukan gagal saat boot.** Berbeda dari adapter pembayaran, dan sengaja: gagal boot akan menuntut setiap test dan setiap lingkungan pengembangan menyediakan kunci RSA untuk endpoint yang tidak dipakainya.
 - **Kredensial yang hilang dijawab 401, bukan 400.** Karena itu header `Authorization` tidak ditandai `required` di OpenAPI — validator akan menjawab 400, dan 400 berarti "permintaan cacat" sementara yang dimaksud adalah "buktikan siapa kamu".
 
+**Jalur turun berjalan lewat aplikasi sungguhan, 8 Agustus 2026.** Stack PowerSync prototipe 05 + server kami + `apps/kasir`: `terhubung: true`, ketujuh tabel katalog turun ke raw table kami, isolasi tenant menahan (tenant lain nol baris). `client_auth.jwks` inline di prototipe diganti `jwks_uri` yang menunjuk server kami — **tidak ada lagi bahan rahasia di konfigurasi PowerSync**.
+
+- **Kedua kolom berskala terbukti benar di aplikasi**: `tax_rate.rate` mendarat `1100` bertipe `integer` (bukan `0.11` bertipe `real`), dan `item_variation.conversion_factor` mendarat `1000` (bukan `1`). Yang kedua ditemukan lewat perbandingan DDL dan belum pernah terukur sampai sekarang.
+- **CORS wajib, dan daftarnya dari `CORS_ORIGINS`** — bukan dari kode (invariant #5). Kosong = tidak ada origin yang diizinkan; `*` tidak pernah dijawab. Tanpa ini aplikasi kasir tidak dapat mencapai server sama sekali.
+- **Perubahan bentuk tabel LOKAL-SAJA tidak terlihat sidik jari skema.** Ia hanya menghitung raw table. Migrasi tabel lokal karena itu ADITIF (`ALTER TABLE ADD COLUMN`) dan berjalan di setiap boot — `outbox_local` memegang penjualan yang belum terkirim, `device_config` memegang `receipt_sequence`. ALTER tidak dapat mengubah primary key; kalau itu yang berubah, database lama harus dibuang.
+- ⛔ **Test klien berjalan di atas SQLite yang BERBEDA dari aplikasi.** `ON CONFLICT(id)` diterima `node:sqlite` dan DITOLAK `wa-sqlite` — seluruh test hijau, hanya aplikasinya yang gagal. Bentuk SQL baru wajib dijalankan di browser sebelum dipercaya.
+- **Aktor dibekukan saat item outbox DIBUAT** (`outbox_local.actor_id`), bukan dibaca saat dikirim. Antrean yang terkuras setelah pergantian shift akan menisbatkan penjualan ke kasir yang salah.
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---
