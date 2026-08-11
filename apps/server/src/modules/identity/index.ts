@@ -1,7 +1,10 @@
 import type { Pool, PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
+import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createDeviceHandlers } from './handlers/devices.ts';
 import { createTokenHandlers, type KonfigToken } from './handlers/tokens.ts';
+import { createUserHandlers } from './handlers/users.ts';
+import { buatPinHasher } from './pin-hasher.ts';
 
 // Permukaan publik modul identity (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul catalog DILARANG query `"user"`
@@ -68,9 +71,18 @@ export async function assertDeviceVisible(client: PoolClient, deviceId: string):
   }
 }
 
-export function createIdentityHandlers(pool: Pool, konfigToken: KonfigToken): Record<string, unknown> {
+export function createIdentityHandlers(
+  pool: Pool,
+  konfigToken: KonfigToken,
+  hlc: Hlc
+): Record<string, unknown> {
+  // Satu `PinHasher` per proses. Ia stateless, tapi dibuat di sini alih-alih
+  // di dalam handler supaya titik penggantiannya tunggal -- sama seperti
+  // adapter pembayaran dipilih sekali di `buildApp`.
+  const hasher = buatPinHasher();
   return {
     ...createDeviceHandlers(pool),
     ...createTokenHandlers(pool, konfigToken),
+    ...createUserHandlers(pool, hasher, hlc),
   };
 }

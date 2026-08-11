@@ -1177,6 +1177,204 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /users:
+    post:
+      operationId: createUser
+      summary: >-
+        FR-F2 -- membuat pengguna beserta peran dan keanggotaan outletnya.
+        Ketiganya SATU transaksi: pengguna tanpa peran dan tanpa outlet tidak
+        dapat melakukan apa pun dan tidak terlihat perangkat mana pun.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, roles, outletIds]
+              properties:
+                id: { type: string }
+                name: { type: string, minLength: 1 }
+                email: { type: string, nullable: true }
+                birthDate:
+                  type: string
+                  nullable: true
+                  description: >-
+                    YYYY-MM-DD. Dipakai menolak PIN berupa tanggal lahir
+                    (spec-f:135). Aturannya bersyarat -- tanpa nilai ini,
+                    pemeriksaan itu tidak berjalan.
+                roles:
+                  type: array
+                  items:
+                    type: object
+                    required: [role, scopeType, scopeId]
+                    properties:
+                      role:
+                        type: string
+                        enum: [owner, area_manager, outlet_manager, cashier, accountant]
+                      scopeType: { type: string, enum: [tenant, outlet] }
+                      scopeId: { type: string }
+                outletIds:
+                  type: array
+                  items: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400':
+          description: Header X-Tenant-Id / X-Actor-Id hilang, atau payload tidak valid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >-
+            Aktor tidak berhak mengelola peran yang diminta. Manajer Outlet
+            hanya boleh mengelola Kasir (spec-f:50).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            outletId tidak ditemukan atau bukan milik tenant pemanggil
+            (OUTLET_NOT_FOUND) -- divalidasi lewat SELECT tunduk RLS, bukan FK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: id sudah dipakai (ID_ALREADY_EXISTS)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}:
+    patch:
+      operationId: updateUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1 }
+                email: { type: string, nullable: true }
+                isActive: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            Owner terakhir tidak dapat dinonaktifkan (LAST_OWNER, spec-f:425).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}/pin:
+    put:
+      operationId: setUserPin
+      summary: >-
+        FR-F2. PIN di-hash Argon2id dan disimpan dalam format PHC. Keunikan PIN
+        per outlet ditegakkan APLIKASI -- UNIQUE(outlet_id, pin_hash) di ERD
+        §3 mustahil, karena salt per pengguna membuat PIN identik menghasilkan
+        hash berbeda (lihat migrasi 0019).
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pin]
+              properties:
+                pin: { type: string }
+                isReset:
+                  type: boolean
+                  default: false
+                  description: >-
+                    Reset oleh manajer. Menyalakan pin_must_change: PIN yang
+                    diketahui manajer tidak boleh berlaku selamanya
+                    (spec-f:420).
+      responses:
+        '204':
+          description: PIN diperbarui. Tanpa body -- tidak ada apa pun tentang PIN yang aman dikembalikan.
+        '400':
+          description: >-
+            Bukan 6 digit (PIN_INVALID_SHAPE) atau termasuk pola lemah
+            (PIN_TOO_WEAK -- pesan menyebut pola mana, spec-f:144)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            PIN sudah dipakai pengguna lain di outlet yang sama (PIN_TAKEN).
+            Pesan TIDAK menyebut siapa -- itu akan memberi tahu pemanggil PIN
+            siapa yang baru saja ia tebak.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}/pin-attempts:
+    post:
+      operationId: recordPinAttempt
+      summary: >-
+        FR-F4. Perangkat melaporkan hasil percobaan PIN yang diverifikasinya
+        secara LOKAL. Server memegang hitungan dan eskalasi supaya penguncian
+        berlaku di seluruh perangkat outlet, bukan hanya di perangkat tempat
+        PIN salah diketik.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [failed, succeeded] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [failedAttempts, lockedUntil, lockSeconds]
+                properties:
+                  failedAttempts: { type: integer }
+                  lockedUntil: { type: string, format: date-time, nullable: true }
+                  lockSeconds:
+                    type: integer
+                    nullable: true
+                    description: 60 detik, atau 900 pada penguncian ketiga dalam satu jam (spec-f:229)
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /devices:
     post:
       operationId: createDevice
@@ -2128,6 +2326,33 @@ components:
           type: array
           items: { type: string }
         effectiveFrom: { type: string, format: date-time }
+    User:
+      type: object
+      required: [id, name, isActive, roles, outletIds]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        isActive: { type: boolean }
+        pinMustChange: { type: boolean }
+        hasPin:
+          type: boolean
+          description: >-
+            Apakah pengguna punya PIN. Hash-nya sendiri TIDAK pernah keluar
+            lewat endpoint ini -- ia hanya turun lewat replikasi ke perangkat
+            outlet tempat pengguna terdaftar (spec-f:124).
+        roles:
+          type: array
+          items:
+            type: object
+            required: [role, scopeType, scopeId]
+            properties:
+              role: { type: string }
+              scopeType: { type: string }
+              scopeId: { type: string }
+        outletIds:
+          type: array
+          items: { type: string }
     Device:
       type: object
       required: [id, outletId, code]

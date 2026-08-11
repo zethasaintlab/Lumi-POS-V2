@@ -128,6 +128,13 @@ async function seedTenantBase(appClient, { suffix }) {
     scope_id: rows.outlet.id,
   });
 
+  rows.user_outlet = await insertReturning(appClient, 'user_outlet', {
+    id: freshId(),
+    tenant_id: tenantId,
+    user_id: rows.user.id,
+    outlet_id: rows.outlet.id,
+  });
+
   rows.category = await insertReturning(appClient, 'category', {
     id: freshId(),
     tenant_id: tenantId,

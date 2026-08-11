@@ -19,6 +19,11 @@ const TABLES = [
   { name: 'role', module: 'identity', partitioned: false },
   { name: 'user', module: 'identity', partitioned: false },
   { name: 'user_role', module: 'identity', partitioned: false },
+  // Migrasi 0019. Ia memikul batas yang `spec-f:81` tuntut ditegakkan "di
+  // lapisan query bukan UI", dan ia yang menentukan hash PIN siapa yang turun
+  // ke perangkat outlet mana — kebocoran di sini mengirim kredensial staf
+  // merchant lain ke perangkat yang salah.
+  { name: 'user_outlet', module: 'identity', partitioned: false },
   { name: 'device', module: 'identity', partitioned: false },
   { name: 'category', module: 'catalog', partitioned: false },
   { name: 'item', module: 'catalog', partitioned: false },

@@ -153,7 +153,7 @@ async function buildAppInner(
       return { status: 'ok' };
     },
     ...createCatalogHandlers(pool),
-    ...createIdentityHandlers(pool, konfigToken),
+    ...createIdentityHandlers(pool, konfigToken, hlc),
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
