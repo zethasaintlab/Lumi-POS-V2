@@ -115,6 +115,15 @@ function kelasPostgres(tipe) {
   if (/^bool/.test(tipe)) return 'bool';
   if (/^(timestamptz|timestamp)/.test(tipe)) return 'waktu';
   if (/^date\b/.test(tipe)) return 'tanggal';
+  // `time` DIPISAH dari `timestamp`, meski keduanya sama-sama tiba sebagai
+  // string. Alasannya bukan mekanisme melainkan BENTUK: timestamptz selalu
+  // ISO-8601 penuh, sementara `time` dapat tiba "04:00" atau "04:00:00" dan
+  // pembacanya harus menerima keduanya. Menggabungkannya ke `waktu` akan
+  // menyembunyikan pertanyaan itu di bawah kelas yang sudah dinyatakan aman.
+  //
+  // Urutannya penting: cek ini HARUS setelah `timestamp`, karena
+  // /^time/ juga cocok dengan `timestamptz`.
+  if (/^time\b/.test(tipe)) return 'time';
   if (/^jsonb?\b/.test(tipe)) return 'json';
   if (/^(text|varchar|character|uuid|citext)/.test(tipe)) return 'teks';
   return `TAK-DIKENAL:${tipe}`;

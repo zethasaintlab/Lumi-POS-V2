@@ -20,6 +20,8 @@
  * nyata kami (prototipe 04, `CLAUDE.md` bagian F2).
  */
 export const TABEL_RAW = [
+  // Konfigurasi outlet — prasyarat FR-D1 (tanggal bisnis, pembulatan tunai).
+  'outlet',
   'category',
   'item',
   'item_variation',
@@ -90,6 +92,8 @@ export const TABEL_LOKAL_SAJA = [
  */
 export const SKALA_KOLOM: Record<string, Record<string, number>> = {
   tax_rate: { rate: 10000 },
+  // Kemunculan KETIGA dari kelas cacat yang sama (numeric -> INTEGER berskala).
+  outlet: { service_charge_rate: 10000 },
   order_line: { tax_rate: 10000 },
   item_variation: { conversion_factor: 1000 },
 };
@@ -118,6 +122,17 @@ export const PERLAKUAN_DIVERGENSI: Record<string, { perlakuan: 'skala' | 'aman' 
   'tanggal->teks': {
     perlakuan: 'aman',
     alasan: 'Sama dengan waktu->teks: `date` tiba sebagai string.',
+  },
+  'time->teks': {
+    perlakuan: 'aman',
+    alasan:
+      'Kelas BARU, dibawa outlet.business_day_ends_at. Alasannya sama dengan ' +
+      'waktu->teks: JSON tidak punya tipe waktu, jadi `time` sudah berupa string ' +
+      'saat tiba. Yang BELUM diukur adalah BENTUKNYA — "04:00" atau "04:00:00". ' +
+      'Itu diserap di sisi pembaca: `tanggalBisnis` (packages/domain) menerima ' +
+      'keduanya, dan menolak apa pun selain itu alih-alih menebak. Kalau ia ' +
+      'hanya menerima satu bentuk, bentuk yang salah membuat SETIAP buka shift ' +
+      'gagal di perangkat sementara seluruh test hijau.',
   },
   'bool->bulat': {
     perlakuan: 'belum-diukur',

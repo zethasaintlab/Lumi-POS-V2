@@ -57,6 +57,27 @@ CREATE TABLE tax_rate (
   effective_from TEXT NOT NULL, effective_to TEXT
 );
 
+-- ---------- KONFIGURASI OUTLET (direplikasi turun) ----------
+-- Prasyarat FR-D1 yang spec-d sebut langsung: "Katalog dan konfigurasi outlet
+-- tersedia lokal." Tanpa ini klien tidak dapat menghitung TANGGAL BISNIS
+-- (butuh `timezone` + `business_day_ends_at`) maupun pembulatan tunai (butuh
+-- `rounding_increment` + `rounding_mode`) saat offline — dan keduanya adalah
+-- angka yang muncul di struk.
+--
+-- ⛔ `service_charge_rate` adalah `numeric(6,4)` di server dan INTEGER x10000
+-- di sini — kelas divergensi yang SAMA PERSIS dengan `tax_rate.rate`, yang
+-- dulu mendarat sebagai `0.11` bertipe `real` di kolom INTEGER tanpa satu pun
+-- error. Ia terdaftar di SKALA_KOLOM, dan `put` yang ditulis sendiri yang
+-- menegakkannya.
+CREATE TABLE outlet (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
+  timezone TEXT NOT NULL, business_day_ends_at TEXT NOT NULL,
+  rounding_increment INTEGER NOT NULL DEFAULT 100,
+  rounding_mode TEXT NOT NULL DEFAULT 'half_up',
+  service_charge_rate INTEGER NOT NULL DEFAULT 0,   -- x10000
+  archived_at TEXT
+);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.

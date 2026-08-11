@@ -168,3 +168,20 @@
   justify-content: flex-end;
   gap: var(--space-3);
 }
+
+/* K-02 buka shift. */
+.kasir-shift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  flex: 1;
+}
+
+.kasir-pecahan {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}

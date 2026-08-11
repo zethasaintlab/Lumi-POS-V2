@@ -27,6 +27,18 @@ streams:
   katalog:
     auto_subscribe: true
     queries:
+      # Konfigurasi outlet — prasyarat FR-D1 ("katalog dan konfigurasi outlet
+      # tersedia lokal"). Disaring ke outlet perangkat ini saja: `spec-f:250`
+      # menuntut perangkat curian tidak memberi akses ke outlet lain, dan nama
+      # serta pengaturan cabang lain tidak dibutuhkan kasir mana pun.
+      #
+      # Kolom eksplisit. `address` dan `vertical_profile_id` tidak turun —
+      # tidak ada layar kasir yang memakainya.
+      - SELECT id, tenant_id, name, timezone, business_day_ends_at,
+               rounding_increment, rounding_mode, service_charge_rate, archived_at
+          FROM outlet
+         WHERE tenant_id = auth.parameter('tenant_id')
+           AND id = auth.parameter('outlet_id')
       - SELECT * FROM category WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item_variation WHERE tenant_id = auth.parameter('tenant_id')
