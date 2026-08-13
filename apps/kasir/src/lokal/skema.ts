@@ -28,6 +28,8 @@ export const TABEL_RAW = [
   'modifier_list',
   'modifier',
   'item_modifier_list',
+  // FR-A7 — tanpa ini perangkat hanya melihat anak tangga harga paling bawah.
+  'price_history',
   'tax_rate',
   'order',
   'check',

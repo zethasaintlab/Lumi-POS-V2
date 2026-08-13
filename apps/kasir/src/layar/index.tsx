@@ -1,6 +1,7 @@
 import type { Rute } from '../rute/tabel.ts';
 import { BelumDibangun } from './BelumDibangun.tsx';
 import { BukaShift } from './BukaShift.tsx';
+import { Kasir } from './Kasir.tsx';
 import { Perangkat } from './Perangkat.tsx';
 import { StatusSinkronisasi } from './StatusSinkronisasi.tsx';
 
@@ -11,6 +12,7 @@ import { StatusSinkronisasi } from './StatusSinkronisasi.tsx';
    sini, dan tidak ada tempat lain yang perlu tahu. */
 const LAYAR: Record<string, () => React.ReactElement> = {
   'K-02': BukaShift,
+  'K-03': Kasir,
   'K-14': StatusSinkronisasi,
   'K-15': Perangkat,
 };

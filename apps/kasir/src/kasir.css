@@ -185,3 +185,85 @@
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
 }
+
+/* K-03 kasir: grid produk + keranjang.
+
+   IA §2.1: keranjang adalah kolom kanan di >=900px, bottom sheet di bawahnya.
+   Yang dibangun sekarang kolom kanan; bottom sheet menunggu perangkat yang
+   benar-benar sempit. */
+.kasir-utama {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.kasir-grid-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* >=12 kartu tanpa scroll (IA:62). `auto-fill` dengan lebar minimum, bukan
+   jumlah kolom tetap: tablet 1024 dan mini-PC 1280 harus keduanya muat. */
+.kasir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--space-3);
+}
+
+.kasir-kartu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  min-height: var(--touch-target);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.kasir-keranjang {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  width: 22rem;
+  flex: none;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.kasir-baris-daftar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.kasir-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.kasir-subtotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}

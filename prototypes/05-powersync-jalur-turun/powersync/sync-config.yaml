@@ -45,6 +45,13 @@ streams:
       - SELECT * FROM modifier_list WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM modifier WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item_modifier_list WHERE tenant_id = auth.parameter('tenant_id')
+      # FR-A7. Kolom audit (`changed_by`, `reason`) tidak turun — tidak ada
+      # layar kasir yang memakainya, dan `changed_by` adalah id pengguna yang
+      # bisa saja bukan staf outlet ini.
+      - SELECT id, tenant_id, variation_id, outlet_id, price, effective_from
+          FROM price_history
+         WHERE tenant_id = auth.parameter('tenant_id')
+           AND (outlet_id IS NULL OR outlet_id = auth.parameter('outlet_id'))
       - SELECT * FROM tax_rate WHERE tenant_id = auth.parameter('tenant_id')
 
   # Identitas — FR-F3 (login offline). Hash PIN harus ADA di perangkat, karena

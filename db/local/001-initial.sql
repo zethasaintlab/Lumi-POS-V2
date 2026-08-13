@@ -57,6 +57,22 @@ CREATE TABLE tax_rate (
   effective_from TEXT NOT NULL, effective_to TEXT
 );
 
+-- ⛔ price_history WAJIB turun, dan itu bukan kelengkapan.
+-- Harga jual adalah TANGGA tiga tingkat (FR-A7): harga outlet -> harga tenant
+-- -> item_variation.price. Tanpa tabel ini perangkat hanya melihat anak tangga
+-- paling bawah, dan setiap perubahan harga yang pernah dibuat merchant
+-- diabaikan diam-diam saat offline -- kasir menjual dengan harga lama, struk
+-- tercetak, dan selisihnya baru terlihat di laporan.
+--
+-- `changed_by` dan `reason` TIDAK turun: keduanya kolom audit yang tidak
+-- dipakai layar kasir mana pun.
+CREATE TABLE price_history (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, variation_id TEXT NOT NULL,
+  outlet_id TEXT, price INTEGER NOT NULL, effective_from TEXT NOT NULL
+);
+CREATE INDEX ix_price_history_resolusi
+  ON price_history(variation_id, outlet_id, effective_from);
+
 -- ---------- KONFIGURASI OUTLET (direplikasi turun) ----------
 -- Prasyarat FR-D1 yang spec-d sebut langsung: "Katalog dan konfigurasi outlet
 -- tersedia lokal." Tanpa ini klien tidak dapat menghitung TANGGAL BISNIS
