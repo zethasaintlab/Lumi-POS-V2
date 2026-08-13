@@ -252,7 +252,23 @@ CREATE TABLE device_config (
   base_url TEXT NOT NULL,
   token_secret TEXT,
   receipt_sequence INTEGER DEFAULT 0, sequence_business_date TEXT,
-  hlc_state INTEGER DEFAULT 0, last_sync_at TEXT
+  -- ⛔ `hlc_state` INTEGER dipertahankan HANYA untuk perangkat lama; jangan
+  -- dipakai lagi. HLC adalah bilangan 57-bit, dan kolom INTEGER membuatnya
+  -- kembali sebagai `number` JavaScript yang SUDAH kehilangan presisi di atas
+  -- 2^53. Ditemukan dengan menjalankan aplikasi: nilai yang ditulis
+  -- 117089592062246913 dibaca sebagai ...912, ditolak parser, lalu HLC jatuh
+  -- ke jam dinding — yang sedang mundur. HLC turun setelah restart, dan tidak
+  -- ada satu pun error.
+  --
+  -- `hlc_teks` adalah kolom yang berlaku. Ia TEXT karena hanya teks yang
+  -- melewati SQLite dan JavaScript tanpa menyentuh double.
+  --
+  -- Kolom lama tidak dibuang: `device_config` murni lokal dan bermigrasi
+  -- ADITIF (ALTER TABLE ADD COLUMN), dan SQLite tidak dapat mengubah tipe
+  -- kolom sama sekali.
+  hlc_state INTEGER DEFAULT 0,
+  hlc_teks TEXT,
+  last_sync_at TEXT
 );
 -- Sidik jari bentuk raw table pada saat skema terakhir dipasang di perangkat
 -- ini. Ia menggantikan nomor versi yang ditulis tangan, dan alasannya bukan

@@ -8,6 +8,7 @@ import {
 } from '../../../../packages/domain/src/money.ts';
 import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
+import { simpanHlc } from '../lokal/hlc.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
 import type { Keranjang } from './keranjang.ts';
@@ -365,6 +366,16 @@ export async function simpanPenjualan({
       dependsOn: idOutboxOrder,
       actorId: sesi.userId,
     });
+
+    // ⛔ Keadaan HLC disimpan DI DALAM transaksi ini, bukan sesudahnya.
+    //
+    // Kalau ia ditulis di luar, ada jendela di antara commit order dan commit
+    // hlc_state. Perangkat yang mati di jendela itu memuat nilai LAMA saat
+    // boot, dan tick berikutnya dapat menghasilkan HLC yang SUDAH DIPAKAI
+    // order yang sudah ter-commit — pelanggaran I10 yang tidak menghasilkan
+    // satu pun error, dan yang membuat "mana yang lebih dulu" tidak dapat
+    // dijawab justru di tempat yang paling membutuhkannya.
+    await simpanHlc(tx, hlcValue);
 
     return { receiptNumber, sequence };
   });

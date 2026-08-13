@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
+import { muatHlc } from '../lokal/hlc.ts';
+import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
 import { simpanPenjualan, type HasilPenjualan } from '../kasir/penjualan.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
@@ -35,6 +37,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const { sesi } = useSesi();
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [shift, setShift] = useState<ShiftAktif | null>(null);
+  const [hlc, setHlc] = useState<Hlc | null>(null);
   const [siap, setSiap] = useState(false);
   const [tendered, setTendered] = useState(0);
   const [menyimpan, setMenyimpan] = useState(false);
@@ -51,7 +54,13 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       if (!hidup) return;
       setKonfig(k);
       if (k) setShift(await shiftAktif(db, k.deviceId));
-      if (hidup) setSiap(true);
+      // HLC melanjutkan dari keadaan tersimpan — bukan instance baru tiap
+      // boot, yang akan membuat setiap order berikutnya ber-HLC lebih kecil
+      // daripada yang sudah ada.
+      const h = await muatHlc(db, () => Date.now());
+      if (!hidup) return;
+      setHlc(h);
+      setSiap(true);
     })();
     return () => {
       hidup = false;
@@ -101,7 +110,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     );
   }
 
-  if (!konfig || !shift || !sesi) {
+  if (!konfig || !shift || !sesi || !hlc) {
     return (
       <EmptyState
         title="Belum siap menerima pembayaran"
@@ -133,11 +142,10 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       pembayaran: { metode: 'cash', tendered },
       waktu: () => new Date(),
       idBaru: () => crypto.randomUUID(),
-      // HLC klien belum disambungkan ke `device_config.hlc_state`; sampai itu
-      // ada, waktu perangkat dipakai apa adanya. Server tetap menstempel
-      // `recorded_at` sendiri, dan I10 (monotonisitas HLC per perangkat)
-      // BELUM dijamin di jalur ini — dicatat, bukan didiamkan.
-      hlc: () => BigInt(Date.now()),
+      // I10 dijamin: HLC melanjutkan dari `device_config.hlc_state`, tidak
+      // turun saat jam perangkat mundur, dan keadaannya disimpan di dalam
+      // transaksi penjualan yang sama.
+      hlc: () => hlc!.tick(),
     })
       .then((hasil) => {
         if (hasil.status === 'tersimpan') {

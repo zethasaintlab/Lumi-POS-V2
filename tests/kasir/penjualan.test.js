@@ -36,7 +36,7 @@ const TARIF = [{
 
 function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null } = {}) {
   const state = {
-    tulis: [], transaksi: 0,
+    tulis: [], transaksi: 0, diDalamTransaksi: false,
     device_config: { receipt_sequence: urutan, sequence_business_date: tanggalUrutan },
   };
   const db = {
@@ -48,7 +48,10 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null } = {}) {
       return [];
     },
     async execute(sql, params = []) {
-      state.tulis.push({ sql: sql.trim().split('\n')[0], params });
+      // `dalam` DIREKAM per penulisan, bukan hanya dihitung sekali. Tanpa
+      // ini, `simpanHlc` yang dipindah ke luar transaksi tetap terlihat
+      // "ditulis" dan test hijau untuk kode yang melanggar I10.
+      state.tulis.push({ sql: sql.trim().split('\n')[0], params, dalam: state.diDalamTransaksi });
       if (/UPDATE device_config/.test(sql)) {
         state.device_config.receipt_sequence = params[0];
         state.device_config.sequence_business_date = params[1];
@@ -57,7 +60,12 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null } = {}) {
     },
     async transaction(fn) {
       state.transaksi += 1;
-      return fn(db);
+      state.diDalamTransaksi = true;
+      try {
+        return await fn(db);
+      } finally {
+        state.diDalamTransaksi = false;
+      }
     },
   };
   return db;
@@ -95,6 +103,14 @@ test('⛔ SATU transaksi untuk seluruh penjualan (invariant #1)', async () => {
   for (const wajib of ['"order"', '"check"', 'order_line', 'payment', 'outbox_local']) {
     assert.ok(tabel.some((s) => s.includes(wajib)), `tidak ada penulisan ke ${wajib}`);
   }
+
+  // ⛔ SETIAP penulisan harus di dalam transaksi itu — termasuk `hlc_state`.
+  // Yang di luar adalah jendela tempat perangkat bisa mati dan meninggalkan
+  // keadaan yang tidak konsisten dengan order yang sudah ter-commit.
+  for (const t of db.state.tulis) {
+    assert.equal(t.dalam, true, `penulisan di LUAR transaksi: ${t.sql}`);
+  }
+  assert.ok(tabel.some((s) => /hlc_teks/.test(s)), 'keadaan HLC harus ikut disimpan (I10)');
 });
 
 test('pajak EKSKLUSIF menambah total; order.tax_amount = seluruh pajak', async () => {
