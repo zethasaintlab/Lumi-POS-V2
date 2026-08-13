@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { EmptyState } from 'ds';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import {
@@ -10,18 +10,13 @@ import {
   type ModifierPilihan,
   type VariationKatalog,
 } from '../katalog/baca.ts';
-import {
-  hapusBaris,
-  keranjangKosong,
-  subtotalKeranjang,
-  tambah,
-  ubahQty,
-  type Keranjang,
-} from '../kasir/keranjang.ts';
+import { hapusBaris, subtotalKeranjang, tambah, ubahQty } from '../kasir/keranjang.ts';
+import { keranjangSekarang, langgananKeranjang, setelKeranjang } from '../kasir/simpanan.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
+import { Pembayaran } from './Pembayaran.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 
@@ -45,8 +40,21 @@ export function Kasir() {
   const [katalog, setKatalog] = useState<ItemKatalog[]>([]);
   const [siap, setSiap] = useState(false);
   const [kueri, setKueri] = useState('');
-  const [keranjang, setKeranjang] = useState<Keranjang>(keranjangKosong());
+  /* Keranjang hidup di modul, bukan di state komponen: K-06 adalah layar
+     lain, dan router membongkar K-03 saat kasir menekan Bayar.
+     `useSyncExternalStore` dipakai dengan alasan yang sama seperti untuk
+     jalur URL — sumber kebenarannya di luar React, dan menyalinnya ke state
+     berarti dua salinan yang harus dijaga sepakat. */
+  const keranjang = useSyncExternalStore(langgananKeranjang, keranjangSekarang, keranjangSekarang);
+  const setKeranjang = (f: (k: typeof keranjang) => typeof keranjang) => setelKeranjang(f(keranjang));
   const [pilihan, setPilihan] = useState<{ item: ItemKatalog; daftar: DaftarModifier[] } | null>(null);
+  /* ⛔ K-06/K-07 adalah MODE, bukan rute. `IA:§7` tidak memberi keduanya URL,
+     dan itu bukan kelalaian dokumen: keranjang hanya hidup di memori
+     (`kasir/simpanan.ts`), jadi `/bayar` akan menjadi alamat yang TIDAK
+     PERNAH dapat dipulihkan — memuat ulang di sana menampilkan layar
+     pembayaran untuk keranjang yang sudah hilang. Ditemukan oleh test yang
+     mengikat TABEL_RUTE ke IA §7, setelah saya sempat menambahkan rutenya. */
+  const [membayar, setMembayar] = useState(false);
 
   useEffect(() => {
     let hidup = true;
@@ -122,6 +130,8 @@ export function Kasir() {
     }
     setPilihan({ item, daftar });
   };
+
+  if (membayar) return <Pembayaran onKembali={() => setMembayar(false)} />;
 
   return (
     <div className="kasir-utama">
@@ -203,7 +213,7 @@ export function Kasir() {
           varian="primary"
           kritis
           disabled={keranjang.baris.length === 0}
-          onClick={() => navigasi(`${BASIS}/bayar`)}
+          onClick={() => setMembayar(true)}
         >
           Bayar
         </Tombol>
