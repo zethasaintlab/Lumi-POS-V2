@@ -26,7 +26,7 @@ const SHIFT = {
   count_attempts: null,
 };
 
-function dbPalsu({ shift = SHIFT, gerakan = [], order = [] } = {}) {
+function dbPalsu({ shift = SHIFT, gerakan = MOVEMENTS, order = PEMBAYARAN } = {}) {
   const state = { shift: { ...shift }, tulis: [], transaksi: 0, diDalam: false };
   const db = {
     state,
@@ -61,10 +61,26 @@ function dbPalsu({ shift = SHIFT, gerakan = [], order = [] } = {}) {
 }
 
 // Penjualan tunai 2.010.000, refund tunai 25.000 — angka dari contoh spec-d.
+//
+// ⛔ Sampai 14 Agustus 2026 KEDUA baris di bawah ada di `PEMBAYARAN`, dan yang
+// kedua ditulis `{ method: 'cash', amount: 25000, arah: -1 }`. Baris itu tidak
+// dapat dihasilkan query mana pun: refund tidak pernah menulis `payment`
+// (`CHECK (amount > 0)`; arah berlawanan lewat tabel `refund`), dan tidak ada
+// order ber-`payment` yang berstatus `voided`. Fake-nya mengarang bentuk data
+// yang skemanya sendiri tidak bisa menghasilkan — jadi saldo laci diuji
+// terhadap dunia yang tidak ada, dan cacat yang sebenarnya (refund tunai tidak
+// pernah mengurangi laci) lolos di balik test hijau.
+//
+// Sekarang saldo laci datang dari BUKU KAS (`spec-d:14`), dan refund muncul di
+// tempat ia memang muncul. Bentuk keduanya sekarang dapat dihasilkan query
+// sungguhannya; yang membuktikannya berjalan di atas SQLite sungguhan ada di
+// `tutup-kas-refund.test.js`.
 const PEMBAYARAN = [
-  { method: 'cash', amount: 2010000, arah: 1 },
-  { method: 'cash', amount: 25000, arah: -1 },
+  { method: 'cash', amount: 2010000 },
+  { method: 'qris_dynamic', amount: 250000 },
 ];
+
+const MOVEMENTS = [{ delta: 2010000 }, { delta: -25000 }];
 
 const JAM = () => new Date('2026-08-13T22:00:00Z');
 const ID = (() => { let n = 0; return () => `t-${++n}`; })();
@@ -73,7 +89,7 @@ const ID = (() => { let n = 0; return () => `t-${++n}`; })();
 
 test('⛔ ringkasan AWAL tidak memuat saldo terhitung (FR-D2)', async () => {
   const { ringkasanSebelumHitung } = await import(MOD);
-  const db = dbPalsu({ order: PEMBAYARAN });
+  const db = dbPalsu();
 
   const r = await ringkasanSebelumHitung(db, 's1');
 
@@ -99,15 +115,15 @@ test('⛔ ringkasan AWAL tidak memuat saldo terhitung (FR-D2)', async () => {
   // harfiahnya. `[KEPUTUSAN]`.
   const tunai = r.perMetode.find((m) => m.metode === 'cash');
   assert.equal(tunai.total, null, 'total tunai tidak boleh terbaca sebelum menghitung');
-  assert.equal(tunai.jumlah, 2, 'jumlah transaksinya tetap boleh — ia tidak membocorkan nominal');
+  assert.equal(tunai.jumlah, 1, 'jumlah transaksinya tetap boleh — ia tidak membocorkan nominal');
 });
 
 test('metode NON-tunai tetap bertotal — ia tidak masuk laci', async () => {
   const { ringkasanSebelumHitung } = await import(MOD);
   const db = dbPalsu({
     order: [
-      { method: 'cash', amount: 100000, arah: 1 },
-      { method: 'qris_dynamic', amount: 250000, arah: 1 },
+      { method: 'cash', amount: 100000 },
+      { method: 'qris_dynamic', amount: 250000 },
     ],
   });
 
@@ -131,7 +147,7 @@ test('saldo seharusnya = saldo awal + tunai masuk − tunai keluar', async () =>
 
 test('⛔ percobaan hitungan TERCATAT, dan yang kedua tidak menimpa yang pertama', async () => {
   const { catatHitungan } = await import(MOD);
-  const db = dbPalsu({ order: PEMBAYARAN });
+  const db = dbPalsu();
 
   // `spec-d`: "Kasir tidak dapat mengubah hitungan fisik setelah melihat
   // selisih. Untuk mengoreksi, kasir memasukkan hitungan ulang yang TERCATAT
@@ -165,7 +181,7 @@ test('⛔ ambang otorisasi INKLUSIF (spec-d FR-D4)', async () => {
 
 test('tutup: selisih di bawah ambang tidak menuntut penyetuju', async () => {
   const { tutupKas } = await import(MOD);
-  const db = dbPalsu({ order: PEMBAYARAN });
+  const db = dbPalsu();
 
   const hasil = await tutupKas({
     db, shiftId: 's1', hitungan: 2480000, // selisih −5.000
@@ -199,7 +215,7 @@ test('⛔ selisih di atas ambang MENUNTUT penyetuju dan alasan', async () => {
 
 test('⛔ penyetuju selisih tidak boleh sama dengan kasir yang menghitung', async () => {
   const { tutupKas } = await import(MOD);
-  const db = dbPalsu({ order: PEMBAYARAN });
+  const db = dbPalsu();
 
   // `spec-f:91`: "Kasir yang menghitung laci TIDAK BOLEH menjadi orang yang
   // menyetujui selisihnya. Alur tutup kas melibatkan dua identitas ketika
@@ -216,7 +232,7 @@ test('⛔ penyetuju selisih tidak boleh sama dengan kasir yang menghitung', asyn
 
 test('⛔ ketiga field disimpan TERPISAH (FR-D3)', async () => {
   const { tutupKas } = await import(MOD);
-  const db = dbPalsu({ order: PEMBAYARAN });
+  const db = dbPalsu();
 
   await tutupKas({
     db, shiftId: 's1', hitungan: 2450000,
@@ -236,7 +252,7 @@ test('⛔ ketiga field disimpan TERPISAH (FR-D3)', async () => {
 
 test('SATU transaksi: tutup + audit + outbox', async () => {
   const { tutupKas } = await import(MOD);
-  const db = dbPalsu({ order: PEMBAYARAN });
+  const db = dbPalsu();
 
   await tutupKas({
     db, shiftId: 's1', hitungan: 2485000,
@@ -294,14 +310,13 @@ test('laporan shift dapat dibaca dari data lokal (FR-D8)', async () => {
       variance_reason_code: 'kekurangan_kembalian',
       count_attempts: JSON.stringify([{ hitungan: 2450000, pada: '2026-08-13T21:59:00Z' }]),
     },
-    order: PEMBAYARAN,
   });
 
   // AC FR-D8: "Laporan shift dapat dilihat dan dicetak dari data LOKAL."
   const l = await laporanShift(db, 's1');
   // Di LAPORAN total tunai muncul penuh: kontrol FR-D2 sudah lewat, kasnya
   // sudah ditutup, dan laporan yang menyembunyikannya tidak berguna.
-  assert.equal(l.perMetode.find((m) => m.metode === 'cash').total, 1985000);
+  assert.equal(l.perMetode.find((m) => m.metode === 'cash').total, 2010000);
   assert.equal(l.saldoAwal, 500000);
   assert.equal(l.saldoSeharusnya, 2485000);
   assert.equal(l.hitunganFisik, 2450000);

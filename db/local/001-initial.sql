@@ -189,6 +189,11 @@ CREATE TABLE payment (
 CREATE TABLE refund (
   id TEXT PRIMARY KEY, order_id TEXT NOT NULL, amount INTEGER NOT NULL,
   reason_code TEXT NOT NULL, reason_note TEXT,
+  -- Lewat apa uangnya dikembalikan. Hanya `cash` yang mengurangi saldo laci
+  -- (`spec-d:14`); refund lewat transfer atau pembalikan QRIS tidak menyentuh
+  -- laci sama sekali. NULL berarti TIDAK DIKETAHUI, bukan tunai — lihat
+  -- db/migrations/0021_refund_method.sql.
+  method TEXT,
   created_by TEXT NOT NULL, approved_by TEXT NOT NULL,
   occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );

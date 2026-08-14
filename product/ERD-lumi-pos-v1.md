@@ -342,8 +342,14 @@ Sengaja **bukan** `tenant.default_vertical_profile_id`: itu membuat siklus FK `t
 **Larangan eksplisit:** tidak ada `card_number`, `cvv`, `pin_block`, `track_data`.
 
 ### `refund`
-`id` · `order_id` · `amount` · `reason_code` · `reason_note` · `created_by` · `approved_by` · `occurred_at` · `recorded_at` · `hlc`
+`id` · `order_id` · `amount` · `reason_code` · `reason_note` · **`method`** · `created_by` · `approved_by` · `occurred_at` · `recorded_at` · `hlc`
 **Constraint:** `SUM(refund.amount)` per order ≤ `order.total` — ditegakkan aplikasi + test.
+
+> **`method` ditambahkan 14 Agustus 2026** (`db/migrations/0021_refund_method.sql`) — daftar tertutup yang sama dengan `payment.method`: `cash`·`qris_dynamic`·`qris_static`·`card_edc`·`other`.
+>
+> Alasannya: `spec-d:14` menjadikan `saldo_awal + SUM(cash_movement.delta)` sebagai satu-satunya definisi saldo laci, dan **hanya refund tunai yang mengurangi laci**. Tanpa kolom ini pertanyaan "apakah refund ini menyentuh laci" tidak punya jawaban. Menyimpulkannya dari payment order asli cukup untuk klien v1 — satu payment per order, seluruhnya tunai — tapi tidak punya jawaban untuk pembayaran campuran yang `spec-d:207` sudah sebut.
+>
+> **NULLABLE, dan NULL berarti tidak diketahui — bukan tunai.** Baris lama diisi `cash` lewat DEFAULT di DDL yang kemudian dibuang; backfill lewat `UPDATE` mustahil karena `FORCE ROW LEVEL SECURITY` berlaku untuk owner juga, sementara backfill ini menyentuh seluruh tenant. `NOT NULL` adalah langkah contract terpisah, setelah semua klien mengirimnya.
 
 ---
 
