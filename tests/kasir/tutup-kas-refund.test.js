@@ -189,3 +189,52 @@ test('⛔ refund tunai MENGURANGI saldo seharusnya', async () => {
     'shift yang lacinya benar menuntut otorisasi manajer'
   );
 });
+
+// --- FR-G3: laporan shift memakai posisi penjualan kanonik ---
+
+test('⛔ laporan shift membawa posisi penjualan, dan angkanya dari FR-G3', async () => {
+  // AC FR-G3 ketiga: "Laporan shift dan laporan harian untuk shift yang sama
+  // konsisten." Itu hanya mungkin bila keduanya memanggil fungsi yang sama.
+  const { laporanShift } = await import(MOD);
+  const { posisiPenjualan } = await import('../../packages/domain/src/posisi-penjualan.ts');
+  const db = dbSungguhan();
+  isiSatuPenjualanTunai(db, 300000);
+  catatMovement(db, {
+    id: 'cm-1', tipe: 'sale', delta: 300000, orderId: 'ord-1', counterpart: 'sales_revenue',
+  });
+  refundPenuh(db, 120000, 'cash');
+
+  const l = await laporanShift(db, SHIFT_ID);
+
+  // Dibandingkan dengan hasil fungsi kanonik atas data yang sama — bukan
+  // dengan angka yang ditulis ulang di test, yang hanya akan menguji bahwa
+  // saya menyalin aritmetikanya dengan benar dua kali.
+  const harusnya = posisiPenjualan({
+    orders: [{ id: 'ord-1', status: 'closed', total: 300000, taxAmount: 0, voidedByOrderId: null }],
+    refunds: [{ orderId: 'ord-1', amount: 120000 }],
+  });
+  assert.equal(l.penjualan.omzetKotor, harusnya.omzetKotor);
+  assert.equal(l.penjualan.omzetBersih, harusnya.omzetBersih);
+  assert.equal(l.penjualan.refundAmount, 120000n);
+  assert.equal(l.penjualan.jumlahTransaksi, 1);
+});
+
+test('⛔ order yang dibatalkan tidak masuk omzet laporan shift', async () => {
+  const { laporanShift } = await import(MOD);
+  const db = dbSungguhan();
+  isiSatuPenjualanTunai(db, 300000);
+  // Order pembatal, seperti yang ditulis `pembatalan.ts`.
+  db.sqlite.exec(`
+    INSERT INTO "order"
+      (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+       status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
+       rounding_adjustment, total, amount_due, voided_by_order_id, created_by, occurred_at, hlc)
+    VALUES ('v1','${TENANT}','${OUTLET}','${DEVICE}','${SHIFT_ID}','K1-20260813-0002','2026-08-13',2,
+            'voided','dine_in',300000,0,0,0,0,300000,300000,'ord-1','u-sari','2026-08-13T11:00:00Z',3)
+  `);
+
+  const l = await laporanShift(db, SHIFT_ID);
+  assert.equal(l.penjualan.omzetKotor, 0n, 'penjualan yang dibatalkan masih terhitung');
+  assert.equal(l.penjualan.voidAmount, 300000n);
+  assert.equal(l.penjualan.jumlahTransaksi, 0);
+});

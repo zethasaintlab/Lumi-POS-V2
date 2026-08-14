@@ -1,6 +1,6 @@
 # PLAN — Buku kas (`cash_movement`) dan fondasi Modul G
 
-**Fase:** F3 · **Ditulis:** 14 Agustus 2026 · **Status:** §5 diputuskan, Tahap A berjalan
+**Fase:** F3 · **Ditulis:** 14 Agustus 2026 · **Status:** Tahap A & B selesai; Tahap C berikutnya
 
 **Spec:** `product/specs/spec-d-kas-shift.md` (FR-D5, FR-D6) · `product/specs/spec-g-laporan.md` (FR-G3, FR-G1)
 
@@ -106,10 +106,16 @@ Yang membuat kedua sisi tidak pernah berbeda BUKAN relay, melainkan `packages/do
 
 ### Tahap B — FR-G3, satu fungsi posisi penjualan bersih
 
-- [ ] B1. `packages/domain`: definisi kanonik omzet kotor / void / refund / bersih sebagai fungsi murni
-- [ ] B2. Laporan shift (`laporanShift`) memanggilnya, bukan menghitung sendiri
-- [ ] B3. Property test `spec-g:293` — untuk kombinasi penjualan/void/refund apa pun, semua laporan sepakat
-- [ ] B4. Penjaga: `status = 'voided'` tidak muncul di luar modul laporan (AC FR-G3 pertama)
+- [x] B1. `packages/domain`: definisi kanonik omzet kotor / void / refund / bersih sebagai fungsi murni
+- [x] B2. Laporan shift (`laporanShift`) memanggilnya, bukan menghitung sendiri
+- [x] B3. Property test `spec-g:293` — untuk kombinasi penjualan/void/refund apa pun, semua laporan sepakat
+- [x] B4. Penjaga satu-sumber (AC FR-G3 pertama) — **polanya diubah, dan itu keputusan**
+
+Pola yang ACnya sebut (`status = 'VOIDED'` di luar modul laporan) tidak dapat dipakai apa adanya: di repo ini `status = 'voided'` muncul sah di `pembatalan.ts` dan `cancel.ts`, karena di sanalah baris pembatal DITULIS. Meng-grep pola itu menandai penulisan yang benar dan melewatkan yang berbahaya.
+
+Yang dijaga: tidak ada `SUM(...)` atas tabel `"order"` di luar `posisi-penjualan.ts`. Pola aslinya tetap ditegakkan, dipersempit ke berkas laporan.
+
+Versi pertama penjaga ini menandai `SUM(amount)` apa pun dan menemukan tiga tempat yang semuanya sah — sisa refund dan sisa tagihan, keduanya agregasi per-order untuk penegakan. Dipersempit, bukan dilonggarkan dengan daftar pengecualian: penjaga yang menandai kode benar akan dimatikan orang berikutnya.
 
 ### Tahap C — FR-G1 laporan operasional, FR-G4 offline, FR-G2 label bersih/kotor
 

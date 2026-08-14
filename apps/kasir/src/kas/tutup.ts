@@ -2,6 +2,10 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import { saldoLaci } from '../../../../packages/domain/src/buku-kas.ts';
+import {
+  posisiPenjualan,
+  type PosisiPenjualan,
+} from '../../../../packages/domain/src/posisi-penjualan.ts';
 
 /**
  * K-12 Tutup Kas + K-13 Laporan Shift (FR-D2, FR-D3, FR-D4, FR-D8).
@@ -371,6 +375,51 @@ export async function tutupKas({
   return { status: 'tertutup', selisih, saldoSeharusnya: seharusnya };
 }
 
+
+/**
+ * Posisi penjualan shift ini — FR-G3.
+ *
+ * ⛔ Yang dilakukan fungsi ini hanya MEMBACA baris. Aritmetikanya milik
+ * `packages/domain/src/posisi-penjualan.ts`, dan itu bukan kerapian:
+ * `spec-g:29` menyebut laporan yang saling bertentangan menghancurkan
+ * kepercayaan merchant lebih cepat daripada fitur yang hilang. Laporan
+ * berikutnya yang menulis agregasinya sendiri adalah laporan yang akan
+ * berbeda angkanya.
+ *
+ * Order PEMBATAL ikut dibaca — tanpanya `posisiPenjualan` tidak dapat tahu
+ * order mana yang dibatalkan, dan penjualan yang sudah batal tetap masuk
+ * omzet kotor.
+ */
+async function bacaPosisiPenjualan(db: DbLokal, shiftId: string): Promise<PosisiPenjualan> {
+  const orders = await db.getAll<{
+    id: string;
+    status: string;
+    total: number;
+    tax_amount: number;
+    voided_by_order_id: string | null;
+  }>(
+    `SELECT id, status, total, tax_amount, voided_by_order_id
+       FROM "order" WHERE shift_id = ?`,
+    [shiftId]
+  );
+  const refunds = await db.getAll<{ order_id: string; amount: number }>(
+    `SELECT r.order_id, r.amount
+       FROM refund r JOIN "order" o ON o.id = r.order_id
+      WHERE o.shift_id = ?`,
+    [shiftId]
+  );
+  return posisiPenjualan({
+    orders: orders.map((o) => ({
+      id: o.id,
+      status: o.status,
+      total: o.total,
+      taxAmount: o.tax_amount,
+      voidedByOrderId: o.voided_by_order_id,
+    })),
+    refunds: refunds.map((r) => ({ orderId: r.order_id, amount: r.amount })),
+  });
+}
+
 export interface LaporanShift {
   shiftId: string;
   businessDate: string;
@@ -384,6 +433,8 @@ export interface LaporanShift {
   disetujuiOleh: string | null;
   alasanSelisih: string | null;
   perMetode: { metode: string; jumlah: number; total: number }[];
+  /** FR-G3 — omzet kotor/bersih, void, refund, pajak. Satu sumber. */
+  penjualan: PosisiPenjualan;
 }
 
 /**
@@ -401,12 +452,14 @@ export async function laporanShift(db: DbLokal, shiftId: string): Promise<Lapora
   // lewat, kasnya sudah ditutup, dan laporan yang menyembunyikan angka tunai
   // tidak berguna bagi siapa pun.
   const bayar = await pembayaranTunai(db, shiftId);
+  const penjualan = await bacaPosisiPenjualan(db, shiftId);
 
   return {
     shiftId: shift.id,
     businessDate: shift.business_date,
     saldoAwal: shift.opening_float,
     saldoSeharusnya: shift.expected_amount ?? (await saldoSeharusnya(db, shift)),
+    penjualan,
     hitunganFisik: shift.counted_amount,
     selisih: shift.difference,
     percobaan: shift.count_attempts ? (JSON.parse(shift.count_attempts) as Percobaan[]) : [],
