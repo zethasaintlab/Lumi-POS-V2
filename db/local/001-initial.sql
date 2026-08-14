@@ -14,9 +14,22 @@ CREATE TABLE item (
   category_id TEXT, description TEXT, image_url TEXT,
   sort_order INTEGER DEFAULT 0, archived_at TEXT
 );
+-- ⛔ `cost` SENGAJA TIDAK ADA. FR-F5: "kolom dan field yang memuat
+-- cost/margin TIDAK ADA di respons — bukan sekadar disembunyikan di UI."
+--
+-- Sampai 14 Agustus 2026 ia turun lewat `SELECT *` ke SETIAP perangkat.
+-- Perangkat kasir dipakai kasir dan manajer bergantian, jadi tidak ada
+-- penyaringan per-peran yang mungkin di satu stream — dan `spec-f:57`
+-- menyebut alasannya: kasir punya turnover tinggi, HPP adalah informasi
+-- kompetitif merchant.
+--
+-- Yang membuat penghapusannya MUNGKIN, dan ini baru dapat dipastikan setelah
+-- penulisan order klien ada: klien menulis `order_line.cost_at_sale = 0` dan
+-- SERVER menghitungnya sendiri lewat `getVariationSnapshot`. Perangkat tidak
+-- pernah membutuhkan angka ini untuk apa pun.
 CREATE TABLE item_variation (
   id TEXT PRIMARY KEY, item_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT 'Regular',
-  sku TEXT, barcode TEXT, price INTEGER NOT NULL, cost INTEGER NOT NULL DEFAULT 0,
+  sku TEXT, barcode TEXT, price INTEGER NOT NULL,
   stocking_unit TEXT DEFAULT 'pcs', selling_unit TEXT DEFAULT 'pcs',
   conversion_factor INTEGER DEFAULT 1000,
   track_stock INTEGER NOT NULL DEFAULT 1, sort_order INTEGER DEFAULT 0, archived_at TEXT

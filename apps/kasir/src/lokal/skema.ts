@@ -229,6 +229,9 @@ export const KOLOM_SENGAJA_TIDAK_TURUN = [
   'refund.tenant_id',
   'cash_movement.tenant_id',
   'item_variation.tenant_id',
+  // ⛔ FR-F5 — HPP tidak pernah menyentuh perangkat kasir. Lihat catatan
+  // panjang di `db/local/001-initial.sql`.
+  'item_variation.cost',
   'modifier.tenant_id',
   'item_modifier_list.tenant_id',
   // Kolom audit — tidak dipakai layar kasir mana pun, dan `changed_by` adalah

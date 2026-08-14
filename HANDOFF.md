@@ -172,7 +172,7 @@ jaringan. Gate-nya (`npm run test:dst`, 10.000 iterasi) hijau.
 |---|---|
 | FR-H8 — notifikasi antrean menua | P1 |
 | Enkripsi at-rest SQLite lokal | Butuh keystore OS lewat Tauri (F4). Sampai itu ada, siapa pun yang dapat membaca berkas database perangkat dapat menyamar jadi perangkat itu |
-| FR-F5 — `cost` tidak boleh sampai ke Kasir | Diblokir dua hal: endpoint katalog tidak menuntut `X-Actor-Id` (opsional = dapat dilewati), dan `cost` sudah turun lewat `SELECT *`. Membuangnya dari jalur turun menuntut keputusan tentang `order_line.cost_at_sale` untuk order offline. Keputusan user: ditangani saat penulisan order dibangun — dan penulisan order kini ADA, jadi ini siap digarap |
+| ~~FR-F5 — `cost` tidak boleh sampai ke Kasir~~ | **Jalur turun ditutup 14 Agustus 2026.** Pertanyaan yang memblokirnya terjawab oleh kode, bukan tebakan: klien menulis `order_line.cost_at_sale = 0` dan SERVER menghitungnya lewat `getVariationSnapshot` — perangkat tidak pernah membutuhkan `cost`. Kolomnya dibuang dari skema lokal dan sync rules, dan `tests/kasir/sync-rules.test.js` menjaganya. **Sisanya menunggu Modul G**: penyaringan `cost`/margin di respons laporan, yang baru punya konsumen setelah laporan ada |
 | K-16 buka laci · K-17 scanner | Belum digarap; keduanya kecil dan tidak memblokir apa pun |
 | Modul C-3 rekonsiliasi & ekspor | P1 |
 | Refund parsial dengan pemilihan baris di UI | `batalkan()` sudah menerima `lines`; yang belum ada layar pemilihnya. Sampai itu ada, refund mengirim `lines: []` — uang kembali tanpa barang kembali, dan layar MENYATAKANNYA |

@@ -41,7 +41,16 @@ streams:
            AND id = auth.parameter('outlet_id')
       - SELECT * FROM category WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item WHERE tenant_id = auth.parameter('tenant_id')
-      - SELECT * FROM item_variation WHERE tenant_id = auth.parameter('tenant_id')
+      # ⛔ KOLOM EKSPLISIT, dan `cost` sengaja TIDAK ada — FR-F5.
+      # `SELECT *` mengirim HPP ke setiap tablet di setiap outlet, dan
+      # `spec-f:57` menyebut alasannya: kasir punya turnover tinggi dan sering
+      # pindah ke kompetitor merchant. Klien tidak pernah membutuhkannya —
+      # `order_line.cost_at_sale` dihitung SERVER.
+      - SELECT id, tenant_id, item_id, name, sku, barcode, price,
+               stocking_unit, selling_unit, conversion_factor,
+               track_stock, sort_order, archived_at
+          FROM item_variation
+         WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM modifier_list WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM modifier WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item_modifier_list WHERE tenant_id = auth.parameter('tenant_id')
