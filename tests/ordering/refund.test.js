@@ -688,7 +688,13 @@ test('⛔ saldo laci server = penjualan − refund, dan itu satu penjumlahan', a
   const order = await buatOrderTertutup(fx, [baris(await buatVariation(30000))]);
   await batalkan(order.id, refundPayload({ amount: 30000 }));
 
-  const m = await query('SELECT delta FROM cash_movement WHERE shift_id = $1', [fx.shiftId]);
+  // ⛔ `opening_float` DIKECUALIKAN, persis seperti `saldoSeharusnya`
+  // melakukannya: modal awal sudah menjadi `shift.opening_float`, dan
+  // menjumlahkan keduanya menghitungnya dua kali.
+  const m = await query(
+    `SELECT delta FROM cash_movement WHERE shift_id = $1 AND type <> 'opening_float'`,
+    [fx.shiftId]
+  );
   const jumlah = m.reduce((s, r) => s + Number(r.delta), 0);
   assert.equal(jumlah, 0, `pergerakan laci harus nol, dapat ${jumlah}`);
 });

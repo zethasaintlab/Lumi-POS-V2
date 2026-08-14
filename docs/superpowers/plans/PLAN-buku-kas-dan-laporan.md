@@ -102,7 +102,11 @@ Ini keluarga yang sama dengan dua pelajaran yang sudah tercatat di `CLAUDE.md` (
 
 Yang membuat kedua sisi tidak pernah berbeda BUKAN relay, melainkan `packages/domain/src/buku-kas.ts`: arah delta, `counterpart_type`, dan derivasi `refund.method` semuanya dibaca dari sana oleh klien maupun server.
 
-- [ ] A3. Movement `opening_float` saat buka shift — **belum**. Tidak memengaruhi hitungan (`saldoSeharusnya` memakai `shift.opening_float` langsung dan mengecualikan tipe ini), tapi buku kasnya belum dapat merekonstruksi laci dari movement saja
+- [x] A3. Movement `opening_float` saat buka shift — di kedua sisi. Buku kas kini lengkap: laci dapat direkonstruksi dari movement saja, tanpa membaca kolom di tabel lain
+
+**`saldoSeharusnya` tetap MENGECUALIKAN tipe ini** dan memakai `shift.opening_float` langsung. Menjumlahkan keduanya menghitung modal awal dua kali, dan setiap shift akan terlihat kelebihan sebesar modalnya sendiri. Pengecualian yang sama berlaku di setiap test yang menjumlahkan `delta` per shift.
+
+**`bukaShift` kini menerima `hlc`** dan menulis `simpanHlc` di dalam transaksinya, sama seperti penjualan — di luar transaksi ada jendela tempat perangkat dapat mati setelah shift ter-commit tapi sebelum HLC tersimpan.
 
 ### Tahap B — FR-G3, satu fungsi posisi penjualan bersih
 

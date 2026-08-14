@@ -370,9 +370,13 @@ test('payment: id sama dengan occurred_at BERBEDA lolos -- PK tidak melindunginy
 async function movementShift(shiftId) {
   await appSetup.query('BEGIN');
   await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  // ⛔ `opening_float` DIKECUALIKAN — modal awal ditulis saat shift dibuka
+  // (A3), dan ia sudah menjadi `shift.opening_float`. `saldoSeharusnya`
+  // mengecualikannya dengan alasan yang sama: menjumlahkan keduanya
+  // menghitung modal awal dua kali.
   const { rows } = await appSetup.query(
     `SELECT type, delta, order_id, counterpart_type FROM cash_movement
-      WHERE shift_id = $1 ORDER BY occurred_at, id`,
+      WHERE shift_id = $1 AND type <> 'opening_float' ORDER BY occurred_at, id`,
     [shiftId]
   );
   await appSetup.query('COMMIT');

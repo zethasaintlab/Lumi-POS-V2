@@ -351,3 +351,36 @@ test('openShift: header X-Actor-Id hilang ditolak 400 MISSING_ACTOR_ID', async (
   assert.equal(res.statusCode, 400, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'MISSING_ACTOR_ID');
 });
+
+// --- Buku kas: modal awal adalah movement (spec-d:189) ---
+
+test('⛔ buka shift menulis cash_movement `opening_float`', async () => {
+  // Tanpa baris ini buku kas tidak lengkap: laci hanya dapat direkonstruksi
+  // bila seseorang juga membaca `cash_drawer_shift.opening_float` dari tabel
+  // lain. Perangkat sudah menulisnya secara lokal; server yang tidak menulis
+  // membuat kedua sisi punya buku kas yang berbeda isinya.
+  const device = await createDevice(base.outlet.id, 'K1');
+  const shiftId = crypto.randomUUID();
+  const res = await req('POST', shiftsUrl(), {
+    id: shiftId,
+    outletId: base.outlet.id,
+    deviceId: device.id,
+    businessDate: BUSINESS_DATE,
+    openingFloat: 100000,
+  });
+  assert.equal(res.statusCode, 201, res.body);
+
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const { rows } = await appSetup.query(
+    `SELECT type, delta, order_id, counterpart_type FROM cash_movement WHERE shift_id = $1`,
+    [shiftId]
+  );
+  await appSetup.query('COMMIT');
+
+  assert.equal(rows.length, 1, 'modal awal tidak tercatat di buku kas');
+  assert.equal(rows[0].type, 'opening_float');
+  assert.equal(rows[0].delta, '100000');
+  assert.equal(rows[0].order_id, null, 'modal awal tidak berasal dari order mana pun');
+  assert.ok(rows[0].counterpart_type, 'counterpart_type wajib terisi (FR-D6)');
+});

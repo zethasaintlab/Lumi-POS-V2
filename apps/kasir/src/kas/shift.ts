@@ -1,6 +1,8 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
+import { simpanHlc } from '../lokal/hlc.ts';
+import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
 import { tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import type { Sesi } from '../identitas/login.ts';
 
@@ -90,6 +92,7 @@ export async function bukaShift({
   waktu,
   idBaru,
   idOutbox,
+  hlc,
 }: {
   db: DbLokal;
   konfig: KonfigPerangkat;
@@ -98,6 +101,7 @@ export async function bukaShift({
   waktu: () => Date;
   idBaru: () => string;
   idOutbox: () => string;
+  hlc: () => bigint;
 }): Promise<HasilBukaShift> {
   const galatSaldo = validasiSaldoAwal(saldoAwal);
   if (galatSaldo) return { status: 'saldo_tidak_valid', pesan: galatSaldo };
@@ -135,6 +139,8 @@ export async function bukaShift({
   // Invariant #1 berlaku juga di klien: shift yang tersimpan tanpa item
   // outbox tidak akan pernah sampai ke server, dan item outbox tanpa shift
   // mengirim baris yang tidak ada di perangkat.
+  const hlcValue = hlc();
+
   await db.transaction(async (tx) => {
     await tx.execute(
       `INSERT INTO cash_drawer_shift
@@ -151,6 +157,35 @@ export async function bukaShift({
         occurredAt,
       ]
     );
+
+    // Buku kas — modal awal adalah movement, bukan hanya kolom di shift
+    // (`spec-d:189`). Tanpanya laci hanya dapat direkonstruksi bila seseorang
+    // juga membaca `cash_drawer_shift.opening_float` dari tabel lain, dan
+    // buku kas berhenti menjadi catatan yang lengkap.
+    //
+    // ⛔ `saldoSeharusnya` MENGECUALIKAN tipe ini dan memakai kolom shift
+    // secara langsung. Menjumlahkan keduanya akan menghitung modal awal DUA
+    // KALI — setiap shift akan terlihat kelebihan sebesar modalnya sendiri.
+    await tx.execute(
+      `INSERT INTO cash_movement
+         (id, shift_id, type, delta, counterpart_type, created_by, occurred_at, hlc)
+       VALUES (?, ?, 'opening_float', ?, ?, ?, ?, ?)`,
+      [
+        idBaru(),
+        shiftId,
+        deltaBertanda('opening_float', saldoAwal),
+        counterpartUntuk('opening_float'),
+        sesi.userId,
+        occurredAt,
+        Number(hlcValue),
+      ]
+    );
+
+    // Di dalam transaksi yang sama — sama seperti penjualan. Di luarnya ada
+    // jendela tempat perangkat dapat mati setelah shift ter-commit tapi
+    // sebelum HLC tersimpan, dan tick berikutnya dapat menghasilkan nilai
+    // yang sudah dipakai.
+    await simpanHlc(tx, hlcValue);
 
     await enqueue(tx, {
       id: idOutbox(),

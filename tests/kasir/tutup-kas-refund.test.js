@@ -238,3 +238,48 @@ test('⛔ order yang dibatalkan tidak masuk omzet laporan shift', async () => {
   assert.equal(l.penjualan.voidAmount, 300000n);
   assert.equal(l.penjualan.jumlahTransaksi, 0);
 });
+
+// --- A3: movement `opening_float` (spec-d:189) ---
+
+test('⛔ buku kas dapat merekonstruksi laci dari movement SAJA', async () => {
+  // `spec-d:189` mendaftar `opening_float` sebagai salah satu dari tujuh tipe
+  // movement. Selama ia tidak pernah ditulis, buku kas tidak lengkap: laci
+  // hanya dapat direkonstruksi bila seseorang juga membaca
+  // `cash_drawer_shift.opening_float` dari tabel lain.
+  //
+  // `saldoSeharusnya` sendiri MENGECUALIKAN tipe ini dan memakai kolom shift
+  // secara langsung — menjumlahkan keduanya akan menghitung modal awal dua
+  // kali. Yang diuji di sini karena itu bukan saldonya, melainkan bahwa
+  // barisnya ADA dan nilainya benar.
+  const { bukaShift } = await import('../../apps/kasir/src/kas/shift.ts');
+  const db = dbSungguhan();
+  db.sqlite.exec(`DELETE FROM cash_drawer_shift`);
+  db.sqlite.exec(`
+    INSERT INTO outlet (id, tenant_id, name, timezone, business_day_ends_at)
+    VALUES ('${OUTLET}','${TENANT}','Cabang Dago','Asia/Jakarta','04:00')
+  `);
+  db.sqlite.exec(`
+    INSERT INTO device_config (id, device_id, device_code, tenant_id, outlet_id, base_url, receipt_sequence)
+    VALUES (1,'${DEVICE}','K1','${TENANT}','${OUTLET}','http://localhost:3000',0)
+  `);
+
+  let n = 0;
+  await bukaShift({
+    db,
+    konfig: { tenantId: TENANT, outletId: OUTLET, deviceId: DEVICE, deviceCode: 'K1' },
+    sesi: { userId: 'u-sari' },
+    saldoAwal: 500000,
+    waktu: () => new Date('2026-08-13T07:00:00Z'),
+    idBaru: () => `id-${++n}`,
+    idOutbox: () => `ob-${++n}`,
+    hlc: () => 5n,
+  });
+
+  const m = db.sqlite
+    .prepare(`SELECT type, delta, counterpart_type, order_id FROM cash_movement WHERE type = 'opening_float'`)
+    .all();
+  assert.equal(m.length, 1, 'modal awal tidak tercatat di buku kas');
+  assert.equal(m[0].delta, 500000, 'delta modal awal harus positif dan sebesar saldo awal');
+  assert.equal(m[0].order_id, null, 'modal awal tidak berasal dari order mana pun');
+  assert.ok(m[0].counterpart_type, 'counterpart_type wajib terisi (FR-D6)');
+});
