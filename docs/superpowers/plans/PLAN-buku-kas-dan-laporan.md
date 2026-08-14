@@ -85,15 +85,24 @@ Ini keluarga yang sama dengan dua pelajaran yang sudah tercatat di `CLAUDE.md` (
 
 ### Tahap A — buku kas (`cash_movement`) menjadi sumber tunggal
 
-- [ ] A1. `sale` ditulis di dalam `writeTransaction` yang sama dengan penjualan (`penjualan.ts`), **hanya** untuk payment `method = cash` (`spec-d:200`). `delta` = `amount`, bukan `tendered_amount` (`spec-d:201`) — invariant #1 CLAUDE.md menyebut cash movement sebagai bagian dari satu transaksi itu, dan sekarang ia benar-benar ada
-- [ ] A0. Kolom `refund.method` — migrasi server + skema lokal + ERD (keputusan §5)
-- [ ] A2. `refund` ditulis di dalam transaksi pembatalan (`pembatalan.ts`), `delta` negatif, **hanya bila `refund.method = 'cash'`**
-- [ ] A3. `opening_float` ditulis saat buka shift
-- [ ] A4. `counterpart_type` diisi per tipe, `NOT NULL` (FR-D6) — tabel pemetaan di `packages/domain`, supaya server dan klien tidak pernah berbeda
-- [ ] A5. `saldoSeharusnya` dihitung dari `saldo_awal + SUM(delta)`; query berbasis `payment` dihapus, termasuk cabang `arah` yang mati
-- [ ] A6. Property test `spec-d:315`: untuk urutan operasi apa pun, `expected_amount` = `opening_float` + `SUM(delta)`
-- [ ] A7. `tests/kasir/tutup-kas.test.js` diperbaiki — `PEMBAYARAN` yang dikarang diganti baris sungguhan di SQLite sungguhan
-- [ ] A8. Relay `cash_movement` ke server lewat outbox, idempoten
+- [x] A1. `sale` ditulis di dalam `writeTransaction` yang sama dengan penjualan (`penjualan.ts`), **hanya** untuk payment `method = cash` (`spec-d:200`). `delta` = `amount`, bukan `tendered_amount` (`spec-d:201`) — invariant #1 CLAUDE.md menyebut cash movement sebagai bagian dari satu transaksi itu, dan sekarang ia benar-benar ada
+- [x] A0. Kolom `refund.method` — migrasi server + skema lokal + ERD (keputusan §5)
+- [x] A2. `refund` ditulis di dalam transaksi pembatalan (`pembatalan.ts`), `delta` negatif, **hanya bila `refund.method = 'cash'`**
+- [x] A4. `counterpart_type` diisi per tipe, `NOT NULL` (FR-D6) — tabel pemetaan di `packages/domain`, supaya server dan klien tidak pernah berbeda
+- [x] A5. `saldoSeharusnya` dihitung dari `saldo_awal + SUM(delta)`; query berbasis `payment` dihapus, termasuk cabang `arah` yang mati
+- [x] A6. Property test `spec-d:315`: untuk urutan operasi apa pun, `expected_amount` = `opening_float` + `SUM(delta)`
+- [x] A7. `tests/kasir/tutup-kas.test.js` diperbaiki — `PEMBAYARAN` yang dikarang diganti baris sungguhan di SQLite sungguhan
+- [x] A8. **Server menulis movement-nya sendiri**, bukan menerimanya lewat outbox — lihat catatan di bawah
+
+**A8 berubah bentuk, dan itu keputusan.** Rencana awalnya merelay `cash_movement` sebagai entity outbox baru, yang menuntut endpoint REST baru + entry di `ENTITY_TYPES` + rute di `http.ts`. Yang dipilih: server menulis movement-nya sendiri di dalam transaksi pembayaran dan transaksi refund yang **sudah** ada. Alasannya:
+
+- server sudah menerima order beserta payment-nya, dan sudah menghitung `cost_at_sale` sendiri — polanya persis sama
+- tidak ada jendela tempat movement mendarat tanpa order yang menjelaskannya
+- tidak ada idempotensi kedua yang harus dijaga; ia ikut idempotensi pembayaran
+
+Yang membuat kedua sisi tidak pernah berbeda BUKAN relay, melainkan `packages/domain/src/buku-kas.ts`: arah delta, `counterpart_type`, dan derivasi `refund.method` semuanya dibaca dari sana oleh klien maupun server.
+
+- [ ] A3. Movement `opening_float` saat buka shift — **belum**. Tidak memengaruhi hitungan (`saldoSeharusnya` memakai `shift.opening_float` langsung dan mengecualikan tipe ini), tapi buku kasnya belum dapat merekonstruksi laci dari movement saja
 
 ### Tahap B — FR-G3, satu fungsi posisi penjualan bersih
 

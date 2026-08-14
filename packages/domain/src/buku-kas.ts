@@ -135,6 +135,39 @@ export function deltaBertanda(tipe: string, besaran: number): number {
 }
 
 /**
+ * Lewat apa uang sebuah refund dikembalikan, diturunkan dari pembayaran order
+ * aslinya.
+ *
+ * ⛔ Ada di sini, bukan disalin di klien dan server. Keduanya menulis
+ * `refund.method` untuk refund yang SAMA — klien saat kasir menekan tombol,
+ * server saat antreannya terkuras — dan dua salinan aturan akan menghasilkan
+ * dua jawaban tentang apakah uang itu keluar dari laci. Yang muncul kemudian
+ * adalah saldo laci yang berbeda antara perangkat dan server, tanpa cara
+ * memutuskan mana yang benar.
+ *
+ * Asumsinya: uang dikembalikan lewat jalan yang sama dengan datangnya. Itu
+ * benar untuk klien v1, yang menulis tepat satu payment per order.
+ *
+ * ⛔ Pembayaran campuran MELEMPAR, tidak menebak (`spec-d:207`). Menebak di
+ * sini berarti memutuskan berapa uang tunai yang keluar dari laci berdasarkan
+ * kebetulan urutan baris, dan salahnya baru terlihat saat tutup kas — sebagai
+ * selisih yang tidak dapat dijelaskan siapa pun.
+ *
+ * Order tanpa payment menjawab `null`: refund atas order yang belum pernah
+ * dibayar tidak mengembalikan uang lewat jalan mana pun.
+ */
+export function metodeRefundDari(metodePembayaran: readonly string[]): string | null {
+  const unik = [...new Set(metodePembayaran)];
+  if (unik.length > 1) {
+    throw new Error(
+      `Order dibayar dengan ${unik.length} metode berbeda (${unik.join(', ')}); refund untuk ` +
+        'pembayaran campuran belum didukung (spec-d:207).'
+    );
+  }
+  return unik[0] ?? null;
+}
+
+/**
  * `spec-d:14` — dan tidak lebih dari itu.
  *
  * ⛔ Tidak ada clamp, tidak ada pembulatan, tidak ada "saldo tidak boleh

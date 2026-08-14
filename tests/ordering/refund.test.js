@@ -642,3 +642,53 @@ test('void TIDAK terpengaruh RBAC penyetuju -- ia memang tidak punya penyetuju',
   assert.equal(res.statusCode, 201, res.body);
   assert.equal(JSON.parse(res.body).operation, 'void');
 });
+
+// --- Buku kas: refund tunai mengurangi laci (spec-d:14) ---
+
+test('⛔ refund atas penjualan TUNAI menulis cash_movement negatif', async () => {
+  // Uang diserahkan kembali ke pelanggan, jadi ia keluar dari laci. Tanpa
+  // baris ini, saldo laci menurut server tetap seolah penjualannya utuh — dan
+  // kasir terlihat kurang sebesar nilai refund saat tutup kas.
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrderTertutup(fx, [baris(await buatVariation(30000))]);
+
+  const res = await batalkan(order.id, refundPayload({ amount: 30000 }));
+  assert.equal(res.statusCode, 201, res.body);
+
+  const m = await query(
+    `SELECT type, delta, order_id, counterpart_type FROM cash_movement
+      WHERE order_id = $1 AND type = 'refund'`,
+    [order.id]
+  );
+  assert.equal(m.length, 1, 'tepat satu movement refund');
+  assert.equal(m[0].delta, '-30000', 'delta harus NEGATIF — uang keluar laci');
+  assert.equal(m[0].counterpart_type, 'refund');
+});
+
+test('⛔ refund.method tersimpan, diturunkan dari pembayaran order aslinya', async () => {
+  // Kolomnya ditambahkan 14 Agustus 2026 (migrasi 0021). Ia yang menjawab
+  // "apakah refund ini menyentuh laci" — dan jawabannya harus TERSIMPAN,
+  // bukan disimpulkan ulang setiap kali laporan dibaca.
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrderTertutup(fx, [baris(await buatVariation(12000))]);
+
+  const res = await batalkan(order.id, refundPayload({ amount: 12000 }));
+  assert.equal(res.statusCode, 201, res.body);
+
+  const r = await query('SELECT method FROM refund WHERE order_id = $1', [order.id]);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].method, 'cash');
+});
+
+test('⛔ saldo laci server = penjualan − refund, dan itu satu penjumlahan', async () => {
+  // `spec-d:14`. Yang diperiksa di sini bukan satu baris, melainkan bahwa
+  // keduanya BERSAMA menghasilkan posisi yang benar: jual 30.000 lalu refund
+  // penuh mengembalikan laci ke nol pergerakan.
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrderTertutup(fx, [baris(await buatVariation(30000))]);
+  await batalkan(order.id, refundPayload({ amount: 30000 }));
+
+  const m = await query('SELECT delta FROM cash_movement WHERE shift_id = $1', [fx.shiftId]);
+  const jumlah = m.reduce((s, r) => s + Number(r.delta), 0);
+  assert.equal(jumlah, 0, `pergerakan laci harus nol, dapat ${jumlah}`);
+});

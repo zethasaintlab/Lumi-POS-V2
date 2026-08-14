@@ -14,6 +14,7 @@ import {
 } from '../../sync/index.ts';
 import { computeCashRounding } from '../../../../../../packages/domain/src/money.ts';
 import { assertTransition } from '../../../../../../packages/domain/src/order-state.ts';
+import { counterpartUntuk, deltaBertanda } from '../../../../../../packages/domain/src/buku-kas.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { PaymentProvider, InitiateResult, GatewayStatus } from '../providers/index.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -926,6 +927,43 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: Payme
           }
           throw err;
         }
+
+        // Buku kas — `spec-d:14`, di transaksi yang SAMA dengan pembayarannya
+        // (`spec-d:200`). Tanpa ini saldo laci menurut server berbeda dari
+        // saldo laci menurut perangkat untuk shift yang sama, dan tidak ada
+        // cara memutuskan mana yang benar.
+        //
+        // ⛔ Aturannya dari `packages/domain/src/buku-kas.ts`, bukan ditulis
+        // ulang di sini. Perangkat menulis barisnya sendiri secara lokal;
+        // yang membuat keduanya tidak pernah berbeda adalah keduanya membaca
+        // arah dan `counterpart_type` dari fungsi yang sama.
+        //
+        // ⛔ `delta` memakai `amount` — nilai transaksi — bukan `tendered`
+        // (`spec-d:201`). Kembalian tidak menghasilkan movement terpisah;
+        // memakai `tendered` melebih-lebihkan laci di setiap penjualan
+        // berkembalian.
+        //
+        // Hanya `cash` yang sampai di sini: metode lain punya handler
+        // sendiri, dan tidak satu pun menyentuh laci.
+        await client.query(
+          `INSERT INTO cash_movement (
+             id, tenant_id, shift_id, type, delta, order_id, counterpart_type,
+             created_by, occurred_at, hlc
+           )
+           SELECT $1, $2, o.shift_id, 'sale', $3, o.id, $4, $5,
+                  COALESCE($6::timestamptz, now()), $7
+             FROM "order" o WHERE o.id = $8`,
+          [
+            randomUUID(),
+            tenantId,
+            deltaBertanda('sale', Number(amount)).toString(),
+            counterpartUntuk('sale'),
+            actorId,
+            body.occurredAt ?? null,
+            hlcValue.toString(),
+            orderId,
+          ]
+        );
 
         // Hanya order yang LUNAS berpindah status. Pembulatan pun hanya
         // dicatat saat itu -- FR-C9: pembulatan berlaku pada sisa yang

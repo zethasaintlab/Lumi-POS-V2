@@ -10,7 +10,11 @@ import {
 } from '../../../../packages/domain/src/cancellation.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
-import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
+import {
+  counterpartUntuk,
+  deltaBertanda,
+  metodeRefundDari,
+} from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
 
 /**
@@ -210,23 +214,15 @@ export async function batalkan({
   // benar untuk klien v1, yang menulis tepat SATU payment per order dan
   // seluruhnya tunai.
   //
-  // Pembayaran campuran (`spec-d:207`) MELEMPAR, tidak menebak. Menebak di
-  // sini berarti memutuskan berapa uang tunai yang keluar dari laci
-  // berdasarkan kebetulan urutan baris, dan salahnya baru terlihat saat tutup
-  // kas — sebagai selisih yang tidak dapat dijelaskan siapa pun.
+  // Aturannya milik `packages/domain/src/buku-kas.ts`, dibagi dengan server —
+  // yang menulis `refund.method` untuk refund YANG SAMA saat antrean terkuras.
   let metodeRefund: string | null = null;
   if (rencana.operasi === 'refund') {
     const metode = await db.getAll<{ method: string }>(
       `SELECT DISTINCT method FROM payment WHERE order_id = ?`,
       [orderId]
     );
-    if (metode.length > 1) {
-      throw new Error(
-        `Order ${orderId} dibayar dengan ${metode.length} metode berbeda; refund untuk ` +
-          'pembayaran campuran belum didukung (spec-d:207).'
-      );
-    }
-    metodeRefund = metode[0]?.method ?? null;
+    metodeRefund = metodeRefundDari(metode.map((m) => m.method));
   }
 
   const barisOrder = await db.getAll<{ id: string; variation_id: string; quantity: number }>(

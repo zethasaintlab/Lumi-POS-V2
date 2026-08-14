@@ -363,3 +363,73 @@ test('payment: id sama dengan occurred_at BERBEDA lolos -- PK tidak melindunginy
   assert.equal(b.statusCode, 201, 'PK (id, occurred_at) tidak menganggap ini duplikat');
   assert.equal(await hitungPayment(order.id), 2);
 });
+
+// --- Buku kas: `sale` ditulis di transaksi yang sama (spec-d:200) ---
+
+/** Movement laci untuk shift ini, apa adanya dari database. */
+async function movementShift(shiftId) {
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const { rows } = await appSetup.query(
+    `SELECT type, delta, order_id, counterpart_type FROM cash_movement
+      WHERE shift_id = $1 ORDER BY occurred_at, id`,
+    [shiftId]
+  );
+  await appSetup.query('COMMIT');
+  return rows;
+}
+
+test('⛔ pembayaran TUNAI menulis cash_movement `sale` (spec-d:14)', async () => {
+  // `spec-d:14` menjadikan `saldo_awal + SUM(delta)` sebagai SATU-SATUNYA
+  // definisi saldo laci. Kalau server tidak menulisnya, saldo laci menurut
+  // server berbeda dari saldo laci menurut perangkat untuk shift yang sama —
+  // dan tidak ada cara memutuskan mana yang benar.
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, await buatVariation(25000));
+
+  const res = await bayar(order.id, { tenderedAmount: 25000 });
+  assert.equal(res.statusCode, 201, res.body);
+
+  const m = await movementShift(fx.shiftId);
+  assert.equal(m.length, 1, 'tepat satu movement untuk satu pembayaran tunai');
+  assert.equal(m[0].type, 'sale');
+  assert.equal(m[0].delta, '25000');
+  assert.equal(m[0].order_id, order.id);
+  assert.equal(m[0].counterpart_type, 'sales_revenue', 'FR-D6: counterpart wajib benar sejak v1');
+});
+
+test('⛔ delta memakai nilai transaksi, BUKAN uang yang diserahkan (spec-d:201)', async () => {
+  // Pelanggan menyerahkan Rp 50.000 untuk belanja Rp 25.000. Yang tinggal di
+  // laci Rp 25.000 — kembaliannya keluar lagi, dan `spec-d:201` menegaskan
+  // kembalian TIDAK menghasilkan movement terpisah. Memakai `tendered`
+  // membuat setiap penjualan berkembalian melebih-lebihkan laci.
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, await buatVariation(25000));
+
+  const res = await bayar(order.id, { tenderedAmount: 50000 });
+  assert.equal(res.statusCode, 201, res.body);
+
+  const m = await movementShift(fx.shiftId);
+  assert.equal(m.length, 1);
+  assert.equal(m[0].delta, '25000', 'delta ikut tendered, bukan nilai transaksi');
+});
+
+test('⛔ retry idempoten tidak menggandakan movement', async () => {
+  // Movement ganda menaikkan saldo seharusnya tanpa uang yang benar-benar
+  // masuk — kasir lalu terlihat kurang, persis cacat yang buku kas perbaiki.
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, await buatVariation(25000));
+
+  const key = crypto.randomUUID();
+  const body = { id: crypto.randomUUID(), method: 'cash', tenderedAmount: 25000 };
+  const satu = await req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key });
+  const dua = await req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key });
+  assert.equal(satu.statusCode, 201, satu.body);
+  assert.equal(dua.statusCode, 201, dua.body);
+
+  const m = await movementShift(fx.shiftId);
+  assert.equal(m.length, 1, 'retry menghasilkan movement kedua');
+});
