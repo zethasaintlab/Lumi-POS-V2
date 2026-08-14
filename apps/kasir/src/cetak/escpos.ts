@@ -80,12 +80,48 @@ const RATA: Record<Perataan, number> = { kiri: 0, tengah: 1, kanan: 2 };
  * Diganti `?`, sama seperti printer sendiri melakukannya untuk karakter di
  * luar codepage-nya.
  */
+const TRANSLITERASI: ReadonlyMap<string, string> = new Map([
+  // Design system memakai bentuk tipografis; codepage printer termal tidak
+  // punya satu pun dari mereka. Diterjemahkan, bukan diganti `?` — struk
+  // berbunyi "2? Kopi Susu" dan "? Rp 8.000" adalah angka yang TANDANYA
+  // hilang, dan pelanggan yang memegangnya tidak punya cara tahu.
+  ['−', '-'], // minus tipografis
+  ['×', 'x'], // tanda kali
+  ['…', '...'],
+  ['–', '-'], // en dash
+  ['—', '-'], // em dash
+  ['‘', "'"],
+  ['’', "'"],
+  ['“', '"'],
+  ['”', '"'],
+  [' ', ' '], // spasi tak-putus
+]);
+
+/**
+ * Bentuk yang BENAR-BENAR tercetak: tipografi diterjemahkan, sisanya `?`.
+ *
+ * ⛔ Dipanggil SEBELUM hitungan lebar, bukan saat menulis byte. `…`
+ * panjangnya 1 karakter di JavaScript tetapi mencetak 3 (`...`); menerjemahkan
+ * belakangan membuat baris yang dihitung "pas 32" mencetak 34, dan printer
+ * melipatnya sendiri — memindahkan angka ke baris berikutnya tanpa label apa
+ * pun. Ditemukan oleh test, setelah transliterasi ditambahkan.
+ */
+function keAscii(teks: string): string {
+  let out = '';
+  for (const ch of teks) {
+    const ganti = TRANSLITERASI.get(ch);
+    if (ganti !== undefined) {
+      out += ganti;
+      continue;
+    }
+    out += (ch.codePointAt(0) ?? 0x3f) <= 0x7f ? ch : '?';
+  }
+  return out;
+}
+
 function keByte(teks: string): number[] {
   const out: number[] = [];
-  for (const ch of teks) {
-    const kode = ch.codePointAt(0) ?? 0x3f;
-    out.push(kode <= 0x7f ? kode : 0x3f);
-  }
+  for (const ch of teks) out.push(ch.charCodeAt(0) & 0xff);
   return out;
 }
 
@@ -148,7 +184,7 @@ export function renderEscPos(dok: ReceiptDocument, profil: PrinterProfile): Uint
 
     if (b.jenis === 'duaKolom') {
       if (b.tebal) out.push(ESC, 0x45, 0x01);
-      out.push(...keByte(duaKolom(b.kiri, b.kanan, lebar)), LF);
+      out.push(...keByte(duaKolom(keAscii(b.kiri), keAscii(b.kanan), lebar)), LF);
       if (b.tebal) out.push(ESC, 0x45, 0x00);
       continue;
     }
@@ -159,7 +195,7 @@ export function renderEscPos(dok: ReceiptDocument, profil: PrinterProfile): Uint
     if (rata !== 'kiri') out.push(ESC, 0x61, RATA[rata]);
     if (b.tebal) out.push(ESC, 0x45, 0x01);
 
-    for (const potongan of lipat(b.isi, lebar)) {
+    for (const potongan of lipat(keAscii(b.isi), lebar)) {
       out.push(...keByte(potongan), LF);
     }
 

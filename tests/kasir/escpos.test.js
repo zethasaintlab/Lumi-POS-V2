@@ -210,6 +210,40 @@ test('⛔ karakter di luar codepage tidak menjatuhkan render', async () => {
   assert.equal(teks(out).includes('Susu'), true);
 });
 
+test('⛔ tipografi design system diterjemahkan, bukan diganti tanda tanya', async () => {
+  // Design system memakai `−` (minus tipografis) dan `×`; codepage
+  // printer termal tidak punya keduanya. Mengganti mereka dengan `?`
+  // menghasilkan struk berbunyi "2? Kopi Susu" dan "? Rp 8.000" — angka yang
+  // tandanya hilang.
+  //
+  // Yang menerjemahkan adalah RENDERER, bukan pembangun dokumen. `ARCH:204`
+  // menempatkan pekerjaan itu di sini: dokumen tetap deskriptif dan setia pada
+  // design system; renderer yang tahu batas codepage-nya.
+  const { renderEscPos } = await import(MOD);
+  const out = renderEscPos(
+    { baris: [{ jenis: 'teks', isi: '2× Kopi − Rp 8.000…' }] },
+    PROFIL_58
+  );
+  const t = teks(out);
+  assert.equal(t.includes('2x Kopi - Rp 8.000...'), true, `dapat: ${JSON.stringify(t)}`);
+  assert.equal(t.includes('?'), false, 'masih ada karakter yang tidak diterjemahkan');
+});
+
+test('⛔ lebar dihitung SETELAH transliterasi, bukan sebelum', async () => {
+  // `…` panjangnya 1 karakter di JavaScript tetapi mencetak 3 (`...`).
+  // Kalau lebar kolom dihitung sebelum diterjemahkan, baris yang "pas 32"
+  // mencetak 34 — dan printer melipatnya sendiri, memindahkan angka ke baris
+  // berikutnya tanpa label apa pun.
+  const { renderEscPos } = await import(MOD);
+  const out = renderEscPos(
+    { baris: [{ jenis: 'duaKolom', kiri: 'Kopi…', kanan: 'Rp 25.000' }] },
+    PROFIL_58
+  );
+  const line = teks(out).split('\n')[0];
+  assert.equal(line.length, 32, `lebar tercetak ${line.length}, seharusnya 32`);
+  assert.equal(line.endsWith('Rp 25.000'), true);
+});
+
 test('⛔ hasilnya Uint8Array, bukan string', async () => {
   // Byte yang melewati string JavaScript akan rusak pada nilai > 0x7F: UTF-16
   // mengubahnya, dan printer menerima urutan yang bukan perintah apa pun.
