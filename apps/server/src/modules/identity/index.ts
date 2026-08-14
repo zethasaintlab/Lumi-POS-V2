@@ -1,6 +1,12 @@
 import type { Pool, PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
+import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createDeviceHandlers } from './handlers/devices.ts';
+import { createTokenHandlers, type KonfigToken } from './handlers/tokens.ts';
+import { createUserHandlers } from './handlers/users.ts';
+import { createAuthHandlers } from './handlers/auth.ts';
+import { buatPinHasher } from './pin-hasher.ts';
+import { bolehkah } from '../../../../../packages/domain/src/rbac.ts';
 
 // Permukaan publik modul identity (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul catalog DILARANG query `"user"`
@@ -67,8 +73,64 @@ export async function assertDeviceVisible(client: PoolClient, deviceId: string):
   }
 }
 
-export function createIdentityHandlers(pool: Pool): Record<string, unknown> {
+/**
+ * Menegakkan matriks hak akses `spec-f:38-53` untuk satu pengguna.
+ *
+ * ## ⛔ Batas yang harus dibaca bersama fungsi ini
+ *
+ * Perangkat kasir mengautentikasi diri sebagai **perangkat** (secret bearer,
+ * FR-F12). `X-Actor-Id` dan `X-Approver-Id` adalah atribusi yang **dijamin
+ * perangkat**, bukan identitas yang diverifikasi server — dan itu konsekuensi
+ * langsung dari offline-first: order yang antre enam jam tidak dapat membawa
+ * sesi hidup, dan `spec-f:118` sendiri menyebut PIN sebagai atribusi, bukan
+ * otentikasi.
+ *
+ * Jadi fungsi ini TIDAK menahan perangkat yang di-root. Yang menahan itu
+ * adalah token perangkat yang dapat dicabut.
+ *
+ * Yang ia lakukan tetap bernilai, dan tidak dapat dicapai dengan cara lain:
+ * id yang disebut memang punya hak untuk operasi itu. Kasir tidak dapat
+ * muncul sebagai penyetuju refund, apa pun yang dikirim perangkat — dan
+ * sebelum ini, satu-satunya yang berdiri di sana adalah
+ * `assertApproverVisible`, yang hanya membuktikan penyetujunya ada dan aktif.
+ *
+ * **Fail-closed dua kali:** pengguna tanpa peran ditolak, dan operasi yang
+ * belum didaftarkan di matriks ditolak untuk semua orang (`bolehkah`).
+ * "Belum diatur" tidak boleh berarti "boleh segalanya".
+ */
+export async function assertBoleh(
+  client: PoolClient,
+  userId: string,
+  operasi: string,
+  label = 'melakukan operasi ini'
+): Promise<void> {
+  // SELECT tunduk RLS: peran milik pengguna tenant lain tidak terlihat, jadi
+  // id lintas-tenant jatuh ke daftar kosong dan ditolak fail-closed.
+  const { rows } = await client.query<{ role: string }>(
+    `SELECT ur.role
+       FROM user_role ur
+       JOIN "user" u ON u.id = ur.user_id
+      WHERE ur.user_id = $1 AND u.is_active = true`,
+    [userId]
+  );
+  if (!bolehkah(rows.map((r) => r.role), operasi)) {
+    throw new HttpError(403, 'FORBIDDEN', `Pengguna ${userId} tidak berhak ${label}.`);
+  }
+}
+
+export function createIdentityHandlers(
+  pool: Pool,
+  konfigToken: KonfigToken,
+  hlc: Hlc
+): Record<string, unknown> {
+  // Satu `PinHasher` per proses. Ia stateless, tapi dibuat di sini alih-alih
+  // di dalam handler supaya titik penggantiannya tunggal -- sama seperti
+  // adapter pembayaran dipilih sekali di `buildApp`.
+  const hasher = buatPinHasher();
   return {
     ...createDeviceHandlers(pool),
+    ...createTokenHandlers(pool, konfigToken),
+    ...createUserHandlers(pool, hasher, hlc),
+    ...createAuthHandlers(pool, hasher),
   };
 }

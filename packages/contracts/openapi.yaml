@@ -1177,6 +1177,284 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      operationId: login
+      summary: >-
+        FR-F2b. Email + password untuk back-office. Kasir TIDAK dilayani di
+        sini (spec-f:150) -- pencarian menyaring password_hash IS NOT NULL,
+        jadi PIN tidak dapat dipakai sebagai password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, nullable: true }
+                password: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expiresAt, userId, roles]
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+                  userId: { type: string }
+                  roles: { type: array, items: { type: string } }
+        '401':
+          description: >-
+            Email atau password salah. SATU pesan untuk semua sebab --
+            selisih apa pun adalah oracle enumerasi email (spec-f:148).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /auth/logout:
+    post:
+      operationId: logout
+      responses:
+        '204':
+          description: Sesi diakhiri. Barisnya dihapus, bukan ditandai.
+        '401':
+          description: Sesi tidak sah atau sudah berakhir
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}/password:
+    put:
+      operationId: setUserPassword
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        '204':
+          description: Password diperbarui
+        '400':
+          description: >-
+            Kurang dari 10 karakter (PASSWORD_TOO_SHORT) atau ada di daftar
+            bocor yang di-bundle (PASSWORD_BREACHED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users:
+    post:
+      operationId: createUser
+      summary: >-
+        FR-F2 -- membuat pengguna beserta peran dan keanggotaan outletnya.
+        Ketiganya SATU transaksi: pengguna tanpa peran dan tanpa outlet tidak
+        dapat melakukan apa pun dan tidak terlihat perangkat mana pun.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, roles, outletIds]
+              properties:
+                id: { type: string }
+                name: { type: string, minLength: 1 }
+                email: { type: string, nullable: true }
+                birthDate:
+                  type: string
+                  nullable: true
+                  description: >-
+                    YYYY-MM-DD. Dipakai menolak PIN berupa tanggal lahir
+                    (spec-f:135). Aturannya bersyarat -- tanpa nilai ini,
+                    pemeriksaan itu tidak berjalan.
+                roles:
+                  type: array
+                  items:
+                    type: object
+                    required: [role, scopeType, scopeId]
+                    properties:
+                      role:
+                        type: string
+                        enum: [owner, area_manager, outlet_manager, cashier, accountant]
+                      scopeType: { type: string, enum: [tenant, outlet] }
+                      scopeId: { type: string }
+                outletIds:
+                  type: array
+                  items: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400':
+          description: Header X-Tenant-Id / X-Actor-Id hilang, atau payload tidak valid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >-
+            Aktor tidak berhak mengelola peran yang diminta. Manajer Outlet
+            hanya boleh mengelola Kasir (spec-f:50).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            outletId tidak ditemukan atau bukan milik tenant pemanggil
+            (OUTLET_NOT_FOUND) -- divalidasi lewat SELECT tunduk RLS, bukan FK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: id sudah dipakai (ID_ALREADY_EXISTS)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}:
+    patch:
+      operationId: updateUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1 }
+                email: { type: string, nullable: true }
+                isActive: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            Owner terakhir tidak dapat dinonaktifkan (LAST_OWNER, spec-f:425).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}/pin:
+    put:
+      operationId: setUserPin
+      summary: >-
+        FR-F2. PIN di-hash Argon2id dan disimpan dalam format PHC. Keunikan PIN
+        per outlet ditegakkan APLIKASI -- UNIQUE(outlet_id, pin_hash) di ERD
+        §3 mustahil, karena salt per pengguna membuat PIN identik menghasilkan
+        hash berbeda (lihat migrasi 0019).
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pin]
+              properties:
+                pin: { type: string }
+                isReset:
+                  type: boolean
+                  default: false
+                  description: >-
+                    Reset oleh manajer. Menyalakan pin_must_change: PIN yang
+                    diketahui manajer tidak boleh berlaku selamanya
+                    (spec-f:420).
+      responses:
+        '204':
+          description: PIN diperbarui. Tanpa body -- tidak ada apa pun tentang PIN yang aman dikembalikan.
+        '400':
+          description: >-
+            Bukan 6 digit (PIN_INVALID_SHAPE) atau termasuk pola lemah
+            (PIN_TOO_WEAK -- pesan menyebut pola mana, spec-f:144)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            PIN sudah dipakai pengguna lain di outlet yang sama (PIN_TAKEN).
+            Pesan TIDAK menyebut siapa -- itu akan memberi tahu pemanggil PIN
+            siapa yang baru saja ia tebak.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /users/{userId}/pin-attempts:
+    post:
+      operationId: recordPinAttempt
+      summary: >-
+        FR-F4. Perangkat melaporkan hasil percobaan PIN yang diverifikasinya
+        secara LOKAL. Server memegang hitungan dan eskalasi supaya penguncian
+        berlaku di seluruh perangkat outlet, bukan hanya di perangkat tempat
+        PIN salah diketik.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [failed, succeeded] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [failedAttempts, lockedUntil, lockSeconds]
+                properties:
+                  failedAttempts: { type: integer }
+                  lockedUntil: { type: string, format: date-time, nullable: true }
+                  lockSeconds:
+                    type: integer
+                    nullable: true
+                    description: 60 detik, atau 900 pada penguncian ketiga dalam satu jam (spec-f:229)
+        '404':
+          description: Pengguna tidak ditemukan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /devices:
     post:
       operationId: createDevice
@@ -1223,6 +1501,122 @@ paths:
             tunduk RLS bukan detail error PostgreSQL), atau id sudah dipakai
             device lain (ID_ALREADY_EXISTS -- retry offline dengan id yang
             sama)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/credentials:
+    post:
+      operationId: issueDeviceCredentials
+      summary: >-
+        FR-F12 -- menerbitkan kredensial perangkat. Secret dikembalikan SEKALI;
+        yang tersimpan hanya SHA-256-nya. Menerbitkan ulang mematikan yang lama.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, secret, expiresAt]
+                properties:
+                  deviceId: { type: string }
+                  secret:
+                    type: string
+                    description: Rahasia perangkat. Tidak dapat dibaca lagi setelah respons ini.
+                  expiresAt: { type: string, format: date-time }
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device tidak ditemukan atau sudah dicabut
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/sync-token:
+    post:
+      operationId: issueSyncToken
+      summary: >-
+        FR-F12 -- menukar kredensial perangkat dengan JWT RS256 berumur pendek
+        untuk PowerSync. `tenant_id` dan `outlet_id` adalah klaim TOP-LEVEL:
+        `auth.parameter('x')` di sync rules membaca `payload.x`.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: >-
+            'Bearer <secret perangkat>'. SENGAJA tidak `required` di skema:
+            validator akan menjawab 400 untuk header yang hilang, dan 400
+            berarti "permintaan cacat" sementara kredensial yang hilang
+            berarti "buktikan siapa kamu". Handler yang menegakkannya, dengan
+            401 -- pesan yang sama persis dengan secret yang salah, supaya
+            tidak ada yang dapat menebak id perangkat dari beda respons.
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [endpoint, token]
+                properties:
+                  endpoint: { type: string }
+                  token: { type: string }
+        '400':
+          description: Header X-Tenant-Id hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: >-
+            Kredensial tidak sah, perangkat dicabut, atau kredensial kedaluwarsa
+            (DEVICE_CREDENTIALS_EXPIRED). Satu pesan untuk semua sebab kecuali
+            kedaluwarsa -- membedakannya memberi tahu penebak bahwa id-nya benar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Kunci penandatangan belum diatur di server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /.well-known/jwks.json:
+    get:
+      operationId: getJwks
+      summary: >-
+        Kunci publik untuk memverifikasi token sinkronisasi. Dilayani tanpa
+        tenant dan tanpa kredensial -- ia memang publik.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        '503':
+          description: Kunci penandatangan belum diatur di server
           content:
             application/json:
               schema:
@@ -2012,6 +2406,33 @@ components:
           type: array
           items: { type: string }
         effectiveFrom: { type: string, format: date-time }
+    User:
+      type: object
+      required: [id, name, isActive, roles, outletIds]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        isActive: { type: boolean }
+        pinMustChange: { type: boolean }
+        hasPin:
+          type: boolean
+          description: >-
+            Apakah pengguna punya PIN. Hash-nya sendiri TIDAK pernah keluar
+            lewat endpoint ini -- ia hanya turun lewat replikasi ke perangkat
+            outlet tempat pengguna terdaftar (spec-f:124).
+        roles:
+          type: array
+          items:
+            type: object
+            required: [role, scopeType, scopeId]
+            properties:
+              role: { type: string }
+              scopeType: { type: string }
+              scopeId: { type: string }
+        outletIds:
+          type: array
+          items: { type: string }
     Device:
       type: object
       required: [id, outletId, code]

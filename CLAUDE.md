@@ -25,7 +25,7 @@ Pelanggaran = cacat, bukan preferensi gaya. Tolak di review.
 
 | Lapisan | Pilihan |
 |---|---|
-| Backend | Node.js 22+ · TypeScript · **Fastify** |
+| Backend | **Node.js 24.7+** · TypeScript · **Fastify** |
 | API | **REST + OpenAPI spec-first** (bukan tRPC — klien POS tidak bisa dipaksa update) |
 | Database | **PostgreSQL 17+** · RLS · queue via `SKIP LOCKED` (**tanpa Redis di v1**) |
 | Frontend | **React 19 + Vite (SPA)** — terkunci oleh `/ds-bundle` |
@@ -36,6 +36,8 @@ Pelanggaran = cacat, bukan preferensi gaya. Tolak di review.
 | Auth | Buatan sendiri, modul terisolasi (alur POS tidak dilayani IAM generik) |
 
 Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan mengusulkan alternatif kecuali diminta.**
+
+**Lantai Node adalah 24.7, bukan 22** (dinaikkan 14 Agustus 2026). `crypto.argon2` — hash PIN Modul F, dan alasan repo ini tidak punya dependency Argon2 sama sekali — baru ada sejak Node 24.7.0. `engines.node`, `node-version` di kedua workflow, dan runtime pengembang dijaga tetap sepakat oleh `tests/runtime/versi-node.test.js`, yang berjalan **paling dulu** di CI. Tanpa itu, runtime yang terlalu tua muncul sebagai test PIN merah yang tidak menyebut kata "Node" sama sekali. `research/00` dan `research/03` masih menulis "Node.js 22+" — itu penyuntingan dokumen riset, bukan kewenangan agent.
 
 ---
 
@@ -125,7 +127,29 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: F1 — Inti transaksi, Modul B (Kasir & Order), sub-project 1 (fondasi order).** Gate F0 tertutup — rincian per item ada di `HANDOFF.md`.
+**Fase: F2 selesai secara isi, 14 Agustus 2026. Berikutnya F3.** Gate F0 dan F1 tertutup — rincian per item ada di `HANDOFF.md`.
+
+Seluruh isi F2 yang `ARCH:§14` sebut kini ada, dan **seluruh alur kasir berjalan tanpa jaringan**:
+
+```
+login PIN → buka shift → jual (grid + modifier) → bayar tunai
+          → riwayat → batalkan/refund → tutup kas → laporan shift
+```
+
+| Layar | Kode | Bukti |
+|---|---|---|
+| Login PIN | K-01 | Argon2 WASM, 33 ms, diverifikasi di browser |
+| Buka shift | K-02 | Tanggal bisnis dari zona outlet; relay `pending → sent` |
+| Kasir + modifier | K-03/04/05 | Tangga harga tiga tingkat berjalan di perangkat |
+| Pembayaran | K-06/07 | Satu `writeTransaction`; mendarat di server dengan ULID klien |
+| Riwayat + detail | K-08/09 | Rantai koreksi dua arah |
+| Void/refund | K-10 | Dua identitas, stok kembali, nol payment negatif |
+| Otorisasi | K-11 | PIN manajer diverifikasi lokal |
+| Tutup kas + laporan | K-12/13 | Urutan input wajib; percobaan hitungan tercatat |
+
+**Gate F2 hijau:** `npm run test:dst` — 10.000 iterasi fault injection, nol pelanggaran atas sepuluh invariant.
+
+**Yang TIDAK termasuk, dan tercatat sebagai utang:** FR-H8 (notifikasi antrean menua, P1) · enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · Modul C-3 rekonsiliasi (P1) · FR-F5 (menunggu keputusan `cost` di jalur turun) · refund parsial dengan pemilihan baris di UI.
 
 Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)
@@ -136,7 +160,7 @@ Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] `_adherence.oxlintrc.json` masuk CI — `npm run lint:ds` hijau, `.github/workflows/lint-ds.yml`
 - [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
 - [x] **DST menembak server sungguhan juga** — `npm run test:dst-server`: Fastify + PostgreSQL lewat transport yang sama cacatnya, invariant diperiksa terhadap baris database. Iterasinya jauh lebih sedikit; yang dicari ikatan ke implementasi, bukan kedalaman ruang keadaan
-- [x] **Harness DST ada dan gate-nya hijau** — `npm run test:dst`, 10.000 iterasi fault injection, nol pelanggaran. Delapan invariant (I1–I8) dari `prototypes/02-dst-sinkronisasi/FINDINGS.md`; kelima mode cacat tinggal permanen sebagai bukti invariantnya tidak kosong
+- [x] **Harness DST ada dan gate-nya hijau** — `npm run test:dst`, 10.000 iterasi fault injection, nol pelanggaran. **Sepuluh** invariant: I1–I8 dari `prototypes/02-dst-sinkronisasi/FINDINGS.md`, lalu **I9 urutan kausal** dan **I10 monotonisitas HLC per perangkat** yang lahir bersama FR-H5 (8 Agustus 2026). Tiap perangkat punya jamnya sendiri, saling geser dan sesekali mundur — sebelumnya ketiganya berbagi satu jam, jadi HLC dihitung lalu diabaikan. Ketujuh mode cacat tinggal permanen sebagai bukti invariantnya tidak kosong
 - [x] **SQLite WASM+OPFS berjalan di browser — diukur 7 Agustus 2026** (`prototypes/03-sqlite-opfs/FINDINGS.md`). Paket `@sqlite.org/sqlite-wasm`. **Temuan yang membalik asumsi: VFS `opfs-sahpool` 71× lebih cepat menulis daripada VFS `opfs`, dan tidak butuh COOP/COEP.** Dua tab tidak dapat sama-sama menulis (`NoModificationAllowedError`) — pola satu-penulis WAJIB. `storage.persisted()` = `false`: data lokal dapat dihapus browser. Belum diukur di Android/iOS
 
 Status F1 sekarang:
@@ -240,6 +264,54 @@ Dibuktikan dengan menjalankan kode, bukan membaca dokumentasi — `prototypes/04
 - ⛔ **Setiap kolom yang tipenya berbeda antara PostgreSQL dan skema lokal wajib punya `put` raw table yang DITULIS SENDIRI.** `put` yang disimpulkan PowerSync menyalin nilai apa adanya. Terukur pada `tax_rate.rate` (`numeric(6,4)` di server, `INTEGER` ×10000 di lokal): `0.1100` mendarat sebagai `0.11` — 10.000× terlalu kecil — **dan tersimpan sebagai `real` di kolom `INTEGER`** tanpa satu pun error, karena affinity SQLite hanya mengubah nilai bila lossless. Perbaikannya `CAST(ROUND(? * 10000) AS INTEGER)` di dalam `put`. Kolomnya tetap terlihat `INTEGER` di skema dan `typeof` JavaScript tetap `number`; hanya `typeof()` SQLite yang membedakannya.
 
 Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` menerima kunci inline; di produksi ia harus **asimetris** dan dicetak server kami.
+
+**Pondasi `apps/kasir` berdiri, 8 Agustus 2026** (`docs/superpowers/plans/PLAN-pondasi-kasir.md`). Kerangka penuh, nol layar fitur: router buatan sendiri dari IA §7, shell kasir, skema raw table + penjaga drift, migrasi lokal, adapter `DbLokal`, dan penjadwal relay. Semuanya modul murni yang diuji `node --test`; yang hanya browser dapat buktikan dijalankan lewat `apps/kasir/harness.html`.
+
+**Yang mengikat kode klien, dan tidak terlihat sampai dijalankan:**
+
+- ⛔ **VFS di-set eksplisit `OPFSWriteAheadVFS`, dan itu BUKAN default paket.** Default `@powersync/web@2.1.1` adalah `IDBBatchAtomicVFS` — IndexedDB. Prototipe 04/05 tidak pernah menyetel `vfs`, jadi **seluruh angkanya angka IndexedDB**, termasuk 12,33 ms dan perbandingan 3,8×; angka prototipe 03 (`opfs-sahpool`) datang dari pustaka berbeda dan tidak sebanding dengan keduanya. Diukur ulang lewat PowerSync, tiga run, beban yang sama: **p50 26,8–28,5 ms (IndexedDB) · 7,0–9,1 (OPFSCoopSync) · 9,0–11,8 (AccessHandlePool) · 4,5–5,1 (OPFSWriteAhead)**. Dua tab tetap aman di atas OPFS — diuji terpisah, bukan diasumsikan dari prototipe 04.
+- ⛔ **`watch()` PowerSync butuh ~1.000 ms untuk melihat perubahan raw table** (diukur sembilan kali; `throttleMs` tidak berpengaruh), sementara `spec-h:224` menuntut indikator diperbarui **< 1 detik**. Perubahan yang lewat kode kita karena itu mengirim isyarat baca-ulang lewat `buatPemberitahu()`; datanya tetap dibaca dari SQLite. `watch()` tidak diganti — ia satu-satunya yang melihat perubahan dari luar (katalog turun, tab lain).
+- **Interval relay 15 detik adalah BATAS ATAS, bukan denyut.** Jeda berikutnya mengikuti tangga backoff `spec-h:62`; denyut tetap membuat anak tangga 2/4/8 detik tidak pernah tercapai. Koneksi yang kembali menjalankan putaran segera tapi **tidak** mereset backoff item.
+- **Setiap raw table punya `put` yang ditulis sendiri, termasuk tabel yang seluruh kolomnya sepakat.** Kalau hanya tabel bermasalah yang punya, kolom berskala yang ditambahkan kelak ke tabel "aman" diam-diam kembali memakai jalur yang disimpulkan. Perbandingan DDL PostgreSQL vs SQLite menemukan **dua kolom lagi** berbentuk cacat yang sama dengan `tax_rate.rate`: `item_variation.conversion_factor` (`numeric` → `INTEGER` ×1000) dan `order_line.tax_rate` (`numeric(6,4)` → ×10000). Keduanya belum pernah turun; keduanya akan salah.
+- **Versi skema lokal adalah sidik jari, bukan nomor.** Dihitung dari nama + kolom raw table, disimpan di `skema_lokal`. Nomor versi harus diingat untuk dinaikkan; yang lupa dinaikkan menghasilkan tepat keadaan paling berbahaya di jalur turun.
+- **Rencana DDL tidak pernah men-drop tabel murni lokal.** `outbox_local` adalah antrean penjualan yang belum terkirim; men-drop-nya saat migrasi menghapus uang merchant yang tidak tercatat di mana pun.
+- **`disconnectAndClear()` dijalankan sebelum DDL**, mengikuti urutan yang diukur di prototipe 05 — bukan urutan yang terasa logis.
+- **`uploadData` connector GAGAL KERAS bila antrean CRUD PowerSync tidak kosong.** Ia seharusnya selalu kosong (trigger tidak dipasang); kalau tidak, jalur naik kedua sudah lahir tanpa disengaja.
+- **Token PowerSync tidak pernah dicetak di klien.** Ia diminta ke server (Modul F). Ada test yang memindai seluruh `apps/kasir/src` untuk operasi penandatanganan.
+- **`AppShell` bukan untuk kasir.** IA §2.1: "Kasir tidak punya sidebar." Penggantinya `ShellKasir`.
+- **`<Button>` design system TIDAK boleh menerima `onClick` atau `disabled`.** `_adherence.oxlintrc.json` membatasi propsnya ke `variant`/`critical`/`fullWidth`/`className`/`style`, dan `lint:ds` menolak sisanya — meski komponennya me-spread `...rest` dan akan bekerja. Tombol interaktif memakai `apps/kasir/src/Tombol.tsx`, yang merender `<button className="btn btn-…">` persis seperti `SyncIndicator` sendiri melakukannya.
+
+**FR-H2 & FR-H3 selesai, 8 Agustus 2026** (`docs/superpowers/plans/PLAN-status-sinkronisasi.md`). Indikator di topbar tersambung ke antrean sungguhan dan dapat diklik menuju K-14; layar K-14 menampilkan jumlah, umur tertua, daftar gagal ber-halaman, penggunaan storage, dan ekspor darurat.
+
+- **Latensi indikator 1–2 ms lewat `pemberitahu`, 980 ms lewat `watch()`** — diukur terhadap DOM sungguhan di `harness-h2.html`. AC `spec-h:224` (< 1 detik) hanya terpenuhi lewat jalur pertama.
+- **Konsol devtools tidak dapat dipakai mengukur apa pun yang menyentuh singleton modul.** `import()` dari konsol mendapat instance modul KEDUA (Vite `?t=` setelah HMR), jadi `buka()` memoisasi terpisah dan pengukurannya diam-diam berpindah ke jalur lain. Terbukti dari `jumlahPelanggan: 0`.
+- **`setTimeout` di-clamp ~1.000 ms di tab yang tidak di depan.** Setiap pengukuran latensi di browser wajib memakai `MutationObserver`, bukan poll timer — poll 10 ms melaporkan 991 ms untuk sesuatu yang sebenarnya 1 ms.
+- **Teks `failed` design system hanya lengkap bila `onRetry` diberikan.** "Coba lagi" adalah tombol di dalam komponen, bukan label; tanpanya `spec-h:216` tidak terpenuhi. Karena itu pembungkus indikator `span role="button"` — tombol di dalam tombol tidak sah.
+- **`tertuaPada` dihitung HANYA dari item yang belum terkirim.** Dari seluruh baris, satu item lama yang sudah `sent` membuat antrean sehat terbaca berumur satu hari — dan `spec-h:302` memakai umur itu sebagai ambang 4/24/72 jam.
+- **Status per-record memakai aturan terburuk-menang.** Satu order punya beberapa baris outbox (`payment` dan `order_cancel` memakai `entity_id` yang sama); order yang pembayarannya gagal terkirim tidak boleh terlihat `ok`.
+
+**FR-F12 (token perangkat) ditarik dari F3 ke F2, 8 Agustus 2026** (`docs/superpowers/plans/PLAN-fr-f12-token-perangkat.md`). **Hanya FR-F12** — bukan peran, PIN, step-up, audit, atau akses support; sisa Modul F tetap di F3. Ia ditarik karena ia satu-satunya potongan yang menutup ⛔ token PowerSync, dan karena skemanya (`device.token_hash`, `credentials_expire_at`, `last_seen_at`, `revoked_at`) sudah ada sejak F0.
+
+- **Token sinkronisasi dicetak SERVER dengan RS256**, kunci dari `POWERSYNC_JWT_PRIVATE_KEY`, JWKS di `GET /.well-known/jwks.json`. Ditandatangani `node:crypto` — nol dependensi baru. Klien tidak pernah memegang bahan rahasia; ada test yang memindai `apps/kasir/src` untuk operasi penandatanganan.
+- ⛔ **`tenant_id` dan `outlet_id` adalah klaim TOP-LEVEL, bukan di dalam objek `parameters`.** Diukur di prototipe 05: `auth.parameter('x')` membaca `payload.x`. Salah tempat berarti sync rules mencocokkan dengan `undefined`, dan yang turun bukan error melainkan **nol baris** — katalog kosong permanen tanpa satu pun keluhan.
+- **Secret perangkat di-hash SHA-256, bukan Argon2id.** Aturan Argon2id berlaku untuk password dan PIN — rahasia berentropi rendah yang dipilih manusia. Secret ini 256 bit dari CSPRNG; KDF lambat tidak membeli apa pun dan diverifikasi pada setiap permintaan token. Yang tetap berlaku: tidak pernah disimpan apa adanya, dan dibandingkan timing-safe.
+- **`POST /devices/{id}/sync-token` TETAP menuntut `X-Tenant-Id`.** Webhook Midtrans tetap satu-satunya endpoint tanpa header itu. Perangkat tahu tenant-nya sendiri, dan menyertakannya menjaga pencarian tetap tunduk RLS; berbohong hanya membuat device id-nya tidak ditemukan.
+- **Kunci kosong → 503, bukan gagal saat boot.** Berbeda dari adapter pembayaran, dan sengaja: gagal boot akan menuntut setiap test dan setiap lingkungan pengembangan menyediakan kunci RSA untuk endpoint yang tidak dipakainya.
+- **Kredensial yang hilang dijawab 401, bukan 400.** Karena itu header `Authorization` tidak ditandai `required` di OpenAPI — validator akan menjawab 400, dan 400 berarti "permintaan cacat" sementara yang dimaksud adalah "buktikan siapa kamu".
+
+**Jalur turun berjalan lewat aplikasi sungguhan, 8 Agustus 2026.** Stack PowerSync prototipe 05 + server kami + `apps/kasir`: `terhubung: true`, ketujuh tabel katalog turun ke raw table kami, isolasi tenant menahan (tenant lain nol baris). `client_auth.jwks` inline di prototipe diganti `jwks_uri` yang menunjuk server kami — **tidak ada lagi bahan rahasia di konfigurasi PowerSync**.
+
+- **Kedua kolom berskala terbukti benar di aplikasi**: `tax_rate.rate` mendarat `1100` bertipe `integer` (bukan `0.11` bertipe `real`), dan `item_variation.conversion_factor` mendarat `1000` (bukan `1`). Yang kedua ditemukan lewat perbandingan DDL dan belum pernah terukur sampai sekarang.
+- **CORS wajib, dan daftarnya dari `CORS_ORIGINS`** — bukan dari kode (invariant #5). Kosong = tidak ada origin yang diizinkan; `*` tidak pernah dijawab. Tanpa ini aplikasi kasir tidak dapat mencapai server sama sekali.
+- **Perubahan bentuk tabel LOKAL-SAJA tidak terlihat sidik jari skema.** Ia hanya menghitung raw table. Migrasi tabel lokal karena itu ADITIF (`ALTER TABLE ADD COLUMN`) dan berjalan di setiap boot — `outbox_local` memegang penjualan yang belum terkirim, `device_config` memegang `receipt_sequence`. ALTER tidak dapat mengubah primary key; kalau itu yang berubah, database lama harus dibuang.
+- ⛔ **Test klien berjalan di atas SQLite yang BERBEDA dari aplikasi.** `ON CONFLICT(id)` diterima `node:sqlite` dan DITOLAK `wa-sqlite` — seluruh test hijau, hanya aplikasinya yang gagal. Bentuk SQL baru wajib dijalankan di browser sebelum dipercaya.
+- **Aktor dibekukan saat item outbox DIBUAT** (`outbox_local.actor_id`), bukan dibaca saat dikirim. Antrean yang terkuras setelah pergantian shift akan menisbatkan penjualan ke kasir yang salah.
+- ⛔ **`@powersync/web` mengembalikan kolom `INTEGER` yang besar sebagai `bigint`, bukan `number`.** Diukur dari database sungguhan, bukan dibaca dari dokumentasi. Konsekuensinya setiap pembacaan kolom numerik besar harus menerima **ketiga** bentuk — `bigint`, `number`, dan `string` — karena driver test (`node:sqlite`) dan driver aplikasi tidak sepakat. Guard yang hanya memeriksa `number` **tidak pernah mengambil cabangnya**, dan itu hijau di seluruh test sambil salah di aplikasi. Ditemukan saat menutup I10 di jalur produksi.
+- ⛔ **HLC klien disimpan sebagai TEXT (`device_config.hlc_teks`), bukan di kolom `INTEGER`.** HLC 57-bit melampaui 2⁵³ untuk setiap nilai nyata (physical = milidetik epoch, digeser 16 bit counter), jadi kolom `INTEGER` mengembalikannya lewat double dan presisinya hilang. Kolom `hlc_state` lama dipertahankan hanya untuk perangkat yang sudah ada — `device_config` murni lokal dan bermigrasi **aditif**, dan SQLite tidak dapat mengubah tipe kolom. Gejala aslinya: setelah restart dengan jam yang sedang mundur, HLC **turun**, tanpa satu pun error.
+- **Keadaan HLC ditulis DI DALAM transaksi penjualan.** Di luar transaksi ada jendela tempat perangkat dapat mati setelah order ter-commit tapi sebelum `hlc_teks` tersimpan; boot berikutnya memuat nilai lama, dan tick berikutnya dapat menghasilkan HLC yang **sudah dipakai** order yang sudah ada. Dua order ber-HLC sama adalah pelanggaran I10 yang tidak menghasilkan error — ia hanya membuat "mana yang lebih dulu" tidak terjawab, di tempat yang paling membutuhkannya.
+- ⛔ **Fake `DbLokal` tidak menegakkan constraint apa pun.** `NOT NULL`, `CHECK`, dan `ON CONFLICT` semuanya lolos di test dan gagal keras di `wa-sqlite`. Terjadi dua kali: `ON CONFLICT(id)` (8 Agustus) dan `audit_event.tenant_id = NULL` (14 Agustus). Test karena itu harus memeriksa **nilai yang di-bind**, bukan sekadar bahwa tabelnya disentuh — dan bentuk SQL baru tetap wajib dijalankan di browser sebelum dipercaya.
+- ⛔ **Fake juga tidak menegakkan `ORDER BY`.** Jaminan urutan yang hanya hidup di SQL tidak dapat diuji sama sekali. Kalau urutannya penting bagi pengguna, ia dimiliki di JS di titik data disusun — `katalog/baca.ts` (modifier, karena dikelompokkan ulang) dan `riwayat/baca.ts` (SQL memilih baris mana lewat `LIMIT`, JS menjamin urutan tampil).
+- **Keranjang K-03 hanya ada di MEMORI** (`apps/kasir/src/kasir/simpanan.ts`). Ia hilang saat aplikasi dimuat ulang. Itu bukan kehilangan uang — penjualan baru ada setelah `simpanPenjualan` menulisnya — tapi kasir harus memasukkan ulang pesanannya. Jalan keluarnya sudah disiapkan skema (`order.status = 'open'` + `owned_by_device_id`, KEP-21) dan **belum dibangun**: order `open` yang tidak pernah dibayar akan muncul di laporan dan harus punya jalan penutupan. Karena itu juga K-06/K-07 **tidak punya URL** (`IA:§7`) — `/bayar` akan menjadi alamat yang tidak pernah dapat dipulihkan.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 

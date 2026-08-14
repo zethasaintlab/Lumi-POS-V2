@@ -168,9 +168,11 @@ THEN perangkat memajukan counter logisnya
 
 **Acceptance criteria.**
 
-- [ ] Urutan transaksi berdasarkan HLC benar meskipun jam perangkat mundur
-- [ ] Transaksi dari dua perangkat dengan jam berbeda terurut konsisten di server
+- [x] Urutan transaksi berdasarkan HLC benar meskipun jam perangkat mundur — **I10** di `tests/dst/`, dengan jam yang benar-benar dimundurkan 1 detik sampai satu hari penuh
+- [x] Transaksi dari dua perangkat dengan jam berbeda terurut konsisten di server — **I9**; tiap perangkat punya jamnya sendiri, saling geser mengelilingi ambang 5 menit di bawah
 - [ ] Selisih jam > 5 menit menghasilkan audit event (lihat Modul F, FR-F8)
+
+`[FAKTA — 8 Agustus 2026]` Sebelum ini, seluruh perangkat di harness DST **berbagi satu jam**, dan tidak ada satu pun invariant yang membaca `hlc`. Nilainya dihitung, disimpan, lalu diabaikan — jadi kedua AC di atas tidak sedang diuji oleh apa pun. Aturan "perangkat memperbarui HLC-nya dari server" juga tidak dapat dipenuhi siapa pun, karena model server tidak mengembalikan HLC sama sekali. Keduanya diperbaiki bersamaan; rinciannya di `docs/superpowers/plans/PLAN-fr-h5-hlc.md`.
 
 ---
 
@@ -323,22 +325,27 @@ THEN ditolak dengan pesan:
 
 **Prasyarat desain yang harus diputuskan SEBELUM menulis kode sinkronisasi:** waktu, keacakan, dan I/O jaringan **di-inject sebagai dependensi**, bukan dipanggil langsung. Retrofitnya mahal.
 
-**Delapan invariant yang diuji sebagai property.** `[FAKTA]` Divalidasi lewat prototipe — lihat `/prototypes/02-dst-sinkronisasi/FINDINGS.md`.
+**Sepuluh invariant yang diuji sebagai property.** `[FAKTA]` I1–I8 divalidasi lewat prototipe — lihat `/prototypes/02-dst-sinkronisasi/FINDINGS.md`. I9 dan I10 lahir belakangan, saat FR-H5 dikerjakan (8 Agustus 2026).
 
-- [ ] **I1 Konservasi** — tidak ada transaksi yang hilang untuk urutan operasi apa pun
-- [ ] **I2 Tanpa duplikasi** — satu nomor struk = tepat satu order di server
-- [ ] **I3 Konvergensi** — semua replika akhirnya sepakat pada himpunan transaksi
-- [ ] **I4 Monotonisitas** — nomor struk per (device, tanggal bisnis) berurutan rapat
-- [ ] **I5 Konservasi uang** — total perangkat = total server
-- [ ] **I6 Kemampuan jual offline** — nol penjualan gagal karena tidak ada koneksi
-- [ ] **I7 Immutabilitas** — record server tidak berubah setelah tulis pertama
-- [ ] **I8 Higienis idempotency** — satu order tidak punya lebih dari satu idempotency key
-- [ ] **Urutan kausal** — HLC menjaga urutan meskipun jam melenceng *(belum divalidasi prototipe)*
-- [ ] **Isolasi tenant** — tidak ada data lintas tenant dalam kondisi apa pun
+- [x] **I1 Konservasi** — tidak ada transaksi yang hilang untuk urutan operasi apa pun
+- [x] **I2 Tanpa duplikasi** — satu nomor struk = tepat satu order di server
+- [x] **I3 Konvergensi** — semua replika akhirnya sepakat pada himpunan transaksi
+- [x] **I4 Monotonisitas struk** — nomor struk per (device, tanggal bisnis) berurutan rapat
+- [x] **I5 Konservasi uang** — total perangkat = total server
+- [x] **I6 Kemampuan jual offline** — nol penjualan gagal karena tidak ada koneksi
+- [x] **I7 Immutabilitas** — record server tidak berubah setelah tulis pertama
+- [x] **I8 Higienis idempotency** — satu order tidak punya lebih dari satu idempotency key
+- [x] **I9 Urutan kausal** — apa pun yang perangkat **buat** setelah ia **melihat** keadaan server mengurutkan sesudah keadaan itu, meskipun jam melenceng
+- [x] **I10 Monotonisitas HLC** — satu perangkat tidak pernah menghasilkan HLC yang tidak naik, apa pun yang terjadi pada jam dindingnya
+- [ ] **Isolasi tenant** — tidak ada data lintas tenant dalam kondisi apa pun *(belum diuji di DST; lihat catatan jalur turun di bawah)*
 
 > ⚠️ **I1–I5 saja tidak cukup.** Pengukuran menunjukkan lima invariant pertama hanya menangkap **1 dari 5** cacat yang diinjeksikan: regenerasi idempotency key, nomor struk dari server, dan void-sebagai-UPDATE semuanya lolos. I6, I7, dan I8 ditambahkan untuk menutupnya.
 >
-> **Baseline terukur:** protokol yang didokumentasikan lolos **2.000 iterasi**, dan bertahan pada jaringan dengan 70% request hilang / 65% respons hilang / 50% duplikat pada 8 device.
+> ⚠️ **I1–I8 pun tidak melihat cacat HLC sama sekali.** Dua cacat yang disuntikkan saat FR-H5 dikerjakan — HLC diambil mentah dari jam dinding, dan perangkat mengabaikan HLC yang dikembalikan server — **tidak melanggar satu pun I1–I8**: tidak ada transaksi yang hilang, tidak ada yang ganda, uangnya cocok. Yang rusak hanya urutannya. I9 dan I10 ditambahkan untuk menutup itu, dan keduanya lahir dengan alasan yang sama persis dengan I6, I7, dan I8.
+>
+> ⚠️ **Isolasi tenant tidak dapat dijaga DST pada jalur TURUN.** Role replikasi PowerSync wajib `BYPASSRLS` (replikasi logis membaca WAL, dan RLS tidak berlaku di sana), jadi sync rules adalah satu-satunya batas tenant di sana. Dibuktikan lewat sabotase di `/prototypes/05-powersync-jalur-turun/FINDINGS.md`. Pemeriksaannya harus menyentuh **setiap tabel** — kebocoran satu tabel tidak terlihat oleh pemeriksaan pada tabel lain.
+>
+> **Baseline terukur:** protokol yang didokumentasikan lolos **2.000 iterasi** di prototipe, dan bertahan pada jaringan dengan 70% request hilang / 65% respons hilang / 50% duplikat pada 8 device. Implementasinya lolos **10.000 iterasi** di `tests/dst/`, termasuk setelah skew jam per perangkat ditambahkan.
 
 **Fault yang wajib diinjeksikan:**
 
@@ -348,7 +355,7 @@ THEN ditolak dengan pesan:
 | Respons hilang setelah server sukses | Timeout di sisi klien |
 | Request duplikat | Retry otomatis |
 | Request tiba tidak berurutan | Jaringan seluler |
-| Jam device mundur/maju | Perangkat murah tanpa NTP, atau manipulasi |
+| ✅ Jam device mundur/maju | Perangkat murah tanpa NTP, atau manipulasi — **diinjeksikan sejak 8 Agu 2026**: tiap perangkat berjam sendiri dengan skew, dan sesekali mundur |
 | Storage penuh | Perangkat kapasitas kecil |
 | Aplikasi mati di tengah transaksi | Baterai habis, force-close |
 | Dua device menjual item terakhir | Alur nyata |
@@ -357,11 +364,11 @@ THEN ditolak dengan pesan:
 
 **Acceptance criteria.**
 
-- [ ] Harness DST ada dan dapat dijalankan di CI
-- [ ] Bug yang ditemukan datang dengan **seed yang mereproduksinya persis**
-- [ ] Seluruh invariant di atas diuji
-- [ ] Seluruh fault di atas diinjeksikan
-- [ ] DST dijalankan minimal 10.000 iterasi sebelum rilis F2
+- [x] Harness DST ada dan dapat dijalankan di CI — `npm run test:dst`, `.github/workflows/test.yml`
+- [x] Bug yang ditemukan datang dengan **seed yang mereproduksinya persis** — tidak ada `Date.now()` maupun `Math.random()` di seluruh harness, dan ada test yang memindainya
+- [ ] Seluruh invariant di atas diuji — I1–I10 hijau; **isolasi tenant belum**
+- [ ] Seluruh fault di atas diinjeksikan — sudah: request hilang, respons hilang setelah server menulis, request duplikat, aplikasi mati di tengah, jam device melenceng/mundur. 5xx diinjeksikan di `tests/dst-server/`, bukan di harness murni. **Tersisa: storage penuh, request tiba tidak berurutan, dua device menjual item terakhir, sinkronisasi parsial**
+- [x] DST dijalankan minimal 10.000 iterasi sebelum rilis F2 — gate-nya di suite, bukan dijalankan tangan
 
 ---
 

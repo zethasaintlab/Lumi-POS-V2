@@ -7,6 +7,7 @@ import { createPool, type Pool } from './db.ts';
 import { HttpError } from './http-error.ts';
 import { createCatalogHandlers } from './modules/catalog/index.ts';
 import { createIdentityHandlers } from './modules/identity/index.ts';
+import type { KonfigToken } from './modules/identity/handlers/tokens.ts';
 import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
@@ -64,6 +65,10 @@ export async function buildApp(
     paymentProvider?: PaymentProvider;
     logger?: { level: string; stream: NodeJS.WritableStream };
     webhookSecret?: string;
+    /** FR-F12: PEM kunci privat RSA. String kosong = fitur tidak dikonfigurasi. */
+    syncJwtPrivateKey?: string;
+    /** Origin yang boleh memanggil server dari browser. Kosong = tidak ada. */
+    corsOrigins?: string[];
   } = {}
 ): Promise<FastifyInstance> {
   const pool = overrides.pool ?? createPool();
@@ -95,7 +100,31 @@ export async function buildApp(
     // dapat memverifikasi notifikasi walau PAYMENT_PROVIDER=fake (mis. saat
     // menguji integrasi di staging dengan adapter palsu).
     const webhookSecret = overrides.webhookSecret ?? process.env.MIDTRANS_SERVER_KEY ?? '';
-    return await buildAppInner(pool, specPath, paymentProvider, overrides.logger, webhookSecret);
+    // FR-F12. Kunci KOSONG diperbolehkan dan berarti "fitur tidak
+    // dikonfigurasi" -- endpoint token menjawab 503. Gagal saat boot (pola
+    // adapter pembayaran) akan menuntut setiap test dan setiap lingkungan
+    // pengembangan menyediakan kunci RSA hanya untuk menjalankan endpoint
+    // yang tidak dipakainya.
+    const konfigToken = {
+      pemPrivat: overrides.syncJwtPrivateKey ?? process.env.POWERSYNC_JWT_PRIVATE_KEY ?? '',
+      powersyncUrl: process.env.POWERSYNC_URL ?? '',
+      sekarang: () => Date.now(),
+    };
+    const corsOrigins =
+      overrides.corsOrigins ??
+      (process.env.CORS_ORIGINS ?? '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
+    return await buildAppInner(
+      pool,
+      specPath,
+      paymentProvider,
+      overrides.logger,
+      webhookSecret,
+      konfigToken,
+      corsOrigins
+    );
   } catch (err) {
     await pool.end();
     throw err;
@@ -107,7 +136,9 @@ async function buildAppInner(
   specPath: string,
   paymentProvider: PaymentProvider,
   loggerOverride: { level: string; stream: NodeJS.WritableStream } | undefined,
-  webhookSecret: string
+  webhookSecret: string,
+  konfigToken: KonfigToken,
+  corsOrigins: string[]
 ): Promise<FastifyInstance> {
   // Satu instance Hlc per proses server (keputusan Q3, PLAN-ordering-fondasi.md
   // §8.0), dibuat di sini -- BUKAN di dalam modul ordering -- dengan clock
@@ -122,7 +153,7 @@ async function buildAppInner(
       return { status: 'ok' };
     },
     ...createCatalogHandlers(pool),
-    ...createIdentityHandlers(pool),
+    ...createIdentityHandlers(pool, konfigToken, hlc),
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
@@ -207,6 +238,42 @@ async function buildAppInner(
     }
     req.log.error({ err, body: redactSensitive(req.body), url: req.url }, 'permintaan gagal');
     reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'Terjadi kesalahan internal.' } });
+  });
+
+
+  /* CORS untuk aplikasi kasir.
+
+     ⛔ Ditemukan dengan menjalankan aplikasi: klien di `http://localhost:1420`
+     tidak dapat mencapai server sama sekali — *"Response to preflight request
+     doesn't pass access control check"* — meskipun seluruh test server hijau.
+     Aplikasi kasir adalah SPA di origin yang berbeda dari API, jadi ini bukan
+     kenyamanan pengembangan melainkan prasyarat agar ia berfungsi.
+
+     Ditulis tangan, bukan `@fastify/cors`: aturannya sempit (satu daftar
+     origin, tanpa kredensial cookie) dan menambah dependensi untuk sembilan
+     baris tidak sepadan.
+
+     Daftar origin datang dari `CORS_ORIGINS`, bukan dari kode (invariant #5).
+     Kosong = tidak ada yang diizinkan, dan `*` tidak pernah dijawab. */
+  const asalDiizinkan = new Set(corsOrigins);
+  const HEADER_DIIZINKAN = 'content-type, authorization, x-tenant-id, x-actor-id, x-approver-id, idempotency-key';
+
+  app.addHook('onRequest', async (req, reply) => {
+    const asal = req.headers.origin;
+    if (typeof asal !== 'string' || !asalDiizinkan.has(asal)) {
+      // Preflight dari origin asing tetap dijawab, tapi TANPA izin apa pun.
+      // Browser yang menolaknya -- itu memang pembagian kerjanya.
+      if (req.method === 'OPTIONS') reply.code(204).send();
+      return;
+    }
+    reply.header('Access-Control-Allow-Origin', asal);
+    reply.header('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      reply.header('Access-Control-Allow-Headers', HEADER_DIIZINKAN);
+      reply.header('Access-Control-Max-Age', '600');
+      reply.code(204).send();
+    }
   });
 
   await app.register(openapiGlue, {

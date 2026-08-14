@@ -64,17 +64,25 @@ function req(method, url, payload, headers = {}) {
 
 // Penyetuju harus user LAIN: audit_event punya CHECK yang menolak aktor
 // menyetujui dirinya sendiri, jadi seluruh test refund butuh dua user.
-async function buatUser(nama) {
+async function buatUser(nama, peran = 'outlet_manager') {
   const id = crypto.randomUUID();
   await appSetup.query('BEGIN');
   await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
-  // Tabel `user` tidak punya kolom `role` (0003_identity.sql) -- RBAC adalah
-  // Modul F dan belum ada. Yang dibutuhkan test ini hanya user AKTIF kedua di
-  // tenant yang sama, karena CHECK di audit_event menolak aktor menyetujui
-  // dirinya sendiri.
   await appSetup.query(
     `INSERT INTO "user" (id, tenant_id, name, is_active) VALUES ($1, $2, $3, true)`,
     [id, tenant.id, `${nama} ${id.slice(0, 6)}`]
+  );
+  // §5 PLAN-modul-f-identitas.md. Sebelum Modul F, user di sini sengaja tanpa
+  // peran -- yang dibutuhkan hanya user AKTIF kedua, karena CHECK di
+  // audit_event menolak aktor menyetujui dirinya sendiri.
+  //
+  // Sekarang `tulisRefund` menuntut penyetuju punya hak `approve_authorization`
+  // (`spec-f:42`), jadi peran menjadi bagian dari prasyarat. Default
+  // `outlet_manager` -- peran yang memang menyetujui refund di outletnya.
+  await appSetup.query(
+    `INSERT INTO user_role (id, tenant_id, user_id, role, scope_type, scope_id)
+     VALUES ($1, $2, $3, $4, 'outlet', $5)`,
+    [crypto.randomUUID(), tenant.id, id, peran, base.outlet.id]
   );
   await appSetup.query('COMMIT');
   return id;
@@ -549,4 +557,88 @@ test('Idempotency-Key sama dengan body berbeda -> 422', async () => {
   const b = await batalkan(order.id, refundPayload({ amount: 5000, lines: [] }), { 'idempotency-key': key });
   assert.equal(b.statusCode, 422, b.body);
   assert.equal((await query('SELECT id FROM refund')).length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// §5 PLAN-modul-f-identitas.md -- penegakan RBAC pada penyetuju refund.
+//
+// Diletakkan di berkas ini, bukan di tests/identity/, karena ia menuntut order
+// yang benar-benar TERTUTUP lewat jalur pembayaran sungguhan -- dan harness
+// itu hidup di sini. Guard-nya sendiri (`assertBoleh`) diuji terpisah dan
+// tanpa database di tests/identity/rbac-penegakan.test.js.
+// ---------------------------------------------------------------------------
+
+test('⛔ kasir TIDAK dapat menjadi penyetuju refund, meski id-nya sah dan aktif', async () => {
+  // `spec-f:42` -- "Menyetujui void/refund/diskon: Kasir ❌".
+  // `spec-b:278` -- refund selalu PIN manajer, tidak dapat diubah.
+  //
+  // Sebelum §5, satu-satunya yang berdiri di sini adalah
+  // `assertApproverVisible`, yang hanya membuktikan penyetujunya ADA dan
+  // AKTIF. Kasir mana pun lolos, dan pemisahan tugas `spec-f:91` runtuh tanpa
+  // satu pun aturan terlihat dilanggar.
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrderTertutup(fx, [baris(await buatVariation(20000))]);
+  const kasir = await buatUser('Kasir Penyetuju', 'cashier');
+
+  const res = await batalkan(order.id, refundPayload({ amount: 5000, lines: [] }), {
+    'x-approver-id': kasir,
+  });
+
+  assert.equal(res.statusCode, 403, res.body);
+  assert.equal(JSON.parse(res.body).error.code, 'FORBIDDEN');
+  // Pesan menunjuk PENYETUJU, bukan aktor. Manajer yang berdiri di kasir
+  // dengan pelanggan menunggu akan mencari masalah di tempat yang keliru
+  // kalau pesannya menyebut kasirnya -- pelajaran yang sama yang melahirkan
+  // APPROVER_NOT_FOUND (CLAUDE.md, temuan F1 bentuk kelima).
+  assert.match(JSON.parse(res.body).error.message, /menyetujui refund/i);
+
+  // Dan TIDAK ADA JEJAK yang tertulis. Refund yang ditolak otorisasinya tidak
+  // boleh meninggalkan baris refund, stok, maupun audit.
+  assert.equal((await query('SELECT id FROM refund')).length, 0);
+  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+});
+
+test('akuntan tidak dapat menyetujui refund; manajer outlet dapat', async () => {
+  // Sisi kedua. Tanpa ini, `assertBoleh` yang selalu melempar akan membuat
+  // test di atas hijau -- yang membedakan guard dari dinding adalah bahwa ada
+  // orang yang LEWAT.
+  const fx = await setupDeviceAndShift();
+  const akuntan = await buatUser('Akuntan', 'accountant');
+
+  const a = await buatOrderTertutup(fx, [baris(await buatVariation(20000))]);
+  const ditolak = await batalkan(a.id, refundPayload({ amount: 5000, lines: [] }), {
+    'x-approver-id': akuntan,
+  });
+  assert.equal(ditolak.statusCode, 403, ditolak.body);
+
+  const b = await buatOrderTertutup(fx, [baris(await buatVariation(20000))]);
+  const diterima = await batalkan(b.id, refundPayload({ amount: 5000, lines: [] }));
+  assert.equal(diterima.statusCode, 201, diterima.body);
+});
+
+test('void TIDAK terpengaruh RBAC penyetuju -- ia memang tidak punya penyetuju', async () => {
+  // Keputusan user 1 Agustus 2026: void berjalan TANPA PIN manajer, cukup
+  // alasan daftar tertutup + audit + restock. Guard penyetuju karena itu
+  // diletakkan di jalur refund, bukan di awal handler -- pemeriksaan yang
+  // berjalan sebelum server memilih operasinya akan menolak void yang sah
+  // hanya karena perangkat menyertakan header nyasar.
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, [baris(await buatVariation(20000))]);
+  const kasir = await buatUser('Kasir Nyasar', 'cashier');
+
+  seq += 1;
+  const res = await batalkan(
+    order.id,
+    refundPayload({
+      // Daftar alasan void BERBEDA dari refund (`spec-b` §B.4) -- `barang_rusak`
+      // milik refund dan ditolak di sini.
+      reasonCode: 'salah_input',
+      receiptNumber: `K1-20260807-${String(seq).padStart(4, '0')}`,
+      sequence: seq,
+    }),
+    { 'x-approver-id': kasir }
+  );
+
+  assert.equal(res.statusCode, 201, res.body);
+  assert.equal(JSON.parse(res.body).operation, 'void');
 });

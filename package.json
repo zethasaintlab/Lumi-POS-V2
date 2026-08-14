@@ -11,14 +11,15 @@
     "prototypes/05-powersync-jalur-turun"
   ],
   "engines": {
-    "node": ">=22.18"
+    "node": ">=24.7"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client",
+    "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client && tsc --noEmit --project apps/kasir",
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
     "test:isolation": "node --env-file=.env --test --test-concurrency=1 \"tests/isolation/*.test.js\"",
+    "test:runtime": "node --test \"tests/runtime/*.test.js\"",
     "test:domain": "node --test \"tests/domain/*.test.js\"",
     "test:schema": "node --env-file=.env --test --test-concurrency=1 \"tests/schema/*.test.js\"",
     "test:server": "node --env-file=.env --test --test-concurrency=1 \"tests/server/*.test.js\"",
@@ -29,9 +30,12 @@
     "test:oxlint-ds-adherence": "node --test \"tests/oxlint-ds-adherence/*.test.js\"",
     "test:dst": "node --experimental-strip-types --test \"tests/dst/*.test.js\"",
     "test:dst-server": "node --env-file=.env --test --test-concurrency=1 \"tests/dst-server/*.test.js\"",
-    "test:sync-client": "node --test \"tests/sync-client/*.test.js\""
+    "test:sync-client": "node --test \"tests/sync-client/*.test.js\"",
+    "test:kasir": "node --experimental-strip-types --test \"tests/kasir/*.test.js\"",
+    "test:identity": "node --env-file=.env --test --test-concurrency=1 \"tests/identity/*.test.js\""
   },
   "dependencies": {
+    "hash-wasm": "^4.12.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {

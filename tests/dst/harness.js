@@ -64,9 +64,19 @@ function createRng(seed) {
  */
 function createClock(startMs) {
   let now = startMs;
+  let mundur = 0;
   return {
     now: () => now,
     advance: (ms) => { now += ms; },
+    /**
+     * Jam melompat MUNDUR. Kejadian nyata, bukan skenario karangan: koreksi
+     * NTP pada tablet murah tanpa RTC yang andal, atau pengguna yang mengubah
+     * tanggal. `spec-h:351` mendaftarkannya sebagai fault yang WAJIB
+     * diinjeksikan; sampai FR-H5 dikerjakan, ia tidak pernah diinjeksikan
+     * sama sekali.
+     */
+    mundurkan: (ms) => { now -= ms; mundur += 1; },
+    get jumlahMundur() { return mundur; },
   };
 }
 
@@ -94,6 +104,9 @@ function createServer(options = {}) {
   const snapshots = new Map();
   // Berapa key yang pernah dipakai untuk satu order. I8 membacanya.
   const keysPerOrder = new Map();
+  // HLC tertinggi yang pernah dilihat server. Ia yang dikembalikan ke
+  // perangkat, dan I9 berdiri di atasnya.
+  let hlcTertinggi = 0n;
 
   function catatKey(orderId, key) {
     const set = keysPerOrder.get(orderId) ?? new Set();
@@ -106,6 +119,7 @@ function createServer(options = {}) {
     idempotencyKeys,
     snapshots,
     keysPerOrder,
+    get hlcTertinggi() { return hlcTertinggi; },
 
     /**
      * @param {{key: string, hash: string, order: object}} req
@@ -155,11 +169,17 @@ function createServer(options = {}) {
       if (!snapshots.has(order.id)) {
         snapshots.set(order.id, JSON.stringify({ ...order, total: order.total.toString() }));
       }
+      // Server menyerap HLC setiap record yang masuk, lalu mengembalikannya.
+      // `spec-h:157`: "Perangkat memperbarui HLC-nya setiap kali menerima HLC
+      // yang lebih besar dari server." Tanpa server yang MENGEMBALIKAN
+      // sesuatu, kalimat itu tidak dapat dipenuhi siapa pun.
+      const masuk = BigInt(order.hlc);
+      if (masuk > hlcTertinggi) hlcTertinggi = masuk;
 
       if (!tulisKeyLebihDulu) {
         idempotencyKeys.set(key, { hash, status: 201, body: { id: order.id } });
       }
-      return { status: 201, body: { id: order.id } };
+      return { status: 201, body: { id: order.id }, hlcServer: hlcTertinggi };
     },
   };
 }
@@ -181,6 +201,27 @@ function createServer(options = {}) {
  *     (`outbox_in_memory`).
  */
 function createDevice(kode, hlc, options = {}) {
+  // Jam perangkat ini sendiri, terpisah dari perangkat lain. Sampai FR-H5
+  // dikerjakan, seluruh perangkat di harness ini berbagi SATU jam -- jadi
+  // tidak ada skew, tidak ada jam mundur, dan HLC-nya dihitung lalu diabaikan.
+  const jam = options.jam ?? { now: () => 0, jumlahMundur: 0 };
+  // HLC tertinggi milik server yang pernah SAMPAI ke perangkat ini. Sisi kiri
+  // I9: apa pun yang dibuat setelah ini harus mengurutkan sesudahnya.
+  let hlcServerTerlihat = 0n;
+
+  /**
+   * HLC untuk record baru.
+   *
+   * MODE CACAT `hlc_dari_jam`: nilainya diambil mentah dari jam dinding, tanpa
+   * counter logis. Itu persis yang dilakukan orang yang mengira "HLC" hanyalah
+   * timestamp -- dan ia bekerja sempurna sampai jam perangkat mundur.
+   */
+  function hlcBaru() {
+    if (options.mode === 'hlc_dari_jam') {
+      return (BigInt(jam.now()) << 16n).toString();
+    }
+    return hlc.tick().toString();
+  }
   // Counter per TANGGAL BISNIS, bukan satu counter global.
   //
   // Nomor struk berbentuk `K1-20260726-0007` (CLAUDE.md § Konvensi data):
@@ -199,6 +240,28 @@ function createDevice(kode, hlc, options = {}) {
     get outbox() { return outbox; },
     dibuat,
     get gagalKarenaOffline() { return gagalKarenaOffline; },
+    get offsetJamMs() { return options.offsetJamMs ?? 0; },
+    get jumlahJamMundur() { return jam.jumlahMundur ?? 0; },
+    get hlcServerTerlihat() { return hlcServerTerlihat; },
+
+    /**
+     * Menyerap HLC yang dikembalikan server (`spec-h:157`).
+     *
+     * MODE CACAT `abaikan_hlc_server`: perangkat MELIHAT nilainya -- ia ada di
+     * respons -- tapi tidak menggabungkannya. Dua perangkat yang jamnya
+     * berbeda karena itu tidak pernah bertemu, dan transaksi yang jelas
+     * terjadi SESUDAH sesuatu yang sudah dilihat perangkat dapat membawa HLC
+     * yang lebih kecil. I1-I8 tidak melihat apa pun: tidak ada yang hilang,
+     * tidak ada yang ganda, uangnya cocok.
+     */
+    terimaHlcServer(nilai) {
+      if (nilai === undefined || nilai === null) return;
+      const hlcServer = BigInt(nilai);
+      if (hlcServer > hlcServerTerlihat) hlcServerTerlihat = hlcServer;
+      if (options.mode === 'abaikan_hlc_server') return;
+      if (options.mode === 'hlc_dari_jam') return;
+      hlc.update(hlcServer);
+    },
 
     /**
      * Menjual. Harus SELALU berhasil, terhubung atau tidak — itu janji utama
@@ -223,7 +286,9 @@ function createDevice(kode, hlc, options = {}) {
         businessDate: tanggalBisnis,
         total,
         status: 'open',
-        hlc: hlc.tick().toString(),
+        hlc: hlcBaru(),
+        // Sisi kiri I9, dibekukan pada saat record DIBUAT.
+        hlcTerlihat: hlcServerTerlihat.toString(),
       };
       dibuat.push(order);
       outbox.push({
@@ -250,7 +315,9 @@ function createDevice(kode, hlc, options = {}) {
         voidsOrderId: order.id,
         total: -order.total,
         status: 'voided',
-        hlc: hlc.tick().toString(),
+        hlc: hlcBaru(),
+        // Sisi kiri I9, dibekukan pada saat record DIBUAT.
+        hlcTerlihat: hlcServerTerlihat.toString(),
       };
       dibuat.push(pembatal);
       outbox.push({ key: `${kode}-key-${idSeq}`, order: pembatal, percobaan: 0 });
@@ -395,6 +462,47 @@ function periksaInvariant(server, devices) {
     }
   }
 
+  // I9 -- URUTAN KAUSAL. `spec-h:336` menandainya "belum divalidasi
+  // prototipe", dan sampai FR-H5 dikerjakan memang tidak ada yang membacanya:
+  // seluruh perangkat berbagi satu jam, jadi tidak ada yang bisa salah.
+  //
+  // Bentuknya: apa pun yang perangkat BUAT setelah ia MELIHAT keadaan server
+  // harus mengurutkan SESUDAH keadaan itu. Ini definisi happens-before yang
+  // paling langsung yang dapat diperiksa tanpa melacak seluruh graf kausal --
+  // dan ia cukup, karena satu-satunya jalan informasi masuk ke perangkat
+  // adalah respons server.
+  for (const d of devices) {
+    for (const order of d.dibuat) {
+      const terlihat = BigInt(order.hlcTerlihat ?? '0');
+      if (terlihat === 0n) continue;
+      if (BigInt(order.hlc) <= terlihat) {
+        pelanggaran.push(
+          `I9 urutan kausal: ${order.id} ber-HLC ${order.hlc} dibuat setelah perangkat ` +
+            `melihat HLC server ${terlihat}`
+        );
+      }
+    }
+  }
+
+  // I10 -- MONOTONISITAS HLC PER PERANGKAT. `spec-h:171`: "Urutan transaksi
+  // berdasarkan HLC benar meskipun jam perangkat mundur."
+  //
+  // Satu perangkat tidak pernah boleh menghasilkan HLC yang tidak naik, apa
+  // pun yang terjadi pada jam dindingnya. Ini yang membedakan HLC dari
+  // timestamp, dan yang membuat `hlc_dari_jam` gagal.
+  for (const d of devices) {
+    let sebelumnya = null;
+    for (const order of d.dibuat) {
+      const kini = BigInt(order.hlc);
+      if (sebelumnya !== null && kini <= sebelumnya) {
+        pelanggaran.push(
+          `I10 monotonisitas: ${d.kode} menghasilkan HLC ${kini} setelah ${sebelumnya}`
+        );
+      }
+      sebelumnya = kini;
+    }
+  }
+
   return pelanggaran;
 }
 
@@ -420,12 +528,36 @@ function jalankanSatuIterasi({ seed, mode, createHlc, jumlahDevice = 3, langkah 
 
   const server = createServer({ mode });
   const devices = [];
+  const jamPerangkat = [];
   for (let i = 0; i < jumlahDevice; i += 1) {
-    devices.push(createDevice(`K${i + 1}`, createHlc({ now: clock.now }), { mode }));
+    // Setiap perangkat punya JAMNYA SENDIRI, saling geser.
+    //
+    // Sampai FR-H5 dikerjakan, ketiganya berbagi satu jam -- jadi HLC tidak
+    // pernah diuji terhadap apa pun yang membuatnya ada. Rentang skew-nya
+    // dipilih mengelilingi ambang 5 menit di `spec-h:173`: ada yang di bawah
+    // ambang, ada yang jauh di atas.
+    const offsetJamMs = (i - 1) * (30_000 + rng.int(600_000));
+    const jam = createClock(clock.now() + offsetJamMs);
+    jamPerangkat.push(jam);
+    devices.push(
+      createDevice(`K${i + 1}`, createHlc({ now: jam.now }), { mode, jam, offsetJamMs })
+    );
   }
 
   for (let langkahKe = 0; langkahKe < langkah; langkahKe += 1) {
-    clock.advance(1 + rng.int(500));
+    const maju = 1 + rng.int(500);
+    clock.advance(maju);
+    for (const jam of jamPerangkat) jam.advance(maju);
+
+    // Jam MUNDUR di tengah jalan: koreksi NTP, atau pengguna mengubah
+    // tanggal (`spec-h:351`). Sesekali mundurnya besar sekali -- `spec-h:378`
+    // menyebut perangkat yang jamnya maju setahun sebagai kasus yang harus
+    // ditangani, dan arah sebaliknya sama mungkinnya.
+    if (rng.chance(0.08)) {
+      const korban = rng.int(jamPerangkat.length);
+      jamPerangkat[korban].mundurkan(rng.chance(0.1) ? 86_400_000 : 1_000 + rng.int(600_000));
+    }
+
     const d = rng.pick(devices);
     const terhubung = rng.chance(0.6);
     const tanggal = rng.pick(TANGGAL);
@@ -491,6 +623,11 @@ function kirimSatu(device, server, rng, opts = {}) {
   if (!andal && rng.chance(0.25)) {
     return;
   }
+
+  // HLC server diserap SEBELUM item ditandai terkirim -- urutannya tidak
+  // penting bagi antrean, tapi ia menegaskan bahwa yang perangkat "lihat"
+  // adalah respons, bukan pengetahuan gaib tentang isi server.
+  device.terimaHlcServer(res.hlcServer);
 
   if (res.status === 201 || res.status === 409 || res.cache === true) {
     device.tandaiTerkirim(item);

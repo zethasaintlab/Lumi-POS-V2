@@ -1,0 +1,394 @@
+import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
+import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
+import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
+import {
+  computeCashRounding,
+  computeLineTotal,
+  computeOrderTotals,
+} from '../../../../packages/domain/src/money.ts';
+import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
+import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
+import { simpanHlc } from '../lokal/hlc.ts';
+import type { Sesi } from '../identitas/login.ts';
+import type { ShiftAktif } from '../kas/shift.ts';
+import type { Keranjang } from './keranjang.ts';
+
+/**
+ * K-06/K-07 — menyimpan penjualan di perangkat.
+ *
+ * ## ⛔ Invariant #1, di klien, dengan uang sungguhan
+ *
+ * Order + check + line + modifier + payment + DUA item outbox ditulis dalam
+ * SATU `writeTransaction`. Yang tersimpan setengah adalah penjualan yang
+ * uangnya sudah masuk laci tapi tidak ada di mana pun — atau item outbox yang
+ * mengirim order yang tidak pernah ditulis.
+ *
+ * ## Aritmetikanya BUKAN milik berkas ini
+ *
+ * `computeLineTotal`, `calculateTax`, `computeOrderTotals`, dan
+ * `computeCashRounding` semuanya dari `packages/domain`, dibagi dengan
+ * server. Menghitungnya sendiri di sini berarti angka di struk menyimpang
+ * dari angka yang tersimpan — dan selisihnya baru terlihat berminggu-minggu
+ * kemudian, di laporan.
+ *
+ * Yang menjadi tanggung jawab berkas ini hanya URUTAN dan PERSISTENSI.
+ */
+
+export type MetodeBayar = 'cash';
+
+export interface Pembayaran {
+  metode: MetodeBayar;
+  /** Uang yang diserahkan pelanggan, rupiah utuh. */
+  tendered: number;
+}
+
+export type HasilPenjualan =
+  | {
+      status: 'tersimpan';
+      orderId: string;
+      receiptNumber: string;
+      sequence: number;
+      total: bigint;
+      taxAmount: bigint;
+      amountDue: bigint;
+      roundingAdjustment: bigint;
+      kembalian: bigint;
+    }
+  | { status: 'keranjang_kosong' }
+  | { status: 'kurang_bayar'; amountDue: bigint; kurang: bigint };
+
+interface BarisTarif {
+  id: string;
+  outlet_id: string | null;
+  name: string;
+  rate: number;
+  is_inclusive: number;
+  channel: string;
+  applies_to: string;
+  applies_to_ids: string | null;
+}
+
+interface BarisOutlet {
+  timezone: string;
+  business_day_ends_at: string;
+  rounding_increment: number;
+  rounding_mode: string;
+  service_charge_rate: number;
+}
+
+/**
+ * Nomor struk berikutnya, dari counter LOKAL.
+ *
+ * `CLAUDE.md`: "Counter lokal, tidak pernah minta ke server." Perangkat
+ * offline harus tetap dapat mencetak struk bernomor, dan nomor yang diminta
+ * ke server adalah nomor yang tidak ada saat internet mati.
+ *
+ * ⛔ Direset saat TANGGAL BISNIS berganti, bukan saat tengah malam. Tanpa
+ * reset, nomor struk tumbuh selamanya dan berhenti berarti "penjualan ke-N
+ * hari ini"; direset di tengah malam, penjualan pukul 01:00 memulai urutan
+ * baru di tengah shift yang sama.
+ */
+async function urutanBerikutnya(
+  tx: DbLokal,
+  businessDate: string
+): Promise<number> {
+  const baris = await tx.getAll<{ receipt_sequence: number; sequence_business_date: string | null }>(
+    `SELECT receipt_sequence, sequence_business_date FROM device_config WHERE id = 1`
+  );
+  const kini = baris[0];
+  const sama = kini?.sequence_business_date === businessDate;
+  const berikutnya = sama ? (kini?.receipt_sequence ?? 0) + 1 : 1;
+
+  await tx.execute(
+    `UPDATE device_config SET receipt_sequence = ?, sequence_business_date = ? WHERE id = 1`,
+    [berikutnya, businessDate]
+  );
+  return berikutnya;
+}
+
+function keTarifSpec(b: BarisTarif): TaxRateSpec {
+  return {
+    id: b.id,
+    name: b.name,
+    // `rate` sudah INTEGER ×10000 di skema lokal — konversinya terjadi di
+    // `put` raw table, bukan di sini.
+    rateScaled: BigInt(b.rate),
+    isInclusive: b.is_inclusive === 1,
+    outletId: b.outlet_id,
+    channel: b.channel as TaxRateSpec['channel'],
+    appliesTo: b.applies_to as TaxRateSpec['appliesTo'],
+    appliesToIds: b.applies_to_ids ? (JSON.parse(b.applies_to_ids) as string[]) : [],
+  };
+}
+
+export async function simpanPenjualan({
+  db,
+  konfig,
+  sesi,
+  shift,
+  keranjang,
+  pembayaran,
+  waktu,
+  idBaru,
+  hlc,
+  channel = 'takeaway',
+}: {
+  db: DbLokal;
+  konfig: KonfigPerangkat;
+  sesi: Sesi;
+  shift: ShiftAktif;
+  keranjang: Keranjang;
+  pembayaran: Pembayaran;
+  waktu: () => Date;
+  idBaru: () => string;
+  hlc: () => bigint;
+  channel?: 'dine_in' | 'takeaway';
+}): Promise<HasilPenjualan> {
+  if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
+
+  const sekarang = waktu();
+  const outlet = (
+    await db.getAll<BarisOutlet>(
+      `SELECT timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate
+         FROM outlet WHERE id = ?`,
+      [konfig.outletId]
+    )
+  )[0];
+
+  const businessDate = outlet
+    ? tanggalBisnis(sekarang, outlet.timezone, outlet.business_day_ends_at)
+    : shift.businessDate;
+
+  // ---- aritmetika: seluruhnya packages/domain ----------------------------
+
+  const lineTotals = keranjang.baris.map((b) =>
+    computeLineTotal({
+      unitPrice: BigInt(b.unitPrice),
+      quantityMilli: BigInt(b.quantityMilli),
+      modifiers: b.modifier.map((m) => ({ price: BigInt(m.harga), quantityMilli: 1000n })),
+      discountAmount: 0n,
+    })
+  );
+
+  const tarif = await db.getAll<BarisTarif>(
+    `SELECT id, outlet_id, name, rate, is_inclusive, channel, applies_to, applies_to_ids
+       FROM tax_rate
+      WHERE (outlet_id IS NULL OR outlet_id = ?)
+        AND effective_from <= ?
+        AND (effective_to IS NULL OR effective_to > ?)`,
+    [konfig.outletId, sekarang.toISOString(), sekarang.toISOString()]
+  );
+
+  const pajak = calculateTax({
+    lines: keranjang.baris.map((b, i) => ({
+      lineId: b.id,
+      // `itemId` dipakai tarif ber-`applies_to = 'item'`. Keranjang menyimpan
+      // variation, dan tarif per-item belum dapat dicocokkan tanpa membaca
+      // `item_variation.item_id` — dibiarkan sebagai variationId, dan itu
+      // BATAS YANG DINYATAKAN: tarif per-item/per-kategori belum berlaku di
+      // klien. Tarif `all_items` (yang dipakai PB1) tidak terpengaruh.
+      itemId: b.variationId,
+      categoryId: null,
+      amount: lineTotals[i],
+    })),
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates: tarif.map(keTarifSpec),
+    channel,
+    outletId: konfig.outletId,
+  });
+
+  const totals = computeOrderTotals({
+    lineTotals,
+    orderDiscount: 0n,
+    serviceChargeAmount: 0n,
+    // Hanya yang MENAMBAH total. `totalTax` di sini akan menggandakan pajak
+    // inklusif (`CLAUDE.md`).
+    taxAmount: pajak.totalTaxExclusive,
+  });
+
+  // ⛔ Pembulatan HANYA saat ada pembayaran tunai (FR-C9), dan hanya pada
+  // `amount_due` — `total` tidak pernah dibulatkan.
+  const bulat = computeCashRounding({
+    outstanding: totals.total,
+    roundingIncrement: BigInt(outlet?.rounding_increment ?? 100),
+    roundingMode: outlet?.rounding_mode ?? 'half_up',
+  });
+  const amountDue = bulat.roundedOutstanding;
+
+  const tendered = BigInt(pembayaran.tendered);
+  if (tendered < amountDue) {
+    return { status: 'kurang_bayar', amountDue, kurang: amountDue - tendered };
+  }
+  // Kembalian dari `amount_due` yang SUDAH dibulatkan. Menghitungnya dari
+  // `total` memberi kembalian beberapa rupiah lebih banyak setiap transaksi.
+  const kembalian = tendered - amountDue;
+
+  // ---- persistensi: satu transaksi ---------------------------------------
+
+  const orderId = idBaru();
+  const checkId = idBaru();
+  const paymentId = idBaru();
+  const idOutboxOrder = idBaru();
+  const occurredAt = sekarang.toISOString();
+  const hlcValue = hlc();
+
+  const perLine = new Map(pajak.perLine.map((p) => [p.lineId, p]));
+
+  const hasil = await db.transaction(async (tx) => {
+    const sequence = await urutanBerikutnya(tx, businessDate);
+    const receiptNumber = nomorStruk(konfig.deviceCode, businessDate, sequence);
+
+    await tx.execute(
+      `INSERT INTO "order"
+         (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+          status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
+          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderId, konfig.tenantId, konfig.outletId, konfig.deviceId, shift.id,
+        receiptNumber, businessDate, sequence, channel,
+        Number(totals.subtotal),
+        // SELURUH pajak — untuk struk. Yang menambah total hanya bagian
+        // eksklusifnya, dan itu sudah masuk lewat `computeOrderTotals`.
+        Number(pajak.totalTax),
+        Number(bulat.roundingAdjustment),
+        Number(totals.total),
+        Number(amountDue),
+        sesi.userId, occurredAt, Number(hlcValue),
+      ]
+    );
+
+    await tx.execute(
+      `INSERT INTO "check" (id, order_id, label, subtotal, total) VALUES (?, ?, NULL, ?, ?)`,
+      [checkId, orderId, Number(totals.subtotal), Number(totals.total)]
+    );
+
+    keranjang.baris.forEach(() => {});
+    for (let i = 0; i < keranjang.baris.length; i += 1) {
+      const b = keranjang.baris[i];
+      const p = perLine.get(b.id);
+      await tx.execute(
+        `INSERT INTO order_line
+           (id, order_id, check_id, variation_id, item_name, variation_name, unit_price,
+            quantity, modifier_snapshot, discount_amount, tax_rate_id, tax_rate, tax_amount,
+            is_tax_inclusive, cost_at_sale, line_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?)`,
+        [
+          b.id, orderId, checkId, b.variationId, b.itemName, b.variationName,
+          b.unitPrice, b.quantityMilli,
+          b.modifier.length > 0 ? JSON.stringify(b.modifier.map((m) => m.nama)) : null,
+          p?.taxRateId ?? null, Number(p?.rateScaled ?? 0n), Number(p?.amount ?? 0n),
+          p?.isInclusive ? 1 : 0,
+          Number(lineTotals[i]),
+        ]
+      );
+
+      for (const m of b.modifier) {
+        await tx.execute(
+          `INSERT INTO order_line_modifier (id, order_line_id, modifier_id, name, price, quantity)
+           VALUES (?, ?, ?, ?, ?, 1000)`,
+          [idBaru(), b.id, m.id, m.nama, m.harga]
+        );
+      }
+    }
+
+    await tx.execute(
+      `INSERT INTO payment
+         (id, order_id, check_id, method, amount, tendered_amount, change_amount, status, tendered_at)
+       VALUES (?, ?, ?, 'cash', ?, ?, ?, 'confirmed', ?)`,
+      [paymentId, orderId, checkId, Number(amountDue), Number(tendered), Number(kembalian), occurredAt]
+    );
+
+    await enqueue(tx, {
+      id: idOutboxOrder,
+      entityType: 'order',
+      entityId: orderId,
+      operation: 'create',
+      payload: {
+        id: orderId,
+        outletId: konfig.outletId,
+        deviceId: konfig.deviceId,
+        shiftId: shift.id,
+        receiptNumber,
+        businessDate,
+        sequence,
+        channel,
+        checkId,
+        hlc: hlcValue.toString(),
+        occurredAt,
+        // FR-H6: total dan harga yang DIPAKAI KLIEN. Server tetap menghitung
+        // sendiri; ini yang membuatnya dapat membedakan klien yang belum
+        // tersinkron dari selisih yang tidak dapat dijelaskan.
+        // ⛔ NUMBER, bukan string — tidak seperti `hlc`. `assertClientTotalValid`
+        // menuntut `Number.isInteger`, dan rupiah utuh muat di double dengan
+        // aman; `hlc` string justru karena ia 57-bit dan TIDAK muat.
+        // Mengirimnya sebagai string ditolak 400 lalu jadi `gagal-permanen` —
+        // penjualan yang sempurna berhenti di antrean. Ditemukan dengan
+        // menembak server sungguhan; test pertama saya justru mengunci
+        // bug-nya dengan mengharapkan string.
+        total: Number(totals.total),
+        lines: keranjang.baris.map((b) => ({
+          id: b.id,
+          variationId: b.variationId,
+          quantityMilli: b.quantityMilli,
+          discountAmount: 0,
+          unitPrice: b.unitPrice,
+          modifiers: b.modifier.map((m) => ({
+            id: idBaru(),
+            modifierId: m.id,
+            name: m.nama,
+            price: m.harga,
+            quantityMilli: 1000,
+          })),
+        })),
+      },
+      idempotencyKey: orderId,
+      createdAt: occurredAt,
+      actorId: sesi.userId,
+    });
+
+    await enqueue(tx, {
+      id: idBaru(),
+      entityType: 'payment',
+      entityId: orderId,
+      operation: 'create',
+      payload: {
+        id: paymentId,
+        method: 'cash',
+        tenderedAmount: Number(tendered),
+      },
+      idempotencyKey: paymentId,
+      createdAt: occurredAt,
+      // ⛔ Pembayaran BERGANTUNG pada order-nya. Tanpa ini, relay dapat
+      // mengirim payment lebih dulu ke order yang belum ada di server — 404,
+      // lalu `gagal-permanen` untuk penjualan yang sempurna.
+      dependsOn: idOutboxOrder,
+      actorId: sesi.userId,
+    });
+
+    // ⛔ Keadaan HLC disimpan DI DALAM transaksi ini, bukan sesudahnya.
+    //
+    // Kalau ia ditulis di luar, ada jendela di antara commit order dan commit
+    // hlc_state. Perangkat yang mati di jendela itu memuat nilai LAMA saat
+    // boot, dan tick berikutnya dapat menghasilkan HLC yang SUDAH DIPAKAI
+    // order yang sudah ter-commit — pelanggaran I10 yang tidak menghasilkan
+    // satu pun error, dan yang membuat "mana yang lebih dulu" tidak dapat
+    // dijawab justru di tempat yang paling membutuhkannya.
+    await simpanHlc(tx, hlcValue);
+
+    return { receiptNumber, sequence };
+  });
+
+  return {
+    status: 'tersimpan',
+    orderId,
+    receiptNumber: hasil.receiptNumber,
+    sequence: hasil.sequence,
+    total: totals.total,
+    taxAmount: pajak.totalTax,
+    amountDue,
+    roundingAdjustment: bulat.roundingAdjustment,
+    kembalian,
+  };
+}

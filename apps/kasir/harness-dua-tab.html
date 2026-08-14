@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Uji dua tab — Lumi POS</title>
+    <style>
+      body { font: 14px/1.6 system-ui, sans-serif; margin: 24px; }
+      pre { background: #f4f2f0; padding: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Uji dua tab</h1>
+    <p>Buka halaman ini di DUA tab dengan <code>?tab=A</code> dan <code>?tab=B</code>.</p>
+    <pre id="hasil">memuat…</pre>
+    <script type="module">
+      import { jalankanDuaTab } from '/src/harness/dua-tab.ts';
+      const q = new URLSearchParams(location.search);
+      const tab = q.get('tab') || 'A';
+      const vfs = q.get('vfs') || 'OPFSWriteAheadVFS';
+      const el = document.querySelector('#hasil');
+      el.textContent = `menjalankan tab=${tab} vfs=${vfs}…`;
+      jalankanDuaTab(vfs, tab).then((h) => {
+        el.textContent = JSON.stringify(h, null, 2);
+        console.log('DUATAB', JSON.stringify(h));
+      });
+    </script>
+  </body>
+</html>

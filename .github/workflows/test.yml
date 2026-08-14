@@ -42,7 +42,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # ⛔ 24, bukan 22 — dan itu lantai yang ditegakkan `engines.node`.
+          # `crypto.argon2` (modul identity, hash PIN) baru ada sejak Node
+          # 24.7.0. Di Node 22 yang muncul adalah tiga test PIN gagal dengan
+          # pesan dari dalam `pin-hasher.ts`, tanpa satu kata pun tentang versi
+          # Node. `tests/runtime/versi-node.test.js` menjaga ketiga angkanya
+          # tetap sepakat.
+          node-version: '24'
 
       - run: npm ci
 
@@ -59,11 +65,23 @@ jobs:
           TELEMETRY=off
           POWERSYNC_URL=http://localhost:8080
           POWERSYNC_TOKEN=
+          # FR-F12: sengaja KOSONG. Endpoint token menjawab 503 tanpa kunci,
+          # dan test yang membutuhkannya membuat kunci RSA-nya sendiri lalu
+          # menyuntikkannya lewat buildApp({ syncJwtPrivateKey }).
+          POWERSYNC_JWT_PRIVATE_KEY=
+          # Kosong = tidak ada origin browser yang diizinkan. Test CORS
+          # menyuntikkan daftarnya sendiri lewat buildApp({ corsOrigins }).
+          CORS_ORIGINS=
           MIDTRANS_SERVER_KEY=
           MIDTRANS_CLIENT_KEY=
           MIDTRANS_ENV=sandbox
           EOF
 
+      # PALING DULU, dan itu seluruh gunanya: ia memeriksa bahwa runner ini
+      # memenuhi `engines.node`. Kalau tidak, setiap langkah di bawah akan
+      # gagal dengan gejala yang menunjuk ke tempat lain -- 14 Agustus 2026
+      # gejalanya adalah tiga test PIN merah, bukan satu kalimat tentang versi.
+      - run: npm run test:runtime
       # Tanpa database dan tanpa I/O -- dijalankan lebih dulu supaya kesalahan
       # logika domain (state machine, aritmetika uang, HLC) gagal dalam
       # hitungan detik, bukan setelah menunggu seluruh suite ber-database.
@@ -79,6 +97,12 @@ jobs:
       # hilang. Berjalan lebih dulu karena ia cepat dan karena antrean yang
       # rusak membuat sisa suite tidak menarik.
       - run: npm run test:sync-client
+      # Pondasi apps/kasir. Semuanya modul murni yang dimuat langsung dengan
+      # --experimental-strip-types: tabel rute, skema raw table, keputusan
+      # migrasi lokal, adapter DbLokal. Yang TIDAK dapat diuji di sini -- OPFS,
+      # Web Worker, writeTransaction PowerSync, watch() -- dijalankan lewat
+      # harness browser (`apps/kasir/harness.html`), manual, seperti prototipe.
+      - run: npm run test:kasir
 
       - run: npm run db:bootstrap
       - run: npm run db:migrate
@@ -86,6 +110,7 @@ jobs:
       - run: npm run test:isolation
       - run: npm run test:schema
       - run: npm run test:server
+      - run: npm run test:identity
       - run: npm run test:catalog
       - run: npm run test:ordering
       # DST terhadap server + database SUNGGUHAN. Iterasinya jauh lebih sedikit

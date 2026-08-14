@@ -216,3 +216,75 @@ test('harness tidak memuat sumber waktu atau keacakan global', async () => {
     );
   }
 });
+
+// --- FR-H5: Hybrid Logical Clock di bawah jam yang melenceng ---------------
+//
+// `spec-h:336` menandai "Urutan kausal — HLC menjaga urutan meskipun jam
+// melenceng" sebagai **belum divalidasi prototipe**, dan itu satu-satunya
+// baris di daftar invariant H.5 yang masih begitu.
+//
+// Alasannya terlihat begitu harness dibaca: sampai sekarang SELURUH perangkat
+// berbagi SATU jam. Tidak ada skew, tidak ada jam mundur, dan tidak ada satu
+// pun invariant yang membaca `order.hlc`. HLC-nya dihitung, lalu diabaikan.
+//
+// Sekarang tiap perangkat punya jamnya sendiri, saling geser sampai belasan
+// menit, dan sesekali mundur di tengah jalan (`spec-h:351`, `spec-h:378`).
+
+test('I9 & I10 menyala di gate: jam tiap perangkat berbeda dan sesekali mundur', async () => {
+  const createHlc = await muatHlc();
+  const { devices, server } = jalankanSatuIterasi({ seed: 11, mode: 'none', createHlc });
+
+  // Jangkar: kalau skew-nya nol, kedua invariant baru tidak menguji apa pun.
+  const offset = devices.map((d) => d.offsetJamMs);
+  assert.ok(new Set(offset).size > 1, `jam perangkat tidak saling geser: ${offset.join(', ')}`);
+  assert.ok(
+    devices.some((d) => d.jumlahJamMundur > 0),
+    'tidak ada jam yang pernah mundur -- I10 tidak diuji'
+  );
+  assert.ok(server.orders.size > 0, 'tidak ada order tersimpan');
+
+  // Dan jangkar kedua: perangkat benar-benar pernah MELIHAT HLC server,
+  // kalau tidak I9 tidak punya sisi kiri.
+  assert.ok(
+    devices.some((d) => d.hlcServerTerlihat > 0n),
+    'tidak ada perangkat yang pernah menerima HLC server -- I9 hampa'
+  );
+});
+
+// `spec-h:171`: "Urutan transaksi berdasarkan HLC benar meskipun jam perangkat
+// mundur." Jam yang mundur adalah kejadian NYATA -- koreksi NTP pada tablet
+// murah tanpa RTC yang andal.
+test('cacat hlc_dari_jam tertangkap I10', async () => {
+  const createHlc = await muatHlc();
+  const hasil = jalankanBanyak({ mode: 'hlc_dari_jam', iterasi: ITERASI_CACAT, createHlc });
+  assert.ok(hasil.gagal > 0, 'HLC yang diambil mentah dari jam dinding HARUS terdeteksi');
+  const nama = hasil.contohPelanggaran.join(' ');
+  assert.match(nama, /I9|I10/, `harus dilanggar I9 atau I10, dapat: ${nama}`);
+});
+
+// `spec-h:157`: "Perangkat memperbarui HLC-nya setiap kali menerima HLC yang
+// lebih besar dari server." Tanpa itu, dua perangkat yang jamnya berbeda tidak
+// pernah bertemu -- dan transaksi yang jelas-jelas terjadi SESUDAH sesuatu
+// yang sudah dilihat perangkat bisa membawa HLC yang lebih kecil.
+test('cacat abaikan_hlc_server tertangkap I9', async () => {
+  const createHlc = await muatHlc();
+  const hasil = jalankanBanyak({ mode: 'abaikan_hlc_server', iterasi: ITERASI_CACAT, createHlc });
+  assert.ok(hasil.gagal > 0, 'perangkat yang tidak menggabungkan HLC server HARUS terdeteksi');
+  const nama = hasil.contohPelanggaran.join(' ');
+  assert.match(nama, /I9/, `harus dilanggar I9, dapat: ${nama}`);
+});
+
+// I1–I8 tidak melihat kedua cacat di atas sama sekali: tidak ada transaksi
+// yang hilang, tidak ada yang ganda, uangnya tetap cocok. Itulah alasan I9 dan
+// I10 harus ada -- sama persis dengan alasan I6, I7, dan I8 dulu ditambahkan.
+test('cacat HLC tidak terlihat oleh I1-I8 -- itu alasan I9 dan I10 ada', async () => {
+  const createHlc = await muatHlc();
+  for (const mode of ['hlc_dari_jam', 'abaikan_hlc_server']) {
+    const hasil = jalankanBanyak({ mode, iterasi: ITERASI_CACAT, createHlc });
+    const nama = hasil.contohPelanggaran.join(' ');
+    assert.ok(
+      !/I[1-8] /.test(nama),
+      `mode ${mode} seharusnya TIDAK melanggar I1-I8, dapat: ${nama}`
+    );
+  }
+});

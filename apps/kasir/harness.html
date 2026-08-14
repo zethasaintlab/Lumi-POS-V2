@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Harness pondasi kasir — Lumi POS</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; }
+      table { border-collapse: collapse; margin-top: 12px; }
+      td { border-bottom: 1px solid #ddd; padding: 4px 12px 4px 0; vertical-align: top; }
+      td:first-child { font-weight: 600; }
+      h1 { font-size: 18px; }
+    </style>
+  </head>
+  <body>
+    <h1>Harness pondasi kasir</h1>
+    <p>
+      Yang tidak dapat dibuktikan <code>node --test</code>: OPFS, Web Worker,
+      <code>writeTransaction</code> PowerSync, dan <code>watch()</code>.
+      Halaman ini hanya ada di <code>vite dev</code>.
+    </p>
+    <p id="status">memuat…</p>
+    <table><tbody id="hasil"></tbody></table>
+    <script type="module" src="/src/harness/main.ts"></script>
+  </body>
+</html>

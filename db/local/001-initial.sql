@@ -57,6 +57,72 @@ CREATE TABLE tax_rate (
   effective_from TEXT NOT NULL, effective_to TEXT
 );
 
+-- ⛔ price_history WAJIB turun, dan itu bukan kelengkapan.
+-- Harga jual adalah TANGGA tiga tingkat (FR-A7): harga outlet -> harga tenant
+-- -> item_variation.price. Tanpa tabel ini perangkat hanya melihat anak tangga
+-- paling bawah, dan setiap perubahan harga yang pernah dibuat merchant
+-- diabaikan diam-diam saat offline -- kasir menjual dengan harga lama, struk
+-- tercetak, dan selisihnya baru terlihat di laporan.
+--
+-- `changed_by` dan `reason` TIDAK turun: keduanya kolom audit yang tidak
+-- dipakai layar kasir mana pun.
+CREATE TABLE price_history (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, variation_id TEXT NOT NULL,
+  outlet_id TEXT, price INTEGER NOT NULL, effective_from TEXT NOT NULL
+);
+CREATE INDEX ix_price_history_resolusi
+  ON price_history(variation_id, outlet_id, effective_from);
+
+-- ---------- KONFIGURASI OUTLET (direplikasi turun) ----------
+-- Prasyarat FR-D1 yang spec-d sebut langsung: "Katalog dan konfigurasi outlet
+-- tersedia lokal." Tanpa ini klien tidak dapat menghitung TANGGAL BISNIS
+-- (butuh `timezone` + `business_day_ends_at`) maupun pembulatan tunai (butuh
+-- `rounding_increment` + `rounding_mode`) saat offline — dan keduanya adalah
+-- angka yang muncul di struk.
+--
+-- ⛔ `service_charge_rate` adalah `numeric(6,4)` di server dan INTEGER x10000
+-- di sini — kelas divergensi yang SAMA PERSIS dengan `tax_rate.rate`, yang
+-- dulu mendarat sebagai `0.11` bertipe `real` di kolom INTEGER tanpa satu pun
+-- error. Ia terdaftar di SKALA_KOLOM, dan `put` yang ditulis sendiri yang
+-- menegakkannya.
+CREATE TABLE outlet (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
+  timezone TEXT NOT NULL, business_day_ends_at TEXT NOT NULL,
+  rounding_increment INTEGER NOT NULL DEFAULT 100,
+  rounding_mode TEXT NOT NULL DEFAULT 'half_up',
+  service_charge_rate INTEGER NOT NULL DEFAULT 0,   -- x10000
+  archived_at TEXT
+);
+
+-- ---------- IDENTITAS (direplikasi turun) ----------
+-- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
+-- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.
+--
+-- ⛔ Kolom di sini SENGAJA lebih sedikit daripada tabel servernya.
+-- `password_hash`, `mfa_secret`, dan `email` TIDAK turun: permukaan kasir
+-- tidak menerima login password (`spec-f:150`), jadi mengirimkannya hanya
+-- menambah bahan yang hilang bersama tablet yang dicuri. Sync rules yang
+-- menegakkannya -- daftar kolom eksplisit, bukan SELECT *.
+--
+-- `pin_hash` sendiri memang harus turun, dan itu diterima dengan sadar:
+-- `spec-f:242` mengasumsikan setiap tablet suatu saat berada di tangan yang
+-- salah. Yang membatasi kerusakannya adalah Argon2id (bukan hash cepat),
+-- cakupan per-outlet, dan enkripsi at-rest yang menunggu Tauri (F4).
+CREATE TABLE "user" (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
+  pin_hash TEXT, pin_algo TEXT,
+  pin_must_change INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE user_role (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  role TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL
+);
+CREATE TABLE user_outlet (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL, outlet_id TEXT NOT NULL
+);
+
 -- ---------- TRANSAKSI (dibuat lokal, naik) ----------
 CREATE TABLE "order" (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL,
@@ -69,6 +135,15 @@ CREATE TABLE "order" (
   rounding_adjustment INTEGER NOT NULL DEFAULT 0,
   total INTEGER NOT NULL, amount_due INTEGER NOT NULL,
   has_calculation_variance INTEGER DEFAULT 0, variance_amount INTEGER,
+  -- ⛔ Ada di order PEMBATAL, menunjuk order yang dibatalkan (AC FR-B7
+  -- pertama: tidak ada UPDATE pada order asli). Tanpa kolom ini, RANTAI
+  -- KOREKSI yang `IA:68` tuntut di K-09 tidak dapat dibaca sama sekali, dan
+  -- order yang sudah di-void terlihat normal — statusnya tetap `open`.
+  --
+  -- Hilang dari skema lokal sampai K-08 dibangun, dan tidak ada yang
+  -- menangkapnya: penjaga drift hanya membandingkan kolom yang ada di KEDUA
+  -- sisi. `KOLOM_SENGAJA_TIDAK_TURUN` sekarang menutup celah itu.
+  voided_by_order_id TEXT,
   created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
 CREATE TABLE "check" (
@@ -161,13 +236,99 @@ CREATE TABLE outbox_local (
   operation TEXT NOT NULL, payload TEXT NOT NULL, idempotency_key TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER DEFAULT 0,
   last_error TEXT, last_attempt_at TEXT, created_at TEXT NOT NULL,
-  depends_on TEXT
+  depends_on TEXT,
+  -- ⛔ Aktor dibekukan saat item DIBUAT, bukan dibaca saat item dikirim.
+  -- Antrean dapat terkuras berjam-jam kemudian, mungkin setelah pergantian
+  -- shift: memakai "siapa yang sedang masuk" akan mencatat penjualan Sari
+  -- atas nama Budi di `X-Actor-Id`, dan audit server percaya begitu saja.
+  actor_id TEXT
 );
+-- Identitas perangkat + counter lokalnya. Satu baris, dipaksa CHECK: satu
+-- pemasangan aplikasi adalah satu perangkat, dan `device_code` sebagai
+-- primary key dulu menyiratkan sebaliknya.
+--
+-- ⛔ `token_secret` disimpan APA ADANYA. AC ketiga FR-F12 menuntut database
+-- lokal terenkripsi dengan kunci di keystore OS, dan itu menunggu Tauri (F4).
+-- Sampai itu ada, siapa pun yang dapat membaca berkas database perangkat
+-- dapat menyamar jadi perangkat itu sampai kredensialnya dicabut. Dicatat di
+-- HANDOFF, bukan disembunyikan.
 CREATE TABLE device_config (
-  device_code TEXT PRIMARY KEY, outlet_id TEXT NOT NULL,
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  device_id TEXT NOT NULL,
+  device_code TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  outlet_id TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  token_secret TEXT,
   receipt_sequence INTEGER DEFAULT 0, sequence_business_date TEXT,
-  hlc_state INTEGER DEFAULT 0, last_sync_at TEXT
+  -- ⛔ `hlc_state` INTEGER dipertahankan HANYA untuk perangkat lama; jangan
+  -- dipakai lagi. HLC adalah bilangan 57-bit, dan kolom INTEGER membuatnya
+  -- kembali sebagai `number` JavaScript yang SUDAH kehilangan presisi di atas
+  -- 2^53. Ditemukan dengan menjalankan aplikasi: nilai yang ditulis
+  -- 117089592062246913 dibaca sebagai ...912, ditolak parser, lalu HLC jatuh
+  -- ke jam dinding — yang sedang mundur. HLC turun setelah restart, dan tidak
+  -- ada satu pun error.
+  --
+  -- `hlc_teks` adalah kolom yang berlaku. Ia TEXT karena hanya teks yang
+  -- melewati SQLite dan JavaScript tanpa menyentuh double.
+  --
+  -- Kolom lama tidak dibuang: `device_config` murni lokal dan bermigrasi
+  -- ADITIF (ALTER TABLE ADD COLUMN), dan SQLite tidak dapat mengubah tipe
+  -- kolom sama sekali.
+  hlc_state INTEGER DEFAULT 0,
+  hlc_teks TEXT,
+  last_sync_at TEXT
 );
+-- Sidik jari bentuk raw table pada saat skema terakhir dipasang di perangkat
+-- ini. Ia menggantikan nomor versi yang ditulis tangan, dan alasannya bukan
+-- kerapian: nomor versi harus DIINGAT untuk dinaikkan, dan yang lupa dinaikkan
+-- menghasilkan tepat keadaan paling berbahaya di jalur turun -- tabel dibangun
+-- ulang tanpa `disconnectAndClear()`, katalog kosong permanen, dan
+-- `waitForFirstSync()` melaporkan sukses dalam 0 ms.
+--
+-- Satu baris, dipaksa oleh CHECK. Murni lokal: PowerSync tidak boleh tahu ia
+-- ada, sama seperti `outbox_local`.
+CREATE TABLE skema_lokal (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  sidik_raw_table TEXT NOT NULL,
+  dipasang_pada TEXT NOT NULL
+);
+
+-- Sesi kasir yang sedang berjalan. Satu baris, dipaksa CHECK: satu perangkat
+-- melayani satu kasir pada satu waktu (`IA:2.1` -- topbar menampilkan satu
+-- nama).
+--
+-- ⛔ MURNI LOKAL, dan itu bukan penyederhanaan. `spec-f:183`: "sesi
+-- back-office kedaluwarsa; sesi kasir TIDAK -- shift yang menentukan." Sesi
+-- kasir tidak punya padanan di server, tidak direplikasi, dan tidak pernah
+-- naik. Yang naik adalah `audit_event` login/logout-nya.
+CREATE TABLE sesi_lokal (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  user_id TEXT NOT NULL,
+  nama TEXT NOT NULL,
+  peran TEXT NOT NULL,              -- JSON array; sesi tidak menyimpan matriks, hanya peran
+  masuk_pada TEXT NOT NULL,
+  wajib_ganti_pin INTEGER NOT NULL DEFAULT 0
+);
+
+-- FR-F4. Penguncian PIN per PENGGUNA (`spec-f:236`), bukan per perangkat --
+-- kasir lain yang PIN-nya benar tidak boleh ikut terhalang.
+--
+-- ⛔ Tabel, bukan variabel di memori. `spec-f:226`: "perangkat di-restart ->
+-- penguncian TETAP berlaku (disimpan persisten, bukan di memori)". Penguncian
+-- yang hilang saat restart adalah penguncian yang dapat dilewati siapa pun
+-- yang dapat mematikan tablet.
+--
+-- Ia lokal-saja dan tidak pernah naik: server memegang hitungannya sendiri
+-- lewat POST /users/{id}/pin-attempts, dan yang di sini adalah yang berlaku
+-- saat offline -- keadaan yang `spec-f:221` tuntut tetap dijaga PENUH.
+CREATE TABLE pin_lockout_lokal (
+  user_id TEXT PRIMARY KEY NOT NULL,
+  gagal_berturut INTEGER NOT NULL DEFAULT 0,
+  terkunci_sampai TEXT,
+  jumlah_penguncian INTEGER NOT NULL DEFAULT 0,
+  jendela_mulai TEXT
+) WITHOUT ROWID;
 
 -- ---------- INDEX (dari ERD §15) ----------
 CREATE INDEX ix_order_outlet_date   ON "order"(tenant_id, outlet_id, business_date);

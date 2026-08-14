@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pengukuran VFS — Lumi POS</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; }
+      table { border-collapse: collapse; margin-top: 12px; }
+      th, td { border-bottom: 1px solid #ddd; padding: 4px 14px 4px 0; text-align: left; }
+      th { font-weight: 600; }
+      td:nth-child(n+3):nth-child(-n+7) { text-align: right; font-variant-numeric: tabular-nums; }
+      h1 { font-size: 18px; }
+    </style>
+  </head>
+  <body>
+    <h1>Pengukuran VFS PowerSync</h1>
+    <p>
+      Beban kerja sama persis dengan prototipe 03 §5b dan prototipe 04:
+      10 baris di 8 tabel, satu <code>writeTransaction</code>, 60 penjualan.
+      <code>enableMultiTabs: true</code> dipertahankan di semua kandidat.
+    </p>
+    <p id="status">memuat…</p>
+    <table>
+      <thead>
+        <tr>
+          <th>VFS</th><th>status</th><th>skema (ms)</th>
+          <th>p50</th><th>p95</th><th>p99</th><th>penjualan/dtk</th><th>disimpan di</th>
+        </tr>
+      </thead>
+      <tbody id="hasil"></tbody>
+    </table>
+    <script type="module" src="/src/harness/vfs-main.ts"></script>
+  </body>
+</html>

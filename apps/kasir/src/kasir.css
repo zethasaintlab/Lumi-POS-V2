@@ -1,0 +1,293 @@
+/* Kerangka aplikasi kasir.
+
+   Ada di sini, bukan sebagai `style={{...}}` di komponen, karena aturan design
+   system #6 menuntut styling lewat token — dan `_adherence.oxlintrc.json`
+   menegakkannya terhadap TSX. Nilai hairline `1px` ditulis persis seperti
+   `ds-bundle/components.css` menulisnya; sisanya token.
+
+   Ini BUKAN sistem styling baru: hanya dua kelas layout untuk elemen yang
+   design system memang tidak punya, karena `AppShell` adalah kerangka
+   back-office dan IA §2.1 melarang memakainya di kasir. */
+
+.kasir-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.kasir-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex: none;
+}
+
+.kasir-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* `SyncIndicator` adalah entry point ke K-14 (IA §2.4), jadi ia harus dapat
+   diklik -- tapi ia tetap harus TERLIHAT seperti indikator, bukan tombol.
+   Pembungkusnya karena itu telanjang, dan hanya fokus keyboard yang
+   memunculkan bingkai. */
+.kasir-indikator {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.kasir-indikator:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+.kasir-konten {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* K-01 login PIN dan K-11 dialog otorisasi.
+
+   Seluruh nilai dari token (aturan design system #6). Target sentuh keypad
+   56px — aturan #3 untuk aksi menyangkut uang; otorisasi refund menyangkut
+   uang, dan salah ketik berarti mengulang dialog di depan pelanggan. */
+
+.kasir-login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  flex: 1;
+}
+
+.kasir-login-sub {
+  color: var(--text-muted);
+}
+
+.kasir-login-galat {
+  color: var(--danger);
+}
+
+.kasir-keypad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.kasir-pin-titik {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Titik, bukan angka: PIN tidak pernah terlihat (spec-f:19), dan perangkat
+   kasir berdiri dengan pelanggan tepat di seberang layar. */
+.kasir-titik {
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.kasir-titik.terisi {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.kasir-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.kasir-dialog-latar {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--overlay);
+}
+
+/* Dialog, bukan layar: keranjang kasir harus tetap terlihat di belakangnya.
+   Manajer datang, mengetik, pergi; kasir melanjutkan dari tempat yang sama. */
+.kasir-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  max-width: 28rem;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.kasir-alasan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: none;
+  padding: 0;
+}
+
+.kasir-alasan-opsi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+}
+
+.kasir-catatan {
+  font: inherit;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.kasir-dialog-aksi {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+/* K-02 buka shift. */
+.kasir-shift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  flex: 1;
+}
+
+.kasir-pecahan {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+/* K-03 kasir: grid produk + keranjang.
+
+   IA §2.1: keranjang adalah kolom kanan di >=900px, bottom sheet di bawahnya.
+   Yang dibangun sekarang kolom kanan; bottom sheet menunggu perangkat yang
+   benar-benar sempit. */
+.kasir-utama {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.kasir-grid-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* >=12 kartu tanpa scroll (IA:62). `auto-fill` dengan lebar minimum, bukan
+   jumlah kolom tetap: tablet 1024 dan mini-PC 1280 harus keduanya muat. */
+.kasir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--space-3);
+}
+
+.kasir-kartu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  min-height: var(--touch-target);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.kasir-keranjang {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  width: 22rem;
+  flex: none;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.kasir-baris-daftar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.kasir-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.kasir-subtotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* K-08 baris riwayat: satu tombol penuh, karena seluruh barisnya dapat
+   diketuk. Target sentuh mengikuti aturan #3. */
+.kasir-riwayat-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Baris pesan yang ruangnya dicadangkan — lihat komentar di DialogOtorisasi.
+   Tanpa ini, pesan yang muncul/hilang menggeser keypad di tengah pengetikan. */
+.kasir-pesan-tetap {
+  min-height: var(--space-5);
+  margin: 0;
+}

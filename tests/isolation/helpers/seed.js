@@ -128,6 +128,21 @@ async function seedTenantBase(appClient, { suffix }) {
     scope_id: rows.outlet.id,
   });
 
+  rows.user_outlet = await insertReturning(appClient, 'user_outlet', {
+    id: freshId(),
+    tenant_id: tenantId,
+    user_id: rows.user.id,
+    outlet_id: rows.outlet.id,
+  });
+
+  rows.user_session = await insertReturning(appClient, 'user_session', {
+    id: freshId(),
+    tenant_id: tenantId,
+    user_id: rows.user.id,
+    token_hash: freshId().replace(/-/g, '').padEnd(64, '0'),
+    expires_at: new Date(Date.now() + 43_200_000).toISOString(),
+  });
+
   rows.category = await insertReturning(appClient, 'category', {
     id: freshId(),
     tenant_id: tenantId,

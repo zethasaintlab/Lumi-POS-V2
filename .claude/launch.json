@@ -33,6 +33,17 @@
         "prototipe-powersync-jalur-turun"
       ],
       "port": 5175
+    },
+    {
+      "name": "kasir",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "kasir"
+      ],
+      "port": 1420
     }
   ]
 }

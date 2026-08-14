@@ -217,3 +217,48 @@ npm run dev        --workspace prototipe-powersync-jalur-turun
 | `/?tenant=alpha&mode=pantau` | Memantau perubahan berjalan; jalankan `node tools/ubah.mjs "Nama Baru" alpha` |
 
 Menghentikan: `npm run stack:down` · menghapus volume juga: `npm run stack:bersih`
+
+
+---
+
+## 6. Jalur turun dijalankan lewat APLIKASI, dengan JWKS sungguhan — 8 Agustus 2026
+
+Prototipe ini dulu mencetak JWT **simetris di dalam browser**, dan komentarnya
+sendiri menyebut itu bukan pola produksi. Setelah FR-F12 ditarik ke F2
+(`docs/superpowers/plans/PLAN-fr-f12-token-perangkat.md`), `service.yaml` di
+sini diubah: `client_auth.jwks` inline diganti `jwks_uri` yang menunjuk server
+Fastify kami, dan `audience` menjadi `powersync`.
+
+**Tidak ada lagi bahan rahasia di berkas konfigurasi ini sama sekali.**
+
+Yang dijalankan: stack ini + server kami (0.0.0.0:3000, kunci RSA dev) +
+`apps/kasir` sungguhan, dengan perangkat yang diprovisioning lewat K-15.
+
+```
+terhubung: true                     ← PowerSync menerima token RS256 kami
+category 1 · item 1 · item_variation 1 · modifier_list 1 · modifier 1
+item_modifier_list 1 · tax_rate 4   ← ketujuh tabel katalog turun
+item: ["Kopi Susu Alpha"]           ← milik tenant-alpha
+tenant terlihat: ["tenant-alpha"]   ← beta 0 baris; isolasi tenant menahan
+```
+
+### Kedua kolom berskala terbukti benar DI APLIKASI
+
+`tax_rate.rate` dan `item_variation.conversion_factor` adalah dua dari tiga
+kolom yang `put`-nya ditulis sendiri (§5b menemukan yang pertama; yang kedua
+ditemukan dengan membandingkan DDL dan **belum pernah terukur** sampai
+sekarang):
+
+```
+tax_rate.rate                → 1100, typeof = integer   (bukan 0.11 bertipe real)
+                               825 · 1075 · 1 (0,01%)
+item_variation.conversion_factor → 1000, typeof = integer  (bukan 1)
+```
+
+Keduanya lewat `buatDefinisiRaw` di `apps/kasir/src/lokal/skema.ts`, bukan
+lewat kode prototipe.
+
+### Yang berubah di berkas prototipe ini
+
+Hanya `powersync/service.yaml` (`client_auth`). Sisanya — compose, init, sync
+rules, tools — tidak disentuh, dan §1–§5 tetap berlaku apa adanya.
