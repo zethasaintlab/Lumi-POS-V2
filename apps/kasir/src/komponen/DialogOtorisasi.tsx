@@ -27,13 +27,26 @@ const hasher = buatPinHasherWasm();
 interface Props {
   /** Kasir yang sedang masuk. Dipakai menolak persetujuan-diri-sendiri. */
   aktorId: string;
-  daftarAlasan: readonly Alasan[];
+  /**
+   * Daftar alasan yang harus dipilih DI SINI.
+   *
+   * ⛔ Dihilangkan bila pemanggil SUDAH mengumpulkan alasannya. Versi pertama
+   * dialog ini selalu memintanya, dan K-10 memanggilnya setelah kasir memilih
+   * alasan — jadi manajer diminta mengulang pilihan kasir, di depan
+   * pelanggan, dan pilihan keduanya dibuang begitu saja. Ditemukan dengan
+   * menjalankan alurnya, bukan lewat test.
+   */
+  daftarAlasan?: readonly Alasan[];
   judul: string;
   onBatal: () => void;
   onSetuju: (hasil: { approverId: string; reasonCode: string; reasonNote: string | null }) => void;
 }
 
 export function DialogOtorisasi({ aktorId, daftarAlasan, judul, onBatal, onSetuju }: Props) {
+  /* Tanpa daftar alasan, dialog langsung meminta PIN. Otorisasi terjadi "di
+     tengah transaksi dengan antrean menunggu" (`spec-f:114`); satu langkah
+     yang tidak menambah informasi adalah satu langkah yang harus hilang. */
+  const mintaAlasan = daftarAlasan !== undefined && daftarAlasan.length > 0;
   const { db } = useDbLokal();
   const [kode, setKode] = useState('');
   const [catatan, setCatatan] = useState('');
@@ -41,14 +54,15 @@ export function DialogOtorisasi({ aktorId, daftarAlasan, judul, onBatal, onSetuj
   const [galat, setGalat] = useState<string | null>(null);
   const [memeriksa, setMemeriksa] = useState(false);
 
-  const galatAlasan = kode === '' ? null : validasiAlasan(daftarAlasan, kode, catatan || null);
+  const galatAlasan =
+    !mintaAlasan || kode === '' ? null : validasiAlasan(daftarAlasan, kode, catatan || null);
   /* Alasan divalidasi SEBELUM PIN diminta.
 
      `spec-f:385` menuntut "Lainnya" memvalidasi catatan ≥10 karakter. Kalau
      itu diperiksa setelah PIN, manajer sudah mengetik PIN-nya di depan orang
      lain, ditolak karena catatan pendek, dan harus mengetiknya lagi — dan
      `spec-f:139` menyebut shoulder surfing sebagai risiko utama PIN manajer. */
-  const alasanSiap = kode !== '' && galatAlasan === null;
+  const alasanSiap = !mintaAlasan || (kode !== '' && galatAlasan === null);
 
   const kirim = (nilaiPin: string) => {
     setMemeriksa(true);
@@ -76,6 +90,7 @@ export function DialogOtorisasi({ aktorId, daftarAlasan, judul, onBatal, onSetuj
       <div className="kasir-dialog">
         <h2 className="t-title">{judul}</h2>
 
+        {mintaAlasan && (
         <fieldset className="kasir-alasan">
           <legend className="t-body-md">Alasan</legend>
           {/* Daftar TERTUTUP. `spec-f:378`: free text tidak dapat diagregasi
@@ -93,8 +108,9 @@ export function DialogOtorisasi({ aktorId, daftarAlasan, judul, onBatal, onSetuj
             </label>
           ))}
         </fieldset>
+        )}
 
-        {kode === 'lainnya' && (
+        {mintaAlasan && kode === 'lainnya' && (
           <textarea
             className="kasir-catatan"
             value={catatan}
@@ -126,11 +142,15 @@ export function DialogOtorisasi({ aktorId, daftarAlasan, judul, onBatal, onSetuj
           </>
         )}
 
-        {galat && (
-          <p className="t-body-md kasir-login-galat" role="alert">
-            {galat}
-          </p>
-        )}
+        {/* ⛔ Ruangnya DICADANGKAN, pesannya tidak dihilangkan.
+            `setGalat(null)` pada digit pertama membuat baris ini lenyap dan
+            SELURUH keypad naik ~34px di tengah pengetikan — penghasil salah
+            tekan, tepat di alur yang `spec-f:114` gambarkan sebagai "di tengah
+            transaksi, antrean menunggu, tangan sering basah". Ditemukan dengan
+            mengetik PIN di layar, bukan lewat test. */}
+        <p className="t-body-md kasir-login-galat kasir-pesan-tetap" role="alert">
+          {galat ?? ' '}
+        </p>
 
         <div className="kasir-dialog-aksi">
           <Tombol varian="ghost" kritis disabled={memeriksa} onClick={onBatal}>

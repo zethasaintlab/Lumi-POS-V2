@@ -284,3 +284,10 @@
   text-align: left;
   cursor: pointer;
 }
+
+/* Baris pesan yang ruangnya dicadangkan — lihat komentar di DialogOtorisasi.
+   Tanpa ini, pesan yang muncul/hilang menggeser keypad di tengah pengetikan. */
+.kasir-pesan-tetap {
+  min-height: var(--space-5);
+  margin: 0;
+}

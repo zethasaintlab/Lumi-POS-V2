@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
 import { bacaDetail, type DetailOrder } from '../riwayat/baca.ts';
+import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
+import { DialogPembatalan } from '../komponen/DialogPembatalan.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { useSesi } from '../konteks/useSesi.ts';
 import { Tombol } from '../Tombol.tsx';
+import { rencanaPembatalan } from '../kasir/pembatalan.ts';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 
@@ -38,20 +42,26 @@ const METODE: Record<string, string> = {
 
 export function DetailTransaksi({ orderId }: { orderId: string }) {
   const { db } = useDbLokal();
+  const { sesi } = useSesi();
   const [detail, setDetail] = useState<DetailOrder | null>(null);
+  const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [siap, setSiap] = useState(false);
+  const [membatalkan, setMembatalkan] = useState(false);
+  const [muatUlang, setMuatUlang] = useState(0);
 
   useEffect(() => {
     let hidup = true;
-    void bacaDetail(db, orderId).then((d) => {
+    void (async () => {
+      const [d, k] = await Promise.all([bacaDetail(db, orderId), bacaKonfigPerangkat(db)]);
       if (!hidup) return;
       setDetail(d);
-      setSiap(true);
-    });
+      setKonfig(k);
+      if (hidup) setSiap(true);
+    })();
     return () => {
       hidup = false;
     };
-  }, [db, orderId]);
+  }, [db, orderId, muatUlang]);
 
   if (!siap) return <EmptyState title="Membaca transaksi" body="Mengambil detail dari perangkat." />;
 
@@ -175,9 +185,52 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
         </>
       )}
 
+      {/* K-10. Muncul HANYA bila transaksi ini masih dapat dibatalkan —
+          `decideCancellation` melempar untuk order yang sudah `voided` atau
+          `refunded`, dan tombol yang pasti gagal lebih buruk daripada tombol
+          yang tidak ada.
+
+          ⛔ TIDAK menuntut shift terbuka. Order pembatal menyalin `shift_id`
+          dari order yang dibatalkan (sama seperti server), jadi shift yang
+          sedang berjalan tidak dipakai sama sekali — dan menuntutnya akan
+          menghalangi pembatalan yang sah setelah kas ditutup. */}
+      {dapatDibatalkan(order.status) && konfig && sesi && (
+        <Tombol varian="danger" kritis onClick={() => setMembatalkan(true)}>
+          {order.status === 'closed' ? 'Kembalikan dana' : 'Batalkan transaksi'}
+        </Tombol>
+      )}
+
       <Tombol varian="ghost" kritis onClick={() => navigasi(`${BASIS}/riwayat`)}>
         Kembali ke riwayat
       </Tombol>
+
+      {membatalkan && konfig && sesi && (
+        <DialogPembatalan
+          orderId={order.id}
+          statusOrder={order.status}
+          sisaDapatDirefund={sisaDapatDirefund}
+          konfig={konfig}
+          sesi={sesi}
+          onBatal={() => setMembatalkan(false)}
+          onSelesai={() => {
+            setMembatalkan(false);
+            // Dibaca ULANG dari database, bukan ditambal di memori: rantai
+            // koreksi lahir dari baris-baris baru, dan menyusunnya di klien
+            // berarti dua sumber kebenaran untuk satu layar.
+            setMuatUlang((n) => n + 1);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+/** `decideCancellation` melempar untuk status yang tidak mengizinkan keduanya. */
+function dapatDibatalkan(status: string): boolean {
+  try {
+    rencanaPembatalan(status);
+    return true;
+  } catch {
+    return false;
+  }
 }
