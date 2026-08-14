@@ -217,6 +217,24 @@ CREATE TABLE stock_movement (
   created_by TEXT, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
 
+-- FR-E5 — penandaan habis MANUAL, terpisah dari stok terhitung.
+--
+-- `spec-e:220`: "Produk dapat ditandai habis meskipun stok tercatat masih 10
+-- (mis. bahan habis, mesin rusak)." Keduanya disimpan terpisah dan tidak
+-- pernah saling menyimpulkan.
+--
+-- ⛔ Tabel LOG, bukan satu baris per produk: tidak ada unique constraint pada
+-- (outlet_id, variation_id), sama seperti servernya. Dua perangkat yang
+-- menandai produk yang sama saat offline sama-sama menulis, dan yang menang
+-- ditentukan HLC — bukan baris yang kebetulan ditulis belakangan.
+CREATE TABLE sold_out_flag (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL,
+  variation_id TEXT NOT NULL,
+  is_sold_out INTEGER NOT NULL DEFAULT 0,
+  set_by TEXT NOT NULL, set_at TEXT NOT NULL, hlc INTEGER NOT NULL
+);
+CREATE INDEX ix_sold_out_terbaru ON sold_out_flag(outlet_id, variation_id, hlc);
+
 -- stock_snapshot: cache lokal hasil agregasi stock_movement, dibangun ulang
 -- saat tutup shift (bukan direplikasi naik/turun) — bentuk dan alasan index
 -- ix_mv_hlc di bawah sudah diukur, lihat prototypes/01-sqlite-sizing/FINDINGS.md §5.

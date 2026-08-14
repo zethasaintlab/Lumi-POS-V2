@@ -146,7 +146,9 @@ Versi pertama penjaga ini menandai `SUM(amount)` apa pun dan menemukan tiga temp
 - [x] D3. Pembacaan stok lokal: `snapshot.balance + SUM(delta WHERE hlc > checkpoint)` (`spec-e:62`), plus jalur agregasi langsung untuk uji drift (`spec-e:331`)
 - [x] D4. Rebuild snapshot saat tutup shift (`spec-e:63`) — **di luar transaksi tutup kas**, karena snapshot adalah cache dan kegagalannya tidak boleh me-rollback penutupan kas yang sudah benar
 - [x] D5. FR-E4 di UI: peringatan "Stok tersisa N" di keranjang K-03 — kumulatif per variation, lintas baris
-- [ ] D6. FR-E5 penandaan sold-out manual, reset saat buka shift dengan konfirmasi
+- [x] D6. FR-E5 penandaan sold-out manual — lokal, ledger ber-HLC, blokir di keranjang, daftar konfirmasi reset
+- [ ] D6b. FR-E5 naik ke server — butuh endpoint REST untuk `sold_out_flag`; sampai ada, penandaan LOKAL saja
+- [ ] D6c. FR-E5 di layar: tekan-tahan kartu produk untuk menandai, dan penimpaan manajer
 - [ ] D7. FR-E6 deteksi oversell pasca-sinkronisasi + `OversellEvent`
 - [x] D8. FR-E7 opname — **DITUNDA ke v1.1**, keputusan user 14 Agustus 2026 (menjawab `spec-e:343`)
 

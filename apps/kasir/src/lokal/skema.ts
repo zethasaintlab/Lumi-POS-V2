@@ -42,6 +42,10 @@ export const TABEL_RAW = [
   'payment',
   'refund',
   'stock_movement',
+  // FR-E5 — penandaan habis manual. Diturunkan supaya penanda dari perangkat
+  // lain di outlet yang sama sampai ke sini lewat server; penyebaran langsung
+  // antar perangkat (hub lokal) adalah v1.1.
+  'sold_out_flag',
   'cash_drawer_shift',
   'cash_movement',
   'audit_event',
@@ -186,6 +190,9 @@ export const KOLOM_BELUM_DIUKUR = [
   // kasir aktif yang terkunci di luar. Belum diukur lewat sync sungguhan.
   'user.is_active',
   'user.pin_must_change',
+  // FR-E5 — `boolean` server, `INTEGER` lokal. Kelas yang sama dengan
+  // `track_stock`; belum diukur menembus PowerSync.
+  'sold_out_flag.is_sold_out',
   // FR-E4 — `boolean` di PostgreSQL, `INTEGER` di sini. Kelas divergensi yang
   // sama dengan `track_stock`: belum diukur menembus PowerSync, jadi ia
   // terdaftar di sini alih-alih diasumsikan aman.

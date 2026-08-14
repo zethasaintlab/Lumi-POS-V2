@@ -13,6 +13,7 @@ import {
 import { hapusBaris, qtyDiKeranjang, subtotalKeranjang, tambah, ubahQty } from '../kasir/keranjang.ts';
 import { bacaStokBanyak } from '../inventori/stok.ts';
 import { bacaProfilVertikal } from '../inventori/profil.ts';
+import { bacaHabis } from '../inventori/sold-out.ts';
 import { keputusanStok } from '../../../../packages/domain/src/profil-vertikal.ts';
 import { keranjangSekarang, langgananKeranjang, setelKeranjang } from '../kasir/simpanan.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
@@ -64,6 +65,9 @@ export function Kasir() {
   const [stok, setStok] = useState<Map<string, number>>(new Map());
   const [bolehNegatif, setBolehNegatif] = useState(true);
   const [pesanStok, setPesanStok] = useState<string | null>(null);
+  /* FR-E5 — penandaan habis MANUAL, terpisah dari stok terhitung. Produk
+     dapat habis meski stoknya masih 10 (bahan habis, mesin rusak). */
+  const [habis, setHabis] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let hidup = true;
@@ -86,6 +90,7 @@ export function Kasir() {
         if (!hidup) return;
         setBolehNegatif(profil.allowNegativeStock);
         setStok(peta);
+        setHabis(await bacaHabis(db, { tenantId: k.tenantId, outletId: k.outletId }));
       }
       if (hidup) setSiap(true);
     })();
@@ -139,6 +144,16 @@ export function Kasir() {
     /* FR-E4. Yang diperiksa adalah kuantitas KUMULATIF variation ini di
        keranjang, bukan satu ketukan — modifier berbeda memisahkan baris,
        tapi stoknya satu. */
+    /* FR-E5 — diperiksa SEBELUM stok terhitung, dan tidak pernah disimpulkan
+       darinya. `spec-e:217`: produk yang ditandai habis "diblokir dengan
+       pesan, TETAPI manajer dapat menimpanya". Penimpaan manajer belum ada
+       jalurnya di layar ini; sampai ada, penandaan memblokir. */
+    if (habis.has(variation.id)) {
+      setPesanStok(`${item.nama} ditandai habis. Manajer dapat membuka kembali penandaannya.`);
+      setPilihan(null);
+      return;
+    }
+
     const diminta = qtyDiKeranjang(keranjang, variation.id) + 1000;
     const k = keputusanStok({
       stokMilli: stok.get(variation.id) ?? 0,
