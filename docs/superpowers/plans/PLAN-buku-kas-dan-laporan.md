@@ -1,6 +1,6 @@
 # PLAN — Buku kas (`cash_movement`) dan fondasi Modul G
 
-**Fase:** F3 · **Ditulis:** 14 Agustus 2026 · **Status:** Tahap A & B selesai; Tahap C berikutnya
+**Fase:** F3 · **Ditulis:** 14 Agustus 2026 · **Status:** Tahap A & B selesai; Tahap C sebagian (C1–C5)
 
 **Spec:** `product/specs/spec-d-kas-shift.md` (FR-D5, FR-D6) · `product/specs/spec-g-laporan.md` (FR-G3, FR-G1)
 
@@ -119,7 +119,15 @@ Versi pertama penjaga ini menandai `SUM(amount)` apa pun dan menemukan tiga temp
 
 ### Tahap C — FR-G1 laporan operasional, FR-G4 offline, FR-G2 label bersih/kotor
 
-Dirinci setelah A dan B selesai.
+- [x] C1. Laporan penjualan harian — omzet lewat FR-G3, per metode, per jam, rata-rata per transaksi
+- [x] C2. Laporan per produk — kuantitas ×1000, omzet, kontribusi %, terurut menurun
+- [x] C3. **Konsistensi diuji, bukan diklaim**: jumlah per produk = omzet harian (AC FR-G3 kedua), dan laporan harian = laporan shift untuk shift yang sama (AC FR-G3 ketiga)
+- [x] C4. FR-G2 `basis` dan FR-G4 `cakupan` dibawa di DATA, bukan hanya teks layar
+- [x] C5. **FR-F5 tertutup di perangkat** — tidak ada field `cost`/`margin` di laporan mana pun, dan ada test yang memeriksa `Object.keys`
+- [ ] C6. Laporan per kasir dan per shift sebagai layar (data per shift sudah ada lewat `laporanShift`)
+- [ ] C7. Layar K-13 memakai laporan harian; empty state "belum ada transaksi hari ini" dibedakan dari "tidak cocok filter" (`spec-g:274`)
+
+**Keputusan: `basis` per produk adalah `sebelum void & refund`.** Baris produk menyatakan barang apa yang keluar, dan refund uang tidak selalu mengembalikan barang — `lines: []` berarti uang kembali tanpa barang kembali. Menyebutnya "bersih" mengklaim sesuatu yang datanya tidak dukung. Order yang DIBATALKAN tetap disaring keluar, karena di sana barangnya memang kembali ke rak — dan itulah yang membuat totalnya cocok dengan omzet kotor harian.
 
 ---
 
