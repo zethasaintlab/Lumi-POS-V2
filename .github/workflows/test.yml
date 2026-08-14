@@ -38,9 +38,9 @@ jobs:
     # literal values for a throwaway service container that lives only for
     # this job — not production secrets.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # ⛔ 24, bukan 22 — dan itu lantai yang ditegakkan `engines.node`.
           # `crypto.argon2` (modul identity, hash PIN) baru ada sejak Node
