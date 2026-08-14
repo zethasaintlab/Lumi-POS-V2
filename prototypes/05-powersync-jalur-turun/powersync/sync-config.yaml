@@ -67,6 +67,21 @@ streams:
          WHERE tenant_id = auth.parameter('tenant_id')
            AND (outlet_id IS NULL OR outlet_id = auth.parameter('outlet_id'))
       - SELECT * FROM tax_rate WHERE tenant_id = auth.parameter('tenant_id')
+      # F4 — profil printer. `ERD:445`: "Data, bukan kode — menambah model
+      # printer = menambah baris". Tanpa tabel ini, menambah dukungan satu
+      # model menuntut perubahan kode lalu rilis ke setiap perangkat merchant.
+      #
+      # ⛔ SATU-SATUNYA query di berkas ini TANPA klausa tenant, dan itu benar:
+      # `db/migrations/0012` menyebutnya "data referensi hardware global" dan
+      # membebaskannya dari RLS — ia tidak punya kolom `tenant_id` sama
+      # sekali. Tabel tanpa tenant tidak dapat bocor antar tenant.
+      #
+      # Penjaga `tests/kasir/sync-rules.test.js` membaca daftar tabel
+      # ber-tenant dari DDL server, jadi pengecualian ini DITURUNKAN, bukan
+      # didaftar tangan.
+      - SELECT id, name, paper_width_mm, chars_per_line, codepage,
+               has_cutter, init_command, cut_command, drawer_command, image_support
+          FROM printer_profile
       # FR-E4 / OQ-09 — `allow_negative_stock` per outlet dengan default tenant.
       #
       # ⛔ Tabelnya diturunkan APA ADANYA, bukan sebagai kolom terhitung di

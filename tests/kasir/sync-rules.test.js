@@ -16,8 +16,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
-const { resolve } = require('node:path');
+const { readFileSync, readdirSync } = require('node:fs');
+const { resolve, join } = require('node:path');
 
 const KONFIG = resolve(__dirname, '../../prototypes/05-powersync-jalur-turun/powersync/sync-config.yaml');
 
@@ -83,12 +83,67 @@ test('⛔ tabel yang punya kolom sensitif TIDAK boleh memakai SELECT *', () => {
   }
 });
 
-test('⛔ setiap query menyaring tenant', () => {
+/**
+ * Tabel mana yang PUNYA `tenant_id`, dibaca dari DDL server.
+ *
+ * ⛔ Diturunkan, bukan didaftar tangan. Aturan yang sebenarnya berlaku adalah
+ * "setiap query atas tabel BER-TENANT menyaring tenant" — dan satu-satunya
+ * sumber yang tahu tabel mana ber-tenant adalah skema itu sendiri.
+ *
+ * Daftar pengecualian yang ditulis tangan akan bertambah panjang setiap kali
+ * seseorang menabrak penjaga ini, sampai ia tidak menjaga apa pun. Daftar
+ * yang dibaca dari DDL bertambah hanya bila skemanya benar-benar berubah.
+ */
+function tabelBerTenant() {
+  const dir = join(__dirname, '..', '..', 'db', 'migrations');
+  const punya = new Set();
+  for (const berkas of readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
+    const sql = readFileSync(join(dir, berkas), 'utf8').replace(/\r\n?/g, '\n');
+    // `[^]` — "karakter apa pun", dipakai karena tidak butuh backslash yang
+    // dapat hilang satu lapis (pelajaran dari helper uji-cetak).
+    for (const m of sql.matchAll(/CREATE TABLE\s+"?(\w+)"?\s*\(([^]*?)\n\)/g)) {
+      if (/\btenant_id\b/.test(m[2])) punya.add(m[1]);
+    }
+    // `ALTER TABLE x ADD COLUMN tenant_id` juga menjadikannya ber-tenant.
+    for (const m of sql.matchAll(/ALTER TABLE\s+"?(\w+)"?\s+ADD COLUMN\s+tenant_id/g)) {
+      punya.add(m[1]);
+    }
+  }
+  return punya;
+}
+
+/** Nama tabel yang di-`FROM` sebuah query. */
+function tabelDari(q) {
+  const m = /FROM\s+"?(\w+)"?/i.exec(q);
+  return m ? m[1] : null;
+}
+
+test('pembaca DDL benar-benar menemukan tabel ber-tenant', () => {
+  const t = tabelBerTenant();
+  assert.ok(t.size > 15, `hanya ${t.size} tabel ber-tenant terbaca; pembaca DDL rusak`);
+  for (const wajib of ['item', 'order', 'tax_rate', 'user']) {
+    assert.ok(t.has(wajib), `${wajib} seharusnya ber-tenant`);
+  }
+  // Dan tabel referensi global TIDAK boleh ikut terbaca sebagai ber-tenant —
+  // kalau ia ikut, penjaga di bawah menuntut sesuatu yang mustahil.
+  assert.equal(t.has('printer_profile'), false, 'printer_profile bukan tabel ber-tenant');
+});
+
+test('⛔ setiap query atas tabel BER-TENANT menyaring tenant', () => {
   // Sabotase prototipe 05 T5: satu klausa dilepas dari SATU baris, dan
   // katalog merchant lain mendarat di perangkat yang salah tanpa error.
   // Pemeriksaan harus menyentuh SETIAP query — kebocoran satu baris tidak
   // terlihat oleh pemeriksaan pada baris lain.
+  //
+  // ⛔ Yang dikecualikan hanya tabel yang MEMANG tidak punya `tenant_id`,
+  // dan itu dibaca dari DDL. `printer_profile` adalah satu-satunya sekarang:
+  // `db/migrations/0012` menyebutnya "data referensi hardware global" dan
+  // membebaskannya dari RLS. Tabel tanpa tenant tidak dapat bocor antar
+  // tenant — tidak ada yang tenant-spesifik di dalamnya.
+  const berTenant = tabelBerTenant();
   for (const q of kueri()) {
+    const tabel = tabelDari(q);
+    if (tabel && !berTenant.has(tabel)) continue;
     assert.match(
       q,
       /auth\.parameter\('tenant_id'\)/,

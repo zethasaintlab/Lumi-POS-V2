@@ -87,3 +87,66 @@ export function dokumenUjiCetak(profil: PrinterProfile) {
     potong: true,
   };
 }
+
+/**
+ * Profil yang tersedia di perangkat ini: yang tersinkron DULU, baseline
+ * sesudahnya.
+ *
+ * ⛔ Baseline tidak pernah dibuang. Perangkat yang katalog profilnya belum
+ * turun — atau merchant yang memang tidak pernah menambahkan model — harus
+ * tetap dapat mencetak. Daftar kosong di layar uji cetak adalah jalan buntu
+ * yang tidak dapat diselesaikan kasir sendiri.
+ *
+ * Duplikat berdasarkan `id` disingkirkan, dengan yang tersinkron menang: bila
+ * merchant menambahkan baris ber-id `baseline-58`, itu koreksi yang disengaja
+ * dan harus berlaku.
+ */
+export async function bacaProfilPrinter(
+  db: { getAll<T>(sql: string, params?: unknown[]): Promise<T[]> }
+): Promise<PrinterProfile[]> {
+  let tersinkron: PrinterProfile[] = [];
+  try {
+    const baris = await db.getAll<{
+      id: string;
+      name: string;
+      paper_width_mm: number | null;
+      chars_per_line: number | null;
+      codepage: string | null;
+      has_cutter: number;
+      init_command: string | null;
+      cut_command: string | null;
+      drawer_command: string | null;
+      image_support: number;
+    }>(
+      `SELECT id, name, paper_width_mm, chars_per_line, codepage,
+              has_cutter, init_command, cut_command, drawer_command, image_support
+         FROM printer_profile`
+    );
+    tersinkron = baris.map((b) => ({
+      id: b.id,
+      nama: b.name,
+      paperWidthMm: Number(b.paper_width_mm ?? 58),
+      // ⛔ `chars_per_line` yang kosong TIDAK boleh menjadi 0: lebar nol
+      // membuat setiap baris struk dipotong habis. Baseline 58 mm yang dipakai.
+      charsPerLine: Number(b.chars_per_line) > 0 ? Number(b.chars_per_line) : 32,
+      codepage: b.codepage ?? 'cp437',
+      // `boolean` server mendarat sebagai INTEGER; dibandingkan eksplisit ke 1
+      // supaya `'0'` dari driver yang mengembalikan string tidak terbaca true.
+      hasCutter: Number(b.has_cutter) === 1,
+      initCommand: b.init_command ?? '',
+      cutCommand: b.cut_command ?? '',
+      drawerCommand: b.drawer_command ?? '',
+      imageSupport: Number(b.image_support) === 1,
+    }));
+  } catch {
+    // Tabelnya belum ada di perangkat lama — bukan alasan untuk kehilangan
+    // kemampuan cetak.
+    tersinkron = [];
+  }
+
+  const hasil = [...tersinkron];
+  for (const b of PROFIL_BASELINE) {
+    if (!hasil.some((p) => p.id === b.id)) hasil.push(b);
+  }
+  return hasil;
+}

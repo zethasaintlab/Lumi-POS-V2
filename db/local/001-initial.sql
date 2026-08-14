@@ -119,6 +119,18 @@ CREATE TABLE vertical_profile (
   default_tax_type TEXT
 );
 
+-- F4 — profil printer. Data referensi hardware GLOBAL: tanpa `tenant_id`,
+-- dikecualikan dari RLS di server (`db/migrations/0012`). Perintah potong dan
+-- laci disimpan sebagai hex berspasi ("1B 40"), supaya menambah model printer
+-- adalah menambah baris — bukan menyentuh renderer.
+CREATE TABLE printer_profile (
+  id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL,
+  paper_width_mm INTEGER, chars_per_line INTEGER, codepage TEXT,
+  has_cutter INTEGER NOT NULL DEFAULT 0,
+  init_command TEXT, cut_command TEXT, drawer_command TEXT,
+  image_support INTEGER NOT NULL DEFAULT 0
+);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.

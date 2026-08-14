@@ -9,7 +9,8 @@ import {
 import { Bidang } from '../Bidang.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
-import { PROFIL_BASELINE, dokumenUjiCetak } from '../cetak/profil.ts';
+import { bacaProfilPrinter, dokumenUjiCetak } from '../cetak/profil.ts';
+import type { PrinterProfile } from '../cetak/escpos.ts';
 import { cetakStruk, noopPeripheral, type HasilCetak } from '../cetak/port.ts';
 
 /* K-15 Perangkat & Uji Cetak.
@@ -47,7 +48,11 @@ export function Perangkat() {
   const [tersimpan, setTersimpan] = useState<KonfigPerangkat | null>(null);
   const [pesan, setPesan] = useState<string | null>(null);
   const [memuat, setMemuat] = useState(true);
-  const [profilId, setProfilId] = useState(PROFIL_BASELINE[0].id);
+  /* Profil dibaca dari DATABASE, bukan dari konstanta. `ERD:445`: menambah
+     model printer = menambah baris. Baseline ikut di belakangnya supaya
+     perangkat tanpa profil tersinkron tetap dapat mencetak. */
+  const [profil, setProfil] = useState<PrinterProfile[]>([]);
+  const [profilId, setProfilId] = useState('');
   const [hasilUji, setHasilUji] = useState<{ hasil: HasilCetak; byte: number } | null>(null);
 
   useEffect(() => {
@@ -57,6 +62,11 @@ export function Perangkat() {
         if (!hidup) return;
         setTersimpan(k);
         if (k) setNilai({ ...k, tokenSecret: k.tokenSecret ?? '' });
+        void bacaProfilPrinter(db).then((daftar) => {
+          if (!hidup) return;
+          setProfil(daftar);
+          setProfilId((kini) => kini || daftar[0]?.id || '');
+        });
         setMemuat(false);
       },
       () => hidup && setMemuat(false)
@@ -79,14 +89,15 @@ export function Perangkat() {
   }
 
   async function ujiCetak() {
-    const profil = PROFIL_BASELINE.find((p) => p.id === profilId) ?? PROFIL_BASELINE[0];
-    const dok = dokumenUjiCetak(profil);
+    const dipilih = profil.find((p) => p.id === profilId) ?? profil[0];
+    if (!dipilih) return;
+    const dok = dokumenUjiCetak(dipilih);
     // Byte dihitung dari renderer yang SAMA yang dipakai penjualan — bukan
     // jalur cetak terpisah. Uji cetak yang memakai jalurnya sendiri dapat
     // berhasil sementara struk sungguhan gagal.
     const { renderEscPos } = await import('../cetak/escpos.ts');
-    const byte = renderEscPos(dok, profil).length;
-    setHasilUji({ hasil: await cetakStruk(noopPeripheral(), dok, profil), byte });
+    const byte = renderEscPos(dok, dipilih).length;
+    setHasilUji({ hasil: await cetakStruk(noopPeripheral(), dok, dipilih), byte });
   }
 
   if (memuat) {
@@ -142,13 +153,13 @@ export function Perangkat() {
           di lembar itu harus muat dalam satu baris.
         </div>
         <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-          {PROFIL_BASELINE.map((p) => (
+          {profil.map((p) => (
             <Tombol
               key={p.id}
               varian={p.id === profilId ? 'primary' : 'secondary'}
               onClick={() => setProfilId(p.id)}
             >
-              {p.paperWidthMm} mm
+              {p.nama}
             </Tombol>
           ))}
         </div>
