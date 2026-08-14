@@ -32,16 +32,30 @@ streams:
       # menuntut perangkat curian tidak memberi akses ke outlet lain, dan nama
       # serta pengaturan cabang lain tidak dibutuhkan kasir mana pun.
       #
-      # Kolom eksplisit. `address` dan `vertical_profile_id` tidak turun —
-      # tidak ada layar kasir yang memakainya.
+      # Kolom eksplisit. `address` tidak turun — tidak ada layar kasir yang
+      # memakainya.
+      #
+      # `vertical_profile_id` TURUN sejak 14 Agustus 2026: FR-E4 menuntut
+      # peringatan stok bekerja offline, jadi perangkat harus meresolusi
+      # profilnya sendiri.
       - SELECT id, tenant_id, name, timezone, business_day_ends_at,
-               rounding_increment, rounding_mode, service_charge_rate, archived_at
+               rounding_increment, rounding_mode, service_charge_rate,
+               vertical_profile_id, archived_at
           FROM outlet
          WHERE tenant_id = auth.parameter('tenant_id')
            AND id = auth.parameter('outlet_id')
       - SELECT * FROM category WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item WHERE tenant_id = auth.parameter('tenant_id')
-      - SELECT * FROM item_variation WHERE tenant_id = auth.parameter('tenant_id')
+      # ⛔ KOLOM EKSPLISIT, dan `cost` sengaja TIDAK ada — FR-F5.
+      # `SELECT *` mengirim HPP ke setiap tablet di setiap outlet, dan
+      # `spec-f:57` menyebut alasannya: kasir punya turnover tinggi dan sering
+      # pindah ke kompetitor merchant. Klien tidak pernah membutuhkannya —
+      # `order_line.cost_at_sale` dihitung SERVER.
+      - SELECT id, tenant_id, item_id, name, sku, barcode, price,
+               stocking_unit, selling_unit, conversion_factor,
+               track_stock, sort_order, archived_at
+          FROM item_variation
+         WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM modifier_list WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM modifier WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item_modifier_list WHERE tenant_id = auth.parameter('tenant_id')
@@ -53,6 +67,22 @@ streams:
          WHERE tenant_id = auth.parameter('tenant_id')
            AND (outlet_id IS NULL OR outlet_id = auth.parameter('outlet_id'))
       - SELECT * FROM tax_rate WHERE tenant_id = auth.parameter('tenant_id')
+      # FR-E4 / OQ-09 — `allow_negative_stock` per outlet dengan default tenant.
+      #
+      # ⛔ Tabelnya diturunkan APA ADANYA, bukan sebagai kolom terhitung di
+      # baris `outlet`. PowerSync mereplikasi perubahan per tabel dari WAL:
+      # mengubah `vertical_profile` tidak mengubah baris `outlet`, jadi baris
+      # itu tidak dipancarkan ulang — dan perangkat memegang nilai basi
+      # selamanya, tanpa satu pun error. Resolusinya terjadi di perangkat,
+      # lewat `packages/domain/src/profil-vertikal.ts`.
+      #
+      # Seluruh profil tenant ikut turun, bukan hanya milik outlet ini: yang
+      # menjadi default tenant adalah baris LAIN, dan resolusinya
+      # membutuhkan keduanya.
+      - SELECT id, tenant_id, name, allow_negative_stock, is_tenant_default,
+               default_channel, requires_barcode_flow, default_tax_type
+          FROM vertical_profile
+         WHERE tenant_id = auth.parameter('tenant_id')
 
   # Identitas — FR-F3 (login offline). Hash PIN harus ADA di perangkat, karena
   # verifikasinya lokal (`spec-f:124-125`).

@@ -31,6 +31,10 @@ export const TABEL_RAW = [
   // FR-A7 — tanpa ini perangkat hanya melihat anak tangga harga paling bawah.
   'price_history',
   'tax_rate',
+  // FR-E4 — peringatan stok harus bekerja offline, jadi profilnya diresolusi
+  // di perangkat. Diturunkan sebagai TABEL, bukan kolom terhitung di `outlet`:
+  // lihat catatan di sync-config.yaml.
+  'vertical_profile',
   'order',
   'check',
   'order_line',
@@ -38,6 +42,10 @@ export const TABEL_RAW = [
   'payment',
   'refund',
   'stock_movement',
+  // FR-E5 — penandaan habis manual. Diturunkan supaya penanda dari perangkat
+  // lain di outlet yang sama sampai ke sini lewat server; penyebaran langsung
+  // antar perangkat (hub lokal) adalah v1.1.
+  'sold_out_flag',
   'cash_drawer_shift',
   'cash_movement',
   'audit_event',
@@ -182,6 +190,15 @@ export const KOLOM_BELUM_DIUKUR = [
   // kasir aktif yang terkunci di luar. Belum diukur lewat sync sungguhan.
   'user.is_active',
   'user.pin_must_change',
+  // FR-E5 — `boolean` server, `INTEGER` lokal. Kelas yang sama dengan
+  // `track_stock`; belum diukur menembus PowerSync.
+  'sold_out_flag.is_sold_out',
+  // FR-E4 — `boolean` di PostgreSQL, `INTEGER` di sini. Kelas divergensi yang
+  // sama dengan `track_stock`: belum diukur menembus PowerSync, jadi ia
+  // terdaftar di sini alih-alih diasumsikan aman.
+  'vertical_profile.allow_negative_stock',
+  'vertical_profile.is_tenant_default',
+  'vertical_profile.requires_barcode_flow',
 ];
 
 /**
@@ -210,6 +227,10 @@ export const KOLOM_BELUM_DIUKUR = [
  *   - kolom audit dan kolom yang tidak dipakai layar kasir mana pun.
  */
 export const KOLOM_SENGAJA_TIDAK_TURUN = [
+  // `modules_enabled` (jsonb) menentukan modul mana yang aktif di back-office.
+  // Tidak ada layar kasir yang membacanya, dan menurunkannya berarti membawa
+  // konfigurasi produk ke perangkat yang tidak dapat berbuat apa-apa dengannya.
+  'vertical_profile.modules_enabled',
   'check.tenant_id',
   'order_line.tenant_id',
   'order_line.outlet_id',
@@ -229,16 +250,21 @@ export const KOLOM_SENGAJA_TIDAK_TURUN = [
   'refund.tenant_id',
   'cash_movement.tenant_id',
   'item_variation.tenant_id',
+  // ⛔ FR-F5 — HPP tidak pernah menyentuh perangkat kasir. Lihat catatan
+  // panjang di `db/local/001-initial.sql`.
+  'item_variation.cost',
   'modifier.tenant_id',
   'item_modifier_list.tenant_id',
   // Kolom audit — tidak dipakai layar kasir mana pun, dan `changed_by` adalah
   // id pengguna yang bisa saja bukan staf outlet ini.
   'price_history.changed_by',
   'price_history.reason',
-  // Tidak ada layar kasir yang menampilkan alamat outlet, dan resolusi
-  // VerticalProfile terjadi di server.
+  // Tidak ada layar kasir yang menampilkan alamat outlet.
+  //
+  // `outlet.vertical_profile_id` TIDAK lagi ada di daftar ini — ia turun
+  // sejak 14 Agustus 2026, karena FR-E4 menuntut peringatan stok bekerja
+  // tanpa jaringan dan resolusi profilnya karena itu pindah ke perangkat.
   'outlet.address',
-  'outlet.vertical_profile_id',
 
   // --- identitas (§6 PLAN-modul-f-identitas.md) --------------------------
   // ⛔ Kredensial back-office. Permukaan kasir TIDAK menerima login password

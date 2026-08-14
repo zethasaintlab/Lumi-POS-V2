@@ -172,7 +172,7 @@ jaringan. Gate-nya (`npm run test:dst`, 10.000 iterasi) hijau.
 |---|---|
 | FR-H8 — notifikasi antrean menua | P1 |
 | Enkripsi at-rest SQLite lokal | Butuh keystore OS lewat Tauri (F4). Sampai itu ada, siapa pun yang dapat membaca berkas database perangkat dapat menyamar jadi perangkat itu |
-| FR-F5 — `cost` tidak boleh sampai ke Kasir | Diblokir dua hal: endpoint katalog tidak menuntut `X-Actor-Id` (opsional = dapat dilewati), dan `cost` sudah turun lewat `SELECT *`. Membuangnya dari jalur turun menuntut keputusan tentang `order_line.cost_at_sale` untuk order offline. Keputusan user: ditangani saat penulisan order dibangun — dan penulisan order kini ADA, jadi ini siap digarap |
+| ~~FR-F5 — `cost` tidak boleh sampai ke Kasir~~ | **Jalur turun ditutup 14 Agustus 2026.** Pertanyaan yang memblokirnya terjawab oleh kode, bukan tebakan: klien menulis `order_line.cost_at_sale = 0` dan SERVER menghitungnya lewat `getVariationSnapshot` — perangkat tidak pernah membutuhkan `cost`. Kolomnya dibuang dari skema lokal dan sync rules, dan `tests/kasir/sync-rules.test.js` menjaganya. **Sisanya menunggu Modul G**: penyaringan `cost`/margin di respons laporan, yang baru punya konsumen setelah laporan ada |
 | K-16 buka laci · K-17 scanner | Belum digarap; keduanya kecil dan tidak memblokir apa pun |
 | Modul C-3 rekonsiliasi & ekspor | P1 |
 | Refund parsial dengan pemilihan baris di UI | `batalkan()` sudah menerima `lines`; yang belum ada layar pemilihnya. Sampai itu ada, refund mengirim `lines: []` — uang kembali tanpa barang kembali, dan layar MENYATAKANNYA |
@@ -191,3 +191,57 @@ jaringan. Gate-nya (`npm run test:dst`, 10.000 iterasi) hijau.
 - Penguncian PIN memakai resolusi dual-layer yang disetujui user 11 Agustus
   2026, dan ia memperlambat penebakan — tidak menutupnya bagi orang yang
   sudah tahu satu PIN sah. Sesuai `spec-f:118`: PIN adalah atribusi.
+
+---
+
+## F3 tertutup, 15 Agustus 2026 — dan apa yang TIDAK ikut tertutup
+
+Gate F3 (`ARCH:§14`) — *"buka toko → jual → tutup buku dengan angka konsisten
+antar laporan"* — terpenuhi isinya. Buku kas menjadi sumber tunggal saldo laci,
+satu fungsi mendefinisikan omzet untuk seluruh laporan, dan stok akhirnya
+bergerak dua arah.
+
+**Yang paling penting untuk dibaca pengganti saya:** F3 hampir seluruhnya
+berisi perbaikan cacat di kode yang sudah lolos gate sebelumnya. Empat cacat,
+semuanya di jalur uang atau stok, semuanya **tanpa satu pun error**, dan
+semuanya di balik test hijau. Rinciannya ada di tabel `CLAUDE.md` § Status.
+
+Yang menyatukan keempatnya: **test yang memeriksa keadaan yang tidak dapat
+terjadi**. Fake diberi baris yang query sungguhannya tidak dapat hasilkan;
+assertion menghitung nol untuk sesuatu yang tidak pernah ditulis; test menguji
+pembuatan tarif alih-alih penerapannya. Coverage tidak melihatnya, review tidak
+melihatnya. Yang melihatnya: membangun potongan berikutnya di atasnya.
+
+**Utang yang dibawa ke F4, semuanya keputusan sadar:**
+
+| Utang | Kenapa belum |
+|---|---|
+| Endpoint REST `sold_out_flag` + relay | Penandaan habis berlaku LOKAL saja. Meng-enqueue item tanpa rute akan membakar hitungan percobaannya sampai `failed` permanen — antrean merah tanpa ada yang salah. `spec-e:211` menuntut ia masuk antrean; itu menunggu endpointnya |
+| Tekan-tahan kartu produk + penimpaan manajer (FR-E5) | Blokirnya sudah berlaku; jalur menandai dan menimpanya belum ada di layar |
+| Notifikasi manajer untuk oversell (FR-E6) | `spec-e:195` menuntut "notifikasi, bukan hanya entri di laporan yang mungkin tidak dibuka". Eventnya sudah lengkap dan dapat diselidiki; yang belum ada jalur pemberitahuannya dan layar penyelesaiannya |
+| Opname (FR-E7) | **Ditunda ke v1.1**, keputusan user 14 Agustus 2026 — menjawab pertanyaan terbuka `spec-e:343` |
+| Laporan back-office B-16/B-17 | `laporanHarian` dan `laporanPerProduk` sudah ada dan teruji, TANPA layar. `IA:195-197` menempatkan keduanya di back-office (peran Manajer Outlet, ❌ offline), dan permukaan kasir hanya punya K-13. Mengarang layar untuk mereka berarti memutuskan sesuatu yang belum diputuskan pemilik produk |
+| Laporan exception FR-G5 (8 laporan) · ringkasan owner FR-G6 · ekspor G.5 | Semuanya P1 |
+| FR-F5 sisi laporan | Tertutup untuk perangkat: tidak ada field `cost`/`margin` di laporan mana pun, dan `Object.keys` diperiksa test. Penyaringan per-peran di respons SERVER menunggu laporan server ada |
+
+**Batas yang harus dibaca sebelum menyebut F3 "aman":**
+
+- ⛔ **K-13 belum pernah dilihat di layar sungguhan.** Ia hanya tercapai
+  setelah buka shift, dan buka shift menuntut konfigurasi outlet yang turun
+  lewat PowerSync. Aplikasinya dijalankan (boot bersih, nol error konsol,
+  alur sampai layar Buka Shift benar) lalu berhenti di "Konfigurasi outlet
+  belum sampai ke perangkat ini." Menyalakan stack itu menuntut Docker
+  berjalan dan `wal_level = logical` — keduanya bukan kewenangan agent.
+- ⛔ **Angka performa Modul E belum diukur ulang di perangkat target.**
+  1,1 ms lewat snapshot datang dari `prototypes/01-sqlite-sizing`, bukan dari
+  tablet. `spec-e:333` menuntut pengukuran ulang setelah prototipe Tauri
+  (OQ-14).
+- ⛔ **`allow_negative_stock = true` untuk F&B adalah `[ASUMSI]`.**
+  `spec-e:341` menuntut validasi ke tiga merchant. Yang divalidasi NILAINYA;
+  strukturnya sudah benar dan tidak menunggu apa pun.
+- **Definisi "terlibat" di `OversellEvent`** — setiap penjualan sejak saldo
+  terakhir kali masih positif — memenuhi contoh `spec-e:173-185` dan belum
+  divalidasi terhadap pola nyata. Ia dapat memasukkan penjualan yang
+  sebenarnya tidak bersaing bila stok lama sudah nol berhari-hari.
+- `research/00` dan `research/03` masih menulis "Node.js 22+" sementara lantai
+  sebenarnya 24.7. Penyuntingan dokumen riset bukan kewenangan agent.

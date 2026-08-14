@@ -3,6 +3,8 @@ import { EmptyState } from 'ds';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { bukaShift, shiftAktif, validasiSaldoAwal, type ShiftAktif } from '../kas/shift.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { muatHlc } from '../lokal/hlc.ts';
+import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
 import { useSesi } from '../konteks/useSesi.ts';
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
@@ -37,6 +39,7 @@ export function BukaShift() {
   const [saldo, setSaldo] = useState(0);
   const [galat, setGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
+  const [hlc, setHlc] = useState<Hlc | null>(null);
 
   useEffect(() => {
     let hidup = true;
@@ -47,6 +50,10 @@ export function BukaShift() {
       // SAMA, bukan diminta membuka lagi — yang akan ditolak, dan kasir
       // terjebak di layar yang tidak dapat dilewati.
       if (k) setAktif(await shiftAktif(db, k.deviceId));
+      // HLC melanjutkan dari keadaan tersimpan — instance baru tiap boot akan
+      // membuat movement modal awal ber-HLC lebih kecil daripada yang sudah
+      // ada di perangkat ini.
+      setHlc(await muatHlc(db, () => Date.now()));
       setSiap(true);
     });
     return () => {
@@ -93,6 +100,7 @@ export function BukaShift() {
       sesi: sesi!,
       saldoAwal: saldo,
       waktu: () => new Date(),
+      hlc: () => hlc!.tick(),
       idBaru: () => crypto.randomUUID(),
       idOutbox: () => crypto.randomUUID(),
     })

@@ -137,3 +137,31 @@ test('keranjang kosong: subtotal nol, bukan galat', async () => {
   const { keranjangKosong, subtotalKeranjang } = await import(MOD);
   assert.equal(subtotalKeranjang(keranjangKosong()), 0n);
 });
+
+// --- FR-E4: kuantitas kumulatif per variation ---
+
+test('⛔ qty di keranjang dijumlahkan LINTAS baris untuk variation yang sama', async () => {
+  // Modifier berbeda memisahkan baris (aturan yang sudah ada), tapi stoknya
+  // satu. Kasir yang menambah 2 Kopi biasa lalu 2 Kopi extra-shot sudah
+  // mengambil 4 dari rak — memeriksa per baris akan meloloskan penjualan yang
+  // melewati stok tanpa satu pun peringatan.
+  const { keranjangKosong, tambah, qtyDiKeranjang } = await import(MOD);
+  const item = { id: 'i1', nama: 'Kopi' };
+  const v = { id: 'v1', nama: 'Regular', harga: 20000 };
+
+  let k = keranjangKosong();
+  k = tambah(k, { item, variation: v, modifier: [], idBaris: () => 'b1', qtyMilli: 2000 });
+  k = tambah(k, {
+    item, variation: v,
+    modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000 }],
+    idBaris: () => 'b2', qtyMilli: 2000,
+  });
+
+  assert.equal(k.baris.length, 2, 'modifier berbeda tetap memisahkan baris');
+  assert.equal(qtyDiKeranjang(k, 'v1'), 4000, 'kuantitas harus dijumlahkan lintas baris');
+});
+
+test('variation yang belum ada di keranjang: nol', async () => {
+  const { keranjangKosong, qtyDiKeranjang } = await import(MOD);
+  assert.equal(qtyDiKeranjang(keranjangKosong(), 'v-belum'), 0);
+});

@@ -9,6 +9,7 @@ import {
 import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
+import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
 import type { Keranjang } from './keranjang.ts';
@@ -216,6 +217,22 @@ export async function simpanPenjualan({
   });
   const amountDue = bulat.roundedOutstanding;
 
+  // FR-E2 — `sale` HANYA untuk variation yang stoknya dilacak.
+  //
+  // ⛔ Dibaca dari KATALOG, bukan dari keranjang. Keranjang hidup di memori
+  // (`simpanan.ts`) dan dapat basi terhadap katalog yang baru turun; menyalin
+  // `lacakStok` ke dalamnya berarti keputusan stok diambil dari data yang
+  // umurnya tidak diketahui siapa pun.
+  const variationIds = [...new Set(keranjang.baris.map((b) => b.variationId))];
+  const lacak = new Map<string, boolean>();
+  if (variationIds.length > 0) {
+    const baris = await db.getAll<{ id: string; track_stock: number }>(
+      `SELECT id, track_stock FROM item_variation WHERE id IN (${variationIds.map(() => '?').join(',')})`,
+      variationIds
+    );
+    for (const v of baris) lacak.set(v.id, v.track_stock === 1);
+  }
+
   const tendered = BigInt(pembayaran.tendered);
   if (tendered < amountDue) {
     return { status: 'kurang_bayar', amountDue, kurang: amountDue - tendered };
@@ -230,6 +247,7 @@ export async function simpanPenjualan({
   const checkId = idBaru();
   const paymentId = idBaru();
   const idOutboxOrder = idBaru();
+  const idMovement = idBaru();
   const occurredAt = sekarang.toISOString();
   const hlcValue = hlc();
 
@@ -291,6 +309,29 @@ export async function simpanPenjualan({
           [idBaru(), b.id, m.id, m.nama, m.harga]
         );
       }
+
+      // FR-E3 — stock cutting, di transaksi yang SAMA (`spec-e:112`:
+      // "kegagalan menulis movement me-rollback seluruh penjualan").
+      //
+      // ⛔ Modifier TIDAK menghasilkan movement di v1 (KEP-04): ia tidak punya
+      // SKU dan stoknya tidak dilacak. Deplesi bahan lewat resep/BOM adalah
+      // v1.2. Karena itu movement ditulis per BARIS, bukan per modifier.
+      //
+      // Delta NEGATIF sebesar kuantitasnya — barang keluar dari rak. Tidak
+      // ada kolom `quantity` di mana pun; stok adalah `SUM(delta)`
+      // (invariant Modul E nomor 1).
+      if (lacak.get(b.variationId) === true) {
+        await tx.execute(
+          `INSERT INTO stock_movement
+             (id, tenant_id, outlet_id, device_id, variation_id, type, delta, order_id,
+              created_by, occurred_at, hlc)
+           VALUES (?, ?, ?, ?, ?, 'sale', ?, ?, ?, ?, ?)`,
+          [
+            idBaru(), konfig.tenantId, konfig.outletId, konfig.deviceId, b.variationId,
+            -b.quantityMilli, orderId, sesi.userId, occurredAt, Number(hlcValue),
+          ]
+        );
+      }
     }
 
     await tx.execute(
@@ -298,6 +339,33 @@ export async function simpanPenjualan({
          (id, order_id, check_id, method, amount, tendered_amount, change_amount, status, tendered_at)
        VALUES (?, ?, ?, 'cash', ?, ?, ?, 'confirmed', ?)`,
       [paymentId, orderId, checkId, Number(amountDue), Number(tendered), Number(kembalian), occurredAt]
+    );
+
+    // Buku kas — `spec-d:14` menjadikan jumlah `delta` sebagai SATU-SATUNYA
+    // definisi saldo laci, dan `spec-d:200` menuntut baris `sale` ditulis
+    // "dalam transaksi yang sama dengan penjualan". Ia ada di sini, bukan di
+    // langkah berikutnya: laci yang bertambah tanpa penjualan yang tersimpan
+    // (atau sebaliknya) adalah persis keadaan yang invariant #1 cegah.
+    //
+    // ⛔ `delta` memakai NILAI TRANSAKSI, bukan `tendered_amount` (`spec-d:201`).
+    // Uang yang diserahkan pelanggan Rp 100.000 untuk belanja Rp 73.000
+    // menambah laci Rp 73.000 — kembaliannya keluar lagi, dan `spec-d:201`
+    // menegaskan kembalian TIDAK menghasilkan movement terpisah. Memakai
+    // `tendered` membuat setiap penjualan berkembalian melebih-lebihkan laci.
+    await tx.execute(
+      `INSERT INTO cash_movement
+         (id, shift_id, type, delta, order_id, counterpart_type, created_by, occurred_at, hlc)
+       VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?)`,
+      [
+        idMovement,
+        shift.id,
+        deltaBertanda('sale', Number(amountDue)),
+        orderId,
+        counterpartUntuk('sale'),
+        sesi.userId,
+        occurredAt,
+        Number(hlcValue),
+      ]
     );
 
     await enqueue(tx, {

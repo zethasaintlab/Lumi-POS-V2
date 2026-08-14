@@ -10,6 +10,11 @@ import {
 } from '../../../../packages/domain/src/cancellation.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
+import {
+  counterpartUntuk,
+  deltaBertanda,
+  metodeRefundDari,
+} from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
 
 /**
@@ -197,6 +202,29 @@ export async function batalkan({
     }
   }
 
+  // Lewat apa uangnya dikembalikan.
+  //
+  // ⛔ Diturunkan dari payment order aslinya, lalu DISIMPAN eksplisit di
+  // `refund.method` (keputusan 14 Agustus 2026). Menyimpannya, bukan
+  // menyimpulkannya ulang setiap kali laporan dibaca, adalah bedanya: jawaban
+  // hari ini terkunci pada baris itu, dan tidak berubah kalau aturan
+  // turunannya kelak diganti.
+  //
+  // Uang dikembalikan lewat jalan yang sama dengan datangnya — itu asumsi yang
+  // benar untuk klien v1, yang menulis tepat SATU payment per order dan
+  // seluruhnya tunai.
+  //
+  // Aturannya milik `packages/domain/src/buku-kas.ts`, dibagi dengan server —
+  // yang menulis `refund.method` untuk refund YANG SAMA saat antrean terkuras.
+  let metodeRefund: string | null = null;
+  if (rencana.operasi === 'refund') {
+    const metode = await db.getAll<{ method: string }>(
+      `SELECT DISTINCT method FROM payment WHERE order_id = ?`,
+      [orderId]
+    );
+    metodeRefund = metodeRefundDari(metode.map((m) => m.method));
+  }
+
   const barisOrder = await db.getAll<{ id: string; variation_id: string; quantity: number }>(
     `SELECT id, variation_id, quantity FROM order_line WHERE order_id = ?`,
     [orderId]
@@ -244,13 +272,36 @@ export async function batalkan({
       // Arah berlawanan dinyatakan lewat baris `refund`.
       await tx.execute(
         `INSERT INTO refund
-           (id, order_id, amount, reason_code, reason_note, created_by, approved_by, occurred_at, hlc)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, order_id, amount, reason_code, reason_note, method, created_by, approved_by, occurred_at, hlc)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          id, orderId, jumlah ?? 0, alasan.kode, alasan.catatan,
+          id, orderId, jumlah ?? 0, alasan.kode, alasan.catatan, metodeRefund,
           sesi.userId, approverId, occurredAt, Number(hlcValue),
         ]
       );
+
+      // ⛔ Buku kas HANYA untuk refund TUNAI (`spec-d:14`). Uang yang kembali
+      // lewat transfer atau pembalikan QRIS tidak keluar dari laci;
+      // mengurangkannya membuat kasir terlihat KELEBIHAN sebesar nilai refund
+      // — cacat yang sama besarnya dengan yang tidak menghitungnya sama
+      // sekali, hanya berlawanan arah.
+      if (metodeRefund === 'cash') {
+        await tx.execute(
+          `INSERT INTO cash_movement
+             (id, shift_id, type, delta, order_id, counterpart_type, created_by, occurred_at, hlc)
+           VALUES (?, ?, 'refund', ?, ?, ?, ?, ?, ?)`,
+          [
+            idBaru(),
+            order.shift_id,
+            deltaBertanda('refund', Number(jumlah ?? 0)),
+            orderId,
+            counterpartUntuk('refund'),
+            sesi.userId,
+            occurredAt,
+            Number(hlcValue),
+          ]
+        );
+      }
     }
 
     // Restock. Untuk VOID seluruh baris kembali; untuk REFUND hanya baris yang

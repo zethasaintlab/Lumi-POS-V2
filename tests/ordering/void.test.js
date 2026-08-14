@@ -243,7 +243,7 @@ test('order yang sudah di-void tidak dapat di-void lagi walau statusnya masih op
   assert.equal(kedua.statusCode, 409, kedua.body);
   assert.equal(JSON.parse(kedua.body).error.code, 'ORDER_ALREADY_VOIDED');
 
-  const movements = await query('SELECT id FROM stock_movement WHERE order_id = $1', [order.id]);
+  const movements = await query("SELECT id FROM stock_movement WHERE order_id = $1 AND type <> 'sale'", [order.id]);
   assert.equal(movements.length, 1, 'stok tidak boleh dikembalikan dua kali');
 });
 
@@ -293,7 +293,7 @@ test('membatalkan order milik tenant lain -> 404, tidak ada baris tersimpan', as
   const orders = await query('SELECT id, status, voided_by_order_id FROM "order"');
   assert.equal(orders.length, 1, 'tidak ada order pembatal yang lahir');
   assert.equal(orders[0].status, 'open');
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0);
   assert.equal((await query('SELECT id FROM audit_event')).length, 0);
 });
 
@@ -308,7 +308,7 @@ test('aktor milik tenant lain -> 404, tidak ada baris tersimpan', async () => {
   assert.equal(res.statusCode, 404, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'ACTOR_NOT_FOUND');
   assert.equal((await query('SELECT id FROM "order" WHERE id = $1', [payload.id])).length, 0);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0);
 });
 
 // ============================================================
@@ -325,7 +325,7 @@ test('void menulis satu stock_movement per baris, type void, delta POSITIF', asy
   assert.equal(res.statusCode, 201, res.body);
 
   const movements = await query(
-    'SELECT variation_id, type, delta, reason_code, order_id, outlet_id, device_id FROM stock_movement ORDER BY delta'
+    "SELECT variation_id, type, delta, reason_code, order_id, outlet_id, device_id FROM stock_movement WHERE type <> 'sale' ORDER BY delta"
   );
   assert.equal(movements.length, 2);
   // Void MENGEMBALIKAN stok, jadi delta positif dan besarnya persis kuantitas
@@ -377,7 +377,7 @@ test('order pembatal, stock_movement, audit_event, dan outbox berbagi satu stemp
   const body = JSON.parse(res.body);
 
   const [pembatal] = await query('SELECT recorded_at FROM "order" WHERE id = $1', [body.order.id]);
-  const movements = await query('SELECT recorded_at FROM stock_movement');
+  const movements = await query("SELECT recorded_at FROM stock_movement WHERE type <> 'sale'");
   const events = await query('SELECT recorded_at FROM audit_event');
 
   assert.equal(movements.length, 2);
@@ -406,7 +406,7 @@ test('atomisitas: nomor struk pembatal bentrok -> nol baris di SEMUA tabel', asy
   assert.equal(res.statusCode, 409, res.body);
 
   assert.equal((await query('SELECT id FROM "order" WHERE id = $1', [payload.id])).length, 0);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0, 'stok tidak boleh dikembalikan');
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0, 'stok tidak boleh dikembalikan');
   assert.equal((await query('SELECT id FROM audit_event')).length, 0, 'audit tidak boleh tertinggal');
   // Klaim idempotency ikut ter-rollback -- kalau tidak, retry akan dianggap
   // cache hit terhadap sesuatu yang tidak pernah tersimpan.

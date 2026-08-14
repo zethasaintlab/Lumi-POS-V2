@@ -243,3 +243,57 @@ test('order.tax_amount selalu sama dengan jumlah tax_amount barisnya', async () 
   const jumlahBaris = order.lines.reduce((s, l) => s + l.taxAmount, 0);
   assert.equal(jumlahBaris, order.taxAmount, 'struk harus berjumlah');
 });
+
+// --- FR-C6: tarif ber-scope ITEM benar-benar berlaku ---
+
+test('⛔ tarif ber-scope ITEM berlaku untuk itemnya (FR-C6)', async () => {
+  // ⛔ Sampai 14 Agustus 2026 ini TIDAK PERNAH berlaku, dan tidak ada satu pun
+  // error. `getVariationSnapshot` memetakan `itemId` dan `categoryId` ke
+  // hasilnya tanpa pernah menyeleksi kolomnya, jadi keduanya `undefined` —
+  // dan `calculateTax` mencocokkan tarif ber-`applies_to` 'item'/'category'
+  // lewat kedua nilai itu. Resolusinya diam-diam jatuh ke `all_items`.
+  //
+  // Test yang ada hanya menguji PEMBUATAN tarif ber-scope item, bukan
+  // penerapannya ke order. Celah itu yang membuatnya bertahan.
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+
+  await buatTarif({
+    name: 'Pajak item khusus 10%',
+    appliesTo: 'item',
+    appliesToIds: [base.item.id],
+  });
+
+  const order = await buatOrder(fx);
+  assert.equal(
+    order.taxAmount > 0,
+    true,
+    'tarif ber-scope item tidak berlaku sama sekali — resolusinya jatuh ke all_items'
+  );
+});
+
+test('⛔ tarif ber-scope item TIDAK berlaku untuk item lain', async () => {
+  // Sisi sebaliknya, dan ia yang membuktikan test di atas tidak hijau karena
+  // tarifnya kebetulan berlaku untuk semua.
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+
+  // Item LAIN yang sungguhan — id karangan ditolak `ITEM_NOT_FOUND` oleh
+  // guard di `tax-rates.ts`, dan penolakan itu memang benar.
+  const lainId = crypto.randomUUID();
+  const resItem = await req('POST', '/items', {
+    id: lainId,
+    name: 'Produk lain',
+    variations: [{ id: crypto.randomUUID(), price: 10000 }],
+  });
+  assert.equal(resItem.statusCode, 201, resItem.body);
+
+  await buatTarif({
+    name: 'Pajak item lain 10%',
+    appliesTo: 'item',
+    appliesToIds: [lainId],
+  });
+
+  const order = await buatOrder(fx);
+  assert.equal(order.taxAmount, 0, 'tarif item lain ikut dikenakan');
+});

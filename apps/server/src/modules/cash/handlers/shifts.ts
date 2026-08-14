@@ -5,6 +5,11 @@ import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { assertUserVisible, assertDeviceVisible } from '../../identity/index.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
+import { randomUUID } from 'node:crypto';
+import {
+  counterpartUntuk,
+  deltaBertanda,
+} from '../../../../../../packages/domain/src/buku-kas.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // T0c (PLAN-ordering-fondasi.md §T0c, keputusan Q1 §8.0) -- POST /shifts,
@@ -91,6 +96,34 @@ async function insertShift(
        RETURNING *`,
       [input.id, tenantId, input.outletId, input.deviceId, input.businessDate, input.openingFloat, actorId]
     );
+
+    // Buku kas — modal awal adalah movement, bukan hanya kolom di shift
+    // (`spec-d:189`). Di transaksi yang sama: shift yang ada tanpa modal
+    // awalnya membuat buku kas tidak dapat merekonstruksi laci sendiri.
+    //
+    // ⛔ Aturannya dari `packages/domain/src/buku-kas.ts`, sama persis dengan
+    // yang dipakai perangkat saat membuka shift secara lokal.
+    //
+    // `hlc` diambil dari shift yang baru ditulis supaya movement dan shiftnya
+    // menempati titik waktu kausal yang sama.
+    await client.query(
+      `INSERT INTO cash_movement (
+         id, tenant_id, shift_id, type, delta, counterpart_type, created_by, hlc
+       ) VALUES ($1, $2, $3, 'opening_float', $4, $5, $6, 0)`,
+      [
+        randomUUID(),
+        tenantId,
+        input.id,
+        // `openingFloat` bertipe `unknown` di `ShiftInput` — ia datang dari
+        // body request. Yang memvalidasinya bilangan bulat >= 0 adalah
+        // `validasiOpeningFloat` yang sudah berjalan sebelum baris ini, jadi
+        // `Number()` di sini membaca nilai yang sudah terbukti sah.
+        deltaBertanda('opening_float', Number(input.openingFloat)).toString(),
+        counterpartUntuk('opening_float'),
+        actorId,
+      ]
+    );
+
     return rows[0];
   } catch (err) {
     if (isPrimaryKeyViolation(err)) {

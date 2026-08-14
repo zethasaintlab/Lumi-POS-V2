@@ -10,7 +10,11 @@ import {
   type ModifierPilihan,
   type VariationKatalog,
 } from '../katalog/baca.ts';
-import { hapusBaris, subtotalKeranjang, tambah, ubahQty } from '../kasir/keranjang.ts';
+import { hapusBaris, qtyDiKeranjang, subtotalKeranjang, tambah, ubahQty } from '../kasir/keranjang.ts';
+import { bacaStokBanyak } from '../inventori/stok.ts';
+import { bacaProfilVertikal } from '../inventori/profil.ts';
+import { bacaHabis } from '../inventori/sold-out.ts';
+import { keputusanStok } from '../../../../packages/domain/src/profil-vertikal.ts';
 import { keranjangSekarang, langgananKeranjang, setelKeranjang } from '../kasir/simpanan.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
@@ -55,6 +59,15 @@ export function Kasir() {
      pembayaran untuk keranjang yang sudah hilang. Ditemukan oleh test yang
      mengikat TABEL_RUTE ke IA §7, setelah saya sempat menambahkan rutenya. */
   const [membayar, setMembayar] = useState(false);
+  /* FR-E4 — stok dan aturannya. Keduanya dibaca sekali saat layar dibuka;
+     penjualan berikutnya menulis movement sendiri, jadi angkanya diperbarui
+     lewat pembacaan ulang setelah setiap penjualan, bukan lewat watch(). */
+  const [stok, setStok] = useState<Map<string, number>>(new Map());
+  const [bolehNegatif, setBolehNegatif] = useState(true);
+  const [pesanStok, setPesanStok] = useState<string | null>(null);
+  /* FR-E5 — penandaan habis MANUAL, terpisah dari stok terhitung. Produk
+     dapat habis meski stoknya masih 10 (bahan habis, mesin rusak). */
+  const [habis, setHabis] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let hidup = true;
@@ -66,7 +79,19 @@ export function Kasir() {
       // Harga diresolusi pada SEKARANG di layar. Saat order ditulis, ia
       // diresolusi ulang pada `occurred_at` (FR-H6) — keduanya sama selama
       // kasir tidak menahan keranjang melewati jadwal perubahan harga.
-      setKatalog(await bacaKatalog(db, { outletId: k?.outletId ?? null, pada: new Date() }));
+      const daftar = await bacaKatalog(db, { outletId: k?.outletId ?? null, pada: new Date() });
+      if (!hidup) return;
+      setKatalog(daftar);
+
+      if (k) {
+        const profil = await bacaProfilVertikal(db, { tenantId: k.tenantId, outletId: k.outletId });
+        const ids = daftar.flatMap((i) => i.variations.map((v) => v.id));
+        const peta = await bacaStokBanyak(db, { tenantId: k.tenantId, outletId: k.outletId }, ids);
+        if (!hidup) return;
+        setBolehNegatif(profil.allowNegativeStock);
+        setStok(peta);
+        setHabis(await bacaHabis(db, { tenantId: k.tenantId, outletId: k.outletId }));
+      }
       if (hidup) setSiap(true);
     })();
     return () => {
@@ -116,7 +141,43 @@ export function Kasir() {
   }
 
   const pilihVariation = (item: ItemKatalog, variation: VariationKatalog, modifier: ModifierPilihan[]) => {
-    setKeranjang((k) => tambah(k, { item, variation, modifier, idBaris: () => crypto.randomUUID() }));
+    /* FR-E4. Yang diperiksa adalah kuantitas KUMULATIF variation ini di
+       keranjang, bukan satu ketukan — modifier berbeda memisahkan baris,
+       tapi stoknya satu. */
+    /* FR-E5 — diperiksa SEBELUM stok terhitung, dan tidak pernah disimpulkan
+       darinya. `spec-e:217`: produk yang ditandai habis "diblokir dengan
+       pesan, TETAPI manajer dapat menimpanya". Penimpaan manajer belum ada
+       jalurnya di layar ini; sampai ada, penandaan memblokir. */
+    if (habis.has(variation.id)) {
+      setPesanStok(`${item.nama} ditandai habis. Manajer dapat membuka kembali penandaannya.`);
+      setPilihan(null);
+      return;
+    }
+
+    const diminta = qtyDiKeranjang(keranjang, variation.id) + 1000;
+    const k = keputusanStok({
+      stokMilli: stok.get(variation.id) ?? 0,
+      dimintaMilli: diminta,
+      bolehNegatif,
+      lacakStok: variation.lacakStok,
+    });
+
+    if (!k.boleh) {
+      /* `spec-e:152` menuntut pembatasan disertai "pesan yang menjelaskan" —
+         jadi angkanya ikut, bukan sekadar penolakan. */
+      setPesanStok(
+        `${item.nama} tersisa ${k.sisaMilli / 1000}. Tidak dapat menambah lagi.`
+      );
+      setPilihan(null);
+      return;
+    }
+
+    /* ⛔ Peringatan TIDAK memblokir (`spec-e:146`: "penjualan TETAP dapat
+       diselesaikan"). Melarang penjualan karena sistem mengira stok habis
+       akan menghentikan penjualan nyata, dan kasir mencari jalan pintas —
+       memindahkan masalah ke tempat yang tidak terlihat sistem. */
+    setPesanStok(k.peringatan ? `Stok ${item.nama} tersisa ${k.sisaMilli / 1000}` : null);
+    setKeranjang((c) => tambah(c, { item, variation, modifier, idBaris: () => crypto.randomUUID() }));
     setPilihan(null);
   };
 
@@ -163,6 +224,29 @@ export function Kasir() {
 
       <aside className="kasir-keranjang">
         <h2 className="t-body-md">Keranjang</h2>
+
+        {/* FR-E4 — peringatan stok. Aturan design system #5: status TIDAK
+            PERNAH warna saja, selalu ada teks; di sini teksnya memang
+            seluruh pesannya, dan angkanya ikut karena `spec-e:152` menuntut
+            pembatasan disertai penjelasan.
+
+            Ia dapat ditutup: peringatan yang tidak dapat dihilangkan akan
+            menetap di layar sepanjang shift dan berhenti dibaca. */}
+        {pesanStok && (
+          <p className="t-caption kasir-login-galat">
+            {pesanStok}{' '}
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={() => setPesanStok(null)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') setPesanStok(null);
+              }}
+            >
+              Tutup
+            </span>
+          </p>
+        )}
 
         {keranjang.baris.length === 0 ? (
           <p className="t-caption kasir-login-sub">Belum ada item. Ketuk produk untuk menambahkan.</p>

@@ -136,3 +136,19 @@ export function subtotalKeranjang(keranjang: Keranjang): bigint {
   }
   return jumlah;
 }
+
+/**
+ * Total kuantitas variation ini di keranjang, ×1000.
+ *
+ * ⛔ Dijumlahkan LINTAS baris. Modifier yang berbeda memisahkan baris, tapi
+ * stoknya satu: kasir yang menambah 2 Kopi biasa lalu 2 Kopi extra-shot sudah
+ * mengambil 4 dari rak. Memeriksa per baris akan meloloskan penjualan yang
+ * melewati stok tanpa satu pun peringatan (FR-E4).
+ */
+export function qtyDiKeranjang(keranjang: Keranjang, variationId: string): number {
+  let total = 0;
+  for (const b of keranjang.baris) {
+    if (b.variationId === variationId) total += b.quantityMilli;
+  }
+  return total;
+}

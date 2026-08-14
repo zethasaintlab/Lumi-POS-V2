@@ -8,6 +8,11 @@ import { computeRequestHash } from './request-hash.ts';
 import { assertUserVisible, assertApproverVisible, assertBoleh } from '../../identity/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { recordStockMovements } from '../../inventory/index.ts';
+import {
+  counterpartUntuk,
+  deltaBertanda,
+  metodeRefundDari,
+} from '../../../../../../packages/domain/src/buku-kas.ts';
 import type { StockMovementInput } from '../../inventory/index.ts';
 import {
   findIdempotencyKey,
@@ -338,10 +343,10 @@ async function planRestock(
 const INSERT_REFUND_SQL = `
   INSERT INTO refund (
     id, tenant_id, order_id, amount, reason_code, reason_note,
-    created_by, approved_by, occurred_at, hlc
+    created_by, approved_by, occurred_at, hlc, method
   ) VALUES (
     $1, $2, $3, $4, $5, $6,
-    $7, $8, COALESCE($9::timestamptz, now()), $10
+    $7, $8, COALESCE($9::timestamptz, now()), $10, $11
   )
   RETURNING *
 `;
@@ -446,6 +451,19 @@ async function tulisRefund(client: PoolClient, ctx: RefundContext): Promise<Reco
 
   const rencana = await planRestock(client, orderId, body.lines);
 
+  // Lewat apa uangnya dikembalikan (`refund.method`, migrasi 0021).
+  //
+  // ⛔ Aturannya dari `packages/domain/src/buku-kas.ts`, sama persis dengan
+  // yang dipakai perangkat saat menulis refund yang SAMA secara lokal. Dua
+  // salinan akan menghasilkan dua jawaban tentang apakah uang itu keluar dari
+  // laci — dan yang muncul kemudian adalah saldo laci yang berbeda antara
+  // perangkat dan server, tanpa cara memutuskan mana yang benar.
+  const { rows: metodeRows } = await client.query<{ method: string }>(
+    `SELECT DISTINCT method FROM payment WHERE order_id = $1`,
+    [orderId]
+  );
+  const metodeRefund = metodeRefundDari(metodeRows.map((m) => m.method));
+
   let refundRow: RefundRow;
   try {
     const { rows } = await client.query<RefundRow>(INSERT_REFUND_SQL, [
@@ -459,6 +477,7 @@ async function tulisRefund(client: PoolClient, ctx: RefundContext): Promise<Reco
       approverId,
       body.occurredAt ?? null,
       hlcValue.toString(),
+      metodeRefund,
     ]);
     refundRow = rows[0];
   } catch (err) {
@@ -466,6 +485,35 @@ async function tulisRefund(client: PoolClient, ctx: RefundContext): Promise<Reco
       throw new HttpError(409, 'ID_ALREADY_EXISTS', `Refund dengan id ${body.id} sudah ada.`);
     }
     throw err;
+  }
+
+  // Buku kas — HANYA untuk refund tunai (`spec-d:14`). Uang yang kembali lewat
+  // transfer atau pembalikan QRIS tidak keluar dari laci; mengurangkannya
+  // membuat kasir terlihat KELEBIHAN sebesar nilai refund, cacat yang sama
+  // besarnya dengan tidak menghitungnya sama sekali.
+  //
+  // Di transaksi yang sama dengan barisnya, seperti `sale` di jalur
+  // pembayaran: laci yang berkurang tanpa refund yang tercatat, atau
+  // sebaliknya, adalah keadaan yang invariant #1 cegah.
+  if (metodeRefund === 'cash') {
+    await client.query(
+      `INSERT INTO cash_movement (
+         id, tenant_id, shift_id, type, delta, order_id, counterpart_type,
+         created_by, occurred_at, hlc
+       )
+       SELECT $1, $2, o.shift_id, 'refund', $3, o.id, $4, $5, $6, $7
+         FROM "order" o WHERE o.id = $8`,
+      [
+        randomUUID(),
+        tenantId,
+        deltaBertanda('refund', Number(requested)).toString(),
+        counterpartUntuk('refund'),
+        actorId,
+        refundRow.occurred_at.toISOString(),
+        hlcValue.toString(),
+        orderId,
+      ]
+    );
   }
 
   await recordStockMovements(

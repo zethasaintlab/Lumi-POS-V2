@@ -81,7 +81,7 @@ test('buka shift menulis shift DAN outbox dalam SATU transaksi', async () => {
 
   const hasil = await bukaShift({
     db, konfig: KONFIG, sesi: SESI, saldoAwal: 200000,
-    waktu: () => JAM, idBaru: () => 'shift-1', idOutbox: () => 'ob-1',
+    waktu: () => JAM, idBaru: () => 'shift-1', idOutbox: () => 'ob-1', hlc: () => 7n,
   });
 
   assert.equal(hasil.status, 'terbuka');
@@ -105,7 +105,7 @@ test('⛔ tanggal bisnis, bukan tanggal kalender', async () => {
   await bukaShift({
     db, konfig: KONFIG, sesi: SESI, saldoAwal: 200000,
     waktu: () => new Date('2026-08-11T18:00:00Z'),
-    idBaru: () => 'shift-2', idOutbox: () => 'ob-2',
+    idBaru: () => 'shift-2', idOutbox: () => 'ob-2', hlc: () => 7n,
   });
   assert.equal(db.state.shift[0].business_date, '2026-08-11');
 });
@@ -119,7 +119,7 @@ test('⛔ aktor DIBEKUKAN di item outbox saat dibuat', async () => {
   // mencatat shift Sari atas nama Budi.
   await bukaShift({
     db, konfig: KONFIG, sesi: SESI, saldoAwal: 200000,
-    waktu: () => JAM, idBaru: () => 'shift-3', idOutbox: () => 'ob-3',
+    waktu: () => JAM, idBaru: () => 'shift-3', idOutbox: () => 'ob-3', hlc: () => 7n,
   });
   assert.equal(db.state.outbox[0].actor_id, 'u-sari');
 });
@@ -130,7 +130,7 @@ test('payload outbox cocok dengan kontrak POST /shifts', async () => {
 
   await bukaShift({
     db, konfig: KONFIG, sesi: SESI, saldoAwal: 200000,
-    waktu: () => JAM, idBaru: () => 'shift-4', idOutbox: () => 'ob-4',
+    waktu: () => JAM, idBaru: () => 'shift-4', idOutbox: () => 'ob-4', hlc: () => 7n,
   });
 
   // Field-nya persis `required: [id, outletId, deviceId, businessDate,
@@ -159,7 +159,7 @@ test('shift yang sudah terbuka menolak shift kedua di perangkat yang sama', asyn
   // masuk ke shift yang tidak dapat ditentukan.
   const hasil = await bukaShift({
     db, konfig: KONFIG, sesi: SESI, saldoAwal: 200000,
-    waktu: () => JAM, idBaru: () => 'shift-5', idOutbox: () => 'ob-5',
+    waktu: () => JAM, idBaru: () => 'shift-5', idOutbox: () => 'ob-5', hlc: () => 7n,
   });
 
   assert.equal(hasil.status, 'sudah_ada');
@@ -190,7 +190,7 @@ test('konfigurasi outlet belum turun → shift TIDAK dibuka', async () => {
   // Gagal terang lebih baik.
   const hasil = await bukaShift({
     db, konfig: KONFIG, sesi: SESI, saldoAwal: 200000,
-    waktu: () => JAM, idBaru: () => 'shift-6', idOutbox: () => 'ob-6',
+    waktu: () => JAM, idBaru: () => 'shift-6', idOutbox: () => 'ob-6', hlc: () => 7n,
   });
 
   assert.equal(hasil.status, 'outlet_belum_siap');
@@ -208,7 +208,7 @@ test('shift terbuka milik perangkat LAIN tidak menghalangi', async () => {
   // punya dua shift terbuka bersamaan, dan itu normal.
   const hasil = await bukaShift({
     db, konfig: KONFIG, sesi: SESI, saldoAwal: 200000,
-    waktu: () => JAM, idBaru: () => 'shift-7', idOutbox: () => 'ob-7',
+    waktu: () => JAM, idBaru: () => 'shift-7', idOutbox: () => 'ob-7', hlc: () => 7n,
   });
   assert.equal(hasil.status, 'terbuka');
 });

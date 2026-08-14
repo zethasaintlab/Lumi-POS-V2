@@ -14,9 +14,22 @@ CREATE TABLE item (
   category_id TEXT, description TEXT, image_url TEXT,
   sort_order INTEGER DEFAULT 0, archived_at TEXT
 );
+-- ⛔ `cost` SENGAJA TIDAK ADA. FR-F5: "kolom dan field yang memuat
+-- cost/margin TIDAK ADA di respons — bukan sekadar disembunyikan di UI."
+--
+-- Sampai 14 Agustus 2026 ia turun lewat `SELECT *` ke SETIAP perangkat.
+-- Perangkat kasir dipakai kasir dan manajer bergantian, jadi tidak ada
+-- penyaringan per-peran yang mungkin di satu stream — dan `spec-f:57`
+-- menyebut alasannya: kasir punya turnover tinggi, HPP adalah informasi
+-- kompetitif merchant.
+--
+-- Yang membuat penghapusannya MUNGKIN, dan ini baru dapat dipastikan setelah
+-- penulisan order klien ada: klien menulis `order_line.cost_at_sale = 0` dan
+-- SERVER menghitungnya sendiri lewat `getVariationSnapshot`. Perangkat tidak
+-- pernah membutuhkan angka ini untuk apa pun.
 CREATE TABLE item_variation (
   id TEXT PRIMARY KEY, item_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT 'Regular',
-  sku TEXT, barcode TEXT, price INTEGER NOT NULL, cost INTEGER NOT NULL DEFAULT 0,
+  sku TEXT, barcode TEXT, price INTEGER NOT NULL,
   stocking_unit TEXT DEFAULT 'pcs', selling_unit TEXT DEFAULT 'pcs',
   conversion_factor INTEGER DEFAULT 1000,
   track_stock INTEGER NOT NULL DEFAULT 1, sort_order INTEGER DEFAULT 0, archived_at TEXT
@@ -91,7 +104,19 @@ CREATE TABLE outlet (
   rounding_increment INTEGER NOT NULL DEFAULT 100,
   rounding_mode TEXT NOT NULL DEFAULT 'half_up',
   service_charge_rate INTEGER NOT NULL DEFAULT 0,   -- x10000
+  vertical_profile_id TEXT,
   archived_at TEXT
+);
+
+-- FR-E4 / OQ-09. Resolusi = COALESCE(profil_outlet, profil_default_tenant),
+-- dilakukan di perangkat (packages/domain/src/profil-vertikal.ts) karena
+-- peringatan stok harus bekerja offline.
+CREATE TABLE vertical_profile (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
+  allow_negative_stock INTEGER NOT NULL DEFAULT 1,
+  is_tenant_default INTEGER NOT NULL DEFAULT 0,
+  default_channel TEXT, requires_barcode_flow INTEGER DEFAULT 0,
+  default_tax_type TEXT
 );
 
 -- ---------- IDENTITAS (direplikasi turun) ----------
@@ -176,6 +201,11 @@ CREATE TABLE payment (
 CREATE TABLE refund (
   id TEXT PRIMARY KEY, order_id TEXT NOT NULL, amount INTEGER NOT NULL,
   reason_code TEXT NOT NULL, reason_note TEXT,
+  -- Lewat apa uangnya dikembalikan. Hanya `cash` yang mengurangi saldo laci
+  -- (`spec-d:14`); refund lewat transfer atau pembalikan QRIS tidak menyentuh
+  -- laci sama sekali. NULL berarti TIDAK DIKETAHUI, bukan tunai — lihat
+  -- db/migrations/0021_refund_method.sql.
+  method TEXT,
   created_by TEXT NOT NULL, approved_by TEXT NOT NULL,
   occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
@@ -186,6 +216,24 @@ CREATE TABLE stock_movement (
   order_id TEXT, stocktake_id TEXT, reason_code TEXT, note TEXT, unit_cost INTEGER,
   created_by TEXT, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
+
+-- FR-E5 — penandaan habis MANUAL, terpisah dari stok terhitung.
+--
+-- `spec-e:220`: "Produk dapat ditandai habis meskipun stok tercatat masih 10
+-- (mis. bahan habis, mesin rusak)." Keduanya disimpan terpisah dan tidak
+-- pernah saling menyimpulkan.
+--
+-- ⛔ Tabel LOG, bukan satu baris per produk: tidak ada unique constraint pada
+-- (outlet_id, variation_id), sama seperti servernya. Dua perangkat yang
+-- menandai produk yang sama saat offline sama-sama menulis, dan yang menang
+-- ditentukan HLC — bukan baris yang kebetulan ditulis belakangan.
+CREATE TABLE sold_out_flag (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL,
+  variation_id TEXT NOT NULL,
+  is_sold_out INTEGER NOT NULL DEFAULT 0,
+  set_by TEXT NOT NULL, set_at TEXT NOT NULL, hlc INTEGER NOT NULL
+);
+CREATE INDEX ix_sold_out_terbaru ON sold_out_flag(outlet_id, variation_id, hlc);
 
 -- stock_snapshot: cache lokal hasil agregasi stock_movement, dibangun ulang
 -- saat tutup shift (bukan direplikasi naik/turun) — bentuk dan alasan index

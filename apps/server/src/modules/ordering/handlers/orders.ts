@@ -7,6 +7,7 @@ import { isPrimaryKeyViolation } from './pg-error.ts';
 import { computeRequestHash } from './request-hash.ts';
 import { assertDeviceVisible, assertUserVisible } from '../../identity/index.ts';
 import { getOutletSettings } from '../../tenancy/index.ts';
+import { recordStockMovements, detectOversell } from '../../inventory/index.ts';
 import { getVariationSnapshot, resolvePrice, wasPriceEverEffective } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
 import { assertShiftOpen } from '../../cash/index.ts';
@@ -527,6 +528,58 @@ async function insertOrderTree(
       }
       lines.push({ line: lineRow, modifiers: modifierRows });
     }
+
+    // FR-E3 — stock cutting, di TRANSAKSI YANG SAMA dengan penjualannya
+    // (`spec-e:112`: "kegagalan menulis movement me-rollback seluruh
+    // penjualan"). Sampai 14 Agustus 2026 server tidak menulis satu pun
+    // movement `sale`, jadi stok hanya pernah NAIK: void dan refund
+    // mengembalikan barang yang tidak pernah dikurangi.
+    //
+    // ⛔ Hanya variation ber-`track_stock = true` (FR-E2, `spec-e:88`).
+    // Nilainya datang dari snapshot katalog, bukan dari SELECT langsung ke
+    // `item_variation` — invariant #4.
+    //
+    // ⛔ Modifier TIDAK menghasilkan movement (KEP-04): ia tidak punya SKU.
+    // Karena itu daftarnya dibangun dari `lineCalcs`, bukan dari modifier.
+    await recordStockMovements(
+      client,
+      lineCalcs
+        .filter((calc) => calc.snapshot.trackStock)
+        .map((calc) => ({
+          id: randomUUID(),
+          tenantId,
+          outletId: orderRow.outlet_id,
+          deviceId: orderRow.device_id,
+          variationId: calc.input.variationId as string,
+          type: 'sale' as const,
+          // NEGATIF: barang keluar dari rak. Kuantitas x1000, dan tidak ada
+          // kolom `quantity` di mana pun — stok adalah SUM(delta).
+          delta: -BigInt(calc.input.quantityMilli as number),
+          orderId: orderRow.id,
+          // `sale` tidak butuh alasan — ia penyebabnya sendiri. Yang wajib
+          // ber-`reason_code` adalah `adjustment` (FR-E2).
+          reasonCode: null,
+          createdBy: actorId,
+          occurredAt: orderRow.occurred_at.toISOString(),
+          hlc: hlcValue,
+        }))
+    );
+
+    // FR-E6 — deteksi oversell, SETELAH movement ditulis dan di transaksi yang
+    // sama. Ia tidak menolak apa pun: `spec-e:177` menuntut kedua penjualan
+    // diterima, dan menolak yang kedua berarti menolak uang yang sudah
+    // diterima merchant.
+    //
+    // Di dalam transaksi supaya event dan penjualan yang menyebabkannya
+    // tidak pernah terpisah — penjualan yang tersimpan tanpa eventnya adalah
+    // oversell yang hilang diam-diam, dan itu persis yang FR-E6 cegah.
+    await detectOversell(client, {
+      tenantId,
+      outletId: orderRow.outlet_id,
+      variationIds: lineCalcs
+        .filter((calc) => calc.snapshot.trackStock)
+        .map((calc) => calc.input.variationId as string),
+    });
 
     return { order: orderRow, check: checkRow, lines };
   } catch (err) {

@@ -127,7 +127,20 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: F2 selesai secara isi, 14 Agustus 2026. Berikutnya F3.** Gate F0 dan F1 tertutup — rincian per item ada di `HANDOFF.md`.
+**Fase: F3 selesai secara isi, 15 Agustus 2026.** Gate F0, F1, dan F2 tertutup — rincian per item ada di `HANDOFF.md`.
+
+Gate F3 `ARCH:§14` — *"buka toko → jual → tutup buku dengan angka konsisten antar laporan"* — terpenuhi: buku kas menjadi sumber tunggal saldo laci, satu fungsi mendefinisikan omzet untuk seluruh laporan, dan stok akhirnya bergerak dua arah.
+
+**Apa yang F3 temukan, dan ini polanya:** setiap potongan Modul G dan E yang dibangun menjatuhkan cacat diam di kode yang sudah lolos review dan lolos gate sebelumnya. Empat, semuanya di jalur uang atau stok, semuanya tanpa satu pun error:
+
+| Cacat | Akibatnya | Yang menyembunyikannya |
+|---|---|---|
+| Saldo laci dihitung dari `payment`, bukan `cash_movement` | Refund tunai tidak pernah mengurangi laci; kasir terlihat kurang sebesar nilai refund, **dan tutup kasnya menuntut otorisasi manajer** untuk selisih yang tidak ada | Fake `DbLokal` diberi baris `{method:'cash', arah:-1}` yang query sungguhannya **tidak dapat hasilkan** |
+| Tidak ada `stock_movement` bertipe `sale` sama sekali | Stok hanya pernah NAIK — void/refund mengembalikan barang yang tidak pernah dikurangi | 18 test void/refund menghitung SELURUH baris `stock_movement`; nol adalah jawaban benar karena alasan yang salah |
+| `getVariationSnapshot` memetakan `itemId`/`categoryId` tanpa menyeleksinya | Tarif ber-scope item/kategori **tidak pernah berlaku**; FR-C6 punya tiga tingkat, dua teratasnya mati | Test hanya menguji PEMBUATAN tarif ber-scope item, bukan penerapannya ke order |
+| Cabang `arah = -1` di tutup kas | Kode mati yang menyamar sebagai penanganan pembatalan | Order pembatal tidak punya baris `payment`; cabangnya tidak pernah menyala |
+
+**Yang ketiganya punya bersama:** test yang hijau karena hampa. Bukan test yang salah menghitung — test yang memeriksa keadaan yang tidak dapat terjadi. Itu kelas yang tidak tertangkap review dan tidak tertangkap coverage.
 
 Seluruh isi F2 yang `ARCH:§14` sebut kini ada, dan **seluruh alur kasir berjalan tanpa jaringan**:
 
@@ -312,6 +325,42 @@ Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` mene
 - ⛔ **Fake `DbLokal` tidak menegakkan constraint apa pun.** `NOT NULL`, `CHECK`, dan `ON CONFLICT` semuanya lolos di test dan gagal keras di `wa-sqlite`. Terjadi dua kali: `ON CONFLICT(id)` (8 Agustus) dan `audit_event.tenant_id = NULL` (14 Agustus). Test karena itu harus memeriksa **nilai yang di-bind**, bukan sekadar bahwa tabelnya disentuh — dan bentuk SQL baru tetap wajib dijalankan di browser sebelum dipercaya.
 - ⛔ **Fake juga tidak menegakkan `ORDER BY`.** Jaminan urutan yang hanya hidup di SQL tidak dapat diuji sama sekali. Kalau urutannya penting bagi pengguna, ia dimiliki di JS di titik data disusun — `katalog/baca.ts` (modifier, karena dikelompokkan ulang) dan `riwayat/baca.ts` (SQL memilih baris mana lewat `LIMIT`, JS menjamin urutan tampil).
 - **Keranjang K-03 hanya ada di MEMORI** (`apps/kasir/src/kasir/simpanan.ts`). Ia hilang saat aplikasi dimuat ulang. Itu bukan kehilangan uang — penjualan baru ada setelah `simpanPenjualan` menulisnya — tapi kasir harus memasukkan ulang pesanannya. Jalan keluarnya sudah disiapkan skema (`order.status = 'open'` + `owned_by_device_id`, KEP-21) dan **belum dibangun**: order `open` yang tidak pernah dibayar akan muncul di laporan dan harus punya jalan penutupan. Karena itu juga K-06/K-07 **tidak punya URL** (`IA:§7`) — `/bayar` akan menjadi alamat yang tidak pernah dapat dipulihkan.
+
+## F3 — keputusan yang mengikat kode
+
+**Buku kas (`cash_movement`) adalah SATU-SATUNYA definisi saldo laci** (`spec-d:14`). `saldo_awal + SUM(delta)`, tidak ada sumber kedua. Ia ditulis di transaksi yang sama dengan penjualan/refund/buka-shift, di **kedua sisi**, dari aturan yang sama di `packages/domain/src/buku-kas.ts`.
+
+- ⛔ `saldoSeharusnya` **mengecualikan** tipe `opening_float` dan memakai `shift.opening_float` langsung. Menjumlahkan keduanya menghitung modal awal dua kali, dan setiap shift terlihat kelebihan sebesar modalnya sendiri. Pengecualian yang sama berlaku di **setiap** test yang menjumlahkan `delta` per shift.
+- `delta` memakai nilai transaksi, bukan `tendered_amount` (`spec-d:201`). Kembalian tidak menghasilkan movement terpisah.
+- **`refund.method` ditambahkan** (migrasi `0021`, keputusan user 14 Agustus). Hanya refund tunai mengurangi laci. Nilainya diturunkan dari payment order aslinya lewat `metodeRefundDari` — dibagi server dan klien — lalu **disimpan**, bukan disimpulkan ulang saat dibaca. Pembayaran campuran **melempar**, tidak menebak (`spec-d:207`).
+- ⛔ **Backfill lintas-tenant mustahil lewat DML.** `UPDATE` ditolak `FORCE ROW LEVEL SECURITY` yang berlaku untuk owner juga, sementara `app.tenant_id` hanya dapat bernilai satu tenant. Jalannya `ADD COLUMN … DEFAULT` (DDL, tidak lewat RLS) lalu **DROP DEFAULT** — default yang tertinggal membuat klien yang lupa mengirim `method` diam-diam mencatat refund tunai.
+
+**`posisi-penjualan.ts` adalah satu-satunya definisi omzet** (FR-G3). Setiap laporan memanggilnya; ada penjaga yang menolak `SUM(...)` atas tabel `"order"` di berkas mana pun selain itu.
+
+- ⛔ **Definisi kanonik `spec-g:34` ditulis untuk skema yang bukan skema ini.** Void tidak mengubah status order aslinya (AC FR-B7 pertama), jadi membaca `status IN ('PAID','CLOSED')` harfiah membuat order yang **sudah dibatalkan tetap masuk omzet kotor**. Yang dipakai: order dianggap batal bila ADA pembatal yang menunjuknya. Penerjemahan ke skema, bukan perubahan spec.
+- Omzet bersih boleh **negatif**, tanpa clamp (`spec-g:283`). Sama seperti saldo laci.
+- Refund atas order yang dibatalkan **tidak** dikurangkan lagi — ordernya sudah keluar dari omzet kotor.
+- **Penjaga satu-sumber polanya diubah dari yang ACnya sebut.** `status = 'voided'` muncul sah di jalur penulisan; meng-grepnya menandai kode benar. Versi pertama penjaga menandai `SUM(amount)` apa pun dan menemukan tiga tempat yang semuanya sah (sisa refund, sisa tagihan). Dipersempit ke `SUM(...)` atas `"order"`, **bukan** dilonggarkan lewat daftar pengecualian: penjaga yang menandai kode benar akan dimatikan orang berikutnya.
+- **`basis` laporan per produk adalah `sebelum void & refund`**, dan itu bukan kelalaian: baris produk menyatakan barang apa yang keluar, dan refund uang tidak selalu mengembalikan barang (`lines: []`).
+- Tanggal bisnis **dibaca** dari `order.business_date`, tidak dihitung ulang dari `occurred_at` — menghitungnya ulang menjadikan laporan tempat kedua yang memutuskan hal yang sama.
+
+**Modul E — stok bergerak dua arah, akhirnya.**
+
+- ⛔ `item_variation.cost` **dibuang** dari skema lokal dan sync rules (FR-F5). Klien menulis `cost_at_sale = 0`; server menghitungnya lewat `getVariationSnapshot`. Perangkat tidak pernah membutuhkannya.
+- ⛔ **`vertical_profile` diturunkan sebagai TABEL, bukan kolom terhitung di `outlet`.** PowerSync mereplikasi perubahan per tabel dari WAL: mengubah profil tidak mengubah baris outlet, jadi baris itu tidak dipancarkan ulang — perangkat memegang nilai basi selamanya, tanpa error. Resolusi `COALESCE(profil_outlet, default_tenant)` terjadi di perangkat.
+- `allow_negative_stock` default `true` untuk F&B, ditandai **`[ASUMSI]`** — `spec-e:341` menuntut validasi tiga merchant untuk NILAINYA, bukan untuk keberadaan setting-nya.
+- Peringatan stok **tidak memblokir** saat boleh negatif (`spec-e:146`); saat blokir aktif, pesannya membawa **angkanya** (`spec-e:152`). Kuantitas diperiksa **kumulatif lintas baris** — modifier memisahkan baris, stoknya satu.
+- Snapshot stok di-rebuild saat tutup shift, **di luar** transaksi penutupan: snapshot adalah cache, dan kegagalan membangunnya tidak boleh me-rollback penutupan kas yang sudah benar.
+- Penandaan habis **terpisah** dari stok terhitung dan tidak pernah saling menyimpulkan (`spec-e:220`). Ledger ber-HLC; penanda terbaru menang.
+- ⛔ **Oversell tidak dicegah** (non-goal permanen) dan tidak pernah ditolak. Konteks `OversellEvent` dibaca dari `stock_movement`, **bukan** dari parameter: event lahir pada penjualan kedua, jadi menyerahkan perangkat yang sedang menulis membuat perangkat pertama tidak pernah muncul. Terlibat = setiap penjualan sejak saldo terakhir kali masih positif.
+
+**⛔ Pelajaran terpenting F3: database sungguhan juga dapat menyembunyikan cacat.**
+
+Aturannya selama ini "fake menyembunyikan, SQLite sungguhan membuktikan". F3 menemukan kebalikannya: test HLC penandaan habis tetap **hijau** saat perbandingan HLC diganti "baris terakhir menang", karena index `(outlet_id, variation_id, hlc)` membuat pemindaian terurut hlc menaik — kedua aturan memberi jawaban identik, secara struktural. Membalik urutan `INSERT` tidak menolong; index yang menentukan.
+
+Jaminan urutan yang kodenya sendiri harus berikan hanya dapat diuji lewat sumber yang mengembalikan baris dalam urutan **yang tidak dijamin SQL** — di sana fake bukan penyederhanaan, melainkan satu-satunya alat yang benar.
+
+---
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
