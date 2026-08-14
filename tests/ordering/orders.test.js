@@ -538,3 +538,108 @@ test('getOrder: order lintas tenant tidak terlihat (RLS)', async () => {
   });
   assert.equal(res.statusCode, 404, res.body);
 });
+
+// ============================================================
+// FR-E3 -- stock cutting otomatis
+// ============================================================
+
+async function movementOrder(orderId) {
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const { rows } = await appSetup.query(
+    `SELECT variation_id, type, delta FROM stock_movement WHERE order_id = $1 ORDER BY variation_id`,
+    [orderId]
+  );
+  await appSetup.query('COMMIT');
+  return rows;
+}
+
+test('⛔ createOrder menulis stock_movement `sale` dengan delta NEGATIF (FR-E3)', async () => {
+  // Sampai sekarang server tidak menulis satu pun movement `sale`. Stok hanya
+  // pernah NAIK — void dan refund mengembalikan barang yang tidak pernah
+  // dikurangi. `CLAUDE.md` invariant #1 menyebut stock movement sebagai
+  // bagian dari satu transaksi penjualan.
+  const { device, shift } = await setupDeviceAndShift();
+  const { variationId } = await createVariation(25000);
+  const orderId = crypto.randomUUID();
+  const res = await req('POST', ordersUrl(), orderPayload({
+    id: orderId,
+    deviceId: device.id,
+    shiftId: shift.id,
+    lines: [{ id: crypto.randomUUID(), variationId, quantityMilli: 2000, discountAmount: 0 }],
+  }));
+  assert.equal(res.statusCode, 201, res.body);
+
+  const m = await movementOrder(orderId);
+  assert.equal(m.length, 1, 'penjualan tidak menulis stock_movement');
+  assert.equal(m[0].type, 'sale');
+  assert.equal(m[0].variation_id, variationId);
+  assert.equal(m[0].delta, '-2000', 'delta harus negatif sebesar kuantitas x1000');
+});
+
+test('⛔ jumlah movement = jumlah baris, dan tiap baris punya deltanya sendiri', async () => {
+  const { device, shift } = await setupDeviceAndShift();
+  const a = await createVariation(10000);
+  const b = await createVariation(20000);
+  const orderId = crypto.randomUUID();
+  const res = await req('POST', ordersUrl(), orderPayload({
+    id: orderId,
+    deviceId: device.id,
+    shiftId: shift.id,
+    lines: [
+      { id: crypto.randomUUID(), variationId: a.variationId, quantityMilli: 3000, discountAmount: 0 },
+      { id: crypto.randomUUID(), variationId: b.variationId, quantityMilli: 1000, discountAmount: 0 },
+    ],
+  }));
+  assert.equal(res.statusCode, 201, res.body);
+
+  const m = await movementOrder(orderId);
+  assert.equal(m.length, 2);
+  const per = new Map(m.map((r) => [r.variation_id, r.delta]));
+  assert.equal(per.get(a.variationId), '-3000');
+  assert.equal(per.get(b.variationId), '-1000');
+});
+
+test('⛔ penjualan lalu VOID mengembalikan stok ke nol bersih (spec-e:318)', async () => {
+  // Property yang `spec-e:318` tuntut: "untuk penjualan + void, stok kembali
+  // ke nilai sebelum penjualan". Sebelum FR-E3 ada, void justru MENAIKKAN
+  // stok di atas nilai awalnya — karena penjualannya tidak pernah menurunkan.
+  const { device, shift } = await setupDeviceAndShift();
+  const { variationId } = await createVariation(25000);
+  const orderId = crypto.randomUUID();
+  const res = await req('POST', ordersUrl(), orderPayload({
+    id: orderId,
+    deviceId: device.id,
+    shiftId: shift.id,
+    lines: [{ id: crypto.randomUUID(), variationId, quantityMilli: 1000, discountAmount: 0 }],
+  }));
+  assert.equal(res.statusCode, 201, res.body);
+
+  const batal = await app.inject({
+    method: 'POST',
+    url: `/orders/${orderId}/cancel`,
+    // Void menuntut `sequence` dan `receiptNumber` — order pembatal punya
+    // nomor struknya sendiri, dan klien yang mencetaknya.
+    payload: {
+      id: crypto.randomUUID(),
+      reasonCode: 'salah_input',
+      sequence: 9001,
+      receiptNumber: 'K1-20260807-9001',
+    },
+    headers: {
+      'x-tenant-id': tenant.id,
+      'x-actor-id': base.user.id,
+      'idempotency-key': crypto.randomUUID(),
+    },
+  });
+  assert.equal(batal.statusCode, 201, batal.body);
+
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const { rows } = await appSetup.query(
+    `SELECT COALESCE(SUM(delta), 0)::text AS total FROM stock_movement WHERE variation_id = $1`,
+    [variationId]
+  );
+  await appSetup.query('COMMIT');
+  assert.equal(rows[0].total, '0', 'penjualan + void harus berjumlah nol, bukan positif');
+});

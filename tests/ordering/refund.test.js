@@ -271,7 +271,11 @@ test('penyetuju yang sama dengan aktor ditolak, tidak ada baris tersimpan', asyn
   assert.ok(res.statusCode >= 400, res.body);
 
   assert.equal((await query('SELECT id FROM refund WHERE id = $1', [payload.id])).length, 0);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0, 'stok tidak boleh dikembalikan');
+  // ⛔ `type <> 'sale'` — sejak FR-E3 (14 Agustus 2026) penjualan menulis
+  // movement `sale` sendiri. Yang diperiksa test-test ini adalah movement
+  // BALIK (void/refund); menghitung seluruh baris akan menghitung penjualan
+  // yang memang seharusnya ada.
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0, 'stok tidak boleh dikembalikan');
   assert.equal((await query('SELECT id FROM audit_event')).length, 0);
 });
 
@@ -346,7 +350,7 @@ test('refund parsial berulang: kumulatif dibatasi, sisa disebut di pesan', async
 
   const rows = await query('SELECT amount FROM refund ORDER BY amount');
   assert.deepEqual(rows.map((r) => r.amount), ['33600', '60000']);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0, 'tidak ada barang yang kembali');
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0, 'tidak ada barang yang kembali');
 
   // Setelah habis, satu rupiah pun ditolak.
   const keempat = await batalkan(order.id, refundPayload({ amount: 1, lines: [] }));
@@ -365,7 +369,7 @@ test('refund sebagian tanpa `lines` ditolak, bukan ditebak', async () => {
   assert.equal(res.statusCode, 400, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'REFUND_LINES_REQUIRED');
   assert.equal((await query('SELECT id FROM refund')).length, 0);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0);
 });
 
 // Refund kedua atas order yang sama juga harus eksplisit, walau nominalnya
@@ -407,7 +411,7 @@ test('refund penuh mengembalikan seluruh baris, type refund, delta positif', asy
   const res = await batalkan(order.id, refundPayload({ amount: order.total }));
   assert.equal(res.statusCode, 201, res.body);
 
-  const movements = await query('SELECT variation_id, type, delta, order_id FROM stock_movement ORDER BY delta');
+  const movements = await query("SELECT variation_id, type, delta, order_id FROM stock_movement WHERE type <> 'sale' ORDER BY delta");
   assert.equal(movements.length, 2);
   assert.deepEqual(movements.map((m) => m.type), ['refund', 'refund']);
   assert.deepEqual(movements.map((m) => m.delta), ['1000', '2000']);
@@ -441,7 +445,7 @@ test('refund, stock_movement, dan audit_event berbagi satu stempel transaksi', a
   assert.equal(res.statusCode, 201, res.body);
 
   const [r] = await query('SELECT recorded_at FROM refund');
-  const movements = await query('SELECT recorded_at FROM stock_movement');
+  const movements = await query("SELECT recorded_at FROM stock_movement WHERE type <> 'sale'");
   const events = await query('SELECT recorded_at FROM audit_event');
   assert.equal(movements.length, 2);
   const stempel = r.recorded_at.toISOString();
@@ -465,7 +469,7 @@ test('refund parsial hanya mengembalikan baris yang disebut', async () => {
   }));
   assert.equal(res.statusCode, 201, res.body);
 
-  const movements = await query('SELECT variation_id, delta FROM stock_movement');
+  const movements = await query("SELECT variation_id, delta FROM stock_movement WHERE type <> 'sale'");
   assert.equal(movements.length, 1, 'hanya baris yang dipilih');
   assert.equal(movements[0].variation_id, v2);
   assert.equal(movements[0].delta, '1000');
@@ -482,7 +486,7 @@ test('baris refund melebihi kuantitas yang terjual ditolak', async () => {
     lines: [{ lineId: line.id, quantityMilli: 2001 }],
   }));
   assert.equal(res.statusCode, 409, res.body);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0);
 });
 
 // Kumulatif per baris, bukan hanya per permintaan: dua refund parsial yang
@@ -510,7 +514,7 @@ test('kumulatif restock per baris tidak melebihi kuantitas terjual', async () =>
   }));
   assert.equal(sisa.statusCode, 201, sisa.body);
 
-  const movements = await query('SELECT delta FROM stock_movement ORDER BY delta');
+  const movements = await query("SELECT delta FROM stock_movement WHERE type <> 'sale' ORDER BY delta");
   assert.deepEqual(movements.map((m) => m.delta), ['500', '1500']);
 });
 
@@ -523,7 +527,7 @@ test('lineId milik order lain ditolak, tidak ada baris tersimpan', async () => {
   const res = await batalkan(orderA.id, payload);
   assert.equal(res.statusCode, 404, res.body);
   assert.equal((await query('SELECT id FROM refund WHERE id = $1', [payload.id])).length, 0);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0);
 });
 
 // ============================================================
@@ -543,7 +547,7 @@ test('retry dengan Idempotency-Key sama tidak menghasilkan refund kedua', async 
   assert.deepEqual(JSON.parse(b.body), JSON.parse(a.body), 'respons asli dikembalikan apa adanya');
 
   assert.equal((await query('SELECT id FROM refund')).length, 1);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 1, 'stok tidak dikembalikan dua kali');
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 1, 'stok tidak dikembalikan dua kali');
   assert.equal((await query('SELECT id FROM audit_event')).length, 1);
 });
 
@@ -595,7 +599,7 @@ test('⛔ kasir TIDAK dapat menjadi penyetuju refund, meski id-nya sah dan aktif
   // Dan TIDAK ADA JEJAK yang tertulis. Refund yang ditolak otorisasinya tidak
   // boleh meninggalkan baris refund, stok, maupun audit.
   assert.equal((await query('SELECT id FROM refund')).length, 0);
-  assert.equal((await query('SELECT id FROM stock_movement')).length, 0);
+  assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0);
 });
 
 test('akuntan tidak dapat menyetujui refund; manajer outlet dapat', async () => {

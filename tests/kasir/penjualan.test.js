@@ -34,7 +34,7 @@ const TARIF = [{
   effective_from: '2026-01-01T00:00:00Z', effective_to: null,
 }];
 
-function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null } = {}) {
+function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = { v1: 1 } } = {}) {
   const state = {
     tulis: [], transaksi: 0, diDalamTransaksi: false,
     device_config: { receipt_sequence: urutan, sequence_business_date: tanggalUrutan },
@@ -45,6 +45,12 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null } = {}) {
       if (/FROM tax_rate/.test(sql)) return tarif;
       if (/FROM outlet/.test(sql)) return [OUTLET];
       if (/FROM device_config/.test(sql)) return [state.device_config];
+      // FR-E2: `sale` hanya untuk variation ber-`track_stock = true`. Nilainya
+      // dibaca dari katalog SAAT MENULIS, bukan dari keranjang — keranjang
+      // hidup di memori dan dapat basi terhadap katalog yang baru turun.
+      if (/FROM item_variation/.test(sql)) {
+        return Object.entries(lacakStok).map(([id, t]) => ({ id, track_stock: t }));
+      }
       return [];
     },
     async execute(sql, params = []) {
@@ -269,4 +275,93 @@ test('modifier ikut ke baris DAN ke harga', async () => {
   const tulisModifier = db.state.tulis.filter((t) => /order_line_modifier/.test(t.sql));
   assert.equal(tulisModifier.length, 1);
   assert.equal(tulisModifier[0].params[3], 'Ekstra');
+});
+
+// --- FR-E3: stock cutting otomatis ---
+
+function movement(db) {
+  return db.state.tulis.filter((t) => /INSERT INTO stock_movement/.test(t.sql));
+}
+
+test('⛔ penjualan MENGURANGI stok, di transaksi yang sama (FR-E3)', async () => {
+  // Sampai sekarang tidak ada satu pun movement `sale` ditulis — di klien
+  // maupun server. Stok karena itu hanya pernah NAIK: void dan refund
+  // mengembalikan barang yang tidak pernah dikurangi. Kafe yang menjual 200
+  // kopi sehari melihat stoknya tetap, lalu naik setiap kali ada pembatalan.
+  //
+  // `CLAUDE.md` invariant #1 menyebut stock movement sebagai bagian dari satu
+  // transaksi penjualan, dan `spec-e:112`: "kegagalan menulis movement
+  // me-rollback seluruh penjualan".
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+
+  const m = movement(db);
+  assert.equal(m.length, 1, 'penjualan tidak menulis stock_movement sama sekali');
+  assert.equal(m[0].dalam, true, 'movement ditulis DI LUAR transaksi penjualan');
+  // Kuantitas ×1000 (konvensi), dan NEGATIF: barang keluar dari rak.
+  assert.ok(
+    m[0].params.includes(-1000),
+    `delta harus −1000 (1 unit keluar), dapat ${JSON.stringify(m[0].params)}`
+  );
+  assert.ok(m[0].params.includes('v1'), 'movement tidak menunjuk variation yang terjual');
+});
+
+test('⛔ variation dengan track_stock = false TIDAK menghasilkan movement (FR-E2)', async () => {
+  // `spec-e:88`: "Produk jasa atau produk yang stoknya tidak dilacak tidak
+  // menghasilkan movement." Menulisnya tetap membuat stok produk jasa turun
+  // selamanya, dan laporan stok penuh baris yang tidak berarti apa pun.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu({ lacakStok: { v1: 0 } });
+  await simpanPenjualan({ db, ...args() });
+
+  assert.equal(movement(db).length, 0, 'produk yang stoknya tidak dilacak ikut menulis movement');
+});
+
+test('⛔ modifier TIDAK menghasilkan movement di v1 (FR-E3)', async () => {
+  // KEP-04: modifier tidak punya SKU dan tidak dilacak stoknya. Deplesi bahan
+  // lewat resep/BOM adalah v1.2.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: [{
+          id: 'b1', variationId: 'v1', itemName: 'Kopi Susu', variationName: 'Regular',
+          unitPrice: 20000, quantityMilli: 1000,
+          modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000 }],
+        }],
+      },
+      // Cukup untuk menutupi baris + modifier + pajak. Versi pertama test ini
+      // memakai `tendered` bawaan dan penjualannya ditolak `kurang_bayar` —
+      // nol movement, tapi karena TIDAK ADA yang ditulis sama sekali.
+      pembayaran: { metode: 'cash', tendered: 100000 },
+    }),
+  });
+
+  const hasil = movement(db);
+  assert.equal(hasil.length, 1, 'modifier ikut menghasilkan movement');
+});
+
+test('jumlah movement = jumlah baris yang dilacak stoknya (FR-E3)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu({ lacakStok: { v1: 1, v2: 1, v3: 0 } });
+  await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: [
+          { id: 'b1', variationId: 'v1', itemName: 'Kopi', variationName: 'R', unitPrice: 10000, quantityMilli: 2000, modifier: [] },
+          { id: 'b2', variationId: 'v2', itemName: 'Roti', variationName: 'C', unitPrice: 10000, quantityMilli: 1000, modifier: [] },
+          { id: 'b3', variationId: 'v3', itemName: 'Jasa', variationName: '-', unitPrice: 10000, quantityMilli: 1000, modifier: [] },
+        ],
+      },
+      pembayaran: { metode: 'cash', tendered: 100000 },
+    }),
+  });
+
+  const m = movement(db);
+  assert.equal(m.length, 2, 'jumlah movement tidak sama dengan baris yang dilacak');
+  assert.ok(m[0].params.includes(-2000), 'kuantitas 2 unit harus jadi delta −2000');
 });

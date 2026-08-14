@@ -313,6 +313,8 @@ export interface VariationSnapshotRow {
   // sini alih-alih lewat SELECT kedua.
   itemId: string;
   categoryId: string | null;
+  /** FR-E2 — `sale` hanya ditulis untuk variation yang stoknya dilacak. */
+  trackStock: boolean;
 }
 
 // T5 (PLAN-ordering-fondasi.md §T5/T6) -- diekspor lewat catalog/index.ts
@@ -337,9 +339,22 @@ export interface VariationSnapshotRow {
 export async function getVariationSnapshot(client: PoolClient, variationId: string): Promise<VariationSnapshotRow | null> {
   const { rows } = await client.query<{
     item_name: string; variation_name: string; cost: string;
-    item_id: string; category_id: string | null;
+    item_id: string; category_id: string | null; track_stock: boolean;
   }>(
-    `SELECT i.name AS item_name, iv.name AS variation_name, iv.cost AS cost
+    // ⛔ `item_id` dan `category_id` DISELEKSI. Versi sebelumnya
+    // memetakannya ke hasil tanpa pernah memintanya, jadi keduanya
+    // `undefined` — dan `calculateTax` mencocokkan tarif ber-`applies_to`
+    // 'item'/'category' lewat kedua nilai itu. Akibatnya tarif ber-scope item
+    // atau kategori TIDAK PERNAH berlaku di server (FR-C6), tanpa satu pun
+    // error: `undefined` hanya tidak cocok dengan apa pun, lalu resolusinya
+    // diam-diam jatuh ke `all_items`.
+    //
+    // `track_stock` untuk FR-E2 — `sale` hanya ditulis untuk variation yang
+    // stoknya dilacak. Ia ikut di sini, bukan lewat SELECT kedua dari modul
+    // ordering: invariant #4 melarang akses lintas modul ke tabel katalog.
+    `SELECT i.name AS item_name, iv.name AS variation_name, iv.cost AS cost,
+            iv.item_id AS item_id, i.category_id AS category_id,
+            iv.track_stock AS track_stock
      FROM item_variation iv
      JOIN item i ON i.id = iv.item_id
      WHERE iv.id = $1`,
@@ -354,6 +369,7 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
     cost: rows[0].cost,
     itemId: rows[0].item_id,
     categoryId: rows[0].category_id,
+    trackStock: rows[0].track_stock,
   };
 }
 
