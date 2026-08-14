@@ -145,7 +145,7 @@ Versi pertama penjaga ini menandai `SUM(amount)` apa pun dan menemukan tiga temp
 - [x] D2. FR-E4 aturan stok negatif — `vertical_profile` turun sebagai TABEL, resolusi `COALESCE(profil_outlet, default_tenant)` di perangkat
 - [x] D3. Pembacaan stok lokal: `snapshot.balance + SUM(delta WHERE hlc > checkpoint)` (`spec-e:62`), plus jalur agregasi langsung untuk uji drift (`spec-e:331`)
 - [x] D4. Rebuild snapshot saat tutup shift (`spec-e:63`) — **di luar transaksi tutup kas**, karena snapshot adalah cache dan kegagalannya tidak boleh me-rollback penutupan kas yang sudah benar
-- [ ] D5. FR-E4 di UI: peringatan "Stok tersisa N" di keranjang K-03
+- [x] D5. FR-E4 di UI: peringatan "Stok tersisa N" di keranjang K-03 — kumulatif per variation, lintas baris
 - [ ] D6. FR-E5 penandaan sold-out manual, reset saat buka shift dengan konfirmasi
 - [ ] D7. FR-E6 deteksi oversell pasca-sinkronisasi + `OversellEvent`
 - [x] D8. FR-E7 opname — **DITUNDA ke v1.1**, keputusan user 14 Agustus 2026 (menjawab `spec-e:343`)
