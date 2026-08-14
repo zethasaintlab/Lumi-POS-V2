@@ -135,6 +135,15 @@ CREATE TABLE "order" (
   rounding_adjustment INTEGER NOT NULL DEFAULT 0,
   total INTEGER NOT NULL, amount_due INTEGER NOT NULL,
   has_calculation_variance INTEGER DEFAULT 0, variance_amount INTEGER,
+  -- ⛔ Ada di order PEMBATAL, menunjuk order yang dibatalkan (AC FR-B7
+  -- pertama: tidak ada UPDATE pada order asli). Tanpa kolom ini, RANTAI
+  -- KOREKSI yang `IA:68` tuntut di K-09 tidak dapat dibaca sama sekali, dan
+  -- order yang sudah di-void terlihat normal — statusnya tetap `open`.
+  --
+  -- Hilang dari skema lokal sampai K-08 dibangun, dan tidak ada yang
+  -- menangkapnya: penjaga drift hanya membandingkan kolom yang ada di KEDUA
+  -- sisi. `KOLOM_SENGAJA_TIDAK_TURUN` sekarang menutup celah itu.
+  voided_by_order_id TEXT,
   created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
 CREATE TABLE "check" (

@@ -185,6 +185,90 @@ export const KOLOM_BELUM_DIUKUR = [
 ];
 
 /**
+ * Kolom yang ADA di PostgreSQL dan SENGAJA tidak ada di skema lokal.
+ *
+ * ⛔ Daftar ini lahir dari cacat nyata. `order.voided_by_order_id` hilang dari
+ * skema lokal sampai K-08 dibangun, dan tidak ada satu pun yang menangkapnya:
+ * penjaga drift tipe hanya membandingkan kolom yang ada di KEDUA sisi, jadi
+ * kolom yang tidak ada di lokal tidak punya pasangan untuk dibandingkan.
+ * Akibatnya rantai koreksi yang `IA:68` tuntut di K-09 tidak dapat dibaca sama
+ * sekali — dan order yang sudah di-void terlihat normal, karena statusnya
+ * memang tetap `open`.
+ *
+ * Yang membuat celah itu mungkin: 25 kolom lain memang sengaja tidak turun,
+ * dan tidak ada apa pun yang membedakan kelalaian dari keputusan. Sekarang
+ * ada — kolom server baru yang tidak masuk daftar ini membuat test merah.
+ *
+ * Alasan per kelompok:
+ *
+ *   - `tenant_id` pada tabel anak — database lokal SATU tenant, satu outlet.
+ *     Menyalinnya ke setiap baris hanya menambah byte yang tidak pernah
+ *     dibaca.
+ *   - `outlet_id`/`device_id`/`created_by`/`occurred_at`/`recorded_at`/`hlc`
+ *     pada `order_line` dan `payment` — di server keduanya tabel PARTISI dan
+ *     butuh kunci partisinya sendiri; di lokal `order` yang membawanya.
+ *   - kolom audit dan kolom yang tidak dipakai layar kasir mana pun.
+ */
+export const KOLOM_SENGAJA_TIDAK_TURUN = [
+  'check.tenant_id',
+  'order_line.tenant_id',
+  'order_line.outlet_id',
+  'order_line.device_id',
+  'order_line.created_by',
+  'order_line.occurred_at',
+  'order_line.recorded_at',
+  'order_line.hlc',
+  'order_line_modifier.tenant_id',
+  'payment.tenant_id',
+  'payment.outlet_id',
+  'payment.device_id',
+  'payment.created_by',
+  'payment.occurred_at',
+  'payment.recorded_at',
+  'payment.hlc',
+  'refund.tenant_id',
+  'cash_movement.tenant_id',
+  'item_variation.tenant_id',
+  'modifier.tenant_id',
+  'item_modifier_list.tenant_id',
+  // Kolom audit — tidak dipakai layar kasir mana pun, dan `changed_by` adalah
+  // id pengguna yang bisa saja bukan staf outlet ini.
+  'price_history.changed_by',
+  'price_history.reason',
+  // Tidak ada layar kasir yang menampilkan alamat outlet, dan resolusi
+  // VerticalProfile terjadi di server.
+  'outlet.address',
+  'outlet.vertical_profile_id',
+
+  // --- identitas (§6 PLAN-modul-f-identitas.md) --------------------------
+  // ⛔ Kredensial back-office. Permukaan kasir TIDAK menerima login password
+  // (`spec-f:150`), jadi mengirimkannya hanya menambah bahan yang hilang
+  // bersama tablet yang dicuri (`spec-f:242`). Sync rules menegakkannya lewat
+  // daftar kolom eksplisit; daftar di sini yang membuat penghilangannya
+  // terbaca sebagai KEPUTUSAN, bukan kelalaian.
+  'user.email',
+  'user.password_hash',
+  'user.mfa_secret',
+  // Keadaan penguncian PIN milik SERVER. Perangkat punya hitungannya sendiri
+  // di `pin_lockout_lokal`, dan itu yang berlaku saat offline (`spec-f:221`).
+  // Menurunkan versi server akan membuat dua sumber kebenaran untuk satu
+  // penguncian.
+  'user.pin_failed_attempts',
+  'user.pin_locked_until',
+  'user.pin_lockout_count',
+  'user.pin_lockout_window_start',
+  // Peringatan rotasi PIN manajer hidup di back-office (`spec-f:149`).
+  'user.pin_rotated_at',
+  // `is_active` sudah cukup untuk menolak login; kapan ia dinonaktifkan
+  // adalah pertanyaan laporan, bukan pertanyaan layar kasir.
+  'user.deactivated_at',
+  // Data pribadi yang hanya dipakai menolak PIN berupa tanggal lahir, dan
+  // penolakan itu terjadi di SERVER saat PIN diset. Mengirimkannya ke setiap
+  // tablet menambah paparan tanpa menambah kemampuan apa pun.
+  'user.birth_date',
+];
+
+/**
  * Memecah berkas skema jadi pernyataan tunggal.
  *
  * `db.execute()` PowerSync menjalankan seluruh isi string tapi hanya

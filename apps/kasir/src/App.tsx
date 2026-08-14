@@ -26,7 +26,7 @@ function useJalur(): string {
    mungkin setelah database terbuka. Hook yang dipanggil di `App` akan
    berjalan sebelum `DbLokalProvider` sempat membuka apa pun. */
 function Isi({ jalur }: { jalur: string }) {
-  const { rute } = cocokkanRute(jalur);
+  const { rute, params } = cocokkanRute(jalur);
   const { sesi, siap } = useSesi();
 
   /* ⛔ K-15 (Perangkat) TIDAK menuntut sesi, dan itu bukan kelalaian.
@@ -40,7 +40,7 @@ function Isi({ jalur }: { jalur: string }) {
   if (!siap) return <SesiBelumSiap />;
   if (!sesi && !tanpaSesi) return <Login />;
 
-  return <Layar rute={rute} />;
+  return <Layar rute={rute} params={params} />;
 }
 
 function App() {

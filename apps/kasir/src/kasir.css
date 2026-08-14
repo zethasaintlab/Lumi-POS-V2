@@ -267,3 +267,20 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
+
+/* K-08 baris riwayat: satu tombol penuh, karena seluruh barisnya dapat
+   diketuk. Target sentuh mengikuti aturan #3. */
+.kasir-riwayat-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}

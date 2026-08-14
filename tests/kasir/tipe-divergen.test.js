@@ -159,3 +159,45 @@ test('T4 kolom belum-diukur terdaftar satu per satu, tidak ada yang menyelinap',
     'KOLOM_BELUM_DIUKUR harus persis sama dengan kolom yang kelasnya belum diukur'
   );
 });
+
+test('⛔ setiap kolom PostgreSQL ada di lokal, atau terdaftar sengaja tidak turun', async () => {
+  const { TABEL_RAW, KOLOM_SENGAJA_TIDAK_TURUN } = await import(SKEMA);
+  const pg = tipeKolomPostgres();
+  const lokal = tipeKolomLokal();
+  const sengaja = new Set(KOLOM_SENGAJA_TIDAK_TURUN);
+
+  // ⛔ Penjaga ini lahir dari cacat nyata: `order.voided_by_order_id` hilang
+  // dari skema lokal sampai K-08 dibangun. Penjaga drift TIPE tidak dapat
+  // menangkapnya — kolom yang tidak ada di lokal tidak punya pasangan untuk
+  // dibandingkan tipenya. Akibatnya rantai koreksi K-09 tidak dapat dibaca,
+  // dan order yang sudah di-void terlihat normal.
+  const hilang = [];
+  for (const tabel of TABEL_RAW) {
+    if (!pg[tabel] || !lokal[tabel]) continue;
+    for (const kolom of Object.keys(pg[tabel])) {
+      if (kolom in lokal[tabel]) continue;
+      if (sengaja.has(`${tabel}.${kolom}`)) continue;
+      hilang.push(`${tabel}.${kolom}`);
+    }
+  }
+
+  assert.deepEqual(
+    hilang,
+    [],
+    'kolom server ini tidak ada di skema lokal dan tidak terdaftar sebagai keputusan'
+  );
+});
+
+test('daftar `sengaja tidak turun` tidak memuat kolom yang ternyata ADA', async () => {
+  const { KOLOM_SENGAJA_TIDAK_TURUN } = await import(SKEMA);
+  const lokal = tipeKolomLokal();
+
+  // Daftar yang basi sama berbahayanya dengan tidak ada daftar: kolom yang
+  // kelak DITAMBAHKAN ke skema lokal harus dicoret dari sini, kalau tidak
+  // penjaga di atas berhenti menjaga bagian itu diam-diam.
+  const basi = KOLOM_SENGAJA_TIDAK_TURUN.filter((k) => {
+    const [tabel, kolom] = k.split('.');
+    return lokal[tabel] && kolom in lokal[tabel];
+  });
+  assert.deepEqual(basi, [], 'kolom ini sudah ada di lokal — coret dari daftar');
+});
