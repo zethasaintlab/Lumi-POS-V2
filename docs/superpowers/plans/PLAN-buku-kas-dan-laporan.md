@@ -149,7 +149,10 @@ Versi pertama penjaga ini menandai `SUM(amount)` apa pun dan menemukan tiga temp
 - [x] D6. FR-E5 penandaan sold-out manual — lokal, ledger ber-HLC, blokir di keranjang, daftar konfirmasi reset
 - [ ] D6b. FR-E5 naik ke server — butuh endpoint REST untuk `sold_out_flag`; sampai ada, penandaan LOKAL saja
 - [ ] D6c. FR-E5 di layar: tekan-tahan kartu produk untuk menandai, dan penimpaan manajer
-- [ ] D7. FR-E6 deteksi oversell pasca-sinkronisasi + `OversellEvent`
+- [x] D7. FR-E6 deteksi oversell + `OversellEvent` — di transaksi order, tidak pernah menolak penjualan
+- [ ] D7b. Notifikasi manajer (`spec-e:195`: "bukan hanya entri di laporan yang mungkin tidak dibuka") dan layar penyelesaian
+
+**Konteks event dibaca dari `stock_movement`, bukan dari parameter.** Event lahir pada penjualan KEDUA; menyerahkan perangkat/order yang sedang menulis berarti hanya penjualan terakhir yang tercatat, dan manajer melihat satu perangkat disebut untuk masalah yang melibatkan dua. Yang terlibat: setiap penjualan sejak saldo terakhir kali masih positif.
 - [x] D8. FR-E7 opname — **DITUNDA ke v1.1**, keputusan user 14 Agustus 2026 (menjawab `spec-e:343`)
 
 **Keputusan: `allow_negative_stock` default `true` untuk F&B, ditandai `[ASUMSI]`.** `spec-e:341` menuntut validasi ke tiga merchant; yang divalidasi adalah NILAI defaultnya, bukan keberadaan setting-nya — FR-E4 sendiri menuntut ia ada di `VerticalProfile` dan bukan konstanta.

@@ -7,7 +7,7 @@ import { isPrimaryKeyViolation } from './pg-error.ts';
 import { computeRequestHash } from './request-hash.ts';
 import { assertDeviceVisible, assertUserVisible } from '../../identity/index.ts';
 import { getOutletSettings } from '../../tenancy/index.ts';
-import { recordStockMovements } from '../../inventory/index.ts';
+import { recordStockMovements, detectOversell } from '../../inventory/index.ts';
 import { getVariationSnapshot, resolvePrice, wasPriceEverEffective } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
 import { assertShiftOpen } from '../../cash/index.ts';
@@ -564,6 +564,22 @@ async function insertOrderTree(
           hlc: hlcValue,
         }))
     );
+
+    // FR-E6 — deteksi oversell, SETELAH movement ditulis dan di transaksi yang
+    // sama. Ia tidak menolak apa pun: `spec-e:177` menuntut kedua penjualan
+    // diterima, dan menolak yang kedua berarti menolak uang yang sudah
+    // diterima merchant.
+    //
+    // Di dalam transaksi supaya event dan penjualan yang menyebabkannya
+    // tidak pernah terpisah — penjualan yang tersimpan tanpa eventnya adalah
+    // oversell yang hilang diam-diam, dan itu persis yang FR-E6 cegah.
+    await detectOversell(client, {
+      tenantId,
+      outletId: orderRow.outlet_id,
+      variationIds: lineCalcs
+        .filter((calc) => calc.snapshot.trackStock)
+        .map((calc) => calc.input.variationId as string),
+    });
 
     return { order: orderRow, check: checkRow, lines };
   } catch (err) {
