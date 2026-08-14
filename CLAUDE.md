@@ -125,7 +125,29 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: F1 — Inti transaksi, Modul B (Kasir & Order), sub-project 1 (fondasi order).** Gate F0 tertutup — rincian per item ada di `HANDOFF.md`.
+**Fase: F2 selesai secara isi, 14 Agustus 2026. Berikutnya F3.** Gate F0 dan F1 tertutup — rincian per item ada di `HANDOFF.md`.
+
+Seluruh isi F2 yang `ARCH:§14` sebut kini ada, dan **seluruh alur kasir berjalan tanpa jaringan**:
+
+```
+login PIN → buka shift → jual (grid + modifier) → bayar tunai
+          → riwayat → batalkan/refund → tutup kas → laporan shift
+```
+
+| Layar | Kode | Bukti |
+|---|---|---|
+| Login PIN | K-01 | Argon2 WASM, 33 ms, diverifikasi di browser |
+| Buka shift | K-02 | Tanggal bisnis dari zona outlet; relay `pending → sent` |
+| Kasir + modifier | K-03/04/05 | Tangga harga tiga tingkat berjalan di perangkat |
+| Pembayaran | K-06/07 | Satu `writeTransaction`; mendarat di server dengan ULID klien |
+| Riwayat + detail | K-08/09 | Rantai koreksi dua arah |
+| Void/refund | K-10 | Dua identitas, stok kembali, nol payment negatif |
+| Otorisasi | K-11 | PIN manajer diverifikasi lokal |
+| Tutup kas + laporan | K-12/13 | Urutan input wajib; percobaan hitungan tercatat |
+
+**Gate F2 hijau:** `npm run test:dst` — 10.000 iterasi fault injection, nol pelanggaran atas sepuluh invariant.
+
+**Yang TIDAK termasuk, dan tercatat sebagai utang:** FR-H8 (notifikasi antrean menua, P1) · enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · Modul C-3 rekonsiliasi (P1) · FR-F5 (menunggu keputusan `cost` di jalur turun) · refund parsial dengan pemilihan baris di UI.
 
 Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)
@@ -285,6 +307,8 @@ Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` mene
 - ⛔ **`@powersync/web` mengembalikan kolom `INTEGER` yang besar sebagai `bigint`, bukan `number`.** Diukur dari database sungguhan, bukan dibaca dari dokumentasi. Konsekuensinya setiap pembacaan kolom numerik besar harus menerima **ketiga** bentuk — `bigint`, `number`, dan `string` — karena driver test (`node:sqlite`) dan driver aplikasi tidak sepakat. Guard yang hanya memeriksa `number` **tidak pernah mengambil cabangnya**, dan itu hijau di seluruh test sambil salah di aplikasi. Ditemukan saat menutup I10 di jalur produksi.
 - ⛔ **HLC klien disimpan sebagai TEXT (`device_config.hlc_teks`), bukan di kolom `INTEGER`.** HLC 57-bit melampaui 2⁵³ untuk setiap nilai nyata (physical = milidetik epoch, digeser 16 bit counter), jadi kolom `INTEGER` mengembalikannya lewat double dan presisinya hilang. Kolom `hlc_state` lama dipertahankan hanya untuk perangkat yang sudah ada — `device_config` murni lokal dan bermigrasi **aditif**, dan SQLite tidak dapat mengubah tipe kolom. Gejala aslinya: setelah restart dengan jam yang sedang mundur, HLC **turun**, tanpa satu pun error.
 - **Keadaan HLC ditulis DI DALAM transaksi penjualan.** Di luar transaksi ada jendela tempat perangkat dapat mati setelah order ter-commit tapi sebelum `hlc_teks` tersimpan; boot berikutnya memuat nilai lama, dan tick berikutnya dapat menghasilkan HLC yang **sudah dipakai** order yang sudah ada. Dua order ber-HLC sama adalah pelanggaran I10 yang tidak menghasilkan error — ia hanya membuat "mana yang lebih dulu" tidak terjawab, di tempat yang paling membutuhkannya.
+- ⛔ **Fake `DbLokal` tidak menegakkan constraint apa pun.** `NOT NULL`, `CHECK`, dan `ON CONFLICT` semuanya lolos di test dan gagal keras di `wa-sqlite`. Terjadi dua kali: `ON CONFLICT(id)` (8 Agustus) dan `audit_event.tenant_id = NULL` (14 Agustus). Test karena itu harus memeriksa **nilai yang di-bind**, bukan sekadar bahwa tabelnya disentuh — dan bentuk SQL baru tetap wajib dijalankan di browser sebelum dipercaya.
+- ⛔ **Fake juga tidak menegakkan `ORDER BY`.** Jaminan urutan yang hanya hidup di SQL tidak dapat diuji sama sekali. Kalau urutannya penting bagi pengguna, ia dimiliki di JS di titik data disusun — `katalog/baca.ts` (modifier, karena dikelompokkan ulang) dan `riwayat/baca.ts` (SQL memilih baris mana lewat `LIMIT`, JS menjamin urutan tampil).
 - **Keranjang K-03 hanya ada di MEMORI** (`apps/kasir/src/kasir/simpanan.ts`). Ia hilang saat aplikasi dimuat ulang. Itu bukan kehilangan uang — penjualan baru ada setelah `simpanPenjualan` menulisnya — tapi kasir harus memasukkan ulang pesanannya. Jalan keluarnya sudah disiapkan skema (`order.status = 'open'` + `owned_by_device_id`, KEP-21) dan **belum dibangun**: order `open` yang tidak pernah dibayar akan muncul di laporan dan harus punya jalan penutupan. Karena itu juga K-06/K-07 **tidak punya URL** (`IA:§7`) — `/bayar` akan menjadi alamat yang tidak pernah dapat dipulihkan.
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.

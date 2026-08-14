@@ -160,3 +160,34 @@ Karena itu ada `npm run typecheck`. **Jalankan sebelum menyatakan apa pun selesa
 - [ ] Validasi ambang otorisasi ke 3 merchant
 
 Asumsi terbesar yang belum diuji ada di [`product/PRD-lumi-pos-v1.md`](product/PRD-lumi-pos-v1.md) § 11.2. Kalau A1 (frekuensi outage) runtuh, posisi produk berubah — sebaiknya diuji **sebelum** F2, bukan sesudah.
+
+## F2 tertutup, 14 Agustus 2026 — dan apa yang TIDAK ikut tertutup
+
+Seluruh isi F2 di `ARCH:§14` ada, dan alur kasir berjalan penuh tanpa
+jaringan. Gate-nya (`npm run test:dst`, 10.000 iterasi) hijau.
+
+**Utang yang dibawa ke F3, semuanya keputusan sadar:**
+
+| Utang | Kenapa belum |
+|---|---|
+| FR-H8 — notifikasi antrean menua | P1 |
+| Enkripsi at-rest SQLite lokal | Butuh keystore OS lewat Tauri (F4). Sampai itu ada, siapa pun yang dapat membaca berkas database perangkat dapat menyamar jadi perangkat itu |
+| FR-F5 — `cost` tidak boleh sampai ke Kasir | Diblokir dua hal: endpoint katalog tidak menuntut `X-Actor-Id` (opsional = dapat dilewati), dan `cost` sudah turun lewat `SELECT *`. Membuangnya dari jalur turun menuntut keputusan tentang `order_line.cost_at_sale` untuk order offline. Keputusan user: ditangani saat penulisan order dibangun — dan penulisan order kini ADA, jadi ini siap digarap |
+| K-16 buka laci · K-17 scanner | Belum digarap; keduanya kecil dan tidak memblokir apa pun |
+| Modul C-3 rekonsiliasi & ekspor | P1 |
+| Refund parsial dengan pemilihan baris di UI | `batalkan()` sudah menerima `lines`; yang belum ada layar pemilihnya. Sampai itu ada, refund mengirim `lines: []` — uang kembali tanpa barang kembali, dan layar MENYATAKANNYA |
+| Percobaan hitungan tidak masuk `audit_event` terpisah | Riwayatnya tersimpan di `cash_drawer_shift.count_attempts` dan tampil di laporan. AC FR-D2 ketiga menyebut "audit"; ini pembacaan yang lebih sempit dan perlu dikonfirmasi |
+
+**Batas yang harus dibaca sebelum menyebut F2 "aman":**
+
+- ⛔ `X-Actor-Id` adalah atribusi yang **dijamin perangkat**, bukan identitas
+  yang diverifikasi server. Konsekuensi offline-first, bukan kelalaian —
+  order yang antre enam jam tidak dapat membawa sesi hidup. Yang menahan
+  perangkat yang di-root adalah pencabutan token (FR-F12), bukan RBAC.
+- ⛔ Kontrol FR-D2 ("angka terhitung tidak dikirim ke klien") **tidak dapat
+  berlaku offline** — datanya sudah di perangkat. Yang berlaku adalah kontrol
+  audit: setiap hitungan tercatat sebagai percobaan, dan riwayatnya tidak
+  dapat ditimpa.
+- Penguncian PIN memakai resolusi dual-layer yang disetujui user 11 Agustus
+  2026, dan ia memperlambat penebakan — tidak menutupnya bagi orang yang
+  sudah tahu satu PIN sah. Sesuai `spec-f:118`: PIN adalah atribusi.
