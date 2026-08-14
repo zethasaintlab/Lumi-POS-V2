@@ -95,6 +95,8 @@ const TRANSLITERASI: ReadonlyMap<string, string> = new Map([
   ['“', '"'],
   ['”', '"'],
   [' ', ' '], // spasi tak-putus
+  ['·', '-'], // middle dot — dipakai design system sebagai pemisah
+  ['•', '-'], // bullet
 ]);
 
 /**
