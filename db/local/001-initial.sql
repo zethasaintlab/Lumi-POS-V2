@@ -104,7 +104,19 @@ CREATE TABLE outlet (
   rounding_increment INTEGER NOT NULL DEFAULT 100,
   rounding_mode TEXT NOT NULL DEFAULT 'half_up',
   service_charge_rate INTEGER NOT NULL DEFAULT 0,   -- x10000
+  vertical_profile_id TEXT,
   archived_at TEXT
+);
+
+-- FR-E4 / OQ-09. Resolusi = COALESCE(profil_outlet, profil_default_tenant),
+-- dilakukan di perangkat (packages/domain/src/profil-vertikal.ts) karena
+-- peringatan stok harus bekerja offline.
+CREATE TABLE vertical_profile (
+  id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
+  allow_negative_stock INTEGER NOT NULL DEFAULT 1,
+  is_tenant_default INTEGER NOT NULL DEFAULT 0,
+  default_channel TEXT, requires_barcode_flow INTEGER DEFAULT 0,
+  default_tax_type TEXT
 );
 
 -- ---------- IDENTITAS (direplikasi turun) ----------
