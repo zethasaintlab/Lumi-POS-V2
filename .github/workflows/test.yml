@@ -42,7 +42,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # ⛔ 24, bukan 22 — dan itu lantai yang ditegakkan `engines.node`.
+          # `crypto.argon2` (modul identity, hash PIN) baru ada sejak Node
+          # 24.7.0. Di Node 22 yang muncul adalah tiga test PIN gagal dengan
+          # pesan dari dalam `pin-hasher.ts`, tanpa satu kata pun tentang versi
+          # Node. `tests/runtime/versi-node.test.js` menjaga ketiga angkanya
+          # tetap sepakat.
+          node-version: '24'
 
       - run: npm ci
 
@@ -71,6 +77,11 @@ jobs:
           MIDTRANS_ENV=sandbox
           EOF
 
+      # PALING DULU, dan itu seluruh gunanya: ia memeriksa bahwa runner ini
+      # memenuhi `engines.node`. Kalau tidak, setiap langkah di bawah akan
+      # gagal dengan gejala yang menunjuk ke tempat lain -- 14 Agustus 2026
+      # gejalanya adalah tiga test PIN merah, bukan satu kalimat tentang versi.
+      - run: npm run test:runtime
       # Tanpa database dan tanpa I/O -- dijalankan lebih dulu supaya kesalahan
       # logika domain (state machine, aritmetika uang, HLC) gagal dalam
       # hitungan detik, bukan setelah menunggu seluruh suite ber-database.

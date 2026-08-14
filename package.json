@@ -11,7 +11,7 @@
     "prototypes/05-powersync-jalur-turun"
   ],
   "engines": {
-    "node": ">=22.18"
+    "node": ">=24.7"
   },
   "scripts": {
     "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client && tsc --noEmit --project apps/kasir",
@@ -19,6 +19,7 @@
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
     "test:isolation": "node --env-file=.env --test --test-concurrency=1 \"tests/isolation/*.test.js\"",
+    "test:runtime": "node --test \"tests/runtime/*.test.js\"",
     "test:domain": "node --test \"tests/domain/*.test.js\"",
     "test:schema": "node --env-file=.env --test --test-concurrency=1 \"tests/schema/*.test.js\"",
     "test:server": "node --env-file=.env --test --test-concurrency=1 \"tests/server/*.test.js\"",

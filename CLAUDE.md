@@ -25,7 +25,7 @@ Pelanggaran = cacat, bukan preferensi gaya. Tolak di review.
 
 | Lapisan | Pilihan |
 |---|---|
-| Backend | Node.js 22+ · TypeScript · **Fastify** |
+| Backend | **Node.js 24.7+** · TypeScript · **Fastify** |
 | API | **REST + OpenAPI spec-first** (bukan tRPC — klien POS tidak bisa dipaksa update) |
 | Database | **PostgreSQL 17+** · RLS · queue via `SKIP LOCKED` (**tanpa Redis di v1**) |
 | Frontend | **React 19 + Vite (SPA)** — terkunci oleh `/ds-bundle` |
@@ -36,6 +36,8 @@ Pelanggaran = cacat, bukan preferensi gaya. Tolak di review.
 | Auth | Buatan sendiri, modul terisolasi (alur POS tidak dilayani IAM generik) |
 
 Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan mengusulkan alternatif kecuali diminta.**
+
+**Lantai Node adalah 24.7, bukan 22** (dinaikkan 14 Agustus 2026). `crypto.argon2` — hash PIN Modul F, dan alasan repo ini tidak punya dependency Argon2 sama sekali — baru ada sejak Node 24.7.0. `engines.node`, `node-version` di kedua workflow, dan runtime pengembang dijaga tetap sepakat oleh `tests/runtime/versi-node.test.js`, yang berjalan **paling dulu** di CI. Tanpa itu, runtime yang terlalu tua muncul sebagai test PIN merah yang tidak menyebut kata "Node" sama sekali. `research/00` dan `research/03` masih menulis "Node.js 22+" — itu penyuntingan dokumen riset, bukan kewenangan agent.
 
 ---
 
