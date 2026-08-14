@@ -6,6 +6,7 @@ import { DetailTransaksi } from './DetailTransaksi.tsx';
 import { Perangkat } from './Perangkat.tsx';
 import { Riwayat } from './Riwayat.tsx';
 import { StatusSinkronisasi } from './StatusSinkronisasi.tsx';
+import { TutupKas } from './TutupKas.tsx';
 
 /* Pemetaan kode layar IA §2.2 ke komponennya.
 
@@ -20,6 +21,7 @@ const LAYAR: Record<string, (p: { params: Record<string, string> }) => React.Rea
   'K-03': Kasir,
   'K-08': Riwayat,
   'K-09': ({ params }) => <DetailTransaksi orderId={params.orderId} />,
+  'K-12': TutupKas,
   'K-14': StatusSinkronisasi,
   'K-15': Perangkat,
 };
