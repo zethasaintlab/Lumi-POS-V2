@@ -88,6 +88,30 @@ export function TutupKas() {
           {laporan.businessDate} · dibuka {laporan.dibukaOleh} · ditutup {laporan.ditutupOleh}
         </p>
 
+        {/* FR-G3 + FR-G2 — posisi penjualan, dengan basisnya tertulis.
+            `spec-g:64`: labelnya "tidak dapat dilewatkan, bukan tooltip".
+            Angkanya dari `posisiPenjualan`, fungsi yang sama yang dipakai
+            laporan harian — itu yang membuat keduanya tidak dapat berbeda. */}
+        <h2 className="t-body-md">Penjualan shift ini</h2>
+        <Baris label="Omzet kotor" nilai={laporan.penjualan.omzetKotor} />
+        {laporan.penjualan.voidAmount > 0n && (
+          <Baris label="Dibatalkan" nilai={-laporan.penjualan.voidAmount} />
+        )}
+        {laporan.penjualan.refundAmount > 0n && (
+          <Baris label="Refund" nilai={-laporan.penjualan.refundAmount} />
+        )}
+        <Baris label="Omzet bersih" nilai={laporan.penjualan.omzetBersih} tebal />
+        <p className="t-caption kasir-login-sub">
+          Setelah void &amp; refund · {laporan.penjualan.jumlahTransaksi} transaksi · rata-rata{' '}
+          {rupiah(Number(laporan.penjualan.rataRataPerTransaksi))}
+        </p>
+        {/* FR-G4 — `spec-g:111`. Tanpa kalimat ini, kasir atau owner yang
+            membaca satu tablet membacanya sebagai angka seluruh outlet. */}
+        <p className="t-caption kasir-login-sub">
+          Hanya transaksi dari perangkat ini.
+        </p>
+
+        <h2 className="t-body-md">Laci kas</h2>
         <Baris label="Saldo awal" nilai={laporan.saldoAwal} />
         {laporan.perMetode.map((m) => (
           <Baris key={m.metode} label={METODE[m.metode] ?? m.metode} nilai={m.total} />
@@ -324,12 +348,23 @@ export function TutupKas() {
   );
 }
 
-function Baris({ label, nilai, tebal = false }: { label: string; nilai: number; tebal?: boolean }) {
+function Baris({
+  label,
+  nilai,
+  tebal = false,
+}: {
+  label: string;
+  // `bigint` juga: posisi penjualan (FR-G3) memakai rupiah utuh ber-bigint,
+  // sementara angka laci datang dari kolom INTEGER sebagai number.
+  nilai: number | bigint;
+  tebal?: boolean;
+}) {
+  const n = Number(nilai);
   return (
     <div className="kasir-subtotal">
       <span className="t-body-md">{label}</span>
       <span className={tebal ? 't-title num' : 't-body-md num'}>
-        {nilai < 0 ? `− ${rupiah(-nilai)}` : rupiah(nilai)}
+        {n < 0 ? `− ${rupiah(-n)}` : rupiah(n)}
       </span>
     </div>
   );

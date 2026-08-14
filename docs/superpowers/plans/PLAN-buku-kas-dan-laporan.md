@@ -1,6 +1,6 @@
 # PLAN — Buku kas (`cash_movement`) dan fondasi Modul G
 
-**Fase:** F3 · **Ditulis:** 14 Agustus 2026 · **Status:** Tahap A & B selesai; Tahap C sebagian (C1–C5)
+**Fase:** F3 · **Ditulis:** 14 Agustus 2026 · **Status:** Tahap A & B selesai; Tahap C selesai untuk permukaan kasir
 
 **Spec:** `product/specs/spec-d-kas-shift.md` (FR-D5, FR-D6) · `product/specs/spec-g-laporan.md` (FR-G3, FR-G1)
 
@@ -125,7 +125,13 @@ Versi pertama penjaga ini menandai `SUM(amount)` apa pun dan menemukan tiga temp
 - [x] C4. FR-G2 `basis` dan FR-G4 `cakupan` dibawa di DATA, bukan hanya teks layar
 - [x] C5. **FR-F5 tertutup di perangkat** — tidak ada field `cost`/`margin` di laporan mana pun, dan ada test yang memeriksa `Object.keys`
 - [ ] C6. Laporan per kasir dan per shift sebagai layar (data per shift sudah ada lewat `laporanShift`)
-- [ ] C7. Layar K-13 memakai laporan harian; empty state "belum ada transaksi hari ini" dibedakan dari "tidak cocok filter" (`spec-g:274`)
+- [x] C7. **Layar K-13 menampilkan posisi penjualan** beserta label FR-G2 dan pernyataan cakupan FR-G4
+
+**⛔ Laporan harian TIDAK disambungkan ke layar kasir, dan itu keputusan.** `IA:195-197` menempatkan Laporan Penjualan (B-16) dan Laporan Produk (B-17) di **back-office**, peran Manajer Outlet, ditandai ❌ offline. Permukaan kasir hanya punya **K-13 Laporan Shift** (`IA:63`), dan `rute/tabel.ts` sudah menyatakan alasannya: mengarang URL untuk layar yang IA tidak beri URL berarti memutuskan sesuatu yang belum diputuskan pemilik produk.
+
+`laporanHarian` dan `laporanPerProduk` karena itu berdiri sebagai fungsi yang sudah teruji, menunggu aplikasi back-office. Yang membuatnya tetap berguna sekarang: K-13 memakai `posisiPenjualan` yang sama, jadi ketika B-16 dibangun, angkanya sudah dijamin sepakat.
+
+- [ ] C8. Aplikasi back-office (B-16/B-17) — di luar F3 permukaan kasir
 
 **Keputusan: `basis` per produk adalah `sebelum void & refund`.** Baris produk menyatakan barang apa yang keluar, dan refund uang tidak selalu mengembalikan barang — `lines: []` berarti uang kembali tanpa barang kembali. Menyebutnya "bersih" mengklaim sesuatu yang datanya tidak dukung. Order yang DIBATALKAN tetap disaring keluar, karena di sana barangnya memang kembali ke rak — dan itulah yang membuat totalnya cocok dengan omzet kotor harian.
 
