@@ -139,6 +139,19 @@ Versi pertama penjaga ini menandai `SUM(amount)` apa pun dan menemukan tiga temp
 
 **Keputusan: `basis` per produk adalah `sebelum void & refund`.** Baris produk menyatakan barang apa yang keluar, dan refund uang tidak selalu mengembalikan barang — `lines: []` berarti uang kembali tanpa barang kembali. Menyebutnya "bersih" mengklaim sesuatu yang datanya tidak dukung. Order yang DIBATALKAN tetap disaring keluar, karena di sana barangnya memang kembali ke rak — dan itulah yang membuat totalnya cocok dengan omzet kotor harian.
 
+### Tahap D — Modul E (inventori)
+
+- [x] D1. FR-E3 stock cutting di kedua sisi, di transaksi penjualan; FR-E2 hanya `track_stock = true`; modifier tidak menghasilkan movement (KEP-04)
+- [x] D2. FR-E4 aturan stok negatif — `vertical_profile` turun sebagai TABEL, resolusi `COALESCE(profil_outlet, default_tenant)` di perangkat
+- [x] D3. Pembacaan stok lokal: `snapshot.balance + SUM(delta WHERE hlc > checkpoint)` (`spec-e:62`), plus jalur agregasi langsung untuk uji drift (`spec-e:331`)
+- [x] D4. Rebuild snapshot saat tutup shift (`spec-e:63`) — **di luar transaksi tutup kas**, karena snapshot adalah cache dan kegagalannya tidak boleh me-rollback penutupan kas yang sudah benar
+- [ ] D5. FR-E4 di UI: peringatan "Stok tersisa N" di keranjang K-03
+- [ ] D6. FR-E5 penandaan sold-out manual, reset saat buka shift dengan konfirmasi
+- [ ] D7. FR-E6 deteksi oversell pasca-sinkronisasi + `OversellEvent`
+- [x] D8. FR-E7 opname — **DITUNDA ke v1.1**, keputusan user 14 Agustus 2026 (menjawab `spec-e:343`)
+
+**Keputusan: `allow_negative_stock` default `true` untuk F&B, ditandai `[ASUMSI]`.** `spec-e:341` menuntut validasi ke tiga merchant; yang divalidasi adalah NILAI defaultnya, bukan keberadaan setting-nya — FR-E4 sendiri menuntut ia ada di `VerticalProfile` dan bukan konstanta.
+
 ---
 
 ## 4. Di luar scope plan ini

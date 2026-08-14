@@ -283,3 +283,36 @@ test('⛔ buku kas dapat merekonstruksi laci dari movement SAJA', async () => {
   assert.equal(m[0].order_id, null, 'modal awal tidak berasal dari order mana pun');
   assert.ok(m[0].counterpart_type, 'counterpart_type wajib terisi (FR-D6)');
 });
+
+test('⛔ tutup kas membangun ulang snapshot stok (spec-e:63)', async () => {
+  // Snapshot adalah cache yang menjaga pembacaan stok tetap ~1 ms; tanpa
+  // rebuild ia menua dan delta yang harus dijumlahkan tumbuh setiap hari
+  // sampai pembacaan melewati 200 ms — ambang yang terukur tercapai kafe
+  // besar dalam kurang dari 30 hari.
+  const { tutupKas } = await import(MOD);
+  const db = dbSungguhan();
+  isiSatuPenjualanTunai(db, 300000);
+  catatMovement(db, {
+    id: 'cm-1', tipe: 'sale', delta: 300000, orderId: 'ord-1', counterpart: 'sales_revenue',
+  });
+  db.sqlite.exec(`
+    INSERT INTO stock_movement
+      (id, tenant_id, outlet_id, device_id, variation_id, type, delta, created_by, occurred_at, hlc)
+    VALUES ('mv-1','${TENANT}','${OUTLET}','${DEVICE}','v1','sale',-2000,'u-sari','2026-08-13T10:00:00Z',7)
+  `);
+
+  await tutupKas({
+    db, shiftId: SHIFT_ID, hitungan: 800000,
+    sesi: { userId: 'u-sari' }, approverId: null, alasan: null,
+    waktu: () => new Date('2026-08-13T22:00:00Z'),
+    idBaru: (() => { let i = 0; return () => `tk-${++i}`; })(),
+    hlc: () => 9n,
+  });
+
+  const snap = db.sqlite
+    .prepare(`SELECT balance, checkpoint_hlc FROM stock_snapshot WHERE variation_id = 'v1'`)
+    .all();
+  assert.equal(snap.length, 1, 'snapshot tidak dibangun saat tutup kas');
+  assert.equal(Number(snap[0].balance), -2000);
+  assert.equal(Number(snap[0].checkpoint_hlc), 7);
+});

@@ -2,6 +2,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import { saldoLaci } from '../../../../packages/domain/src/buku-kas.ts';
+import { bangunUlangSnapshot } from '../inventori/stok.ts';
 import {
   posisiPenjualan,
   type PosisiPenjualan,
@@ -371,6 +372,22 @@ export async function tutupKas({
 
     await simpanHlc(tx, hlcValue);
   });
+
+  // Rebuild snapshot stok — `spec-e:63` menempatkannya di sini: tutup shift
+  // adalah jeda operasional alami, dan biayanya terukur 126 ms.
+  //
+  // ⛔ DI LUAR transaksi tutup kas, dan itu disengaja. Snapshot adalah CACHE
+  // yang selalu dapat dibangun ulang dari ledger; menaruhnya di dalam berarti
+  // kegagalan membangun cache me-rollback penutupan kas yang sudah benar —
+  // menahan uang merchant demi optimasi baca.
+  //
+  // Kalau ia gagal, stok tetap terbaca benar lewat agregasi langsung, hanya
+  // lebih lambat. Itu sebabnya kegagalannya tidak dilemparkan ke pemanggil.
+  try {
+    await bangunUlangSnapshot(db, { tenantId: shift.tenant_id, outletId: shift.outlet_id });
+  } catch {
+    // Sengaja ditelan: lihat alasan di atas. Stok tetap benar tanpa snapshot.
+  }
 
   return { status: 'tertutup', selisih, saldoSeharusnya: seharusnya };
 }

@@ -260,6 +260,12 @@ test('SATU transaksi: tutup + audit + outbox', async () => {
     waktu: JAM, idBaru: ID, hlc: () => 7n,
   });
 
+  // Satu transaksi untuk penutupan itu sendiri. Rebuild snapshot stok
+  // (`spec-e:63`) sengaja berjalan di transaksi TERPISAH setelahnya — ia
+  // cache yang selalu dapat dibangun ulang, dan menaruhnya di dalam berarti
+  // kegagalan membangun cache me-rollback penutupan kas yang sudah benar.
+  // Di sini ia tidak menambah transaksi karena tidak ada movement sama
+  // sekali; `tutup-kas-refund.test.js` yang mengujinya dengan movement nyata.
   assert.equal(db.state.transaksi, 1);
   for (const t of db.state.tulis) {
     assert.equal(t.dalam, true, `penulisan di LUAR transaksi: ${t.sql}`);
