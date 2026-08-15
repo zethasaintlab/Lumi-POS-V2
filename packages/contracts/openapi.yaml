@@ -1756,6 +1756,32 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
   /devices:
+    get:
+      operationId: listDevices
+      summary: >-
+        Daftar perangkat tenant ini, untuk layar B-28 Perangkat.
+      description: >-
+        Perangkat yang DICABUT tetap ikut, dengan `revokedAt` terisi.
+        Perangkat tidak pernah dihapus -- `order.device_id` menunjuknya, dan
+        riwayat penjualan harus tetap dapat menyebut perangkat mana yang
+        membuatnya.
+
+
+        ⛔ `token_hash` TIDAK PERNAH dikirim. Layar hanya perlu tahu APAKAH
+        kredensial sudah diterbitkan (`adaKredensial`), bukan nilainya.
+      responses:
+        '200':
+          description: Daftar perangkat, aktif lebih dulu lalu urut kode.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DeviceRingkas' }
+        '403':
+          description: Aktor tidak berhak mengelola perangkat (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     post:
       operationId: createDevice
       requestBody:
@@ -3161,6 +3187,27 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OrderLine'
+    DeviceRingkas:
+      type: object
+      required: [id, outletId, code, revokedAt, adaKredensial]
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        code: { type: string }
+        name: { type: string, nullable: true }
+        platform: { type: string, nullable: true }
+        appVersion: { type: string, nullable: true }
+        lastSeenAt: { type: string, nullable: true }
+        revokedAt:
+          type: string
+          nullable: true
+          description: Terisi berarti perangkat dicabut dan tidak dapat lagi menukar token.
+        adaKredensial:
+          type: boolean
+          description: >-
+            Apakah kredensial sudah pernah diterbitkan. BUKAN nilainya --
+            secret hanya dapat dibaca sekali, pada respons yang menerbitkannya.
+        credentialsExpireAt: { type: string, nullable: true }
     PemakaianKuota:
       type: object
       required: [terpakai, batas]
