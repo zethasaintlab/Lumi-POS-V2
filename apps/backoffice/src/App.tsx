@@ -5,6 +5,9 @@ import 'ds/styles.css';
 // system tidak sediakan — lihat komentar di berkasnya.
 import './backoffice.css';
 import { NAVIGASI, LAYAR_SIAP, cariItem, grupUntuk } from './navigasi.ts';
+import { PenyediaSesi, useSesi } from './sesi.tsx';
+import { Masuk } from './Masuk.tsx';
+import { Tombol } from './Tombol.tsx';
 
 /**
  * Kerangka back-office. Nol layar fitur — sama seperti `PLAN-pondasi-kasir`
@@ -16,23 +19,15 @@ import { NAVIGASI, LAYAR_SIAP, cariItem, grupUntuk } from './navigasi.ts';
  * `ShellKasir`. Back-office adalah kebalikannya: `IA:§3.1` menyebut `AppShell`
  * dengan nama — sidebar berkelompok + topbar breadcrumb + konten.
  *
- * `AppShell` sudah ada di `packages/ds` sejak F0 dan **tidak pernah dipakai
- * siapa pun**. Ini konsumen pertamanya.
- *
  * ## ⛔ `brand.logo` diberikan, dan itu bukan hiasan
  *
  * Cabang fallback `AppShell` (saat `logo` kosong) merender inisial di dalam
  * kotak ber-`style` inline dengan angka piksel yang dipanggang: `width: 28`,
- * `height: 28`, `borderRadius: 8`. Itu melanggar aturan design system #6
- * ("semua styling lewat token; tidak ada nilai warna/ukuran hardcoded di
- * komponen").
+ * `height: 28`, `borderRadius: 8`. Itu melanggar aturan design system #6.
  *
- * `ds-bundle` dinyatakan **final dan tidak boleh diubah** (`CLAUDE.md`), dan
- * `lint:ds` memang tidak memindainya. Jadi yang dilakukan di sini bukan
- * memperbaiki komponennya, melainkan **tidak menyalakan cabang yang
- * melanggar**: `logo` selalu diberikan, dan isinya memakai token saja.
- *
- * Temuan audit selengkapnya ada di `apps/backoffice/AUDIT-APPSHELL.md`.
+ * `ds-bundle` dinyatakan **final dan tidak boleh diubah** (`CLAUDE.md`), jadi
+ * yang dilakukan bukan memperbaiki komponennya melainkan **tidak menyalakan
+ * cabang yang melanggar**. Temuan selengkapnya di `AUDIT-APPSHELL.md`.
  */
 
 function LogoLumi() {
@@ -57,8 +52,27 @@ function LogoLumi() {
   );
 }
 
-export default function App() {
+/**
+ * ⛔ Penjaga rute — dan batasnya harus dibaca apa adanya.
+ *
+ * Ia menjaga BAHWA APLIKASI TIDAK MENAMPILKAN SHELL tanpa sesi. Ia **bukan**
+ * batas keamanan: setiap endpoint back-office mengotorisasi lewat
+ * `X-Actor-Id`, sebuah header berisi id pengguna biasa, dan server belum
+ * memverifikasi token sesi pada satu pun endpoint selain `POST /auth/logout`.
+ *
+ * Artinya melewati layar ini di devtools tidak memberi akses ke data apa pun
+ * yang tidak sudah dapat diambil dengan `curl`. Yang menutupnya adalah
+ * middleware server yang menukar Bearer → aktor, dan ia belum dibangun.
+ *
+ * Dinyatakan di sini supaya tidak ada yang menyimpulkan dari keberadaan
+ * penjaga ini bahwa autentikasi sudah selesai.
+ */
+function Terlindungi() {
+  const { sesi, keluar } = useSesi();
   const [aktif, setAktif] = useState('B-01');
+
+  if (!sesi) return <Masuk />;
+
   const item = cariItem(aktif);
   const grup = grupUntuk(aktif);
 
@@ -73,18 +87,32 @@ export default function App() {
       active={aktif}
       onNavigate={setAktif}
       breadcrumb={grup && item ? [grup, item.label] : undefined}
-      // ⛔ Placeholder. Sesi back-office (B-00) belum dibangun, jadi tidak ada
-      // pengguna sungguhan untuk ditampilkan — dan nama karangan yang
-      // terlihat asli lebih buruk daripada menyatakan bahwa ia belum ada.
-      user={{ name: 'Belum masuk', role: 'Sesi belum dibangun (B-00)' }}
+      user={{
+        name: sesi.userId,
+        // ⛔ Peran ditampilkan APA ADANYA dari server, bukan diterjemahkan di
+        // sini. Terjemahan di klien adalah salinan kedua dari daftar peran,
+        // dan ia akan menyimpang dari `packages/domain/src/rbac.ts`.
+        role: sesi.roles.join(', ') || 'tanpa peran',
+      }}
     >
-      {item && !LAYAR_SIAP.has(item.id) ? (
-        <EmptyState
-          icon={<Icon name={item.icon} size={32} />}
-          title={`${item.label} belum dibangun`}
-          body={`Layar ${item.id} ada di peta layar IA §3.3 dan belum punya isi. Menu ini sengaja tetap terlihat supaya peta layarnya utuh — menu yang disembunyikan sampai siap membuat "apa yang belum ada" mustahil dilihat.`}
-        />
-      ) : null}
+      <div className="stack" style={{ gap: 'var(--space-4)' }}>
+        {item && !LAYAR_SIAP.has(item.id) ? (
+          <EmptyState
+            icon={<Icon name={item.icon} size={32} />}
+            title={`${item.label} belum dibangun`}
+            body={`Layar ${item.id} ada di peta layar IA §3.3 dan belum punya isi. Menu ini sengaja tetap terlihat supaya peta layarnya utuh — menu yang disembunyikan sampai siap membuat "apa yang belum ada" mustahil dilihat.`}
+            action={<Tombol onClick={() => void keluar()}>Keluar</Tombol>}
+          />
+        ) : null}
+      </div>
     </AppShell>
+  );
+}
+
+export default function App() {
+  return (
+    <PenyediaSesi>
+      <Terlindungi />
+    </PenyediaSesi>
   );
 }
