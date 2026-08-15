@@ -3,6 +3,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from './db.ts';
 import { withTenantTransaction } from './db.ts';
 import { HttpError } from './http-error.ts';
+import { operasiUntuk } from './rbac-rute.ts';
+import { bolehkah } from '../../../packages/domain/src/rbac.ts';
 
 /**
  * Verifikasi sesi back-office (FR-F2b) — hook `onRequest` fail-closed.
@@ -61,6 +63,8 @@ export interface SesiTerverifikasi {
   sesiId: string;
   tenantId: string;
   userId: string;
+  /** Peran pengguna ini. Kosong berarti tidak berhak apa pun (fail-closed). */
+  peran: string[];
 }
 
 declare module 'fastify' {
@@ -213,16 +217,30 @@ export function pasangPenjagaSesi(app: FastifyInstance, pool: Pool): void {
         tenant_id: string;
         user_id: string;
         token_hash: string;
+        peran: string[] | null;
       }>(
-        `SELECT s.id, s.tenant_id, s.user_id, s.token_hash
+        `SELECT s.id, s.tenant_id, s.user_id, s.token_hash,
+                -- ⛔ Peran diambil di query yang SAMA, bukan lewat SELECT
+                -- kedua. Penjaga peran berjalan pada SETIAP permintaan ke
+                -- permukaan back-office; satu round trip tambahan per
+                -- permintaan adalah biaya yang tidak perlu dibayar.
+                --
+                -- array_agg menghasilkan {NULL} untuk pengguna tanpa
+                -- peran, bukan array kosong; FILTER yang membuatnya
+                -- benar-benar kosong. Pengguna tanpa peran harus ditolak
+                -- fail-closed, dan array berisi satu NULL akan lolos setiap
+                -- pemeriksaan panjang.
+                array_agg(ur.role) FILTER (WHERE ur.role IS NOT NULL) AS peran
            FROM user_session s
            JOIN "user" u ON u.id = s.user_id
+           LEFT JOIN user_role ur ON ur.user_id = s.user_id
           WHERE s.token_hash = $1
             AND s.expires_at > now()
             -- ⛔ Pengguna yang DINONAKTIFKAN kehilangan sesinya seketika.
             -- Tanpa baris ini, memecat kasir tidak mencabut apa pun sampai
             -- sesinya kedaluwarsa sendiri — sampai 12 jam kemudian.
-            AND u.is_active = true`,
+            AND u.is_active = true
+          GROUP BY s.id, s.tenant_id, s.user_id, s.token_hash`,
         [hash]
       );
       return rows[0] ?? null;
@@ -234,6 +252,26 @@ export function pasangPenjagaSesi(app: FastifyInstance, pool: Pool): void {
       sesiId: baris.id,
       tenantId: baris.tenant_id,
       userId: baris.user_id,
+      peran: baris.peran ?? [],
     };
+
+    // ## ⛔ Penjaga peran, di sini dan bukan di 30 handler
+    //
+    // Audit menemukan 34 endpoint mutasi tanpa penjaga peran sama sekali.
+    // Menambalnya satu per satu memperbaiki ke-34 itu dan TIDAK memperbaiki
+    // yang ke-35 — endpoint bulan depan lahir tanpa penjaga persis seperti
+    // ke-34 ini lahir.
+    //
+    // `bolehkah` sendiri fail-closed: operasi tak dikenal ditolak untuk
+    // SEMUA orang, termasuk owner. Jadi peta yang salah ketik menutup rute,
+    // bukan membukanya.
+    const operasi = operasiUntuk(req.method, req.routeOptions?.url);
+    if (operasi !== null && !bolehkah(req.sesi.peran, operasi)) {
+      throw new HttpError(
+        403,
+        'FORBIDDEN',
+        `Pengguna ${req.sesi.userId} tidak berhak melakukan operasi ini.`
+      );
+    }
   });
 }

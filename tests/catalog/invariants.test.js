@@ -85,6 +85,14 @@ test('property: setiap Item yang berhasil dibuat selalu punya >= 1 variation', a
     tenant.id,
     'Aktor Invariant',
   ]);
+  // Peran owner: `POST /items` menuntut `catalog_edit` sejak penjaga peran
+  // dipasang (`apps/server/src/rbac-rute.ts`). Pengguna tanpa peran ditolak
+  // 403 fail-closed — benar, tapi bukan yang sedang diuji di sini.
+  await appSetup.query(
+    "INSERT INTO user_role (id, tenant_id, user_id, role, scope_type, scope_id) " +
+      "VALUES ($1, $2, $3, 'owner', 'tenant', $2)",
+    [crypto.randomUUID(), tenant.id, userId]
+  );
   await appSetup.query('COMMIT');
   const token = await buatSesi(appSetup, { tenantId: tenant.id, userId });
 

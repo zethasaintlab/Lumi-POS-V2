@@ -119,6 +119,26 @@ async function seedTenantBase(appClient, { suffix }) {
     deactivated_at: null,
   });
 
+  // ⛔ Pengguna fixture diberi DUA peran: kasir DAN owner.
+  //
+  // Itu bukan kelonggaran, melainkan bentuk yang paling umum di segmen ini —
+  // pemilik kafe kecil berdiri di kasir sendiri. Yang menentukan di sini:
+  // sejak penjaga peran dipasang (), fixture
+  // yang hanya berperan kasir membuat SETIAP test katalog, pajak, dan
+  // perangkat gagal 403 — bukan karena kodenya salah, melainkan karena
+  // fixture-nya tidak pernah dimaksudkan untuk mewakili aktor administratif.
+  //
+  // Penolakan RBAC punya suite-nya sendiri ()
+  // dengan pengguna berperan kasir MURNI. Kalau penolakan itu diuji dengan
+  // fixture ini, ia akan hijau karena alasan yang salah.
+  rows.user_role_owner = await insertReturning(appClient, 'user_role', {
+    id: freshId(),
+    tenant_id: tenantId,
+    user_id: rows.user.id,
+    role: 'owner',
+    scope_type: 'tenant',
+    scope_id: tenantId,
+  });
   rows.user_role = await insertReturning(appClient, 'user_role', {
     id: freshId(),
     tenant_id: tenantId,
