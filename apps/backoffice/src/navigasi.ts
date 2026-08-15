@@ -124,6 +124,7 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
  */
 export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-06',
+  'B-08',
   'B-11',
   'B-27',
   'B-28',

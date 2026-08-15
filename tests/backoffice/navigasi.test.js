@@ -176,6 +176,11 @@ test('B-06 sudah ditandai siap', async () => {
   assert.ok(LAYAR_SIAP.has('B-06'), 'B-06 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
 
+test('B-08 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-08'), 'B-08 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
+
 test('⛔ B-07 TIDAK di sidebar — ia layar detail, dicapai dari B-06', async () => {
   // `IA:§3.3` menaruhnya di luar menu. Menambahkannya ke sidebar berarti
   // layar yang tidak dapat tahu produk mana yang sedang dibuka.
