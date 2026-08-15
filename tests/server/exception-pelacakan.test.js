@@ -288,3 +288,122 @@ test('daftar kosong tidak melempar dan tidak membagi nol', async () => {
   const { ringkasPerAktor } = await import(MOD);
   assert.deepEqual(ringkasPerAktor([]), []);
 });
+
+// ---------------------------------------------------------------------------
+// Endpoint `GET /reports/exceptions/voids`
+// ---------------------------------------------------------------------------
+
+const { test: t2 } = require('node:test');
+
+let appX;
+
+async function endpoint(headers = {}, q = 'from=2026-08-10&to=2026-08-10') {
+  if (!appX) {
+    const { buildApp } = await import('../../apps/server/src/app.ts');
+    appX = await buildApp();
+  }
+  return appX.inject({
+    method: 'GET',
+    url: `/reports/exceptions/voids?${q}`,
+    headers: {
+      'x-tenant-id': tenant.id,
+      authorization: base.authHeader,
+      'x-actor-id': base.user.id,
+      ...headers,
+    },
+  });
+}
+
+/** `seedTenantBase` memberi user peran `cashier` + `owner`. */
+async function jadikanHanyaKasir(userId) {
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(`DELETE FROM user_role WHERE user_id = $1 AND role <> 'cashier'`, [userId]);
+  await appSetup.query('COMMIT');
+}
+
+t2('endpoint mengembalikan ringkasan per pelaku dan daftar peristiwa', async () => {
+  const order = await jual({ createdBy: base.user.id, total: 50000 });
+  await catatAudit({ orderId: order, jenis: 'void', aktor: manajer });
+
+  const res = await endpoint();
+  assert.equal(res.statusCode, 200, res.body);
+  const body = res.json();
+
+  assert.equal(body.perAktor.length, 1);
+  assert.equal(body.perAktor[0].userId, manajer, 'pelaku pembatalan salah');
+  assert.equal(body.perAktor[0].jumlahVoid, 1);
+  assert.equal(body.perAktor[0].nilaiVoid, '50000');
+  assert.equal(body.perAktor[0].rasio, '1.0');
+  assert.equal(body.peristiwa.length, 1);
+  assert.equal(body.peristiwa[0].receiptNumber.startsWith('K1-'), true);
+});
+
+t2('⛔ KASIR ditolak 403 — AC spec-g', async () => {
+  // "Kasir tidak dapat mengakses laporan exception". Ini satu-satunya endpoint
+  // laporan yang menuntut operasi RBAC eksplisit: omzet outletnya sendiri
+  // bukan rahasia dari kasir, daftar siapa-membatalkan-apa adalah.
+  await jadikanHanyaKasir(base.user.id);
+  const res = await endpoint();
+  assert.equal(res.statusCode, 403, res.body);
+  assert.equal(res.json().error.code, 'FORBIDDEN');
+});
+
+t2('⛔ uang keluar sebagai STRING di kedua bagian', async () => {
+  const order = await jual({ createdBy: base.user.id, total: '9007199254740993' });
+  await catatAudit({ orderId: order, jenis: 'void', aktor: base.user.id });
+
+  const body = (await endpoint()).json();
+  assert.equal(typeof body.perAktor[0].nilaiVoid, 'string');
+  assert.equal(typeof body.perAktor[0].rasio, 'string');
+  assert.equal(body.peristiwa[0].nilai, '9007199254740993', 'presisi hilang lewat endpoint');
+});
+
+t2('⛔ tanpa sesi ditolak 401', async () => {
+  // Header dibangun tanpa `authorization` sama sekali — `inject` menolak nilai
+  // `undefined` sebagai header cacat, dan yang diuji di sini bukan itu.
+  if (!appX) {
+    const { buildApp } = await import('../../apps/server/src/app.ts');
+    appX = await buildApp();
+  }
+  const res = await appX.inject({
+    method: 'GET',
+    url: '/reports/exceptions/voids?from=2026-08-10&to=2026-08-10',
+    headers: { 'x-tenant-id': tenant.id },
+  });
+  assert.equal(res.statusCode, 401, res.body);
+});
+
+t2('⛔ outlet tenant lain ditolak 404', async () => {
+  const lain = await seedTenantBase(appSetup, { suffix: 'ExcLain' });
+  const res = await endpoint({}, `from=2026-08-10&to=2026-08-10&outlet_id=${lain.outlet.id}`);
+  assert.equal(res.statusCode, 404, res.body);
+});
+
+t2('⛔ tanpa bahasa menuduh di seluruh respons', async () => {
+  // Penjaga yang sama dengan yang mengawal helper, kini atas JSON yang
+  // benar-benar dikirim ke browser. Laporan ini menamai orang; satu kata
+  // "curiga" di dalamnya menjadikannya tuduhan yang dicetak sistem.
+  const order = await jual({ createdBy: base.user.id, total: 20000 });
+  await catatAudit({ orderId: order, jenis: 'void', aktor: manajer });
+
+  const res = await endpoint();
+  assert.doesNotMatch(
+    res.body,
+    /curiga|suspicious|fraud|penipuan|mencurigakan|pelanggar|nakal|abuse/i,
+    res.body
+  );
+});
+
+t2('rentang tak sah ditolak 400, memakai validasi yang sama', async () => {
+  const res = await endpoint({}, 'from=2026-08-12&to=2026-08-10');
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error.code, 'VALIDATION_ERROR');
+});
+
+t2('rentang tanpa pembatalan mengembalikan dua daftar kosong', async () => {
+  const res = await endpoint({}, 'from=2026-01-01&to=2026-01-31');
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json().perAktor, []);
+  assert.deepEqual(res.json().peristiwa, []);
+});

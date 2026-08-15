@@ -494,3 +494,28 @@ test('X-Approver-Id yang dikirim pada void diabaikan, tidak tersimpan', async ()
   const events = await query('SELECT approver_user_id FROM audit_event');
   assert.equal(events[0].approver_user_id, null);
 });
+
+test('⛔ nilai uang di payload audit adalah STRING, bukan number', async () => {
+  // `before.total` dulu ditulis `Number(asli.total)` — `Number` atas `bigint`,
+  // DI DALAM jsonb, tempat nilainya tersimpan permanen dan tidak dapat
+  // dipulihkan dari mana pun.
+  //
+  // Di atas 2^53 presisinya hilang tanpa satu pun error. Ditemukan saat
+  // merancang laporan exception (B-21), yang karena cacat ini harus JOIN ke
+  // `"order"` alih-alih membaca payload ini.
+  //
+  // 47 test void/refund hijau tanpa satu pun memeriksa BENTUK payloadnya —
+  // itu sebabnya cacatnya tidak terlihat.
+  const fx = await setupDeviceAndShift();
+  const v = await buatVariation(10000);
+  const order = await buatOrder(fx, [await baris(v)]);
+  await batalkan(order.id, batalkanPayload({}));
+
+  const events = await query(`SELECT before FROM audit_event WHERE event_type = 'order.voided'`);
+  assert.equal(events.length, 1);
+  assert.equal(
+    typeof events[0].before.total,
+    'string',
+    `nilai uang di jsonb bukan string: ${JSON.stringify(events[0].before)}`
+  );
+});

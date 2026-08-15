@@ -3103,8 +3103,143 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/exceptions/voids:
+    get:
+      operationId: getVoidExceptionReport
+      summary: >-
+        FR-G5 X1 -- void & refund per PELAKU, pada rentang tanggal bisnis.
+      description: >-
+        ⛔ Menjawab pertanyaan yang `/reports/cashiers` sengaja TIDAK jawab.
+        Laporan kasir melekatkan `voidAmount` pada kasir yang PENJUALANNYA
+        dibatalkan -- supaya jumlah seluruh kasir sama dengan laporan global.
+        Di sini yang dilacak adalah yang MENEKAN TOMBOL
+        (`audit_event.actor_user_id`).
+
+
+        Keduanya benar untuk pertanyaan berbeda. Sejak keputusan 1 Agustus 2026
+        menghapus PIN manajer dari void, ini satu-satunya kontrol yang tersisa
+        terhadap penyalahgunaannya.
+
+
+        ⛔ SATU-SATUNYA endpoint laporan yang menuntut operasi RBAC eksplisit
+        (`report_exception`). Keempat laporan lain hanya menuntut sesi yang
+        sah, dan itu benar: omzet outletnya sendiri bukan rahasia dari kasir.
+        Daftar siapa-membatalkan-apa adalah. AC spec-g: "Kasir tidak dapat
+        mengakses laporan exception".
+
+
+        ⛔ Nilai uang datang dari `order.total` lewat JOIN, BUKAN dari
+        `audit_event.before`. Payload audit sempat menulis `Number(total)`
+        atas bigint; baris lama tidak di-backfill, jadi laporan tidak boleh
+        mempercayainya.
+
+
+        ⛔ Tanpa bahasa menuduh: tidak ada skor, tidak ada label. `rasio`
+        dibandingkan terhadap RATA-RATA seluruh pelaku pada periode ini, sebagai
+        STRING satu angka desimal -- ia satu-satunya angka yang diurutkan, dan
+        urutan yang berpindah antar-muat adalah laporan yang tidak dapat
+        dipercaya.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: >-
+            Ringkasan per pelaku (terurut tingkat anomali) beserta daftar
+            peristiwa untuk drill-down.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaporanException'
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >-
+            Aktor tidak berhak melihat laporan exception (FORBIDDEN). Kasir
+            selalu mendarat di sini.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
+    LaporanException:
+      type: object
+      required: [from, to, outletId, perAktor, peristiwa]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        perAktor:
+          type: array
+          items:
+            type: object
+            required:
+              [userId, name, jumlahVoid, nilaiVoid, jumlahRefund, nilaiRefund,
+               jumlahTotal, rasio, alasan]
+            properties:
+              userId: { type: string }
+              name: { type: string }
+              jumlahVoid: { type: integer }
+              nilaiVoid: { type: string }
+              jumlahRefund: { type: integer }
+              nilaiRefund: { type: string }
+              jumlahTotal: { type: integer }
+              rasio:
+                type: string
+                description: >-
+                  Terhadap rata-rata seluruh pelaku pada periode ini. Satu
+                  angka desimal, STRING.
+              alasan:
+                type: array
+                items:
+                  type: object
+                  required: [reasonCode, jumlah]
+                  properties:
+                    reasonCode: { type: string }
+                    jumlah: { type: integer }
+        peristiwa:
+          type: array
+          items:
+            type: object
+            required:
+              [auditId, occurredAt, recordedAt, jenis, aktorId, aktorNama,
+               orderId, receiptNumber, nilai]
+            properties:
+              auditId: { type: string }
+              occurredAt: { type: string, format: date-time }
+              recordedAt: { type: string, format: date-time }
+              jenis: { type: string, enum: [void, refund] }
+              aktorId: { type: string }
+              aktorNama: { type: string }
+              penyetujuId: { type: string, nullable: true }
+              penyetujuNama: { type: string, nullable: true }
+              orderId: { type: string }
+              receiptNumber: { type: string }
+              nilai:
+                type: string
+                description: Dari `order.total`, bukan dari payload audit.
+              reasonCode: { type: string, nullable: true }
+              reasonNote: { type: string, nullable: true }
+              outletId: { type: string, nullable: true }
     LaporanKasir:
       type: object
       required: [from, to, outletId, kasir]

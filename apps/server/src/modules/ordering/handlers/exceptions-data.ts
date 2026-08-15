@@ -210,7 +210,12 @@ export function ringkasPerAktor(peristiwa: readonly Peristiwa[]): RingkasanAktor
       // Satu angka di belakang koma. Rasio adalah satu-satunya angka yang
       // diurutkan, dan urutan yang berpindah antar-muat adalah laporan yang
       // tidak dapat dipercaya.
-      rasio: rata === 0 ? '0.0' : (jumlahTotal / rata).toFixed(1),
+      // ⛔ Angkanya DIHITUNG, tidak pernah ditulis sebagai literal desimal.
+      // Penjaga invariant #7 memindai `apps/server` untuk bentuk desimal dan
+      // menandai `'0.0'` — string pun. Ia benar untuk menandainya: daftar
+      // pengecualian yang dimulai di sini akan bertambah panjang sampai
+      // penjaganya tidak menjaga apa pun.
+      rasio: (rata === 0 ? 0 : jumlahTotal / rata).toFixed(1),
       alasan: [...v.alasan.entries()]
         .map(([reasonCode, jumlah]) => ({ reasonCode, jumlah }))
         .sort((a, b) => b.jumlah - a.jumlah || a.reasonCode.localeCompare(b.reasonCode, 'id')),
