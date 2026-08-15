@@ -245,3 +245,47 @@ melihatnya. Yang melihatnya: membangun potongan berikutnya di atasnya.
   sebenarnya tidak bersaing bila stok lama sudah nol berhari-hari.
 - `research/00` dan `research/03` masih menulis "Node.js 22+" sementara lantai
   sebenarnya 24.7. Penyuntingan dokumen riset bukan kewenangan agent.
+
+---
+
+## F4 — separuh tertutup, 15 Agustus 2026
+
+⛔ **Gate F4 punya DUA bagian, dan hanya satu yang tertutup.** `ARCH:398`:
+*"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."*
+
+Bagian kedua terbukti lewat test. Bagian pertama menuntut perangkat fisik.
+**Jangan menandai F4 selesai sampai lima model benar-benar dicoba.**
+
+Yang ada dan teruji: renderer ESC/POS, `ReceiptDocument` FR-C10 yang
+mereproduksi contoh spec persis, `PeripheralPort` + adapter Noop, penegakan
+invariant #3, K-15 uji cetak (dijalankan di layar), profil printer sebagai
+data, dan cetak ulang FR-B11.
+
+**Utang yang dibawa ke F5, semuanya keputusan sadar:**
+
+| Utang | Kenapa belum |
+|---|---|
+| Adapter Network (TCP 9100), Tauri/Rust, WebUSB | `ARCH:235`: WebUSB gagal di Windows, jadi jalur universalnya Rust atau printer network. Keduanya menuntut shell Tauri, yang belum ada |
+| Tombol cetak ulang di K-09 | `cetakUlangStruk` siap dan teruji; tombolnya belum ada di layar detail transaksi |
+| Retry antrean `print_job` | Tabel dan dokumen tersimpan; penjadwal retry belum ditulis. Sampai ada, cetak yang gagal harus diulang manual lewat K-09 |
+| Nama tarif pajak di cetak ulang | Baris pajak berbunyi "Pajak" tanpa nama tarif — meresolusinya menuntut query ke `tax_rate`, yang `spec-b:145` larang. Jalan keluarnya menyalin nama tarif ke `order_line` saat penjualan: **migrasi kecil, keputusan pemilik produk** |
+| Endpoint REST `sold_out_flag` + relay (dari F3) | Penandaan habis masih lokal saja |
+| Notifikasi manajer untuk oversell (dari F3) | `spec-e:195` menuntut lebih dari entri laporan |
+| Laporan back-office B-16/B-17 (dari F3) | Fungsinya ada dan teruji, tanpa layar. `IA:195-197` menempatkannya di back-office |
+
+**Batas yang harus dibaca sebelum menyebut F4 aman:**
+
+- ⛔ **Tidak satu byte pun pernah sampai ke printer sungguhan.** Yang
+  dibuktikan adalah byte yang KELUAR dari renderer. Codepage, perilaku
+  pemotong, dan lebar sebenarnya per model belum diverifikasi sama sekali.
+- ⛔ **Profil baseline adalah TEBAKAN yang masuk akal, bukan pengukuran.**
+  58 mm → 32 karakter dan 80 mm → 48 karakter adalah angka yang lazim, dan
+  `has_cutter: false` pada baseline 58 mm adalah tebakan ke arah aman.
+  Model nyata dapat berbeda; itu sebabnya tabelnya diturunkan.
+- **Transliterasi menutup sepuluh karakter** yang design system pakai.
+  Karakter lain di luar ASCII tetap menjadi `?`. Nama produk beraksara non-
+  Latin akan tercetak sebagai tanda tanya, dan itu belum pernah dibicarakan
+  dengan merchant mana pun.
+- **Uji cetak K-15 memakai `noopPeripheral`.** Ia membuktikan dokumen dan
+  byte-nya terbentuk, bukan bahwa perangkat menjawab.
+
