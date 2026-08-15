@@ -2836,8 +2836,137 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/products:
+    get:
+      operationId: getProductReport
+      summary: >-
+        FR-G1 -- laporan produk: BARANG yang keluar pada rentang tanggal
+        bisnis. Operasional, bukan finansial.
+      description: >-
+        ## ⛔ Ini BUKAN laporan uang, dan istilahnya sengaja berbeda
+
+
+        Metriknya `kuantitas` dan `nilaiKotor` -- bukan "omzet". Omzet punya
+        satu definisi tunggal di `packages/domain/src/posisi-penjualan.ts`
+        (FR-G3), dan angka di sini TIDAK sama dengannya: ia mengagregasi
+        `order_line`, tidak mengurangkan refund, dan tidak memakai
+        `order.total`.
+
+
+        `CLAUDE.md`: *"basis laporan per produk adalah sebelum void & refund,
+        dan itu bukan kelalaian: baris produk menyatakan barang apa yang
+        keluar, dan refund uang tidak selalu mengembalikan barang"*.
+
+
+        ## Void diabaikan, refund TIDAK
+
+
+        Pesanan yang dibatalkan tidak pernah menghasilkan barang keluar -- ia
+        dikeluarkan. Pesanan yang direfund SUDAH menghasilkan barang keluar;
+        uangnya kembali, barangnya belum tentu (`lines: []` pada refund
+        berarti uang kembali tanpa barang kembali). Ia tetap dihitung.
+
+
+        ## ⛔ Dilaporkan per VARIATION, bukan per produk
+
+
+        `order_line` tidak punya `item_id` sama sekali -- hanya
+        `variation_id` beserta snapshot `item_name` dan `variation_name`.
+        Menambahkan id produk menuntut join ke `item_variation` yang dimiliki
+        modul catalog, dan invariant #4 melarang modul ordering meng-query
+        tabel milik modul lain.
+
+
+        Nama yang dikembalikan adalah SNAPSHOT saat penjualan, bukan nama
+        katalog hari ini -- produk yang berganti nama tetap dapat dijelaskan
+        di laporan lama.
+
+
+        ## Kuantitas berskala x1000
+
+
+        Konvensi repo: `order_line.quantity` adalah INTEGER x1000
+        (`0.5 kg` -> `500`). `kuantitas` di sini dikirim apa adanya dalam
+        skala itu; `kuantitasTampil` adalah bentuk desimalnya sebagai string.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Tanggal bisnis awal, inklusif. `YYYY-MM-DD`.
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          description: Tanggal bisnis akhir, inklusif. `YYYY-MM-DD`.
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          description: Dikosongkan berarti seluruh outlet tenant.
+          schema: { type: string }
+      responses:
+        '200':
+          description: >-
+            Baris per variation, terurut kuantitas menurun lalu nama --
+            deterministik.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaporanProduk'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, `from`/`to` bukan YYYY-MM-DD, atau
+            `from` lebih besar dari `to` (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Aktor tidak ditemukan, atau `outlet_id` bukan milik tenant
+            pemanggil (OUTLET_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
+    LaporanProduk:
+      type: object
+      required: [from, to, outletId, produk]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        produk:
+          type: array
+          items:
+            $ref: '#/components/schemas/BarisProduk'
+    BarisProduk:
+      type: object
+      required:
+        [variationId, itemName, variationName, kuantitas, kuantitasTampil, nilaiKotor]
+      description: >-
+        ⛔ `nilaiKotor` BUKAN omzet. Ia `SUM(quantity x unit_price)` sebelum
+        diskon baris, sebelum pajak, dan sebelum refund -- nilai barang yang
+        keluar, bukan uang yang masuk. Omzet punya satu definisi tunggal di
+        `posisi-penjualan.ts`, dan angka ini tidak akan sama dengannya.
+      properties:
+        variationId: { type: string }
+        itemName:
+          type: string
+          description: Snapshot saat penjualan, bukan nama katalog hari ini.
+        variationName: { type: string }
+        kuantitas:
+          type: string
+          description: >-
+            INTEGER x1000 (konvensi repo), dikirim sebagai STRING karena ia
+            `bigint` di database.
+        kuantitasTampil:
+          type: string
+          description: Bentuk desimal dari `kuantitas`, mis. `"2"` atau `"0,5"`.
+        nilaiKotor:
+          type: string
+          description: Rupiah utuh sebagai STRING -- `bigint`, bukan `number`.
     LaporanPenjualan:
       type: object
       required: [from, to, outletId, penjualan]
