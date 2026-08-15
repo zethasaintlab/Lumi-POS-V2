@@ -111,6 +111,11 @@ jobs:
       - run: npm run test:schema
       - run: npm run test:server
       - run: npm run test:identity
+      # F5 -- pendaftaran merchant, penegakan kuota, batas laju. Suite ini
+      # nyaris tertinggal dari daftar ini, dan konsekuensinya persis kelas
+      # cacat yang paling sering ditemukan di repo ini: penjaga yang tidak
+      # menjaga apa pun karena tidak pernah dijalankan.
+      - run: npm run test:tenancy
       - run: npm run test:catalog
       - run: npm run test:ordering
       # DST terhadap server + database SUNGGUHAN. Iterasinya jauh lebih sedikit
