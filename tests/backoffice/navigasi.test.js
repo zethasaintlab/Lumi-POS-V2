@@ -212,3 +212,22 @@ test('B-23 sudah ditandai siap', async () => {
   const { LAYAR_SIAP } = await import(NAV);
   assert.ok(LAYAR_SIAP.has('B-23'), 'B-23 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
+
+test('B-25 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-25'), 'B-25 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
+
+test('⛔ B-24 dan B-26 TIDAK ditandai siap — endpointnya belum ada', async () => {
+  // Penyelidikan kontrak: `vertical_profile` punya tabel tapi NOL endpoint;
+  // ambang otorisasi tidak punya tabel maupun endpoint (yang ada hanya
+  // konstanta `AMBANG_SELISIH` yang dipanggang di `apps/kasir/src/kas/tutup.ts`).
+  //
+  // Menandainya siap berarti sidebar menjanjikan layar yang tidak dapat
+  // memuat apa pun. Keadaan kosong bawaan sudah jujur — dan test ini menahan
+  // seseorang menandainya siap sebelum endpointnya benar-benar ada.
+  const { LAYAR_SIAP } = await import(NAV);
+  for (const id of ['B-24', 'B-26']) {
+    assert.ok(!LAYAR_SIAP.has(id), `${id} ditandai siap padahal endpointnya belum ada`);
+  }
+});
