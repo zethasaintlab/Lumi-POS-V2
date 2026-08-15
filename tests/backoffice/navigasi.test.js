@@ -236,3 +236,8 @@ test('B-16 sudah ditandai siap', async () => {
   const { LAYAR_SIAP } = await import(NAV);
   assert.ok(LAYAR_SIAP.has('B-16'), 'B-16 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
+
+test('B-17 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-17'), 'B-17 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
