@@ -2741,8 +2741,142 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /reports/sales:
+    get:
+      operationId: getSalesReport
+      summary: >-
+        FR-G3/FR-G7 -- posisi penjualan untuk rentang tanggal bisnis. Satu
+        endpoint untuk seluruh laporan penjualan back-office.
+      description: >-
+        ## Rentang memakai `business_date`, BUKAN `occurred_at`
+
+
+        `order.business_date` dihitung SEKALI saat penjualan, dari zona waktu
+        outletnya, dan sejak itu hanya DIBACA (CLAUDE.md -- "Tanggal bisnis
+        dibaca dari order.business_date, tidak dihitung ulang dari
+        occurred_at"). Memfilter `occurred_at` di sini akan menjadikan laporan
+        tempat KEDUA yang memutuskan tanggal sebuah penjualan, dan untuk outlet
+        di WITA/WIT jawabannya akan berbeda dari tutup kas di outlet itu
+        sendiri.
+
+
+        Tanggal bisnis juga tidak berakhir tengah malam melainkan saat tutup
+        shift (default 04:00), jadi `occurred_at` pukul 01:00 milik tanggal
+        bisnis SEBELUMNYA.
+
+
+        ## Angkanya dihitung fungsi yang sama dengan aplikasi kasir
+
+
+        Handler mengambil baris lalu memanggil `posisiPenjualan()`
+        (`packages/domain/src/posisi-penjualan.ts`) -- fungsi yang sama persis
+        yang dipakai laporan harian kasir di atas SQLite lokal. Itu yang membuat
+        AC FR-G4 ("angka laporan lokal cocok dengan laporan server") dapat
+        dipenuhi, dan penjaga `tests/domain/satu-sumber-omzet.test.js` menolak
+        agregasi `SUM(...)` atas tabel `order` di berkas mana pun selain
+        fungsi itu.
+
+
+        ## Order pembatal ikut terbawa rentang
+
+
+        Order pembatal MENYALIN `business_date` order aslinya (`cancel.ts`),
+        jadi rentang yang memuat order asli selalu memuat pembatalnya juga --
+        dan deteksi "sudah dibatalkan" tidak pernah meleset karena batas
+        rentang.
+
+
+        Refund diambil lewat `business_date` ORDER-nya, sama seperti laporan
+        harian kasir. Refund atas transaksi hari lalu karena itu mengurangi
+        omzet pada hari transaksi ASLINYA, bukan hari refundnya.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Tanggal bisnis awal, inklusif. `YYYY-MM-DD`.
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          description: Tanggal bisnis akhir, inklusif. `YYYY-MM-DD`.
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          description: >-
+            Dikosongkan berarti SELURUH outlet tenant. Lintas-outlet
+            diagregasi berdasarkan tanggal bisnis lokal masing-masing outlet --
+            itulah yang `business_date` sudah simpan.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Posisi penjualan untuk rentang tersebut.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaporanPenjualan'
+        '400':
+          description: >-
+            Header X-Tenant-Id hilang, `from`/`to` bukan YYYY-MM-DD, atau
+            `from` lebih besar dari `to` (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Aktor tidak berhak melihat laporan (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Aktor tidak ditemukan, atau `outlet_id` bukan milik tenant
+            pemanggil (OUTLET_NOT_FOUND) -- divalidasi lewat SELECT yang tunduk
+            RLS, bukan FK.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
+    LaporanPenjualan:
+      type: object
+      required: [from, to, outletId, penjualan]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId:
+          type: string
+          nullable: true
+          description: >-
+            `null` berarti seluruh outlet tenant.
+        penjualan:
+          $ref: '#/components/schemas/PosisiPenjualan'
+    PosisiPenjualan:
+      type: object
+      required:
+        [omzetKotor, voidAmount, refundAmount, omzetBersih, pajakTerkumpul,
+         jumlahTransaksi, rataRataPerTransaksi]
+      description: >-
+        Bentuknya satu-satu dengan `PosisiPenjualan` di
+        `packages/domain/src/posisi-penjualan.ts`.
+
+
+        ⛔ Seluruh nilai uang dikirim sebagai STRING desimal rupiah utuh, bukan
+        `number`. Nilainya `bigint` di domain, dan JSON.parse mengubah
+        bilangan besar menjadi double -- pola yang sama dengan `TaxRate.rate`.
+
+
+        `omzetBersih` BOLEH negatif dan tidak pernah dijepit ke nol
+        (spec-g:283): refund yang melebihi penjualan menghasilkan hari yang
+        justru paling perlu dilihat.
+      properties:
+        omzetKotor: { type: string }
+        voidAmount: { type: string }
+        refundAmount: { type: string }
+        omzetBersih: { type: string }
+        pajakTerkumpul: { type: string }
+        jumlahTransaksi: { type: integer }
+        rataRataPerTransaksi: { type: string }
     Payment:
       type: object
       required: [id, orderId, checkId, method, amount, status]

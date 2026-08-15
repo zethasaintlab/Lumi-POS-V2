@@ -2,6 +2,7 @@ import type { Pool } from '../../db.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createOrderHandlers } from './handlers/orders.ts';
 import { createCancelHandlers } from './handlers/cancel.ts';
+import { createReportHandlers } from './handlers/reports.ts';
 
 // Permukaan publik modul ordering (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN: order, check, order_line, order_line_modifier,
@@ -13,5 +14,8 @@ export function createOrderingHandlers(pool: Pool, hlc: Hlc): Record<string, unk
   return {
     ...createOrderHandlers(pool, hlc),
     ...createCancelHandlers(pool, hlc),
+    // Laporan hidup di modul ini karena `order` dan `refund` MILIKNYA
+    // (invariant #4). Ia tidak butuh `hlc` — ia hanya membaca.
+    ...createReportHandlers(pool),
   };
 }
