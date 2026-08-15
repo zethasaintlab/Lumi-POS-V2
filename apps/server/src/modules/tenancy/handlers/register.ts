@@ -7,6 +7,7 @@ import { recordAuditEvent } from '../../audit/index.ts';
 import { periksaPassword } from '../../../../../../packages/domain/src/password.ts';
 import { KUOTA_PAKET, PAKET_PENDAFTARAN } from '../../../../../../packages/domain/src/paket.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
+import { ZONA_WAKTU } from '../../../../../../packages/domain/src/zona-waktu.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
@@ -57,8 +58,13 @@ interface BodyDaftar {
   owner: { id: string; name: string; email: string; password: string };
 }
 
-/** `0002_tenancy.sql` — CHECK (timezone IN (…)). */
-const ZONA_SAH = new Set(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']);
+/**
+ * `0002_tenancy.sql` — CHECK (timezone IN (…)).
+ *
+ * Daftarnya dari `packages/domain`: layar pendaftaran B-00b merender pilihan
+ * dari daftar yang sama, dan dua salinan akan menyimpang tanpa error.
+ */
+const ZONA_SAH = new Set<string>(ZONA_WAKTU);
 
 function pelanggaranUnik(err: unknown): boolean {
   return (err as { code?: string }).code === '23505';

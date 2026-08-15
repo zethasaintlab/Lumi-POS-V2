@@ -5,6 +5,7 @@ import { Tombol } from './Tombol.tsx';
 import { Bidang } from './Bidang.tsx';
 import { useSesi } from './sesi.tsx';
 import { GalatHttp } from './http.ts';
+import { bacaTenantTerakhir, ingatTenant } from './tenant-terakhir.ts';
 
 /**
  * B-00 — Login back-office (`IA:§3.3`). Email + password, FR-F2b.
@@ -17,18 +18,20 @@ import { GalatHttp } from './http.ts';
  * membuat layar login terlihat seperti satu layar di antara 29 lainnya alih-alih
  * pintu masuknya.
  *
- * ## ⛔ Field "ID Tenant" — gap produk, bukan pilihan desain
+ * ## Field "ID Tenant" — sekarang OPSIONAL
  *
- * `POST /auth/login` MENUNTUT header `X-Tenant-Id`. Tenant karena itu harus
- * sudah diketahui SEBELUM login, bukan hasil darinya.
+ * `POST /auth/login` DULU menuntut header `X-Tenant-Id`, dan field ini tidak
+ * dapat diisi siapa pun tanpa menyalinnya dari tempat lain — sementara
+ * merchant yang baru mendaftar tidak punya tempat lain.
  *
- * Merchant tidak menghafal UUID tenant-nya, jadi field ini tidak dapat
- * bertahan sampai merchant berbayar pertama. Jalan keluarnya (subdomain per
- * tenant, atau pencarian by-email lintas tenant di server — yang menuntut
- * query di luar RLS dan karena itu bukan keputusan kecil) belum kamu putuskan.
+ * Sejak migrasi 0023, server meresolusi tenant dari email lewat fungsi
+ * `SECURITY DEFINER` yang sesempit mungkin. Field-nya tetap ada, karena satu
+ * orang dapat bekerja di dua merchant: email yang terdaftar di dua tenant
+ * TIDAK ditebak server (ia menolak), dan menyebutkannya di sini satu-satunya
+ * jalan masuk. Ia disembunyikan di balik "Punya lebih dari satu usaha?" supaya
+ * tidak menjadi pertanyaan pertama yang dilihat orang yang tidak punya
+ * jawabannya.
  *
- * Yang dilakukan sekarang: field-nya ADA, diberi label jujur, dan nilainya
- * diingat di `localStorage` supaya ia hanya diketik sekali per perangkat.
  * ⛔ Hanya id tenant yang diingat — bukan token, bukan email. Id tenant bukan
  * rahasia (ia dikirim di header setiap permintaan); token adalah.
  *
@@ -40,31 +43,23 @@ import { GalatHttp } from './http.ts';
  * enumerasi yang server berusaha tutup.
  */
 
-const KUNCI_TENANT_TERAKHIR = 'lumi.backoffice.tenant-terakhir';
-
-function bacaTenantTerakhir(): string {
-  try {
-    return window.localStorage.getItem(KUNCI_TENANT_TERAKHIR) ?? '';
-  } catch {
-    return '';
-  }
+interface Props {
+  /** Beralih ke B-00b. */
+  onDaftar: () => void;
+  /** Ditampilkan sekali setelah pendaftaran berhasil. */
+  kabar?: string | null;
 }
 
-function ingatTenant(id: string): void {
-  try {
-    window.localStorage.setItem(KUNCI_TENANT_TERAKHIR, id);
-  } catch {
-    // Private mode. Merchant mengetiknya lagi lain kali — tidak fatal.
-  }
-}
-
-export function Masuk() {
+export function Masuk({ onDaftar, kabar }: Props) {
   const { masuk } = useSesi();
   const [tenantId, setTenantId] = useState(bacaTenantTerakhir);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [galat, setGalat] = useState<string | null>(null);
   const [sedangKirim, setSedangKirim] = useState(false);
+  // Terbuka sendiri bila ada nilai tersimpan — merchant yang PERNAH memakainya
+  // hampir pasti membutuhkannya lagi.
+  const [tampilTenant, setTampilTenant] = useState(() => bacaTenantTerakhir().length > 0);
 
   async function kirim(e: FormEvent) {
     e.preventDefault();
@@ -72,7 +67,10 @@ export function Masuk() {
     setSedangKirim(true);
     try {
       await masuk({ tenantId: tenantId.trim(), email: email.trim(), password });
-      ingatTenant(tenantId.trim());
+      // Yang diingat adalah isian merchant, dan `ingatTenant` mengabaikan
+      // nilai kosong — login lewat resolusi email tidak menghapus id tenant
+      // yang tersimpan dari pendaftaran.
+      ingatTenant(tenantId);
     } catch (err) {
       // Pesan server dipakai apa adanya. Ia satu pesan untuk semua sebab, dan
       // itu disengaja (`spec-f:148`).
@@ -89,7 +87,10 @@ export function Masuk() {
     }
   }
 
-  const siap = tenantId.trim().length > 0 && email.trim().length > 0 && password.length > 0;
+  // ⛔ `tenantId` TIDAK ikut. Ia opsional sekarang, dan menuntutnya di sini
+  // membuat seluruh perubahan di server sia-sia: tombolnya tetap mati untuk
+  // merchant yang tidak menghafal UUID-nya.
+  const siap = email.trim().length > 0 && password.length > 0;
 
   return (
     <div
@@ -115,14 +116,12 @@ export function Masuk() {
                 <div className="t-caption">Lumi POS</div>
               </div>
 
-              <Bidang
-                id="tenant"
-                label="ID Tenant"
-                value={tenantId}
-                required
-                autoComplete="off"
-                onChange={setTenantId}
-              />
+              {kabar ? (
+                // Status tidak pernah warna saja (aturan DS #5) — ini teks.
+                <div className="t-caption" role="status">
+                  {kabar}
+                </div>
+              ) : null}
 
               <Bidang
                 id="email"
@@ -149,6 +148,24 @@ export function Masuk() {
                 onChange={setPassword}
               />
 
+              {/* ⛔ Di BAWAH password, dan tertutup secara bawaan.
+                  Merchant yang tidak punya jawabannya tidak boleh disodori
+                  pertanyaan ini lebih dulu — itu justru keadaan yang membuat
+                  layar ini tidak dapat dipakai sebelum migrasi 0023. */}
+              {tampilTenant ? (
+                <Bidang
+                  id="tenant"
+                  label="ID Tenant (hanya bila email Anda terdaftar di lebih dari satu usaha)"
+                  value={tenantId}
+                  autoComplete="off"
+                  onChange={setTenantId}
+                />
+              ) : (
+                <Tombol varian="ghost" onClick={() => setTampilTenant(true)}>
+                  Punya lebih dari satu usaha?
+                </Tombol>
+              )}
+
               <Tombol varian="primary" tipe="submit" penuh disabled={!siap || sedangKirim}>
                 {sedangKirim ? 'Memeriksa…' : 'Masuk'}
               </Tombol>
@@ -156,8 +173,13 @@ export function Masuk() {
           </div>
         </Card>
 
-        <div className="t-caption" style={{ marginTop: 'var(--space-3)', textAlign: 'center' }}>
-          Kasir tidak masuk lewat sini. Aplikasi kasir memakai PIN.
+        <div
+          className="stack"
+          style={{ marginTop: 'var(--space-3)', gap: 'var(--space-2)', textAlign: 'center' }}
+        >
+          <span className="t-caption">Belum punya akun?</span>
+          <Tombol onClick={onDaftar}>Daftarkan usaha baru</Tombol>
+          <span className="t-caption">Kasir tidak masuk lewat sini. Aplikasi kasir memakai PIN.</span>
         </div>
       </div>
     </div>

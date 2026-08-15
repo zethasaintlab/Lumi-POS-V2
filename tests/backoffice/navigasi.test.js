@@ -158,3 +158,15 @@ test('B-29 sudah ditandai siap', async () => {
   const { LAYAR_SIAP } = await import(NAV);
   assert.ok(LAYAR_SIAP.has('B-29'), 'B-29 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
+
+test('⛔ B-27 sudah ditandai siap — ia GATE F5, bukan CRUD biasa', async () => {
+  // Tanpa layar ini tidak ada jalur apa pun untuk menyetel PIN, dan login
+  // kasir menuntut `pin_hash IS NOT NULL`. Merchant yang baru mendaftar punya
+  // back-office yang dapat dimasuki dan aplikasi kasir yang tidak dapat
+  // dimasuki siapa pun — termasuk dirinya sendiri.
+  //
+  // Kalau layarnya ada tapi tidak terdaftar di sini, sidebar menampilkan
+  // keadaan kosong "B-27 belum dibangun" di atas layar yang sudah ada.
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-27'), 'B-27 sudah dibangun tapi masih menampilkan keadaan kosong');
+});

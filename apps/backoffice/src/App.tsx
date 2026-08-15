@@ -7,10 +7,12 @@ import './backoffice.css';
 import { NAVIGASI, LAYAR_SIAP, cariItem, grupUntuk } from './navigasi.ts';
 import { PenyediaSesi, useSesi } from './sesi.tsx';
 import { Masuk } from './Masuk.tsx';
+import { Daftar } from './daftar/Daftar.tsx';
 import { Tombol } from './Tombol.tsx';
 import { Langganan } from './langganan/Langganan.tsx';
 import { Impor } from './impor/Impor.tsx';
 import { PerangkatLayar } from './perangkat/Perangkat.tsx';
+import { PenggunaLayar } from './pengguna/Pengguna.tsx';
 
 /**
  * Kerangka back-office. Nol layar fitur — sama seperti `PLAN-pondasi-kasir`
@@ -67,11 +69,52 @@ function LogoLumi() {
  * Jadi penjaga ini adalah kenyamanan (jangan tampilkan layar yang setiap
  * permintaannya akan gagal), bukan satu-satunya yang berdiri di sana.
  */
+/**
+ * Pintu publik — dua layar yang berdiri sebelum ada sesi.
+ *
+ * ⛔ Tanpa URL, dan itu mengikuti pola aplikasi ini. Back-office memilih layar
+ * lewat keadaan (`aktif` di bawah), bukan lewat alamat; `apps/kasir` yang
+ * punya router buatan sendiri. Menambahkan router di sini untuk dua layar
+ * berarti dua cara berpindah layar di satu aplikasi.
+ *
+ * Harganya nyata dan dicatat: halaman pendaftaran tidak dapat ditautkan
+ * langsung. Merchant mencapainya lewat tombol di layar masuk.
+ */
+function PintuPublik() {
+  const [layar, setLayar] = useState<'masuk' | 'daftar'>('masuk');
+  const [kabar, setKabar] = useState<string | null>(null);
+
+  if (layar === 'daftar') {
+    return (
+      <Daftar
+        onSelesai={(pesan) => {
+          setKabar(pesan);
+          setLayar('masuk');
+        }}
+        onBatal={() => setLayar('masuk')}
+      />
+    );
+  }
+
+  return (
+    <Masuk
+      kabar={kabar}
+      onDaftar={() => {
+        // Kabar pendaftaran dibersihkan saat merchant kembali mendaftar —
+        // "usaha X terdaftar" di atas form pendaftaran KEDUA terbaca seperti
+        // konfirmasi atas sesuatu yang belum terjadi.
+        setKabar(null);
+        setLayar('daftar');
+      }}
+    />
+  );
+}
+
 function Terlindungi() {
   const { sesi, keluar } = useSesi();
   const [aktif, setAktif] = useState('B-01');
 
-  if (!sesi) return <Masuk />;
+  if (!sesi) return <PintuPublik />;
 
   const item = cariItem(aktif);
   const grup = grupUntuk(aktif);
@@ -98,6 +141,7 @@ function Terlindungi() {
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
         {aktif === 'B-29' ? <Langganan /> : null}
         {aktif === 'B-11' ? <Impor /> : null}
+        {aktif === 'B-27' ? <PenggunaLayar /> : null}
         {aktif === 'B-28' ? <PerangkatLayar /> : null}
 
         {item && !LAYAR_SIAP.has(item.id) ? (

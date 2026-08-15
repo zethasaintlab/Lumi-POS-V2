@@ -1528,11 +1528,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [token, expiresAt, userId, roles]
+                required: [token, expiresAt, userId, tenantId, roles]
                 properties:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
                   userId: { type: string }
+                  tenantId:
+                    type: string
+                    description: >-
+                      Tenant yang DIPAKAI sesi ini -- dari header bila dikirim,
+                      hasil resolusi email bila tidak. Klien yang menghilangkan
+                      `X-Tenant-Id` tidak punya cara lain mengetahuinya, dan ia
+                      membutuhkannya di setiap permintaan berikutnya.
                   roles: { type: array, items: { type: string } }
         '401':
           description: >-

@@ -162,6 +162,19 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
           token,
           expiresAt: sesi[0].expires_at,
           userId: pengguna.id,
+          // ⛔ Tenant yang DIPAKAI dikembalikan, bukan disimpan diam-diam.
+          //
+          // Klien yang tidak mengirim `X-Tenant-Id` tidak punya cara lain
+          // mengetahuinya, dan ia membutuhkannya di SETIAP permintaan
+          // berikutnya. Tanpa baris ini resolusi di atas tidak berguna:
+          // login-nya berhasil, lalu seluruh layar back-office menjawab 400
+          // "Header X-Tenant-Id wajib diisi" — kegagalan yang justru sulit
+          // dibaca karena pintunya terbuka.
+          //
+          // Bukan kebocoran: ia hanya dikembalikan pada login yang BERHASIL,
+          // dan pemanggilnya sudah membuktikan password. Id tenant juga bukan
+          // rahasia — ia dikirim di header setiap permintaan.
+          tenantId,
           roles: peran.map((p) => p.role),
         };
       });

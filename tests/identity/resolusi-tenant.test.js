@@ -74,6 +74,34 @@ test('⛔ login TANPA X-Tenant-Id berhasil — tenant diresolusi dari email', as
   assert.equal(JSON.parse(res.body).userId, t.ownerId);
 });
 
+test('⛔ respons login MENYEBUT tenant yang diresolusi, dan token itu dapat dipakai', async () => {
+  // Tanpa ini, resolusi di server tidak berguna: klien berhasil masuk lalu
+  // tidak punya nilai untuk `X-Tenant-Id` di permintaan berikutnya, dan setiap
+  // layar back-office menjawab 400 "Header X-Tenant-Id wajib diisi".
+  //
+  // Gejalanya paling buruk justru karena login-nya BERHASIL — merchant melihat
+  // aplikasi terbuka lalu setiap layar di dalamnya gagal.
+  //
+  // Bukan kebocoran: ia hanya dikembalikan pada login yang berhasil, dan
+  // pemanggilnya sudah membuktikan password.
+  const t = await daftar('pakai@contoh.id');
+
+  const res = await masuk({ email: 'pakai@contoh.id', password: SANDI });
+  assert.equal(res.statusCode, 200, res.body);
+  const hasil = JSON.parse(res.body);
+  assert.equal(hasil.tenantId, t.id);
+
+  // ⛔ Diuji sampai DIPAKAI, bukan berhenti di bentuk responsnya. Nilai yang
+  // benar bentuknya tapi salah isinya menghasilkan tepat kegagalan yang test
+  // ini ada untuk menahan.
+  const lanjut = await app.inject({
+    method: 'GET',
+    url: '/users',
+    headers: { authorization: `Bearer ${hasil.token}`, 'x-tenant-id': hasil.tenantId },
+  });
+  assert.equal(lanjut.statusCode, 200, lanjut.body);
+});
+
 test('X-Tenant-Id tetap DIHORMATI bila dikirim', async () => {
   // Aplikasi kasir sudah mengirimnya, dan merchant yang emailnya terdaftar di
   // dua tenant harus dapat menyebut yang mana.
