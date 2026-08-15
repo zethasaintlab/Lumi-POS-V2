@@ -170,3 +170,8 @@ test('⛔ B-27 sudah ditandai siap — ia GATE F5, bukan CRUD biasa', async () =
   const { LAYAR_SIAP } = await import(NAV);
   assert.ok(LAYAR_SIAP.has('B-27'), 'B-27 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
+
+test('B-08 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-08'), 'B-08 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
