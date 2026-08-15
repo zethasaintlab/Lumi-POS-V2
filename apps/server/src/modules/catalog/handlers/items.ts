@@ -4,7 +4,23 @@ import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import { toModifierList, fetchModifierListsByIds, fetchModifiersForLists } from './modifier-lists.ts';
+import { assertKuota } from '../../tenancy/index.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+
+/**
+ * Pemakaian kuota `max_products`, dihitung modul yang MEMILIKI tabelnya
+ * (invariant #4 -- modul tenancy tidak boleh query `item`).
+ *
+ * Satu fungsi, dipakai `POST /items` maupun `POST /catalog/import`. Dua
+ * salinan akan menyimpang tepat pada aturan arsip, dan yang menyimpang adalah
+ * jalur impor -- jalur yang justru dirancang untuk volume.
+ */
+export async function hitungProduk(client: PoolClient): Promise<number> {
+  const { rows } = await client.query<{ n: string }>(
+    'SELECT count(*) AS n FROM item WHERE archived_at IS NULL'
+  );
+  return Number(rows[0].n);
+}
 
 interface ItemRow {
   id: string;
@@ -463,6 +479,20 @@ export function createItemHandlers(pool: Pool) {
         if (body.categoryId !== null && body.categoryId !== undefined) {
           await assertCategoryVisible(client, body.categoryId);
         }
+
+        // Titik penegakan `max_products` (`research/09` § 6).
+        //
+        // ⛔ Dihitung per ITEM, bukan per variation. `spec-a:370` menandai ini
+        // sebagai pertanyaan terbuka ("dihitung per variation atau per
+        // item?"); yang dipilih adalah satuan yang MERCHANT lihat di
+        // katalognya. `[ASUMSI]` -- kalau kelak diputuskan per variation,
+        // yang berubah hanya query ini dan pasangannya di `import.ts`.
+        //
+        // Item yang diarsipkan tidak dihitung: katalog tidak pernah di-DELETE
+        // (invariant #2), jadi menghitungnya membuat kuota menjadi penghitung
+        // seumur hidup yang tidak dapat dipulihkan dengan cara apa pun.
+        await assertKuota(client, tenantId, 'produk', await hitungProduk(client), 1);
+
         let item: ItemRow;
         try {
           const { rows } = await client.query<ItemRow>(

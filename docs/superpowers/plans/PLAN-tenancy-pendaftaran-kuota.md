@@ -1,6 +1,6 @@
 # PLAN — F5: pendaftaran merchant & penegakan kuota
 
-**Status:** sub-project 1 (pendaftaran) SELESAI 15 Agustus 2026 · sub-project 2 (kuota) berikutnya
+**Status:** SELESAI 15 Agustus 2026 — pendaftaran dan penegakan kuota keduanya tertutup
 **Gate:** `ARCH:399` — *"Merchant dapat mendaftar → impor → bertransaksi tanpa bantuan"*
 **Spec:** ⛔ **tidak ada spec modul untuk tenancy.** Lihat § 2.
 
@@ -100,6 +100,7 @@ Invariant #4: `"user"`, `user_role`, `user_outlet` milik modul `identity`. Modul
 |---|---|
 | **Tanpa rate limit / captcha** | Endpoint publik yang membuat baris database. Sebelum merchant berbayar pertama ini wajib ditutup — dicatat sebagai utang, bukan dianggap selesai |
 | **Tanpa verifikasi email** | Email owner tidak dibuktikan miliknya. Pemulihan password belum ada sama sekali |
+| **Unggah-ulang berkas yang sudah diimpor dapat ditolak** | Kuota impor dinilai dari SELURUH baris berkas (instruksi user: `(Eksisting + Baris CSV) <= Kuota`), bukan dari baris yang akan benar-benar dibuat. Berkas 150 baris yang seluruhnya sudah ada tetap menghabiskan 150 slot dalam penilaian — bertabrakan dengan alur `spec-a:288` (unduh baris gagal → perbaiki → unggah ulang). Menunggu keputusan, bukan kelalaian |
 | **Retry dengan id BARU membuat tenant kedua** | Idempotensi datang dari PK `tenant.id` yang di-generate klien. Respons yang hilang lalu diulang dengan id sama → `409`. Diulang dengan id baru → tenant kedua. Tidak ada `UNIQUE` lintas-tenant pada email, dan tidak dapat ada tanpa query yang melewati RLS |
 
 ---
@@ -149,9 +150,9 @@ Yang **tidak** dilakukan: `tenancy` menghitung `COUNT(*) FROM item`. Itu melangg
 
 ### Sub-project 2 — kuota
 
-- [ ] T12 `packages/domain/src/kuota.ts` + test
-- [ ] T13 `tenancy` — `batasKuota`
-- [ ] T14 Penegakan di `POST /users`, `POST /devices`
-- [ ] T15 Penegakan di `POST /items` **dan** `POST /catalog/import`
-- [ ] T16 Penjaga: jalur kasir tidak menyentuh kuota
-- [ ] T17 Sabotase + suite penuh
+- [x] T12 `packages/domain/src/kuota.ts` + test
+- [x] T13 `tenancy` — `batasKuota`
+- [x] T14 Penegakan di `POST /users`, `POST /devices`
+- [x] T15 Penegakan di `POST /items` **dan** `POST /catalog/import`
+- [x] T16 Penjaga: jalur kasir tidak menyentuh kuota
+- [x] T17 Sabotase + suite penuh

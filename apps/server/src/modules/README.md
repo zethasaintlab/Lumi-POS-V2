@@ -33,7 +33,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
 | `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` |
-| `tenancy` | Pendaftaran merchant mandiri (F5) | `POST /tenants` · `assertOutletVisible` · `getOutletSettings` |
+| `tenancy` | Pendaftaran merchant mandiri + kuota (F5) | `POST /tenants` · `POST /outlets` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
 | `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
@@ -79,6 +79,25 @@ Midtrans tidak tahu apa-apa soal tenant kami. Karena itu `POST /webhooks/midtran
 2. **Tenant dibaca dari `custom_field1`** yang kami titipkan sendiri saat charge, lalu dipakai sebagai `app.tenant_id` — sehingga pencarian payment tetap tunduk RLS. Notifikasi bertanda tangan sah tapi bertenant salah dijawab `404`.
 
 Alternatifnya adalah query yang melewati RLS, dan itu melanggar invariant #8.
+
+## Kuota: empat titik administratif, nol di jalur kasir
+
+`research/09` § 6, aturan mutlak: *"tidak ada kuota yang boleh menghentikan penjualan."*
+
+| Dimensi | Ditegakkan di | Yang menghitung | Tidak dihitung |
+|---|---|---|---|
+| `max_outlets` | `POST /outlets` | tenancy | outlet terarsip |
+| `max_devices` | `POST /devices` | identity | perangkat tercabut |
+| `max_users` | `POST /users` | identity | pengguna nonaktif |
+| `max_products` | `POST /items` **dan `POST /catalog/import`** | catalog | item terarsip |
+
+⛔ **`tenancy` tidak menghitung apa pun.** Ia hanya membaca kolom `max_*` dan menjalankan aturannya; `COUNT(*) FROM item` dijalankan catalog, `FROM device` oleh identity (invariant #4). Kalau tenancy menghitung sendiri, ia harus tahu aturan arsip setiap modul lain — dan aturan itu berbeda di tiap modul, seperti tabel di atas menunjukkan.
+
+⛔ **Impor dinilai UTUH.** `(terpakai + seluruh baris berkas) <= kuota`, ditolak `403` sebagai satu kesatuan. Memeriksa per baris akan memasukkan 200 baris pertama lalu menolak sisanya — impor parsial yang meninggalkan katalog setengah jadi tanpa cara membatalkannya, karena katalog tidak pernah di-`DELETE` (invariant #2).
+
+⛔ **`tenant` adalah satu-satunya tabel yang `WHERE tenant_id`-nya WAJIB.** Ia dikecualikan RLS (akar model tenancy). Setiap tabel lain menyaring dirinya sendiri walau `WHERE` lupa ditulis; di sini `SELECT max_products FROM tenant` tanpa `WHERE` mengembalikan baris **setiap merchant**, dan kuota yang terbaca adalah kuota siapa pun yang kebetulan pertama.
+
+Bahwa jalur kasir tidak menyentuhnya dijaga statis: `tests/domain/kuota-tidak-di-jalur-kasir.test.js` memindai `ordering`, `payment`, `cash`, dan `inventory`. Test perilaku hanya membuktikan kuota tidak menolak penjualan **pada keadaan yang diujinya** — merchant yang melewati kuota lalu menjual barang yang sudah ada di katalognya adalah keadaan yang tidak terpikir dituliskan sampai ia terjadi di outlet sungguhan.
 
 ## Guard lintas modul: SELECT, bukan foreign key
 

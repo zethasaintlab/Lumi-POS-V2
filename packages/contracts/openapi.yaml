@@ -136,6 +136,71 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /outlets:
+    post:
+      operationId: createOutlet
+      summary: >-
+        Outlet kedua dan seterusnya. Outlet PERTAMA lahir bersama tenant di
+        `POST /tenants` -- tenant tanpa outlet tidak dapat berjualan sama
+        sekali, jadi ia tidak pernah ada sebagai keadaan yang sah.
+      description: >-
+        Titik penegakan `max_outlets` (research/09 § 6). Owner-only:
+        `spec-f:29` memberi Owner "membuat outlet" dan `spec-f:30` menaruhnya
+        di kolom yang TIDAK BOLEH milik Manajer Area.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, timezone]
+              properties:
+                id: { type: string, minLength: 1 }
+                name: { type: string, minLength: 1 }
+                timezone:
+                  type: string
+                  enum: [Asia/Jakarta, Asia/Makassar, Asia/Jayapura]
+                address: { type: string, nullable: true }
+                verticalProfileId:
+                  type: string
+                  nullable: true
+                  description: >-
+                    Dikosongkan berarti mewarisi default tenant (OQ-09,
+                    resolusi `COALESCE(profil_outlet, default_tenant)`).
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  timezone: { type: string }
+        '400':
+          description: Payload tidak valid, atau zona waktu di luar daftar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >-
+            Aktor bukan Owner (FORBIDDEN), atau kuota `max_outlets` paket ini
+            sudah penuh (QUOTA_EXCEEDED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau profil vertikal tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: id sudah dipakai (ID_ALREADY_EXISTS)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /categories:
     post:
       operationId: createCategory

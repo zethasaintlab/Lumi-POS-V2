@@ -6,6 +6,8 @@ import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertUserVisible } from '../../identity/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { pratinjauImpor } from '../../../../../../packages/domain/src/impor-katalog.ts';
+import { assertKuota } from '../../tenancy/index.ts';
+import { hitungProduk } from './items.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
@@ -81,6 +83,33 @@ export function createImportHandlers(pool: Pool) {
           // yang tetap 200 karena baris bermasalah adalah HASIL.
           throw new HttpError(400, 'IMPORT_FILE_INVALID', hasil.galatBerkas);
         }
+
+        // ⛔ Titik penegakan kuota yang PALING MUDAH TERLEWAT, dan paling
+        // penting. Impor menambah ribuan baris dalam satu request; kuota yang
+        // hanya dipasang di `POST /items` akan dilewati sepenuhnya oleh jalur
+        // yang justru dirancang untuk volume.
+        //
+        // Dinilai UTUH, bukan per baris: `(terpakai + jumlahBaris) <= kuota`.
+        // Memeriksa satu-satu akan memasukkan 200 baris pertama lalu menolak
+        // sisanya — impor parsial karena kuota, yang meninggalkan katalog
+        // setengah jadi tanpa cara membatalkannya (katalog tidak pernah
+        // di-DELETE, invariant #2).
+        //
+        // ⛔ Yang dihitung adalah SELURUH BARIS BERKAS, bukan hanya baris yang
+        // akan benar-benar dibuat. Konsekuensinya nyata dan disengaja: berkas
+        // 150 baris yang seluruhnya sudah ada di katalog tetap menghabiskan
+        // 150 slot dalam penilaian ini, jadi unggah-ulang berkas yang sudah
+        // diimpor dapat ditolak meski nol produk akan bertambah. Itu
+        // bertabrakan dengan alur `spec-a:288` ("unduh baris gagal, perbaiki,
+        // unggah ulang) dan dicatat sebagai keputusan yang menunggu, bukan
+        // sebagai kelalaian.
+        await assertKuota(
+          client,
+          tenantId,
+          'produk',
+          await hitungProduk(client),
+          hasil.jumlahBaris
+        );
 
         const ringkas = {
           dryRun,
