@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import openapiGlue from 'fastify-openapi-glue';
+import rateLimit from '@fastify/rate-limit';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
@@ -11,6 +12,7 @@ import type { KonfigToken } from './modules/identity/handlers/tokens.ts';
 import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
+import { createTenancyHandlers } from './modules/tenancy/index.ts';
 import { selectPaymentProvider } from './modules/payment/providers/index.ts';
 import { createRedactingLogMethod, redactSensitive, registerSecretValues } from './log-redaction.ts';
 import type { PaymentProvider } from './modules/payment/providers/index.ts';
@@ -69,6 +71,12 @@ export async function buildApp(
     syncJwtPrivateKey?: string;
     /** Origin yang boleh memanggil server dari browser. Kosong = tidak ada. */
     corsOrigins?: string[];
+    /**
+     * Batas laju `POST /tenants` — satu-satunya endpoint tanpa autentikasi.
+     * Seam TEST: default-nya membaca environment variable, persis seperti
+     * panggilan produksi.
+     */
+    batasPendaftaran?: { max: number; jendela: string };
   } = {}
 ): Promise<FastifyInstance> {
   const pool = overrides.pool ?? createPool();
@@ -116,6 +124,14 @@ export async function buildApp(
         .split(',')
         .map((o) => o.trim())
         .filter(Boolean);
+    // Invariant #5: angkanya dari environment variable, bukan dari `if`
+    // tentang lingkungan. Bawaan 5 per 15 menit — pendaftaran adalah operasi
+    // yang seorang merchant lakukan SEKALI, jadi batas yang longgar pun sudah
+    // jauh di atas pemakaian yang sah.
+    const batasPendaftaran = overrides.batasPendaftaran ?? {
+      max: Number(process.env.TENANT_REGISTRATION_RATE_MAX ?? 5),
+      jendela: process.env.TENANT_REGISTRATION_RATE_WINDOW ?? '15 minutes',
+    };
     return await buildAppInner(
       pool,
       specPath,
@@ -123,7 +139,8 @@ export async function buildApp(
       overrides.logger,
       webhookSecret,
       konfigToken,
-      corsOrigins
+      corsOrigins,
+      batasPendaftaran
     );
   } catch (err) {
     await pool.end();
@@ -138,7 +155,8 @@ async function buildAppInner(
   loggerOverride: { level: string; stream: NodeJS.WritableStream } | undefined,
   webhookSecret: string,
   konfigToken: KonfigToken,
-  corsOrigins: string[]
+  corsOrigins: string[],
+  batasPendaftaran: { max: number; jendela: string }
 ): Promise<FastifyInstance> {
   // Satu instance Hlc per proses server (keputusan Q3, PLAN-ordering-fondasi.md
   // §8.0), dibuat di sini -- BUKAN di dalam modul ordering -- dengan clock
@@ -157,6 +175,7 @@ async function buildAppInner(
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
+    ...createTenancyHandlers(pool, hlc),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);
@@ -274,6 +293,66 @@ async function buildAppInner(
       reply.header('Access-Control-Max-Age', '600');
       reply.code(204).send();
     }
+  });
+
+  /* ## Rate limit — HANYA `POST /tenants`
+   *
+   * Ia satu-satunya endpoint yang membuat baris database tanpa
+   * autentikasi apa pun. Tanpa batas, siapa pun dapat membuat tenant, outlet,
+   * dan pengguna sebanyak yang mau; tabel `tenant` dikecualikan RLS, jadi
+   * tidak ada lapisan lain yang menahannya.
+   *
+   * ⛔ `global: false`. Setiap endpoint lain sudah dijaga `X-Tenant-Id` +
+   * RLS, dan membatasi jalur kasir berarti membangun kemampuan MENGHENTIKAN
+   * PENJUALAN dari sisi server — hal yang sama yang `research/09` § 6 larang
+   * untuk kuota. Perangkat di balik satu NAT outlet berbagi alamat IP; batas
+   * global akan mengunci kasir kedua pada jam sibuk.
+   *
+   * Store-nya IN-MEMORY, dan itu keputusan yang dinyatakan, bukan bawaan yang
+   * kebetulan: `research/03` mengunci "tanpa Redis di v1". Konsekuensinya
+   * jujur — hitungannya per-proses dan hilang saat restart, jadi ia menahan
+   * penyalahgunaan kasar, bukan penyerang terdistribusi. Yang menahan sisanya
+   * belum ada, dan itu tetap tercatat sebagai utang.
+   *
+   * Angkanya dari environment variable (invariant #5), bukan `if
+   * (isProduction)`.
+   *
+   * ## Kenapa lewat `onRoute`, bukan opsi rute
+   *
+   * Rute didaftarkan `fastify-openapi-glue` dari spesifikasi OpenAPI — tidak
+   * ada tempat untuk menaruh `config.rateLimit` per rute. Hook ini menempelkan
+   * config itu sebelum plugin membacanya, dan ia ditambahkan SEBELUM
+   * `register` supaya urutannya benar.
+   */
+  app.addHook('onRoute', (routeOptions) => {
+    if (routeOptions.method !== 'POST' || routeOptions.url !== '/tenants') return;
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: {
+        max: batasPendaftaran.max,
+        timeWindow: batasPendaftaran.jendela,
+      },
+    };
+  });
+
+  await app.register(rateLimit, {
+    global: false,
+    // Pesan penolakan menyebut berapa lama harus menunggu. "Terlalu banyak
+    // permintaan" tanpa angka membuat merchant yang sah — yang salah ketik
+    // password tiga kali — menebak apakah ia diblokir selamanya.
+    // ⛔ Mengembalikan `HttpError`, BUKAN objek biasa berbentuk respons.
+    // Yang dikembalikan di sini DILEMPAR sebagai error dan melewati
+    // `setErrorHandler` di atas; objek `{ error: { … } }` tanpa `statusCode`
+    // tidak dikenali cabang mana pun di sana dan keluar sebagai **500**.
+    // Ditemukan dengan menjalankannya: penolakan batas laju terbaca sebagai
+    // kesalahan server, dan tidak ada satu pun tipe yang mengeluh.
+    errorResponseBuilder: (_req, konteks) =>
+      new HttpError(
+        429,
+        'RATE_LIMITED',
+        `Terlalu banyak percobaan pendaftaran. Maksimal ${konteks.max} dalam ` +
+          `${konteks.after}. Coba lagi setelah itu.`
+      ),
   });
 
   await app.register(openapiGlue, {

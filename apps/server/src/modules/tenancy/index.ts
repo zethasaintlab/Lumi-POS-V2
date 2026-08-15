@@ -1,6 +1,14 @@
-import type { PoolClient } from '../../db.ts';
+import type { Pool, PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
 import { parseRateToScaled } from '../../../../../packages/domain/src/numeric.ts';
+import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
+import { createRegisterHandlers } from './handlers/register.ts';
+import { createOutletHandlers } from './handlers/outlets.ts';
+
+// Penegakan kuota. Implementasinya di `./kuota.ts` supaya handler di dalam
+// modul ini dapat memakainya tanpa impor melingkar; ia tetap keluar lewat
+// `index.ts` karena itulah satu-satunya permukaan publik bagi modul lain.
+export { batasKuota, assertKuota } from './kuota.ts';
 
 // Permukaan publik modul tenancy (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul catalog DILARANG query `outlet`
@@ -70,5 +78,19 @@ export async function getOutletSettings(client: PoolClient, outletId: string): P
     roundingIncrement: BigInt(rows[0].rounding_increment),
     serviceChargeRateScaled: parseRateToScaled(rows[0].service_charge_rate),
     roundingMode: rows[0].rounding_mode,
+  };
+}
+
+/**
+ * F5 — pendaftaran merchant mandiri (`POST /tenants`).
+ *
+ * Modul ini tidak punya endpoint sama sekali sebelum ini; ia hidup hanya
+ * sebagai guard lintas modul. `tenant`, `outlet`, dan `vertical_profile`
+ * miliknya, jadi di sinilah pendaftaran berada.
+ */
+export function createTenancyHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
+  return {
+    ...createRegisterHandlers(pool, hlc),
+    ...createOutletHandlers(pool, hlc),
   };
 }

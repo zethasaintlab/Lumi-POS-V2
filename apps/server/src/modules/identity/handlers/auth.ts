@@ -5,6 +5,7 @@ import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
 import type { PinHasher } from '../../../../../../packages/domain/src/pin.ts';
+import { periksaPassword } from '../../../../../../packages/domain/src/password.ts';
 
 // §9 PLAN-modul-f-identitas.md -- FR-F2b, login back-office.
 //
@@ -12,33 +13,14 @@ import type { PinHasher } from '../../../../../../packages/domain/src/pin.ts';
 // (`ARCH:§14`). Dibangun sekarang karena FR-F2b adalah P0 dan seluruh
 // aturannya dapat diuji lewat API. Dinyatakan, tidak didiamkan.
 
-/** `spec-f:174`. */
-const PANJANG_MINIMUM = 10;
 /** `spec-f:176` — "sesi back-office kedaluwarsa setelah 12 jam tidak aktif". */
 const UMUR_SESI_JAM = 12;
 
-/**
- * Daftar password bocor yang di-bundle (`spec-f:174`).
- *
- * ⛔ Daftar ini SENGAJA kecil, dan itu bukan penyelesaian setengah. Daftar
- * sungguhan (rockyou, HIBP) berukuran ratusan megabita dan tidak dapat
- * di-bundle; memakainya menuntut layanan eksternal — yang berarti pendaftaran
- * password gagal saat internet mati, di produk yang seluruh nilainya adalah
- * berfungsi tanpa internet.
- *
- * Yang ada di sini adalah pola yang benar-benar muncul di merchant Indonesia
- * ditambah yang universal. Ia menangkap tebakan pertama, bukan serangan
- * kamus — dan yang menahan serangan kamus adalah Argon2id, bukan daftar ini.
- *
- * Batas ini dicatat supaya tidak dibaca sebagai perlindungan yang lebih besar
- * daripada adanya.
- */
-const PASSWORD_BOCOR: ReadonlySet<string> = new Set([
-  'password', 'password1', 'password12', 'password123', 'password1234',
-  'qwerty12345', '1234567890', '12345678901', 'admin12345', 'administrator',
-  'iloveyou12', 'letmein1234', 'welcome1234', 'abcd123456', 'passw0rd123',
-  'indonesia1', 'indonesia123', 'jakarta1234', 'bismillah123', 'rahasia123',
-]);
+// Aturan panjang dan daftar password bocor DULU tinggal di berkas ini sebagai
+// konstanta privat. Keduanya pindah ke `packages/domain/src/password.ts` saat
+// pendaftaran merchant (F5) menjadi jalur KEDUA yang menetapkan password —
+// dua salinan aturan yang sama adalah dua salinan yang akan menyimpang, dan
+// tidak ada apa pun yang gagal pada saat penyimpangan itu terjadi.
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -80,19 +62,9 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
           throw new HttpError(404, 'USER_NOT_FOUND', `Pengguna ${userId} tidak ditemukan.`);
         }
 
-        if (typeof password !== 'string' || password.length < PANJANG_MINIMUM) {
-          throw new HttpError(
-            400,
-            'PASSWORD_TOO_SHORT',
-            `Password minimal ${PANJANG_MINIMUM} karakter.`
-          );
-        }
-        if (PASSWORD_BOCOR.has(password.toLowerCase())) {
-          throw new HttpError(
-            400,
-            'PASSWORD_BREACHED',
-            'Password ini termasuk yang paling sering dipakai dan sudah pernah bocor. Pilih yang lain.'
-          );
+        const periksa = periksaPassword(password);
+        if (!periksa.ok) {
+          throw new HttpError(400, periksa.kode, periksa.pesan);
         }
 
         // Argon2id yang SAMA dengan PIN. `spec-f:173` menuntutnya, dan

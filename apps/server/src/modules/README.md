@@ -33,7 +33,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
 | `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` |
-| `tenancy` | Tidak punya endpoint | `assertOutletVisible` · `getOutletSettings` |
+| `tenancy` | Pendaftaran merchant mandiri + kuota (F5) | `POST /tenants` · `POST /outlets` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
 | `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
@@ -58,7 +58,20 @@ Konsekuensinya mutlak: **tidak ada satu pun test yang boleh menyentuh jaringan.*
 
 `PAYMENT_PROVIDER=midtrans` dengan kunci kosong **gagal saat boot**, bukan saat pelanggan pertama membayar.
 
-## Webhook: satu-satunya endpoint tanpa `X-Tenant-Id`
+## Dua endpoint tanpa `X-Tenant-Id` — dan alasannya berbeda
+
+`POST /tenants` (pendaftaran, F5) menyusul webhook Midtrans sebagai yang kedua. Alasannya tidak sama:
+
+| Endpoint | Kenapa tidak ada header | Dari mana tenant-nya |
+|---|---|---|
+| `POST /webhooks/midtrans` | Midtrans tidak tahu apa-apa soal tenant kami | `custom_field1` yang kami titipkan sendiri saat charge |
+| `POST /tenants` | **Tenantnya belum ada** — tidak ada nilai yang benar | Id yang di-generate klien di body |
+
+Keduanya tetap menulis di dalam transaksi ber-`SET LOCAL app.tenant_id`. Pada pendaftaran, `SET LOCAL` berjalan dengan id yang belum punya baris; `tenant` — satu-satunya tabel yang dikecualikan RLS, karena ia akar model tenancy — ditulis di dalamnya, dan setiap tabel sesudahnya sudah tunduk RLS seperti biasa. **Invariant #8 tidak dilonggarkan di jalur mana pun.**
+
+⛔ Pendaftaran belum punya rate limit maupun verifikasi email. Endpoint publik yang membuat baris database; wajib ditutup sebelum merchant berbayar pertama.
+
+### Webhook: dua hal yang hanya berlaku di sana
 
 Midtrans tidak tahu apa-apa soal tenant kami. Karena itu `POST /webhooks/midtrans` berbeda dari seluruh endpoint lain:
 
@@ -66,6 +79,37 @@ Midtrans tidak tahu apa-apa soal tenant kami. Karena itu `POST /webhooks/midtran
 2. **Tenant dibaca dari `custom_field1`** yang kami titipkan sendiri saat charge, lalu dipakai sebagai `app.tenant_id` — sehingga pencarian payment tetap tunduk RLS. Notifikasi bertanda tangan sah tapi bertenant salah dijawab `404`.
 
 Alternatifnya adalah query yang melewati RLS, dan itu melanggar invariant #8.
+
+## Kuota: empat titik administratif, nol di jalur kasir
+
+`research/09` § 6, aturan mutlak: *"tidak ada kuota yang boleh menghentikan penjualan."*
+
+| Dimensi | Ditegakkan di | Yang menghitung | Tidak dihitung |
+|---|---|---|---|
+| `max_outlets` | `POST /outlets` | tenancy | outlet terarsip |
+| `max_devices` | `POST /devices` | identity | perangkat tercabut |
+| `max_users` | `POST /users` | identity | pengguna nonaktif |
+| `max_products` | `POST /items` **dan `POST /catalog/import`** | catalog | item terarsip |
+
+⛔ **`tenancy` tidak menghitung apa pun.** Ia hanya membaca kolom `max_*` dan menjalankan aturannya; `COUNT(*) FROM item` dijalankan catalog, `FROM device` oleh identity (invariant #4). Kalau tenancy menghitung sendiri, ia harus tahu aturan arsip setiap modul lain — dan aturan itu berbeda di tiap modul, seperti tabel di atas menunjukkan.
+
+⛔ **Impor dinilai UTUH, atas produk BARU saja.** `(terpakai + produk baru) <= kuota`, ditolak `403` sebagai satu kesatuan. Memeriksa per baris akan memasukkan 200 baris pertama lalu menolak sisanya — impor parsial yang meninggalkan katalog setengah jadi tanpa cara membatalkannya, karena katalog tidak pernah di-`DELETE` (invariant #2).
+
+Yang **tidak** dihitung, karena tidak menambah produk: baris `dilewati` (nama sudah ada, mode `lewati`), baris `valid.perbarui` (nama sudah ada, mode `perbarui` — yang disentuhnya hanya `category_id`), dan baris `masalah` (tidak dapat diparse). Versi pertama menghitung seluruh baris berkas dan menabrak `spec-a:288` secara langsung: alur yang spec sebut adalah "unduh baris gagal → perbaiki → unggah ulang", jadi unggah-ulang berkas yang sama selalu menghitung ulang seluruh barisnya — merchant dihukum karena memperbaiki datanya sendiri.
+
+## `POST /tenants`: satu-satunya endpoint yang dibatasi lajunya
+
+`@fastify/rate-limit`, store **in-memory** (`research/03` mengunci "tanpa Redis di v1"), `global: false`, hanya pada `POST /tenants`. Angkanya dari `TENANT_REGISTRATION_RATE_MAX` / `TENANT_REGISTRATION_RATE_WINDOW` (invariant #5), bawaan 5 per 15 menit.
+
+⛔ **Bukan global, dan itu bukan penghematan.** Endpoint lain sudah dijaga `X-Tenant-Id` + RLS, dan membatasi jalur kasir berarti membangun kemampuan **menghentikan penjualan** dari sisi server — hal yang sama yang `research/09` § 6 larang untuk kuota. Perangkat di balik satu NAT outlet berbagi alamat IP; batas global akan mengunci kasir kedua pada jam sibuk.
+
+⛔ **`errorResponseBuilder` mengembalikan `HttpError`, bukan objek berbentuk respons.** Yang dikembalikan di sana dilempar sebagai error dan melewati `setErrorHandler`; objek `{ error: { … } }` tanpa `statusCode` tidak dikenali cabang mana pun dan keluar sebagai **500**. Ditemukan dengan menjalankannya — tidak ada satu pun tipe yang mengeluh.
+
+Batas yang tersisa: **tidak ada captcha**, dan hitungannya per-proses (hilang saat restart, tidak dibagi antar instance). Ia menahan penyalahgunaan kasar, bukan penyerang terdistribusi.
+
+⛔ **`tenant` adalah satu-satunya tabel yang `WHERE tenant_id`-nya WAJIB.** Ia dikecualikan RLS (akar model tenancy). Setiap tabel lain menyaring dirinya sendiri walau `WHERE` lupa ditulis; di sini `SELECT max_products FROM tenant` tanpa `WHERE` mengembalikan baris **setiap merchant**, dan kuota yang terbaca adalah kuota siapa pun yang kebetulan pertama.
+
+Bahwa jalur kasir tidak menyentuhnya dijaga statis: `tests/domain/kuota-tidak-di-jalur-kasir.test.js` memindai `ordering`, `payment`, `cash`, dan `inventory`. Test perilaku hanya membuktikan kuota tidak menolak penjualan **pada keadaan yang diujinya** — merchant yang melewati kuota lalu menjual barang yang sudah ada di katalognya adalah keadaan yang tidak terpikir dituliskan sampai ia terjadi di outlet sungguhan.
 
 ## Guard lintas modul: SELECT, bukan foreign key
 

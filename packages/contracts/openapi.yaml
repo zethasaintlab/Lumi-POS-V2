@@ -17,6 +17,190 @@ paths:
                 properties:
                   status:
                     type: string
+
+  /tenants:
+    post:
+      operationId: registerTenant
+      summary: >-
+        F5 -- pendaftaran merchant mandiri. Membuat tenant, profil vertikal
+        default, outlet pertama, dan pengguna owner beserta passwordnya dalam
+        SATU transaksi.
+      description: >-
+        Endpoint KEDUA di API ini yang tidak menuntut `X-Tenant-Id`, setelah
+        webhook Midtrans -- dan alasannya berbeda: tenantnya belum ada, jadi
+        tidak ada nilai yang benar untuk header itu. `X-Actor-Id` juga tidak
+        diminta; aktor pertama adalah owner yang dibuat request ini.
+
+
+        Seluruh penulisan tetap terjadi di dalam transaksi ber-`SET LOCAL
+        app.tenant_id` -- invariant #8 tidak dilonggarkan. `tenant` adalah
+        satu-satunya tabel yang dikecualikan RLS, dan itulah yang membuat
+        baris pertama dapat ditulis sebelum ada apa pun untuk di-scope.
+
+
+        ⛔ Belum ada rate limit maupun verifikasi email. Keduanya wajib
+        ditutup sebelum merchant berbayar pertama.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant, outlet, owner]
+              properties:
+                tenant:
+                  type: object
+                  required: [id, name]
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      description: >-
+                        Di-generate klien (konvensi ID repo ini). Ia sekaligus
+                        satu-satunya idempotensi endpoint ini: id yang sama
+                        diulang menjawab 409, bukan tenant kedua.
+                    name: { type: string, minLength: 1 }
+                outlet:
+                  type: object
+                  required: [id, name, timezone]
+                  properties:
+                    id: { type: string, minLength: 1 }
+                    name: { type: string, minLength: 1 }
+                    timezone:
+                      type: string
+                      enum: [Asia/Jakarta, Asia/Makassar, Asia/Jayapura]
+                    address: { type: string, nullable: true }
+                owner:
+                  type: object
+                  required: [id, name, email, password]
+                  properties:
+                    id: { type: string, minLength: 1 }
+                    name: { type: string, minLength: 1 }
+                    email:
+                      type: string
+                      minLength: 1
+                      description: >-
+                        Dipakai `POST /auth/login`. Tidak diverifikasi
+                        kepemilikannya -- utang yang dicatat, bukan yang
+                        didiamkan.
+                    password:
+                      type: string
+                      description: >-
+                        FR-F2b -- minimal 10 karakter, ditolak bila ada di
+                        daftar bocor yang di-bundle. Aturannya SATU, dibagi
+                        dengan `PATCH /users/{userId}/password` lewat
+                        `packages/domain/src/password.ts`.
+      responses:
+        '201':
+          description: Tenant, outlet, dan owner tercipta.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenantId, outletId, ownerId, plan, kuota]
+                properties:
+                  tenantId: { type: string }
+                  outletId: { type: string }
+                  ownerId: { type: string }
+                  plan:
+                    type: string
+                    description: >-
+                      SELALU `free`. Paket TIDAK diterima dari body -- endpoint
+                      ini tidak terautentikasi, jadi paket yang dapat dipilih
+                      pemanggil berarti siapa pun memberi dirinya kuota tanpa
+                      batas lewat satu field JSON.
+                  kuota:
+                    type: object
+                    description: >-
+                      Kuota yang berlaku, dikembalikan supaya merchant melihat
+                      batasnya di layar pertama -- bukan saat operasi ditolak.
+                      `null` berarti tanpa batas.
+                    properties:
+                      maxOutlets: { type: integer, nullable: true }
+                      maxDevices: { type: integer, nullable: true }
+                      maxUsers: { type: integer, nullable: true }
+                      maxProducts: { type: integer, nullable: true }
+        '400':
+          description: >-
+            Payload tidak valid, atau password tidak memenuhi FR-F2b
+            (PASSWORD_TOO_SHORT / PASSWORD_BREACHED).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            id tenant, outlet, atau owner sudah dipakai (ID_ALREADY_EXISTS).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /outlets:
+    post:
+      operationId: createOutlet
+      summary: >-
+        Outlet kedua dan seterusnya. Outlet PERTAMA lahir bersama tenant di
+        `POST /tenants` -- tenant tanpa outlet tidak dapat berjualan sama
+        sekali, jadi ia tidak pernah ada sebagai keadaan yang sah.
+      description: >-
+        Titik penegakan `max_outlets` (research/09 § 6). Owner-only:
+        `spec-f:29` memberi Owner "membuat outlet" dan `spec-f:30` menaruhnya
+        di kolom yang TIDAK BOLEH milik Manajer Area.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, timezone]
+              properties:
+                id: { type: string, minLength: 1 }
+                name: { type: string, minLength: 1 }
+                timezone:
+                  type: string
+                  enum: [Asia/Jakarta, Asia/Makassar, Asia/Jayapura]
+                address: { type: string, nullable: true }
+                verticalProfileId:
+                  type: string
+                  nullable: true
+                  description: >-
+                    Dikosongkan berarti mewarisi default tenant (OQ-09,
+                    resolusi `COALESCE(profil_outlet, default_tenant)`).
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  timezone: { type: string }
+        '400':
+          description: Payload tidak valid, atau zona waktu di luar daftar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >-
+            Aktor bukan Owner (FORBIDDEN), atau kuota `max_outlets` paket ini
+            sudah penuh (QUOTA_EXCEEDED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau profil vertikal tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: id sudah dipakai (ID_ALREADY_EXISTS)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /categories:
     post:
       operationId: createCategory
@@ -212,6 +396,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  # FR-A8 — impor katalog. `spec-a:254`: fitur AKUISISI, bukan utilitas admin.
+  #
+  # SATU operasi dengan `dryRun`, bukan dua endpoint. Alurnya di `spec-a:261`
+  # menuntut pratinjau SEBELUM impor dijalankan, dan pratinjau yang memakai
+  # endpoint berbeda dapat menyimpang dari yang benar-benar dijalankan —
+  # merchant menyetujui satu hasil lalu menerima hasil lain.
+  /catalog/import:
+    post:
+      operationId: importCatalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv:
+                  type: string
+                  description: Isi berkas CSV apa adanya, termasuk baris header.
+                dryRun:
+                  type: boolean
+                  default: true
+                  description: >-
+                    `true` (bawaan) hanya menghitung dan melaporkan; tidak satu
+                    baris pun ditulis. Bawaannya sengaja aman: impor yang
+                    berjalan karena field lupa diisi tidak dapat dibatalkan.
+                bilaSudahAda:
+                  type: string
+                  enum: [lewati, perbarui]
+                  default: lewati
+                  description: >-
+                    Ditanyakan SEKALI di awal (spec-a:280), bukan per baris.
+      responses:
+        '200':
+          description: >-
+            Pratinjau atau ringkasan impor. Selalu 200 walau ada baris
+            bermasalah -- baris bermasalah adalah HASIL yang dilaporkan, bukan
+            kegagalan permintaan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResult'
+        '400':
+          description: >-
+            Berkas tidak dapat dibaca sama sekali (IMPORT_FILE_INVALID) --
+            misalnya kolom nama/harga tidak ditemukan di baris pertama.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aktor pada X-Actor-Id tidak ditemukan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /items:
     post:
       operationId: createItem
@@ -2508,6 +2750,31 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ModifierList'
+    ImportResult:
+      type: object
+      required: [dryRun, jumlahBaris, diimpor, dilewati, masalah, kategoriBaru]
+      properties:
+        dryRun: { type: boolean }
+        jumlahBaris:
+          type: integer
+          description: >-
+            Baris DATA yang dibaca. `diimpor + dilewati + masalah` harus sama
+            dengan angka ini -- tidak ada impor parsial diam-diam (spec-a:287).
+        diimpor: { type: integer }
+        dilewati: { type: integer }
+        kategoriBaru:
+          type: array
+          items: { type: string }
+        masalah:
+          type: array
+          items:
+            type: object
+            required: [baris, alasan]
+            properties:
+              baris:
+                type: integer
+                description: Nomor baris di BERKAS, 1-based, header terhitung.
+              alasan: { type: string }
     ItemVariationInput:
       type: object
       required: [id, price]

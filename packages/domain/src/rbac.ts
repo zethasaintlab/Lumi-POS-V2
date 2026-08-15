@@ -50,6 +50,7 @@ export type Operasi =
   | 'report_exception'
   | 'tax_settings'
   | 'billing'
+  | 'outlet_manage'
   | 'device_revoke';
 
 /**
@@ -72,6 +73,12 @@ const MATRIKS: Readonly<Record<Operasi, ReadonlySet<Peran>>> = {
   report_exception: new Set(['owner', 'area_manager', 'outlet_manager', 'accountant']),
   tax_settings: new Set(['owner']),
   billing: new Set(['owner']),
+  // `spec-f:29` memberi Owner "membuat outlet"; `spec-f:30` menaruhnya di
+  // kolom YANG TIDAK BOLEH milik Manajer Area, berdampingan dengan billing.
+  // Owner-only karena itu diturunkan dari tabel, bukan ditebak — dan ia
+  // operasi tersendiri, bukan `billing` yang dipakai ulang, supaya penolakan
+  // membaca "tidak berhak mengelola outlet" alih-alih menyalahkan tagihan.
+  outlet_manage: new Set(['owner']),
   device_revoke: new Set(['owner', 'area_manager', 'outlet_manager']),
 };
 
@@ -92,6 +99,7 @@ export const OPERASI_MUTASI: readonly Operasi[] = [
   'stock_adjust',
   'tax_settings',
   'billing',
+  'outlet_manage',
   'device_revoke',
 ];
 

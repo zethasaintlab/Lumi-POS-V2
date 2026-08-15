@@ -212,7 +212,11 @@ CREATE TABLE order_line (
   item_name TEXT NOT NULL, variation_name TEXT NOT NULL,
   unit_price INTEGER NOT NULL, quantity INTEGER NOT NULL,       -- x1000
   modifier_snapshot TEXT, discount_amount INTEGER DEFAULT 0,
+  -- `tax_rate_name` adalah SNAPSHOT, sama seperti `item_name`: struk yang
+  -- dicetak ulang tidak boleh menyentuh tabel katalog (`spec-b:145`), jadi
+  -- namanya harus sudah ada di sini sejak penjualan ditulis.
   tax_rate_id TEXT, tax_rate INTEGER DEFAULT 0, tax_amount INTEGER DEFAULT 0,
+  tax_rate_name TEXT,
   is_tax_inclusive INTEGER DEFAULT 0, cost_at_sale INTEGER NOT NULL DEFAULT 0,
   line_total INTEGER NOT NULL
 );
