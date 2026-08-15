@@ -550,8 +550,16 @@ async function tulisRefund(client: PoolClient, ctx: RefundContext): Promise<Reco
     entityId: orderId,
     reasonCode: body.reasonCode,
     reasonNote: body.reasonNote ?? null,
-    before: { total: Number(asli.total), alreadyRefunded: Number(alreadyRefunded) },
-    after: { refundId: refundRow.id, amount: Number(requested) },
+    // ⛔ STRING, bukan `Number`. Uang di sini `bigint`, dan `Number` membuang
+    // presisi di atas 2^53 — DI DALAM jsonb, tempat nilainya tersimpan
+    // permanen dan tidak dapat dipulihkan dari mana pun.
+    //
+    // Ditemukan saat merancang laporan exception (B-21): laporan itu karena
+    // cacat ini harus JOIN ke `"order"` alih-alih membaca payload di sini.
+    // Perbaikan berlaku untuk baris BARU; baris lama tidak di-backfill
+    // (keputusan produk), jadi laporan tetap tidak boleh mempercayainya.
+    before: { total: asli.total.toString(), alreadyRefunded: alreadyRefunded.toString() },
+    after: { refundId: refundRow.id, amount: requested.toString() },
     hlc: hlcValue,
     occurredAt: refundRow.occurred_at.toISOString(),
   });
@@ -734,7 +742,8 @@ export function createCancelHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
           entityId: orderId,
           reasonCode: body.reasonCode,
           reasonNote: body.reasonNote ?? null,
-          before: { status: asli.status, total: Number(asli.total) },
+          // ⛔ STRING — lihat catatan di jalur refund di atas.
+          before: { status: asli.status, total: asli.total.toString() },
           after: { voidOrderId: voidOrder.id, status: 'voided' },
           hlc: hlcValue,
           occurredAt: voidOrder.occurred_at.toISOString(),
