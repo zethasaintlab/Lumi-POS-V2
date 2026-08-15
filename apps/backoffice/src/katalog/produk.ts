@@ -64,7 +64,37 @@ export interface Item {
  * cabangnya, dan itu hijau di test sambil salah di aplikasi.
  */
 export function rupiah(nilai: number | bigint | string): string {
-  const n = typeof nilai === 'bigint' ? nilai : BigInt(Math.trunc(Number(nilai) || 0));
+  // ⛔ STRING diubah lewat `BigInt` LANGSUNG, tidak lewat `Number`.
+  //
+  // Versi pertama menulis `BigInt(Math.trunc(Number(nilai) || 0))` untuk
+  // semua bentuk non-bigint. Itu benar untuk harga produk — dan membuang
+  // presisi tepat pada nilai yang `GET /reports/sales` kirim sebagai string
+  // justru untuk menjaganya: `Number('9007199254740993')` menghasilkan
+  // …992, satu rupiah hilang tanpa satu pun error.
+  //
+  // Endpoint laporan mengirim uang sebagai string karena `PosisiPenjualan`
+  // memakai `bigint`. Mengubahnya kembali jadi `number` di titik tampilan
+  // membatalkan seluruh alasan itu.
+  let n: bigint;
+  try {
+    if (typeof nilai === 'bigint') n = nilai;
+    else if (typeof nilai === 'number') n = BigInt(Math.trunc(nilai));
+    else {
+      const teks = String(nilai).trim();
+      // ⛔ `BigInt('')` mengembalikan **0n**, tidak melempar — berbeda dari
+      // `BigInt('abc')`. Nilai yang hilang karena itu akan tampil sebagai
+      // "Rp 0" yang meyakinkan, dan merchant membacanya sebagai penjualan nol
+      // alih-alih data yang tidak sampai.
+      if (teks.length === 0) return 'Rp —';
+      n = BigInt(teks);
+    }
+  } catch {
+    // `BigInt('abc')` MELEMPAR, tidak seperti `Number('abc')` yang
+    // menghasilkan NaN diam-diam. Layar yang jatuh karena satu field tak
+    // terduga lebih buruk daripada layar yang menampilkan tanda tanya.
+    return 'Rp —';
+  }
+
   const negatif = n < 0n;
   const teks = (negatif ? -n : n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   // `−` (U+2212), bukan hyphen — format yang `CLAUDE.md` tetapkan untuk nilai

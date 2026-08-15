@@ -231,3 +231,8 @@ test('⛔ B-24 dan B-26 TIDAK ditandai siap — endpointnya belum ada', async ()
     assert.ok(!LAYAR_SIAP.has(id), `${id} ditandai siap padahal endpointnya belum ada`);
   }
 });
+
+test('B-16 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-16'), 'B-16 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
