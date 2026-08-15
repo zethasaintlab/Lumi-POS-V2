@@ -304,6 +304,18 @@ async function buildAppInner(
     }
     reply.header('Access-Control-Allow-Origin', asal);
     reply.header('Vary', 'Origin');
+    /* ⛔ `content-disposition` WAJIB diekspos, kalau tidak ia tidak terbaca
+       JavaScript sama sekali.
+
+       Browser hanya menyerahkan tujuh header "safelisted" kepada kode lintas
+       origin; sisanya dibaca sebagai `null` TANPA error. Layar B-20 mengambil
+       nama berkas CSV dari header ini — tanpa baris ini ia selalu jatuh ke
+       nama cadangan, dan nama yang server tentukan tidak pernah dipakai.
+
+       Ditemukan dengan menjalankannya di browser: `app.inject()` di test
+       melihat headernya baik-baik saja, karena ia tidak pernah melewati
+       aturan CORS. */
+    reply.header('Access-Control-Expose-Headers', 'content-disposition');
     if (req.method === 'OPTIONS') {
       reply.header('Access-Control-Allow-Methods', [...metodeRute].join(', '));
       reply.header('Access-Control-Allow-Headers', HEADER_DIIZINKAN);

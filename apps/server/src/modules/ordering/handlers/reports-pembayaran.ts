@@ -49,6 +49,45 @@ interface BarisDb {
   total: string;
 }
 
+/** Data laporan pembayaran. Diekspor untuk dipakai `GET /reports/export`. */
+export async function ambilPembayaran(
+  client: import('../../../db.ts').PoolClient,
+  { from, to, outletId }: { from: string; to: string; outletId: string | null }
+) {
+        const { rows } = await client.query<BarisDb>(
+    `SELECT p.method,
+            COUNT(*)::text   AS jumlah,
+            SUM(p.amount)::text AS total
+       FROM payment p
+       JOIN "order" o ON o.id = p.order_id
+      WHERE o.business_date BETWEEN $1 AND $2
+        AND ($3::text IS NULL OR o.outlet_id = $3)
+        -- spec-c:223 — hanya yang benar-benar terkonfirmasi.
+        AND p.status = 'confirmed'
+        -- Pesanan yang PUNYA pembatal dikeluarkan; aturan yang sama
+        -- dengan posisiPenjualan.
+        AND NOT EXISTS (
+          SELECT 1 FROM "order" v WHERE v.voided_by_order_id = o.id
+        )
+      GROUP BY p.method
+      ORDER BY SUM(p.amount) DESC, p.method ASC`,
+    [from, to, outletId]
+  );
+
+  // ⛔ STRING. `pg` mengembalikan `bigint` sebagai string, dan
+  // mengubahnya ke `number` membuang presisi di atas 2^53.
+  const metode = rows.map((r) => ({
+    method: r.method,
+    jumlahTransaksi: Number(r.jumlah),
+    totalDiterima: String(r.total),
+  }));
+
+  let total = 0n;
+  for (const m of metode) total += BigInt(m.totalDiterima);
+
+  return { metode, totalDiterima: total.toString() };
+}
+
 export function createPaymentReportHandlers(pool: Pool): Record<string, unknown> {
   return {
     async getPaymentReport(req: FastifyRequest) {
@@ -61,38 +100,7 @@ export function createPaymentReportHandlers(pool: Pool): Record<string, unknown>
         await assertUserVisible(client, actorId);
         if (outletId !== null) await assertOutletVisible(client, outletId);
 
-        const { rows } = await client.query<BarisDb>(
-          `SELECT p.method,
-                  COUNT(*)::text   AS jumlah,
-                  SUM(p.amount)::text AS total
-             FROM payment p
-             JOIN "order" o ON o.id = p.order_id
-            WHERE o.business_date BETWEEN $1 AND $2
-              AND ($3::text IS NULL OR o.outlet_id = $3)
-              -- spec-c:223 — hanya yang benar-benar terkonfirmasi.
-              AND p.status = 'confirmed'
-              -- Pesanan yang PUNYA pembatal dikeluarkan; aturan yang sama
-              -- dengan posisiPenjualan.
-              AND NOT EXISTS (
-                SELECT 1 FROM "order" v WHERE v.voided_by_order_id = o.id
-              )
-            GROUP BY p.method
-            ORDER BY SUM(p.amount) DESC, p.method ASC`,
-          [from, to, outletId]
-        );
-
-        // ⛔ STRING. `pg` mengembalikan `bigint` sebagai string, dan
-        // mengubahnya ke `number` membuang presisi di atas 2^53.
-        const metode = rows.map((r) => ({
-          method: r.method,
-          jumlahTransaksi: Number(r.jumlah),
-          totalDiterima: String(r.total),
-        }));
-
-        let total = 0n;
-        for (const m of metode) total += BigInt(m.totalDiterima);
-
-        return { from, to, outletId, metode, totalDiterima: total.toString() };
+        return { from, to, outletId, ...(await ambilPembayaran(client, { from, to, outletId })) };
       });
     },
   };

@@ -249,10 +249,53 @@ test('B-18 dan B-19 sudah ditandai siap', async () => {
   }
 });
 
-test('⛔ B-20 Ekspor BELUM siap — persona Akuntan belum diputuskan', async () => {
-  // `IA:439` mencatat open question yang masih terbuka: "Apakah Akuntan punya
-  // navigasi sendiri yang disederhanakan, atau back-office penuh dengan menu
-  // tersembunyi?" Ia memblokir bentuk B-20.
+
+// ---------------------------------------------------------------------------
+// ⛔ Akuntan — resolusi IA:439
+// ---------------------------------------------------------------------------
+
+test('⛔ akuntan hanya melihat grup Laporan', async () => {
+  const { navigasiUntuk } = await import(NAV);
+  const grup = navigasiUntuk(['accountant']).map((g) => g.group);
+  assert.deepEqual(grup, ['Laporan']);
+});
+
+test('⛔ akuntan yang JUGA manajer melihat menu penuh', async () => {
+  // Seseorang dapat memegang beberapa peran. Memeriksa `includes('accountant')`
+  // saja akan menyembunyikan menu dari orang yang berhak memakainya.
+  const { navigasiUntuk } = await import(NAV);
+  const grup = navigasiUntuk(['accountant', 'outlet_manager']).map((g) => g.group);
+  assert.ok(grup.length > 1, 'akuntan-merangkap-manajer kehilangan menunya');
+});
+
+test('peran lain tidak terpengaruh', async () => {
+  const { navigasiUntuk, NAVIGASI } = await import(NAV);
+  for (const peran of [['owner'], ['area_manager'], ['outlet_manager'], []]) {
+    assert.equal(navigasiUntuk(peran).length, NAVIGASI.length, `${peran} kehilangan menu`);
+  }
+});
+
+test('⛔ beranda akuntan adalah B-16, bukan dashboard', async () => {
+  // B-01 tidak ada di grup Laporan. Akuntan yang mendarat di sana melihat
+  // keadaan kosong "tidak punya akses" sebagai layar pertamanya.
+  const { BERANDA_AKUNTAN, navigasiUntuk } = await import(NAV);
+  assert.equal(BERANDA_AKUNTAN, 'B-16');
+  const terlihat = navigasiUntuk(['accountant']).flatMap((g) => g.items.map((i) => i.id));
+  assert.ok(terlihat.includes(BERANDA_AKUNTAN), 'beranda akuntan tidak ada di menunya');
+});
+
+test('B-20 sudah ditandai siap — IA:439 sudah diputuskan', async () => {
+  // Persona Akuntan: hanya grup Laporan. Penjaga yang menahan B-20 sebelumnya
+  // sengaja dihapus bersamaan dengan keputusan itu.
   const { LAYAR_SIAP } = await import(NAV);
-  assert.ok(!LAYAR_SIAP.has('B-20'), 'B-20 ditandai siap padahal bentuknya belum diputuskan');
+  assert.ok(LAYAR_SIAP.has('B-20'), 'B-20 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
+
+test('⛔ SELURUH grup Laporan siap — itu yang akuntan lihat', async () => {
+  const { LAYAR_SIAP, navigasiUntuk } = await import(NAV);
+  const belum = navigasiUntuk(['accountant'])
+    .flatMap((g) => g.items)
+    .filter((i) => !LAYAR_SIAP.has(i.id))
+    .map((i) => i.id);
+  assert.deepEqual(belum, [], `akuntan melihat layar tanpa isi: ${belum.join(', ')}`);
 });

@@ -87,6 +87,46 @@ export function tampilkanKuantitas(skala: string): string {
   return negatif ? `−${teks}` : teks;
 }
 
+/** Data laporan produk. Diekspor untuk dipakai `GET /reports/export`. */
+export async function ambilProduk(
+  client: import('../../../db.ts').PoolClient,
+  { from, to, outletId }: { from: string; to: string; outletId: string | null }
+) {
+        const { rows } = await client.query<BarisDb>(
+    `SELECT ol.variation_id,
+            MIN(ol.item_name)      AS item_name,
+            MIN(ol.variation_name) AS variation_name,
+            SUM(ol.quantity)       AS kuantitas,
+            -- ⛔ Dibagi 1000: quantity adalah INTEGER x1000 (konvensi
+            -- repo). Tanpa pembagian ini nilainya 1000x terlalu besar,
+            -- dan tidak ada satu pun error yang menandainya.
+            SUM(ol.quantity * ol.unit_price / 1000) AS nilai_kotor
+       FROM order_line ol
+       JOIN "order" o ON o.id = ol.order_id
+      WHERE o.business_date BETWEEN $1 AND $2
+        AND ($3::text IS NULL OR o.outlet_id = $3)
+        AND o.status = ANY($4::text[])
+        -- Pesanan yang PUNYA pembatal dikeluarkan. Aturan yang sama
+        -- dengan posisiPenjualan; refund TIDAK dikeluarkan.
+        AND NOT EXISTS (
+          SELECT 1 FROM "order" v WHERE v.voided_by_order_id = o.id
+        )
+      GROUP BY ol.variation_id
+      -- Urutan dijamin di sini DAN di JS: kuantitas menurun, lalu nama.
+      ORDER BY SUM(ol.quantity) DESC, MIN(ol.item_name) ASC`,
+    [from, to, outletId, STATUS_PENJUALAN_LIST]
+  );
+
+  return rows.map((r) => ({
+    variationId: r.variation_id,
+    itemName: r.item_name,
+    variationName: r.variation_name,
+    kuantitas: String(r.kuantitas),
+    kuantitasTampil: tampilkanKuantitas(String(r.kuantitas)),
+    nilaiKotor: String(r.nilai_kotor),
+  }));
+}
+
 export function createProductReportHandlers(pool: Pool): Record<string, unknown> {
   return {
     async getProductReport(req: FastifyRequest) {
@@ -99,47 +139,7 @@ export function createProductReportHandlers(pool: Pool): Record<string, unknown>
         await assertUserVisible(client, actorId);
         if (outletId !== null) await assertOutletVisible(client, outletId);
 
-        const { rows } = await client.query<BarisDb>(
-          `SELECT ol.variation_id,
-                  MIN(ol.item_name)      AS item_name,
-                  MIN(ol.variation_name) AS variation_name,
-                  SUM(ol.quantity)       AS kuantitas,
-                  -- ⛔ Dibagi 1000: quantity adalah INTEGER x1000 (konvensi
-                  -- repo). Tanpa pembagian ini nilainya 1000x terlalu besar,
-                  -- dan tidak ada satu pun error yang menandainya.
-                  SUM(ol.quantity * ol.unit_price / 1000) AS nilai_kotor
-             FROM order_line ol
-             JOIN "order" o ON o.id = ol.order_id
-            WHERE o.business_date BETWEEN $1 AND $2
-              AND ($3::text IS NULL OR o.outlet_id = $3)
-              AND o.status = ANY($4::text[])
-              -- Pesanan yang PUNYA pembatal dikeluarkan. Aturan yang sama
-              -- dengan posisiPenjualan; refund TIDAK dikeluarkan.
-              AND NOT EXISTS (
-                SELECT 1 FROM "order" v WHERE v.voided_by_order_id = o.id
-              )
-            GROUP BY ol.variation_id
-            -- Urutan dijamin di sini DAN di JS: kuantitas menurun, lalu nama.
-            ORDER BY SUM(ol.quantity) DESC, MIN(ol.item_name) ASC`,
-          [from, to, outletId, STATUS_PENJUALAN_LIST]
-        );
-
-        return {
-          from,
-          to,
-          outletId,
-          produk: rows.map((r) => ({
-            variationId: r.variation_id,
-            itemName: r.item_name,
-            variationName: r.variation_name,
-            // ⛔ STRING. `pg` mengembalikan `bigint` sebagai string, dan
-            // mengubahnya ke `number` membuang presisi di atas 2^53 — sama
-            // seperti uang di `/reports/sales`.
-            kuantitas: String(r.kuantitas),
-            kuantitasTampil: tampilkanKuantitas(String(r.kuantitas)),
-            nilaiKotor: String(r.nilai_kotor),
-          })),
-        };
+        return { from, to, outletId, produk: await ambilProduk(client, { from, to, outletId }) };
       });
     },
   };
