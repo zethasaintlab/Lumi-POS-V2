@@ -72,6 +72,9 @@ export const TABEL_RAW = [
  */
 export const TABEL_LOKAL_SAJA = [
   'stock_snapshot',
+  // F4 — antrean cetak. Murni lokal: struk adalah artefak PERANGKAT, dan
+  // printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh kasir 2.
+  'print_job',
   'outbox_local',
   'device_config',
   'skema_lokal',
