@@ -257,33 +257,45 @@ test('PIN plaintext tidak pernah muncul di log (spec-f:443)', async () => {
 });
 
 test('PATCH /users: owner terakhir tidak dapat dinonaktifkan (spec-f:425)', async () => {
+  // ⛔ Premisnya dibangun eksplisit, tidak diwarisi fixture.
+  //
+  // Versi lama mengandalkan `base.user` berperan KASIR, sehingga owner yang
+  // dibuat di sini otomatis menjadi satu-satunya. Sejak fixture memberi
+  // `base.user` peran owner juga (pemilik kafe kecil berdiri di kasir
+  // sendiri, dan tanpa itu setiap test administratif gagal 403), premis itu
+  // diam-diam batal — test ini LULUS-lalu-GAGAL karena alasan yang tidak ada
+  // hubungannya dengan aturan yang dijaganya.
+  //
+  // Yang diuji sekarang adalah aturannya utuh, dalam urutan yang membuktikan
+  // keduanya: dengan DUA owner, penonaktifan berhasil; owner TERAKHIR
+  // ditolak. Test lama hanya membuktikan yang kedua.
   const pemilik = (await buatUser({
-    name: 'Owner Tunggal',
+    name: 'Owner Kedua',
     roles: [{ role: 'owner', scopeType: 'tenant', scopeId: tenant.id }],
   })).json();
 
-  const res = await app.inject({
+  // Dua owner (fixture + yang barusan): penonaktifan HARUS berhasil. Kalau
+  // tidak, aturannya bukan "minimal satu owner" melainkan "owner tidak dapat
+  // dinonaktifkan".
+  const duaOwner = await app.inject({
     method: 'PATCH',
     url: `/users/${pemilik.id}`,
+    payload: { isActive: false },
+    headers: hdr(),
+  });
+  assert.equal(duaOwner.statusCode, 200, duaOwner.body);
+
+  // Kini fixture adalah owner AKTIF terakhir — dan ia tidak dapat
+  // menonaktifkan dirinya sendiri.
+  const res = await app.inject({
+    method: 'PATCH',
+    url: `/users/${base.user.id}`,
     payload: { isActive: false },
     headers: hdr(),
   });
   assert.equal(res.statusCode, 409, res.body);
   assert.equal(res.json().error.code, 'LAST_OWNER');
 
-  // Dengan owner kedua, penonaktifan harus berhasil -- kalau tidak, aturannya
-  // bukan "minimal satu owner" melainkan "owner tidak dapat dinonaktifkan".
-  await buatUser({
-    name: 'Owner Kedua',
-    roles: [{ role: 'owner', scopeType: 'tenant', scopeId: tenant.id }],
-  });
-  const kedua = await app.inject({
-    method: 'PATCH',
-    url: `/users/${pemilik.id}`,
-    payload: { isActive: false },
-    headers: hdr(),
-  });
-  assert.equal(kedua.statusCode, 200, kedua.body);
 });
 
 test('POST /pin-attempts: 5 gagal mengunci 60 detik (FR-F4)', async () => {
