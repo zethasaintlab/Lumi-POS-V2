@@ -297,3 +297,47 @@ test('⛔ tarif ber-scope item TIDAK berlaku untuk item lain', async () => {
   const order = await buatOrder(fx);
   assert.equal(order.taxAmount, 0, 'tarif item lain ikut dikenakan');
 });
+
+// --- F5: nama tarif sebagai SNAPSHOT di order_line ---
+
+test('⛔ order_line menyimpan NAMA tarif, bukan hanya id-nya', async () => {
+  // Keputusan user 15 Agustus 2026. Tanpa kolom ini, cetak ulang hanya dapat
+  // menulis "Pajak" — nama tarif hidup di `tax_rate`, dan `spec-b:145`
+  // melarang cetak ulang menyentuh tabel katalog.
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  await buatTarif({ name: 'PBJT 10%' });
+
+  const order = await buatOrder(fx);
+
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const { rows } = await appSetup.query(
+    'SELECT tax_rate_id, tax_rate_name FROM order_line WHERE order_id = $1',
+    [order.id]
+  );
+  await appSetup.query('COMMIT');
+
+  assert.ok(rows.length > 0, 'order_line tidak ada');
+  assert.equal(rows[0].tax_rate_name, 'PBJT 10%', 'nama tarif tidak tersimpan');
+  assert.ok(rows[0].tax_rate_id, 'tax_rate_id ikut hilang');
+});
+
+test('⛔ baris TANPA tarif menyimpan NULL, bukan string kosong', async () => {
+  // `null` berarti "tidak ada tarif yang berlaku"; string kosong akan
+  // tercetak sebagai baris pajak tanpa nama di struk.
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+
+  const order = await buatOrder(fx);
+
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const { rows } = await appSetup.query(
+    'SELECT tax_rate_name FROM order_line WHERE order_id = $1',
+    [order.id]
+  );
+  await appSetup.query('COMMIT');
+
+  assert.equal(rows[0].tax_rate_name, null);
+});

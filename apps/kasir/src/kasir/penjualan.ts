@@ -306,8 +306,8 @@ export async function simpanPenjualan({
         `INSERT INTO order_line
            (id, order_id, check_id, variation_id, item_name, variation_name, unit_price,
             quantity, modifier_snapshot, discount_amount, tax_rate_id, tax_rate, tax_amount,
-            is_tax_inclusive, cost_at_sale, line_total)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?)`,
+            is_tax_inclusive, cost_at_sale, line_total, tax_rate_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?, ?)`,
         [
           b.id, orderId, checkId, b.variationId, b.itemName, b.variationName,
           b.unitPrice, b.quantityMilli,
@@ -315,6 +315,10 @@ export async function simpanPenjualan({
           p?.taxRateId ?? null, Number(p?.rateScaled ?? 0n), Number(p?.amount ?? 0n),
           p?.isInclusive ? 1 : 0,
           Number(lineTotals[i]),
+          // F5 — snapshot nama tarif, dari hasil `calculateTax` yang sudah
+          // ada. Tanpanya struk yang dicetak ulang hanya dapat menulis
+          // "Pajak" (`spec-b:145` melarang menyentuh tabel katalog).
+          p?.name ?? null,
         ]
       );
 

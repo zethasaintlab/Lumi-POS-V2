@@ -198,3 +198,70 @@ test('⛔ dua kali cetak ulang menghasilkan byte IDENTIK', async () => {
   isiOrder(db);
   assert.equal(await cetak(db), await cetak(db));
 });
+
+// --- F5: nama tarif dari SNAPSHOT, bukan dari tabel katalog ---
+
+function isiPajakBernama(db, nama) {
+  db.sqlite.exec(`
+    UPDATE order_line SET tax_rate_id = 'tr-1', tax_amount = 5000, tax_rate_name = '${nama}'
+     WHERE order_id = 'ord-1'
+  `);
+}
+
+test('⛔ cetak ulang memakai NAMA tarif tersimpan, bukan "Pajak" generik', async () => {
+  // Keputusan user 15 Agustus 2026: denormalisasi di F5. Larangan
+  // `spec-b:145` TIDAK dilonggarkan — yang berubah adalah apa yang tersimpan
+  // sebagai snapshot.
+  const db = dbSungguhan();
+  isiOrder(db);
+  isiPajakBernama(db, 'PBJT 10%');
+
+  const out = await cetak(db);
+  assert.ok(out.includes('PBJT 10%'), `nama tarif hilang:${String.fromCharCode(10)}${out}`);
+  assert.equal(/^Pajak\s/m.test(out), false, 'masih memakai label generik');
+});
+
+test('⛔ dan ia tetap TIDAK menyentuh tabel katalog', async () => {
+  // Perbaikan ini mudah dilakukan dengan cara yang salah: satu JOIN ke
+  // `tax_rate` menghasilkan hasil yang sama di test ini, dan melanggar
+  // `spec-b:145` diam-diam.
+  const db = dbSungguhan();
+  isiOrder(db);
+  isiPajakBernama(db, 'PBJT 10%');
+  await cetak(db);
+
+  assert.equal(db.tabelDisentuh.has('tax_rate'), false, 'cetak ulang menyentuh tax_rate');
+});
+
+test('baris LAMA tanpa nama tarif jatuh ke "Pajak", bukan mengarang', async () => {
+  // Transaksi yang ditulis sebelum F5 tidak punya namanya dan tidak dapat
+  // direkonstruksi tanpa menebak.
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(`
+    UPDATE order_line SET tax_rate_id = 'tr-1', tax_amount = 5000, tax_rate_name = NULL
+     WHERE order_id = 'ord-1'
+  `);
+
+  const out = await cetak(db);
+  assert.ok(/^Pajak\s/m.test(out), 'baris pajak hilang seluruhnya');
+});
+
+test('⛔ dua tarif berbeda menghasilkan DUA baris, digabung per tarif', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(`
+    INSERT INTO order_line
+      (id, order_id, check_id, variation_id, item_name, variation_name, unit_price,
+       quantity, line_total, tax_rate_id, tax_amount, tax_rate_name)
+    VALUES ('ln-2','ord-1','chk','v2','Roti','Cokelat',30000,1000,30000,'tr-2',3000,'PPN 11%')
+  `);
+  db.sqlite.exec(`
+    UPDATE order_line SET tax_rate_id = 'tr-1', tax_amount = 5000, tax_rate_name = 'PBJT 10%'
+     WHERE id = 'ln-1'
+  `);
+
+  const out = await cetak(db);
+  assert.ok(out.includes('PBJT 10%'));
+  assert.ok(out.includes('PPN 11%'));
+});

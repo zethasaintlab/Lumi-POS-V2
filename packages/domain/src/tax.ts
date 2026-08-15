@@ -80,6 +80,16 @@ export interface TaxBreakdownLine {
 export interface TaxPerLine {
   lineId: string;
   taxRateId: string;
+  /**
+   * Nama tarif, ikut sebagai SNAPSHOT.
+   *
+   * ⛔ Ada di sini, bukan diresolusi pemanggil lewat `taxRateId`. Struk yang
+   * dicetak ulang tidak boleh menyentuh tabel katalog (`spec-b:145`), jadi
+   * namanya harus tersimpan di `order_line` sejak penjualan ditulis — dan
+   * satu-satunya tempat yang tahu namanya saat itu adalah hasil perhitungan
+   * ini.
+   */
+  name: string;
   rateScaled: bigint;
   amount: bigint;
   isInclusive: boolean;
@@ -283,6 +293,7 @@ export function calculateTax(input: TaxCalculationInput): TaxBreakdown {
       perLine.push({
         lineId: members[i].lineId,
         taxRateId: rate.id,
+        name: rate.name,
         rateScaled: rate.rateScaled,
         amount: bagian[i],
         isInclusive: rate.isInclusive,

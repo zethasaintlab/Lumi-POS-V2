@@ -47,6 +47,42 @@ const METODE: Record<string, string> = {
 };
 
 /**
+ * Rincian pajak per TARIF, dari snapshot `order_line`.
+ *
+ * Baris yang tarifnya sama digabung — struk mencetak satu baris per tarif
+ * (`spec-c:404`), bukan satu per produk.
+ *
+ * ⛔ Baris tanpa `tax_rate_name` (ditulis sebelum F5) dikumpulkan ke satu
+ * baris "Pajak". Mengarang nama untuk mereka berarti struk menyebut tarif yang
+ * mungkin tidak pernah berlaku pada transaksi itu.
+ *
+ * Bila tidak ada rincian sama sekali, `totalPajak` dipakai apa adanya —
+ * jumlah yang tercetak harus tetap menutup selisih ke TOTAL (AC FR-C10 kedua).
+ */
+function rincianPajak(
+  baris: readonly { tax_rate_name: string | null; tax_amount: number | null }[],
+  totalPajak: number
+): { nama: string; jumlah: number }[] {
+  const per = new Map<string, number>();
+  let terinci = 0;
+  for (const b of baris) {
+    const jumlah = Number(b.tax_amount ?? 0);
+    if (jumlah === 0) continue;
+    const nama = b.tax_rate_name ?? 'Pajak';
+    per.set(nama, (per.get(nama) ?? 0) + jumlah);
+    terinci += jumlah;
+  }
+
+  // Selisih terjadi bila pajak tersimpan di order tetapi tidak di barisnya —
+  // bentuk data lama. Ia ditambahkan sebagai "Pajak" supaya aritmetika struk
+  // tetap tertutup.
+  const sisa = totalPajak - terinci;
+  if (sisa !== 0) per.set('Pajak', (per.get('Pajak') ?? 0) + sisa);
+
+  return [...per].map(([nama, jumlah]) => ({ nama, jumlah })).filter((r) => r.jumlah !== 0);
+}
+
+/**
  * Membangun ulang dokumen struk sebuah order dari data LOKAL.
  *
  * `null` bila ordernya tidak ada di perangkat ini — riwayat lokal hanya
@@ -73,8 +109,11 @@ export async function bangunUlangStruk(
     variation_name: string;
     quantity: number;
     line_total: number;
+    tax_rate_name: string | null;
+    tax_amount: number | null;
   }>(
-    `SELECT id, item_name, variation_name, quantity, line_total
+    `SELECT id, item_name, variation_name, quantity, line_total,
+            tax_rate_name, tax_amount
        FROM order_line WHERE order_id = ?`,
     [orderId]
   );
@@ -115,15 +154,15 @@ export async function bangunUlangStruk(
     subtotal: Number(order.subtotal),
     diskon: 0,
     serviceCharge: 0,
-    // ⛔ `order.tax_amount` adalah SELURUH pajak dan tidak menyimpan nama
-    // tarifnya. Nama per tarif hidup di `order_line.tax_rate_id`, dan
-    // meresolusinya menuntut query ke `tax_rate` — tabel KATALOG, yang
-    // `spec-b:145` larang untuk cetak ulang.
+    // ⛔ Nama tarif dibaca dari SNAPSHOT di `order_line`, bukan dari
+    // `tax_rate`. Larangan `spec-b:145` tidak dilonggarkan — yang berubah
+    // (F5, keputusan user 15 Agustus 2026) adalah apa yang tersimpan: nama
+    // tarif kini ikut disalin saat penjualan ditulis, sama seperti
+    // `item_name`.
     //
-    // Yang dipilih: satu baris "Pajak" tanpa nama tarif, dan itu BATAS YANG
-    // DINYATAKAN. Alternatifnya menyalin nama tarif ke `order_line` saat
-    // penjualan — perubahan skema yang belum diputuskan.
-    pajak: Number(order.tax_amount) === 0 ? [] : [{ nama: 'Pajak', jumlah: Number(order.tax_amount) }],
+    // Baris LAMA tidak punya namanya dan tidak dapat direkonstruksi tanpa
+    // menebak; keduanya jatuh ke "Pajak", dan itu jujur.
+    pajak: rincianPajak(baris, Number(order.tax_amount)),
     pembulatan: Number(order.rounding_adjustment),
     total: Number(order.amount_due),
     pembayaran: payment.map((p) => ({
