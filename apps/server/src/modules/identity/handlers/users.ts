@@ -7,7 +7,7 @@ import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { assertOutletVisible, assertKuota } from '../../tenancy/index.ts';
-import { hitungPengguna } from '../index.ts';
+import { hitungPengguna, assertUserVisible } from '../index.ts';
 import {
   detectWeakPin,
   isValidPinShape,
@@ -156,6 +156,65 @@ async function assertPinBelumDipakaiDiOutlet(
 
 export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Record<string, unknown> {
   return {
+    /**
+     * Daftar pengguna untuk layar B-27.
+     *
+     * ⛔ `pin_hash` dan `password_hash` TIDAK ikut — hanya `hasPin`.
+     * Layar perlu tahu APAKAH PIN sudah disetel (tanpa itu pengguna tidak
+     * dapat membuka aplikasi kasir sama sekali), bukan nilainya. Setiap
+     * tempat yang memegang bahan kredensial tanpa membutuhkannya adalah
+     * tempat ia dapat bocor.
+     *
+     * ⛔ Pengguna yang DINONAKTIFKAN tetap ikut. Baris `"user"` tidak pernah
+     * dihapus — `audit_event.actor_user_id` menunjuknya, dan menghapusnya
+     * memutus atribusi setiap peristiwa yang pernah ia lakukan.
+     *
+     * Urutan dijamin SQL: aktif dulu, lalu nama.
+     */
+    async listUsers(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        // Yang berhak MELIHAT daftar pengguna adalah yang berhak
+        // mengelolanya. `assertBolehKelola` menuntut daftar peran target;
+        // untuk pembacaan, yang relevan hanya bahwa aktor mengelola SESEORANG
+        // — dipakai peran terlemah yang tetap masuk akal, yaitu kasir.
+        await assertBolehKelola(client, actorId, ['cashier']);
+
+        const { rows } = await client.query<{
+          id: string;
+          name: string;
+          email: string | null;
+          is_active: boolean;
+          has_pin: boolean;
+          roles: string[] | null;
+          outlet_ids: string[] | null;
+        }>(
+          `SELECT u.id, u.name, u.email, u.is_active,
+                  (u.pin_hash IS NOT NULL) AS has_pin,
+                  array_agg(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL) AS roles,
+                  array_agg(DISTINCT uo.outlet_id) FILTER (WHERE uo.outlet_id IS NOT NULL) AS outlet_ids
+             FROM "user" u
+             LEFT JOIN user_role ur ON ur.user_id = u.id
+             LEFT JOIN user_outlet uo ON uo.user_id = u.id
+            GROUP BY u.id, u.name, u.email, u.is_active, u.pin_hash
+            ORDER BY (u.is_active = false), u.name`
+        );
+
+        return rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          email: r.email,
+          isActive: r.is_active,
+          hasPin: r.has_pin,
+          roles: r.roles ?? [],
+          outletIds: r.outlet_ids ?? [],
+        }));
+      });
+    },
+
     async createUser(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);

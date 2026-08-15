@@ -1585,6 +1585,39 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
   /users:
+    get:
+      operationId: listUsers
+      summary: Daftar pengguna tenant ini, untuk layar B-27 Pengguna & Peran.
+      description: >-
+        Pengguna yang DINONAKTIFKAN ikut, dengan isActive false -- baris
+        "user" tidak pernah dihapus karena audit trail menunjuknya.
+
+
+        hasPin menyatakan APAKAH PIN sudah disetel, bukan nilainya. Tanpa PIN,
+        pengguna tidak dapat membuka aplikasi kasir sama sekali.
+      responses:
+        '200':
+          description: Daftar pengguna, aktif lebih dulu lalu urut nama.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, isActive, hasPin, roles, outletIds]
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    email: { type: string, nullable: true }
+                    isActive: { type: boolean }
+                    hasPin: { type: boolean }
+                    roles: { type: array, items: { type: string } }
+                    outletIds: { type: array, items: { type: string } }
+        '403':
+          description: Aktor tidak berhak mengelola pengguna.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     post:
       operationId: createUser
       summary: >-
