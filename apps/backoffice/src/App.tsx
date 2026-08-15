@@ -8,6 +8,7 @@ import { NAVIGASI, LAYAR_SIAP, cariItem, grupUntuk } from './navigasi.ts';
 import { PenyediaSesi, useSesi } from './sesi.tsx';
 import { Masuk } from './Masuk.tsx';
 import { Tombol } from './Tombol.tsx';
+import { Langganan } from './langganan/Langganan.tsx';
 
 /**
  * Kerangka back-office. Nol layar fitur — sama seperti `PLAN-pondasi-kasir`
@@ -93,6 +94,8 @@ function Terlindungi() {
       }}
     >
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
+        {aktif === 'B-29' ? <Langganan /> : null}
+
         {item && !LAYAR_SIAP.has(item.id) ? (
           <EmptyState
             icon={<Icon name={item.icon} size={32} />}

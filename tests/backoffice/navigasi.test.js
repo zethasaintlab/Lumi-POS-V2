@@ -138,10 +138,23 @@ test('⛔ tidak ada layar yang muncul di DUA grup', async () => {
   assert.deepEqual(ganda, [], `layar muncul dua kali: ${ganda.join(', ')}`);
 });
 
-test('LAYAR_SIAP kosong, dan itu jujur', async () => {
-  // Scaffold. Setiap menu menampilkan keadaan kosong yang menyebut namanya
-  // sendiri — bukan halaman putih, yang tidak dapat dibedakan dari aplikasi
-  // yang rusak.
+test('⛔ setiap layar di LAYAR_SIAP benar-benar ada di sidebar', async () => {
+  // Dulu test ini berbunyi "LAYAR_SIAP kosong, dan itu jujur" — benar saat
+  // seluruh back-office masih kerangka. B-29 mengisi yang pertama.
+  //
+  // Yang dijaga sekarang bukan kekosongannya melainkan konsistensinya: kode
+  // layar di daftar ini yang tidak ada di sidebar adalah layar yang tidak
+  // dapat dicapai siapa pun — ia dianggap "siap" dan menyembunyikan keadaan
+  // kosong yang seharusnya menjelaskan bahwa ia belum ada.
+  const { LAYAR_SIAP, NAVIGASI } = await import(NAV);
+  const diSidebar = new Set(NAVIGASI.flatMap((g) => g.items.map((i) => i.id)));
+
+  for (const id of LAYAR_SIAP) {
+    assert.ok(diSidebar.has(id), `${id} ada di LAYAR_SIAP tapi tidak ada di sidebar`);
+  }
+});
+
+test('B-29 sudah ditandai siap', async () => {
   const { LAYAR_SIAP } = await import(NAV);
-  assert.equal(LAYAR_SIAP.size, 0);
+  assert.ok(LAYAR_SIAP.has('B-29'), 'B-29 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
