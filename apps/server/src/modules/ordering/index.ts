@@ -4,6 +4,8 @@ import { createOrderHandlers } from './handlers/orders.ts';
 import { createCancelHandlers } from './handlers/cancel.ts';
 import { createReportHandlers } from './handlers/reports.ts';
 import { createProductReportHandlers } from './handlers/reports-produk.ts';
+import { createCashierReportHandlers } from './handlers/reports-kasir.ts';
+import { createPaymentReportHandlers } from './handlers/reports-pembayaran.ts';
 
 // Permukaan publik modul ordering (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN: order, check, order_line, order_line_modifier,
@@ -19,5 +21,7 @@ export function createOrderingHandlers(pool: Pool, hlc: Hlc): Record<string, unk
     // (invariant #4). Ia tidak butuh `hlc` — ia hanya membaca.
     ...createReportHandlers(pool),
     ...createProductReportHandlers(pool),
+    ...createCashierReportHandlers(pool),
+    ...createPaymentReportHandlers(pool),
   };
 }
