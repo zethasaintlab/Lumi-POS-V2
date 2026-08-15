@@ -188,3 +188,10 @@ test('⛔ B-07 TIDAK di sidebar — ia layar detail, dicapai dari B-06', async (
   const diSidebar = NAVIGASI.flatMap((g) => g.items.map((i) => i.id));
   assert.ok(!diSidebar.includes('B-07'), 'B-07 masuk sidebar — ia layar detail');
 });
+
+test('B-10 sudah ditandai siap — ia satu-satunya jalan mengubah harga', async () => {
+  // B-07 membekukan harga varian dan MENUNJUK ke sini. Kalau layarnya tidak
+  // terdaftar, tunjukan itu mengarah ke keadaan kosong "belum dibangun".
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-10'), 'B-10 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
