@@ -93,7 +93,21 @@ export interface PosisiPenjualan {
  * yang dibatalkannya — memasukkannya akan membuat omzet NAIK setiap kali
  * sebuah penjualan dibatalkan.
  */
-const STATUS_PENJUALAN: ReadonlySet<string> = new Set(['paid', 'closed', 'refunded']);
+export const STATUS_PENJUALAN: ReadonlySet<string> = new Set(['paid', 'closed', 'refunded']);
+
+/**
+ * Bentuk larik dari daftar yang sama, untuk dikirim sebagai parameter SQL.
+ *
+ * ⛔ Diekspor supaya laporan lain — `GET /reports/products` yang mengagregasi
+ * `order_line`, bukan `order` — memakai daftar status yang SAMA alih-alih
+ * menuliskannya lagi di SQL. Dua daftar status akan menyimpang pada status
+ * berikutnya yang ditambahkan, dan laporan produk akan menghitung barang dari
+ * pesanan yang laporan penjualan anggap belum terjadi.
+ *
+ * Diturunkan dari `STATUS_PENJUALAN`, bukan ditulis ulang — kalau tidak, ia
+ * sendiri menjadi salinan kedua.
+ */
+export const STATUS_PENJUALAN_LIST: readonly string[] = [...STATUS_PENJUALAN];
 
 export function posisiPenjualan({
   orders,

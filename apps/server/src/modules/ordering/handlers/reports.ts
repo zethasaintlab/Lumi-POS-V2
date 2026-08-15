@@ -1,9 +1,9 @@
 import type { FastifyRequest } from 'fastify';
 import type { Pool } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
-import { HttpError } from '../../../http-error.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import { assertUserVisible } from '../../identity/index.ts';
+import { assertRentang } from './rentang.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import {
   posisiPenjualan,
@@ -66,27 +66,6 @@ import {
  * sendiri akan membuat kedua laporan berbeda untuk hari yang sama.
  */
 
-/** `YYYY-MM-DD`, dan benar-benar tanggal — bukan sekadar berbentuk begitu. */
-const POLA_TANGGAL = /^\d{4}-\d{2}-\d{2}$/;
-
-function assertTanggal(nilai: unknown, nama: string): string {
-  if (typeof nilai !== 'string' || !POLA_TANGGAL.test(nilai)) {
-    throw new HttpError(
-      400,
-      'VALIDATION_ERROR',
-      `Parameter ${nama} harus tanggal bisnis berformat YYYY-MM-DD.`
-    );
-  }
-  // `2026-02-31` lolos regex. `Date` menormalkannya jadi 3 Maret secara diam-
-  // diam, dan rentang yang dimaksud merchant bergeser tanpa satu pun error.
-  const [t, b, h] = nilai.split('-').map(Number);
-  const d = new Date(Date.UTC(t, b - 1, h));
-  if (d.getUTCFullYear() !== t || d.getUTCMonth() !== b - 1 || d.getUTCDate() !== h) {
-    throw new HttpError(400, 'VALIDATION_ERROR', `Parameter ${nama} bukan tanggal yang ada.`);
-  }
-  return nilai;
-}
-
 interface BarisOrder {
   id: string;
   status: string;
@@ -123,25 +102,9 @@ export function createReportHandlers(pool: Pool): Record<string, unknown> {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);
       const q = req.query as { from?: string; to?: string; outlet_id?: string };
-
-      const from = assertTanggal(q.from, 'from');
-      const to = assertTanggal(q.to, 'to');
-
-      // ⛔ Ditolak, bukan dijawab nol.
-      //
-      // Rentang terbalik menghasilkan nol baris, dan nol yang terlihat seperti
-      // "tidak ada penjualan" adalah jawaban paling berbahaya yang dapat
-      // diberikan laporan keuangan. Perbandingan string aman: `YYYY-MM-DD`
-      // berurutan secara leksikografis.
-      if (from > to) {
-        throw new HttpError(
-          400,
-          'VALIDATION_ERROR',
-          'Tanggal awal tidak boleh setelah tanggal akhir.'
-        );
-      }
-
-      const outletId = q.outlet_id !== undefined && q.outlet_id !== '' ? q.outlet_id : null;
+      // Validasi rentang dibagi dengan `/reports/products` (`rentang.ts`) —
+      // dua salinan akan menyimpang tepat pada jebakan `2026-02-31`.
+      const { from, to, outletId } = assertRentang(q);
 
       return withTenantTransaction(pool, tenantId, async (client) => {
         await assertUserVisible(client, actorId);
