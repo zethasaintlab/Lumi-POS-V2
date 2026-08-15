@@ -53,7 +53,7 @@ function req(method, url, payload, headers = {}) {
     url,
     payload,
     headers: {
-      'x-tenant-id': tenant.id,
+      'x-tenant-id': tenant.id, authorization: base.authHeader,
       'x-actor-id': base.user.id,
       'idempotency-key': crypto.randomUUID(),
       ...headers,

@@ -44,6 +44,17 @@
         "kasir"
       ],
       "port": 1420
+    },
+    {
+      "name": "backoffice",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "backoffice"
+      ],
+      "port": 1422
     }
   ]
 }

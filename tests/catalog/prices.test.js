@@ -60,7 +60,7 @@ function req(method, url, payload, headers = {}) {
     method,
     url,
     payload,
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers },
   });
 }
 
@@ -135,6 +135,15 @@ async function assertNoPriceRowSaved(callerTenantId, priceId) {
   assert.equal(rows.length, 0, 'tidak boleh ada baris price_history tersimpan untuk request yang ditolak');
 }
 
+
+// Membaca baris untuk verifikasi, dalam konteks RLS tenant yang disebut.
+async function queryAsTenant(tenantIdKonteks, sql, params = []) {
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantIdKonteks]);
+  const hasil = await appSetup.query(sql, params);
+  await appSetup.query('COMMIT');
+  return hasil;
+}
 // --- T2: jalur bahagia ---
 
 test('createPrice: jalur bahagia, 201, baris tersimpan, changed_by terisi aktor', async () => {
@@ -295,9 +304,23 @@ test('createPrice: outletId milik tenant lain ditolak 404, tidak ada baris tersi
   await assertNoPriceRowSaved(tenant.id, priceId);
 });
 
-// --- T5b: actor (X-Actor-Id) lintas tenant -> 404, tidak ada baris tersimpan ---
+// --- T5b: aktor datang dari SESI, bukan dari header ---
+//
+// ⛔ Kedua test di bawah dulu berbunyi lain, dan perubahannya bukan
+// pelonggaran melainkan pengetatan.
+//
+// Versi lama menguji "X-Actor-Id milik tenant lain ditolak 404
+// ACTOR_NOT_FOUND" dan "X-Actor-Id hilang ditolak 400 MISSING_ACTOR_ID".
+// Keduanya berangkat dari premis bahwa header itu MENENTUKAN aktor — premis
+// yang `apps/server/src/sesi.ts` hapus: pada rute terlindungi, aktor dibaca
+// dari baris `user_session`, dan header `X-Actor-Id` tidak pernah dibaca
+// sama sekali.
+//
+// Menyimpan test lama berarti menguji jalur yang tidak ada lagi. Yang diuji
+// sekarang adalah sifat yang lebih kuat: header itu tidak berpengaruh apa
+// pun, bahkan saat berisi id yang sah di tenant lain.
 
-test('createPrice: actor (X-Actor-Id) milik tenant lain ditolak 404, tidak ada baris tersimpan', async () => {
+test('⛔ X-Actor-Id yang menunjuk tenant lain DIABAIKAN — changed_by tetap pemilik sesi', async () => {
   const otherBase = await seedTenantBase(appSetup, { suffix: 'PriceTestOtherActor' });
   const priceId = crypto.randomUUID();
 
@@ -307,10 +330,37 @@ test('createPrice: actor (X-Actor-Id) milik tenant lain ditolak 404, tidak ada b
     { id: priceId, price: 26000 },
     { 'x-actor-id': otherBase.user.id }
   );
-  assert.equal(res.statusCode, 404);
-  assert.equal(JSON.parse(res.body).error.code, 'ACTOR_NOT_FOUND');
+  assert.equal(res.statusCode, 201, res.body);
 
-  await assertNoPriceRowSaved(tenant.id, priceId);
+  // ⛔ Inti test ini: `changed_by` adalah pemilik SESI, bukan id yang
+  // dikirim di header. Kolom itu adalah kolom audit finansial (FR-A7,
+  // "changed_by selalu terisi") dan tanpa penjaga sesi ia dapat dinisbatkan
+  // ke siapa pun yang idnya diketahui pengirim.
+  const { rows } = await queryAsTenant(
+    tenant.id,
+    'SELECT changed_by FROM price_history WHERE id = $1',
+    [priceId]
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].changed_by, base.user.id);
+  assert.notEqual(rows[0].changed_by, otherBase.user.id);
+});
+
+test('⛔ TANPA X-Actor-Id sama sekali tetap berhasil — aktornya dari sesi', async () => {
+  const priceId = crypto.randomUUID();
+
+  const res = await req('POST', pricesUrl(base.item.id, base.item_variation.id), {
+    id: priceId,
+    price: 27000,
+  });
+  assert.equal(res.statusCode, 201, res.body);
+
+  const { rows } = await queryAsTenant(
+    tenant.id,
+    'SELECT changed_by FROM price_history WHERE id = $1',
+    [priceId]
+  );
+  assert.equal(rows[0].changed_by, base.user.id);
 });
 
 // Retry adalah keadaan NORMAL di POS offline-first, bukan kasus tepi:
@@ -360,17 +410,28 @@ test('createPrice: id sama dengan price berbeda ditolak 409, harga pertama tidak
   assert.equal(Number(stored.price), 25000, 'harga pertama tidak boleh tertimpa lewat retry ber-id sama');
 });
 
-// --- T5c: header X-Actor-Id hilang -> 400 MISSING_ACTOR_ID ---
+// --- T5c: TANPA sesi -> 401, dan tidak ada baris tersimpan ---
 
-test('createPrice: header X-Actor-Id hilang ditolak 400 MISSING_ACTOR_ID', async () => {
+test('⛔ createPrice TANPA Bearer ditolak 401, dan tidak ada baris riwayat harga', async () => {
+  // Dulu test ini berbunyi "X-Actor-Id hilang -> 400 MISSING_ACTOR_ID".
+  // Aktor sekarang datang dari sesi, jadi ia tidak dapat hilang pada rute
+  // terlindungi — yang dapat hilang adalah sesinya, dan jawabannya 401.
+  //
+  // `price_history.changed_by` adalah `text NOT NULL` TANPA FK ke `"user"`
+  // (temuan F1, `CLAUDE.md`): database tidak akan menangkap id karangan apa
+  // pun di sana. Sebelum penjaga sesi, satu-satunya yang berdiri di kolom itu
+  // adalah `assertUserVisible`. Sekarang penulisnya harus memiliki token.
+  const priceId = crypto.randomUUID();
   const res = await app.inject({
     method: 'POST',
     url: pricesUrl(base.item.id, base.item_variation.id),
-    payload: { id: crypto.randomUUID(), price: 25000 },
-    headers: { 'x-tenant-id': tenant.id },
+    payload: { id: priceId, price: 25000 },
+    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id },
   });
-  assert.equal(res.statusCode, 400);
-  assert.equal(JSON.parse(res.body).error.code, 'MISSING_ACTOR_ID');
+  assert.equal(res.statusCode, 401, res.body);
+  assert.equal(JSON.parse(res.body).error.code, 'SESSION_INVALID');
+
+  await assertNoPriceRowSaved(tenant.id, priceId);
 });
 
 // --- T6: GET riwayat -- urutan dan isolasi tenant ---

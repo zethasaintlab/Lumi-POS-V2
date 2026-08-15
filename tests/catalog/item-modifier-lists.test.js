@@ -31,11 +31,28 @@ beforeEach(async () => {
 });
 
 function req(method, url, payload) {
-  return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenant.id } });
+  return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
 }
 
-function reqAs(tenantId, method, url, payload) {
-  return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenantId } });
+// ⛔ Bertindak sebagai TENANT LAIN, dengan sesi tenant lain itu sendiri.
+//
+// Sejak penjaga sesi ada, mengirim `x-tenant-id` tenant lain sambil membawa
+// token tenant ini dijawab 401 — sesinya tidak akan ditemukan di sana. Yang
+// dimodelkan test-test di bawah BUKAN itu, melainkan serangan yang justru
+// temuan F1 sebut: penyerang yang SAH DI TENANTNYA SENDIRI menunjuk baris
+// milik tenant korban lewat FK. FK PostgreSQL tidak tunduk RLS, jadi hanya
+// guard SELECT di aplikasi yang berdiri di sana.
+//
+// Token penyerang karena itu WAJIB ikut berpindah bersama tenantnya —
+// kalau tidak, seluruh test ini berhenti di 401 dan guard FK-nya tidak
+// pernah dijalankan sama sekali.
+function reqAs(tenantId, method, url, payload, auth) {
+  return app.inject({
+    method,
+    url,
+    payload,
+    headers: { 'x-tenant-id': tenantId, authorization: auth ?? base.authHeader },
+  });
 }
 
 async function createItem() {
@@ -243,7 +260,8 @@ test('attachModifierList: modifierListId lintas tenant ditolak 404, dan tidak ad
     attackerTenantId,
     'POST',
     `/items/${attackerItemId}/modifier-lists/${victimModifierListId}`,
-    {}
+    {},
+    otherBase.authHeader
   );
   assert.equal(res.statusCode, 404);
   assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
@@ -274,7 +292,8 @@ test('attachModifierList: itemId lintas tenant ditolak 404, dan tidak ada baris 
     attackerTenantId,
     'POST',
     `/items/${victimItemId}/modifier-lists/${attackerModifierListId}`,
-    {}
+    {},
+    otherBase.authHeader
   );
   assert.equal(res.statusCode, 404);
   assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');
@@ -408,7 +427,9 @@ test('detachModifierList: tenant lain tidak bisa menghapus pasangan attach milik
   const res = await reqAs(
     attackerTenantId,
     'DELETE',
-    `/items/${victimItemId}/modifier-lists/${victimModifierListId}`
+    `/items/${victimItemId}/modifier-lists/${victimModifierListId}`,
+    undefined,
+    otherBase.authHeader
   );
   assert.equal(res.statusCode, 204);
 

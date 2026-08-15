@@ -54,7 +54,7 @@ function req(payload, headers = {}) {
     method: 'POST',
     url: '/orders',
     payload,
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers },
   });
 }
 
@@ -64,7 +64,7 @@ async function createDevice(outletId, code) {
     method: 'POST',
     url: '/devices',
     payload: { id: deviceId, outletId, code },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(res.statusCode, 201, `gagal membuat device persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -76,7 +76,7 @@ async function openShift(outletId, deviceId) {
     method: 'POST',
     url: '/shifts',
     payload: { id: shiftId, outletId, deviceId, businessDate: BUSINESS_DATE, openingFloat: 100000 },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id },
   });
   assert.equal(res.statusCode, 201, `gagal membuka shift persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -208,8 +208,8 @@ test('idempotency: dua request BERSAMAAN dengan key sama -> tepat satu berhasil,
   // memaksa pool tumbuh ke DUA koneksi idle, supaya race POST di bawah
   // sungguhan bersamaan.
   await Promise.all([
-    app.inject({ method: 'GET', url: orderUrl(crypto.randomUUID()), headers: { 'x-tenant-id': tenant.id } }),
-    app.inject({ method: 'GET', url: orderUrl(crypto.randomUUID()), headers: { 'x-tenant-id': tenant.id } }),
+    app.inject({ method: 'GET', url: orderUrl(crypto.randomUUID()), headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} }),
+    app.inject({ method: 'GET', url: orderUrl(crypto.randomUUID()), headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} }),
   ]);
 
   const [resA, resB] = await Promise.all([

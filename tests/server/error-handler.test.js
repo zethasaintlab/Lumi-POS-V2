@@ -16,7 +16,7 @@ const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
 const { seedTenantBase } = require('../isolation/helpers/seed');
 
-let owner, appSetup, app, tenant;
+let owner, appSetup, app, tenant, base;
 
 before(async () => {
   owner = await connectAsOwner();
@@ -32,7 +32,7 @@ after(async () => {
 
 beforeEach(async () => {
   await resetAll(owner);
-  const base = await seedTenantBase(appSetup, { suffix: 'ErrHandlerTest' });
+  base = await seedTenantBase(appSetup, { suffix: 'ErrHandlerTest' });
   tenant = base.tenant;
   const { buildApp } = await import('../../apps/server/src/app.ts');
   if (app) await app.close();
@@ -40,7 +40,7 @@ beforeEach(async () => {
 });
 
 function post(url, payload) {
-  return app.inject({ method: 'POST', url, payload, headers: { 'x-tenant-id': tenant.id } });
+  return app.inject({ method: 'POST', url, payload, headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader } });
 }
 
 function assertErrorEnvelope(res, expectedStatus) {
@@ -80,7 +80,7 @@ test('malformed JSON body mengembalikan 400 dengan envelope, bukan 500', async (
   const res = await app.inject({
     method: 'POST',
     url: '/categories',
-    headers: { 'x-tenant-id': tenant.id, 'content-type': 'application/json' },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'content-type': 'application/json' },
     payload: '{ "id": "x", "name": ',
   });
   assertErrorEnvelope(res, 400);

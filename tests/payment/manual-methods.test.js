@@ -55,7 +55,7 @@ let deviceCounter = 0;
 let seq = 0;
 
 function req(method, url, payload, headers = {}) {
-  const h = { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers };
+  const h = { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers };
   if (method === 'POST' && (url === '/orders' || url.endsWith('/payments')) && h['idempotency-key'] === undefined) {
     h['idempotency-key'] = crypto.randomUUID();
   }
@@ -88,7 +88,7 @@ async function buatOrder(fx, price = 20000) {
   const it = await app.inject({
     method: 'POST', url: '/items',
     payload: { id: itemId, name: `P${variationId.slice(0, 6)}`, variations: [{ id: variationId, price }] },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(it.statusCode, 201, it.body);
   const payload = {

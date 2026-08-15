@@ -67,7 +67,7 @@ function kirim(url, payload, headers = {}) {
     method: 'POST',
     url,
     payload,
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers },
   });
 }
 
@@ -254,7 +254,7 @@ async function siapkanPerangkat(kode, nomor) {
   const it = await app.inject({
     method: 'POST', url: '/items',
     payload: { id: itemId, name: `P${nomor}`, variations: [{ id: variationId, price: 20000 }] },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(it.statusCode, 201, it.body);
 

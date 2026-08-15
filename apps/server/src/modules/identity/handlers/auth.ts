@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
@@ -24,13 +24,6 @@ const UMUR_SESI_JAM = 12;
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
-}
-
-function samaAman(a: string, b: string): boolean {
-  const bufA = Buffer.from(a, 'utf8');
-  const bufB = Buffer.from(b, 'utf8');
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
 }
 
 /**
@@ -140,25 +133,35 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
     },
 
     async logout(req: FastifyRequest, reply: FastifyReply) {
-      const tenantId = getTenantId(req);
-      const header = req.headers.authorization;
-      const nilai = Array.isArray(header) ? header[0] : header;
-      if (typeof nilai !== 'string' || !nilai.startsWith('Bearer ')) {
+      // ⛔ Tokennya TIDAK dibaca lagi di sini.
+      //
+      // Berkas ini dulu memverifikasi Bearer sendiri — membaca header, meng-
+      // hash, mencocokkan. Sejak `pasangPenjagaSesi` ada, verifikasi itu
+      // sudah terjadi di `preHandler`, dan permintaan yang sampai ke sini
+      // PASTI membawa sesi yang sah.
+      //
+      // Memeriksanya dua kali bukan sekadar mubazir: kedua pemeriksaan
+      // menjawab dengan status dan kode yang sama persis, jadi salah satunya
+      // dapat dimatikan sepenuhnya tanpa satu test pun merah. Itu bentuk yang
+      // sama dengan temuan 7 Agustus di penyetuju refund (`CLAUDE.md`) —
+      // "guard yang tidak dapat DIBEDAKAN dari luar adalah guard yang tidak
+      // teruji".
+      const sesi = req.sesi;
+      if (!sesi) {
+        // Tidak dapat terjadi: `/auth/logout` tidak ada di `RUTE_TERBUKA`.
+        // Ditulis fail-closed supaya rute ini tidak diam-diam menjadi terbuka
+        // kalau daftar itu disunting keliru.
         throw new HttpError(401, 'SESSION_INVALID', 'Sesi tidak sah atau sudah berakhir.');
       }
-      const token = nilai.slice('Bearer '.length).trim();
 
-      await withTenantTransaction(pool, tenantId, async (client) => {
+      await withTenantTransaction(pool, sesi.tenantId, async (client) => {
         // Baris benar-benar DIHAPUS, bukan ditandai. Sesi yang hanya ditandai
         // tetap dapat dihidupkan lagi oleh siapa pun yang dapat menulis ke
         // tabel, dan tidak ada yang membutuhkan riwayat sesi back-office.
-        const { rows } = await client.query<{ token_hash: string }>(
-          'DELETE FROM user_session WHERE token_hash = $1 RETURNING token_hash',
-          [hashToken(token)]
-        );
-        if (rows.length === 0 || !samaAman(rows[0].token_hash, hashToken(token))) {
-          throw new HttpError(401, 'SESSION_INVALID', 'Sesi tidak sah atau sudah berakhir.');
-        }
+        //
+        // Dihapus lewat `id` dari sesi terverifikasi, bukan lewat hash token
+        // yang dibaca ulang dari header.
+        await client.query('DELETE FROM user_session WHERE id = $1', [sesi.sesiId]);
       });
 
       reply.code(204);

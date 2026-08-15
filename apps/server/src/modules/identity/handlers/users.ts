@@ -7,6 +7,7 @@ import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { assertOutletVisible, assertKuota } from '../../tenancy/index.ts';
+import { hitungPengguna } from '../index.ts';
 import {
   detectWeakPin,
   isValidPinShape,
@@ -170,15 +171,9 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         await assertBolehKelola(client, actorId, body.roles.map((r) => r.role));
 
-        // Titik penegakan `max_users` (`research/09` § 6). Pengguna yang
-        // dinonaktifkan tidak dihitung: merchant yang melepas kasir harus
-        // mendapatkan kembali slotnya. Baris `"user"` tidak pernah dihapus
-        // (atribusi audit akan putus), jadi menghitung seluruh baris membuat
-        // kuota menjadi penghitung seumur hidup yang tidak dapat dipulihkan.
-        const { rows: terpakai } = await client.query<{ n: string }>(
-          'SELECT count(*) AS n FROM "user" WHERE is_active = true'
-        );
-        await assertKuota(client, tenantId, 'pengguna', Number(terpakai[0].n), 1);
+        // Titik penegakan `max_users` (`research/09` § 6). `hitungPengguna`
+        // adalah fungsi yang SAMA yang dipakai `GET /tenants/usage`.
+        await assertKuota(client, tenantId, 'pengguna', await hitungPengguna(client), 1);
 
         // FK klien-suplai ke tabel ber-tenant_id. Temuan F1 (CLAUDE.md),
         // bentuk keenam: FK PostgreSQL tidak tunduk RLS, jadi ia hanya

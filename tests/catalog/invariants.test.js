@@ -8,6 +8,7 @@ const path = require('node:path');
 const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
 const { seedBareTenant } = require('../isolation/helpers/seed');
+const { buatSesi } = require('../isolation/helpers/sesi');
 
 // Task 6 — spec-a-katalog.md § A.8: property test + grep guard yang tidak
 // dicakup test lain (tests/catalog/items.test.js dkk menguji perilaku HTTP
@@ -71,8 +72,29 @@ test('property: setiap Item yang berhasil dibuat selalu punya >= 1 variation', a
   if (app) await app.close();
   app = await buildApp();
 
+  // `seedBareTenant` sengaja hanya membuat baris `tenant` — katalognya harus
+  // mulai kosong. Tapi `POST /items` kini menuntut sesi
+  // (`apps/server/src/sesi.ts`), dan sesi menuntut pengguna, jadi satu
+  // pengguna minimal dibuat di sini. Ia TIDAK menambah item apa pun, sehingga
+  // maksud fixture ini tetap utuh.
+  const userId = crypto.randomUUID();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query('INSERT INTO "user" (id, tenant_id, name) VALUES ($1, $2, $3)', [
+    userId,
+    tenant.id,
+    'Aktor Invariant',
+  ]);
+  await appSetup.query('COMMIT');
+  const token = await buatSesi(appSetup, { tenantId: tenant.id, userId });
+
   function req(method, url, payload) {
-    return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenant.id } });
+    return app.inject({
+      method,
+      url,
+      payload,
+      headers: { 'x-tenant-id': tenant.id, authorization: `Bearer ${token}` },
+    });
   }
 
   for (let n = 1; n <= 5; n += 1) {

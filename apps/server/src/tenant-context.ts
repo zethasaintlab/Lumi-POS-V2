@@ -27,12 +27,22 @@ function readIdHeader(
 }
 
 /**
- * Placeholder for real auth (modul identity, F3). Reads X-Tenant-Id directly
- * from the request header -- NOT a security mechanism, RLS is. Every future
- * module reads tenantId this same way until identity replaces it with real
- * token/session extraction.
+ * Tenant yang berlaku untuk permintaan ini.
+ *
+ * ⛔ **Sesi terverifikasi MENANG atas header, selalu.** Pada rute terlindungi
+ * (`apps/server/src/sesi.ts`), `req.sesi` diisi dari baris `user_session`
+ * yang hanya dapat ditemukan oleh pemegang token 256-bit — dan nilainya
+ * dipakai apa adanya. `X-Tenant-Id` yang dikirim klien pada rute itu hanya
+ * berperan sebagai petunjuk pencarian; ia TIDAK PERNAH menentukan hasilnya.
+ *
+ * Header dibaca hanya bila tidak ada sesi, dan itu tepat pada rute yang
+ * memang tidak punya sesi: jalur perangkat kasir (relay outbox tidak mengirim
+ * Bearer sama sekali — `spec-f:183` melarang kasir punya sesi back-office)
+ * dan endpoint terbuka. Di sana yang menjaga isolasi tetap RLS + guard SELECT
+ * lintas modul, persis seperti sebelumnya.
  */
 export function getTenantId(req: FastifyRequest): string {
+  if (req.sesi) return req.sesi.tenantId;
   return readIdHeader(req, 'x-tenant-id', 'MISSING_TENANT_ID', 'X-Tenant-Id');
 }
 
@@ -52,6 +62,12 @@ export function getTenantId(req: FastifyRequest): string {
  * RLS -- ia hanya membuktikan baris itu ada di SUATU tenant.
  */
 export function getActorId(req: FastifyRequest): string {
+  // ⛔ Sesi menang. Inilah yang mengubah `X-Actor-Id` dari klaim menjadi
+  // bukti: pada rute terlindungi, aktor datang dari baris `user_session`, dan
+  // memalsukannya menuntut memiliki tokennya. Header yang dikirim klien di
+  // rute itu diabaikan sepenuhnya — bukan divalidasi lalu dipakai, melainkan
+  // tidak pernah dibaca.
+  if (req.sesi) return req.sesi.userId;
   return readIdHeader(req, 'x-actor-id', 'MISSING_ACTOR_ID', 'X-Actor-Id');
 }
 

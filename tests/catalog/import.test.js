@@ -44,7 +44,7 @@ function impor(payload, headers = {}) {
     url: '/catalog/import',
     payload,
     headers: {
-      'x-tenant-id': tenant.id,
+      'x-tenant-id': tenant.id, authorization: base.authHeader,
       'x-actor-id': base.user.id,
       'idempotency-key': crypto.randomUUID(),
       ...headers,
@@ -207,7 +207,7 @@ test('⛔ impor tenant lain tidak terlihat — nama yang sama tetap dapat diimpo
     url: '/catalog/import',
     payload: { csv: CSV, dryRun: false },
     headers: {
-      'x-tenant-id': lain.tenant.id,
+      'x-tenant-id': lain.tenant.id, authorization: lain.authHeader,
       'x-actor-id': lain.user.id,
       'idempotency-key': crypto.randomUUID(),
     },

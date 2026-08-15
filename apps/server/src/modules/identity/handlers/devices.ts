@@ -3,6 +3,7 @@ import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
 import { assertOutletVisible, assertKuota } from '../../tenancy/index.ts';
+import { hitungPerangkat } from '../index.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
@@ -142,15 +143,11 @@ export function createDeviceHandlers(pool: Pool) {
         // berturut-turut di repo ini termasuk untuk price_history.outlet_id).
         await assertOutletVisible(client, body.outletId);
 
-        // Titik penegakan `max_devices` (`research/09` § 6). Perangkat yang
-        // sudah DICABUT tidak dihitung -- dokumen itu menulis "jumlah device
-        // AKTIF", dan perilakunya "tolak; tawarkan mencabut device lama".
-        // Menghitung yang tercabut membuat tawaran itu tidak menyelesaikan
-        // apa pun.
-        const { rows } = await client.query<{ n: string }>(
-          'SELECT count(*) AS n FROM device WHERE revoked_at IS NULL'
-        );
-        await assertKuota(client, tenantId, 'device', Number(rows[0].n), 1);
+        // Titik penegakan `max_devices` (`research/09` § 6). `hitungPerangkat`
+        // adalah fungsi yang SAMA yang dipakai `GET /tenants/usage` — angka
+        // yang ditampilkan B-29 dan angka yang ditegakkan di sini tidak dapat
+        // menyimpang.
+        await assertKuota(client, tenantId, 'device', await hitungPerangkat(client), 1);
 
         return insertDevice(client, tenantId, body);
       });

@@ -55,7 +55,7 @@ function req(method, url, payload, headers = {}) {
     method,
     url,
     payload,
-    headers: { 'x-tenant-id': tenant.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, ...headers },
   });
 }
 
@@ -214,7 +214,7 @@ test('revokeDevice: device tidak ditemukan (lintas tenant) ditolak 404', async (
     method: 'POST',
     url: devicesUrl(),
     payload: { id: otherDeviceId, outletId: otherBase.outlet.id, code: 'K1' },
-    headers: { 'x-tenant-id': otherBase.tenant.id },
+    headers: { 'x-tenant-id': otherBase.tenant.id , authorization: otherBase.authHeader},
   });
   assert.equal(otherDeviceRes.statusCode, 201, otherDeviceRes.body);
 
