@@ -33,7 +33,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
 | `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` |
-| `tenancy` | Tidak punya endpoint | `assertOutletVisible` · `getOutletSettings` |
+| `tenancy` | Pendaftaran merchant mandiri (F5) | `POST /tenants` · `assertOutletVisible` · `getOutletSettings` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
 | `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
@@ -58,7 +58,20 @@ Konsekuensinya mutlak: **tidak ada satu pun test yang boleh menyentuh jaringan.*
 
 `PAYMENT_PROVIDER=midtrans` dengan kunci kosong **gagal saat boot**, bukan saat pelanggan pertama membayar.
 
-## Webhook: satu-satunya endpoint tanpa `X-Tenant-Id`
+## Dua endpoint tanpa `X-Tenant-Id` — dan alasannya berbeda
+
+`POST /tenants` (pendaftaran, F5) menyusul webhook Midtrans sebagai yang kedua. Alasannya tidak sama:
+
+| Endpoint | Kenapa tidak ada header | Dari mana tenant-nya |
+|---|---|---|
+| `POST /webhooks/midtrans` | Midtrans tidak tahu apa-apa soal tenant kami | `custom_field1` yang kami titipkan sendiri saat charge |
+| `POST /tenants` | **Tenantnya belum ada** — tidak ada nilai yang benar | Id yang di-generate klien di body |
+
+Keduanya tetap menulis di dalam transaksi ber-`SET LOCAL app.tenant_id`. Pada pendaftaran, `SET LOCAL` berjalan dengan id yang belum punya baris; `tenant` — satu-satunya tabel yang dikecualikan RLS, karena ia akar model tenancy — ditulis di dalamnya, dan setiap tabel sesudahnya sudah tunduk RLS seperti biasa. **Invariant #8 tidak dilonggarkan di jalur mana pun.**
+
+⛔ Pendaftaran belum punya rate limit maupun verifikasi email. Endpoint publik yang membuat baris database; wajib ditutup sebelum merchant berbayar pertama.
+
+### Webhook: dua hal yang hanya berlaku di sana
 
 Midtrans tidak tahu apa-apa soal tenant kami. Karena itu `POST /webhooks/midtrans` berbeda dari seluruh endpoint lain:
 

@@ -32,7 +32,8 @@
     "test:dst-server": "node --env-file=.env --test --test-concurrency=1 \"tests/dst-server/*.test.js\"",
     "test:sync-client": "node --test \"tests/sync-client/*.test.js\"",
     "test:kasir": "node --experimental-strip-types --test \"tests/kasir/*.test.js\"",
-    "test:identity": "node --env-file=.env --test --test-concurrency=1 \"tests/identity/*.test.js\""
+    "test:identity": "node --env-file=.env --test --test-concurrency=1 \"tests/identity/*.test.js\"",
+    "test:tenancy": "node --env-file=.env --test --test-concurrency=1 \"tests/tenancy/*.test.js\""
   },
   "dependencies": {
     "hash-wasm": "^4.12.0",

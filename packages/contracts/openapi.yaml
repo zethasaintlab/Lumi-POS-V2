@@ -17,6 +17,125 @@ paths:
                 properties:
                   status:
                     type: string
+
+  /tenants:
+    post:
+      operationId: registerTenant
+      summary: >-
+        F5 -- pendaftaran merchant mandiri. Membuat tenant, profil vertikal
+        default, outlet pertama, dan pengguna owner beserta passwordnya dalam
+        SATU transaksi.
+      description: >-
+        Endpoint KEDUA di API ini yang tidak menuntut `X-Tenant-Id`, setelah
+        webhook Midtrans -- dan alasannya berbeda: tenantnya belum ada, jadi
+        tidak ada nilai yang benar untuk header itu. `X-Actor-Id` juga tidak
+        diminta; aktor pertama adalah owner yang dibuat request ini.
+
+
+        Seluruh penulisan tetap terjadi di dalam transaksi ber-`SET LOCAL
+        app.tenant_id` -- invariant #8 tidak dilonggarkan. `tenant` adalah
+        satu-satunya tabel yang dikecualikan RLS, dan itulah yang membuat
+        baris pertama dapat ditulis sebelum ada apa pun untuk di-scope.
+
+
+        ⛔ Belum ada rate limit maupun verifikasi email. Keduanya wajib
+        ditutup sebelum merchant berbayar pertama.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant, outlet, owner]
+              properties:
+                tenant:
+                  type: object
+                  required: [id, name]
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      description: >-
+                        Di-generate klien (konvensi ID repo ini). Ia sekaligus
+                        satu-satunya idempotensi endpoint ini: id yang sama
+                        diulang menjawab 409, bukan tenant kedua.
+                    name: { type: string, minLength: 1 }
+                outlet:
+                  type: object
+                  required: [id, name, timezone]
+                  properties:
+                    id: { type: string, minLength: 1 }
+                    name: { type: string, minLength: 1 }
+                    timezone:
+                      type: string
+                      enum: [Asia/Jakarta, Asia/Makassar, Asia/Jayapura]
+                    address: { type: string, nullable: true }
+                owner:
+                  type: object
+                  required: [id, name, email, password]
+                  properties:
+                    id: { type: string, minLength: 1 }
+                    name: { type: string, minLength: 1 }
+                    email:
+                      type: string
+                      minLength: 1
+                      description: >-
+                        Dipakai `POST /auth/login`. Tidak diverifikasi
+                        kepemilikannya -- utang yang dicatat, bukan yang
+                        didiamkan.
+                    password:
+                      type: string
+                      description: >-
+                        FR-F2b -- minimal 10 karakter, ditolak bila ada di
+                        daftar bocor yang di-bundle. Aturannya SATU, dibagi
+                        dengan `PATCH /users/{userId}/password` lewat
+                        `packages/domain/src/password.ts`.
+      responses:
+        '201':
+          description: Tenant, outlet, dan owner tercipta.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenantId, outletId, ownerId, plan, kuota]
+                properties:
+                  tenantId: { type: string }
+                  outletId: { type: string }
+                  ownerId: { type: string }
+                  plan:
+                    type: string
+                    description: >-
+                      SELALU `free`. Paket TIDAK diterima dari body -- endpoint
+                      ini tidak terautentikasi, jadi paket yang dapat dipilih
+                      pemanggil berarti siapa pun memberi dirinya kuota tanpa
+                      batas lewat satu field JSON.
+                  kuota:
+                    type: object
+                    description: >-
+                      Kuota yang berlaku, dikembalikan supaya merchant melihat
+                      batasnya di layar pertama -- bukan saat operasi ditolak.
+                      `null` berarti tanpa batas.
+                    properties:
+                      maxOutlets: { type: integer, nullable: true }
+                      maxDevices: { type: integer, nullable: true }
+                      maxUsers: { type: integer, nullable: true }
+                      maxProducts: { type: integer, nullable: true }
+        '400':
+          description: >-
+            Payload tidak valid, atau password tidak memenuhi FR-F2b
+            (PASSWORD_TOO_SHORT / PASSWORD_BREACHED).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            id tenant, outlet, atau owner sudah dipakai (ID_ALREADY_EXISTS).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /categories:
     post:
       operationId: createCategory

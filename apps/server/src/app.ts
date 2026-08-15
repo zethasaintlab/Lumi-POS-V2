@@ -11,6 +11,7 @@ import type { KonfigToken } from './modules/identity/handlers/tokens.ts';
 import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
+import { createTenancyHandlers } from './modules/tenancy/index.ts';
 import { selectPaymentProvider } from './modules/payment/providers/index.ts';
 import { createRedactingLogMethod, redactSensitive, registerSecretValues } from './log-redaction.ts';
 import type { PaymentProvider } from './modules/payment/providers/index.ts';
@@ -157,6 +158,7 @@ async function buildAppInner(
     ...createCashHandlers(pool),
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
+    ...createTenancyHandlers(pool, hlc),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
@@ -116,6 +117,78 @@ export async function assertBoleh(
   if (!bolehkah(rows.map((r) => r.role), operasi)) {
     throw new HttpError(403, 'FORBIDDEN', `Pengguna ${userId} tidak berhak ${label}.`);
   }
+}
+
+/**
+ * Membuat pengguna owner PERTAMA sebuah tenant — dipakai pendaftaran mandiri
+ * (`POST /tenants`, modul tenancy).
+ *
+ * ## Kenapa ia ada di sini dan bukan di modul tenancy
+ *
+ * Invariant #4: `"user"`, `user_role`, dan `user_outlet` milik modul identity
+ * (`apps/server/src/modules/README.md`). Modul tenancy tidak boleh
+ * menyentuhnya — pola yang sama persis dengan `recordAuditEvent` dan
+ * `recordStockMovements`, yang lahir karena alasan itu juga.
+ *
+ * `client` WAJIB berasal dari transaksi pemanggil. Pendaftaran adalah satu
+ * transaksi: tenant yang lahir tanpa owner **tidak dapat dimasuki siapa pun
+ * selamanya**, karena setiap endpoint lain menuntut `X-Actor-Id` yang sah dan
+ * tidak ada satu pun jalur pemulihan.
+ *
+ * ## Kenapa ia TIDAK memanggil `createUser`
+ *
+ * `createUser` memeriksa `assertBolehKelola(actorId, …)` — aktor yang berhak
+ * mengelola peran yang diminta. Pada pendaftaran, aktor itu adalah pengguna
+ * yang sedang dibuat baris ini. Melewatinya berarti menulis pengecualian ke
+ * dalam RBAC, dan pengecualian di RBAC adalah lubang yang bentuknya persis
+ * seperti fitur.
+ *
+ * ⛔ Peran owner ber-scope **tenant**, bukan outlet. Scope outlet membuat
+ * owner tidak dapat membuat outlet kedua — ia terkunci di cabang pertamanya
+ * sendiri, dan tidak ada orang lain yang dapat mengeluarkannya.
+ */
+export async function buatPemilikPertama(
+  client: PoolClient,
+  input: {
+    id: string;
+    tenantId: string;
+    name: string;
+    email: string;
+    passwordHash: string;
+    outletId: string;
+  }
+): Promise<void> {
+  await client.query(
+    `INSERT INTO "user" (id, tenant_id, name, email, password_hash)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [input.id, input.tenantId, input.name, input.email, input.passwordHash]
+  );
+
+  await client.query(
+    `INSERT INTO user_role (id, tenant_id, user_id, role, scope_type, scope_id)
+     VALUES ($1, $2, $3, 'owner', 'tenant', $4)`,
+    [randomUUID(), input.tenantId, input.id, input.tenantId]
+  );
+
+  // Owner ber-scope tenant tidak MEMBUTUHKAN baris outlet untuk haknya
+  // (`0019_identity_outlet_pin.sql`), tapi ia membutuhkannya untuk terlihat
+  // perangkat outlet pertama — jalur turun mengirim pengguna per outlet.
+  await client.query(
+    `INSERT INTO user_outlet (id, tenant_id, user_id, outlet_id) VALUES ($1, $2, $3, $4)`,
+    [randomUUID(), input.tenantId, input.id, input.outletId]
+  );
+}
+
+/**
+ * Hasher yang dipakai lintas modul untuk password pendaftaran.
+ *
+ * Ia stateless; yang dijaga di sini adalah supaya parameter Argon2id-nya
+ * tidak punya dua sumber. `buatPinHasher` membaca `ARGON2_PARAMS` dari
+ * `packages/domain`, jadi bahkan instance kedua tidak dapat menyimpang —
+ * tapi titik penggantiannya tetap tunggal.
+ */
+export function buatHasher() {
+  return buatPinHasher();
 }
 
 export function createIdentityHandlers(
