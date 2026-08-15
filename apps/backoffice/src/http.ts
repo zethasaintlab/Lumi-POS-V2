@@ -47,7 +47,9 @@ export interface OpsiKlien {
 }
 
 export interface PermintaanApi {
-  metode?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  // `PUT` ada karena `PUT /users/{userId}/pin` memakainya — B-27 adalah layar
+  // pertama yang menyentuh endpoint itu.
+  metode?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Diserialisasi JSON. Dikosongkan berarti tanpa body. */
   body?: unknown;
   /** Header tambahan, mis. `Idempotency-Key`. Tidak dapat menimpa header sesi. */
@@ -144,32 +146,36 @@ export interface HasilLogin {
   token: string;
   expiresAt: string;
   userId: string;
+  /**
+   * ⛔ Tenant yang DIPAKAI sesi ini, dari server.
+   *
+   * Bukan salinan dari apa yang dikirim klien: kalau `X-Tenant-Id` tidak
+   * dikirim, server meresolusinya dari email (migrasi 0023) dan ini
+   * satu-satunya tempat klien dapat mengetahuinya. Ia dibutuhkan di setiap
+   * permintaan berikutnya.
+   */
+  tenantId: string;
   roles: string[];
 }
 
 /**
- * `POST /auth/login`.
+ * Permintaan tanpa sesi.
  *
- * ⛔ Ia MENUNTUT `X-Tenant-Id`, dan itu berarti tenant harus sudah diketahui
- * SEBELUM login — bukan hasil darinya. Karena itu fungsi ini menerima
- * `tenantId` dan mengirim headernya sendiri, alih-alih lewat `buatKlien`
- * (yang mengambilnya dari sesi yang belum ada).
- *
- * Ini gap produk yang nyata dan dicatat: merchant tidak menghafal UUID
- * tenant-nya. Jalan keluarnya (subdomain, atau pencarian by-email lintas
- * tenant di server) belum diputuskan.
+ * Login dan pendaftaran tidak dapat lewat `buatKlien` — ia mengambil header
+ * dari sesi yang, di kedua jalur ini, justru belum ada. Keduanya tetap lewat
+ * SATU fungsi supaya penguraian error tidak ditulis dua kali dan menyimpang.
  */
-export async function masuk(
+async function tanpaSesi<T>(
   opsi: { baseUrl: string; fetch: typeof globalThis.fetch },
-  kredensial: { tenantId: string; email: string; password: string }
-): Promise<HasilLogin> {
-  const res = await opsi.fetch(`${opsi.baseUrl}/auth/login`, {
+  jalur: string,
+  body: unknown,
+  header: Record<string, string>,
+  pesanBawaan: string
+): Promise<T> {
+  const res = await opsi.fetch(`${opsi.baseUrl}${jalur}`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-tenant-id': kredensial.tenantId,
-    },
-    body: JSON.stringify({ email: kredensial.email, password: kredensial.password }),
+    headers: { 'content-type': 'application/json', ...header },
+    body: JSON.stringify(body),
   });
 
   const teks = await res.text();
@@ -182,12 +188,60 @@ export async function masuk(
 
   if (!res.ok) {
     const galat = (terurai as { error?: { code?: string; message?: string } } | null)?.error;
-    throw new GalatHttp(
-      res.status,
-      galat?.code ?? 'UNKNOWN',
-      galat?.message ?? 'Email atau password salah.'
-    );
+    throw new GalatHttp(res.status, galat?.code ?? 'UNKNOWN', galat?.message ?? pesanBawaan);
   }
 
-  return terurai as HasilLogin;
+  return terurai as T;
+}
+
+/**
+ * `POST /auth/login`.
+ *
+ * ## ⛔ `X-Tenant-Id` dikirim HANYA bila merchant menyebutkannya
+ *
+ * Header ini dulu wajib, dan layar masuk karena itu punya field "ID Tenant"
+ * yang tidak dapat diisi siapa pun tanpa menyalin dari tempat lain — sementara
+ * merchant yang baru mendaftar tidak punya tempat lain.
+ *
+ * Sejak migrasi 0023, server meresolusi tenant dari email bila header tidak
+ * dikirim. Mengirimnya sebagai string KOSONG akan membatalkan itu: server
+ * memeriksa panjangnya, dan header kosong yang diperlakukan sebagai "disebut"
+ * menghasilkan pencarian di tenant bernama "" — 401 untuk kredensial yang
+ * benar.
+ *
+ * Header tetap dikirim bila diisi: merchant yang emailnya terdaftar di dua
+ * tenant harus dapat menyebut yang mana.
+ */
+export async function masuk(
+  opsi: { baseUrl: string; fetch: typeof globalThis.fetch },
+  kredensial: { tenantId?: string; email: string; password: string }
+): Promise<HasilLogin> {
+  const tenant = (kredensial.tenantId ?? '').trim();
+  return tanpaSesi<HasilLogin>(
+    opsi,
+    '/auth/login',
+    { email: kredensial.email, password: kredensial.password },
+    tenant.length > 0 ? { 'x-tenant-id': tenant } : {},
+    'Email atau password salah.'
+  );
+}
+
+export interface HasilDaftar {
+  tenantId: string;
+  outletId: string;
+  ownerId: string;
+  plan: string;
+}
+
+/**
+ * `POST /tenants` — B-00b.
+ *
+ * Endpoint publik: tanpa `X-Tenant-Id` (tenantnya belum ada) dan tanpa
+ * `X-Actor-Id` (aktornya adalah owner yang request ini buat).
+ */
+export function daftar(
+  opsi: { baseUrl: string; fetch: typeof globalThis.fetch },
+  muatan: unknown
+): Promise<HasilDaftar> {
+  return tanpaSesi<HasilDaftar>(opsi, '/tenants', muatan, {}, 'Pendaftaran tidak dapat diproses.');
 }

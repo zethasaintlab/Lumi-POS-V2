@@ -396,3 +396,126 @@ test('POST /pin-attempts: audit pin_failed dan pin_lockout tercatat (FR-F6)', as
   assert.equal(per.pin_failed, 5, 'setiap percobaan gagal tercatat -- spec-f:235');
   assert.equal(per.pin_lockout, 1);
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Cakupan "Satu outlet" — `spec-f:31` dan `spec-f:32`
+// ---------------------------------------------------------------------------
+//
+// B-27 sudah menolaknya di layar, dan itu TIDAK CUKUP. Penjaga yang hanya
+// hidup di klien adalah penjaga yang hilang begitu ada yang memanggil API
+// langsung — dan permukaan ini dipakai Manajer Outlet, bukan hanya owner.
+//
+// Yang dijaga bukan formalitas: Kasir yang terdaftar di dua outlet muncul di
+// layar login KEDUA tablet, dan penjualannya dapat dinisbatkan ke outlet yang
+// tidak pernah ia tempati. Manajer Outlet yang bercakupan dua outlet
+// menyetujui refund di outlet yang bukan tanggung jawabnya — dan `spec-f:91`
+// (pemisahan tugas) runtuh tanpa satu pun aturan terlihat dilanggar.
+
+test('⛔ POST /users: cashier dengan DUA outlet ditolak 400', async () => {
+  const outletKedua = freshId();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(
+    `INSERT INTO outlet (id, tenant_id, name, timezone) VALUES ($1, $2, 'Cabang Dua', 'Asia/Jakarta')`,
+    [outletKedua, tenant.id]
+  );
+  await appSetup.query('COMMIT');
+
+  const res = await buatUser({
+    roles: [{ role: 'cashier', scopeType: 'outlet', scopeId: outlet.id }],
+    outletIds: [outlet.id, outletKedua],
+  });
+
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error.code, 'ROLE_SCOPE_TOO_WIDE');
+  // Pesannya menyebut peran MANA dan jalan keluarnya. Penolakan yang hanya
+  // berkata "tidak boleh" membuat pemanggil menebak batas mana yang kena.
+  assert.match(res.json().error.message, /Kasir|cashier/i);
+});
+
+test('⛔ POST /users: outlet_manager dengan DUA outlet ditolak 400', async () => {
+  const outletKedua = freshId();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(
+    `INSERT INTO outlet (id, tenant_id, name, timezone) VALUES ($1, $2, 'Cabang Tiga', 'Asia/Jakarta')`,
+    [outletKedua, tenant.id]
+  );
+  await appSetup.query('COMMIT');
+
+  const res = await buatUser({
+    roles: [{ role: 'outlet_manager', scopeType: 'outlet', scopeId: outlet.id }],
+    outletIds: [outlet.id, outletKedua],
+  });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error.code, 'ROLE_SCOPE_TOO_WIDE');
+});
+
+test('⛔ penolakan terjadi SEBELUM satu baris pun ditulis', async () => {
+  // `POST /users` menulis "user", user_role, user_outlet, dan audit_event
+  // dalam satu transaksi (invariant #1). Penolakan yang terjadi di tengah akan
+  // di-rollback juga — tapi yang diuji di sini adalah bahwa tidak ada jalur
+  // di mana penggunanya tercipta lalu penjaganya menolak keanggotaan kedua,
+  // meninggalkan pengguna separuh jadi.
+  const outletKedua = freshId();
+  const idBaru = freshId();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(
+    `INSERT INTO outlet (id, tenant_id, name, timezone) VALUES ($1, $2, 'Cabang Empat', 'Asia/Jakarta')`,
+    [outletKedua, tenant.id]
+  );
+  await appSetup.query('COMMIT');
+
+  const res = await buatUser({
+    id: idBaru,
+    roles: [{ role: 'cashier', scopeType: 'outlet', scopeId: outlet.id }],
+    outletIds: [outlet.id, outletKedua],
+  });
+  assert.equal(res.statusCode, 400, res.body);
+
+  const { rows } = await kueriTenant(
+    `SELECT (SELECT count(*) FROM "user" WHERE id = $1) AS u,
+            (SELECT count(*) FROM user_role WHERE user_id = $1) AS r,
+            (SELECT count(*) FROM user_outlet WHERE user_id = $1) AS o,
+            (SELECT count(*) FROM audit_event WHERE entity_id = $1) AS a`,
+    [idBaru]
+  );
+  assert.deepEqual(
+    { u: Number(rows[0].u), r: Number(rows[0].r), o: Number(rows[0].o), a: Number(rows[0].a) },
+    { u: 0, r: 0, o: 0, a: 0 }
+  );
+});
+
+test('peran ber-cakupan LUAS tetap boleh banyak outlet', async () => {
+  // ⛔ Penjaga yang menolak semua peran akan membuat Manajer Area mustahil
+  // dibuat — `spec-f:30` menulis cakupannya "Beberapa outlet", dan Owner serta
+  // Akuntan bercakupan Tenant. Test ini yang membedakan penjaga dari palang.
+  const outletKedua = freshId();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(
+    `INSERT INTO outlet (id, tenant_id, name, timezone) VALUES ($1, $2, 'Cabang Lima', 'Asia/Jakarta')`,
+    [outletKedua, tenant.id]
+  );
+  await appSetup.query('COMMIT');
+
+  for (const peran of ['area_manager', 'accountant']) {
+    const res = await buatUser({
+      id: freshId(),
+      roles: [{ role: peran, scopeType: 'outlet', scopeId: outlet.id }],
+      outletIds: [outlet.id, outletKedua],
+    });
+    assert.equal(res.statusCode, 201, `${peran} ditolak: ${res.body}`);
+  }
+});
+
+test('satu outlet tetap lewat, dan outlet DUPLIKAT bukan dua outlet', async () => {
+  // `outletIds` datang dari klien. Menghitung panjang array mentah membuat
+  // `[o1, o1]` ditolak sebagai "dua outlet" — padahal ia satu, dan handler
+  // sendiri mem-`Set`-kannya sebelum menulis. Penjaga harus menghitung yang
+  // SAMA dengan yang ditulis.
+  const res = await buatUser({ outletIds: [outlet.id, outlet.id] });
+  assert.equal(res.statusCode, 201, res.body);
+  assert.deepEqual(res.json().outletIds, [outlet.id]);
+});

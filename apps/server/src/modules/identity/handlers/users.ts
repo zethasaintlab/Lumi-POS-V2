@@ -7,13 +7,18 @@ import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { assertOutletVisible, assertKuota } from '../../tenancy/index.ts';
-import { hitungPengguna } from '../index.ts';
+import { hitungPengguna, assertUserVisible } from '../index.ts';
 import {
   detectWeakPin,
   isValidPinShape,
   type PinHasher,
 } from '../../../../../../packages/domain/src/pin.ts';
-import { bolehKelolaPengguna } from '../../../../../../packages/domain/src/rbac.ts';
+import {
+  bolehKelolaPengguna,
+  peranMelebihiCakupan,
+  LABEL_PERAN,
+  type Peran,
+} from '../../../../../../packages/domain/src/rbac.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 
 // §4 PLAN-modul-f-identitas.md -- REST identitas (FR-F2, FR-F4, FR-F6).
@@ -156,6 +161,65 @@ async function assertPinBelumDipakaiDiOutlet(
 
 export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Record<string, unknown> {
   return {
+    /**
+     * Daftar pengguna untuk layar B-27.
+     *
+     * ⛔ `pin_hash` dan `password_hash` TIDAK ikut — hanya `hasPin`.
+     * Layar perlu tahu APAKAH PIN sudah disetel (tanpa itu pengguna tidak
+     * dapat membuka aplikasi kasir sama sekali), bukan nilainya. Setiap
+     * tempat yang memegang bahan kredensial tanpa membutuhkannya adalah
+     * tempat ia dapat bocor.
+     *
+     * ⛔ Pengguna yang DINONAKTIFKAN tetap ikut. Baris `"user"` tidak pernah
+     * dihapus — `audit_event.actor_user_id` menunjuknya, dan menghapusnya
+     * memutus atribusi setiap peristiwa yang pernah ia lakukan.
+     *
+     * Urutan dijamin SQL: aktif dulu, lalu nama.
+     */
+    async listUsers(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        // Yang berhak MELIHAT daftar pengguna adalah yang berhak
+        // mengelolanya. `assertBolehKelola` menuntut daftar peran target;
+        // untuk pembacaan, yang relevan hanya bahwa aktor mengelola SESEORANG
+        // — dipakai peran terlemah yang tetap masuk akal, yaitu kasir.
+        await assertBolehKelola(client, actorId, ['cashier']);
+
+        const { rows } = await client.query<{
+          id: string;
+          name: string;
+          email: string | null;
+          is_active: boolean;
+          has_pin: boolean;
+          roles: string[] | null;
+          outlet_ids: string[] | null;
+        }>(
+          `SELECT u.id, u.name, u.email, u.is_active,
+                  (u.pin_hash IS NOT NULL) AS has_pin,
+                  array_agg(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL) AS roles,
+                  array_agg(DISTINCT uo.outlet_id) FILTER (WHERE uo.outlet_id IS NOT NULL) AS outlet_ids
+             FROM "user" u
+             LEFT JOIN user_role ur ON ur.user_id = u.id
+             LEFT JOIN user_outlet uo ON uo.user_id = u.id
+            GROUP BY u.id, u.name, u.email, u.is_active, u.pin_hash
+            ORDER BY (u.is_active = false), u.name`
+        );
+
+        return rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          email: r.email,
+          isActive: r.is_active,
+          hasPin: r.has_pin,
+          roles: r.roles ?? [],
+          outletIds: r.outlet_ids ?? [],
+        }));
+      });
+    },
+
     async createUser(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);
@@ -168,6 +232,39 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
         outletIds: string[];
       };
 
+      // ⛔ Outlet UNIK, dan dihitung SEKALI di sini.
+      //
+      // Penulisan di bawah juga mem-`Set`-kannya. Kalau penjaga cakupan
+      // menghitung panjang array mentah sementara penulisan menghitung yang
+      // unik, `['o1','o1']` ditolak sebagai "dua outlet" — permintaan sah yang
+      // gagal karena klien mengirim id yang sama dua kali.
+      const outletUnik = [...new Set(body.outletIds ?? [])];
+
+      // ⛔ DI LUAR transaksi, sebelum satu query pun jalan.
+      //
+      // `spec-f:31` dan `spec-f:32` memberi Manajer Outlet dan Kasir cakupan
+      // "Satu outlet". Layar B-27 sudah menolaknya, dan itu TIDAK CUKUP:
+      // penjaga yang hanya hidup di klien hilang begitu ada yang memanggil API
+      // langsung — dan permukaan ini dipakai Manajer Outlet, bukan hanya
+      // owner.
+      //
+      // Akibat kalau lolos: kasir muncul di layar login DUA tablet dan
+      // penjualannya dapat dinisbatkan ke outlet yang tidak pernah ia
+      // tempati; manajer outlet menyetujui refund di outlet yang bukan
+      // tanggung jawabnya. Keduanya tidak menghasilkan error di mana pun.
+      const terlaluLuas = peranMelebihiCakupan(
+        body.roles.map((r) => r.role),
+        outletUnik.length
+      );
+      if (terlaluLuas) {
+        throw new HttpError(
+          400,
+          'ROLE_SCOPE_TOO_WIDE',
+          `Peran ${LABEL_PERAN[terlaluLuas as Peran] ?? terlaluLuas} bercakupan satu outlet. ` +
+            'Pilih satu outlet, atau pakai peran Manajer Area untuk beberapa outlet.'
+        );
+      }
+
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         await assertBolehKelola(client, actorId, body.roles.map((r) => r.role));
 
@@ -178,7 +275,7 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
         // FK klien-suplai ke tabel ber-tenant_id. Temuan F1 (CLAUDE.md),
         // bentuk keenam: FK PostgreSQL tidak tunduk RLS, jadi ia hanya
         // membuktikan outlet itu ada di SUATU tenant.
-        for (const outletId of new Set(body.outletIds)) {
+        for (const outletId of outletUnik) {
           await assertOutletVisible(client, outletId);
         }
 
@@ -203,7 +300,7 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
           );
         }
 
-        for (const outletId of new Set(body.outletIds)) {
+        for (const outletId of outletUnik) {
           await client.query(
             `INSERT INTO user_outlet (id, tenant_id, user_id, outlet_id) VALUES ($1, $2, $3, $4)`,
             [randomUUID(), tenantId, body.id, outletId]

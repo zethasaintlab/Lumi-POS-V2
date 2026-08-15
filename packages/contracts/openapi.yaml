@@ -1528,11 +1528,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [token, expiresAt, userId, roles]
+                required: [token, expiresAt, userId, tenantId, roles]
                 properties:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
                   userId: { type: string }
+                  tenantId:
+                    type: string
+                    description: >-
+                      Tenant yang DIPAKAI sesi ini -- dari header bila dikirim,
+                      hasil resolusi email bila tidak. Klien yang menghilangkan
+                      `X-Tenant-Id` tidak punya cara lain mengetahuinya, dan ia
+                      membutuhkannya di setiap permintaan berikutnya.
                   roles: { type: array, items: { type: string } }
         '401':
           description: >-
@@ -1585,6 +1592,39 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
   /users:
+    get:
+      operationId: listUsers
+      summary: Daftar pengguna tenant ini, untuk layar B-27 Pengguna & Peran.
+      description: >-
+        Pengguna yang DINONAKTIFKAN ikut, dengan isActive false -- baris
+        "user" tidak pernah dihapus karena audit trail menunjuknya.
+
+
+        hasPin menyatakan APAKAH PIN sudah disetel, bukan nilainya. Tanpa PIN,
+        pengguna tidak dapat membuka aplikasi kasir sama sekali.
+      responses:
+        '200':
+          description: Daftar pengguna, aktif lebih dulu lalu urut nama.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, isActive, hasPin, roles, outletIds]
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    email: { type: string, nullable: true }
+                    isActive: { type: boolean }
+                    hasPin: { type: boolean }
+                    roles: { type: array, items: { type: string } }
+                    outletIds: { type: array, items: { type: string } }
+        '403':
+          description: Aktor tidak berhak mengelola pengguna.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     post:
       operationId: createUser
       summary: >-
@@ -1630,7 +1670,19 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '400':
-          description: Header X-Tenant-Id / X-Actor-Id hilang, atau payload tidak valid
+          description: >-
+            Header X-Tenant-Id / X-Actor-Id hilang, payload tidak valid, atau
+            cakupan peran dilampaui (ROLE_SCOPE_TOO_WIDE).
+
+
+            spec-f:31 dan spec-f:32 memberi Manajer Outlet dan Kasir cakupan
+            "Satu outlet". Lebih dari satu outletId untuk peran itu ditolak
+            SEBELUM transaksi dibuka -- kasir yang terdaftar di dua outlet
+            muncul di layar login kedua tablet dan penjualannya dapat
+            dinisbatkan ke outlet yang tidak pernah ia tempati.
+
+
+            outletId duplikat dihitung SEKALI; `[o1, o1]` adalah satu outlet.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

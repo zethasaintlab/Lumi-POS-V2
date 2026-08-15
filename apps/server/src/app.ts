@@ -278,6 +278,22 @@ async function buildAppInner(
   const asalDiizinkan = new Set(corsOrigins);
   const HEADER_DIIZINKAN = 'content-type, authorization, x-tenant-id, x-actor-id, x-approver-id, idempotency-key';
 
+  /* ⛔ Metode diturunkan dari RUTE, bukan ditulis tangan.
+     Ditemukan dengan menjalankan aplikasi, kedua kalinya untuk blok ini:
+     daftarnya dulu `'GET, POST, PATCH, DELETE, OPTIONS'`, dan
+     `PUT /users/{userId}/pin` sudah ada sejak Modul F — ia hanya tidak pernah
+     dipanggil dari browser sampai B-27 dibangun. Gejalanya *"Method PUT is not
+     allowed by Access-Control-Allow-Methods"*, dan satu-satunya jalur menyetel
+     PIN kasir mati di browser. `HEAD` juga hilang; Fastify mendaftarkannya
+     sendiri untuk setiap `GET`.
+
+     Tidak ada test yang DAPAT menangkapnya: `app.inject()` memanggil handler
+     langsung dan tidak menegakkan CORS sama sekali. Daftar tulis tangan akan
+     tertinggal lagi pada metode berikutnya — dan gejalanya muncul di browser
+     merchant, bukan di CI. Ini pola yang sama dengan penjaga sync-rules yang
+     menurunkan daftar tabel ber-tenant dari DDL. */
+  const metodeRute = new Set<string>(['OPTIONS']);
+
   app.addHook('onRequest', async (req, reply) => {
     const asal = req.headers.origin;
     if (typeof asal !== 'string' || !asalDiizinkan.has(asal)) {
@@ -289,7 +305,7 @@ async function buildAppInner(
     reply.header('Access-Control-Allow-Origin', asal);
     reply.header('Vary', 'Origin');
     if (req.method === 'OPTIONS') {
-      reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      reply.header('Access-Control-Allow-Methods', [...metodeRute].join(', '));
       reply.header('Access-Control-Allow-Headers', HEADER_DIIZINKAN);
       reply.header('Access-Control-Max-Age', '600');
       reply.code(204).send();
@@ -326,6 +342,10 @@ async function buildAppInner(
    * `register` supaya urutannya benar.
    */
   app.addHook('onRoute', (routeOptions) => {
+    // Setiap rute yang didaftarkan mencatatkan metodenya untuk CORS di atas.
+    // `method` dapat berupa array (Fastify menambahkan HEAD untuk setiap GET).
+    for (const m of [routeOptions.method].flat()) metodeRute.add(m);
+
     if (routeOptions.method !== 'POST' || routeOptions.url !== '/tenants') return;
     routeOptions.config = {
       ...routeOptions.config,

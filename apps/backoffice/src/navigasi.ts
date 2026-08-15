@@ -122,7 +122,12 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
  * dan yang membuka back-office pertama kali adalah merchant yang baru
  * mendaftar, tanpa siapa pun untuk ditanyai.
  */
-export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>(['B-11', 'B-28', 'B-29']);
+export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
+  'B-11',
+  'B-27',
+  'B-28',
+  'B-29',
+]);
 
 export function cariItem(id: string): ItemNavigasi | undefined {
   for (const grup of NAVIGASI) {

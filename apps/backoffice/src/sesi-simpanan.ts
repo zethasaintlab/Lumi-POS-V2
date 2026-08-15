@@ -37,11 +37,13 @@ export interface Sesi {
   userId: string;
   roles: string[];
   /**
-   * ⛔ Ikut disimpan meski login tidak mengembalikannya.
+   * Tenant yang dipakai sesi ini, **dari respons login**.
    *
-   * `POST /auth/login` MENUNTUT `X-Tenant-Id` — jadi tenant sudah diketahui
-   * sebelum login, bukan hasil darinya. Tanpa menyimpannya, setiap permintaan
-   * sesudah login tidak punya tenant untuk dikirim, dan seluruh API menolak.
+   * ⛔ Bukan dari isian form. `X-Tenant-Id` opsional sejak migrasi 0023 —
+   * server meresolusinya dari email bila tidak disebut, dan responsnya adalah
+   * satu-satunya tempat klien dapat mengetahui hasilnya. Menyimpan isian form
+   * berarti sesi merchant yang masuk lewat resolusi menyimpan tenant kosong,
+   * dan setiap permintaan sesudahnya ditolak 400.
    */
   tenantId: string;
 }

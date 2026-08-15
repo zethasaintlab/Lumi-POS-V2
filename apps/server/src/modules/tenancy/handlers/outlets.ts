@@ -7,6 +7,7 @@ import { assertUserVisible, assertBoleh } from '../../identity/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 import { assertKuota, hitungOutlet } from '../kuota.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
+import { ZONA_WAKTU } from '../../../../../../packages/domain/src/zona-waktu.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
@@ -36,8 +37,14 @@ interface BodyOutlet {
   verticalProfileId?: string | null;
 }
 
-/** `0002_tenancy.sql` — CHECK (timezone IN (…)). */
-const ZONA_SAH = new Set(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']);
+/**
+ * `0002_tenancy.sql` — CHECK (timezone IN (…)).
+ *
+ * Daftarnya dari `packages/domain`, bukan disalin ke sini: layar pendaftaran
+ * B-00b harus merender pilihan yang sama, dan salinan di sisi klien akan
+ * menyimpang tanpa satu pun error.
+ */
+const ZONA_SAH = new Set<string>(ZONA_WAKTU);
 
 export function createOutletHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {

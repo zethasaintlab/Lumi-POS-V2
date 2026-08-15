@@ -90,3 +90,49 @@ test('permintaan tanpa Origin tetap dilayani seperti biasa', async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['access-control-allow-origin'], undefined);
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Metode yang diizinkan diturunkan dari RUTE, bukan ditulis tangan
+// ---------------------------------------------------------------------------
+
+test('⛔ SETIAP metode yang punya rute ikut di Access-Control-Allow-Methods', async () => {
+  // Ditemukan dengan menjalankan aplikasi, kedua kalinya untuk berkas ini.
+  //
+  // Daftarnya dulu string tulis tangan `'GET, POST, PATCH, DELETE, OPTIONS'`,
+  // dan `PUT /users/{userId}/pin` sudah ada sejak Modul F — ia hanya tidak
+  // pernah dipanggil dari browser sampai B-27 dibangun. Gejalanya: *"Method
+  // PUT is not allowed by Access-Control-Allow-Methods in preflight
+  // response"*, dan satu-satunya jalur menyetel PIN kasir mati di browser.
+  //
+  // ⛔ Tidak ada test yang DAPAT menangkapnya sebelumnya: `app.inject()`
+  // memanggil handler langsung dan tidak menegakkan CORS sama sekali. Yang
+  // ditegakkan di sini karena itu bukan "PUT ada di daftar" melainkan bahwa
+  // daftarnya diturunkan dari rute yang benar-benar terdaftar — daftar tulis
+  // tangan akan tertinggal lagi pada metode berikutnya, dan gejalanya muncul
+  // di browser, bukan di CI.
+  const metodeRute = new Set();
+  for (const baris of app.printRoutes({ commonPrefix: false }).split('\n')) {
+    const cocok = baris.match(/\(([A-Z, ]+)\)/);
+    if (cocok) for (const m of cocok[1].split(',')) metodeRute.add(m.trim());
+  }
+  assert.ok(metodeRute.size > 0, 'tidak ada rute terbaca');
+  assert.ok(metodeRute.has('PUT'), 'premis test salah: tidak ada rute PUT sama sekali');
+
+  const res = await app.inject({
+    method: 'OPTIONS',
+    url: '/users/u-1/pin',
+    headers: { origin: ASAL, 'access-control-request-method': 'PUT' },
+  });
+  const diizinkan = new Set(
+    String(res.headers['access-control-allow-methods'])
+      .split(',')
+      .map((m) => m.trim())
+  );
+
+  for (const m of metodeRute) {
+    assert.ok(diizinkan.has(m), `metode ${m} punya rute tapi tidak diizinkan CORS`);
+  }
+  // OPTIONS sendiri tidak punya rute; ia dijawab hook, dan browser
+  // membutuhkannya di daftar.
+  assert.ok(diizinkan.has('OPTIONS'));
+});

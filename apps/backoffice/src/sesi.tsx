@@ -8,7 +8,13 @@ import {
   type Penyimpanan,
   type Sesi,
 } from './sesi-simpanan.ts';
-import { buatKlien, masuk as mintaLogin, type KlienApi } from './http.ts';
+import {
+  buatKlien,
+  masuk as mintaLogin,
+  daftar as mintaDaftar,
+  type HasilDaftar,
+  type KlienApi,
+} from './http.ts';
 
 /**
  * Glue React untuk sesi back-office. SENGAJA tipis — seluruh aturan
@@ -35,7 +41,19 @@ interface NilaiSesi {
    * di outlet sebagai sinkronisasi yang tidak pernah jalan.
    */
   baseUrl: string;
-  masuk: (kredensial: { tenantId: string; email: string; password: string }) => Promise<void>;
+  /**
+   * `tenantId` OPSIONAL sejak migrasi 0023 — server meresolusinya dari email
+   * bila tidak disebut. Ia tetap diterima karena merchant yang emailnya
+   * terdaftar di dua tenant harus dapat menyebut yang mana.
+   */
+  masuk: (kredensial: { tenantId?: string; email: string; password: string }) => Promise<void>;
+  /**
+   * `POST /tenants` (B-00b). Ada di sini meski ia TIDAK membuat sesi — supaya
+   * ia memakai `baseUrl` dan `fetch` yang sama dengan seluruh aplikasi. Layar
+   * yang memanggil `globalThis.fetch` sendiri adalah layar yang tidak dapat
+   * diuji dan yang akan menembak alamat berbeda saat `VITE_API_URL` disetel.
+   */
+  daftar: (muatan: unknown) => Promise<HasilDaftar>;
   keluar: () => Promise<void>;
 }
 
@@ -100,13 +118,27 @@ export function PenyediaSesi({
   );
 
   const masuk = useCallback(
-    async (kredensial: { tenantId: string; email: string; password: string }) => {
+    async (kredensial: { tenantId?: string; email: string; password: string }) => {
       const hasil = await mintaLogin({ baseUrl, fetch: fetchDipakai }, kredensial);
-      const baru: Sesi = { ...hasil, tenantId: kredensial.tenantId };
-      simpanSesi(baru, { penyimpanan: simpanan });
-      setSesi(baru);
+      // ⛔ `tenantId` dari RESPONS, bukan dari isian form.
+      //
+      // Versi pertama memakai `kredensial.tenantId`, dan itu benar selama
+      // field-nya wajib. Sejak ia opsional, memakainya berarti sesi merchant
+      // yang masuk lewat resolusi email menyimpan tenant KOSONG — login
+      // berhasil, lalu setiap layar di dalamnya menjawab 400. Kegagalan yang
+      // justru sulit dibaca karena pintunya terbuka.
+      //
+      // Server juga satu-satunya yang tahu tenant mana yang benar-benar
+      // dipakai: ia yang meresolusinya.
+      simpanSesi(hasil, { penyimpanan: simpanan });
+      setSesi(hasil);
     },
     [baseUrl, fetchDipakai, simpanan]
+  );
+
+  const daftar = useCallback(
+    (muatan: unknown) => mintaDaftar({ baseUrl, fetch: fetchDipakai }, muatan),
+    [baseUrl, fetchDipakai]
   );
 
   const keluar = useCallback(async () => {
@@ -125,8 +157,8 @@ export function PenyediaSesi({
   }, [api, buangSesi]);
 
   const nilai = useMemo<NilaiSesi>(
-    () => ({ sesi, api, baseUrl, masuk, keluar }),
-    [sesi, api, baseUrl, masuk, keluar]
+    () => ({ sesi, api, baseUrl, masuk, daftar, keluar }),
+    [sesi, api, baseUrl, masuk, daftar, keluar]
   );
 
   return <KonteksSesi.Provider value={nilai}>{children}</KonteksSesi.Provider>;

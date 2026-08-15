@@ -72,12 +72,50 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
     },
 
     async login(req: FastifyRequest, reply: FastifyReply) {
-      const tenantId = getTenantId(req);
       const { email, password } = req.body as { email?: string | null; password?: string };
 
       // Bentuk diperiksa lebih dulu, tapi jawabannya tetap 401 yang sama.
       if (typeof email !== 'string' || email.length === 0 || typeof password !== 'string') {
         tolakLogin();
+      }
+
+      // ## ⛔ `X-Tenant-Id` menjadi OPSIONAL di sini, dan hanya di sini
+      //
+      // Merchant tidak menghafal UUID tenantnya. Layar masuk yang menuntutnya
+      // adalah layar yang tidak dapat dipakai siapa pun yang baru mendaftar.
+      //
+      // Kalau header tidak dikirim, tenant diresolusi dari email lewat
+      // `resolve_login_tenant` (migrasi 0023) — fungsi `SECURITY DEFINER`
+      // sesempit mungkin, karena `"user"` tunduk RLS dan tenant yang dicari
+      // justru yang belum diketahui.
+      //
+      // ⛔ Resolusinya TIDAK diekspos sebagai endpoint. Endpoint "cari tenant
+      // dari email" adalah oracle enumerasi, dan email back-office adalah
+      // email owner merchant (`spec-f:148`). Di sini ia hidup di dalam jalur
+      // yang sudah menuntut password dan sudah menjawab SATU pesan untuk
+      // setiap kegagalan — penyerang tidak mendapat apa pun yang tidak sudah
+      // dapat ia coba.
+      //
+      // Header tetap DIHORMATI bila dikirim: merchant yang emailnya terdaftar
+      // di dua tenant harus dapat menyebut yang mana, dan aplikasi kasir sudah
+      // mengirimnya.
+      const headerTenant = req.headers['x-tenant-id'];
+      const dariHeader = Array.isArray(headerTenant) ? headerTenant[0] : headerTenant;
+
+      let tenantId: string;
+      if (typeof dariHeader === 'string' && dariHeader.length > 0) {
+        tenantId = dariHeader;
+      } else {
+        const { rows } = await pool.query<{ resolve_login_tenant: string | null }>(
+          'SELECT resolve_login_tenant($1)',
+          [email]
+        );
+        const hasil = rows[0]?.resolve_login_tenant ?? null;
+        // ⛔ Penolakan yang SAMA dengan password salah. Membedakannya berarti
+        // memberi tahu penebak bahwa emailnya ada — persis yang
+        // `tolakLogin` dibuat untuk tutup.
+        if (hasil === null) tolakLogin();
+        tenantId = hasil;
       }
 
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
@@ -124,6 +162,19 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
           token,
           expiresAt: sesi[0].expires_at,
           userId: pengguna.id,
+          // ⛔ Tenant yang DIPAKAI dikembalikan, bukan disimpan diam-diam.
+          //
+          // Klien yang tidak mengirim `X-Tenant-Id` tidak punya cara lain
+          // mengetahuinya, dan ia membutuhkannya di SETIAP permintaan
+          // berikutnya. Tanpa baris ini resolusi di atas tidak berguna:
+          // login-nya berhasil, lalu seluruh layar back-office menjawab 400
+          // "Header X-Tenant-Id wajib diisi" — kegagalan yang justru sulit
+          // dibaca karena pintunya terbuka.
+          //
+          // Bukan kebocoran: ia hanya dikembalikan pada login yang BERHASIL,
+          // dan pemanggilnya sudah membuktikan password. Id tenant juga bukan
+          // rahasia — ia dikirim di header setiap permintaan.
+          tenantId,
           roles: peran.map((p) => p.role),
         };
       });
