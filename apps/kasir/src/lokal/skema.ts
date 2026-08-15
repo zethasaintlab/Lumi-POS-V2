@@ -31,6 +31,9 @@ export const TABEL_RAW = [
   // FR-A7 — tanpa ini perangkat hanya melihat anak tangga harga paling bawah.
   'price_history',
   'tax_rate',
+  // F4 — profil printer sebagai DATA (`ERD:445`). Tanpa ini, mendukung satu
+  // model printer baru menuntut perubahan kode dan rilis ke setiap perangkat.
+  'printer_profile',
   // FR-E4 — peringatan stok harus bekerja offline, jadi profilnya diresolusi
   // di perangkat. Diturunkan sebagai TABEL, bukan kolom terhitung di `outlet`:
   // lihat catatan di sync-config.yaml.
@@ -69,6 +72,9 @@ export const TABEL_RAW = [
  */
 export const TABEL_LOKAL_SAJA = [
   'stock_snapshot',
+  // F4 — antrean cetak. Murni lokal: struk adalah artefak PERANGKAT, dan
+  // printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh kasir 2.
+  'print_job',
   'outbox_local',
   'device_config',
   'skema_lokal',
@@ -193,6 +199,9 @@ export const KOLOM_BELUM_DIUKUR = [
   // FR-E5 — `boolean` server, `INTEGER` lokal. Kelas yang sama dengan
   // `track_stock`; belum diukur menembus PowerSync.
   'sold_out_flag.is_sold_out',
+  // F4 — `boolean` server, `INTEGER` lokal.
+  'printer_profile.has_cutter',
+  'printer_profile.image_support',
   // FR-E4 — `boolean` di PostgreSQL, `INTEGER` di sini. Kelas divergensi yang
   // sama dengan `track_stock`: belum diukur menembus PowerSync, jadi ia
   // terdaftar di sini alih-alih diasumsikan aman.

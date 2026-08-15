@@ -9,6 +9,9 @@ import {
 import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
+import { bangunDokumenStruk } from '../cetak/dokumen.ts';
+import { cetakStruk, type HasilCetak, type PeripheralPort } from '../cetak/port.ts';
+import type { PrinterProfile } from '../cetak/escpos.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
@@ -54,6 +57,8 @@ export type HasilPenjualan =
       amountDue: bigint;
       roundingAdjustment: bigint;
       kembalian: bigint;
+      /** Invariant #3: penjualan TERSIMPAN apa pun hasil ini. */
+      cetak: HasilCetak;
     }
   | { status: 'keranjang_kosong' }
   | { status: 'kurang_bayar'; amountDue: bigint; kurang: bigint };
@@ -70,6 +75,8 @@ interface BarisTarif {
 }
 
 interface BarisOutlet {
+  /** Dicetak di kepala struk (`spec-c:377`). */
+  name: string;
   timezone: string;
   business_day_ends_at: string;
   rounding_increment: number;
@@ -133,6 +140,8 @@ export async function simpanPenjualan({
   idBaru,
   hlc,
   channel = 'takeaway',
+  peripheral,
+  printerProfile,
 }: {
   db: DbLokal;
   konfig: KonfigPerangkat;
@@ -144,13 +153,20 @@ export async function simpanPenjualan({
   idBaru: () => string;
   hlc: () => bigint;
   channel?: 'dine_in' | 'takeaway';
+  /**
+   * Periferal perangkat ini. Boleh TIDAK ADA — merchant yang menjual lewat
+   * QRIS tanpa printer adalah kasus nyata, dan aplikasi berjalan penuh di
+   * sana. Hasilnya dilaporkan `tanpa_printer`, bukan `gagal`.
+   */
+  peripheral?: PeripheralPort | null;
+  printerProfile?: PrinterProfile | null;
 }): Promise<HasilPenjualan> {
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
 
   const sekarang = waktu();
   const outlet = (
     await db.getAll<BarisOutlet>(
-      `SELECT timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate
+      `SELECT name, timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate
          FROM outlet WHERE id = ?`,
       [konfig.outletId]
     )
@@ -448,6 +464,52 @@ export async function simpanPenjualan({
     return { receiptNumber, sequence };
   });
 
+  // ⛔ INVARIANT #3 — "Simpan sebelum cetak, SELALU."
+  //
+  // Cetak berjalan SETELAH `db.transaction` di atas selesai dan ter-commit,
+  // di luar blok transaksinya. Menaruhnya di dalam berarti kertas yang habis
+  // me-rollback penjualan yang uangnya SUDAH masuk laci — dan penjualan yang
+  // hilang tidak dapat dipulihkan, sementara struk selalu dapat dicetak ulang.
+  //
+  // `cetakStruk` tidak pernah melempar; hasilnya DIKEMBALIKAN supaya layar
+  // dapat berkata "struk gagal dicetak, transaksi tersimpan" — bukan diam,
+  // dan bukan menuduh penjualannya gagal.
+  //
+  // Ini juga urutan yang `ARCH:201` sebut mengikat: commit → SigningHook →
+  // ReceiptRenderer. `SigningHook` masih no-op di Indonesia; tempatnya ada di
+  // sini bila kelak dibutuhkan.
+  const cetak = await cetakStruk(
+    peripheral,
+    bangunDokumenStruk({
+      namaMerchant: outlet?.name ?? '',
+      alamatOutlet: null,
+      receiptNumber: hasil.receiptNumber,
+      waktu: occurredAt,
+      namaKasir: sesi.userId,
+      channel,
+      baris: keranjang.baris.map((b, i) => ({
+        itemName: b.itemName,
+        variationName: b.variationName,
+        quantityMilli: b.quantityMilli,
+        lineTotal: Number(lineTotals[i]),
+        modifier: b.modifier.map((m) => ({ nama: m.nama, harga: m.harga })),
+      })),
+      subtotal: Number(totals.subtotal),
+      diskon: 0,
+      serviceCharge: 0,
+      // `lines` adalah rincian PER TARIF — itu yang dicetak di struk
+      // (`spec-c:404`: nama dari `TaxRate.name`). `perLine` adalah snapshot
+      // per baris order, dan mencetaknya akan mengulang tarif yang sama
+      // sebanyak jumlah produk.
+      pajak: pajak.lines.map((r) => ({ nama: r.name, jumlah: Number(r.amount) })),
+      pembulatan: Number(bulat.roundingAdjustment),
+      total: Number(amountDue),
+      pembayaran: [{ nama: 'Tunai', jumlah: Number(tendered) }],
+      kembalian: Number(kembalian),
+    }),
+    printerProfile
+  );
+
   return {
     status: 'tersimpan',
     orderId,
@@ -458,5 +520,6 @@ export async function simpanPenjualan({
     amountDue,
     roundingAdjustment: bulat.roundingAdjustment,
     kembalian,
+    cetak,
   };
 }

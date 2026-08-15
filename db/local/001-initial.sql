@@ -119,6 +119,37 @@ CREATE TABLE vertical_profile (
   default_tax_type TEXT
 );
 
+-- F4 — profil printer. Data referensi hardware GLOBAL: tanpa `tenant_id`,
+-- dikecualikan dari RLS di server (`db/migrations/0012`). Perintah potong dan
+-- laci disimpan sebagai hex berspasi ("1B 40"), supaya menambah model printer
+-- adalah menambah baris — bukan menyentuh renderer.
+CREATE TABLE printer_profile (
+  id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL,
+  paper_width_mm INTEGER, chars_per_line INTEGER, codepage TEXT,
+  has_cutter INTEGER NOT NULL DEFAULT 0,
+  init_command TEXT, cut_command TEXT, drawer_command TEXT,
+  image_support INTEGER NOT NULL DEFAULT 0
+);
+
+-- F4 — antrean cetak. `ERD:447`.
+--
+-- ⛔ MURNI LOKAL, tidak direplikasi ke mana pun. Struk adalah artefak
+-- perangkat: printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh
+-- kasir 2, dan mengirim antrean cetak ke server berarti server menyimpan
+-- dokumen yang tidak dapat dipakainya.
+--
+-- `document` menyimpan dokumen APA ADANYA. Retry karena itu mencetak
+-- persis yang gagal — bukan dokumen yang dibangun ulang dan mungkin
+-- berbeda karena kode di antaranya berubah.
+CREATE TABLE print_job (
+  id TEXT PRIMARY KEY NOT NULL, order_id TEXT, peripheral_id TEXT,
+  document TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','printed','failed')),
+  attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX ix_print_job_pending ON print_job(status, created_at);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.

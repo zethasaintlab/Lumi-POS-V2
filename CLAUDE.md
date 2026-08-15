@@ -127,7 +127,9 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: F3 selesai secara isi, 15 Agustus 2026.** Gate F0, F1, dan F2 tertutup — rincian per item ada di `HANDOFF.md`.
+**Fase: F4 selesai sejauh yang dapat dibuktikan tanpa printer, 15 Agustus 2026.** Gate F0–F3 tertutup — rincian per item ada di `HANDOFF.md`.
+
+⛔ **Gate F4 punya DUA bagian, dan hanya satu yang tertutup.** `ARCH:398`: *"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."* Bagian kedua terbukti lewat test. Bagian pertama menuntut perangkat fisik dan **TETAP TERBUKA** — jangan menandai F4 selesai sampai lima model benar-benar dicoba.
 
 Gate F3 `ARCH:§14` — *"buka toko → jual → tutup buku dengan angka konsisten antar laporan"* — terpenuhi: buku kas menjadi sumber tunggal saldo laci, satu fungsi mendefinisikan omzet untuk seluruh laporan, dan stok akhirnya bergerak dua arah.
 
@@ -325,6 +327,23 @@ Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` mene
 - ⛔ **Fake `DbLokal` tidak menegakkan constraint apa pun.** `NOT NULL`, `CHECK`, dan `ON CONFLICT` semuanya lolos di test dan gagal keras di `wa-sqlite`. Terjadi dua kali: `ON CONFLICT(id)` (8 Agustus) dan `audit_event.tenant_id = NULL` (14 Agustus). Test karena itu harus memeriksa **nilai yang di-bind**, bukan sekadar bahwa tabelnya disentuh — dan bentuk SQL baru tetap wajib dijalankan di browser sebelum dipercaya.
 - ⛔ **Fake juga tidak menegakkan `ORDER BY`.** Jaminan urutan yang hanya hidup di SQL tidak dapat diuji sama sekali. Kalau urutannya penting bagi pengguna, ia dimiliki di JS di titik data disusun — `katalog/baca.ts` (modifier, karena dikelompokkan ulang) dan `riwayat/baca.ts` (SQL memilih baris mana lewat `LIMIT`, JS menjamin urutan tampil).
 - **Keranjang K-03 hanya ada di MEMORI** (`apps/kasir/src/kasir/simpanan.ts`). Ia hilang saat aplikasi dimuat ulang. Itu bukan kehilangan uang — penjualan baru ada setelah `simpanPenjualan` menulisnya — tapi kasir harus memasukkan ulang pesanannya. Jalan keluarnya sudah disiapkan skema (`order.status = 'open'` + `owned_by_device_id`, KEP-21) dan **belum dibangun**: order `open` yang tidak pernah dibayar akan muncul di laporan dan harus punya jalan penutupan. Karena itu juga K-06/K-07 **tidak punya URL** (`IA:§7`) — `/bayar` akan menjadi alamat yang tidak pernah dapat dipulihkan.
+
+## F4 — keputusan yang mengikat kode
+
+**Rantai cetak: `ReceiptDocument` → `ReceiptRenderer` → `PeripheralPort`** (`ARCH:199-200`). Dokumen deskriptif dulu, byte belakangan — `ARCH:204` menyebut alasannya: tanpa pemisahan itu, mendukung printer fiskal berarti menyentuh layar kasir.
+
+- ⛔ **Invariant #3 ditegakkan di DUA tempat.** `cetakStruk` tidak pernah melempar (lemparan apa pun jadi `HasilCetak`), dan cetak berjalan SETELAH `db.transaction` ter-commit. Satu saja tidak cukup: lemparan yang lolos naik ke alur penjualan, dan cetak di dalam transaksi membuat kertas habis me-rollback penjualan yang uangnya sudah masuk laci.
+- **Kegagalan cetak DIKEMBALIKAN, bukan didiamkan.** Layar harus dapat berkata "struk gagal dicetak, transaksi tersimpan". `tanpa_printer` dibedakan dari `gagal` — merchant tanpa printer adalah kasus sah.
+- **Renderer MURNI.** Tanpa jam, tanpa acak. FR-B11 menuntut cetak ulang identik dengan cetakan pertama; renderer yang menyentuh `Date.now()` membuat itu mustahil dibuktikan.
+- ⛔ **Perintah printer datang dari PROFIL, tidak pernah dari renderer** (`ERD:445`: "Data, bukan kode"). `printer_profile` diturunkan sebagai tabel; baseline 58/80 mm ikut di kode hanya supaya perangkat tanpa profil tersinkron tetap dapat mencetak.
+- ⛔ **Transliterasi terjadi SEBELUM hitungan lebar.** `…` panjangnya 1 karakter di JavaScript tetapi mencetak 3; menerjemahkan belakangan membuat baris yang dihitung "pas 32" mencetak 34, dan printer melipatnya sendiri.
+- **Dua kolom dipotong di KIRI**, tidak pernah di angkanya — memotong dari kanan menghasilkan "Rp 25.0", struk yang menyebut harga salah.
+- **Cetak ulang tidak menyentuh satu pun tabel katalog** (`spec-b:145`), diuji dari tabel yang benar-benar disentuh query. Konsekuensinya: baris pajak pada cetak ulang berbunyi "Pajak" tanpa nama tarif — nama tarif hidup di `tax_rate`, dan meresolusinya melanggar aturan itu. **Batas yang dinyatakan**, bukan kelalaian.
+- `print_job` **murni lokal**: struk adalah artefak perangkat, dan printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh kasir 2.
+
+**⛔ Penjaga sync-rules kini menurunkan aturannya dari DDL.** Aturannya bukan lagi "setiap query menyaring tenant" melainkan "setiap query atas tabel **ber-tenant** menyaring tenant", dan daftar tabel ber-tenant dibaca dari `db/migrations/*.sql`. Diperlukan karena `printer_profile` dikecualikan dari RLS dan tidak punya `tenant_id` sama sekali. Daftar pengecualian yang ditulis tangan akan bertambah panjang sampai penjaganya tidak menjaga apa pun.
+
+---
 
 ## F3 — keputusan yang mengikat kode
 
