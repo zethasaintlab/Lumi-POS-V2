@@ -123,6 +123,7 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
  * mendaftar, tanpa siapa pun untuk ditanyai.
  */
 export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
+  'B-08',
   'B-11',
   'B-27',
   'B-28',
