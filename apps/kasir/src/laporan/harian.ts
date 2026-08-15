@@ -115,10 +115,22 @@ export async function laporanHarian(
   const refunds = await refundHari(db, businessDate);
   const batal = idDibatalkan(orders);
 
+  // ⛔ HANYA payment `confirmed` (`spec-c:223`).
+  //
+  // Versi sebelumnya tidak menyaring status sama sekali, jadi QRIS dinamis
+  // yang masih `pending_confirmation` — dan payment `failed` — ikut
+  // terjumlahkan. Akibatnya laporan di tablet menampilkan uang masuk LEBIH
+  // BESAR daripada back-office, dan selisih itu muncul saat rekonsiliasi
+  // sebagai uang yang seolah hilang di tangan kasir.
+  //
+  // Ditemukan saat membangun `GET /reports/payments`, yang menegakkan aturan
+  // yang sama. `sumConfirmed` di server sudah memakainya sejak Modul C untuk
+  // pelunasan order; yang di sini tertinggal.
   const bayar = await db.getAll<{ method: string; amount: number; order_id: string }>(
     `SELECT p.method, p.amount, p.order_id
        FROM payment p JOIN "order" o ON o.id = p.order_id
-      WHERE o.business_date = ?`,
+      WHERE o.business_date = ?
+        AND p.status = 'confirmed'`,
     [businessDate]
   );
   const perMetodeMap = new Map<string, { jumlah: number; total: bigint }>();

@@ -241,3 +241,18 @@ test('B-17 sudah ditandai siap', async () => {
   const { LAYAR_SIAP } = await import(NAV);
   assert.ok(LAYAR_SIAP.has('B-17'), 'B-17 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
+
+test('B-18 dan B-19 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  for (const id of ['B-18', 'B-19']) {
+    assert.ok(LAYAR_SIAP.has(id), `${id} sudah dibangun tapi masih menampilkan keadaan kosong`);
+  }
+});
+
+test('⛔ B-20 Ekspor BELUM siap — persona Akuntan belum diputuskan', async () => {
+  // `IA:439` mencatat open question yang masih terbuka: "Apakah Akuntan punya
+  // navigasi sendiri yang disederhanakan, atau back-office penuh dengan menu
+  // tersembunyi?" Ia memblokir bentuk B-20.
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(!LAYAR_SIAP.has('B-20'), 'B-20 ditandai siap padahal bentuknya belum diputuskan');
+});

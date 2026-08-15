@@ -98,13 +98,22 @@ async function ambilShift(db: DbLokal, shiftId: string): Promise<BarisShift | nu
  * pembatalan — dan selama ia ada, refund tunai tidak pernah mengurangi laci.
  *
  * Saldo laci sekarang datang dari `cash_movement` (`spec-d:14`).
+ *
+ * ⛔ HANYA payment `confirmed` (`spec-c:223`).
+ *
+ * Tanpa filter ini, QRIS yang masih `pending_confirmation` dan payment
+ * `failed` ikut terhitung di ringkasan tutup kas — layar tempat selisih paling
+ * berbahaya. Kasir menutup shift dengan angka non-tunai yang lebih besar
+ * daripada yang benar-benar diterima, dan selisihnya terbaca sebagai uang yang
+ * hilang di tangannya.
  */
 async function pembayaranTunai(db: DbLokal, shiftId: string): Promise<BarisPembayaran[]> {
   return db.getAll<BarisPembayaran>(
     `SELECT p.method, p.amount
        FROM payment p
        JOIN "order" o ON o.id = p.order_id
-      WHERE o.shift_id = ?`,
+      WHERE o.shift_id = ?
+        AND p.status = 'confirmed'`,
     [shiftId]
   );
 }
