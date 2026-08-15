@@ -17,6 +17,7 @@ import { OutletLayar } from './outlet/Outlet.tsx';
 import { ProdukLayar } from './katalog/Produk.tsx';
 import { KategoriLayar } from './katalog/Kategori.tsx';
 import { HargaLayar } from './katalog/Harga.tsx';
+import { ModifierLayar } from './katalog/Modifier.tsx';
 
 /**
  * Kerangka back-office. Nol layar fitur — sama seperti `PLAN-pondasi-kasir`
@@ -146,6 +147,7 @@ function Terlindungi() {
         {aktif === 'B-29' ? <Langganan /> : null}
         {aktif === 'B-06' ? <ProdukLayar /> : null}
         {aktif === 'B-08' ? <KategoriLayar /> : null}
+        {aktif === 'B-09' ? <ModifierLayar /> : null}
         {aktif === 'B-10' ? <HargaLayar /> : null}
         {aktif === 'B-11' ? <Impor /> : null}
         {aktif === 'B-23' ? <OutletLayar /> : null}

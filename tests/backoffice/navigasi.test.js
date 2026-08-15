@@ -196,6 +196,18 @@ test('B-10 sudah ditandai siap — ia satu-satunya jalan mengubah harga', async 
   assert.ok(LAYAR_SIAP.has('B-10'), 'B-10 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
 
+test('B-09 sudah ditandai siap — grup Katalog akhirnya utuh', async () => {
+  const { LAYAR_SIAP, NAVIGASI } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-09'), 'B-09 sudah dibangun tapi masih menampilkan keadaan kosong');
+
+  // Seluruh grup Katalog kini punya isi. Penjaga ini menahan grup itu tetap
+  // utuh: layar Katalog yang ditambahkan kelak tanpa isi akan terlihat di sini
+  // alih-alih diam-diam menampilkan keadaan kosong di tengah grup yang penuh.
+  const katalog = NAVIGASI.find((g) => g.group === 'Katalog');
+  const belum = katalog.items.filter((i) => !LAYAR_SIAP.has(i.id)).map((i) => i.id);
+  assert.deepEqual(belum, [], `layar Katalog tanpa isi: ${belum.join(', ')}`);
+});
+
 test('B-23 sudah ditandai siap', async () => {
   const { LAYAR_SIAP } = await import(NAV);
   assert.ok(LAYAR_SIAP.has('B-23'), 'B-23 sudah dibangun tapi masih menampilkan keadaan kosong');
