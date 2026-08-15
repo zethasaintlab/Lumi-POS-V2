@@ -207,3 +207,8 @@ test('B-09 sudah ditandai siap — grup Katalog akhirnya utuh', async () => {
   const belum = katalog.items.filter((i) => !LAYAR_SIAP.has(i.id)).map((i) => i.id);
   assert.deepEqual(belum, [], `layar Katalog tanpa isi: ${belum.join(', ')}`);
 });
+
+test('B-23 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-23'), 'B-23 sudah dibangun tapi masih menampilkan keadaan kosong');
+});
