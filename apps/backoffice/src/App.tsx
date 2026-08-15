@@ -13,6 +13,7 @@ import { Langganan } from './langganan/Langganan.tsx';
 import { Impor } from './impor/Impor.tsx';
 import { PerangkatLayar } from './perangkat/Perangkat.tsx';
 import { PenggunaLayar } from './pengguna/Pengguna.tsx';
+import { OutletLayar } from './outlet/Outlet.tsx';
 import { ProdukLayar } from './katalog/Produk.tsx';
 import { KategoriLayar } from './katalog/Kategori.tsx';
 import { HargaLayar } from './katalog/Harga.tsx';
@@ -147,6 +148,7 @@ function Terlindungi() {
         {aktif === 'B-08' ? <KategoriLayar /> : null}
         {aktif === 'B-10' ? <HargaLayar /> : null}
         {aktif === 'B-11' ? <Impor /> : null}
+        {aktif === 'B-23' ? <OutletLayar /> : null}
         {aktif === 'B-27' ? <PenggunaLayar /> : null}
         {aktif === 'B-28' ? <PerangkatLayar /> : null}
 
