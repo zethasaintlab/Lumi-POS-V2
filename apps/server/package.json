@@ -8,16 +8,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
+    "contracts": "*",
     "fastify": "^5.11.0",
     "fastify-openapi-glue": "^4.11.3",
-    "pg": "^8.22.0",
     "js-yaml": "^4.1.0",
-    "contracts": "*"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "@types/pg": "^8.20.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
-    "@types/js-yaml": "^4.0.9"
+    "@types/pg": "^8.20.0",
+    "typescript": "^5.9.3"
   }
 }

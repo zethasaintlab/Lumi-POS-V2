@@ -93,7 +93,19 @@ Alternatifnya adalah query yang melewati RLS, dan itu melanggar invariant #8.
 
 ⛔ **`tenancy` tidak menghitung apa pun.** Ia hanya membaca kolom `max_*` dan menjalankan aturannya; `COUNT(*) FROM item` dijalankan catalog, `FROM device` oleh identity (invariant #4). Kalau tenancy menghitung sendiri, ia harus tahu aturan arsip setiap modul lain — dan aturan itu berbeda di tiap modul, seperti tabel di atas menunjukkan.
 
-⛔ **Impor dinilai UTUH.** `(terpakai + seluruh baris berkas) <= kuota`, ditolak `403` sebagai satu kesatuan. Memeriksa per baris akan memasukkan 200 baris pertama lalu menolak sisanya — impor parsial yang meninggalkan katalog setengah jadi tanpa cara membatalkannya, karena katalog tidak pernah di-`DELETE` (invariant #2).
+⛔ **Impor dinilai UTUH, atas produk BARU saja.** `(terpakai + produk baru) <= kuota`, ditolak `403` sebagai satu kesatuan. Memeriksa per baris akan memasukkan 200 baris pertama lalu menolak sisanya — impor parsial yang meninggalkan katalog setengah jadi tanpa cara membatalkannya, karena katalog tidak pernah di-`DELETE` (invariant #2).
+
+Yang **tidak** dihitung, karena tidak menambah produk: baris `dilewati` (nama sudah ada, mode `lewati`), baris `valid.perbarui` (nama sudah ada, mode `perbarui` — yang disentuhnya hanya `category_id`), dan baris `masalah` (tidak dapat diparse). Versi pertama menghitung seluruh baris berkas dan menabrak `spec-a:288` secara langsung: alur yang spec sebut adalah "unduh baris gagal → perbaiki → unggah ulang", jadi unggah-ulang berkas yang sama selalu menghitung ulang seluruh barisnya — merchant dihukum karena memperbaiki datanya sendiri.
+
+## `POST /tenants`: satu-satunya endpoint yang dibatasi lajunya
+
+`@fastify/rate-limit`, store **in-memory** (`research/03` mengunci "tanpa Redis di v1"), `global: false`, hanya pada `POST /tenants`. Angkanya dari `TENANT_REGISTRATION_RATE_MAX` / `TENANT_REGISTRATION_RATE_WINDOW` (invariant #5), bawaan 5 per 15 menit.
+
+⛔ **Bukan global, dan itu bukan penghematan.** Endpoint lain sudah dijaga `X-Tenant-Id` + RLS, dan membatasi jalur kasir berarti membangun kemampuan **menghentikan penjualan** dari sisi server — hal yang sama yang `research/09` § 6 larang untuk kuota. Perangkat di balik satu NAT outlet berbagi alamat IP; batas global akan mengunci kasir kedua pada jam sibuk.
+
+⛔ **`errorResponseBuilder` mengembalikan `HttpError`, bukan objek berbentuk respons.** Yang dikembalikan di sana dilempar sebagai error dan melewati `setErrorHandler`; objek `{ error: { … } }` tanpa `statusCode` tidak dikenali cabang mana pun dan keluar sebagai **500**. Ditemukan dengan menjalankannya — tidak ada satu pun tipe yang mengeluh.
+
+Batas yang tersisa: **tidak ada captcha**, dan hitungannya per-proses (hilang saat restart, tidak dibagi antar instance). Ia menahan penyalahgunaan kasar, bukan penyerang terdistribusi.
 
 ⛔ **`tenant` adalah satu-satunya tabel yang `WHERE tenant_id`-nya WAJIB.** Ia dikecualikan RLS (akar model tenancy). Setiap tabel lain menyaring dirinya sendiri walau `WHERE` lupa ditulis; di sini `SELECT max_products FROM tenant` tanpa `WHERE` mengembalikan baris **setiap merchant**, dan kuota yang terbaca adalah kuota siapa pun yang kebetulan pertama.
 

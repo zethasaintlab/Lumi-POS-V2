@@ -135,6 +135,81 @@ test('⛔ dua impor yang MASING-MASING muat, tapi bersama tidak, ditolak di yang
   assert.match(JSON.parse(res.body).error.message, /150/, 'pesan tidak menyebut yang sudah terpakai');
 });
 
+test('⛔ CSV 150 baris berisi SKU EKSISTING lolos — pembaruan tidak dihitung kuota', async () => {
+  // Revisi atas rumus pertama. Versi awal menilai kuota terhadap SELURUH
+  // baris berkas, dan itu menabrak `spec-a:288` secara langsung: alur yang
+  // spec sebut adalah "unduh baris gagal → perbaiki → unggah ulang", dan
+  // unggah-ulang berkas yang sama akan selalu menghitung ulang seluruh
+  // barisnya. Merchant dihukum karena memperbaiki datanya sendiri.
+  //
+  // Kuota mengukur BERAPA PRODUK YANG AKAN ADA, dan baris yang memperbarui
+  // produk lama tidak menambah satu pun.
+  const csv = csvBaris(150);
+  assert.equal((await post('/catalog/import', { csv, dryRun: false })).statusCode, 200);
+
+  // Berkas yang sama persis, diunggah ulang. 150 + 150 = 300 > 200 pada
+  // rumus lama; 150 + 0 = 150 pada rumus yang benar.
+  const ulang = await post('/catalog/import', { csv, dryRun: false });
+  assert.equal(ulang.statusCode, 200, ulang.body);
+  const b = JSON.parse(ulang.body);
+  assert.equal(b.dilewati, 150, 'seluruh baris seharusnya dilewati — tidak ada produk baru');
+  assert.equal(b.diimpor, 0);
+
+  const rows = await lihat('SELECT count(*) AS n FROM item');
+  assert.equal(rows[0].n, '150', 'produk bertambah padahal seluruh baris sudah ada');
+});
+
+test('⛔ bilaSudahAda=perbarui juga tidak dihitung kuota', async () => {
+  // Jalur `perbarui` menaruh baris di `valid` (bukan `dilewati`), jadi ia
+  // lolos dari penyaringan yang hanya melihat `dilewati`. Ia tetap tidak
+  // membuat produk baru — yang disentuhnya hanya `category_id`.
+  const csv = csvBaris(150);
+  assert.equal((await post('/catalog/import', { csv, dryRun: false })).statusCode, 200);
+
+  const ulang = await post('/catalog/import', { csv, dryRun: false, bilaSudahAda: 'perbarui' });
+  assert.equal(ulang.statusCode, 200, ulang.body);
+
+  const rows = await lihat('SELECT count(*) AS n FROM item');
+  assert.equal(rows[0].n, '150');
+});
+
+test('⛔ berkas CAMPURAN: hanya baris baru yang dihitung', async () => {
+  // Berkas berisi 190 baris: 150 yang sudah ada + 40 baru.
+  //
+  //   rumus lama  : 150 terpakai + 190 baris  = 340 > 200  → DITOLAK
+  //   rumus benar : 150 terpakai +  40 baru   = 190 ≤ 200  → diterima
+  //
+  // Angkanya dipilih supaya kedua rumus memberi jawaban BERBEDA. Test yang
+  // angkanya lolos di kedua rumus tidak membuktikan yang mana yang berjalan.
+  const csv = csvBaris(150);
+  assert.equal((await post('/catalog/import', { csv, dryRun: false })).statusCode, 200);
+
+  const campur = [csv];
+  for (let i = 1; i <= 40; i += 1) campur.push(`Kue Baru ${i},Makanan Impor,5000`);
+  const res = await post('/catalog/import', { csv: campur.join('\n'), dryRun: false });
+
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(JSON.parse(res.body).diimpor, 40);
+
+  const rows = await lihat('SELECT count(*) AS n FROM item');
+  assert.equal(rows[0].n, '190');
+});
+
+test('⛔ baris BERMASALAH tidak menghabiskan kuota', async () => {
+  // Baris yang tidak dapat diparse tidak akan pernah menjadi produk. Kuota
+  // yang menghitungnya menolak impor karena data yang justru DIBUANG.
+  const baris = ['nama,kategori,harga'];
+  for (let i = 1; i <= 195; i += 1) baris.push(`Produk Sah ${i},Minuman Impor,10000`);
+  for (let i = 1; i <= 50; i += 1) baris.push(`Produk Rusak ${i},Minuman Impor,bukan-angka`);
+
+  const res = await post('/catalog/import', { csv: baris.join('\n'), dryRun: false });
+  assert.equal(res.statusCode, 200, res.body);
+
+  const b = JSON.parse(res.body);
+  assert.equal(b.diimpor, 195);
+  assert.equal(b.masalah.length, 50);
+});
+
 test('⛔ dryRun juga ditolak — pratinjau harus mencerminkan yang akan dijalankan', async () => {
   // Pratinjau yang berkata "201 akan diimpor" lalu ditolak saat dijalankan
   // adalah pratinjau yang berbohong tentang satu-satunya hal yang ditanyakan.

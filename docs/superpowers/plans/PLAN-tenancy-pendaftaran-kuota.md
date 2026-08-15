@@ -98,9 +98,9 @@ Invariant #4: `"user"`, `user_role`, `user_outlet` milik modul `identity`. Modul
 
 | Batas | Kenapa dibiarkan |
 |---|---|
-| **Tanpa rate limit / captcha** | Endpoint publik yang membuat baris database. Sebelum merchant berbayar pertama ini wajib ditutup — dicatat sebagai utang, bukan dianggap selesai |
+| ~~Tanpa rate limit~~ | **DITUTUP 15 Agustus 2026.** `@fastify/rate-limit` dengan store in-memory, `global: false`, hanya pada `POST /tenants`. Angkanya dari `TENANT_REGISTRATION_RATE_MAX` / `_WINDOW` (invariant #5), bawaan 5 per 15 menit. **Tanpa captcha**, dan hitungannya per-proses — ia menahan penyalahgunaan kasar, bukan penyerang terdistribusi |
 | **Tanpa verifikasi email** | Email owner tidak dibuktikan miliknya. Pemulihan password belum ada sama sekali |
-| **Unggah-ulang berkas yang sudah diimpor dapat ditolak** | Kuota impor dinilai dari SELURUH baris berkas (instruksi user: `(Eksisting + Baris CSV) <= Kuota`), bukan dari baris yang akan benar-benar dibuat. Berkas 150 baris yang seluruhnya sudah ada tetap menghabiskan 150 slot dalam penilaian — bertabrakan dengan alur `spec-a:288` (unduh baris gagal → perbaiki → unggah ulang). Menunggu keputusan, bukan kelalaian |
+| ~~Unggah-ulang berkas yang sudah diimpor dapat ditolak~~ | **DITUTUP 15 Agustus 2026.** Rumus pertama menilai kuota terhadap seluruh baris berkas dan menabrak `spec-a:288`. Direvisi: yang dihitung hanya baris yang akan menjadi produk BARU — `dilewati`, `valid.perbarui`, dan `masalah` semuanya gratis |
 | **Retry dengan id BARU membuat tenant kedua** | Idempotensi datang dari PK `tenant.id` yang di-generate klien. Respons yang hilang lalu diulang dengan id sama → `409`. Diulang dengan id baru → tenant kedua. Tidak ada `UNIQUE` lintas-tenant pada email, dan tidak dapat ada tanpa query yang melewati RLS |
 
 ---
