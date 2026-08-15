@@ -21,6 +21,7 @@
  */
 
 import type { IconName } from 'ds';
+import { bolehkah, type Operasi } from '../../../packages/domain/src/rbac.ts';
 
 export interface ItemNavigasi {
   /** Kode layar `IA:§3.3`. */
@@ -44,6 +45,21 @@ export interface ItemNavigasi {
    * membaca tabel itu dua kali, di dua waktu berbeda.
    */
   aksesMinimum: string;
+  /**
+   * Operasi `spec-f` yang layar ini butuhkan, bila ada satu yang tepat.
+   *
+   * ⛔ Ada supaya persona yang menunya disempitkan TIDAK ditentukan daftar
+   * kedua yang ditulis tangan. Akuntan melihat B-21 karena matriks di
+   * `packages/domain/src/rbac.ts` memberinya `report_exception` — matriks yang
+   * SAMA dengan yang server tegakkan lewat `assertBoleh`. Kalau kelak hak itu
+   * dicabut, menunya ikut hilang tanpa ada yang perlu ingat menghapusnya.
+   *
+   * Sebagian besar item tidak punya satu operasi yang tepat (Dashboard,
+   * Transaksi) dan sengaja dibiarkan kosong. `aksesMinimum` tetap ada dan tetap
+   * berperan lain: ia salinan kolom "akses minimum" dari `IA:§3.3`, bukan
+   * kosakata RBAC.
+   */
+  operasi?: Operasi;
 }
 
 export interface GrupNavigasi {
@@ -95,7 +111,13 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
   {
     group: 'Pengawasan',
     items: [
-      { id: 'B-21', label: 'Laporan exception', icon: 'shield', aksesMinimum: 'outlet_manager' },
+      {
+        id: 'B-21',
+        label: 'Laporan exception',
+        icon: 'shield',
+        aksesMinimum: 'outlet_manager',
+        operasi: 'report_exception',
+      },
       { id: 'B-22', label: 'Audit & Aktivitas', icon: 'book', aksesMinimum: 'outlet_manager' },
     ],
   },
@@ -133,6 +155,7 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-18',
   'B-19',
   'B-20',
+  'B-21',
   'B-23',
   'B-25',
   'B-27',
@@ -166,11 +189,16 @@ export function grupUntuk(id: string): string | undefined {
  * ("Akuntan tidak dapat melakukan mutasi apa pun", `spec-f:82`). Menyembunyikan
  * menu hanya menghilangkan tombol yang setiap penekanannya akan ditolak.
  *
- * ⛔ Satu ketegangan yang dinyatakan, bukan didiamkan: matriks memberi Akuntan
- * `report_exception`, jadi B-21 (Laporan exception) sebenarnya BOLEH ia buka.
- * Keputusan produk di atas tetap menyembunyikannya karena ia bukan grup
- * Laporan. Kalau kelak Akuntan mengeluh tidak dapat melihat laporan exception
- * yang haknya ia punya, jawabannya ada di sini — bukan di kode server.
+ * ⛔ **Ketegangan yang dicatat di sini sudah ditutup, 16 Agustus 2026.** Versi
+ * sebelumnya menuliskan: matriks memberi Akuntan `report_exception`, jadi B-21
+ * sebenarnya boleh ia buka, tapi menunya tetap disembunyikan karena B-21 bukan
+ * grup Laporan. Keputusan produk direvisi — Akuntan mendapat B-21.
+ *
+ * Yang berubah bukan hanya isinya. Sebelumnya penyempitan ditentukan SEMATA
+ * oleh daftar grup di bawah; sekarang item di luar grup itu ikut terlihat bila
+ * matriks `spec-f` memberi Akuntan operasinya. Itu memindahkan keputusan
+ * "layar mana yang Akuntan lihat" dari daftar tulisan tangan ke matriks yang
+ * server tegakkan — satu sumber, bukan dua yang harus diingat agar sepakat.
  */
 export const GRUP_AKUNTAN: ReadonlySet<string> = new Set(['Laporan']);
 
@@ -189,9 +217,27 @@ export function hanyaAkuntan(peran: readonly string[]): boolean {
   return peran.length > 0 && peran.every((p) => p === 'accountant');
 }
 
-/** Navigasi yang terlihat oleh pemegang peran ini. */
+/**
+ * Navigasi yang terlihat oleh pemegang peran ini.
+ *
+ * ⛔ Untuk Akuntan: grup di `GRUP_AKUNTAN` utuh, DITAMBAH item di luar grup itu
+ * yang operasinya diberikan matriks kepadanya. Grup yang tersisa kosong
+ * dibuang — judul grup tanpa satu pun menu di bawahnya terbaca seperti menu
+ * yang gagal dimuat.
+ *
+ * Penambahannya per ITEM, bukan per grup. Membuka grup Pengawasan borongan
+ * akan menyeret B-22 (Audit & Aktivitas) ikut — layar yang tidak punya operasi
+ * di matriks dan yang tidak seorang pun putuskan untuk Akuntan.
+ */
 export function navigasiUntuk(peran: readonly string[]): GrupNavigasi[] {
   const semua = NAVIGASI.map((g) => ({ ...g, items: [...g.items] }));
   if (!hanyaAkuntan(peran)) return semua;
-  return semua.filter((g) => GRUP_AKUNTAN.has(g.group));
+
+  return semua
+    .map((g) =>
+      GRUP_AKUNTAN.has(g.group)
+        ? g
+        : { ...g, items: g.items.filter((i) => i.operasi !== undefined && bolehkah(peran, i.operasi)) }
+    )
+    .filter((g) => g.items.length > 0);
 }

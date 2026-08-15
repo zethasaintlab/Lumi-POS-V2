@@ -254,10 +254,56 @@ test('B-18 dan B-19 sudah ditandai siap', async () => {
 // ⛔ Akuntan — resolusi IA:439
 // ---------------------------------------------------------------------------
 
-test('⛔ akuntan hanya melihat grup Laporan', async () => {
+test('⛔ akuntan melihat grup Laporan DAN Pengawasan', async () => {
+  // Keputusan produk direvisi 16 Agustus 2026: Akuntan mendapat akses ke B-21.
+  //
+  // Versi sebelumnya menyempitkan akuntan ke grup Laporan saja dan MENCATAT
+  // ketegangannya: matriks `spec-f` memberinya `report_exception`, jadi menu
+  // menyembunyikan layar yang haknya benar-benar ia punya. Revisi ini menutup
+  // ketegangan itu — sekarang navigasinya DITURUNKAN dari matriks yang sama
+  // dengan yang server tegakkan, bukan dari daftar grup yang ditulis tangan.
   const { navigasiUntuk } = await import(NAV);
   const grup = navigasiUntuk(['accountant']).map((g) => g.group);
-  assert.deepEqual(grup, ['Laporan']);
+  assert.deepEqual(grup, ['Laporan', 'Pengawasan']);
+});
+
+test('⛔ akuntan melihat B-21 tapi TIDAK B-22', async () => {
+  // Pengawasan tidak dibuka sebagai grup utuh. B-22 (Audit & Aktivitas) tidak
+  // punya operasi di matriks, dan grup yang dibuka borongan akan menyeretnya
+  // ikut — memberi akuntan menu yang tidak seorang pun pernah putuskan.
+  const { navigasiUntuk } = await import(NAV);
+  const pengawasan = navigasiUntuk(['accountant']).find((g) => g.group === 'Pengawasan');
+  assert.deepEqual(pengawasan.items.map((i) => i.id), ['B-21']);
+});
+
+test('⛔ akuntan tidak melihat Katalog, Pengguna, atau Pengaturan', async () => {
+  const { navigasiUntuk } = await import(NAV);
+  const terlihat = navigasiUntuk(['accountant']).flatMap((g) => g.items.map((i) => i.id));
+  for (const id of ['B-06', 'B-08', 'B-09', 'B-10', 'B-23', 'B-25', 'B-27', 'B-28']) {
+    assert.ok(!terlihat.includes(id), `${id} bocor ke menu akuntan`);
+  }
+});
+
+test('⛔ operasi pada item navigasi DIKENAL matriks domain', async () => {
+  // Penjaga yang membuat `operasi` tidak dapat menjadi sumber kebenaran kedua.
+  // `bolehkah` fail-closed: operasi yang salah ketik ditolak untuk SEMUA orang,
+  // jadi item itu akan hilang dari menu semua peran — diam-diam, tanpa error.
+  const { NAVIGASI } = await import(NAV);
+  const { bolehkah } = await import('../../packages/domain/src/rbac.ts');
+
+  const asing = [];
+  for (const grup of NAVIGASI) {
+    for (const item of grup.items) {
+      if (item.operasi === undefined) continue;
+      if (!bolehkah(['owner'], item.operasi)) asing.push(`${item.id} → "${item.operasi}"`);
+    }
+  }
+  assert.deepEqual(asing, [], `operasi tidak dikenal matriks: ${asing.join(', ')}`);
+});
+
+test('B-21 sudah ditandai siap', async () => {
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-21'), 'B-21 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
 
 test('⛔ akuntan yang JUGA manajer melihat menu penuh', async () => {
