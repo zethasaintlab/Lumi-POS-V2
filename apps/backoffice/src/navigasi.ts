@@ -132,6 +132,7 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-17',
   'B-18',
   'B-19',
+  'B-20',
   'B-23',
   'B-25',
   'B-27',
@@ -149,4 +150,48 @@ export function cariItem(id: string): ItemNavigasi | undefined {
 
 export function grupUntuk(id: string): string | undefined {
   return NAVIGASI.find((g) => g.items.some((i) => i.id === id))?.group;
+}
+
+/**
+ * ⛔ Akuntan hanya melihat grup LAPORAN.
+ *
+ * Keputusan produk yang menutup `IA:439` ("Apakah Akuntan punya navigasi
+ * sendiri yang disederhanakan, atau back-office penuh dengan menu
+ * tersembunyi?"): navigasi sendiri, disederhanakan.
+ *
+ * ⛔ **Ini penjaga UX, bukan batas keamanan.** Yang menahan Akuntan mengubah
+ * apa pun adalah `apps/server/src/rbac-rute.ts` — setiap rute mutasi
+ * administratif menuntut operasi yang matriks `spec-f` tidak berikan
+ * kepadanya, dan `OPERASI_MUTASI` diuji sebagai property atas SELURUH daftar
+ * ("Akuntan tidak dapat melakukan mutasi apa pun", `spec-f:82`). Menyembunyikan
+ * menu hanya menghilangkan tombol yang setiap penekanannya akan ditolak.
+ *
+ * ⛔ Satu ketegangan yang dinyatakan, bukan didiamkan: matriks memberi Akuntan
+ * `report_exception`, jadi B-21 (Laporan exception) sebenarnya BOLEH ia buka.
+ * Keputusan produk di atas tetap menyembunyikannya karena ia bukan grup
+ * Laporan. Kalau kelak Akuntan mengeluh tidak dapat melihat laporan exception
+ * yang haknya ia punya, jawabannya ada di sini — bukan di kode server.
+ */
+export const GRUP_AKUNTAN: ReadonlySet<string> = new Set(['Laporan']);
+
+/** Layar pertama Akuntan. Dashboard bukan miliknya. */
+export const BERANDA_AKUNTAN = 'B-16';
+
+/**
+ * Apakah peran ini HANYA akuntan.
+ *
+ * ⛔ Seseorang dapat memegang beberapa peran. Akuntan yang juga Manajer Outlet
+ * harus melihat menu manajer — penyempitan berlaku hanya bila akuntan adalah
+ * satu-satunya perannya. Memeriksa `includes('accountant')` saja akan
+ * menyembunyikan menu dari orang yang berhak memakainya.
+ */
+export function hanyaAkuntan(peran: readonly string[]): boolean {
+  return peran.length > 0 && peran.every((p) => p === 'accountant');
+}
+
+/** Navigasi yang terlihat oleh pemegang peran ini. */
+export function navigasiUntuk(peran: readonly string[]): GrupNavigasi[] {
+  const semua = NAVIGASI.map((g) => ({ ...g, items: [...g.items] }));
+  if (!hanyaAkuntan(peran)) return semua;
+  return semua.filter((g) => GRUP_AKUNTAN.has(g.group));
 }

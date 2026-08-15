@@ -3038,6 +3038,71 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/export:
+    get:
+      operationId: getReportExport
+      summary: FR-G1 -- keempat laporan sebagai CSV.
+      description: >-
+        Angkanya datang dari FUNGSI yang sama dengan endpoint JSON
+        (`ambilPenjualan`, `ambilProduk`, `ambilKasir`,
+        `ambilPembayaran`) -- tidak ada query yang ditulis ulang. CSV adalah
+        berkas yang merchant bawa ke akuntannya, dan CSV yang berbeda dari
+        layar adalah bentuk terburuk perbedaan angka.
+
+
+        ⛔ Sel yang diawali `=`, `+`, `-`, `@`, tab, atau CR diawali
+        kutip tunggal: Excel dan Google Sheets mengeksekusinya sebagai RUMUS,
+        dan nama produk berasal dari input merchant. Korbannya bukan yang
+        mengetiknya melainkan akuntan yang membuka berkasnya.
+
+
+        ⛔ Diawali BOM UTF-8. Tanpanya Excel di Windows membaca CSV sebagai
+        ANSI dan setiap nama ber-aksen rusak.
+
+
+        Uang ditulis apa adanya dari bigint -- tanpa pemisah ribuan dan tanpa
+        simbol mata uang, supaya kolomnya dapat dijumlahkan spreadsheet.
+      parameters:
+        - name: type
+          in: query
+          required: true
+          # SENGAJA tanpa `enum`: handler adalah satu-satunya sumber
+          # kebenaran untuk penolakan ini, dan pesannya MENYEBUT pilihan
+          # yang sah. AJV menolak lebih dulu dengan "must be equal to one
+          # of the allowed values" -- benar, tapi tidak dapat
+          # ditindaklanjuti. Pola sama dengan PriceInput.price,
+          # TaxRateInput.rate, dan selectionType.
+          schema: { type: string }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Berkas CSV. `content-disposition` memuat jenis dan rentangnya.
+          content:
+            text/csv:
+              schema: { type: string }
+        '400':
+          description: >-
+            Parameter `type` atau rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
     LaporanKasir:

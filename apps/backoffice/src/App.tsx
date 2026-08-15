@@ -4,7 +4,14 @@ import 'ds/styles.css';
 // SETELAH `ds/styles.css`. Ia memberi jangkar tinggi yang `base.css` design
 // system tidak sediakan — lihat komentar di berkasnya.
 import './backoffice.css';
-import { NAVIGASI, LAYAR_SIAP, cariItem, grupUntuk } from './navigasi.ts';
+import {
+  LAYAR_SIAP,
+  BERANDA_AKUNTAN,
+  cariItem,
+  grupUntuk,
+  hanyaAkuntan,
+  navigasiUntuk,
+} from './navigasi.ts';
 import { PenyediaSesi, useSesi } from './sesi.tsx';
 import { Masuk } from './Masuk.tsx';
 import { Daftar } from './daftar/Daftar.tsx';
@@ -19,6 +26,7 @@ import { PenjualanLayar } from './laporan/Penjualan.tsx';
 import { ProdukLaporanLayar } from './laporan/Produk.tsx';
 import { KasirLaporanLayar } from './laporan/Kasir.tsx';
 import { PembayaranLayar } from './laporan/Pembayaran.tsx';
+import { EksporLayar } from './laporan/Ekspor.tsx';
 import { ProdukLayar } from './katalog/Produk.tsx';
 import { KategoriLayar } from './katalog/Kategori.tsx';
 import { HargaLayar } from './katalog/Harga.tsx';
@@ -126,8 +134,30 @@ function Terlindungi() {
 
   if (!sesi) return <PintuPublik />;
 
-  const item = cariItem(aktif);
-  const grup = grupUntuk(aktif);
+  // ⛔ Penyempitan menu adalah penjaga UX, BUKAN batas keamanan. Yang menahan
+  // Akuntan mengubah apa pun adalah `rbac-rute.ts` di server.
+  const navigasi = navigasiUntuk(sesi.roles);
+
+  // ⛔ Layar aktif DITURUNKAN, bukan disetel sekali saat mount.
+  //
+  // Versi pertama memakai inisialisasi lazy `useState` untuk memilih beranda
+  // akuntan — dan itu berjalan pada render PERTAMA `Terlindungi`, saat `sesi`
+  // masih `null`. Hasilnya selalu `B-01`, dan akuntan mendarat di "Dashboard
+  // belum dibangun" sebagai layar pertamanya. Ditemukan di browser, bukan di
+  // test: nilainya benar untuk setiap peran lain.
+  //
+  // Menurunkannya juga menutup kasus kedua: akuntan yang layar aktifnya
+  // menjadi tersembunyi (mis. setelah perannya berubah) tidak tertinggal di
+  // layar yang menunya sudah tidak memuatnya.
+  const terlihat = new Set(navigasi.flatMap((g) => g.items.map((i) => i.id)));
+  const layar = terlihat.has(aktif)
+    ? aktif
+    : hanyaAkuntan(sesi.roles)
+      ? BERANDA_AKUNTAN
+      : (navigasi[0]?.items[0]?.id ?? 'B-01');
+
+  const item = cariItem(layar);
+  const grup = grupUntuk(layar);
 
   return (
     <AppShell
@@ -136,8 +166,8 @@ function Terlindungi() {
       // `NAVIGASI` sengaja `readonly` — ia data tetap, dan komponen yang
       // menerimanya tidak berhak menyunting peta layar aplikasi. Disalin
       // dangkal di batas ini, bukan dilonggarkan tipenya di sumbernya.
-      nav={NAVIGASI.map((g) => ({ ...g, items: [...g.items] }))}
-      active={aktif}
+      nav={navigasi}
+      active={layar}
       onNavigate={setAktif}
       breadcrumb={grup && item ? [grup, item.label] : undefined}
       user={{
@@ -149,20 +179,21 @@ function Terlindungi() {
       }}
     >
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
-        {aktif === 'B-29' ? <Langganan /> : null}
-        {aktif === 'B-06' ? <ProdukLayar /> : null}
-        {aktif === 'B-08' ? <KategoriLayar /> : null}
-        {aktif === 'B-09' ? <ModifierLayar /> : null}
-        {aktif === 'B-10' ? <HargaLayar /> : null}
-        {aktif === 'B-11' ? <Impor /> : null}
-        {aktif === 'B-16' ? <PenjualanLayar /> : null}
-        {aktif === 'B-17' ? <ProdukLaporanLayar /> : null}
-        {aktif === 'B-18' ? <KasirLaporanLayar /> : null}
-        {aktif === 'B-19' ? <PembayaranLayar /> : null}
-        {aktif === 'B-23' ? <OutletLayar /> : null}
-        {aktif === 'B-25' ? <PajakLayar /> : null}
-        {aktif === 'B-27' ? <PenggunaLayar /> : null}
-        {aktif === 'B-28' ? <PerangkatLayar /> : null}
+        {layar === 'B-29' ? <Langganan /> : null}
+        {layar === 'B-06' ? <ProdukLayar /> : null}
+        {layar === 'B-08' ? <KategoriLayar /> : null}
+        {layar === 'B-09' ? <ModifierLayar /> : null}
+        {layar === 'B-10' ? <HargaLayar /> : null}
+        {layar === 'B-11' ? <Impor /> : null}
+        {layar === 'B-16' ? <PenjualanLayar /> : null}
+        {layar === 'B-17' ? <ProdukLaporanLayar /> : null}
+        {layar === 'B-18' ? <KasirLaporanLayar /> : null}
+        {layar === 'B-19' ? <PembayaranLayar /> : null}
+        {layar === 'B-20' ? <EksporLayar /> : null}
+        {layar === 'B-23' ? <OutletLayar /> : null}
+        {layar === 'B-25' ? <PajakLayar /> : null}
+        {layar === 'B-27' ? <PenggunaLayar /> : null}
+        {layar === 'B-28' ? <PerangkatLayar /> : null}
 
         {item && !LAYAR_SIAP.has(item.id) ? (
           <EmptyState

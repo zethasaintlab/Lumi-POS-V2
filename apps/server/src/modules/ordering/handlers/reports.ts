@@ -7,9 +7,7 @@ import { assertRentang } from './rentang.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import {
   posisiPenjualan,
-  type OrderUntukPosisi,
   type PosisiPenjualan,
-  type RefundUntukPosisi,
 } from '../../../../../../packages/domain/src/posisi-penjualan.ts';
 
 /**
@@ -96,6 +94,45 @@ function keJson(p: PosisiPenjualan) {
   };
 }
 
+/**
+ * Data laporan penjualan. Diekspor supaya `GET /reports/export` memakai
+ * perhitungan yang SAMA — dua jalur yang menghitung sendiri akan menyimpang,
+ * dan CSV yang berbeda dari layar adalah bentuk terburuk perbedaan itu:
+ * merchant membawanya ke akuntannya.
+ */
+export async function ambilPenjualan(
+  client: import('../../../db.ts').PoolClient,
+  { from, to, outletId }: { from: string; to: string; outletId: string | null }
+) {
+  const { rows: orders } = await client.query<BarisOrder>(
+    `SELECT id, status, total, tax_amount, voided_by_order_id
+       FROM "order"
+      WHERE business_date BETWEEN $1 AND $2
+        AND ($3::text IS NULL OR outlet_id = $3)`,
+    [from, to, outletId]
+  );
+  const { rows: refunds } = await client.query<{ order_id: string; amount: string }>(
+    `SELECT r.order_id, r.amount
+       FROM refund r
+       JOIN "order" o ON o.id = r.order_id
+      WHERE o.business_date BETWEEN $1 AND $2
+        AND ($3::text IS NULL OR o.outlet_id = $3)`,
+    [from, to, outletId]
+  );
+  return keJson(
+    posisiPenjualan({
+      orders: orders.map((o) => ({
+        id: o.id,
+        status: o.status,
+        total: o.total,
+        taxAmount: o.tax_amount,
+        voidedByOrderId: o.voided_by_order_id,
+      })),
+      refunds: refunds.map((r) => ({ orderId: r.order_id, amount: r.amount })),
+    })
+  );
+}
+
 export function createReportHandlers(pool: Pool): Record<string, unknown> {
   return {
     async getSalesReport(req: FastifyRequest) {
@@ -114,45 +151,7 @@ export function createReportHandlers(pool: Pool): Record<string, unknown> {
         // nol, id milik sendiri menjawab 200 dengan angka.
         if (outletId !== null) await assertOutletVisible(client, outletId);
 
-        // ⛔ Hanya MENGAMBIL BARIS. Tidak ada agregasi di SQL — lihat catatan
-        // kepala berkas dan `satu-sumber-omzet.test.js`.
-        const { rows: orders } = await client.query<BarisOrder>(
-          `SELECT id, status, total, tax_amount, voided_by_order_id
-             FROM "order"
-            WHERE business_date BETWEEN $1 AND $2
-              AND ($3::text IS NULL OR outlet_id = $3)`,
-          [from, to, outletId]
-        );
-
-        const { rows: refunds } = await client.query<{ order_id: string; amount: string }>(
-          `SELECT r.order_id, r.amount
-             FROM refund r
-             JOIN "order" o ON o.id = r.order_id
-            WHERE o.business_date BETWEEN $1 AND $2
-              AND ($3::text IS NULL OR o.outlet_id = $3)`,
-          [from, to, outletId]
-        );
-
-        // `pg` mengembalikan `bigint` PostgreSQL sebagai STRING, dan
-        // `posisiPenjualan` menerima ketiga bentuk justru karena itu.
-        const untukPosisi: OrderUntukPosisi[] = orders.map((o) => ({
-          id: o.id,
-          status: o.status,
-          total: o.total,
-          taxAmount: o.tax_amount,
-          voidedByOrderId: o.voided_by_order_id,
-        }));
-        const refundUntukPosisi: RefundUntukPosisi[] = refunds.map((r) => ({
-          orderId: r.order_id,
-          amount: r.amount,
-        }));
-
-        return {
-          from,
-          to,
-          outletId,
-          penjualan: keJson(posisiPenjualan({ orders: untukPosisi, refunds: refundUntukPosisi })),
-        };
+        return { from, to, outletId, penjualan: await ambilPenjualan(client, { from, to, outletId }) };
       });
     },
   };

@@ -136,3 +136,19 @@ test('⛔ SETIAP metode yang punya rute ikut di Access-Control-Allow-Methods', a
   // membutuhkannya di daftar.
   assert.ok(diizinkan.has('OPTIONS'));
 });
+
+test('⛔ content-disposition DIEKSPOS ke JavaScript lintas origin', async () => {
+  // Browser hanya menyerahkan tujuh header "safelisted" kepada kode lintas
+  // origin; sisanya dibaca `null` TANPA error. Layar B-20 mengambil nama
+  // berkas CSV dari header ini.
+  //
+  // ⛔ `app.inject()` TIDAK dapat menangkap ini — ia tidak pernah melewati
+  // aturan CORS, dan headernya selalu terlihat. Yang diuji di sini karena itu
+  // bukan keberadaan headernya melainkan IZIN membacanya.
+  const res = await app.inject({ method: 'GET', url: '/health', headers: { origin: ASAL } });
+  const diekspos = String(res.headers['access-control-expose-headers'] ?? '').toLowerCase();
+  assert.ok(
+    diekspos.includes('content-disposition'),
+    `nama berkas unduhan tidak akan terbaca klien: "${diekspos}"`
+  );
+});
