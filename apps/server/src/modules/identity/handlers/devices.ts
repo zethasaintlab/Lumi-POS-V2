@@ -1,9 +1,9 @@
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
-import { getTenantId } from '../../../tenant-context.ts';
+import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertOutletVisible, assertKuota } from '../../tenancy/index.ts';
-import { hitungPerangkat } from '../index.ts';
+import { hitungPerangkat, assertUserVisible, assertBoleh } from '../index.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
@@ -153,6 +153,59 @@ export function createDeviceHandlers(pool: Pool) {
       });
       reply.code(201);
       return toDevice(row);
+    },
+
+    /**
+     * Daftar perangkat untuk layar B-28.
+     *
+     * ⛔ `token_hash` TIDAK ikut. Ia SHA-256 dari secret perangkat, dan layar
+     * hanya perlu tahu APAKAH kredensial sudah diterbitkan — bukan nilainya.
+     * Mengirimkannya berarti menaruh bahan kredensial di tempat yang tidak
+     * membutuhkannya, dan setiap tempat semacam itu adalah tempat ia dapat
+     * bocor.
+     *
+     * ⛔ Perangkat yang DICABUT tetap ikut. Perangkat tidak pernah di-`DELETE`
+     * — `order.device_id` menunjuknya, dan riwayat penjualan harus tetap dapat
+     * menyebut perangkat mana yang membuatnya. Menyembunyikannya membuat
+     * merchant mengira ia hilang, lalu membuat ulang dengan kode yang sama.
+     *
+     * Urutannya deterministik di SQL: aktif dulu, lalu kode. Daftar yang
+     * urutannya berubah tiap muat ulang tidak dapat dibaca — dan urutan yang
+     * tidak dijamin SQL adalah urutan yang tidak dapat diuji fake mana pun
+     * (`CLAUDE.md`, pelajaran F3).
+     */
+    async listDevices(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        // `spec-f:52` menaruh pengelolaan perangkat di luar jangkauan Kasir
+        // dan Akuntan. Dipakai ulang dari matriks, bukan perbandingan nama
+        // peran di sini.
+        await assertBoleh(client, actorId, 'device_revoke', 'mengelola perangkat');
+
+        const { rows } = await client.query<
+          DeviceRow & {
+            last_seen_at: string | null;
+            ada_kredensial: boolean;
+            credentials_expire_at: string | null;
+          }
+        >(
+          `SELECT id, outlet_id, code, name, platform, app_version, revoked_at,
+                  last_seen_at, credentials_expire_at,
+                  (token_hash IS NOT NULL) AS ada_kredensial
+             FROM device
+            ORDER BY (revoked_at IS NOT NULL), code`
+        );
+
+        return rows.map((r) => ({
+          ...toDevice(r),
+          lastSeenAt: r.last_seen_at,
+          adaKredensial: r.ada_kredensial,
+          credentialsExpireAt: r.credentials_expire_at,
+        }));
+      });
     },
 
     async revokeDevice(req: FastifyRequest) {

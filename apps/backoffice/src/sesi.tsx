@@ -23,6 +23,18 @@ import { buatKlien, masuk as mintaLogin, type KlienApi } from './http.ts';
 interface NilaiSesi {
   sesi: Sesi | null;
   api: KlienApi;
+  /**
+   * Alamat server API.
+   *
+   * ⛔ Diekspos supaya layar yang perlu MENYEBUTKANNYA — B-28 memasukkannya
+   * ke kode pemasangan perangkat — memakai nilai yang SAMA dengan yang
+   * dipakai klien HTTP. Versi pertama B-28 memakai
+   * `window.location.origin` sebagai cadangan, dan itu menghasilkan alamat
+   * BACK-OFFICE (port 1422) alih-alih API (port 3000): perangkat kasir yang
+   * dipasang dengan kode itu menembak Vite dev server, dan gejalanya muncul
+   * di outlet sebagai sinkronisasi yang tidak pernah jalan.
+   */
+  baseUrl: string;
   masuk: (kredensial: { tenantId: string; email: string; password: string }) => Promise<void>;
   keluar: () => Promise<void>;
 }
@@ -113,8 +125,8 @@ export function PenyediaSesi({
   }, [api, buangSesi]);
 
   const nilai = useMemo<NilaiSesi>(
-    () => ({ sesi, api, masuk, keluar }),
-    [sesi, api, masuk, keluar]
+    () => ({ sesi, api, baseUrl, masuk, keluar }),
+    [sesi, api, baseUrl, masuk, keluar]
   );
 
   return <KonteksSesi.Provider value={nilai}>{children}</KonteksSesi.Provider>;
