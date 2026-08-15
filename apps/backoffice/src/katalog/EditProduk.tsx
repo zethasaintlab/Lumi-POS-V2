@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
 import { useSesi } from '../sesi.tsx';
 import { GalatHttp } from '../http.ts';
@@ -61,6 +61,53 @@ const VARIAN_KOSONG: FormVariation = {
 
 export function EditProduk({ item, kategori, onKembali, onBerubah }: Props) {
   const { api } = useSesi();
+
+  // ⛔ Dimuat dengan `includeArchived=true`, dan yang terarsip TIDAK disaring.
+  //
+  // `Item.modifierLists` sendiri tidak menyaringnya — kontraknya menyatakan
+  // itu eksplisit: list terarsip "membawa `archivedAt` sendiri, bukan
+  // menghilang dari array". Kalau layar ini menyaringnya, kaitan yang sudah
+  // tidak berlaku menjadi MUSTAHIL DILEPAS: ia tetap terkirim ke perangkat,
+  // dan merchant tidak punya tombol untuk menghapusnya.
+  const [daftarModifier, setDaftarModifier] = useState<
+    { id: string; name: string; archivedAt: string | null }[]
+  >([]);
+  const [pesanKaitan, setPesanKaitan] = useState<string | null>(null);
+
+  useEffect(() => {
+    let batal = false;
+    void (async () => {
+      try {
+        const hasil = await api.minta<{
+          items: { id: string; name: string; archivedAt: string | null }[];
+        }>('/modifier-lists?includeArchived=true');
+        if (!batal) setDaftarModifier(hasil.items);
+      } catch {
+        // Kegagalan memuat daftar modifier TIDAK menjatuhkan layar produk.
+        // Yang hilang hanya kemampuan mengaitkan; nama, kategori, dan varian
+        // tetap dapat disunting.
+      }
+    })();
+    return () => {
+      batal = true;
+    };
+  }, [api]);
+
+  async function ubahKaitan(modifierListId: string, sedangTerkait: boolean) {
+    setPesanKaitan(null);
+    try {
+      const jalur = `/items/${item.id}/modifier-lists/${modifierListId}`;
+      // ⛔ `DELETE` menjawab 204 TANPA SYARAT — ada atau tidak, milik tenant
+      // ini atau bukan. Kontraknya menyebut alasannya: supaya ia tidak menjadi
+      // oracle keberadaan lintas tenant. Jadi "berhasil" di sini tidak
+      // membuktikan kaitannya pernah ada, dan layar memuat ulang alih-alih
+      // menyimpulkan sendiri.
+      await api.minta(jalur, sedangTerkait ? { metode: 'DELETE' } : { metode: 'POST', body: {} });
+      await onBerubah();
+    } catch (err) {
+      setPesanKaitan(err instanceof GalatHttp ? err.message : 'Kaitan modifier tidak dapat diubah.');
+    }
+  }
 
   const [formItem, setFormItem] = useState<FormItem>({
     nama: item.name,
@@ -242,6 +289,47 @@ export function EditProduk({ item, kategori, onKembali, onBerubah }: Props) {
                     </Tombol>
                   ))}
               </div>
+            </div>
+
+            {/* ⛔ Modifier dikaitkan ke ITEM, bukan ke varian.
+                `attachModifierList` ber-URL `/items/{itemId}/modifier-lists/
+                {modifierListId}` — tidak ada variationId di dalamnya sama
+                sekali. Menaruh tombolnya di baris varian akan menjanjikan
+                cakupan yang tidak dimiliki endpointnya: kasir melihat modifier
+                yang sama untuk SETIAP varian produk ini. */}
+            <div className="stack" style={{ gap: 'var(--space-2)' }}>
+              <span className="label">Modifier</span>
+              {daftarModifier.length === 0 ? (
+                <span className="t-caption">
+                  Belum ada daftar modifier. Buat dulu di layar Modifier, lalu kaitkan dari sini.
+                </span>
+              ) : (
+                <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  {daftarModifier.map((m) => {
+                    const terkait = item.modifierLists.some((x) => x.id === m.id);
+                    return (
+                      <Tombol
+                        key={m.id}
+                        varian={terkait ? 'primary' : 'secondary'}
+                        onClick={() => void ubahKaitan(m.id, terkait)}
+                      >
+                        {terkait ? '✓ ' : ''}
+                        {m.name}
+                        {m.archivedAt ? ' (diarsipkan)' : ''}
+                      </Tombol>
+                    );
+                  })}
+                </div>
+              )}
+              <span className="t-caption">
+                Berlaku untuk seluruh varian produk ini — modifier menempel pada produk, bukan pada
+                varian.
+              </span>
+              {pesanKaitan ? (
+                <span className="t-caption" style={{ color: 'var(--danger)' }} role="alert">
+                  {pesanKaitan}
+                </span>
+              ) : null}
             </div>
 
             <div className="row" style={{ gap: 'var(--space-3)' }}>
