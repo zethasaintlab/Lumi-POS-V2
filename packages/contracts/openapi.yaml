@@ -1670,7 +1670,19 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '400':
-          description: Header X-Tenant-Id / X-Actor-Id hilang, atau payload tidak valid
+          description: >-
+            Header X-Tenant-Id / X-Actor-Id hilang, payload tidak valid, atau
+            cakupan peran dilampaui (ROLE_SCOPE_TOO_WIDE).
+
+
+            spec-f:31 dan spec-f:32 memberi Manajer Outlet dan Kasir cakupan
+            "Satu outlet". Lebih dari satu outletId untuk peran itu ditolak
+            SEBELUM transaksi dibuka -- kasir yang terdaftar di dua outlet
+            muncul di layar login kedua tablet dan penjualannya dapat
+            dinisbatkan ke outlet yang tidak pernah ia tempati.
+
+
+            outletId duplikat dihitung SEKALI; `[o1, o1]` adalah satu outlet.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

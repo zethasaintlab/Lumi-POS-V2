@@ -128,6 +128,67 @@ export function bolehkah(peran: readonly string[], operasi: string): boolean {
 }
 
 /**
+ * Terjemahan peran untuk manusia.
+ *
+ * ⛔ Di sini, bukan di layar. Pesan penolakan server menyebut peran mana
+ * (`ROLE_SCOPE_TOO_WIDE`), dan layar B-27 menampilkan pilihan peran — dua
+ * tempat, satu daftar. Terjemahan yang disalin akan menyimpang, dan yang
+ * menyimpang menghasilkan layar yang menyebut "Manajer Outlet" sementara
+ * penolakannya menyebut sesuatu yang lain.
+ */
+export const LABEL_PERAN: Readonly<Record<Peran, string>> = {
+  owner: 'Owner',
+  area_manager: 'Manajer Area',
+  outlet_manager: 'Manajer Outlet',
+  cashier: 'Kasir',
+  accountant: 'Akuntan',
+};
+
+/**
+ * Cakupan peran — kolom "Cakupan" di tabel `spec-f:27-33`, diturunkan apa
+ * adanya:
+ *
+ * | Peran | Cakupan |
+ * |---|---|
+ * | Owner | Tenant |
+ * | Akuntan | Tenant, read-only |
+ * | Manajer Area | **Beberapa** outlet |
+ * | Manajer Outlet | **Satu** outlet |
+ * | Kasir | **Satu** outlet |
+ */
+export const CAKUPAN_TENANT: ReadonlySet<string> = new Set<Peran>(['owner', 'accountant']);
+export const CAKUPAN_SATU_OUTLET: ReadonlySet<string> = new Set<Peran>([
+  'outlet_manager',
+  'cashier',
+]);
+
+/**
+ * Peran pertama yang cakupannya dilampaui, atau `null`.
+ *
+ * ⛔ Batasnya nyata, bukan formalitas. Kasir yang terdaftar di dua outlet
+ * muncul di layar login KEDUA tablet, dan penjualannya dapat dinisbatkan ke
+ * outlet yang tidak pernah ia tempati — laporan per outlet dan per kasir
+ * keduanya jadi salah tanpa satu pun error. Manajer Outlet bercakupan dua
+ * outlet menyetujui refund di outlet yang bukan tanggung jawabnya, dan
+ * pemisahan tugas `spec-f:91` runtuh tanpa aturan apa pun terlihat dilanggar.
+ *
+ * ⛔ `jumlahOutlet` harus jumlah outlet UNIK. `['o1','o1']` adalah satu
+ * outlet, dan handler sendiri mem-`Set`-kannya sebelum menulis — penjaga yang
+ * menghitung panjang array mentah menolak permintaan yang sah.
+ *
+ * Mengembalikan peran, bukan boolean, supaya pemanggil dapat MENYEBUTNYA.
+ * Penolakan yang hanya berkata "tidak boleh" membuat pemanggil menebak batas
+ * mana yang kena.
+ */
+export function peranMelebihiCakupan(
+  peran: readonly string[],
+  jumlahOutlet: number
+): string | null {
+  if (jumlahOutlet <= 1) return null;
+  return peran.find((p) => CAKUPAN_SATU_OUTLET.has(p)) ?? null;
+}
+
+/**
  * Sel bersyarat `spec-f:50`: Manajer Outlet mengelola **kasir saja**.
  *
  * Batasnya nyata, bukan formalitas: manajer outlet yang dapat membuat manajer

@@ -5,6 +5,7 @@ import { GalatHttp } from '../http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
 import { buatMuatanPengguna, periksaPinBaru, type FormPengguna } from './muatan.ts';
+import { LABEL_PERAN, type Peran } from '../../../../packages/domain/src/rbac.ts';
 
 /**
  * B-27 — Pengguna & Peran (`IA:§3.3`, akses minimum Manajer Outlet).
@@ -56,23 +57,13 @@ interface Outlet {
 type Keadaan = { jenis: 'memuat' } | { jenis: 'siap' } | { jenis: 'galat'; pesan: string };
 
 /**
- * Label peran.
+ * Urutan tampil: dari yang paling sering dibuat.
  *
- * ⛔ Nilainya dari `PERAN_DIKENAL` (`packages/domain/src/rbac.ts`), yang harus
- * sama persis dengan CHECK di migrasi 0003. Yang ditambahkan di sini hanya
- * terjemahannya — dan `spec-f:83` menuntut "penambahan peran baru tidak
- * memerlukan perubahan di layar kasir", bukan di sini: layar INI justru satu-
- * satunya tempat peran dipilih manusia.
+ * ⛔ Terjemahannya (`LABEL_PERAN`) datang dari `packages/domain/src/rbac.ts`,
+ * bukan ditulis di sini — pesan penolakan server menyebut peran yang sama
+ * (`ROLE_SCOPE_TOO_WIDE`), dan layar yang menyebut "Manajer Outlet" sementara
+ * penolakannya menyebut sesuatu yang lain adalah dua daftar yang menyimpang.
  */
-const LABEL_PERAN: Readonly<Record<string, string>> = {
-  owner: 'Owner',
-  area_manager: 'Manajer Area',
-  outlet_manager: 'Manajer Outlet',
-  cashier: 'Kasir',
-  accountant: 'Akuntan',
-};
-
-/** Urutan tampil: dari yang paling sering dibuat. */
 const URUTAN_PERAN = ['cashier', 'outlet_manager', 'area_manager', 'accountant', 'owner'];
 
 const FORM_KOSONG: FormPengguna = {
@@ -351,7 +342,7 @@ export function PenggunaLayar() {
                     varian={form.peran === p ? 'primary' : 'secondary'}
                     onClick={() => ubah('peran')(p)}
                   >
-                    {LABEL_PERAN[p]}
+                    {LABEL_PERAN[p as Peran]}
                   </Tombol>
                 ))}
               </div>
@@ -445,7 +436,7 @@ export function PenggunaLayar() {
                     {p.email ? <span className="t-caption">{p.email}</span> : null}
                   </div>
                 ),
-                peran: p.roles.length === 0 ? '—' : [...new Set(p.roles)].map((r) => LABEL_PERAN[r] ?? r).join(', '),
+                peran: p.roles.length === 0 ? '—' : [...new Set(p.roles)].map((r) => LABEL_PERAN[r as Peran] ?? r).join(', '),
                 outlet: p.outletIds.length === 0 ? '—' : p.outletIds.map(namaOutlet).join(', '),
                 // ⛔ Status membawa teks, tidak pernah warna saja (aturan DS #5).
                 status: !p.isActive ? (

@@ -13,7 +13,12 @@ import {
   isValidPinShape,
   type PinHasher,
 } from '../../../../../../packages/domain/src/pin.ts';
-import { bolehKelolaPengguna } from '../../../../../../packages/domain/src/rbac.ts';
+import {
+  bolehKelolaPengguna,
+  peranMelebihiCakupan,
+  LABEL_PERAN,
+  type Peran,
+} from '../../../../../../packages/domain/src/rbac.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 
 // §4 PLAN-modul-f-identitas.md -- REST identitas (FR-F2, FR-F4, FR-F6).
@@ -227,6 +232,39 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
         outletIds: string[];
       };
 
+      // ⛔ Outlet UNIK, dan dihitung SEKALI di sini.
+      //
+      // Penulisan di bawah juga mem-`Set`-kannya. Kalau penjaga cakupan
+      // menghitung panjang array mentah sementara penulisan menghitung yang
+      // unik, `['o1','o1']` ditolak sebagai "dua outlet" — permintaan sah yang
+      // gagal karena klien mengirim id yang sama dua kali.
+      const outletUnik = [...new Set(body.outletIds ?? [])];
+
+      // ⛔ DI LUAR transaksi, sebelum satu query pun jalan.
+      //
+      // `spec-f:31` dan `spec-f:32` memberi Manajer Outlet dan Kasir cakupan
+      // "Satu outlet". Layar B-27 sudah menolaknya, dan itu TIDAK CUKUP:
+      // penjaga yang hanya hidup di klien hilang begitu ada yang memanggil API
+      // langsung — dan permukaan ini dipakai Manajer Outlet, bukan hanya
+      // owner.
+      //
+      // Akibat kalau lolos: kasir muncul di layar login DUA tablet dan
+      // penjualannya dapat dinisbatkan ke outlet yang tidak pernah ia
+      // tempati; manajer outlet menyetujui refund di outlet yang bukan
+      // tanggung jawabnya. Keduanya tidak menghasilkan error di mana pun.
+      const terlaluLuas = peranMelebihiCakupan(
+        body.roles.map((r) => r.role),
+        outletUnik.length
+      );
+      if (terlaluLuas) {
+        throw new HttpError(
+          400,
+          'ROLE_SCOPE_TOO_WIDE',
+          `Peran ${LABEL_PERAN[terlaluLuas as Peran] ?? terlaluLuas} bercakupan satu outlet. ` +
+            'Pilih satu outlet, atau pakai peran Manajer Area untuk beberapa outlet.'
+        );
+      }
+
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         await assertBolehKelola(client, actorId, body.roles.map((r) => r.role));
 
@@ -237,7 +275,7 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
         // FK klien-suplai ke tabel ber-tenant_id. Temuan F1 (CLAUDE.md),
         // bentuk keenam: FK PostgreSQL tidak tunduk RLS, jadi ia hanya
         // membuktikan outlet itu ada di SUATU tenant.
-        for (const outletId of new Set(body.outletIds)) {
+        for (const outletId of outletUnik) {
           await assertOutletVisible(client, outletId);
         }
 
@@ -262,7 +300,7 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
           );
         }
 
-        for (const outletId of new Set(body.outletIds)) {
+        for (const outletId of outletUnik) {
           await client.query(
             `INSERT INTO user_outlet (id, tenant_id, user_id, outlet_id) VALUES ($1, $2, $3, $4)`,
             [randomUUID(), tenantId, body.id, outletId]

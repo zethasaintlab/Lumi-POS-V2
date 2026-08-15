@@ -1,4 +1,9 @@
-import { PERAN_DIKENAL, type Peran } from '../../../../packages/domain/src/rbac.ts';
+import {
+  PERAN_DIKENAL,
+  CAKUPAN_TENANT,
+  peranMelebihiCakupan,
+  type Peran,
+} from '../../../../packages/domain/src/rbac.ts';
 import { detectWeakPin, isValidPinShape } from '../../../../packages/domain/src/pin.ts';
 
 /**
@@ -22,11 +27,16 @@ import { detectWeakPin, isValidPinShape } from '../../../../packages/domain/src/
  * menghasilkan baris yang terbaca lebih sempit daripada haknya. `user_role`
  * adalah tempat pertama yang dibaca orang saat menjawab "kenapa dia bisa".
  *
- * ## ⛔ "Satu outlet" ditegakkan DI SINI, dan server tidak menegakkannya
+ * ## "Satu outlet" ditegakkan DI KEDUA SISI
  *
- * `POST /users` menerima berapa pun outlet untuk peran apa pun. Penjaga di
- * bawah karena itu penjaga UI, bukan batas keamanan — dinyatakan begitu supaya
- * tidak ada yang menyimpulkan sebaliknya dari keberadaannya.
+ * `POST /users` menolaknya dengan `400 ROLE_SCOPE_TOO_WIDE`, dan aturannya
+ * fungsi yang SAMA — `peranMelebihiCakupan` di `packages/domain/src/rbac.ts`.
+ *
+ * Yang di sini karena itu bukan batas keamanan (batasnya di server) melainkan
+ * penghapus perjalanan pulang-pergi: kesalahan yang dapat dilihat tanpa
+ * bertanya tidak perlu ditanyakan. Yang penting keduanya tidak dapat
+ * menyimpang — versi pertama berkas ini memegang salinan `SATU_OUTLET`
+ * sendiri, dan salinan itulah yang akan tertinggal saat cakupan peran berubah.
  */
 
 export interface FormPengguna {
@@ -62,12 +72,6 @@ export type HasilMuatanPengguna =
   | { ok: true; muatan: MuatanPengguna }
   | { ok: false; bidang: keyof FormPengguna; pesan: string };
 
-/** `spec-f:29` dan `spec-f:33` — dua peran yang cakupannya "Tenant". */
-const CAKUPAN_TENANT: ReadonlySet<string> = new Set(['owner', 'accountant']);
-
-/** `spec-f:31` dan `spec-f:32` — dua peran yang cakupannya "Satu outlet". */
-const SATU_OUTLET: ReadonlySet<string> = new Set(['outlet_manager', 'cashier']);
-
 export function buatMuatanPengguna(
   form: FormPengguna,
   konteks: KonteksPengguna
@@ -99,7 +103,7 @@ export function buatMuatanPengguna(
     };
   }
 
-  if (SATU_OUTLET.has(form.peran) && outletIds.length > 1) {
+  if (peranMelebihiCakupan([form.peran], outletIds.length)) {
     return {
       ok: false,
       bidang: 'outletIds',
