@@ -130,6 +130,8 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-11',
   'B-16',
   'B-17',
+  'B-18',
+  'B-19',
   'B-23',
   'B-25',
   'B-27',

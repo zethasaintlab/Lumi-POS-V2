@@ -59,7 +59,7 @@ let seq = 0;
  * `baris` = [{ itemName, variationName, unitPrice, qty }] dengan qty dalam
  * satuan utuh (dikali 1000 di sini, sesuai konvensi kuantitas).
  */
-function jual(db, { id, baris, metode = 'cash', jam = '10', taxAmount = 0, businessDate = TANGGAL }) {
+function jual(db, { id, baris, metode = 'cash', jam = '10', taxAmount = 0, businessDate = TANGGAL, statusBayar = 'confirmed' }) {
   const s = db.sqlite;
   seq += 1;
   const total = baris.reduce((t, b) => t + b.unitPrice * b.qty, 0);
@@ -84,7 +84,7 @@ function jual(db, { id, baris, metode = 'cash', jam = '10', taxAmount = 0, busin
   });
   s.exec(`
     INSERT INTO payment (id, order_id, check_id, method, amount, status, tendered_at)
-    VALUES ('pay-${id}','${id}','chk-${id}','${metode}',${total},'confirmed','${businessDate}T${jam}:00:00Z')
+    VALUES ('pay-${id}','${id}','chk-${id}','${metode}',${total},'${statusBayar}','${businessDate}T${jam}:00:00Z')
   `);
   return total;
 }
@@ -318,4 +318,35 @@ test('⛔ baris order yang DIBATALKAN tidak muncul di laporan per produk', async
     produk.baris.reduce((t, b) => t + b.omzet, 0n),
     harian.penjualan.omzetKotor
   );
+});
+
+// ---------------------------------------------------------------------------
+// ⛔ Status pembayaran
+// ---------------------------------------------------------------------------
+
+test('⛔ payment pending dan failed TIDAK dihitung di ringkasan per metode', async () => {
+  // `spec-c:223` — hanya `confirmed` yang boleh dianggap uang masuk.
+  //
+  // Cacat yang ini perbaiki: `harian.ts` tidak menyaring status sama sekali,
+  // jadi QRIS dinamis yang masih `pending_confirmation` dan payment `failed`
+  // ikut terjumlahkan. Laporan di tablet menampilkan uang masuk LEBIH BESAR
+  // daripada back-office, dan selisihnya muncul saat rekonsiliasi sebagai uang
+  // yang seolah hilang di tangan kasir.
+  //
+  // 272 test kasir hijau tanpa satu pun menyentuh status payment — itulah
+  // kenapa cacatnya tidak terlihat.
+  const db = dbSungguhan();
+  jual(db, { id: 'o-lunas', baris: [{ ...KOPI, unitPrice: 25000, qty: 1 }], metode: 'cash' });
+  jual(db, { id: 'o-pending', baris: [{ ...ROTI, unitPrice: 90000, qty: 1 }], metode: 'qris_dynamic', statusBayar: 'pending_confirmation' });
+  jual(db, { id: 'o-gagal', baris: [{ ...KOPI, unitPrice: 80000, qty: 1 }], metode: 'card_edc', statusBayar: 'failed' });
+
+  const { laporanHarian } = await import(MOD);
+  const hasil = await laporanHarian(db, { businessDate: TANGGAL });
+
+  assert.deepEqual(
+    hasil.perMetode.map((m) => m.metode),
+    ['cash'],
+    'metode dengan payment belum/tidak terkonfirmasi ikut dilaporkan'
+  );
+  assert.equal(hasil.perMetode[0].total, 25000n);
 });
