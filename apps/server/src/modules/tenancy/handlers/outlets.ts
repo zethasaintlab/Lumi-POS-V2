@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool, PoolClient } from '../../../db.ts';
+import type { Pool } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertUserVisible, assertBoleh } from '../../identity/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
-import { assertKuota } from '../kuota.ts';
+import { assertKuota, hitungOutlet } from '../kuota.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
@@ -38,21 +38,6 @@ interface BodyOutlet {
 
 /** `0002_tenancy.sql` — CHECK (timezone IN (…)). */
 const ZONA_SAH = new Set(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']);
-
-/**
- * Outlet yang diarsipkan TIDAK dihitung.
- *
- * Merchant yang menutup cabang harus mendapatkan kembali slotnya; kalau
- * tidak, kuota menjadi penghitung seumur hidup dan bukan batas kapasitas —
- * dan tidak ada cara memulihkannya, karena katalog dan outlet tidak pernah
- * di-`DELETE` (invariant #2).
- */
-async function hitungOutlet(client: PoolClient): Promise<number> {
-  const { rows } = await client.query<{ n: string }>(
-    'SELECT count(*) AS n FROM outlet WHERE archived_at IS NULL'
-  );
-  return Number(rows[0].n);
-}
 
 export function createOutletHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {

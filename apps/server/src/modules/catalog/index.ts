@@ -24,6 +24,15 @@ export type { VariationSnapshotRow } from './handlers/items.ts';
 // (invariant #4); lihat komentar di handlers/items.ts.
 export { findInvisibleItemIds, findInvisibleCategoryIds } from './handlers/items.ts';
 
+// Pemakaian kuota `max_products`. Diekspor karena layar B-29 "Langganan &
+// Batas" harus MENAMPILKAN angka yang sama persis dengan yang DITEGAKKAN
+// `POST /items` dan `POST /catalog/import`.
+//
+// ⛔ Dua salinan query ini akan menyimpang tepat pada aturan arsip, dan
+// gejalanya adalah gejala terburuk yang mungkin: merchant melihat "12 dari
+// 200" lalu ditolak karena kuota penuh. Satu fungsi, tiga pemanggil.
+export { hitungProduk } from './handlers/items.ts';
+
 export function createCatalogHandlers(pool: Pool): Record<string, unknown> {
   return {
     ...createCategoryHandlers(pool),

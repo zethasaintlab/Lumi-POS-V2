@@ -136,6 +136,64 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /tenants/usage:
+    get:
+      operationId: getTenantUsage
+      summary: >-
+        Pemakaian nyata versus kuota. Data untuk layar B-29 "Langganan &
+        Batas" (IA:169).
+      description: >-
+        `research/09` § "Implikasi untuk IA": peringatan kuota mendekati batas
+        harus muncul di dashboard owner, BUKAN hanya saat operasi ditolak.
+
+
+        ⛔ Setiap angka `terpakai` dihitung fungsi yang SAMA PERSIS dengan
+        yang dipakai titik penegakannya. Salinan query akan menyimpang pada
+        aturan arsip, dan gejalanya adalah merchant yang melihat "12 dari 200"
+        lalu ditolak karena kuota penuh.
+
+
+        Owner-only: `spec-f:52` menandai "Billing & langganan" hanya untuk
+        Owner.
+      responses:
+        '200':
+          description: Pemakaian dan batas per dimensi kuota.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan, status, kuota]
+                properties:
+                  plan:
+                    type: string
+                    enum: [free, standard, pro, enterprise]
+                  status:
+                    type: string
+                    enum: [active, suspended, cancelled]
+                  kuota:
+                    type: object
+                    description: >-
+                      Satu entri per dimensi di `DIMENSI_KUOTA`. Nama
+                      dimensinya sengaja SAMA dengan yang dipakai penegakan,
+                      supaya layar dan server tidak punya dua kosakata.
+                      `batas: null` berarti tanpa batas -- bukan nol, dan
+                      bukan angka besar.
+                    properties:
+                      outlet: { $ref: '#/components/schemas/PemakaianKuota' }
+                      device: { $ref: '#/components/schemas/PemakaianKuota' }
+                      pengguna: { $ref: '#/components/schemas/PemakaianKuota' }
+                      produk: { $ref: '#/components/schemas/PemakaianKuota' }
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /outlets:
     post:
       operationId: createOutlet
@@ -3103,6 +3161,21 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OrderLine'
+    PemakaianKuota:
+      type: object
+      required: [terpakai, batas]
+      properties:
+        terpakai:
+          type: integer
+          description: >-
+            Jumlah yang sudah dipakai SEKARANG, dengan aturan arsip milik
+            modul pemilik tabelnya: produk & outlet mengecualikan yang
+            diarsipkan, pengguna mengecualikan yang nonaktif, device
+            mengecualikan yang dicabut.
+        batas:
+          type: integer
+          nullable: true
+          description: '`null` = tanpa batas.'
     Error:
       type: object
       required: [error]

@@ -8,6 +8,22 @@ import { periksaKuota, type DimensiKuota } from '../../../../../packages/domain/
 // (`handlers/outlets.ts`) dapat memakainya tanpa impor melingkar — dan
 // `index.ts` tetap satu-satunya permukaan publik bagi modul lain.
 /**
+ * Pemakaian kuota `max_outlets` — satu-satunya dimensi yang tabelnya milik
+ * modul ini.
+ *
+ * ⛔ Outlet yang DIARSIPKAN tidak dihitung. Merchant yang menutup cabang
+ * harus mendapatkan kembali slotnya; kalau tidak, kuota menjadi penghitung
+ * seumur hidup dan bukan batas kapasitas — dan tidak ada cara memulihkannya,
+ * karena outlet tidak pernah di-`DELETE` (invariant #2).
+ */
+export async function hitungOutlet(client: PoolClient): Promise<number> {
+  const { rows } = await client.query<{ n: string }>(
+    'SELECT count(*) AS n FROM outlet WHERE archived_at IS NULL'
+  );
+  return Number(rows[0].n);
+}
+
+/**
  * Batas kuota tenant — `research/09` § 6.
  *
  * ## ⛔ Satu-satunya query di repo ini yang `WHERE`-nya WAJIB, bukan gaya

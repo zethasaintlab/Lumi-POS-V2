@@ -1,0 +1,32 @@
+/* Pelabuhan tinggi untuk `AppShell`.
+ *
+ * ⛔ `.shell { height: 100% }` (`ds-bundle/components.css:100`) tidak punya
+ * jangkar: `ds-bundle/base.css` tidak pernah memberi tinggi kepada `html`,
+ * `body`, maupun host aplikasi. Tanpa baris di bawah, `100%` diselesaikan
+ * terhadap `body` yang tingginya mengikuti isi — jadi seluruh halaman
+ * memanjang setinggi sidebar (terukur 1442px pada viewport 800px), dan
+ * `overflow-y: auto` pada `.shell-nav` tidak pernah menyala. Sidebar-lah yang
+ * mendorong halaman, bukan sebaliknya.
+ *
+ * `AppShell` tidak pernah dipakai siapa pun sejak F0, jadi tidak ada yang
+ * menabraknya sampai sekarang. Ditemukan dengan menjalankannya di browser,
+ * bukan dengan membacanya — DOM-nya benar dan tidak ada satu pun error di
+ * konsol.
+ *
+ * `apps/kasir/src/kasir.css` menyelesaikan hal yang sama dengan `height:
+ * 100vh` pada shell-nya sendiri. Di sini jangkarnya dipasang pada host,
+ * supaya `height: 100%` milik design system bekerja seperti yang dimaksudkan
+ * alih-alih ditimpa.
+ *
+ * Ini plumbing tata letak, bukan nilai desain: tidak ada warna, tidak ada
+ * ukuran dari skala spasi, tidak ada tipografi. Aturan #6 tidak dilanggar.
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}

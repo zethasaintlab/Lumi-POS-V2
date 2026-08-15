@@ -4,11 +4,12 @@ import { parseRateToScaled } from '../../../../../packages/domain/src/numeric.ts
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createRegisterHandlers } from './handlers/register.ts';
 import { createOutletHandlers } from './handlers/outlets.ts';
+import { createUsageHandlers } from './handlers/usage.ts';
 
 // Penegakan kuota. Implementasinya di `./kuota.ts` supaya handler di dalam
 // modul ini dapat memakainya tanpa impor melingkar; ia tetap keluar lewat
 // `index.ts` karena itulah satu-satunya permukaan publik bagi modul lain.
-export { batasKuota, assertKuota } from './kuota.ts';
+export { batasKuota, assertKuota, hitungOutlet } from './kuota.ts';
 
 // Permukaan publik modul tenancy (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul catalog DILARANG query `outlet`
@@ -92,5 +93,6 @@ export function createTenancyHandlers(pool: Pool, hlc: Hlc): Record<string, unkn
   return {
     ...createRegisterHandlers(pool, hlc),
     ...createOutletHandlers(pool, hlc),
+    ...createUsageHandlers(pool),
   };
 }

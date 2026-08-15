@@ -120,6 +120,40 @@ export async function assertBoleh(
 }
 
 /**
+ * Pemakaian kuota `max_users`.
+ *
+ * ⛔ Pengguna NONAKTIF tidak dihitung. Baris `"user"` tidak pernah dihapus —
+ * menghapusnya memutus atribusi setiap audit event yang menunjuknya — jadi
+ * menghitung seluruh baris membuat kuota menjadi penghitung seumur hidup yang
+ * tidak dapat dipulihkan dengan cara apa pun yang tersedia bagi merchant.
+ *
+ * Satu fungsi, dua pemanggil: penegakan di `POST /users` dan tampilan di
+ * `GET /tenants/usage`. Dua salinan akan menyimpang, dan gejalanya adalah
+ * merchant yang melihat "1 dari 3" lalu ditolak karena kuota penuh.
+ */
+export async function hitungPengguna(client: PoolClient): Promise<number> {
+  const { rows } = await client.query<{ n: string }>(
+    'SELECT count(*) AS n FROM "user" WHERE is_active = true'
+  );
+  return Number(rows[0].n);
+}
+
+/**
+ * Pemakaian kuota `max_devices`.
+ *
+ * ⛔ Perangkat yang sudah DICABUT tidak dihitung. `research/09` § 6 menulis
+ * "jumlah device AKTIF", dan perilaku yang ditetapkannya saat kuota penuh
+ * adalah "tolak; tawarkan mencabut device lama" — tawaran yang tidak
+ * menyelesaikan apa pun kalau yang dicabut tetap dihitung.
+ */
+export async function hitungPerangkat(client: PoolClient): Promise<number> {
+  const { rows } = await client.query<{ n: string }>(
+    'SELECT count(*) AS n FROM device WHERE revoked_at IS NULL'
+  );
+  return Number(rows[0].n);
+}
+
+/**
  * Membuat pengguna owner PERTAMA sebuah tenant — dipakai pendaftaran mandiri
  * (`POST /tenants`, modul tenancy).
  *

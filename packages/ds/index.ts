@@ -9,6 +9,11 @@ export { Button } from '../../ds-bundle/components/forms/Button.jsx';
 export { Chip } from '../../ds-bundle/components/forms/Chip.jsx';
 export { Field } from '../../ds-bundle/components/forms/Field.jsx';
 export { Icon, iconNames } from '../../ds-bundle/components/forms/Icon.jsx';
+// Tipe nama ikon ikut keluar lewat permukaan publik. Tanpa ini, konsumen
+// yang ingin mengetik datanya (mis. peta menu back-office) harus mengimpor
+// internal ds-bundle — dan penjaga `no-restricted-imports` melarangnya,
+// dengan benar.
+export type { IconName } from '../../ds-bundle/components/forms/Icon';
 export { SegmentedControl } from '../../ds-bundle/components/forms/SegmentedControl.jsx';
 export { Stepper } from '../../ds-bundle/components/forms/Stepper.jsx';
 export { Switch } from '../../ds-bundle/components/forms/Switch.jsx';

@@ -103,6 +103,9 @@ jobs:
       # Web Worker, writeTransaction PowerSync, watch() -- dijalankan lewat
       # harness browser (`apps/kasir/harness.html`), manual, seperti prototipe.
       - run: npm run test:kasir
+      # Sidebar back-office diperiksa terhadap tabel layar di IA §3.3. Tanpa
+      # database, sekelas test:kasir.
+      - run: npm run test:backoffice
 
       - run: npm run db:bootstrap
       - run: npm run db:migrate

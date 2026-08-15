@@ -14,7 +14,7 @@
     "node": ">=24.7"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client && tsc --noEmit --project apps/kasir",
+    "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client && tsc --noEmit --project apps/kasir && tsc --noEmit --project apps/backoffice",
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
@@ -33,7 +33,8 @@
     "test:sync-client": "node --test \"tests/sync-client/*.test.js\"",
     "test:kasir": "node --experimental-strip-types --test \"tests/kasir/*.test.js\"",
     "test:identity": "node --env-file=.env --test --test-concurrency=1 \"tests/identity/*.test.js\"",
-    "test:tenancy": "node --env-file=.env --test --test-concurrency=1 \"tests/tenancy/*.test.js\""
+    "test:tenancy": "node --env-file=.env --test --test-concurrency=1 \"tests/tenancy/*.test.js\"",
+    "test:backoffice": "node --experimental-strip-types --test \"tests/backoffice/*.test.js\""
   },
   "dependencies": {
     "hash-wasm": "^4.12.0",
