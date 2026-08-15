@@ -268,7 +268,7 @@ data, dan cetak ulang FR-B11.
 | Adapter Network (TCP 9100), Tauri/Rust, WebUSB | `ARCH:235`: WebUSB gagal di Windows, jadi jalur universalnya Rust atau printer network. Keduanya menuntut shell Tauri, yang belum ada |
 | Tombol cetak ulang di K-09 | `cetakUlangStruk` siap dan teruji; tombolnya belum ada di layar detail transaksi |
 | Retry antrean `print_job` | Tabel dan dokumen tersimpan; penjadwal retry belum ditulis. Sampai ada, cetak yang gagal harus diulang manual lewat K-09 |
-| Nama tarif pajak di cetak ulang | Baris pajak berbunyi "Pajak" tanpa nama tarif — meresolusinya menuntut query ke `tax_rate`, yang `spec-b:145` larang. Jalan keluarnya menyalin nama tarif ke `order_line` saat penjualan: **migrasi kecil, keputusan pemilik produk** |
+| Nama tarif pajak di cetak ulang | Baris pajak berbunyi "Pajak" tanpa nama tarif — meresolusinya menuntut query ke `tax_rate`, yang `spec-b:145` larang. **DIPUTUSKAN 15 Agustus 2026: denormalisasi di F5** — nama tarif disalin ke `order_line` saat checkout. Larangan query katalog tidak dilonggarkan; yang berubah adalah apa yang tersimpan sebagai snapshot. Struk adalah rekaman historis, dan snapshot-nya harus lengkap sejak ditulis |
 | Endpoint REST `sold_out_flag` + relay (dari F3) | Penandaan habis masih lokal saja |
 | Notifikasi manajer untuk oversell (dari F3) | `spec-e:195` menuntut lebih dari entri laporan |
 | Laporan back-office B-16/B-17 (dari F3) | Fungsinya ada dan teruji, tanpa layar. `IA:195-197` menempatkannya di back-office |
