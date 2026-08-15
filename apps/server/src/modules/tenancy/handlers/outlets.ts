@@ -41,6 +41,51 @@ const ZONA_SAH = new Set(['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura']);
 
 export function createOutletHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
+    /**
+     * Daftar outlet — dibutuhkan setiap layar yang harus MEMILIH outlet, dan
+     * B-28 adalah yang pertama.
+     *
+     * Tanpa ini, layar hanya dapat meminta `outletId` sebagai teks — dan
+     * merchant tidak menghafal UUID outletnya, persis masalah yang sama
+     * dengan field "ID Tenant" di layar masuk.
+     *
+     * ⛔ Outlet yang DIARSIPKAN ikut, dengan `archivedAt` terisi. Riwayat
+     * penjualan menunjuknya (`order.outlet_id`), jadi ia tidak pernah
+     * benar-benar hilang; menyembunyikannya membuat laporan lama menyebut
+     * outlet yang tidak dapat ditemukan di mana pun.
+     *
+     * TIDAK ber-RBAC, dan itu disengaja: nama outlet bukan informasi
+     * komersial, dan setiap peran yang dapat masuk back-office bekerja di
+     * salah satunya. Yang membatasi APA yang dapat dilakukan di outlet itu
+     * adalah penjaga di endpointnya masing-masing.
+     */
+    async listOutlets(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        const { rows } = await client.query<{
+          id: string;
+          name: string;
+          timezone: string;
+          address: string | null;
+          archived_at: string | null;
+        }>(
+          `SELECT id, name, timezone, address, archived_at
+             FROM outlet
+            ORDER BY (archived_at IS NOT NULL), name`
+        );
+        return rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          timezone: r.timezone,
+          address: r.address,
+          archivedAt: r.archived_at,
+        }));
+      });
+    },
+
     async createOutlet(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);

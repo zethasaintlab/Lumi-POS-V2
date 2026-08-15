@@ -10,6 +10,7 @@ import { Masuk } from './Masuk.tsx';
 import { Tombol } from './Tombol.tsx';
 import { Langganan } from './langganan/Langganan.tsx';
 import { Impor } from './impor/Impor.tsx';
+import { PerangkatLayar } from './perangkat/Perangkat.tsx';
 
 /**
  * Kerangka back-office. Nol layar fitur — sama seperti `PLAN-pondasi-kasir`
@@ -97,6 +98,7 @@ function Terlindungi() {
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
         {aktif === 'B-29' ? <Langganan /> : null}
         {aktif === 'B-11' ? <Impor /> : null}
+        {aktif === 'B-28' ? <PerangkatLayar /> : null}
 
         {item && !LAYAR_SIAP.has(item.id) ? (
           <EmptyState

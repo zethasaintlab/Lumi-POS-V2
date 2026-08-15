@@ -195,6 +195,33 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
 
   /outlets:
+    get:
+      operationId: listOutlets
+      summary: Daftar outlet tenant ini. Dipakai B-28 dan setiap layar yang memilih outlet.
+      description: >-
+        Outlet yang DIARSIPKAN ikut, dengan archivedAt terisi -- riwayat
+        penjualan menunjuknya, jadi ia tidak pernah benar-benar hilang.
+      responses:
+        '200':
+          description: Daftar outlet, aktif lebih dulu lalu urut nama.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, timezone, archivedAt]
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    timezone: { type: string }
+                    address: { type: string, nullable: true }
+                    archivedAt: { type: string, nullable: true }
+        '404':
+          description: Aktor tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     post:
       operationId: createOutlet
       summary: >-
