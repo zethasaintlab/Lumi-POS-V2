@@ -5,26 +5,28 @@
  * dengan waktu, keacakan, dan I/O di-inject"). Yang di sini dapat diuji di
  * `node --test` tanpa browser sama sekali.
  *
- * ## ⛔ Apa yang token ini SEBENARNYA lakukan hari ini
+ * ## Apa yang token ini lakukan
  *
  * `POST /auth/login` menerbitkan token 32 byte acak, menyimpan SHA-256-nya di
  * `user_session`, dan memberi `expiresAt` 12 jam (`spec-f:176`).
  *
- * Tapi **tidak satu pun endpoint lain memverifikasinya.** Baris
- * `user_session` ditulis oleh login dan dihapus oleh logout; tidak ada kode
- * yang membacanya untuk mengotorisasi permintaan. Setiap endpoint back-office
- * mengotorisasi lewat `X-Actor-Id` + `assertUserVisible` + `assertBoleh` —
- * header biasa berisi id pengguna, bukan bukti kepemilikan.
+ * Sejak `apps/server/src/sesi.ts` ada, token itu **diverifikasi server pada
+ * setiap permintaan ke permukaan back-office**: middleware `preHandler`
+ * mencari barisnya, menolak yang kedaluwarsa atau milik pengguna nonaktif,
+ * lalu menetapkan tenant dan aktor DARI BARIS ITU. `X-Actor-Id` yang dikirim
+ * klien tidak pernah dibaca di rute terlindungi.
  *
- * Konsekuensi yang harus dibaca apa adanya: **penjaga rute di aplikasi ini
- * adalah penjaga UX, bukan batas keamanan.** Siapa pun yang tahu sebuah
- * `tenant_id` dan `user_id` dapat memanggil API tanpa pernah login. Menutup
- * itu adalah perubahan SERVER (middleware yang menukar Bearer → aktor), dan
- * ia belum dibangun.
+ * ⛔ **Batas yang tersisa, dan harus dibaca apa adanya:** jalur perangkat
+ * kasir (`POST /orders`, `/shifts`, `/orders/{id}/cancel`,
+ * `/orders/{id}/payments`) TIDAK ikut dilindungi. Relay outbox tidak mengirim
+ * Bearer sama sekali dan `spec-f:183` melarang kasir punya sesi
+ * back-office — melindunginya berarti setiap penjualan offline yang menyusul
+ * dijawab 401. Kredensial perangkat (FR-F12) belum menjadi kredensial
+ * permintaan; itu pekerjaan tersendiri.
  *
- * Ini dinyatakan, bukan didiamkan, supaya lapisan ini tidak salah dibaca
- * sebagai autentikasi yang sudah selesai. Ada test yang menyematkan kenyataan
- * itu (`tests/backoffice/sesi.test.js`).
+ * Versi pertama berkas ini menyatakan bahwa penjaga rute di aplikasi ini
+ * "penjaga UX, bukan batas keamanan". Untuk permukaan back-office, itu tidak
+ * berlaku lagi.
  */
 
 export interface Sesi {

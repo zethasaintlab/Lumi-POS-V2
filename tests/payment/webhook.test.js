@@ -61,7 +61,7 @@ let deviceCounter = 0;
 let seq = 0;
 
 function req(method, url, payload, headers = {}) {
-  const h = { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers };
+  const h = { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers };
   if (method === 'POST' && (url === '/orders' || url.endsWith('/payments')) && h['idempotency-key'] === undefined) {
     h['idempotency-key'] = crypto.randomUUID();
   }
@@ -86,7 +86,7 @@ async function buatOrderDanQris(harga = 20000) {
   await app.inject({
     method: 'POST', url: '/items',
     payload: { id: crypto.randomUUID(), name: `P${seq}`, variations: [{ id: variationId, price: harga }] },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   const orderId = crypto.randomUUID();
   const o = await req('POST', '/orders', {

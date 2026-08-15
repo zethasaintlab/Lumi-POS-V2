@@ -5,24 +5,16 @@ import type { Sesi } from './sesi-simpanan.ts';
  *
  * ## ⛔ TIGA header dikirim, dan hanya DUA yang benar-benar dipakai server
  *
- * | Header | Siapa yang membacanya hari ini |
+ * | Header | Perannya di rute back-office |
  * |---|---|
- * | `X-Tenant-Id` | **Setiap** endpoint (`getTenantId`) — inilah yang menetapkan `app.tenant_id` per transaksi |
- * | `X-Actor-Id` | **Setiap** endpoint back-office (`getActorId` → `assertUserVisible` → `assertBoleh`) |
- * | `Authorization: Bearer` | **HANYA** `POST /auth/logout` |
+ * | `Authorization: Bearer` | **Kredensialnya.** Middleware server mencari barisnya di `user_session`, menolak yang kedaluwarsa atau milik pengguna nonaktif |
+ * | `X-Tenant-Id` | **Petunjuk pencarian**, bukan otoritas. `user_session` tunduk RLS, jadi pembacaannya menuntut `app.tenant_id`. Berbohong tidak membeli apa pun — token tenant A tidak ditemukan saat dicari di tenant B |
+ * | `X-Actor-Id` | **DIABAIKAN** di rute terlindungi. Aktor datang dari baris sesi |
  *
- * Dibuktikan dengan membaca server, bukan diasumsikan dari kontrak: baris
- * `user_session` ditulis `login` dan dihapus `logout`, dan tidak ada kode lain
- * yang membacanya (`grep user_session apps/server/src` → dua kecocokan,
- * keduanya di `auth.ts`).
- *
- * Artinya kredensial yang SUNGGUHAN hari ini adalah `X-Actor-Id` — sebuah id
- * pengguna biasa. Bearer tetap dikirim ke semua permintaan karena ia gratis,
- * dan karena hari kredensialnya berpindah, yang berubah hanya server.
- *
- * **Jangan membaca lapisan ini sebagai autentikasi yang selesai.** Ia
- * memastikan permintaan membawa identitas yang konsisten; yang belum ada
- * adalah server yang menuntut BUKTI atas identitas itu.
+ * `X-Actor-Id` tetap dikirim karena jalur perangkat kasir masih memakainya
+ * (rute terbuka), dan mengirimnya di kedua tempat lebih sederhana daripada
+ * dua klien yang berbeda. Di rute terlindungi ia tidak berpengaruh apa pun —
+ * ada test server yang membuktikannya (`tests/identity/sesi-middleware`).
  *
  * ## Kenapa satu pintu, bukan `fetch` di tiap layar
  *

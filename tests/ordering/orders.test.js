@@ -57,7 +57,7 @@ function orderUrl(orderId) {
 // Test yang MEMANG menguji idempotency (tests/ordering/idempotency.test.js)
 // mengoper headernya sendiri secara eksplisit, meng-override default ini.
 function req(method, url, payload, headers = {}) {
-  const defaultHeaders = { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id };
+  const defaultHeaders = { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id };
   if (method === 'POST' && url === ordersUrl() && headers['idempotency-key'] === undefined) {
     defaultHeaders['idempotency-key'] = crypto.randomUUID();
   }
@@ -77,7 +77,7 @@ async function createDevice(outletId, code, headers = {}) {
     method: 'POST',
     url: '/devices',
     payload: { id: deviceId, outletId, code },
-    headers: { 'x-tenant-id': tenant.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, ...headers },
   });
   assert.equal(res.statusCode, 201, `gagal membuat device persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -89,7 +89,7 @@ async function openShift(outletId, deviceId, headers = {}) {
     method: 'POST',
     url: '/shifts',
     payload: { id: shiftId, outletId, deviceId, businessDate: BUSINESS_DATE, openingFloat: 100000 },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers },
   });
   assert.equal(res.statusCode, 201, `gagal membuka shift persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -104,10 +104,30 @@ async function openShift(outletId, deviceId, headers = {}) {
 // assertOutletVisible/getOutletSettings sebelum sempat jadi kasus yang
 // relevan sama sekali).
 let deviceCounter = 0;
-async function setupDeviceAndShift(outletId = base.outlet.id, { tenantId = tenant.id, actorId = base.user.id } = {}) {
+// `auth` ikut dioverride bersama `tenantId`, dan itu wajib.
+//
+// `POST /devices` terlindungi penjaga sesi (`apps/server/src/sesi.ts`).
+// Membuat device "sebagai tenant lain" karena itu menuntut token tenant lain
+// itu juga — token tenant ini tidak akan ditemukan di sana, dan hasilnya 401
+// jauh sebelum kasus lintas-tenant yang ingin diuji sempat terjadi.
+//
+// `POST /shifts` sendiri TERBUKA (jalur perangkat kasir), jadi ia tidak
+// menuntut apa pun — tapi headernya dibuat konsisten supaya tidak ada yang
+// menyimpulkan bahwa keduanya diperlakukan sama.
+async function setupDeviceAndShift(
+  outletId = base.outlet.id,
+  { tenantId = tenant.id, actorId = base.user.id, auth = base.authHeader } = {}
+) {
   deviceCounter += 1;
-  const device = await createDevice(outletId, `K${deviceCounter}`, { 'x-tenant-id': tenantId });
-  const shift = await openShift(outletId, device.id, { 'x-tenant-id': tenantId, 'x-actor-id': actorId });
+  const device = await createDevice(outletId, `K${deviceCounter}`, {
+    'x-tenant-id': tenantId,
+    authorization: auth,
+  });
+  const shift = await openShift(outletId, device.id, {
+    'x-tenant-id': tenantId,
+    authorization: auth,
+    'x-actor-id': actorId,
+  });
   return { device, shift };
 }
 
@@ -159,7 +179,7 @@ async function createVariation(price) {
     method: 'POST',
     url: '/items',
     payload: { id: itemId, name: `Produk ${variationId.slice(0, 8)}`, variations: [{ id: variationId, price }] },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(res.statusCode, 201, `gagal membuat variation persiapan test: ${res.body}`);
   return { itemId, variationId };
@@ -358,6 +378,7 @@ test('createOrder: deviceId milik tenant lain ditolak 404 DEVICE_NOT_FOUND, tida
   const { device: otherDevice } = await setupDeviceAndShift(other.outlet.id, {
     tenantId: other.tenant.id,
     actorId: other.user.id,
+    auth: other.authHeader,
   });
   const { shift } = await setupDeviceAndShift();
   const payload = orderPayload({ deviceId: otherDevice.id, shiftId: shift.id });
@@ -370,12 +391,12 @@ test('createOrder: deviceId milik tenant lain ditolak 404 DEVICE_NOT_FOUND, tida
 test('createOrder: shiftId milik tenant lain ditolak 404 SHIFT_NOT_FOUND, tidak ada baris tersimpan', async () => {
   const other = await seedTenantBase(appSetup, { suffix: 'OrderTestOtherShift' });
   deviceCounter += 1;
-  const otherDevice = await createDevice(other.outlet.id, `KO${deviceCounter}`, { 'x-tenant-id': other.tenant.id });
+  const otherDevice = await createDevice(other.outlet.id, `KO${deviceCounter}`, { 'x-tenant-id': other.tenant.id , authorization: other.authHeader});
   const otherShiftRes = await app.inject({
     method: 'POST',
     url: '/shifts',
     payload: { id: crypto.randomUUID(), outletId: other.outlet.id, deviceId: otherDevice.id, businessDate: BUSINESS_DATE, openingFloat: 50000 },
-    headers: { 'x-tenant-id': other.tenant.id, 'x-actor-id': other.user.id },
+    headers: { 'x-tenant-id': other.tenant.id, authorization: other.authHeader, 'x-actor-id': other.user.id },
   });
   assert.equal(otherShiftRes.statusCode, 201, otherShiftRes.body);
   const otherShift = JSON.parse(otherShiftRes.body);
@@ -534,7 +555,7 @@ test('getOrder: order lintas tenant tidak terlihat (RLS)', async () => {
   const res = await app.inject({
     method: 'GET',
     url: orderUrl(payload.id),
-    headers: { 'x-tenant-id': other.tenant.id },
+    headers: { 'x-tenant-id': other.tenant.id , authorization: other.authHeader},
   });
   assert.equal(res.statusCode, 404, res.body);
 });
@@ -627,7 +648,7 @@ test('⛔ penjualan lalu VOID mengembalikan stok ke nol bersih (spec-e:318)', as
       receiptNumber: 'K1-20260807-9001',
     },
     headers: {
-      'x-tenant-id': tenant.id,
+      'x-tenant-id': tenant.id, authorization: base.authHeader,
       'x-actor-id': base.user.id,
       'idempotency-key': crypto.randomUUID(),
     },

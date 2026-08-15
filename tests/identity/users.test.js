@@ -17,7 +17,7 @@ const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
 const { seedTenantBase, freshId } = require('../isolation/helpers/seed');
 
-let owner, appSetup, app, tenant, outlet, aktor;
+let owner, appSetup, app, tenant, outlet, aktor, base;
 
 before(async () => {
   owner = await connectAsOwner();
@@ -33,7 +33,7 @@ after(async () => {
 
 beforeEach(async () => {
   await resetAll(owner);
-  const base = await seedTenantBase(appSetup, { suffix: 'UserTest' });
+  base = await seedTenantBase(appSetup, { suffix: 'UserTest' });
   tenant = base.tenant;
   outlet = base.outlet;
   aktor = base.user;
@@ -63,7 +63,7 @@ beforeEach(async () => {
 });
 
 function hdr(extra = {}) {
-  return { 'x-tenant-id': tenant.id, 'x-actor-id': aktor.id, ...extra };
+  return { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': aktor.id, ...extra };
 }
 
 async function kueriTenant(sql, params, tenantId = tenant.id) {

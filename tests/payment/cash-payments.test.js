@@ -48,7 +48,7 @@ let deviceCounter = 0;
 let seq = 0;
 
 function req(method, url, payload, headers = {}) {
-  const h = { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers };
+  const h = { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers };
   if (method === 'POST' && (url === '/orders' || url.endsWith('/payments')) && h['idempotency-key'] === undefined) {
     h['idempotency-key'] = crypto.randomUUID();
   }
@@ -82,7 +82,7 @@ async function buatVariation(price) {
   const res = await app.inject({
     method: 'POST', url: '/items',
     payload: { id: itemId, name: `P${variationId.slice(0, 6)}`, variations: [{ id: variationId, price }] },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(res.statusCode, 201, res.body);
   return variationId;
@@ -305,7 +305,7 @@ test('Idempotency-Key hilang ditolak 400', async () => {
     method: 'POST',
     url: `/orders/${order.id}/payments`,
     payload: { id: crypto.randomUUID(), method: 'cash', tenderedAmount: 25000 },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id },
   });
   assert.equal(res.statusCode, 400, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'MISSING_IDEMPOTENCY_KEY');

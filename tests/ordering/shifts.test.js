@@ -51,7 +51,7 @@ function req(method, url, payload, headers = {}) {
     method,
     url,
     payload,
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers },
   });
 }
 
@@ -62,7 +62,7 @@ async function createDevice(outletId, code, headers = {}) {
     method: 'POST',
     url: '/devices',
     payload: { id: deviceId, outletId, code },
-    headers: { 'x-tenant-id': tenant.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, ...headers },
   });
   assert.equal(res.statusCode, 201, `gagal membuat device persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -258,7 +258,7 @@ test('openShift: deviceId milik tenant lain ditolak 404 DEVICE_NOT_FOUND, tidak 
     method: 'POST',
     url: '/devices',
     payload: { id: otherDeviceId, outletId: otherBase.outlet.id, code: 'K1' },
-    headers: { 'x-tenant-id': otherBase.tenant.id },
+    headers: { 'x-tenant-id': otherBase.tenant.id , authorization: otherBase.authHeader},
   });
   assert.equal(otherDeviceRes.statusCode, 201, otherDeviceRes.body);
 
@@ -346,7 +346,7 @@ test('openShift: header X-Actor-Id hilang ditolak 400 MISSING_ACTOR_ID', async (
       businessDate: BUSINESS_DATE,
       openingFloat: 50000,
     },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(res.statusCode, 400, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'MISSING_ACTOR_ID');

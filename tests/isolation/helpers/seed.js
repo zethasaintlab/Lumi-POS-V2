@@ -254,6 +254,27 @@ async function seedTenantBase(appClient, { suffix }) {
     effective_to: null,
   });
 
+  // ⛔ Sesi back-office untuk `rows.user`, dicetak di sini supaya setiap suite
+  // yang memakai fixture ini punya kredensial yang SAH sejak awal.
+  //
+  // Sejak `pasangPenjagaSesi` ada (`apps/server/src/sesi.ts`), seluruh
+  // permukaan back-office menuntut `Authorization: Bearer`. Tanpa baris ini,
+  // setiap suite harus mencetak sesinya sendiri — dan yang lupa akan
+  // menjatuhkan puluhan test dengan 401 yang tidak menyebut sebabnya.
+  //
+  // Token mentahnya dikembalikan sebagai `rows.sessionToken`; yang tersimpan
+  // hanya SHA-256-nya, persis seperti `POST /auth/login` melakukannya.
+  const sessionToken = crypto.randomBytes(32).toString('base64url');
+  await insertReturning(appClient, 'user_session', {
+    id: freshId(),
+    tenant_id: tenantId,
+    user_id: rows.user.id,
+    token_hash: crypto.createHash('sha256').update(sessionToken).digest('hex'),
+    expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000),
+  });
+  rows.sessionToken = sessionToken;
+  rows.authHeader = `Bearer ${sessionToken}`;
+
   await appClient.query('COMMIT');
   return rows;
 }

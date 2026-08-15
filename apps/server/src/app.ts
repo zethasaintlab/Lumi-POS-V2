@@ -17,6 +17,7 @@ import { selectPaymentProvider } from './modules/payment/providers/index.ts';
 import { createRedactingLogMethod, redactSensitive, registerSecretValues } from './log-redaction.ts';
 import type { PaymentProvider } from './modules/payment/providers/index.ts';
 import { createHlc } from '../../../packages/domain/src/hlc.ts';
+import { pasangPenjagaSesi } from './sesi.ts';
 
 const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
 
@@ -354,6 +355,15 @@ async function buildAppInner(
           `${konteks.after}. Coba lagi setelah itu.`
       ),
   });
+
+  /* ⛔ Penjaga sesi dipasang SEBELUM rute didaftarkan — hook `preHandler` di
+   * scope ini hanya berlaku untuk rute yang didaftarkan SESUDAHNYA. Dibalik
+   * urutannya, ia tidak menjaga apa pun dan tidak ada satu pun yang gagal.
+   *
+   * Fail-closed: setiap rute WAJIB membawa sesi kecuali yang terdaftar
+   * eksplisit di `RUTE_TERBUKA` (`sesi.ts`). Endpoint yang ditambahkan besok
+   * terlindungi tanpa ada yang perlu ingat melindunginya. */
+  pasangPenjagaSesi(app, pool);
 
   await app.register(openapiGlue, {
     specification: specPath,

@@ -46,7 +46,7 @@ const BUSINESS_DATE = '2026-08-06';
 let deviceCounter = 0;
 
 function req(method, url, payload, headers = {}) {
-  const h = { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers };
+  const h = { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers };
   if (method === 'POST' && url === '/orders' && h['idempotency-key'] === undefined) {
     h['idempotency-key'] = crypto.randomUUID();
   }

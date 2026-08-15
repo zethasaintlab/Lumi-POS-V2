@@ -7,7 +7,7 @@ const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
 const { seedTenantBase } = require('../isolation/helpers/seed');
 
-let owner, appSetup, app, tenant;
+let owner, appSetup, app, tenant, base;
 
 before(async () => {
   owner = await connectAsOwner();
@@ -23,7 +23,7 @@ after(async () => {
 
 beforeEach(async () => {
   await resetAll(owner);
-  const base = await seedTenantBase(appSetup, { suffix: 'CatTest' });
+  base = await seedTenantBase(appSetup, { suffix: 'CatTest' });
   tenant = base.tenant;
   const { buildApp } = await import('../../apps/server/src/app.ts');
   if (app) await app.close();
@@ -31,13 +31,13 @@ beforeEach(async () => {
 });
 
 function post(url, payload) {
-  return app.inject({ method: 'POST', url, payload, headers: { 'x-tenant-id': tenant.id } });
+  return app.inject({ method: 'POST', url, payload, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
 }
 function get(url) {
-  return app.inject({ method: 'GET', url, headers: { 'x-tenant-id': tenant.id } });
+  return app.inject({ method: 'GET', url, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
 }
 function patch(url, payload) {
-  return app.inject({ method: 'PATCH', url, payload, headers: { 'x-tenant-id': tenant.id } });
+  return app.inject({ method: 'PATCH', url, payload, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
 }
 
 test('createCategory: kategori top-level berhasil dibuat', async () => {
@@ -80,11 +80,11 @@ test('createCategory: parentId string kosong ditolak dengan error klien, bukan 5
 test('archiveCategory lalu restoreCategory: archivedAt terisi lalu null lagi', async () => {
   const id = crypto.randomUUID();
   await post('/categories', { id, name: 'Snack' });
-  const archived = await app.inject({ method: 'POST', url: `/categories/${id}/archive`, headers: { 'x-tenant-id': tenant.id } });
+  const archived = await app.inject({ method: 'POST', url: `/categories/${id}/archive`, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
   assert.equal(archived.statusCode, 200);
   assert.notEqual(JSON.parse(archived.body).archivedAt, null);
 
-  const restored = await app.inject({ method: 'POST', url: `/categories/${id}/restore`, headers: { 'x-tenant-id': tenant.id } });
+  const restored = await app.inject({ method: 'POST', url: `/categories/${id}/restore`, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
   assert.equal(restored.statusCode, 200);
   assert.equal(JSON.parse(restored.body).archivedAt, null);
 });
@@ -92,7 +92,7 @@ test('archiveCategory lalu restoreCategory: archivedAt terisi lalu null lagi', a
 test('listCategories: default menyembunyikan yang diarsipkan, includeArchived=true menampilkannya', async () => {
   const id = crypto.randomUUID();
   await post('/categories', { id, name: 'Dessert' });
-  await app.inject({ method: 'POST', url: `/categories/${id}/archive`, headers: { 'x-tenant-id': tenant.id } });
+  await app.inject({ method: 'POST', url: `/categories/${id}/archive`, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
 
   const hidden = await get('/categories');
   assert.equal(JSON.parse(hidden.body).items.some((c) => c.id === id), false);

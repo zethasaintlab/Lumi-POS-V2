@@ -31,7 +31,7 @@ beforeEach(async () => {
 });
 
 function req(method, url, payload) {
-  return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenant.id } });
+  return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
 }
 
 // --- plan lama Task 4 Step 5 ---
@@ -137,7 +137,7 @@ test('createModifier: modifierListId lintas tenant ditolak 404, dan tidak ada ba
     method: 'POST',
     url: `/modifier-lists/${listId}/modifiers`,
     payload: { id: crypto.randomUUID(), name: 'Nyelundup', price: 1000 },
-    headers: { 'x-tenant-id': attackerTenantId },
+    headers: { 'x-tenant-id': attackerTenantId, authorization: otherBase.authHeader},
   });
   assert.equal(res.statusCode, 404);
   assert.equal(JSON.parse(res.body).error.code, 'NOT_FOUND');

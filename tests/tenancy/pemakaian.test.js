@@ -14,6 +14,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
+const { buatSesi } = require('../isolation/helpers/sesi');
 
 let owner, appDb, app, tenant;
 
@@ -55,13 +56,25 @@ async function daftarkanMerchant() {
     headers: { 'content-type': 'application/json' },
   });
   assert.equal(res.statusCode, 201, res.body);
-  return { id: b.tenant.id, outletId: b.outlet.id, ownerId: b.owner.id };
+
+  // ⛔ Sesi dicetak langsung, bukan lewat `POST /auth/login`.
+  //
+  // Seluruh permukaan back-office kini menuntut `Authorization: Bearer`
+  // (`apps/server/src/sesi.ts`). Login sungguhan memverifikasi password lewat
+  // Argon2id — 23 ms per panggilan — dan test di berkas ini butuh sesi puluhan
+  // kali tanpa satu pun menguji login itu sendiri.
+  const token = await buatSesi(appDb, { tenantId: b.tenant.id, userId: b.owner.id });
+  return { id: b.tenant.id, outletId: b.outlet.id, ownerId: b.owner.id, token };
 }
 
 function H(extra = {}) {
   return {
     'content-type': 'application/json',
     'x-tenant-id': tenant.id,
+    authorization: `Bearer ${tenant.token}`,
+    // ⛔ `x-actor-id` tetap dikirim, dan server MENGABAIKANNYA sepenuhnya
+    // pada rute terlindungi — aktor datang dari baris sesi. Dibiarkan di sini
+    // supaya jelas bahwa keberadaannya tidak lagi berpengaruh.
     'x-actor-id': tenant.ownerId,
     ...extra,
   };
@@ -288,10 +301,14 @@ test('⛔ hanya Owner yang boleh melihat langganan (spec-f:52)', async () => {
     201
   );
 
+  // ⛔ Sesi kasir, bukan header. Header `x-actor-id` diabaikan penjaga sesi,
+  // jadi versi lama test ini tetap bertindak sebagai owner — ia lulus tanpa
+  // pernah menjalankan cabang RBAC yang namanya ia sebut.
+  const tokenKasir = await buatSesi(appDb, { tenantId: tenant.id, userId: kasirId });
   const res = await app.inject({
     method: 'GET',
     url: '/tenants/usage',
-    headers: H({ 'x-actor-id': kasirId }),
+    headers: H({ authorization: `Bearer ${tokenKasir}`, 'x-actor-id': kasirId }),
   });
   assert.equal(res.statusCode, 403, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'FORBIDDEN');

@@ -53,19 +53,16 @@ function LogoLumi() {
 }
 
 /**
- * ⛔ Penjaga rute — dan batasnya harus dibaca apa adanya.
+ * Penjaga rute.
  *
- * Ia menjaga BAHWA APLIKASI TIDAK MENAMPILKAN SHELL tanpa sesi. Ia **bukan**
- * batas keamanan: setiap endpoint back-office mengotorisasi lewat
- * `X-Actor-Id`, sebuah header berisi id pengguna biasa, dan server belum
- * memverifikasi token sesi pada satu pun endpoint selain `POST /auth/logout`.
+ * Ia menjaga bahwa aplikasi tidak menampilkan shell tanpa sesi — dan sejak
+ * `apps/server/src/sesi.ts` ada, **server menegakkan hal yang sama secara
+ * mandiri**: melewati layar ini di devtools tidak memberi akses ke apa pun,
+ * karena setiap permintaan ke permukaan back-office ditolak 401 tanpa token
+ * sesi yang sah.
  *
- * Artinya melewati layar ini di devtools tidak memberi akses ke data apa pun
- * yang tidak sudah dapat diambil dengan `curl`. Yang menutupnya adalah
- * middleware server yang menukar Bearer → aktor, dan ia belum dibangun.
- *
- * Dinyatakan di sini supaya tidak ada yang menyimpulkan dari keberadaan
- * penjaga ini bahwa autentikasi sudah selesai.
+ * Jadi penjaga ini adalah kenyamanan (jangan tampilkan layar yang setiap
+ * permintaannya akan gagal), bukan satu-satunya yang berdiri di sana.
  */
 function Terlindungi() {
   const { sesi, keluar } = useSesi();

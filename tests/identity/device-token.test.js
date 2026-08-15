@@ -20,7 +20,7 @@ const { seedTenantBase } = require('../isolation/helpers/seed');
 const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PEM = privateKey.export({ type: 'pkcs8', format: 'pem' });
 
-let owner, appSetup, app, tenant, outlet;
+let owner, appSetup, app, tenant, outlet, base;
 
 before(async () => {
   owner = await connectAsOwner();
@@ -42,14 +42,28 @@ async function bangun(opsi = {}) {
 
 beforeEach(async () => {
   await resetAll(owner);
-  const base = await seedTenantBase(appSetup, { suffix: 'TokenTest' });
+  base = await seedTenantBase(appSetup, { suffix: 'TokenTest' });
   tenant = base.tenant;
   outlet = base.outlet;
   await bangun();
 });
 
-function headerTenant(id = tenant.id) {
-  return { 'x-tenant-id': id };
+// ⛔ Bearer sesi ikut dikirim, dan ia HANYA berlaku untuk sebagian rute di
+// berkas ini.
+//
+// `POST /devices` dan `POST /devices/{id}/credentials` terlindungi penjaga
+// sesi (`apps/server/src/sesi.ts`) — provisioning perangkat adalah operasi
+// administratif. `POST /devices/{id}/sync-token` TIDAK: ia diautentikasi
+// secret perangkat di header `Authorization` sendiri, dan karena itu ada di
+// `RUTE_TERBUKA`.
+//
+// `auth` dapat dioverride ke `undefined` untuk membuktikan penolakan tanpa
+// sesi, dan ke token tenant lain untuk memodelkan penyerang yang sah di
+// tenantnya sendiri.
+function headerTenant(id = tenant.id, auth = base.authHeader) {
+  return auth === undefined
+    ? { 'x-tenant-id': id }
+    : { 'x-tenant-id': id, authorization: auth };
 }
 
 /* Query verifikasi WAJIB berjalan di dalam transaksi ber-`app.tenant_id`.
@@ -139,7 +153,10 @@ test('F12-2 menerbitkan ulang mengganti kredensial lama', async () => {
 test('F12-2 device milik tenant lain tidak dapat diberi kredensial', async () => {
   const deviceId = await buatDevice();
   const lain = await seedTenantBase(appSetup, { suffix: 'TokenLain' });
-  const res = await terbitkanKredensial(deviceId, headerTenant(lain.tenant.id));
+  // Penyerang memakai sesinya SENDIRI — kalau ia memakai token tenant ini,
+  // permintaannya berhenti di 401 dan guard lintas-tenant yang sedang diuji
+  // tidak pernah dijalankan.
+  const res = await terbitkanKredensial(deviceId, headerTenant(lain.tenant.id, lain.authHeader));
   assert.equal(res.statusCode, 404, res.body);
 });
 
@@ -265,7 +282,7 @@ test('F12-5 JWKS dilayani tanpa header tenant dan tanpa kredensial', async () =>
 
 test('F12-5 tanpa kunci: JWKS dan penukaran token 503, bukan token tanpa tanda tangan', async () => {
   await bangun({ syncJwtPrivateKey: '' });
-  const base = await seedTenantBase(appSetup, { suffix: 'TokenKosong' });
+  base = await seedTenantBase(appSetup, { suffix: 'TokenKosong' });
   tenant = base.tenant;
   outlet = base.outlet;
 

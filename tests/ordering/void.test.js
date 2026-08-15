@@ -47,7 +47,7 @@ let deviceCounter = 0;
 let seq = 0;
 
 function req(method, url, payload, headers = {}) {
-  const h = { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers };
+  const h = { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers };
   const butuhKey = method === 'POST' && (url === '/orders' || url.endsWith('/payments') || url.endsWith('/cancel'));
   if (butuhKey && h['idempotency-key'] === undefined) {
     h['idempotency-key'] = crypto.randomUUID();
@@ -75,7 +75,7 @@ async function buatVariation(price) {
   const res = await app.inject({
     method: 'POST', url: '/items',
     payload: { id: itemId, name: `P${variationId.slice(0, 6)}`, variations: [{ id: variationId, price }] },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(res.statusCode, 201, res.body);
   return variationId;
@@ -280,7 +280,7 @@ test('membatalkan order milik tenant lain -> 404, tidak ada baris tersimpan', as
     url: `/orders/${order.id}/cancel`,
     payload,
     headers: {
-      'x-tenant-id': lain.tenant.id, // tenant LAIN yang meminta
+      'x-tenant-id': lain.tenant.id, authorization: lain.authHeader, // tenant LAIN yang meminta
       'x-actor-id': lain.user.id,
       'idempotency-key': crypto.randomUUID(),
     },
@@ -472,7 +472,7 @@ test('void berhasil TANPA header X-Approver-Id', async () => {
     url: `/orders/${order.id}/cancel`,
     payload: batalkanPayload(),
     headers: {
-      'x-tenant-id': tenant.id,
+      'x-tenant-id': tenant.id, authorization: base.authHeader,
       'x-actor-id': base.user.id,
       'idempotency-key': crypto.randomUUID(),
       // TIDAK ADA x-approver-id, dan itu memang inti test ini.

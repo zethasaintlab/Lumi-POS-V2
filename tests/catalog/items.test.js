@@ -31,7 +31,7 @@ beforeEach(async () => {
 });
 
 function req(method, url, payload) {
-  return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenant.id } });
+  return app.inject({ method, url, payload, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} });
 }
 
 test('createItem: item dengan 1 variation berhasil, image_url tidak muncul di response', async () => {
@@ -298,7 +298,7 @@ test('createItem: conversionFactor non-finite (Infinity lewat 1e400) ditolak 400
   const res = await app.inject({
     method: 'POST',
     url: '/items',
-    headers: { 'x-tenant-id': tenant.id, 'content-type': 'application/json' },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'content-type': 'application/json' },
     payload: JSON.stringify({
       id: crypto.randomUUID(),
       name: 'Rusak',

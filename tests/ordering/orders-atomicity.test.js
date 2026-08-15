@@ -52,7 +52,7 @@ function req(payload, headers = {}) {
     url: '/orders',
     payload,
     headers: {
-      'x-tenant-id': tenant.id,
+      'x-tenant-id': tenant.id, authorization: base.authHeader,
       'x-actor-id': base.user.id,
       'idempotency-key': crypto.randomUUID(),
       ...headers,
@@ -66,7 +66,7 @@ async function createDevice(outletId, code) {
     method: 'POST',
     url: '/devices',
     payload: { id: deviceId, outletId, code },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(res.statusCode, 201, `gagal membuat device persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -78,7 +78,7 @@ async function openShift(outletId, deviceId) {
     method: 'POST',
     url: '/shifts',
     payload: { id: shiftId, outletId, deviceId, businessDate: BUSINESS_DATE, openingFloat: 100000 },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id },
   });
   assert.equal(res.statusCode, 201, `gagal membuka shift persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -263,7 +263,7 @@ test('atomisitas: order sukses lalu order gagal -- order pertama tetap utuh', as
   const rereadRes = await app.inject({
     method: 'GET',
     url: `/orders/${first.id}`,
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(rereadRes.statusCode, 200, rereadRes.body);
   const reread = JSON.parse(rereadRes.body);

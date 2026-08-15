@@ -58,6 +58,22 @@ Konsekuensinya mutlak: **tidak ada satu pun test yang boleh menyentuh jaringan.*
 
 `PAYMENT_PROVIDER=midtrans` dengan kunci kosong **gagal saat boot**, bukan saat pelanggan pertama membayar.
 
+## ⛔ Penjaga sesi: fail-closed, dan jalur kasir SENGAJA di luar
+
+`apps/server/src/sesi.ts` memasang hook `onRequest` yang memverifikasi `Authorization: Bearer` terhadap `user_session`. Setiap rute WAJIB membawa sesi **kecuali** yang terdaftar eksplisit di `RUTE_TERBUKA` — endpoint yang ditambahkan besok terlindungi tanpa ada yang perlu ingat melindunginya.
+
+Sebelum ini, `X-Actor-Id` adalah satu-satunya identitas yang dipegang server: header biasa berisi id pengguna. Siapa pun yang tahu sepasang tenant_id + user_id dapat memanggil seluruh permukaan back-office.
+
+| | |
+|---|---|
+| `Authorization: Bearer` | **Kredensialnya.** Barisnya dicari di `user_session`; kedaluwarsa dan pengguna nonaktif ditolak |
+| `X-Tenant-Id` | **Petunjuk pencarian**, bukan otoritas — `user_session` tunduk RLS. Berbohong tidak membeli apa pun |
+| `X-Actor-Id` | **DIABAIKAN** di rute terlindungi. `getActorId` mengutamakan `req.sesi` |
+
+⛔ **Jalur perangkat kasir tidak ikut dilindungi, dan itu dipaksa kenyataan.** Relay outbox mengirim tepat empat header dan tidak satu pun Bearer; `spec-f:183` melarang kasir punya sesi back-office. Menuntut sesi di `POST /orders`, `/shifts`, `/orders/{id}/cancel`, `/orders/{id}/payments` berarti **setiap penjualan offline yang menyusul dijawab 401** — jalur naik mati. Menutupnya menuntut kredensial perangkat (FR-F12) menjadi kredensial permintaan, dan itu pekerjaan tersendiri.
+
+⛔ **`onRequest`, bukan `preHandler`.** Validasi skema OpenAPI berjalan di antara keduanya. Terukur: dipasang di `preHandler`, `POST /items` dengan body `{}` tanpa Bearer menjawab **400**, sementara body sah menjawab 401 — pemanggil tanpa kredensial dapat memetakan bentuk request setiap endpoint dari selisih itu.
+
 ## Dua endpoint tanpa `X-Tenant-Id` — dan alasannya berbeda
 
 `POST /tenants` (pendaftaran, F5) menyusul webhook Midtrans sebagai yang kedua. Alasannya tidak sama:

@@ -47,7 +47,7 @@ function req(payload, headers = {}) {
     url: '/orders',
     payload,
     headers: {
-      'x-tenant-id': tenant.id,
+      'x-tenant-id': tenant.id, authorization: base.authHeader,
       'x-actor-id': base.user.id,
       'idempotency-key': crypto.randomUUID(),
       ...headers,
@@ -61,7 +61,7 @@ async function createDevice(outletId, code) {
     method: 'POST',
     url: '/devices',
     payload: { id: deviceId, outletId, code },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(res.statusCode, 201, `gagal membuat device persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -73,7 +73,7 @@ async function openShift(outletId, deviceId) {
     method: 'POST',
     url: '/shifts',
     payload: { id: shiftId, outletId, deviceId, businessDate: BUSINESS_DATE, openingFloat: 100000 },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id },
   });
   assert.equal(res.statusCode, 201, `gagal membuka shift persiapan test: ${res.body}`);
   return JSON.parse(res.body);
@@ -158,8 +158,8 @@ test('outbox: request idempotency yang KALAH konkurensi (409) tidak meninggalkan
   // selalu punya satu sisi yang menang lewat koneksi TCP+auth baru yang
   // jauh lebih lambat (~20ms) -- bukan race sungguhan.
   await Promise.all([
-    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: { 'x-tenant-id': tenant.id } }),
-    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: { 'x-tenant-id': tenant.id } }),
+    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} }),
+    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader} }),
   ]);
 
   const [resA, resB] = await Promise.all([

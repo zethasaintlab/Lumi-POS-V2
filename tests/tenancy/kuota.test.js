@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
+const { buatSesi } = require('../isolation/helpers/sesi');
 
 let owner, appDb, app, tenant;
 
@@ -52,13 +53,25 @@ async function daftarkanMerchant() {
     headers: { 'content-type': 'application/json' },
   });
   assert.equal(res.statusCode, 201, res.body);
-  return { id: b.tenant.id, outletId: b.outlet.id, ownerId: b.owner.id };
+
+  // ⛔ Sesi dicetak langsung, bukan lewat `POST /auth/login`.
+  //
+  // Seluruh permukaan back-office kini menuntut `Authorization: Bearer`
+  // (`apps/server/src/sesi.ts`). Login sungguhan memverifikasi password lewat
+  // Argon2id — 23 ms per panggilan — dan test di berkas ini butuh sesi puluhan
+  // kali tanpa satu pun menguji login itu sendiri.
+  const token = await buatSesi(appDb, { tenantId: b.tenant.id, userId: b.owner.id });
+  return { id: b.tenant.id, outletId: b.outlet.id, ownerId: b.owner.id, token };
 }
 
 function H(extra = {}) {
   return {
     'content-type': 'application/json',
     'x-tenant-id': tenant.id,
+    authorization: `Bearer ${tenant.token}`,
+    // ⛔ `x-actor-id` tetap dikirim, dan server MENGABAIKANNYA sepenuhnya
+    // pada rute terlindungi — aktor datang dari baris sesi. Dibiarkan di sini
+    // supaya jelas bahwa keberadaannya tidak lagi berpengaruh.
     'x-actor-id': tenant.ownerId,
     ...extra,
   };
@@ -312,10 +325,18 @@ test('⛔ hanya Owner yang boleh membuat outlet (spec-f:29-30)', async () => {
     201
   );
 
+  // ⛔ Bertindak sebagai kasir lewat SESINYA, bukan lewat header.
+  //
+  // Versi lama mengirim `x-actor-id: kasirId` dan mengandalkan server
+  // mempercayainya. Sejak penjaga sesi ada, header itu diabaikan sepenuhnya —
+  // test lama karena itu tetap bertindak sebagai owner dan lulus tanpa
+  // menguji RBAC sama sekali. Yang membuat aktor benar-benar berpindah
+  // sekarang adalah memiliki sesi kasir itu.
+  const tokenKasir = await buatSesi(appDb, { tenantId: tenant.id, userId: kasirId });
   const res = await post(
     '/outlets',
     { id: crypto.randomUUID(), name: 'Cabang Kasir', timezone: 'Asia/Jakarta' },
-    { 'x-actor-id': kasirId }
+    { authorization: `Bearer ${tokenKasir}`, 'x-actor-id': kasirId }
   );
   assert.equal(res.statusCode, 403, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'FORBIDDEN', 'kuota menutupi penolakan RBAC');

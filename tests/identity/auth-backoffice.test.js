@@ -18,8 +18,9 @@ const assert = require('node:assert/strict');
 const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
 const { seedTenantBase, freshId } = require('../isolation/helpers/seed');
+const { headerSesi } = require('../isolation/helpers/sesi');
 
-let owner, appSetup, app, tenant, outlet;
+let owner, appSetup, app, tenant, outlet, base;
 
 before(async () => {
   owner = await connectAsOwner();
@@ -35,7 +36,7 @@ after(async () => {
 
 beforeEach(async () => {
   await resetAll(owner);
-  const base = await seedTenantBase(appSetup, { suffix: 'Auth' });
+  base = await seedTenantBase(appSetup, { suffix: 'Auth' });
   tenant = base.tenant;
   outlet = base.outlet;
   const { buildApp } = await import('../../apps/server/src/app.ts');
@@ -72,7 +73,7 @@ async function buatPengguna({ email, password, peran = 'owner' }) {
       method: 'PUT',
       url: `/users/${id}/password`,
       payload: { password },
-      headers: { 'x-tenant-id': tenant.id, 'x-actor-id': id },
+      headers: headerSesi(tenant.id, base.sessionToken, { 'x-actor-id': id }),
     });
     assert.equal(res.statusCode, 204, res.body);
   }
@@ -96,7 +97,7 @@ test('password < 10 karakter ditolak (spec-f:180)', async () => {
     method: 'PUT',
     url: `/users/${id}/password`,
     payload: { password: 'pendek123' },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': id },
+    headers: headerSesi(tenant.id, base.sessionToken, { 'x-actor-id': id }),
   });
   assert.equal(res.statusCode, 400, res.body);
   assert.equal(res.json().error.code, 'PASSWORD_TOO_SHORT');
@@ -108,7 +109,7 @@ test('password dari daftar bocor ditolak, dengan pesan yang menjelaskan', async 
     method: 'PUT',
     url: `/users/${id}/password`,
     payload: { password: 'password123' },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': id },
+    headers: headerSesi(tenant.id, base.sessionToken, { 'x-actor-id': id }),
   });
   assert.equal(res.statusCode, 400, res.body);
   assert.equal(res.json().error.code, 'PASSWORD_BREACHED');
@@ -166,7 +167,7 @@ test('⛔ PIN tidak dapat dipakai sebagai password back-office (spec-f:150)', as
     method: 'PUT',
     url: `/users/${id}/pin`,
     payload: { pin: '482913' },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': id },
+    headers: headerSesi(tenant.id, base.sessionToken, { 'x-actor-id': id }),
   });
   assert.equal(setPin.statusCode, 204, setPin.body);
 

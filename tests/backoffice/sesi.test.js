@@ -314,48 +314,81 @@ test('⛔ login gagal meneruskan pesan SERAGAM server, tidak memperkayanya', asy
   );
 });
 
-// --- ⛔ kenyataan yang disematkan -------------------------------------------
+// --- ⛔ verifikasi sesi di server ------------------------------------------
 
-test('⛔ SERVER BELUM memverifikasi token sesi di endpoint mana pun selain logout', async () => {
-  // Test ini tidak menguji perilaku yang diinginkan — ia MENYEMATKAN
-  // kenyataan hari ini supaya tidak salah dibaca.
+test('⛔ server MEMVERIFIKASI token sesi — dan test ini dulu berbunyi sebaliknya', () => {
+  // ## Riwayat berkas ini, karena ia menjelaskan kelas cacat
   //
-  // `user_session` ditulis `login` dan dihapus `logout`. Tidak ada kode lain
-  // yang membacanya, jadi `Authorization: Bearer` diabaikan oleh setiap
-  // endpoint selain `POST /auth/logout`. Kredensial yang SUNGGUHAN adalah
-  // `X-Actor-Id` — header biasa berisi id pengguna.
+  // Versi pertama test ini MENYEMATKAN kenyataan bahwa server tidak
+  // memverifikasi token sesi di endpoint mana pun selain logout. Ia ditulis
+  // dengan komentar: "saat middleware sesi dibangun, test ini akan GAGAL —
+  // dan kegagalannya adalah kabar baik."
   //
-  // Konsekuensinya: penjaga rute di `App.tsx` adalah penjaga UX, BUKAN batas
-  // keamanan. Siapa pun yang tahu sepasang tenant_id + user_id dapat
-  // memanggil API tanpa pernah login.
+  // ⛔ Middleware itu dibangun (`apps/server/src/sesi.ts`), dan test itu
+  // TIDAK GAGAL. Ia memindai empat berkas di `modules/identity/handlers/`
+  // saja, sementara middleware-nya lahir di `apps/server/src/`. Penjaga yang
+  // ruang lingkupnya lebih sempit daripada hal yang dijaganya adalah penjaga
+  // yang hijau selamanya — kelas yang sama dengan test yang memeriksa keadaan
+  // yang tidak dapat terjadi.
   //
-  // Saat middleware sesi dibangun di server, test ini akan GAGAL — dan
-  // kegagalannya adalah kabar baik. Perbarui bersama perubahan itu.
-  const berkas = ['auth.ts', 'users.ts', 'devices.ts', 'tokens.ts'];
-  const penyebut = [];
-  for (const nama of berkas) {
-    const isi = readFileSync(
-      join(AKAR, 'apps', 'server', 'src', 'modules', 'identity', 'handlers', nama),
-      'utf8'
-    );
-    if (/user_session/.test(isi)) penyebut.push(nama);
+  // Yang diuji sekarang adalah keberadaan verifikasinya, bukan ketiadaannya.
+  const sesi = readFileSync(join(AKAR, 'apps', 'server', 'src', 'sesi.ts'), 'utf8');
+
+  assert.match(sesi, /FROM user_session/, 'middleware tidak membaca user_session');
+  assert.match(sesi, /expires_at > now\(\)/, 'kedaluwarsa tidak diperiksa di jam DATABASE');
+  assert.match(sesi, /is_active = true/, 'pengguna nonaktif tidak dicabut sesinya');
+  assert.match(sesi, /req\.sesi = \{/, 'konteks tidak diambil alih dari header');
+
+  // Dipasang di `buildApp`, bukan sekadar didefinisikan.
+  const app = readFileSync(join(AKAR, 'apps', 'server', 'src', 'app.ts'), 'utf8');
+  assert.match(app, /pasangPenjagaSesi\(app, pool\)/, 'penjaga tidak dipasang di buildApp');
+
+  // ⛔ Dan dipasang SEBELUM rute didaftarkan. Hook `preHandler` hanya berlaku
+  // untuk rute yang didaftarkan sesudahnya; dibalik urutannya, ia tidak
+  // menjaga apa pun dan tidak ada satu pun yang gagal.
+  assert.ok(
+    app.indexOf('pasangPenjagaSesi(app, pool)') < app.indexOf('await app.register(openapiGlue'),
+    'penjaga dipasang SESUDAH rute — ia tidak menjaga apa pun'
+  );
+});
+
+test('⛔ getTenantId/getActorId mengutamakan sesi di atas header', () => {
+  // Inilah yang mengubah `X-Actor-Id` dari klaim menjadi bukti. Kalau salah
+  // satunya kembali membaca header lebih dulu, seluruh permukaan back-office
+  // dapat dinisbatkan ke siapa pun yang idnya diketahui pengirim — tanpa satu
+  // pun error.
+  const konteks = readFileSync(join(AKAR, 'apps', 'server', 'src', 'tenant-context.ts'), 'utf8');
+
+  for (const fn of ['getTenantId', 'getActorId']) {
+    const i = konteks.indexOf(`export function ${fn}(`);
+    assert.ok(i > 0, `${fn} tidak ditemukan`);
+    const badan = konteks.slice(i, konteks.indexOf('}', konteks.indexOf('return readIdHeader', i)));
+    const iSesi = badan.indexOf('req.sesi');
+    const iHeader = badan.indexOf('readIdHeader');
+    assert.ok(iSesi > 0, `${fn} tidak membaca req.sesi sama sekali`);
+    assert.ok(iSesi < iHeader, `${fn} membaca header SEBELUM sesi`);
+  }
+});
+
+test('⛔ jalur perangkat kasir tetap ada di daftar terbuka', async () => {
+  // Relay outbox (`packages/sync-client/src/http.ts`) mengirim TEPAT empat
+  // header dan tidak satu pun Bearer. Melindungi keempat rute ini berarti
+  // setiap penjualan offline yang menyusul dijawab 401 — jalur naik mati, dan
+  // gejalanya muncul di outlet, bukan di CI.
+  const { DAFTAR_RUTE_TERBUKA } = await import('../../apps/server/src/sesi.ts');
+  const terbuka = new Set(DAFTAR_RUTE_TERBUKA.map((r) => `${r.metode} ${r.pola}`));
+
+  for (const rute of [
+    'POST /shifts',
+    'POST /orders',
+    'POST /orders/:orderId/cancel',
+    'POST /orders/:orderId/payments',
+  ]) {
+    assert.ok(terbuka.has(rute), `${rute} tidak lagi terbuka — jalur naik kasir mati`);
   }
 
-  assert.deepEqual(
-    penyebut,
-    ['auth.ts'],
-    'ada berkas lain yang menyentuh user_session — verifikasi sesi mungkin sudah dibangun; ' +
-      'kalau ya, perbarui komentar batas keamanan di sesi-simpanan.ts, http.ts, dan App.tsx'
-  );
-
-  const auth = readFileSync(
-    join(AKAR, 'apps', 'server', 'src', 'modules', 'identity', 'handlers', 'auth.ts'),
-    'utf8'
-  );
-  const pembacaan = auth.match(/SELECT[^;]*FROM user_session/gi) ?? [];
-  assert.deepEqual(
-    pembacaan,
-    [],
-    'user_session mulai dibaca untuk otorisasi — perbarui pernyataan batas keamanan di klien'
-  );
+  // Dan permukaan back-office TIDAK boleh masuk daftar itu.
+  for (const rute of ['GET /tenants/usage', 'POST /items', 'POST /users', 'POST /devices']) {
+    assert.ok(!terbuka.has(rute), `${rute} terbuka — lubang otorisasi`);
+  }
 });

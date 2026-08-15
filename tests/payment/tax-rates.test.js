@@ -47,7 +47,7 @@ function req(method, url, payload, headers = {}) {
     method,
     url,
     payload,
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, ...headers },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, ...headers },
   });
 }
 

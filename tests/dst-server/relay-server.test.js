@@ -105,7 +105,7 @@ async function siapkanPerangkat(kode) {
     method: 'POST',
     url: '/devices',
     payload: { id: deviceId, outletId: base.outlet.id, code: kode },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, 'idempotency-key': crypto.randomUUID() },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, 'idempotency-key': crypto.randomUUID() },
   });
   assert.equal(d.statusCode, 201, d.body);
 
@@ -120,7 +120,7 @@ async function siapkanPerangkat(kode) {
       businessDate: BUSINESS_DATE,
       openingFloat: 100000,
     },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id },
   });
   assert.equal(s.statusCode, 201, s.body);
 
@@ -129,7 +129,7 @@ async function siapkanPerangkat(kode) {
     method: 'POST',
     url: '/items',
     payload: { id: crypto.randomUUID(), name: `P-${kode}`, variations: [{ id: variationId, price: 20000 }] },
-    headers: { 'x-tenant-id': tenant.id },
+    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
   });
   assert.equal(it.statusCode, 201, it.body);
 
@@ -376,7 +376,7 @@ test('shift yang dikirim ulang menerima 409 ID_ALREADY_EXISTS dan ditandai sent'
     method: 'POST',
     url: '/devices',
     payload: { id: deviceId, outletId: base.outlet.id, code: 'K3' },
-    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': base.user.id, 'idempotency-key': crypto.randomUUID() },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': base.user.id, 'idempotency-key': crypto.randomUUID() },
   });
   assert.equal(d.statusCode, 201, d.body);
 
