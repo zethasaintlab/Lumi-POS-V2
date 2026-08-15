@@ -2928,8 +2928,156 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/cashiers:
+    get:
+      operationId: getCashierReport
+      summary: FR-G1 -- posisi penjualan per kasir, pada rentang tanggal bisnis.
+      description: >-
+        Setiap kasir dihitung lewat `posisiPenjualan()` yang sama dengan
+        laporan global (FR-G3), bukan lewat SUM tersendiri. Sifat yang dijaga:
+        jumlah seluruh kasir SAMA dengan angka laporan global.
+
+
+        ⛔ Order pembatal dimasukkan ke kelompok pemilik order ASLINYA, bukan
+        pemilik pembatal. Pembatal punya `created_by` sendiri -- orang yang
+        menekan tombol void, yang sering bukan kasir yang menjual. Tanpa itu,
+        kelompok kasir penjual tidak memuat pembatalnya dan penjualan yang
+        sudah dibatalkan tetap masuk omzetnya.
+
+
+        Konsekuensinya disengaja: `voidAmount` melekat pada kasir yang
+        PENJUALANNYA dibatalkan, bukan pada yang menekan tombolnya. Manajer
+        yang membatalkan sepuluh transaksi kasir lain tidak muncul dengan void
+        sepuluh. Penyalahgunaan void dilacak laporan exception FR-G5 lewat
+        `audit_event`, yang memang menyimpan aktornya.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Baris per kasir, terurut omzet bersih menurun lalu nama.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaporanKasir'
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reports/payments:
+    get:
+      operationId: getPaymentReport
+      summary: FR-G1 -- uang masuk per metode pembayaran.
+      description: >-
+        ⛔ Rekonsiliasi TIDAK termasuk. `IA:§3.3` menamai layarnya "Laporan
+        Pembayaran & Rekonsiliasi", tapi Modul C-3 belum dibangun sama sekali
+        (P1). Endpoint ini murni agregasi per metode; batasnya dinyatakan,
+        bukan disamarkan dengan field kosong.
+
+
+        ⛔ Hanya payment `confirmed` (spec-c:223). Yang masih
+        `pending_confirmation` (QRIS dinamis) belum boleh dianggap uang
+        masuk, dan `failed` jelas bukan.
+
+
+        ⛔ Ini BERBEDA dari laporan harian di aplikasi kasir
+        (`apps/kasir/src/laporan/harian.ts`), yang menjumlahkan payment tanpa
+        menyaring status. Selisihnya muncul hanya bila ada payment
+        non-confirmed pada hari itu -- dan bila itu terjadi, angka yang benar
+        adalah yang di sini.
+
+
+        `totalDiterima` BUKAN omzet: omzet bersih mengurangkan refund, dan
+        refund tidak menghasilkan baris payment negatif (payment.amount punya
+        CHECK amount > 0).
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Baris per metode, terurut total menurun.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaporanPembayaran'
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
+    LaporanKasir:
+      type: object
+      required: [from, to, outletId, kasir]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        kasir:
+          type: array
+          items:
+            type: object
+            required: [userId, name, penjualan]
+            properties:
+              userId: { type: string }
+              name: { type: string }
+              penjualan:
+                $ref: '#/components/schemas/PosisiPenjualan'
+    LaporanPembayaran:
+      type: object
+      required: [from, to, outletId, metode, totalDiterima]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        totalDiterima:
+          type: string
+          description: Rupiah utuh sebagai STRING -- bigint, bukan number.
+        metode:
+          type: array
+          items:
+            type: object
+            required: [method, jumlahTransaksi, totalDiterima]
+            properties:
+              method:
+                type: string
+                enum: [cash, qris_dynamic, qris_static, card_edc, other]
+              jumlahTransaksi: { type: integer }
+              totalDiterima: { type: string }
     LaporanProduk:
       type: object
       required: [from, to, outletId, produk]
