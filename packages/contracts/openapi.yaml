@@ -212,6 +212,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  # FR-A8 — impor katalog. `spec-a:254`: fitur AKUISISI, bukan utilitas admin.
+  #
+  # SATU operasi dengan `dryRun`, bukan dua endpoint. Alurnya di `spec-a:261`
+  # menuntut pratinjau SEBELUM impor dijalankan, dan pratinjau yang memakai
+  # endpoint berbeda dapat menyimpang dari yang benar-benar dijalankan —
+  # merchant menyetujui satu hasil lalu menerima hasil lain.
+  /catalog/import:
+    post:
+      operationId: importCatalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv:
+                  type: string
+                  description: Isi berkas CSV apa adanya, termasuk baris header.
+                dryRun:
+                  type: boolean
+                  default: true
+                  description: >-
+                    `true` (bawaan) hanya menghitung dan melaporkan; tidak satu
+                    baris pun ditulis. Bawaannya sengaja aman: impor yang
+                    berjalan karena field lupa diisi tidak dapat dibatalkan.
+                bilaSudahAda:
+                  type: string
+                  enum: [lewati, perbarui]
+                  default: lewati
+                  description: >-
+                    Ditanyakan SEKALI di awal (spec-a:280), bukan per baris.
+      responses:
+        '200':
+          description: >-
+            Pratinjau atau ringkasan impor. Selalu 200 walau ada baris
+            bermasalah -- baris bermasalah adalah HASIL yang dilaporkan, bukan
+            kegagalan permintaan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResult'
+        '400':
+          description: >-
+            Berkas tidak dapat dibaca sama sekali (IMPORT_FILE_INVALID) --
+            misalnya kolom nama/harga tidak ditemukan di baris pertama.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aktor pada X-Actor-Id tidak ditemukan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /items:
     post:
       operationId: createItem
@@ -2508,6 +2566,31 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ModifierList'
+    ImportResult:
+      type: object
+      required: [dryRun, jumlahBaris, diimpor, dilewati, masalah, kategoriBaru]
+      properties:
+        dryRun: { type: boolean }
+        jumlahBaris:
+          type: integer
+          description: >-
+            Baris DATA yang dibaca. `diimpor + dilewati + masalah` harus sama
+            dengan angka ini -- tidak ada impor parsial diam-diam (spec-a:287).
+        diimpor: { type: integer }
+        dilewati: { type: integer }
+        kategoriBaru:
+          type: array
+          items: { type: string }
+        masalah:
+          type: array
+          items:
+            type: object
+            required: [baris, alasan]
+            properties:
+              baris:
+                type: integer
+                description: Nomor baris di BERKAS, 1-based, header terhitung.
+              alasan: { type: string }
     ItemVariationInput:
       type: object
       required: [id, price]
