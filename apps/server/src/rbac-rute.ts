@@ -98,6 +98,18 @@ export const PETA_PERAN: readonly AturanRute[] = [
   { metode: 'POST', pola: '/devices/:deviceId/revoke', operasi: 'device_revoke' },
   { metode: 'GET', pola: '/devices', operasi: 'device_revoke' },
 
+  // --- inventori -----------------------------------------------------------
+  //
+  // `stock_adjust` — owner, manajer area, manajer outlet (`spec-f`). Kasir
+  // tidak menyesuaikan stok: seluruh pengurangan yang boleh ia sebabkan lahir
+  // dari penjualan, dan yang di luar itu adalah koreksi yang harus disetujui.
+  { metode: 'POST', pola: '/inventory/movements', operasi: 'stock_adjust' },
+
+  // ⛔ Pembersihan keranjang terbengkalai ada di sini, bukan di `void_refund`,
+  // karena EFEKNYA adalah membebaskan stok — dan `void_refund` mencakup kasir,
+  // yang tidak boleh menjalankan pembersihan massal lintas outlet.
+  { metode: 'POST', pola: '/orders/cleanup-abandoned', operasi: 'stock_adjust' },
+
   // --- outlet & komersial --------------------------------------------------
   { metode: 'POST', pola: '/outlets', operasi: 'outlet_manage' },
   { metode: 'GET', pola: '/tenants/usage', operasi: 'billing' },

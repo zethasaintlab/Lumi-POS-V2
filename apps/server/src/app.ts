@@ -14,6 +14,7 @@ import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
 import { createTenancyHandlers } from './modules/tenancy/index.ts';
 import { createReportingHandlers } from './modules/reporting/index.ts';
+import { createInventoryHandlers } from './modules/inventory/index.ts';
 import { selectPaymentProvider } from './modules/payment/providers/index.ts';
 import { createRedactingLogMethod, redactSensitive, registerSecretValues } from './log-redaction.ts';
 import type { PaymentProvider } from './modules/payment/providers/index.ts';
@@ -180,6 +181,7 @@ async function buildAppInner(
     ...createTenancyHandlers(pool, hlc),
     // Agregator baca-saja; satu-satunya modul yang boleh membaca lintas domain.
     ...createReportingHandlers(pool),
+    ...createInventoryHandlers(pool, hlc),
   };
 
   assertAllOperationsImplemented(specPath, serviceHandlers);
