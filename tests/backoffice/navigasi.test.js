@@ -345,3 +345,24 @@ test('⛔ SELURUH grup Laporan siap — itu yang akuntan lihat', async () => {
     .map((i) => i.id);
   assert.deepEqual(belum, [], `akuntan melihat layar tanpa isi: ${belum.join(', ')}`);
 });
+
+test('B-12 dan B-13 sudah ditandai siap', async () => {
+  // ⛔ B-13 tidak punya layar sendiri — ia panel di atas B-12, dan menunya
+  // membuka B-12 dengan panel itu terbuka. Menandainya siap karena itu benar:
+  // menu yang menampilkan "belum dibangun" untuk sesuatu yang sudah ada
+  // berbohong ke arah yang berlawanan dari yang daftar ini cegah.
+  const { LAYAR_SIAP } = await import(NAV);
+  for (const id of ['B-12', 'B-13']) {
+    assert.ok(LAYAR_SIAP.has(id), `${id} sudah dibangun tapi masih menampilkan keadaan kosong`);
+  }
+});
+
+test('⛔ B-14 dan B-15 TIDAK ditandai siap — endpointnya belum ada', async () => {
+  // `stocktake` dan `oversell_event` ada di skema, tapi tidak satu pun rute
+  // REST menyentuhnya. Menandainya siap menjanjikan layar yang tidak dapat
+  // memuat apa pun.
+  const { LAYAR_SIAP } = await import(NAV);
+  for (const id of ['B-14', 'B-15']) {
+    assert.ok(!LAYAR_SIAP.has(id), `${id} ditandai siap padahal endpointnya belum ada`);
+  }
+});
