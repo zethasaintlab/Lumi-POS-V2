@@ -104,3 +104,24 @@ test('ada isi → tidak ada pesan', async () => {
   const { pesanKeadaan } = await import(B04);
   assert.equal(pesanKeadaan({ jenis: 'siap', items: [{ id: 'a' }] }, false), null);
 });
+
+test('⛔ SETIAP kode alasan selisih di kasir punya label — daftarnya diturunkan', async () => {
+  // Ditemukan di browser: layar sempat memakai `labelAlasan` dari B-21, yang
+  // memetakan alasan PEMBATALAN. `kesalahan_hitung` tidak ada di sana, jadi ia
+  // tampil sebagai slug mentah — di kolom yang manajer baca untuk memutuskan
+  // apakah selisihnya wajar.
+  const { LABEL_ALASAN_SELISIH } = await import(B04);
+  const { ALASAN_SELISIH } = await import('../../apps/kasir/src/kas/tutup.ts');
+
+  const hilang = ALASAN_SELISIH.map((a) => a.kode).filter(
+    (kode) => LABEL_ALASAN_SELISIH[kode] === undefined
+  );
+  assert.deepEqual(hilang, [], `kode alasan selisih tanpa label: ${hilang.join(', ')}`);
+});
+
+test('label alasan selisih dipakai, kode asing tampil apa adanya', async () => {
+  const { labelAlasanSelisih } = await import(B04);
+  assert.equal(labelAlasanSelisih('kesalahan_hitung'), 'Kesalahan hitung');
+  assert.equal(labelAlasanSelisih('kode_baru'), 'kode_baru');
+  assert.equal(labelAlasanSelisih(null), '—');
+});

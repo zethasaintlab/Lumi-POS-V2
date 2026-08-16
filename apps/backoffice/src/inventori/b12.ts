@@ -248,3 +248,81 @@ export function pesanKeadaan(keadaan: Keadaan, cari: string): PesanLayar | null 
       'stok awal — sampai itu dilakukan, setiap penjualan membuat saldonya minus.',
   };
 }
+
+// ---------------------------------------------------------------------------
+// Peringatan stok menipis
+// ---------------------------------------------------------------------------
+
+/**
+ * ⛔ Ambang "menipis" adalah PENYARING TAMPILAN, bukan data.
+ *
+ * Tidak ada kolom `minimum_stock_level` di skema mana pun, dan tidak ada satu
+ * pun FR yang menuntutnya — diperiksa terhadap `spec-e` dan PRD. Menambahkan
+ * migrasi untuk itu berarti mengarang kebutuhan produk.
+ *
+ * Yang lebih menentukan: ambang minimum yang benar **berbeda per barang**.
+ * Lima kilogram biji kopi dan lima cangkir bukan angka yang sebanding, dan
+ * satu nilai untuk seluruh katalog akan salah untuk hampir semuanya.
+ *
+ * Karena itu ambangnya hidup di layar, dapat diubah merchant, dan **tidak
+ * disimpan**. Ia menjawab "tunjukkan yang di bawah N" — pertanyaan yang jujur
+ * — bukan berpura-pura sistem tahu batas amannya.
+ *
+ * `[ASUMSI]` nilai bawaannya. Minimum per varian yang tersimpan menuntut
+ * migrasi DAN keputusan produk, dan keduanya milik user.
+ */
+export const AMBANG_MENIPIS_BAWAAN = 5;
+
+/** Keadaan stok yang layak diperhatikan, dari yang paling mendesak. */
+export type TingkatStok = 'minus' | 'habis' | 'menipis' | 'aman';
+
+/**
+ * ⛔ `habis` (nol) dibedakan dari `minus`.
+ *
+ * Nol berarti barangnya benar-benar tidak ada — keadaan yang wajar dan sering
+ * benar. Minus berarti terjual melebihi yang tercatat masuk, dan itu keadaan
+ * yang mustahil secara fisik: entah stok awalnya belum dicatat, atau ada
+ * penjualan yang tidak seharusnya bisa terjadi.
+ *
+ * Menyamakannya membuat merchant baru — yang seluruh stoknya memang belum
+ * dicatat — melihat daftar penuh peringatan yang tidak dapat ia tindaklanjuti.
+ */
+export function tingkatStok(saldoMilli: string, ambangUtuh: number): TingkatStok {
+  let n: bigint;
+  try {
+    n = BigInt(saldoMilli);
+  } catch {
+    return 'aman';
+  }
+  if (n < 0n) return 'minus';
+  if (n === 0n) return 'habis';
+  // Ambang dibandingkan dalam satuan ×1000, tanpa float.
+  return n <= BigInt(Math.trunc(ambangUtuh)) * 1000n ? 'menipis' : 'aman';
+}
+
+export const LABEL_TINGKAT: Record<TingkatStok, string> = {
+  minus: 'Minus',
+  habis: 'Habis',
+  menipis: 'Menipis',
+  aman: '',
+};
+
+export function nadaTingkat(t: TingkatStok): 'warning' | 'neutral' {
+  return t === 'aman' ? 'neutral' : 'warning';
+}
+
+/**
+ * Menyaring daftar stok ke yang perlu diperhatikan.
+ *
+ * ⛔ Varian yang stoknya TIDAK DILACAK dikecualikan. Produk jasa tidak punya
+ * stok untuk menipis, dan memasukkannya membuat daftar peringatan penuh baris
+ * yang tidak dapat ditindaklanjuti siapa pun.
+ */
+export function saringMenipis(
+  daftar: readonly BarisStok[],
+  ambangUtuh: number
+): BarisStok[] {
+  return daftar.filter(
+    (b) => b.trackStock && !b.archived && tingkatStok(b.saldoMilli, ambangUtuh) !== 'aman'
+  );
+}

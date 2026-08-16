@@ -3627,6 +3627,68 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/inventory/oversells:
+    get:
+      operationId: getInventoryOversells
+      summary: B-15 "Perlu Diperiksa" -- oversell dan selisih kas.
+      description: >-
+        Dua daftar dalam satu respons, karena IA menamai layarnya "Perlu
+        Diperiksa (oversell + selisih)". Mengirimnya terpisah berarti layar
+        harus menjahitnya sendiri, dan ringkasan "berapa yang perlu diperiksa"
+        jadi punya dua sumber.
+
+
+        ⛔ Oversell BUKAN kesalahan. Pencegahannya saat offline adalah non-goal
+        PERMANEN (konsekuensi teorema CAP): dua perangkat yang menjual barang
+        terakhir saat offline sama-sama benar, dan keduanya harus berhasil.
+        Yang dilakukan sistem adalah membuat konsekuensinya terlihat dan
+        tertangani sebagai proses bisnis. Bahasanya karena itu deskriptif --
+        perangkat yang TERLIBAT, bukan pelaku.
+
+
+        Rentang oversell dihitung atas detected_at (waktu server menyadarinya),
+        bukan tanggal bisnis penjualannya: oversell lahir saat perangkat kedua
+        tersinkronisasi, dan itu dapat berhari-hari kemudian.
+
+
+        Selisih kas hanya memuat shift TERTUTUP yang selisihnya bukan nol.
+        Shift yang cocok bukan "perlu diperiksa", dan difference NULL berarti
+        belum dihitung -- bukan selisih nol.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: include_resolved
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Oversell dan selisih kas pada rentang ini.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerluDiperiksa'
+        '400':
+          description: Rentang tidak valid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
     HasilTutupShift:
@@ -3742,6 +3804,56 @@ components:
               hitungan: { type: string }
               pada: { type: string, nullable: true }
               oleh: { type: string, nullable: true }
+    PerluDiperiksa:
+      type: object
+      required: [from, to, outletId, oversell, selisihKas]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        oversell:
+          type: array
+          items:
+            type: object
+            required:
+              [id, outletId, variationId, itemName, variationName, detectedAt,
+               quantityOver, devicesInvolved, ordersInvolved]
+            properties:
+              id: { type: string }
+              outletId: { type: string }
+              variationId: { type: string }
+              itemName: { type: string }
+              variationName: { type: string }
+              detectedAt: { type: string, format: date-time }
+              quantityOver:
+                type: string
+                description: Kuantitas x1000 yang terjual melebihi saldo.
+              devicesInvolved:
+                type: array
+                items: { type: string }
+              ordersInvolved:
+                type: array
+                items: { type: string }
+              resolvedBy: { type: string, nullable: true }
+              resolvedByNama: { type: string, nullable: true }
+              resolvedAt: { type: string, nullable: true }
+              resolutionNote: { type: string, nullable: true }
+        selisihKas:
+          type: array
+          items:
+            type: object
+            required: [shiftId, outletId, businessDate, openedByNama, difference]
+            properties:
+              shiftId: { type: string }
+              outletId: { type: string }
+              businessDate: { type: string }
+              openedByNama: { type: string }
+              closedByNama: { type: string, nullable: true }
+              approvedByNama: { type: string, nullable: true }
+              closedAt: { type: string, nullable: true }
+              difference: { type: string }
+              varianceReasonCode: { type: string, nullable: true }
+              varianceNote: { type: string, nullable: true }
     DaftarStok:
       type: object
       required: [outletId, items]

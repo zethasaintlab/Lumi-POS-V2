@@ -265,3 +265,71 @@ test('ada isi → tidak ada pesan', async () => {
   const { pesanKeadaan } = await import(B12);
   assert.equal(pesanKeadaan({ jenis: 'siap', items: [BARIS({})] }, ''), null);
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Peringatan stok menipis
+// ---------------------------------------------------------------------------
+
+test('⛔ SABOTASE: barang di atas ambang TIDAK boleh muncul di peringatan', async () => {
+  // Skenario yang diminta. Peringatan yang memuat barang aman membuat
+  // seluruh daftarnya tidak dapat dipercaya — merchant berhenti membacanya,
+  // dan yang benar-benar habis ikut terabaikan.
+  const { saringMenipis } = await import(B12);
+  const daftar = [
+    BARIS({ variationId: 'aman', saldoMilli: '50000' }),   // 50 satuan
+    BARIS({ variationId: 'batas', saldoMilli: '6000' }),    // 6 — di atas ambang 5
+    BARIS({ variationId: 'menipis', saldoMilli: '5000' }),  // 5 — tepat di ambang
+    BARIS({ variationId: 'habis', saldoMilli: '0' }),
+    BARIS({ variationId: 'minus', saldoMilli: '-2000' }),
+  ];
+  const hasil = saringMenipis(daftar, 5).map((b) => b.variationId);
+
+  assert.ok(!hasil.includes('aman'), 'barang bersaldo aman muncul di peringatan');
+  assert.ok(!hasil.includes('batas'), 'barang di ATAS ambang muncul di peringatan');
+  assert.deepEqual(hasil.sort(), ['habis', 'menipis', 'minus']);
+});
+
+test('⛔ ambang INKLUSIF — tepat di ambang sudah dianggap menipis', async () => {
+  const { tingkatStok } = await import(B12);
+  assert.equal(tingkatStok('5000', 5), 'menipis');
+  assert.equal(tingkatStok('5001', 5), 'aman');
+});
+
+test('⛔ habis (nol) DIBEDAKAN dari minus', async () => {
+  // Nol berarti barangnya memang tidak ada — wajar. Minus berarti terjual
+  // melebihi yang tercatat masuk: mustahil secara fisik.
+  const { tingkatStok, LABEL_TINGKAT } = await import(B12);
+  assert.equal(tingkatStok('0', 5), 'habis');
+  assert.equal(tingkatStok('-1', 5), 'minus');
+  assert.notEqual(LABEL_TINGKAT.habis, LABEL_TINGKAT.minus);
+});
+
+test('⛔ varian yang stoknya TIDAK DILACAK dikecualikan', async () => {
+  // Produk jasa tidak punya stok untuk menipis.
+  const { saringMenipis } = await import(B12);
+  const daftar = [
+    BARIS({ variationId: 'jasa', saldoMilli: '0', trackStock: false }),
+    BARIS({ variationId: 'barang', saldoMilli: '0', trackStock: true }),
+  ];
+  assert.deepEqual(saringMenipis(daftar, 5).map((b) => b.variationId), ['barang']);
+});
+
+test('varian terarsip tidak ikut diperingatkan', async () => {
+  const { saringMenipis } = await import(B12);
+  const daftar = [BARIS({ variationId: 'arsip', saldoMilli: '0', archived: true })];
+  assert.deepEqual(saringMenipis(daftar, 5), []);
+});
+
+test('⛔ ambang dibandingkan TANPA float', async () => {
+  // ×1000 dan ambang utuh: 0,001 satuan di bawah ambang tetap menipis, dan
+  // nilai besar tidak kehilangan presisi.
+  const { tingkatStok } = await import(B12);
+  assert.equal(tingkatStok('4999', 5), 'menipis');
+  assert.equal(tingkatStok('9007199254740993', 5), 'aman');
+});
+
+test('ambang bawaan ditandai sebagai asumsi, bukan aturan', async () => {
+  const { AMBANG_MENIPIS_BAWAAN } = await import(B12);
+  assert.equal(typeof AMBANG_MENIPIS_BAWAAN, 'number');
+  assert.equal(AMBANG_MENIPIS_BAWAAN, 5);
+});
