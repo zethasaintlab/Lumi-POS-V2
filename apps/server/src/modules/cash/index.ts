@@ -1,15 +1,20 @@
 import type { Pool, PoolClient } from '../../db.ts';
+import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { HttpError } from '../../http-error.ts';
 import { createShiftHandlers } from './handlers/shifts.ts';
+import { createTutupHandlers } from './handlers/tutup.ts';
 
 // Modul cash lahir kecil dan disengaja demikian (keputusan Q1,
 // PLAN-ordering-fondasi.md §8.0): hanya "buka shift". Tutup shift, hitung
 // kas, selisih, cash_movement, no-sale tetap F3 -- lihat
 // apps/server/src/modules/README.md untuk kepemilikan tabel modul ini
 // (cash_drawer_shift, cash_movement).
-export function createCashHandlers(pool: Pool): Record<string, unknown> {
+//  masuk sejak tutup shift ada: penutupan menulis audit event, dan
+// monotonisitas HLC dijaga LINTAS request oleh satu instance di buildApp.
+export function createCashHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
     ...createShiftHandlers(pool),
+    ...createTutupHandlers(pool, hlc),
   };
 }
 

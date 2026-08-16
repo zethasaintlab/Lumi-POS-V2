@@ -30,6 +30,7 @@ import { EksporLayar } from './laporan/Ekspor.tsx';
 import { ExceptionLayar } from './pengawasan/Exception.tsx';
 import { RiwayatLayar } from './penjualan/Riwayat.tsx';
 import { StokLayar } from './inventori/Stok.tsx';
+import { ShiftLayar } from './penjualan/Shift.tsx';
 import { ProdukLayar } from './katalog/Produk.tsx';
 import { KategoriLayar } from './katalog/Kategori.tsx';
 import { HargaLayar } from './katalog/Harga.tsx';
@@ -184,6 +185,8 @@ function Terlindungi() {
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
         {layar === 'B-29' ? <Langganan /> : null}
         {layar === 'B-02' ? <RiwayatLayar /> : null}
+        {/* B-05 tidak punya layar sendiri — ia panel di atas B-04. */}
+        {layar === 'B-04' ? <ShiftLayar /> : null}
         {layar === 'B-06' ? <ProdukLayar /> : null}
         {layar === 'B-08' ? <KategoriLayar /> : null}
         {layar === 'B-09' ? <ModifierLayar /> : null}

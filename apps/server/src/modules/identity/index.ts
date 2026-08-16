@@ -105,6 +105,29 @@ export async function assertBoleh(
   operasi: string,
   label = 'melakukan operasi ini'
 ): Promise<void> {
+  if (!(await bolehkahAktor(client, userId, operasi))) {
+    throw new HttpError(403, 'FORBIDDEN', `Pengguna ${userId} tidak berhak ${label}.`);
+  }
+}
+
+/**
+ * Bentuk `assertBoleh` yang MENJAWAB alih-alih melempar.
+ *
+ * ⛔ Ada karena sebagian aturan bukan "boleh atau ditolak" melainkan salah
+ * satu dari beberapa jalan. Tutup shift misalnya: pemilik shift boleh, DAN
+ * manajer boleh — memakai `assertBoleh` di sana akan menolak kasir yang
+ * menutup shiftnya sendiri, yang justru jalur normalnya.
+ *
+ * ⛔ Keduanya berbagi SATU query dan SATU pemanggilan `bolehkah`. Menyalin
+ * badannya akan membuat dua tempat memutuskan hal yang sama, dan yang satu
+ * akan lupa `u.is_active = true` — pengguna nonaktif yang tetap berwenang
+ * adalah kegagalan yang tidak terlihat sampai seseorang memakainya.
+ */
+export async function bolehkahAktor(
+  client: PoolClient,
+  userId: string,
+  operasi: string
+): Promise<boolean> {
   // SELECT tunduk RLS: peran milik pengguna tenant lain tidak terlihat, jadi
   // id lintas-tenant jatuh ke daftar kosong dan ditolak fail-closed.
   const { rows } = await client.query<{ role: string }>(
@@ -114,9 +137,7 @@ export async function assertBoleh(
       WHERE ur.user_id = $1 AND u.is_active = true`,
     [userId]
   );
-  if (!bolehkah(rows.map((r) => r.role), operasi)) {
-    throw new HttpError(403, 'FORBIDDEN', `Pengguna ${userId} tidak berhak ${label}.`);
-  }
+  return bolehkah(rows.map((r) => r.role), operasi);
 }
 
 /**

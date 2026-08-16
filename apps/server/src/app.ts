@@ -175,7 +175,7 @@ async function buildAppInner(
     },
     ...createCatalogHandlers(pool),
     ...createIdentityHandlers(pool, konfigToken, hlc),
-    ...createCashHandlers(pool),
+    ...createCashHandlers(pool, hlc),
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
     ...createTenancyHandlers(pool, hlc),

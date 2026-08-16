@@ -157,6 +157,15 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/close',
+    alasan:
+      'Aturannya BUKAN "peran X boleh operasi Y" melainkan "pemilik shift ATAU manajer". ' +
+      'Peta ini hanya dapat menyatakan yang pertama, dan memakainya di sini akan menolak ' +
+      'kasir yang menutup shiftnya SENDIRI — jalur normalnya. Dijaga di handler: ' +
+      '`opened_by === aktor` atau `approve_cash_variance`',
+  },
+  {
+    metode: 'POST',
     pola: '/auth/logout',
     alasan:
       'Setiap pemegang sesi berhak MENGAKHIRI sesinya sendiri. Peran tidak relevan — ' +

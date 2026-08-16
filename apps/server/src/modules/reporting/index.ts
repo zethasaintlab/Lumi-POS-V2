@@ -5,8 +5,10 @@ import { HttpError } from '../../http-error.ts';
 import { getActorId, getTenantId } from '../../tenant-context.ts';
 import { assertUserVisible } from '../identity/index.ts';
 import { assertOutletVisible } from '../tenancy/index.ts';
+import { assertRentang } from '../ordering/handlers/rentang.ts';
 import { ambilDetail } from './handlers/detail-transaksi.ts';
 import { ambilStok } from './handlers/stok.ts';
+import { ambilDaftarShift, ambilDetailShift } from './handlers/shift.ts';
 
 /**
  * Modul `reporting` — agregator baca-saja.
@@ -61,6 +63,43 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
           sertakanNol: q.include_zero === 'true',
         });
         return { outletId, items };
+      });
+    },
+
+    async getShiftReport(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = req.query as { from?: string; to?: string; outlet_id?: string; include_open?: string };
+      const { from, to, outletId } = assertRentang(q);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+        const items = await ambilDaftarShift(client, {
+          from,
+          to,
+          outletId,
+          // ⛔ Bawaan: HANYA yang tertutup. Shift berjalan tidak punya angka
+          // selisih, dan menampilkannya kosong di kolom uang membuat
+          // manajer mengira hitungannya nol.
+          hanyaTertutup: q.include_open !== 'true',
+        });
+        return { from, to, outletId, items };
+      });
+    },
+
+    async getShiftDetail(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const { shift_id: shiftId } = req.params as { shift_id: string };
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        const detail = await ambilDetailShift(client, shiftId);
+        if (detail === null) {
+          throw new HttpError(404, 'NOT_FOUND', `Shift ${shiftId} tidak ditemukan.`);
+        }
+        return detail;
       });
     },
   };

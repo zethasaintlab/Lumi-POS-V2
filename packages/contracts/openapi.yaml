@@ -3469,8 +3469,279 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /shifts/{shiftId}/close:
+    post:
+      operationId: closeShift
+      summary: Menutup shift, mencatat hitungan fisik dan selisihnya.
+      description: >-
+        Sampai endpoint ini ada, tutup kas hanya terjadi di perangkat dan
+        hasilnya tidak pernah sampai ke server -- setiap shift berstatus open
+        selamanya, dengan counted_amount, difference, dan closed_at permanen
+        NULL. Itu yang memblokir B-04 dan B-05.
+
+
+        Saldo seharusnya dihitung dari cash_movement (spec-d:14), BUKAN dari
+        payment, dan opening_float dikecualikan dari penjumlahan karena ia
+        sudah menjadi saldo awal -- menjumlahkan keduanya menghitung modal awal
+        dua kali.
+
+
+        Selisih yang melewati ambang FR-D4 menuntut alasan DAN penyetuju yang
+        berbeda dari yang menghitung. Ambangnya dipakai bersama dengan aplikasi
+        kasir lewat packages/domain.
+
+
+        Yang boleh menutup: kasir yang membuka shift itu, atau manajer
+        (operasi approve_cash_variance). Kasir lain ditolak 403 -- shift
+        memegang uang yang dipertanggungjawabkan satu orang.
+
+
+        Percobaan hitungan DITAMBAHKAN, tidak pernah menimpa.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [countedAmount]
+              properties:
+                countedAmount:
+                  type: string
+                  description: Hitungan fisik laci, rupiah utuh. Tidak boleh negatif.
+                varianceReasonCode: { type: string, nullable: true }
+                varianceNote: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Shift tertutup.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HasilTutupShift'
+        '400':
+          description: >-
+            Hitungan tidak valid, atau selisih melewati ambang tanpa alasan /
+            penyetuju yang sah.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Bukan pemilik shift dan bukan manajer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Shift tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Shift sudah ditutup.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reports/shifts:
+    get:
+      operationId: getShiftReport
+      summary: B-04 -- daftar shift beserta selisih kasnya.
+      description: >-
+        Bawaan hanya shift yang sudah DITUTUP. Shift berjalan tidak punya angka
+        selisih, dan menampilkannya kosong di kolom uang membuat manajer
+        mengira hitungannya nol; include_open=true menyertakannya secara
+        eksplisit.
+
+
+        expectedAmount dan difference DIBACA dari kolom yang ditulis saat
+        penutupan, tidak dihitung ulang saat laporan dibaca -- movement yang
+        tiba terlambat dari perangkat offline akan mengubah selisih shift yang
+        sudah ditandatangani manajer, tanpa satu pun jejak.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: include_open
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Daftar shift.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaftarShift'
+        '400':
+          description: Rentang tidak valid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reports/shifts/{shift_id}:
+    get:
+      operationId: getShiftDetail
+      summary: B-05 -- rincian satu shift.
+      description: >-
+        Menggabungkan cash_drawer_shift (cash), nama kasir (identity), dan
+        rincian pembayaran per metode (payment). Hanya pembayaran confirmed
+        yang dihitung.
+
+
+        gerakanKas memuat pergerakan NON-penjualan -- setoran bank,
+        pengeluaran, koreksi. opening_float dan sale dikecualikan: yang pertama
+        sudah menjadi saldo awal, yang kedua sudah terwakili rincian per
+        metode.
+      parameters:
+        - name: shift_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Detail shift.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailShift'
+        '404':
+          description: Shift tidak ditemukan, atau milik tenant lain.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
+    HasilTutupShift:
+      type: object
+      required:
+        [id, status, countedAmount, expectedAmount, difference, butuhOtorisasi,
+         jumlahPercobaan]
+      properties:
+        id: { type: string }
+        status: { type: string }
+        countedAmount: { type: string }
+        expectedAmount: { type: string }
+        difference:
+          type: string
+          description: 'counted - expected. Negatif berarti kas kurang.'
+        butuhOtorisasi: { type: boolean }
+        approvedBy: { type: string, nullable: true }
+        closedAt: { type: string, nullable: true }
+        jumlahPercobaan: { type: integer }
+
+    DaftarShift:
+      type: object
+      required: [from, to, outletId, items]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              [id, outletId, deviceId, businessDate, status, openingFloat,
+               openedBy, openedByNama, openedAt, totalDiterima, jumlahTransaksi]
+            properties:
+              id: { type: string }
+              outletId: { type: string }
+              deviceId: { type: string }
+              businessDate: { type: string }
+              status: { type: string }
+              openingFloat: { type: string }
+              openedBy: { type: string }
+              openedByNama: { type: string }
+              openedAt: { type: string, format: date-time }
+              closedBy: { type: string, nullable: true }
+              closedByNama: { type: string, nullable: true }
+              approvedBy: { type: string, nullable: true }
+              approvedByNama: { type: string, nullable: true }
+              closedAt: { type: string, nullable: true }
+              countedAmount: { type: string, nullable: true }
+              expectedAmount: { type: string, nullable: true }
+              difference: { type: string, nullable: true }
+              varianceReasonCode: { type: string, nullable: true }
+              varianceNote: { type: string, nullable: true }
+              totalDiterima: { type: string }
+              jumlahTransaksi: { type: integer }
+
+    DetailShift:
+      type: object
+      required:
+        [id, outletId, deviceId, businessDate, status, openingFloat, openedBy,
+         openedByNama, openedAt, totalDiterima, jumlahTransaksi, perMetode,
+         gerakanKas, percobaanHitungan]
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        deviceId: { type: string }
+        businessDate: { type: string }
+        status: { type: string }
+        openingFloat: { type: string }
+        openedBy: { type: string }
+        openedByNama: { type: string }
+        openedAt: { type: string, format: date-time }
+        closedBy: { type: string, nullable: true }
+        closedByNama: { type: string, nullable: true }
+        approvedBy: { type: string, nullable: true }
+        approvedByNama: { type: string, nullable: true }
+        closedAt: { type: string, nullable: true }
+        countedAmount: { type: string, nullable: true }
+        expectedAmount: { type: string, nullable: true }
+        difference: { type: string, nullable: true }
+        varianceReasonCode: { type: string, nullable: true }
+        varianceNote: { type: string, nullable: true }
+        totalDiterima: { type: string }
+        jumlahTransaksi: { type: integer }
+        perMetode:
+          type: array
+          items:
+            type: object
+            required: [method, jumlahTransaksi, total]
+            properties:
+              method: { type: string }
+              jumlahTransaksi: { type: integer }
+              total: { type: string }
+        gerakanKas:
+          type: array
+          items:
+            type: object
+            required: [id, type, delta, occurredAt]
+            properties:
+              id: { type: string }
+              type: { type: string }
+              delta: { type: string }
+              reasonCode: { type: string, nullable: true }
+              note: { type: string, nullable: true }
+              occurredAt: { type: string, format: date-time }
+        percobaanHitungan:
+          type: array
+          items:
+            type: object
+            required: [hitungan]
+            properties:
+              hitungan: { type: string }
+              pada: { type: string, nullable: true }
+              oleh: { type: string, nullable: true }
     DaftarStok:
       type: object
       required: [outletId, items]

@@ -183,3 +183,25 @@ export function saldoLaci(saldoAwal: number, deltas: readonly number[]): number 
   for (const d of deltas) total += d;
   return total;
 }
+
+/**
+ * `spec-d` FR-D4 — ambang selisih kas yang menuntut otorisasi manajer.
+ *
+ * ## ⛔ Ia pindah ke sini karena SERVER kini juga menutup shift
+ *
+ * Sampai 16 Agustus 2026 konstanta ini hanya hidup di
+ * `apps/kasir/src/kas/tutup.ts`, dan itu benar selama hanya perangkat yang
+ * dapat menutup kas. Begitu server punya endpoint tutup, dua salinan angka
+ * yang sama akan menyimpang — dan bentuk penyimpangannya buruk: perangkat
+ * menuntut otorisasi untuk selisih yang server terima diam-diam, atau
+ * sebaliknya. Kasir yang sama, shift yang sama, jawaban berbeda.
+ *
+ * `[ASUMSI]` pada NILAINYA — keputusan 1 Agustus 2026 menetapkan Rp 20.000
+ * dan mencatat bahwa angkanya belum divalidasi ke merchant.
+ */
+export const AMBANG_SELISIH = 20000;
+
+/** Inklusif, dan berlaku untuk kelebihan maupun kekurangan (`spec-d` FR-D4). */
+export function butuhOtorisasiSelisih(selisih: number): boolean {
+  return Math.abs(selisih) >= AMBANG_SELISIH;
+}
