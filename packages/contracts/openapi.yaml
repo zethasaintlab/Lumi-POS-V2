@@ -3297,8 +3297,209 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /orders/cleanup-abandoned:
+    post:
+      operationId: cleanupAbandonedOrders
+      summary: Menutup keranjang mati dan membebaskan stok yang dikuncinya.
+      description: >-
+        Movement sale ditulis saat order DIBUAT, bukan saat dibayar. Order yang
+        dibuat lalu ditinggalkan karena itu memegang stok selamanya, dan
+        keputusan B-02 menyembunyikan keranjang open dari daftar transaksi --
+        jadi stok berkurang karena order yang tidak dapat dilihat siapa pun.
+
+
+        Endpoint ini mencari order berstatus open yang recorded_at-nya lebih
+        tua dari 24 jam, membalik movement sale-nya, dan mengubah statusnya
+        menjadi abandoned. Ambangnya memakai recorded_at (jam database), BUKAN
+        occurred_at (jam perangkat, yang dapat menyimpang dan mundur).
+
+
+        Aman dijalankan berulang: putaran kedua tidak menemukan order yang sama
+        karena statusnya sudah bukan open.
+
+
+        Menuntut operasi stock_adjust -- efeknya membebaskan stok, dan itu
+        tingkat manajer.
+      responses:
+        '200':
+          description: Ringkasan pembersihan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [jamKedaluwarsa, jumlahDibersihkan, movementDitulis,
+                   totalStokDikembalikan, orderIds]
+                properties:
+                  jamKedaluwarsa: { type: integer }
+                  jumlahDibersihkan: { type: integer }
+                  movementDitulis: { type: integer }
+                  totalStokDikembalikan:
+                    type: string
+                    description: Kuantitas x1000, STRING.
+                  orderIds:
+                    type: array
+                    items: { type: string }
+        '403':
+          description: Aktor tidak berhak (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /inventory/movements:
+    post:
+      operationId: createStockMovement
+      summary: B-13 -- mencatat barang masuk atau koreksi stok.
+      description: >-
+        Satu-satunya jalan MEMASUKKAN stok ke sistem. Hanya menerima tipe
+        receipt dan adjustment; sale, void, dan refund lahir dari transaksi
+        penjualan di transaksi database yang sama dengannya, dan menerimanya
+        di sini membuka jalan menulis pergerakan penjualan tanpa penjualannya.
+
+
+        adjustment WAJIB menyertakan reasonCode (AC FR-E2). receipt wajib
+        positif -- tanpa aturan itu, receipt negatif menjadi cara mengurangi
+        stok tanpa alasan, persis yang adjustment diwajibkan menyertakannya.
+
+
+        delta adalah kuantitas x1000 bertanda, dikirim sebagai STRING.
+
+
+        Menuntut operasi stock_adjust.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outletId, variationId, type, delta]
+              properties:
+                id: { type: string }
+                outletId: { type: string }
+                variationId: { type: string }
+                type:
+                  type: string
+                  description: 'receipt | adjustment'
+                delta:
+                  type: string
+                  description: Kuantitas x1000, bertanda.
+                reasonCode: { type: string, nullable: true }
+                note: { type: string, nullable: true }
+                unitCost: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Movement tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, outletId, variationId, type, delta]
+                properties:
+                  id: { type: string }
+                  outletId: { type: string }
+                  variationId: { type: string }
+                  type: { type: string }
+                  delta: { type: string }
+                  reasonCode: { type: string, nullable: true }
+        '400':
+          description: Tipe, delta, atau alasan tidak valid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Aktor tidak berhak (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Outlet atau variation tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reports/inventory/stocks:
+    get:
+      operationId: getInventoryStocks
+      summary: B-12 -- saldo stok per varian, dari SUM(delta).
+      description: >-
+        Dilayani modul reporting: saldo butuh stock_movement (milik inventory)
+        DAN nama produk (milik catalog), dan modul itu satu-satunya yang boleh
+        membaca lintas domain.
+
+
+        Saldo dihitung SUM(delta), bukan dibaca dari stock_snapshot -- tabel
+        itu ada di skema server dan kosong, dan memakainya berarti membangun
+        keadaan kedua yang dapat basi untuk mempercepat sesuatu yang belum
+        pernah diukur lambat.
+
+
+        saldoMilli adalah kuantitas x1000 sebagai STRING; saldo adalah bentuk
+        terbacanya, dihitung dari bilangan bulat. Pembagian 1000 TIDAK
+        dilakukan di SQL -- pembagian integer atas bigint membuat 2500 menjadi
+        2, dan setengah kilogram menghilang tanpa error.
+
+
+        include_zero=true menyertakan varian yang belum punya movement sama
+        sekali, dan hanya berlaku bila outlet_id diberikan -- tanpa outlet yang
+        jelas, saldo nol tidak dapat dibentuk. Varian itu justru yang paling
+        perlu terlihat: barang baru yang stoknya belum pernah dimasukkan.
+      parameters:
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: only_negative
+          in: query
+          required: false
+          schema: { type: string }
+        - name: include_zero
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Saldo stok per varian.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaftarStok'
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
+    DaftarStok:
+      type: object
+      required: [outletId, items]
+      properties:
+        outletId: { type: string, nullable: true }
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              [variationId, itemId, itemName, variationName, outletId,
+               trackStock, archived, saldoMilli, saldo, jumlahMovement]
+            properties:
+              variationId: { type: string }
+              itemId: { type: string }
+              itemName: { type: string }
+              variationName: { type: string }
+              categoryId: { type: string, nullable: true }
+              outletId: { type: string }
+              trackStock: { type: boolean }
+              archived: { type: boolean }
+              saldoMilli:
+                type: string
+                description: Kuantitas x1000, STRING.
+              saldo:
+                type: string
+                description: Bentuk terbaca, dihitung dari bilangan bulat.
+              jumlahMovement: { type: integer }
+              movementTerakhir: { type: string, nullable: true }
     DetailTransaksi:
       type: object
       required:

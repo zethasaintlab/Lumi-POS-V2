@@ -4,7 +4,9 @@ import { withTenantTransaction } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
 import { getActorId, getTenantId } from '../../tenant-context.ts';
 import { assertUserVisible } from '../identity/index.ts';
+import { assertOutletVisible } from '../tenancy/index.ts';
 import { ambilDetail } from './handlers/detail-transaksi.ts';
+import { ambilStok } from './handlers/stok.ts';
 
 /**
  * Modul `reporting` — agregator baca-saja.
@@ -40,6 +42,25 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
           throw new HttpError(404, 'NOT_FOUND', `Transaksi ${orderId} tidak ditemukan.`);
         }
         return detail;
+      });
+    },
+
+    async getInventoryStocks(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = req.query as { outlet_id?: string; only_negative?: string; include_zero?: string };
+      const outletId = q.outlet_id === undefined || q.outlet_id === '' ? null : q.outlet_id;
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+
+        const items = await ambilStok(client, {
+          outletId,
+          hanyaNegatif: q.only_negative === 'true',
+          sertakanNol: q.include_zero === 'true',
+        });
+        return { outletId, items };
       });
     },
   };

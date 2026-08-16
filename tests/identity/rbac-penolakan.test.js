@@ -193,6 +193,18 @@ function kasus() {
     ],
     ['POST', `/tax-rates/${pajakId}/end`, { effectiveTo: new Date().toISOString() }],
     ['GET', '/tenants/usage', undefined],
+
+    // Inventori: `stock_adjust`. Kasir tidak menyesuaikan stok — seluruh
+    // pengurangan yang boleh ia sebabkan lahir dari penjualan.
+    [
+      'POST',
+      '/inventory/movements',
+      { outletId: base.outlet.id, variationId: varId, type: 'receipt', delta: '1000' },
+    ],
+    // ⛔ Pembersihan keranjang terbengkalai ikut `stock_adjust`, bukan
+    // `void_refund` — yang terakhir mencakup kasir, dan pembersihan massal
+    // lintas outlet bukan wewenangnya.
+    ['POST', '/orders/cleanup-abandoned', undefined],
   ];
 }
 
