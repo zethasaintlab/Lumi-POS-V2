@@ -8,6 +8,7 @@ import { createCashierReportHandlers } from './handlers/reports-kasir.ts';
 import { createPaymentReportHandlers } from './handlers/reports-pembayaran.ts';
 import { createExportHandlers } from './handlers/reports-ekspor.ts';
 import { createExceptionReportHandlers } from './handlers/reports-exception.ts';
+import { createRiwayatHandlers } from './handlers/riwayat.ts';
 
 // Permukaan publik modul ordering (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN: order, check, order_line, order_line_modifier,
@@ -27,5 +28,6 @@ export function createOrderingHandlers(pool: Pool, hlc: Hlc): Record<string, unk
     ...createPaymentReportHandlers(pool),
     ...createExportHandlers(pool),
     ...createExceptionReportHandlers(pool),
+    ...createRiwayatHandlers(pool),
   };
 }

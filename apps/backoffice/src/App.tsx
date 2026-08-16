@@ -28,6 +28,7 @@ import { KasirLaporanLayar } from './laporan/Kasir.tsx';
 import { PembayaranLayar } from './laporan/Pembayaran.tsx';
 import { EksporLayar } from './laporan/Ekspor.tsx';
 import { ExceptionLayar } from './pengawasan/Exception.tsx';
+import { RiwayatLayar } from './penjualan/Riwayat.tsx';
 import { ProdukLayar } from './katalog/Produk.tsx';
 import { KategoriLayar } from './katalog/Kategori.tsx';
 import { HargaLayar } from './katalog/Harga.tsx';
@@ -181,6 +182,7 @@ function Terlindungi() {
     >
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
         {layar === 'B-29' ? <Langganan /> : null}
+        {layar === 'B-02' ? <RiwayatLayar /> : null}
         {layar === 'B-06' ? <ProdukLayar /> : null}
         {layar === 'B-08' ? <KategoriLayar /> : null}
         {layar === 'B-09' ? <ModifierLayar /> : null}
