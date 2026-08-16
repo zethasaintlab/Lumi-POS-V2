@@ -57,16 +57,25 @@ async function ambilUser(client: PoolClient, userId: string): Promise<BarisUser>
 }
 
 async function bentukUser(client: PoolClient, baris: BarisUser) {
-  const [peran, outlet] = await Promise.all([
-    client.query<{ role: string; scope_type: string; scope_id: string }>(
-      'SELECT role, scope_type, scope_id FROM user_role WHERE user_id = $1 ORDER BY role',
-      [baris.id]
-    ),
-    client.query<{ outlet_id: string }>(
-      'SELECT outlet_id FROM user_outlet WHERE user_id = $1 ORDER BY outlet_id',
-      [baris.id]
-    ),
-  ]);
+  // ⛔ BERURUTAN, dan itu bukan pilihan gaya. Versi sebelumnya memakai
+  // `Promise.all` atas SATU `PoolClient`, dan itu tidak memparalelkan apa pun:
+  // `node-postgres` mengantrekan query pada koneksi yang sama, jadi
+  // wall-clock-nya identik dengan berurutan — sambil memancing
+  // `DeprecationWarning: Calling client.query() when the client is already
+  // executing a query`, perilaku yang **dihapus di pg@9**.
+  //
+  // Memparalelkannya dengan sungguh-sungguh menuntut koneksi kedua, dan itu
+  // berarti transaksi kedua: `SET LOCAL app.tenant_id` berlaku per transaksi
+  // (invariant #8), jadi keduanya harus menyetelnya sendiri-sendiri dan
+  // pengguna berhenti dibaca dari satu potret pada satu titik waktu.
+  const peran = await client.query<{ role: string; scope_type: string; scope_id: string }>(
+    'SELECT role, scope_type, scope_id FROM user_role WHERE user_id = $1 ORDER BY role',
+    [baris.id]
+  );
+  const outlet = await client.query<{ outlet_id: string }>(
+    'SELECT outlet_id FROM user_outlet WHERE user_id = $1 ORDER BY outlet_id',
+    [baris.id]
+  );
   return {
     id: baris.id,
     name: baris.name,

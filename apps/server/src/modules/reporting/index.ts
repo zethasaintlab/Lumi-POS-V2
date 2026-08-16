@@ -128,10 +128,23 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
         // "Perlu Diperiksa (oversell + selisih)"; mengirimnya terpisah
         // berarti layar harus menjahitnya sendiri, dan ringkasan
         // "berapa yang perlu diperiksa" jadi punya dua sumber.
-        const [oversell, selisihKas] = await Promise.all([
-          ambilOversell(client, filter),
-          ambilSelisihKas(client, filter),
-        ]);
+        //
+        // ⛔ Keduanya dijalankan BERURUTAN, dan itu bukan pilihan gaya. Versi
+        // sebelumnya memakai `Promise.all` atas SATU `PoolClient`, dan itu
+        // tidak memparalelkan apa pun: `node-postgres` mengantrekan query pada
+        // koneksi yang sama, jadi wall-clock-nya identik dengan berurutan —
+        // sambil memancing `DeprecationWarning: Calling client.query() when
+        // the client is already executing a query`, perilaku yang **dihapus di
+        // pg@9**. Terlihat di log server, bukan di test: keduanya menjawab
+        // benar.
+        //
+        // Memparalelkannya dengan sungguh-sungguh menuntut dua koneksi, dan
+        // itu berarti dua transaksi: `SET LOCAL app.tenant_id` berlaku per
+        // transaksi (invariant #8), jadi keduanya harus menyetelnya
+        // sendiri-sendiri dan respons berhenti menjadi satu potret pada satu
+        // titik waktu — persis yang komentar di atas melarang.
+        const oversell = await ambilOversell(client, filter);
+        const selisihKas = await ambilSelisihKas(client, filter);
         return { from, to, outletId, oversell, selisihKas };
       });
     },
