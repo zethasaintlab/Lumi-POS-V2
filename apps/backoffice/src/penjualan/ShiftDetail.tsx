@@ -4,13 +4,14 @@ import { useSesi } from '../sesi.tsx';
 import { GalatHttp } from '../http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { rupiah } from '../katalog/produk.ts';
-import { waktuTampil, zonaPerangkat, labelAlasan } from '../pengawasan/b21.ts';
+import { waktuTampil, zonaPerangkat } from '../pengawasan/b21.ts';
 import {
   LABEL_SELISIH,
   arahSelisih,
   besaranSelisih,
   labelGerak,
   labelMetode,
+  labelAlasanSelisih,
   nadaSelisih,
   type DetailShift,
 } from './b04.ts';
@@ -178,7 +179,11 @@ export function ShiftDetailModal({ shiftId, onTutup }: Props) {
                   jenis: labelGerak(g.type),
                   alasan: (
                     <span className="t-caption">
-                      {g.reasonCode !== null ? labelAlasan(g.reasonCode) : '—'}
+                      {/* ⛔ `cash_movement.reason_code` adalah teks BEBAS — tidak
+                          ada CHECK constraint dan tidak ada daftar tertutup.
+                          Memetakannya lewat kamus mana pun akan menampilkan
+                          `—` untuk kode yang sah tapi tidak terdaftar. */}
+                      {g.reasonCode !== null && g.reasonCode !== '' ? g.reasonCode : '—'}
                       {g.note !== null && g.note !== '' ? ` · ${g.note}` : ''}
                     </span>
                   ),
@@ -224,7 +229,7 @@ export function ShiftDetailModal({ shiftId, onTutup }: Props) {
             </div>
             {d.varianceReasonCode !== null ? (
               <span className="t-caption">
-                Alasan: {labelAlasan(d.varianceReasonCode)}
+                Alasan: {labelAlasanSelisih(d.varianceReasonCode)}
                 {d.varianceNote !== null && d.varianceNote !== '' ? ` — ${d.varianceNote}` : ''}
               </span>
             ) : null}

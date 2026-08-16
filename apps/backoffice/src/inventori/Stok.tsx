@@ -7,11 +7,16 @@ import { Bidang } from '../Bidang.tsx';
 import type { Outlet } from '../laporan/RentangTanggal.tsx';
 import { SesuaikanModal } from './Sesuaikan.tsx';
 import {
+  AMBANG_MENIPIS_BAWAAN,
+  LABEL_TINGKAT,
   labelStok,
   nadaStok,
+  nadaTingkat,
   pesanKeadaan,
   ringkasStok,
+  saringMenipis,
   saringStok,
+  tingkatStok,
   type BarisStok,
   type Keadaan,
 } from './b12.ts';
@@ -67,6 +72,11 @@ export function StokLayar({ bukaPanelAwal = false }: { bukaPanelAwal?: boolean }
   const [outletId, setOutletId] = useState('');
   const [cari, setCari] = useState('');
   const [tampilArsip, setTampilArsip] = useState(false);
+  // ⛔ Mode "perlu diisi" adalah PENYARING TAMPILAN, bukan data. Tidak ada
+  // kolom minimum di skema mana pun, dan ambang yang benar berbeda per barang
+  // — lima kilogram biji kopi dan lima cangkir bukan angka yang sebanding.
+  const [modeMenipis, setModeMenipis] = useState(false);
+  const [ambang, setAmbang] = useState(String(AMBANG_MENIPIS_BAWAAN));
   const [keadaan, setKeadaan] = useState<Keadaan>({ jenis: 'memuat' });
   const [panelTerbuka, setPanelTerbuka] = useState(bukaPanelAwal);
   const [varianAwal, setVarianAwal] = useState<string | null>(null);
@@ -131,10 +141,15 @@ export function StokLayar({ bukaPanelAwal = false }: { bukaPanelAwal?: boolean }
     () => (keadaan.jenis === 'siap' ? keadaan.items : []),
     [keadaan]
   );
-  const terlihat = useMemo(
-    () => saringStok(semua, { cari, tampilArsip }),
-    [semua, cari, tampilArsip]
-  );
+  const ambangUtuh = Number.parseInt(ambang, 10);
+  // Ambang cacat diperlakukan sebagai 0 — menyaring "habis dan minus" saja,
+  // bukan menyaring segalanya atau tidak menyaring apa pun.
+  const ambangSah = Number.isFinite(ambangUtuh) && ambangUtuh >= 0 ? ambangUtuh : 0;
+
+  const terlihat = useMemo(() => {
+    const dasar = saringStok(semua, { cari, tampilArsip });
+    return modeMenipis ? saringMenipis(dasar, ambangSah) : dasar;
+  }, [semua, cari, tampilArsip, modeMenipis, ambangSah]);
   const ringkas = useMemo(() => ringkasStok(terlihat), [terlihat]);
   const pesan = pesanKeadaan(
     keadaan.jenis === 'siap' ? { jenis: 'siap', items: terlihat } : keadaan,
@@ -219,6 +234,12 @@ export function StokLayar({ bukaPanelAwal = false }: { bukaPanelAwal?: boolean }
 
             <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center' }}>
               <Tombol
+                varian={modeMenipis ? 'primary' : 'secondary'}
+                onClick={() => setModeMenipis((v) => !v)}
+              >
+                {modeMenipis ? 'Tampilkan semua' : 'Hanya yang perlu diisi'}
+              </Tombol>
+              <Tombol
                 varian={tampilArsip ? 'primary' : 'secondary'}
                 onClick={() => setTampilArsip((v) => !v)}
               >
@@ -236,6 +257,27 @@ export function StokLayar({ bukaPanelAwal = false }: { bukaPanelAwal?: boolean }
                 </span>
               ) : null}
             </div>
+
+            {modeMenipis ? (
+              <div className="stack" style={{ gap: 'var(--space-2)', maxWidth: '44ch' }}>
+                <div style={{ width: '18ch' }}>
+                  <Bidang
+                    id="ambang-menipis"
+                    label="Anggap perlu diisi bila ≤"
+                    value={ambang}
+                    onChange={(v) => setAmbang(v)}
+                  />
+                </div>
+                {/* ⛔ Dinyatakan: angkanya BUKAN aturan sistem. Tidak ada kolom
+                    minimum di skema, dan menyimpannya menuntut keputusan produk
+                    — ambang yang benar berbeda per barang. */}
+                <span className="t-caption">
+                  Angka ini hanya menyaring tampilan dan <strong>tidak disimpan</strong>. Sistem
+                  belum menyimpan batas minimum per produk, jadi tentukan sendiri berapa yang Anda
+                  anggap perlu diisi ulang.
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -285,9 +327,20 @@ export function StokLayar({ bukaPanelAwal = false }: { bukaPanelAwal?: boolean }
                     <span className="num" style={ANGKA}>
                       {b.saldo}
                     </span>
-                    {labelStok(b.saldoMilli) !== '' ? (
-                      <Badge tone={nadaStok(b.saldoMilli)}>{labelStok(b.saldoMilli)}</Badge>
-                    ) : null}
+                    {/* ⛔ Di mode "perlu diisi", labelnya membedakan Minus,
+                        Habis, dan Menipis — tiga keadaan yang tindakannya
+                        berbeda. Di luar mode itu hanya minus yang ditandai,
+                        supaya daftar penuh tidak menjadi lautan lencana yang
+                        berhenti dibaca orang. */}
+                    {modeMenipis
+                      ? LABEL_TINGKAT[tingkatStok(b.saldoMilli, ambangSah)] !== '' && (
+                          <Badge tone={nadaTingkat(tingkatStok(b.saldoMilli, ambangSah))}>
+                            {LABEL_TINGKAT[tingkatStok(b.saldoMilli, ambangSah)]}
+                          </Badge>
+                        )
+                      : labelStok(b.saldoMilli) !== '' && (
+                          <Badge tone={nadaStok(b.saldoMilli)}>{labelStok(b.saldoMilli)}</Badge>
+                        )}
                   </span>
                 ),
                 gerak: <span className="num">{b.jumlahMovement}</span>,

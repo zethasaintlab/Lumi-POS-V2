@@ -357,14 +357,19 @@ test('B-12 dan B-13 sudah ditandai siap', async () => {
   }
 });
 
-test('⛔ B-14 dan B-15 TIDAK ditandai siap — endpointnya belum ada', async () => {
-  // `stocktake` dan `oversell_event` ada di skema, tapi tidak satu pun rute
-  // REST menyentuhnya. Menandainya siap menjanjikan layar yang tidak dapat
-  // memuat apa pun.
+test('⛔ B-14 (Opname) TIDAK ditandai siap — endpointnya belum ada', async () => {
+  // ⛔ Keduanya dulu sama-sama diblokir, dan sekarang tidak lagi sama.
+  //
+  // B-15 SIAP: `oversell_event` sudah terisi `detectOversell` sejak F3, dan
+  // `GET /reports/inventory/oversells` membacanya.
+  //
+  // B-14 tetap TIDAK. `IA:§3.3` menamainya **Opname**, bukan "stok menipis" —
+  // `stocktake` dan `stocktake_line` ada di skema tapi tidak punya satu pun
+  // rute REST. Peringatan stok menipis hidup di B-12 sebagai penyaring
+  // tampilan, dan itu layar yang berbeda.
   const { LAYAR_SIAP } = await import(NAV);
-  for (const id of ['B-14', 'B-15']) {
-    assert.ok(!LAYAR_SIAP.has(id), `${id} ditandai siap padahal endpointnya belum ada`);
-  }
+  assert.ok(!LAYAR_SIAP.has('B-14'), 'B-14 (Opname) ditandai siap padahal endpointnya belum ada');
+  assert.ok(LAYAR_SIAP.has('B-15'), 'B-15 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
 
 test('B-04 sudah ditandai siap — blokadenya dibuka endpoint tutup shift', async () => {

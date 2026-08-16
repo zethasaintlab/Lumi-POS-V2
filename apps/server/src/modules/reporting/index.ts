@@ -9,6 +9,7 @@ import { assertRentang } from '../ordering/handlers/rentang.ts';
 import { ambilDetail } from './handlers/detail-transaksi.ts';
 import { ambilStok } from './handlers/stok.ts';
 import { ambilDaftarShift, ambilDetailShift } from './handlers/shift.ts';
+import { ambilOversell, ambilSelisihKas } from './handlers/perlu-diperiksa.ts';
 
 /**
  * Modul `reporting` — agregator baca-saja.
@@ -100,6 +101,38 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
           throw new HttpError(404, 'NOT_FOUND', `Shift ${shiftId} tidak ditemukan.`);
         }
         return detail;
+      });
+    },
+
+    async getInventoryOversells(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = req.query as {
+        from?: string;
+        to?: string;
+        outlet_id?: string;
+        include_resolved?: string;
+      };
+      const { from, to, outletId } = assertRentang(q);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+        const filter = {
+          from,
+          to,
+          outletId,
+          sertakanSelesai: q.include_resolved === 'true',
+        };
+        // ⛔ Dua daftar dalam SATU respons. `IA:§3.3` menamai layarnya
+        // "Perlu Diperiksa (oversell + selisih)"; mengirimnya terpisah
+        // berarti layar harus menjahitnya sendiri, dan ringkasan
+        // "berapa yang perlu diperiksa" jadi punya dua sumber.
+        const [oversell, selisihKas] = await Promise.all([
+          ambilOversell(client, filter),
+          ambilSelisihKas(client, filter),
+        ]);
+        return { from, to, outletId, oversell, selisihKas };
       });
     },
   };

@@ -170,3 +170,30 @@ export function pesanKeadaan(keadaan: Keadaan, sertakanTerbuka: boolean): PesanL
         'punya hitungan kas — tekan "Tampilkan shift berjalan" untuk melihatnya.',
   };
 }
+
+/**
+ * ⛔ Alasan SELISIH KAS punya daftarnya sendiri.
+ *
+ * Ditemukan di browser: layar sempat memakai `labelAlasan` dari B-21, yang
+ * memetakan alasan PEMBATALAN. Kode `kesalahan_hitung` tidak ada di sana, jadi
+ * ia tampil sebagai slug mentah — di kolom yang manajer baca untuk memutuskan
+ * apakah selisihnya wajar.
+ *
+ * Daftar kodenya hidup di `apps/kasir/src/kas/tutup.ts` (`ALASAN_SELISIH`),
+ * dan ada test yang membacanya lalu menuntut setiap kode punya label di sini —
+ * kode yang ditambahkan kelak gagal di test alih-alih muncul sebagai slug.
+ */
+export const LABEL_ALASAN_SELISIH: Record<string, string> = {
+  kelebihan_kembalian: 'Kelebihan kembalian',
+  kekurangan_kembalian: 'Kekurangan kembalian',
+  uang_palsu: 'Uang palsu',
+  kesalahan_hitung: 'Kesalahan hitung',
+  belum_teridentifikasi: 'Belum teridentifikasi',
+  lainnya: 'Lainnya',
+};
+
+/** Kode tak dikenal tampil apa adanya — sel kosong lebih buruk. */
+export function labelAlasanSelisih(kode: string | null): string {
+  if (kode === null || kode === '') return '—';
+  return LABEL_ALASAN_SELISIH[kode] ?? kode;
+}
