@@ -3689,6 +3689,228 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /inventory/stocktakes:
+    post:
+      operationId: createStocktake
+      summary: B-14 -- memulai opname. Waktu T dibekukan di sini.
+      description: >-
+        snapshot_at diisi jam DATABASE dan menjadi waktu T untuk seluruh opname
+        ini. Penjualan tetap berjalan selama opname (FR-E7); movement setelah
+        waktu T tidak memengaruhi perhitungan selisih.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outletId]
+              properties:
+                id: { type: string }
+                outletId: { type: string }
+      responses:
+        '201':
+          description: Opname dimulai.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, outletId, status, snapshotAt, startedBy]
+                properties:
+                  id: { type: string }
+                  outletId: { type: string }
+                  status: { type: string }
+                  snapshotAt: { type: string, format: date-time }
+                  startedBy: { type: string }
+        '403':
+          description: Aktor tidak berhak (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      operationId: listStocktakes
+      summary: B-14 -- riwayat opname.
+      parameters:
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Daftar opname, terbaru lebih dulu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaftarOpname'
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /inventory/stocktakes/{stocktakeId}:
+    get:
+      operationId: getStocktake
+      summary: B-14 -- rincian satu opname beserta selisih per baris.
+      parameters:
+        - name: stocktakeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rincian opname.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailOpname'
+        '404':
+          description: Opname tidak ditemukan, atau milik tenant lain.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /inventory/stocktakes/{stocktakeId}/lines:
+    put:
+      operationId: saveStocktakeLines
+      summary: B-14 -- menyimpan hitungan fisik. Dapat dipanggil berulang.
+      description: >-
+        FR-E7: "Opname dapat dijeda dan dilanjutkan." Menyimpan ulang hitungan
+        untuk varian yang sama adalah alur NORMAL, bukan kesalahan.
+
+
+        ⛔ expected_qty dibekukan pada penyimpanan PERTAMA dan tidak ditulis
+        ulang. Ia saldo pada waktu T, dihitung dari movement ber-occurred_at
+        <= snapshot_at. Kalau ia ikut diperbarui setiap koreksi hitungan, waktu
+        T bergerak dan seluruh alasan aturannya hilang.
+      parameters:
+        - name: stocktakeId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lines]
+              properties:
+                lines:
+                  type: array
+                  items:
+                    type: object
+                    required: [variationId, countedQty]
+                    properties:
+                      variationId: { type: string }
+                      countedQty:
+                        type: string
+                        description: Hitungan fisik x1000. Tidak boleh negatif.
+                      reasonCode: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Hitungan tersimpan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, lines]
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      required: [variationId, expectedQty, countedQty]
+                      properties:
+                        variationId: { type: string }
+                        expectedQty: { type: string }
+                        countedQty: { type: string }
+        '400':
+          description: Baris atau kuantitas tidak valid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Opname atau variation tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Opname sudah diselesaikan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /inventory/stocktakes/{stocktakeId}/complete:
+    post:
+      operationId: completeStocktake
+      summary: B-14 -- menyelesaikan opname; di sinilah movement lahir.
+      description: >-
+        ⛔ delta = hitungan_fisik - stok_pada_T, BUKAN hitungan - stok saat ini.
+        AC FR-E7 menyebutnya eksplisit: "Selisih dihitung terhadap snapshot
+        waktu T, bukan stok saat penyimpanan."
+
+
+        Kalau selisih dihitung terhadap stok saat penyelesaian, setiap
+        penjualan yang terjadi selama petugas menghitung akan TERHAPUS: sistem
+        dipaksa sama dengan angka fisik yang dihitung sebelum penjualan itu
+        terjadi, dan barang yang benar-benar keluar dari rak kembali muncul di
+        catatan.
+
+
+        ⛔ Tipe movementnya stocktake, BUKAN adjustment. FR-E2 memberi keduanya
+        baris tersendiri, dan adjustment WAJIB reason_code -- hasil opname
+        tidak selalu punya satu, karena sebab selisihnya justru yang sedang
+        dicari.
+
+
+        Baris yang cocok (selisih nol) tidak menghasilkan movement. Movement
+        dan penutupan opname ditulis di transaksi yang SAMA.
+      parameters:
+        - name: stocktakeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Opname selesai.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [id, status, approvedBy, jumlahBaris, jumlahBerselisih,
+                   movementDitulis]
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+                  snapshotAt: { type: string, nullable: true }
+                  approvedBy: { type: string }
+                  jumlahBaris: { type: integer }
+                  jumlahBerselisih: { type: integer }
+                  movementDitulis: { type: integer }
+        '403':
+          description: Aktor tidak berhak (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Opname tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Opname sudah diselesaikan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
     HasilTutupShift:
@@ -3854,6 +4076,61 @@ components:
               difference: { type: string }
               varianceReasonCode: { type: string, nullable: true }
               varianceNote: { type: string, nullable: true }
+    DaftarOpname:
+      type: object
+      required: [outletId, items]
+      properties:
+        outletId: { type: string, nullable: true }
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              [id, outletId, status, startedBy, startedByNama, jumlahBaris,
+               jumlahDihitung, jumlahBerselisih]
+            properties:
+              id: { type: string }
+              outletId: { type: string }
+              status: { type: string }
+              snapshotAt: { type: string, nullable: true }
+              startedBy: { type: string }
+              startedByNama: { type: string }
+              approvedBy: { type: string, nullable: true }
+              approvedByNama: { type: string, nullable: true }
+              jumlahBaris: { type: integer }
+              jumlahDihitung: { type: integer }
+              jumlahBerselisih: { type: integer }
+
+    DetailOpname:
+      type: object
+      required: [id, outletId, status, startedBy, startedByNama, lines]
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        status: { type: string }
+        snapshotAt: { type: string, nullable: true }
+        startedBy: { type: string }
+        startedByNama: { type: string }
+        approvedBy: { type: string, nullable: true }
+        approvedByNama: { type: string, nullable: true }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [variationId, itemName, variationName, expectedQty]
+            properties:
+              variationId: { type: string }
+              itemName: { type: string }
+              variationName: { type: string }
+              expectedQty:
+                type: string
+                description: Saldo pada waktu T, x1000.
+              countedQty:
+                type: string
+                nullable: true
+                description: null berarti belum dihitung -- bukan dihitung nol.
+              selisih: { type: string, nullable: true }
+              reasonCode: { type: string, nullable: true }
     DaftarStok:
       type: object
       required: [outletId, items]

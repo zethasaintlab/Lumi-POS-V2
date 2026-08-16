@@ -1,6 +1,7 @@
 import type { Pool } from '../../db.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createMovementHandlers } from './handlers/movements.ts';
+import { createOpnameHandlers } from './handlers/opname.ts';
 
 /**
  * Permukaan publik modul `inventory` — Modul E.
@@ -35,5 +36,6 @@ export type { StockMovementType, StockMovementInput } from './handlers/pergeraka
 export function createInventoryHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
     ...createMovementHandlers(pool, hlc),
+    ...createOpnameHandlers(pool, hlc),
   };
 }

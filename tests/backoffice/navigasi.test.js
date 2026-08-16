@@ -357,19 +357,28 @@ test('B-12 dan B-13 sudah ditandai siap', async () => {
   }
 });
 
-test('⛔ B-14 (Opname) TIDAK ditandai siap — endpointnya belum ada', async () => {
-  // ⛔ Keduanya dulu sama-sama diblokir, dan sekarang tidak lagi sama.
+test('B-14 dan B-15 sudah ditandai siap — seluruh grup Inventori utuh', async () => {
+  // ⛔ Keduanya dulu diblokir oleh sebab yang berbeda, dan keduanya kini
+  // terbuka:
   //
-  // B-15 SIAP: `oversell_event` sudah terisi `detectOversell` sejak F3, dan
+  // B-15 — `oversell_event` sudah terisi `detectOversell` sejak F3, dan
   // `GET /reports/inventory/oversells` membacanya.
   //
-  // B-14 tetap TIDAK. `IA:§3.3` menamainya **Opname**, bukan "stok menipis" —
-  // `stocktake` dan `stocktake_line` ada di skema tapi tidak punya satu pun
-  // rute REST. Peringatan stok menipis hidup di B-12 sebagai penyaring
-  // tampilan, dan itu layar yang berbeda.
-  const { LAYAR_SIAP } = await import(NAV);
-  assert.ok(!LAYAR_SIAP.has('B-14'), 'B-14 (Opname) ditandai siap padahal endpointnya belum ada');
-  assert.ok(LAYAR_SIAP.has('B-15'), 'B-15 sudah dibangun tapi masih menampilkan keadaan kosong');
+  // B-14 — `stocktake`/`stocktake_line` ada di skema sejak migrasi 0010 tapi
+  // tidak punya satu pun rute REST sampai epik ini. `IA:§3.3` menamainya
+  // **Opname**; peringatan stok menipis adalah hal lain dan hidup di B-12
+  // sebagai penyaring tampilan.
+  const { LAYAR_SIAP, NAVIGASI } = await import(NAV);
+  for (const id of ['B-14', 'B-15']) {
+    assert.ok(LAYAR_SIAP.has(id), `${id} sudah dibangun tapi masih menampilkan keadaan kosong`);
+  }
+
+  // Penjaga yang menahan grup Inventori tetap utuh: layar yang ditambahkan
+  // kelak tanpa isi terlihat di sini alih-alih diam-diam menampilkan keadaan
+  // kosong di tengah grup yang penuh.
+  const inventori = NAVIGASI.find((g) => g.group === 'Inventori');
+  const belum = inventori.items.filter((i) => !LAYAR_SIAP.has(i.id)).map((i) => i.id);
+  assert.deepEqual(belum, [], `layar Inventori tanpa isi: ${belum.join(', ')}`);
 });
 
 test('B-04 sudah ditandai siap — blokadenya dibuka endpoint tutup shift', async () => {
