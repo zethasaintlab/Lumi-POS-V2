@@ -1,6 +1,11 @@
 # Handoff Checklist
 
-Status per 27 Juli 2026. Centang saat selesai.
+Status per 16 Agustus 2026. Centang saat selesai.
+
+Bagian F0–F4 di bawah adalah catatan fase kasir; **G1 (back-office) ada di
+bagian terakhir berkas ini.** Beberapa baris utang di bagian F3/F4 sudah
+ditutup oleh G1 dan ditandai coret di tempatnya — dicoret, bukan dihapus,
+supaya alasan aslinya tetap dapat dibaca.
 
 ## Sebelum baris kode pertama
 
@@ -219,8 +224,8 @@ melihatnya. Yang melihatnya: membangun potongan berikutnya di atasnya.
 | Endpoint REST `sold_out_flag` + relay | Penandaan habis berlaku LOKAL saja. Meng-enqueue item tanpa rute akan membakar hitungan percobaannya sampai `failed` permanen — antrean merah tanpa ada yang salah. `spec-e:211` menuntut ia masuk antrean; itu menunggu endpointnya |
 | Tekan-tahan kartu produk + penimpaan manajer (FR-E5) | Blokirnya sudah berlaku; jalur menandai dan menimpanya belum ada di layar |
 | Notifikasi manajer untuk oversell (FR-E6) | `spec-e:195` menuntut "notifikasi, bukan hanya entri di laporan yang mungkin tidak dibuka". Eventnya sudah lengkap dan dapat diselidiki; yang belum ada jalur pemberitahuannya dan layar penyelesaiannya |
-| Opname (FR-E7) | **Ditunda ke v1.1**, keputusan user 14 Agustus 2026 — menjawab pertanyaan terbuka `spec-e:343` |
-| Laporan back-office B-16/B-17 | `laporanHarian` dan `laporanPerProduk` sudah ada dan teruji, TANPA layar. `IA:195-197` menempatkan keduanya di back-office (peran Manajer Outlet, ❌ offline), dan permukaan kasir hanya punya K-13. Mengarang layar untuk mereka berarti memutuskan sesuatu yang belum diputuskan pemilik produk |
+| ~~Opname (FR-E7)~~ | **Keputusan dibalik dan dikerjakan 16 Agustus 2026** (PR #43, B-14). Yang membuka blokirnya: pertanyaan `spec-e:343` ternyata tentang *kapan* delta dihitung, bukan tentang apakah opname perlu ada — dan jawabannya ada di spec, bukan pada merchant. Lihat § G1 |
+| ~~Laporan back-office B-16/B-17~~ | **Berlayar.** Daftar layar yang sudah punya isi hidup di `LAYAR_SIAP` (`apps/backoffice/src/navigasi.ts`) dan dijaga test — bukan di berkas ini, yang akan basi |
 | Laporan exception FR-G5 (8 laporan) · ringkasan owner FR-G6 · ekspor G.5 | Semuanya P1 |
 | FR-F5 sisi laporan | Tertutup untuk perangkat: tidak ada field `cost`/`margin` di laporan mana pun, dan `Object.keys` diperiksa test. Penyaringan per-peran di respons SERVER menunggu laporan server ada |
 
@@ -270,8 +275,8 @@ data, dan cetak ulang FR-B11.
 | Retry antrean `print_job` | Tabel dan dokumen tersimpan; penjadwal retry belum ditulis. Sampai ada, cetak yang gagal harus diulang manual lewat K-09 |
 | Nama tarif pajak di cetak ulang | Baris pajak berbunyi "Pajak" tanpa nama tarif — meresolusinya menuntut query ke `tax_rate`, yang `spec-b:145` larang. **DIPUTUSKAN 15 Agustus 2026: denormalisasi di F5** — nama tarif disalin ke `order_line` saat checkout. Larangan query katalog tidak dilonggarkan; yang berubah adalah apa yang tersimpan sebagai snapshot. Struk adalah rekaman historis, dan snapshot-nya harus lengkap sejak ditulis |
 | Endpoint REST `sold_out_flag` + relay (dari F3) | Penandaan habis masih lokal saja |
-| Notifikasi manajer untuk oversell (dari F3) | `spec-e:195` menuntut lebih dari entri laporan |
-| Laporan back-office B-16/B-17 (dari F3) | Fungsinya ada dan teruji, tanpa layar. `IA:195-197` menempatkannya di back-office |
+| Notifikasi manajer untuk oversell (dari F3) | `spec-e:195` menuntut lebih dari entri laporan. **Separuh tertutup di G1**: B-15 "Perlu diperiksa" memberi layar penyelesaiannya; yang belum ada jalur pemberitahuan aktifnya |
+| ~~Laporan back-office B-16/B-17 (dari F3)~~ | **Berlayar sejak G1** — lihat § G1 di bawah |
 
 **Batas yang harus dibaca sebelum menyebut F4 aman:**
 
@@ -288,4 +293,83 @@ data, dan cetak ulang FR-B11.
   dengan merchant mana pun.
 - **Uji cetak K-15 memakai `noopPeripheral`.** Ia membuktikan dokumen dan
   byte-nya terbentuk, bukan bahwa perangkat menjawab.
+
+---
+
+## G1 — back-office, milestone ditutup 16 Agustus 2026
+
+`apps/backoffice` bukan lagi kerangka. Empat epik selesai dan ter-merge,
+semuanya lewat PR ber-CI dan semuanya diverifikasi di browser terhadap
+PostgreSQL sungguhan — bukan hanya lewat test.
+
+| Epik | Layar | Status | PR |
+|---|---|---|---|
+| **Dasbor** | B-01 beranda | ✅ MERGED | #44 |
+| **Penjualan** | B-02 riwayat · B-03 detail transaksi | ✅ MERGED | #34, #35, #36 |
+| **Penjualan** | B-04 daftar shift · B-05 detail shift | ✅ MERGED | #41 |
+| **Inventori** | B-12 stok · B-13 penyesuaian | ✅ MERGED | #38, #39, #40 |
+| **Inventori** | B-14 opname · B-15 perlu diperiksa | ✅ MERGED | #42, #43 |
+| **Pengawasan** | B-21 laporan exception | ✅ MERGED | #32, #33 |
+
+**Epik Inventori selesai 100%** — keempat layarnya ada, dan penjaga
+`tests/backoffice/navigasi.test.js` menolak grup Inventori yang punya layar
+tanpa isi. Penjaga yang sama kini berlaku untuk grup Ringkasan.
+
+### B-01 sebagai beranda, dan kenapa itu penting
+
+`Terlindungi` sudah memulai `aktif` di `'B-01'` sejak `apps/backoffice`
+berdiri. Selama ini itu berarti layar **pertama** setiap pembukaan
+back-office adalah "Dashboard belum dibangun" — keadaan kosong yang jujur di
+menu mana pun, tapi di beranda ia terbaca sebagai aplikasi yang rusak, dan
+yang membukanya pertama kali adalah merchant yang baru mendaftar tanpa
+siapa pun untuk ditanyai.
+
+`GET /reports/dashboard/summary` menutup itu **tanpa memperkenalkan satu pun
+definisi angka baru**. Rinciannya di `CLAUDE.md` § G1.
+
+### ⛔ Utang PostgreSQL yang dibersihkan (PR #45)
+
+`Promise.all` atas **satu `PoolClient`** dihapus dari ketiga tempat yang
+punya: `reporting/handlers/dasbor.ts` (Dasbor), `identity/handlers/users.ts`
+(Identity), `reporting/index.ts` (Reporting).
+
+`node-postgres` tidak memparalelkan query pada satu koneksi — ia
+mengantrekannya — jadi polanya tidak pernah membeli apa pun. Yang didapat
+hanya `DeprecationWarning: Calling client.query() when the client is already
+executing a query`, perilaku yang **dihapus di pg@9**: silent break yang
+menunggu upgrade. Terlihat di **log server saat E2E**, bukan di test —
+ketiganya menjawab benar.
+
+Alasan untuk tidak memparalelkannya dengan sungguh-sungguh ditulis sebagai
+komentar di ketiga berkas: koneksi tambahan berarti transaksi tambahan, dan
+`SET LOCAL app.tenant_id` berlaku per transaksi (invariant #8).
+
+`grep 'Promise.all' apps/server/src/modules` kini menemukan 4 kemunculan,
+**keempatnya di dalam komentar**.
+
+### Utang yang dibawa keluar dari G1
+
+| Utang | Kenapa belum |
+|---|---|
+| Paginasi + pencarian sisi server untuk Katalog (B-06/B-08/B-09/B-10) | Keempat layarnya ada dan berjalan. Penyelidikan #37 menemukan bahwa keduanya belum ada di backend katalog, dan keputusan user adalah **tidak melakukan optimasi prematur**. Ia akan menggigit pada katalog besar, bukan sekarang |
+| Modul C-3 — rekonsiliasi & ekspor | P1, dan tidak berubah oleh G1 |
+| Cron `POST /orders/cleanup-abandoned` | Endpointnya ada dan teruji; **sengaja tanpa tombol UI** (keputusan user) — ia dijalankan sebagai cron job dari luar aplikasi. Sampai cron itu dipasang, keranjang `open` yang ditinggalkan tetap mengunci stok |
+| Notifikasi aktif untuk oversell | B-15 memberi layar penyelesaiannya; jalur pemberitahuannya belum ada |
+
+### Batas yang harus dibaca sebelum menyebut G1 aman
+
+- ⛔ **`stock_snapshot` diabaikan; stok dihitung `SUM(delta)`** (keputusan
+  user). Benar dan konsisten dengan invariant, tapi biayanya tumbuh bersama
+  jumlah `stock_movement` dan **belum diukur pada katalog besar**.
+- ⛔ **Keranjang `open` yang ditinggalkan mengunci stok selamanya** sampai
+  cron cleanup benar-benar dipasang. Endpointnya ada; penjadwalnya di luar
+  repo ini.
+- **Angka dasbor hanya mencakup perangkat yang sudah tersinkronisasi.**
+  Layarnya menyatakan itu; yang belum ada adalah indikator seberapa jauh
+  tertinggalnya.
+- **Tidak satu pun komponen React di-render oleh test.** Keputusan §3.1
+  `PLAN-pondasi-kasir` masih berlaku di back-office: seluruh logika hidup
+  sebagai modul murni (`b01.ts`, `b16.ts`, `b12.ts`, …) yang diuji
+  `node --test`, dan komponennya dijaga tipis oleh disiplin. Verifikasi
+  layarnya dilakukan **di browser**, manual, dan tercatat di tiap PR.
 

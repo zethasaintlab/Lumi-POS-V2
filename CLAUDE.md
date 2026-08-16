@@ -127,9 +127,40 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: F4 selesai sejauh yang dapat dibuktikan tanpa printer, 15 Agustus 2026.** Gate F0–F3 tertutup — rincian per item ada di `HANDOFF.md`.
+**Fase: G1 (back-office) berjalan, 16 Agustus 2026.** F0–F3 tertutup; F4 tertutup sejauh yang dapat dibuktikan tanpa printer. Rincian per item ada di `HANDOFF.md`.
 
 ⛔ **Gate F4 punya DUA bagian, dan hanya satu yang tertutup.** `ARCH:398`: *"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."* Bagian kedua terbukti lewat test. Bagian pertama menuntut perangkat fisik dan **TETAP TERBUKA** — jangan menandai F4 selesai sampai lima model benar-benar dicoba.
+
+---
+
+### G1 — back-office, milestone ditutup 16 Agustus 2026
+
+`apps/backoffice` bukan lagi kerangka. Empat epik selesai dan ter-merge, semuanya lewat PR ber-CI:
+
+| Epik | Layar | PR |
+|---|---|---|
+| **Dasbor** | B-01 beranda | #44 |
+| **Penjualan** | B-02 riwayat · B-03 detail transaksi · B-04 shift · B-05 detail shift | #34–#36, #41 |
+| **Inventori** | B-12 stok · B-13 penyesuaian · B-14 opname · B-15 perlu diperiksa | #38–#40, #42, #43 |
+| **Pengawasan** | B-21 laporan exception | #32, #33 |
+
+**⛔ Modul `reporting` adalah satu-satunya yang boleh MEMBACA lintas domain.** Ia lahir bersama B-03 dan aman karena dua sifat yang **diuji**, bukan dijanjikan: ia tidak memiliki satu pun tabel, dan ia tidak pernah menulis. Invariant #4 karena itu tidak dilonggarkan — yang dibuat adalah satu tempat yang batasnya dinyatakan dan dijaga. Setiap layar yang menjahit data dari beberapa modul masuk ke sana.
+
+**Keputusan yang mengikat kode back-office:**
+
+- **`posisi-penjualan.ts` tetap satu-satunya definisi omzet, dan B-01 membuktikannya lewat test.** Dasbor memakai `ambilPenjualan`/`ambilProduk`/`ambilStok` — fungsi yang **sama persis** dengan B-16/B-17/B-12, diekspor lewat `index.ts` masing-masing. Test utamanya `assert.deepEqual` terhadap respons `GET /reports/sales`, bukan terhadap angka tulisan tangan. Dasbor adalah layar yang pertama dilihat merchant setiap pagi dan yang paling jarang diperiksa ulang; angka di sini yang berbeda dari laporan akan dipercaya lebih dulu.
+- **Top-N diambil `slice`, bukan `LIMIT` di query kedua.** Query kedua dengan urutannya sendiri adalah tempat kedua yang memutuskan "terlaris".
+- **Ringkasan stok `null` tanpa `outlet_id`.** Stok per outlet; satu angka gabungan lintas outlet tidak dapat dipakai memutuskan apa pun — kekurangan di satu cabang tertutup kelebihan di cabang lain.
+- **`order` TIDAK berisi satu baris per transaksi.** Order pembatal adalah baris tersendiri dan order asli tetap `open` (lihat § void & refund). Setiap layar riwayat harus menurunkan status dari ada/tidaknya pembatal, bukan dari kolom `status`.
+- **Paginasi riwayat wajib keyset, bukan offset.** Perangkat offline menyisipkan baris ber-`business_date` historis di tengah urutan; offset akan melewatkan atau menggandakan baris tepat saat antrean terkuras.
+- **Delta opname dihitung dari snapshot pada T**, bukan dari stok saat tombol ditekan (FR-E7) — penjualan yang terjadi SELAMA opname tidak boleh ikut terkoreksi. Dibuktikan di browser: stok 5, bukan 8.
+- **Ambang stok menipis dan `AMBANG_SELISIH` hidup di `packages/domain`**, dibagi server dan klien. Konstanta yang dipanggang di satu sisi akan menyimpang dari sisi lain.
+
+**⛔ Utang PostgreSQL yang dibersihkan, 16 Agustus 2026 (PR #45):** `Promise.all` atas **satu `PoolClient`** dihapus dari ketiga tempat yang punya — rute Dasbor (`reporting/handlers/dasbor.ts`), Identity (`identity/handlers/users.ts`), dan Reporting (`reporting/index.ts`).
+
+`node-postgres` **tidak** memparalelkan query pada satu koneksi; ia mengantrekannya. Jadi polanya tidak pernah membeli apa pun — yang didapat hanya `DeprecationWarning: Calling client.query() when the client is already executing a query`, perilaku yang **dihapus di pg@9**. Terlihat di log server saat E2E, bukan di test: ketiganya menjawab benar.
+
+Memparalelkannya dengan sungguh-sungguh menuntut koneksi tambahan, dan itu berarti transaksi tambahan — `SET LOCAL app.tenant_id` berlaku **per transaksi** (invariant #8), jadi responsnya berhenti menjadi satu potret pada satu titik waktu. **Jangan mengembalikan `Promise.all` ke sana sebagai "optimasi";** alasannya ditulis sebagai komentar di ketiga berkas.
 
 Gate F3 `ARCH:§14` — *"buka toko → jual → tutup buku dengan angka konsisten antar laporan"* — terpenuhi: buku kas menjadi sumber tunggal saldo laci, satu fungsi mendefinisikan omzet untuk seluruh laporan, dan stok akhirnya bergerak dua arah.
 
