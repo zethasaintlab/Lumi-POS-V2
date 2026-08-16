@@ -40,6 +40,14 @@ export interface StockMovementInput {
    */
   delta: bigint;
   orderId: string | null;
+  /**
+   * Opname yang menghasilkan movement ini.
+   *
+   * ⛔ Kolomnya ada di skema sejak migrasi 0010 dan tidak pernah diisi. Tanpa
+   * ia, movement hasil opname tidak dapat ditelusuri kembali ke hitungan fisik
+   * mana pun — dan opname yang tidak dapat ditelusuri tidak dapat diaudit.
+   */
+  stocktakeId?: string | null;
   reasonCode: string | null;
   note?: string | null;
   unitCost?: bigint | null;
@@ -92,14 +100,15 @@ export async function recordStockMovements(
     await client.query(
       `INSERT INTO stock_movement (
          id, tenant_id, outlet_id, device_id, variation_id, type, delta,
-         order_id, reason_code, note, unit_cost, created_by, occurred_at, hlc
+         order_id, stocktake_id, reason_code, note, unit_cost, created_by,
+         occurred_at, hlc
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7,
-         $8, $9, $10, $11, $12, COALESCE($13::timestamptz, now()), $14
+         $8, $9, $10, $11, $12, $13, COALESCE($14::timestamptz, now()), $15
        )`,
       [
         m.id, m.tenantId, m.outletId, m.deviceId, m.variationId, m.type, m.delta.toString(),
-        m.orderId, m.reasonCode, m.note ?? null,
+        m.orderId, m.stocktakeId ?? null, m.reasonCode, m.note ?? null,
         m.unitCost === undefined || m.unitCost === null ? null : m.unitCost.toString(),
         m.createdBy, m.occurredAt ?? null, m.hlc.toString(),
       ]

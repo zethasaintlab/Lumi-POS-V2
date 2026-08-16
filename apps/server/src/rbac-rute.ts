@@ -105,6 +105,14 @@ export const PETA_PERAN: readonly AturanRute[] = [
   // dari penjualan, dan yang di luar itu adalah koreksi yang harus disetujui.
   { metode: 'POST', pola: '/inventory/movements', operasi: 'stock_adjust' },
 
+  // Opname — seluruh siklus hidupnya tingkat manajer. `spec-e` FR-E7 menyebut
+  // "Manajer menyetujui" untuk penyelesaian; memulai dan menghitung diberi
+  // operasi yang sama karena hitungan fisik yang dapat disimpan siapa pun
+  // membuat persetujuan di ujungnya tidak menjamin apa-apa.
+  { metode: 'POST', pola: '/inventory/stocktakes', operasi: 'stock_adjust' },
+  { metode: 'PUT', pola: '/inventory/stocktakes/:stocktakeId/lines', operasi: 'stock_adjust' },
+  { metode: 'POST', pola: '/inventory/stocktakes/:stocktakeId/complete', operasi: 'stock_adjust' },
+
   // ⛔ Pembersihan keranjang terbengkalai ada di sini, bukan di `void_refund`,
   // karena EFEKNYA adalah membebaskan stok — dan `void_refund` mencakup kasir,
   // yang tidak boleh menjalankan pembersihan massal lintas outlet.

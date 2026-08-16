@@ -205,6 +205,11 @@ function kasus() {
     // `void_refund` — yang terakhir mencakup kasir, dan pembersihan massal
     // lintas outlet bukan wewenangnya.
     ['POST', '/orders/cleanup-abandoned', undefined],
+
+    // Opname: seluruh siklus hidupnya `stock_adjust`.
+    ['POST', '/inventory/stocktakes', { outletId: base.outlet.id }],
+    ['PUT', `/inventory/stocktakes/${crypto.randomUUID()}/lines`, { lines: [{ variationId: varId, countedQty: '1000' }] }],
+    ['POST', `/inventory/stocktakes/${crypto.randomUUID()}/complete`, {}],
   ];
 }
 

@@ -32,6 +32,7 @@ import { RiwayatLayar } from './penjualan/Riwayat.tsx';
 import { StokLayar } from './inventori/Stok.tsx';
 import { ShiftLayar } from './penjualan/Shift.tsx';
 import { PerluDiperiksaLayar } from './inventori/PerluDiperiksa.tsx';
+import { OpnameLayar } from './inventori/Opname.tsx';
 import { ProdukLayar } from './katalog/Produk.tsx';
 import { KategoriLayar } from './katalog/Kategori.tsx';
 import { HargaLayar } from './katalog/Harga.tsx';
@@ -196,6 +197,7 @@ function Terlindungi() {
         {layar === 'B-12' ? <StokLayar /> : null}
         {/* B-13 tidak punya layar sendiri — ia panel di atas B-12. */}
         {layar === 'B-13' ? <StokLayar bukaPanelAwal /> : null}
+        {layar === 'B-14' ? <OpnameLayar /> : null}
         {layar === 'B-15' ? <PerluDiperiksaLayar /> : null}
         {layar === 'B-16' ? <PenjualanLayar /> : null}
         {layar === 'B-17' ? <ProdukLaporanLayar /> : null}
