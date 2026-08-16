@@ -37,6 +37,7 @@ import { ProdukLayar } from './katalog/Produk.tsx';
 import { KategoriLayar } from './katalog/Kategori.tsx';
 import { HargaLayar } from './katalog/Harga.tsx';
 import { ModifierLayar } from './katalog/Modifier.tsx';
+import { DasborLayar } from './dasbor/Dasbor.tsx';
 
 /**
  * Kerangka back-office. Nol layar fitur — sama seperti `PLAN-pondasi-kasir`
@@ -185,6 +186,9 @@ function Terlindungi() {
       }}
     >
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
+        {/* B-01 adalah layar pertama yang merchant lihat — `aktif` bermula di
+            sini, dan itu memang alamat berandanya. */}
+        {layar === 'B-01' ? <DasborLayar onBuka={setAktif} /> : null}
         {layar === 'B-29' ? <Langganan /> : null}
         {layar === 'B-02' ? <RiwayatLayar /> : null}
         {/* B-05 tidak punya layar sendiri — ia panel di atas B-04. */}

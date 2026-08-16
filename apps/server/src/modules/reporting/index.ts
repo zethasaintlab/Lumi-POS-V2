@@ -10,6 +10,7 @@ import { ambilDetail } from './handlers/detail-transaksi.ts';
 import { ambilStok } from './handlers/stok.ts';
 import { ambilDaftarShift, ambilDetailShift } from './handlers/shift.ts';
 import { ambilOversell, ambilSelisihKas } from './handlers/perlu-diperiksa.ts';
+import { ambilDasbor } from './handlers/dasbor.ts';
 
 /**
  * Modul `reporting` — agregator baca-saja.
@@ -146,6 +147,19 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
         const oversell = await ambilOversell(client, filter);
         const selisihKas = await ambilSelisihKas(client, filter);
         return { from, to, outletId, oversell, selisihKas };
+      });
+    },
+
+    async getDashboardSummary(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = req.query as { from?: string; to?: string; outlet_id?: string };
+      const { from, to, outletId } = assertRentang(q);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+        return ambilDasbor(client, { from, to, outletId });
       });
     },
   };
