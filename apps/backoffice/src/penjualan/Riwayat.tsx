@@ -29,6 +29,7 @@ import {
   type Status,
   type Tumpukan,
 } from './b02.ts';
+import { DetailTransaksiModal } from './Detail.tsx';
 
 /**
  * B-02 — Riwayat Penjualan (`IA:§3.3`, grup PENJUALAN).
@@ -41,15 +42,16 @@ import {
  * — layar ini hanya menampilkan apa yang dikirimnya, dan **tidak boleh**
  * menyaring atau menghitung status sendiri.
  *
- * ## ⛔ Baris TIDAK dapat diklik
+ * ## Detail transaksi (B-03)
  *
- * B-03 (Detail Transaksi) akan dibangun di modul `reporting` yang belum ada,
- * karena detail menggabungkan order + pembayaran + refund + audit + nama orang
- * — lima modul, dan invariant #4 melarang `ordering` menjangkau semuanya.
+ * Nomor struk membuka `DetailTransaksiModal`, yang dilayani modul `reporting`
+ * — satu-satunya modul yang boleh membaca lintas domain, karena satu struk
+ * menggabungkan order + pembayaran + refund + nama orang.
  *
- * Barisnya karena itu dibiarkan mati, dan layar MENYEBUTKANNYA. Baris yang
- * terlihat dapat diklik tapi tidak melakukan apa-apa terbaca sebagai aplikasi
- * rusak; yang menyatakan batasnya terbaca sebagai fitur yang belum ada.
+ * ⛔ Yang dapat diklik nomor struknya, BUKAN seluruh baris. `Table` design
+ * system tidak punya `onRowClick`, dan `<tr onClick>` tidak dapat dicapai
+ * keyboard — baris yang hanya dapat dibuka dengan tetikus mengunci fitur ini
+ * dari siapa pun yang tidak memakainya.
  *
  * ## Paginasi
  *
@@ -79,6 +81,10 @@ export function RiwayatLayar() {
   const [keadaan, setKeadaan] = useState<Keadaan>({ jenis: 'memuat' });
   const [zona] = useState(() => zonaPerangkat());
   const [namaUser, setNamaUser] = useState<Record<string, string>>({});
+  // ⛔ Id, bukan objek transaksi: panel memuat detailnya sendiri dari
+  // server. Menyalin baris daftar ke panel akan menampilkan angka yang
+  // lebih sedikit — daftar tidak punya baris barang maupun pembayaran.
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     let batal = false;
@@ -276,9 +282,23 @@ export function RiwayatLayar() {
                       {waktuTampil(t.occurredAt, zona)}
                     </span>
                   ),
+                  // ⛔ Yang dapat diklik adalah NOMOR STRUK, bukan seluruh
+                  // baris `<tr>`. Dua alasan, keduanya bukan selera:
+                  //
+                  // 1. `Table` design system tidak punya `onRowClick`, dan
+                  //    menambahkannya berarti menyunting `/ds-bundle` yang
+                  //    `CLAUDE.md` nyatakan final.
+                  // 2. `<tr onClick>` tidak dapat dicapai keyboard. Baris yang
+                  //    hanya dapat dibuka dengan tetikus mengunci fitur ini
+                  //    dari siapa pun yang tidak memakainya.
+                  //
+                  // Nomor struk juga kebetulan hal yang benar untuk diklik: ia
+                  // yang dibaca merchant dari struk pelanggan.
                   struk: (
-                    <span className="num" style={ANGKA}>
-                      {t.receiptNumber}
+                    <span style={ANGKA}>
+                      <Tombol varian="ghost" onClick={() => setDetailId(t.id)}>
+                        <span className="num">{t.receiptNumber}</span>
+                      </Tombol>
                     </span>
                   ),
                   // Nama diresolusi klien; id ditampilkan bila namanya belum ada.
@@ -334,13 +354,12 @@ export function RiwayatLayar() {
         </div>
       </Card>
 
-      {/* ⛔ Batas dinyatakan, bukan disamarkan. Baris yang terlihat dapat diklik
-          tapi tidak melakukan apa-apa terbaca sebagai aplikasi rusak. */}
       <span className="t-caption">
-        Baris di tabel ini belum dapat dibuka. Layar Detail Transaksi (B-03) menggabungkan
-        pembayaran, refund, dan riwayat audit dari beberapa modul sekaligus, dan akan dibangun
-        setelah modul pelaporan tersendiri ada.
+        Tekan <strong>nomor struk</strong> untuk melihat rincian barang, pembayaran, dan refund
+        transaksi itu.
       </span>
+
+      <DetailTransaksiModal orderId={detailId} onTutup={() => setDetailId(null)} />
 
       <span className="t-caption">
         Jam ditampilkan menurut zona waktu perangkat Anda (<span className="num">{zona}</span>),

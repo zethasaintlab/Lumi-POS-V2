@@ -3257,8 +3257,142 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/transactions/{order_id}:
+    get:
+      operationId: getTransactionDetail
+      summary: B-03 -- detail satu transaksi, digabung dari empat modul.
+      description: >-
+        Dilayani modul reporting, satu-satunya modul yang boleh MEMBACA lintas
+        domain: satu struk menurut definisi menggabungkan order (ordering),
+        pembayaran (payment), nama kasir (identity), dan refund. Modul itu
+        tidak memiliki satu tabel pun dan tidak menulis apa pun -- kedua sifat
+        itulah yang membuat izin bacanya aman.
+
+
+        Uang seluruhnya STRING. tenderedAmount dan changeAmount boleh null
+        untuk metode non-tunai, dan null DIPERTAHANKAN: "Tunai diterima:
+        Rp 0" adalah pernyataan yang salah, bukan sekadar kosong.
+
+
+        quantityMilli adalah kuantitas x1000.
+
+
+        404 dipakai untuk transaksi yang tidak ada MAUPUN milik tenant lain,
+        dengan pesan yang sama persis.
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Detail transaksi.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailTransaksi'
+        '404':
+          description: Transaksi tidak ditemukan, atau milik tenant lain.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
+    DetailTransaksi:
+      type: object
+      required:
+        [id, receiptNumber, businessDate, sequence, outletId, deviceId, channel,
+         status, createdBy, createdByNama, occurredAt, recordedAt, subtotal,
+         orderDiscount, serviceChargeAmount, taxAmount, roundingAdjustment,
+         total, amountDue, hasCalculationVariance, dibatalkanOleh, lines,
+         payments, refunds, totalDibayar, totalRefund]
+      properties:
+        id: { type: string }
+        receiptNumber: { type: string }
+        businessDate: { type: string }
+        sequence: { type: integer }
+        outletId: { type: string }
+        deviceId: { type: string }
+        channel: { type: string }
+        status: { type: string }
+        createdBy: { type: string }
+        createdByNama: { type: string }
+        occurredAt: { type: string, format: date-time }
+        recordedAt: { type: string, format: date-time }
+        subtotal: { type: string }
+        orderDiscount: { type: string }
+        serviceChargeAmount: { type: string }
+        taxAmount: { type: string }
+        roundingAdjustment: { type: string }
+        total: { type: string }
+        amountDue: { type: string }
+        hasCalculationVariance: { type: boolean }
+        varianceAmount: { type: string, nullable: true }
+        dibatalkanOleh: { type: string, nullable: true }
+        dibatalkanPada: { type: string, nullable: true }
+        totalDibayar: { type: string }
+        totalRefund: { type: string }
+        lines:
+          type: array
+          items:
+            type: object
+            required:
+              [id, itemName, variationName, unitPrice, quantityMilli,
+               discountAmount, taxAmount, isTaxInclusive, lineTotal, modifiers]
+            properties:
+              id: { type: string }
+              itemName: { type: string }
+              variationName: { type: string }
+              unitPrice: { type: string }
+              quantityMilli: { type: integer }
+              discountAmount: { type: string }
+              taxAmount: { type: string }
+              isTaxInclusive: { type: boolean }
+              lineTotal: { type: string }
+              modifiers:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, price, quantityMilli]
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    price: { type: string }
+                    quantityMilli: { type: integer }
+        payments:
+          type: array
+          items:
+            type: object
+            required: [id, method, amount, status, confirmedManually, occurredAt]
+            properties:
+              id: { type: string }
+              method: { type: string }
+              amount: { type: string }
+              tenderedAmount: { type: string, nullable: true }
+              changeAmount: { type: string, nullable: true }
+              status: { type: string }
+              confirmedManually: { type: boolean }
+              cardLast4: { type: string, nullable: true }
+              occurredAt: { type: string, format: date-time }
+        refunds:
+          type: array
+          items:
+            type: object
+            required:
+              [id, amount, reasonCode, createdBy, createdByNama, approvedBy,
+               approvedByNama, occurredAt]
+            properties:
+              id: { type: string }
+              amount: { type: string }
+              method: { type: string, nullable: true }
+              reasonCode: { type: string }
+              reasonNote: { type: string, nullable: true }
+              createdBy: { type: string }
+              createdByNama: { type: string }
+              approvedBy: { type: string }
+              approvedByNama: { type: string }
+              occurredAt: { type: string, format: date-time }
     DaftarTransaksi:
       type: object
       required: [from, to, outletId, items, cursorBerikut]

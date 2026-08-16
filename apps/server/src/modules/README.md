@@ -16,7 +16,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `payment` | `payment`, `tax_rate` |
 | `inventory` | `stock_movement`, `stock_snapshot`, `sold_out_flag`, `stocktake`, `stocktake_line`, `oversell_event` |
 | `cash` | `cash_drawer_shift`, `cash_movement` |
-| `reporting` | — (baca lewat view yang disediakan modul lain) |
+| `reporting` | — **tidak memiliki tabel apa pun**. Satu-satunya modul yang boleh MEMBACA lintas domain (keputusan user 16 Agustus 2026); tidak menulis apa pun |
 | `sync` | `idempotency_key`, `outbox` |
 | `peripheral` | `peripheral`, `printer_profile`, `print_job` |
 | `audit` | `audit_event` |
