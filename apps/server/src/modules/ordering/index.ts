@@ -11,6 +11,22 @@ import { createExceptionReportHandlers } from './handlers/reports-exception.ts';
 import { createRiwayatHandlers } from './handlers/riwayat.ts';
 import { createCleanupHandlers } from './handlers/cleanup.ts';
 
+/**
+ * ⛔ Diekspor untuk modul `reporting`, dan hanya untuk itu.
+ *
+ * B-01 (dasbor) menampilkan omzet dan produk terlaris. Angkanya WAJIB sama
+ * persis dengan B-16 dan B-17 — dasbor yang menyebut omzet berbeda dari
+ * laporan penjualan adalah bentuk terburuk perbedaan angka, karena ia yang
+ * pertama dilihat merchant setiap pagi dan yang paling jarang diperiksa
+ * ulang.
+ *
+ * Menyalin query-nya ke `reporting` akan melahirkan definisi omzet kedua, dan
+ * penjaga `satu-sumber-omzet` ada justru untuk mencegah itu. Yang diekspor
+ * karena itu FUNGSINYA, lewat permukaan publik modul (invariant #4).
+ */
+export { ambilPenjualan } from './handlers/reports.ts';
+export { ambilProduk, tampilkanKuantitas } from './handlers/reports-produk.ts';
+
 // Permukaan publik modul ordering (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN: order, check, order_line, order_line_modifier,
 // refund). `hlc` adalah satu instance Hlc dibuat sekali di buildApp

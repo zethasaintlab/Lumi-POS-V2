@@ -3911,6 +3911,64 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      summary: >-
+        B-01 -- ringkasan beranda. Omzet, produk terlaris, dan stok.
+      description: >-
+        ⛔ Endpoint ini tidak menghitung apa pun sendiri. Omzet datang dari
+        fungsi yang SAMA dengan GET /reports/sales, produk terlaris dari yang
+        sama dengan GET /reports/products, dan stok dari yang sama dengan
+        GET /reports/inventory/stocks.
+
+
+        Alasannya bukan kerapian: dasbor adalah layar yang pertama dilihat
+        merchant setiap pagi dan yang paling jarang diperiksa ulang. Angka di
+        sini yang berbeda dari laporan akan dipercaya lebih dulu, dan spec-g:29
+        menyebut akibatnya -- kepercayaan merchant hilang lebih cepat daripada
+        karena fitur yang tidak ada.
+
+
+        Ringkasan stok hanya dibentuk bila outlet_id diberikan. Stok bersifat
+        per outlet, dan satu angka gabungan lintas outlet tidak dapat dipakai
+        memutuskan apa pun: kekurangan di satu cabang tertutup kelebihan di
+        cabang lain. Tanpa outlet_id, field stok bernilai null.
+
+
+        Ketiga agregasi berjalan bersamaan di dalam satu transaksi, dan
+        seluruhnya menyaring business_date yang punya index.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Ringkasan dasbor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RingkasanDasbor'
+        '400':
+          description: Rentang tidak valid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   schemas:
     HasilTutupShift:
@@ -4131,6 +4189,64 @@ components:
                 description: null berarti belum dihitung -- bukan dihitung nol.
               selisih: { type: string, nullable: true }
               reasonCode: { type: string, nullable: true }
+    RingkasanDasbor:
+      type: object
+      required: [from, to, outletId, penjualan, terlaris, stok]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        penjualan:
+          type: object
+          description: >-
+            Bentuk yang SAMA dengan GET /reports/sales -- dihitung fungsi yang
+            sama, bukan disalin.
+          required:
+            [omzetKotor, voidAmount, refundAmount, omzetBersih, pajakTerkumpul,
+             jumlahTransaksi, rataRataPerTransaksi]
+          properties:
+            omzetKotor: { type: string }
+            voidAmount: { type: string }
+            refundAmount: { type: string }
+            omzetBersih: { type: string }
+            pajakTerkumpul: { type: string }
+            jumlahTransaksi: { type: integer }
+            rataRataPerTransaksi: { type: string }
+        terlaris:
+          type: array
+          description: Paling banyak 5, terurut kuantitas menurun.
+          items:
+            type: object
+            required:
+              [variationId, itemName, variationName, kuantitas, kuantitasTampil,
+               nilaiKotor]
+            properties:
+              variationId: { type: string }
+              itemName: { type: string }
+              variationName: { type: string }
+              kuantitas:
+                type: string
+                description: Kuantitas x1000.
+              kuantitasTampil: { type: string }
+              nilaiKotor: { type: string }
+        stok:
+          type: object
+          nullable: true
+          description: null bila outlet_id tidak diberikan.
+          required: [minus, habis, contoh]
+          properties:
+            minus: { type: integer }
+            habis: { type: integer }
+            contoh:
+              type: array
+              items:
+                type: object
+                required: [variationId, itemName, variationName, saldo]
+                properties:
+                  variationId: { type: string }
+                  itemName: { type: string }
+                  variationName: { type: string }
+                  saldo: { type: string }
     DaftarStok:
       type: object
       required: [outletId, items]

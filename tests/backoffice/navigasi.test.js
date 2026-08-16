@@ -392,3 +392,23 @@ test('B-04 sudah ditandai siap — blokadenya dibuka endpoint tutup shift', asyn
   const { LAYAR_SIAP } = await import(NAV);
   assert.ok(LAYAR_SIAP.has('B-04'), 'B-04 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
+
+test('⛔ B-01 ditandai siap — ia BERANDA, dan berandanya tidak boleh kosong', async () => {
+  // `Terlindungi` memulai `aktif` di 'B-01'. Selama epik-epik sebelumnya itu
+  // berarti layar PERTAMA yang merchant lihat setiap kali membuka back-office
+  // adalah "Dashboard belum dibangun" — keadaan kosong yang jujur di menu
+  // mana pun, tapi di beranda ia terbaca sebagai aplikasi yang rusak.
+  //
+  // `GET /reports/dashboard/summary` menutup itu, dan ia sengaja tidak
+  // memperkenalkan satu pun definisi angka baru: omzet, produk terlaris, dan
+  // stok datang dari fungsi yang sama dengan B-16, B-17, dan B-12.
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-01'), 'B-01 adalah beranda dan tidak boleh menampilkan keadaan kosong');
+});
+
+test('⛔ grup Ringkasan utuh — beranda tidak punya layar yang tertinggal', async () => {
+  const { LAYAR_SIAP, NAVIGASI } = await import(NAV);
+  const ringkasan = NAVIGASI.find((g) => g.group === 'Ringkasan');
+  const belum = ringkasan.items.filter((i) => !LAYAR_SIAP.has(i.id)).map((i) => i.id);
+  assert.deepEqual(belum, [], `layar Ringkasan tanpa isi: ${belum.join(', ')}`);
+});
