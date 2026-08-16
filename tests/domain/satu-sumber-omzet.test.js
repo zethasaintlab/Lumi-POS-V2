@@ -67,6 +67,71 @@ test('penjaga benar-benar memindai berkas — bukan hijau karena kosong', () => 
   );
 });
 
+/**
+ * Apakah isi ini mengagregasi tabel `order`?
+ *
+ * ⛔ Yang diperiksa: tabel yang di-`FROM` oleh `SUM(...)` ITU SENDIRI, yaitu
+ * `FROM` PERTAMA setelahnya. Bukan "apakah `FROM "order"` muncul di dekatnya".
+ *
+ * Versi sebelumnya memeriksa yang kedua, dan itu salah untuk pola yang justru
+ * sah dan umum: agregasi tabel LAIN yang di-nest di dalam query atas `order`.
+ *
+ * ```sql
+ * SELECT o.id,
+ *        (SELECT SUM(r.amount) FROM refund r WHERE r.order_id = o.id)
+ *   FROM "order" o
+ * ```
+ *
+ * `SUM` di sana menjumlahkan `refund`, bukan `order` — persis kasus yang
+ * catatan penjaga ini sendiri sebut SAH ("sisa yang dapat direfund"). Yang
+ * membuatnya tertangkap hanya jaraknya ke `FROM "order"` milik query LUAR.
+ *
+ * Perubahannya membuat penjaga LEBIH SEMPIT, bukan lebih longgar: setiap yang
+ * ditandai aturan baru pasti juga ditandai aturan lama. Jendela 220 karakter
+ * dipertahankan — `FROM` yang lebih jauh dari itu milik pernyataan lain.
+ *
+ * ⛔ Jalan yang TIDAK diambil: menyusun ulang query supaya lolos jendela, dan
+ * menambah daftar pengecualian. Yang pertama membuat kebenaran bergantung pada
+ * jumlah karakter — orang berikutnya yang merapikan query akan memicunya lagi
+ * tanpa tahu kenapa. Yang kedua adalah awal dari daftar yang bertambah panjang
+ * sampai penjaganya tidak menjaga apa pun.
+ */
+function mengagregasiOrder(isi) {
+  for (const m of isi.matchAll(/SUM\s*\(/gi)) {
+    const jendela = isi.slice(m.index, m.index + 220);
+    const from = /\bFROM\s+("order"|[A-Za-z_][\w.]*)/i.exec(jendela);
+    if (from !== null && from[1].toLowerCase() === '"order"') return true;
+  }
+  return false;
+}
+
+test('⛔ penjaga menandai agregasi order, dan TIDAK menandai agregasi tabel lain', () => {
+  // ⛔ Perilaku penjaganya sendiri diuji, bukan hanya disimpulkan dari isi repo
+  // saat ini. Penjaga yang dipersempit tanpa bukti bahwa ia masih menangkap
+  // hal yang dicarinya adalah penjaga yang baru saja dimatikan diam-diam.
+  const HARUS_DITANDAI = [
+    `SELECT SUM(total) FROM "order" WHERE business_date = $1`,
+    `SELECT SUM(o.total) FROM "order" o JOIN refund r ON r.order_id = o.id`,
+    `SELECT SUM( o.total ) AS omzet\n  FROM "order" o`,
+    // Agregasi order yang di-nest di dalam query atas tabel lain tetap
+    // tertangkap — arahnya tidak menolong pelanggarnya.
+    `SELECT r.id, (SELECT SUM(o.total) FROM "order" o) FROM refund r`,
+  ];
+  const HARUS_LOLOS = [
+    // Pola yang memicu kegagalan CI PR #34.
+    `SELECT o.id, COALESCE((SELECT SUM(r.amount) FROM refund r WHERE r.order_id = o.id), 0)\n  FROM "order" o WHERE o.business_date BETWEEN $1 AND $2`,
+    `SELECT SUM(amount) FROM payment WHERE order_id = $1`,
+    `SELECT SUM(ol.quantity) FROM order_line ol JOIN "order" o ON o.id = ol.order_id`,
+  ];
+
+  for (const s of HARUS_DITANDAI) {
+    assert.equal(mengagregasiOrder(s), true, `agregasi order LOLOS penjaga:\n${s}`);
+  }
+  for (const s of HARUS_LOLOS) {
+    assert.equal(mengagregasiOrder(s), false, `agregasi tabel lain ditandai keliru:\n${s}`);
+  }
+});
+
 test('⛔ hanya SATU tempat yang mengagregasi nilai order (AC FR-G3 pertama)', () => {
   // `SUM(o.total)`, `SUM(order.total)`, `SUM(total)` — bentuk apa pun.
   // Laporan berikutnya yang menulis agregasinya sendiri adalah laporan yang
@@ -87,16 +152,7 @@ test('⛔ hanya SATU tempat yang mengagregasi nilai order (AC FR-G3 pertama)', (
   for (const f of DIPINDAI.flatMap(berkasSumber)) {
     const rel = relative(AKAR, f);
     if (rel === SUMBER_TUNGGAL) continue;
-    const isi = tanpaKomentar(readFileSync(f, 'utf8'));
-    for (const m of isi.matchAll(/SUM\s*\(/gi)) {
-      // Jendela setelah `SUM(` — cukup untuk memuat `FROM "order"` pada
-      // pernyataan yang sama, tidak cukup untuk menjangkau query berikutnya.
-      const jendela = isi.slice(m.index, m.index + 220);
-      if (/FROM\s+"order"/i.test(jendela)) {
-        pelanggar.push(rel);
-        break;
-      }
-    }
+    if (mengagregasiOrder(tanpaKomentar(readFileSync(f, 'utf8')))) pelanggar.push(rel);
   }
   assert.deepEqual(
     pelanggar,

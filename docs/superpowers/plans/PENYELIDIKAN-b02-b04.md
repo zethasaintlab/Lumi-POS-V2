@@ -109,7 +109,7 @@ Konsekuensi praktis: **kasus pemakaian utama B-02 — pelanggan datang membawa s
 CREATE INDEX ix_order_receipt ON "order"(tenant_id, receipt_number);
 ```
 
-Belum saya buat: menambah migrasi di luar scope penyelidikan, dan keputusannya (index biasa vs UNIQUE) milikmu. Lihat §6.
+✅ **Dibuat** sebagai migrasi `0024` setelah keputusanmu (B-Tree biasa, bukan UNIQUE). Lihat §6 untuk ketegangannya dengan pencarian sebagian.
 
 ### 2.4 `business_date` bergeser satu hari lewat `Date` JavaScript
 
@@ -202,8 +202,8 @@ Kemampuannya:
 | Rentang | `business_date`, keduanya termasuk |
 | Outlet | `outlet_id` opsional |
 | Kasir | `created_by` opsional |
-| Nomor struk | cocok **persis** |
-| Status | `terjual` · `dibatalkan` · `direfund` · `terbuka` · `ditinggalkan` |
+| Nomor struk | cocok **sebagian** (`ILIKE`), wildcard pengguna dilucuti |
+| Status | `terjual` · `dibatalkan` · `direfund` — `terbuka`/`ditinggalkan` disembunyikan |
 | Paginasi | **keyset** `(business_date, sequence, id)` |
 | Uang | STRING, presisi utuh di atas 2⁵³ |
 
@@ -249,22 +249,33 @@ Belum didaftarkan di `openapi.yaml` dan belum punya handler — menunggu keputus
 
 ---
 
-## 6. Keputusan yang saya butuhkan darimu
+## 6. Keputusan — dijawab user 16 Agustus 2026
 
-| # | Pertanyaan | Kenapa aku tidak memutuskannya sendiri |
-|---|---|---|
-| **1** | **Index `receipt_number`** — index biasa, atau `UNIQUE (tenant_id, receipt_number)`? | UNIQUE menegakkan I2 secara langsung, tapi ia dapat **gagal saat migrasi** bila sudah ada duplikat, dan itu perubahan skema |
-| **2** | **B-03 lintas-modul** — tambahkan permukaan di `payment`/`audit`/`identity` lalu komposisi di handler, atau bangkitkan modul `reporting` yang `README` sudah janjikan? | Ini keputusan arsitektur, bukan implementasi. Yang kedua juga menjadi rumah bagi tujuh pelanggaran yang sudah ada |
-| **3** | **B-04** — bangun `POST /shifts/{id}/close` (Modul D di server) lebih dulu, atau tunda B-04 seluruhnya? | Tanpa salah satunya, layarnya berbohong. Aku tidak menambah endpoint tulis tanpa persetujuanmu |
-| **4** | **Pencarian struk** — cocok persis, atau awalan (`K1-20260810-%`)? | Persis sudah cukup untuk "pelanggan membawa struk". Awalan berguna untuk "semua struk device K1 hari itu", dan itu keputusan produk |
-| **5** | **Keranjang `open` yang tidak pernah dibayar** — tampilkan di B-02 atau sembunyikan? | Utang yang `CLAUDE.md` sudah catat. B-02 adalah tempat pertama ia terlihat merchant, dan belum ada jalan penutupannya |
+| # | Pertanyaan | Keputusan | Status |
+|---|---|---|---|
+| **1** | Index `receipt_number` | **B-Tree biasa**, bukan UNIQUE | ✅ migrasi `0024` |
+| **2** | Rumah untuk B-03 lintas-modul | Modul **`reporting`** baru, nanti. Jangan JOIN lintas-domain dari `ordering` | ✅ dipatuhi — helper hanya menyentuh `order` + `refund`, dan ada test yang menahannya |
+| **3** | B-04 | **Ditunda sepenuhnya**, jangan disentuh | ✅ tidak disentuh |
+| **4** | Pencarian struk | **Cocok sebagian** (`ILIKE '%…%'`) | ✅ + pelucutan wildcard |
+| **5** | Keranjang `open` | **Disembunyikan** — hanya selesai, void, refund | ✅ `STATUS_TERLIHAT` |
+
+### ⛔ Ketegangan antara keputusan 1 dan 4, dinyatakan
+
+Wildcard di **awal** pola (`'%…%'`) membuat B-Tree tidak terpakai untuk pencarian itu — index hanya melayani pencocokan dari kiri. Kedua keputusan tetap diterapkan apa adanya; yang berubah hanya bahwa batasnya sekarang tertulis alih-alih ditemukan nanti sebagai "kenapa pencarian lambat".
+
+Yang menahan biayanya: penyaring rentang tanggal selalu ikut, jadi scan-nya terbatas pada rentang yang diminta — bukan seluruh riwayat merchant. Index tetap melayani pencocokan setara dan pengurutan menurut nomor struk. Kalau kelak lambat pada merchant sungguhan, jawabannya `pg_trgm` + GIN, dan itu ekstensi baru — keputusan tersendiri.
+
+### Yang ditemukan saat menerapkannya
+
+- **Penyaring status pertama dapat DILEWATI.** `f.status === null ? STATUS_TERLIHAT : [f.status]` **mengganti** daftar alih-alih menyempitkannya, jadi `?status=terbuka` menembusnya utuh. Diperbaiki jadi irisan. Ditemukan test, bukan review.
+- **Klausa `ESCAPE` terkirim KOSONG.** Ditulis satu backslash di sumber, dan template literal TypeScript memakannya — `ESCAPE ''` berarti tidak ada karakter escape sama sekali. Tiga test wildcard tetap hijau di atasnya, karena alasan yang salah: polanya menuntut backslash harfiah yang tidak ada di nomor struk mana pun, jadi jawabannya nol baris. **Nol karena tidak pernah cocok terlihat sama persis dengan nol karena wildcard berhasil dilucuti.** Yang membedakan hanya satu test: struk yang benar-benar memuat `_` harus ditemukan.
 
 ---
 
 ## 7. Yang **tidak** aku sentuh
 
 - Tidak ada UI (sesuai instruksi).
-- Tidak ada migrasi baru.
+- Tidak ada migrasi selain `0024` (index struk, disetujui).
 - Tidak ada endpoint baru di `openapi.yaml`.
 - Tidak ada perbaikan atas tujuh pelanggaran batas modul — melaporkannya, bukan memperbaikinya diam-diam di tengah penyelidikan.
 - `product/`, `research/`, dan `docs/superpowers/specs/` tidak disentuh.

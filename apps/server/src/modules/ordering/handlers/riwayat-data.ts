@@ -69,19 +69,78 @@ export interface BarisRiwayat {
   hasCalculationVariance: boolean;
 }
 
+/**
+ * ⛔ Status yang boleh MUNCUL di daftar (keputusan user 16 Agustus 2026).
+ *
+ * Keranjang `terbuka` yang belum dibayar disembunyikan. Ia bukan transaksi —
+ * ia pesanan yang sedang berjalan, atau sisa keranjang dari perangkat yang
+ * dimuat ulang (`CLAUDE.md`: keranjang K-03 hanya ada di memori). Menampilkan-
+ * nya di daftar transaksi membuat manajer mengira ada penjualan menggantung
+ * yang perlu ditutup, sementara belum ada jalan menutupnya sama sekali.
+ *
+ * `ditinggalkan` ikut tersembunyi. Ia tidak punya penulis di seluruh repo —
+ * `abandoned` ada di state machine (`packages/domain/src/order-state.ts`) dan
+ * di CHECK constraint, tapi tidak satu pun kode menulisnya. Menampilkan kolom
+ * untuk keadaan yang tidak dapat terjadi adalah janji kosong.
+ */
+export const STATUS_TERLIHAT = ['terjual', 'dibatalkan', 'direfund'] as const;
+export type StatusTerlihat = (typeof STATUS_TERLIHAT)[number];
+
 export interface FilterRiwayat {
   from: string;
   to: string;
   outletId: string | null;
   /** `created_by`. Layar menyebutnya kasir; kolomnya aktor pembuat order. */
   createdBy: string | null;
-  /** Pencarian nomor struk. Cocok persis, bukan `LIKE` — lihat catatan. */
+  /**
+   * Pencarian nomor struk, **cocok sebagian** (`ILIKE '%…%'`).
+   *
+   * Keputusan user 16 Agustus 2026. Alasannya praktis: struk termal luntur dan
+   * pelanggan mengetik ulang sebagian — "0007" harus menemukan
+   * `K1-20260810-0007`.
+   */
   receiptNumber: string | null;
-  status: StatusTampil | null;
+  status: StatusTerlihat | null;
   limit: number;
   /** Keyset dari halaman sebelumnya: `{businessDate, sequence, id}`. */
   cursor: Kursor | null;
 }
+
+/**
+ * ⛔ `%` dan `_` di input pengguna DILUCUTI maknanya.
+ *
+ * Tanpa ini, kasir yang mengetik `%` mendapat seluruh riwayat merchant dalam
+ * satu permintaan, dan `_` diam-diam mencocokkan karakter apa pun. Bukan
+ * lubang keamanan — parameternya tetap ter-bind, jadi tidak ada injeksi — tapi
+ * pencarian yang mengembalikan segalanya sama tidak bergunanya dengan
+ * pencarian yang mengembalikan kosong.
+ *
+ * Backslash dilucuti LEBIH DULU; membaliknya akan meloloskan `\%` sebagai
+ * wildcard kembali.
+ */
+export function polaCari(teks: string): string {
+  return `%${teks.replace(/\\/g, '\\\\').replace(/[%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/*
+ * ⛔ Klausa `ESCAPE` di query ditulis DUA backslash di sumber, satu di SQL.
+ *
+ * Versi pertama menulis satu, dan template literal TypeScript memakannya —
+ * yang terkirim ke PostgreSQL adalah escape KOSONG, artinya tidak ada karakter
+ * escape sama sekali, dan pelucutan `polaCari` di atas jadi hiasan.
+ *
+ * Tiga test wildcard tetap HIJAU di atas cacat itu, karena alasan yang salah:
+ * polanya berisi backslash harfiah, tidak ada nomor struk yang memuatnya, jadi
+ * jawabannya nol baris. Nol karena tidak pernah cocok terlihat sama persis
+ * dengan nol karena wildcard berhasil dilucuti.
+ *
+ * Yang membedakan keduanya hanya satu test: nomor struk yang benar-benar
+ * memuat `_` HARUS ditemukan saat dicari. Itu yang sekarang menjaganya.
+ *
+ * Catatan ini hidup di sini, bukan sebagai komentar SQL di dalam query-nya —
+ * backtick di dalam template literal menutup literalnya, dan `CLAUDE.md` sudah
+ * mencatat gejalanya: galat sintaks yang menunjuk baris yang salah.
+ */
 
 export interface Kursor {
   businessDate: string;
@@ -181,7 +240,13 @@ export async function ambilRiwayat(
   client: PoolClient,
   f: FilterRiwayat
 ): Promise<{ items: BarisRiwayat[]; cursorBerikut: Kursor | null }> {
-  const p: unknown[] = [f.from, f.to, f.outletId, f.createdBy, f.receiptNumber];
+  const p: unknown[] = [
+    f.from,
+    f.to,
+    f.outletId,
+    f.createdBy,
+    f.receiptNumber === null ? null : polaCari(f.receiptNumber),
+  ];
 
   // Satu baris ekstra diminta HANYA untuk mengetahui apakah masih ada
   // halaman berikutnya. Menghitung `COUNT(*)` atas seluruh rentang jauh lebih
@@ -196,11 +261,25 @@ export async function ambilRiwayat(
     kursorSql = `AND (o.business_date, o.sequence, o.id) < ($${a}::date, $${a + 1}::int, $${a + 2})`;
   }
 
-  let statusSql = '';
-  if (f.status !== null) {
-    p.push(f.status);
-    statusSql = `AND st.status_tampil = $${p.length}`;
-  }
+  // ⛔ Penyaring status SELALU dipasang, bahkan ketika pemanggil tidak meminta
+  // satu status tertentu. Yang dapat dipilih pemanggil hanyalah MENYEMPITKAN
+  // daftar yang sudah terlihat — bukan membuka keranjang terbuka.
+  //
+  // Kalau daftar terlihatnya hanya berlaku saat `status === null`, permintaan
+  // `?status=terbuka` akan menembusnya. Penyaring yang dapat dilewati dengan
+  // satu parameter bukan penyaring — dan `STATUS_TERLIHAT` yang membatasi tipe
+  // hanya menahan pemanggil TypeScript, bukan query string.
+  // ⛔ IRISAN, bukan penggantian. Versi pertama menulis
+  // `f.status === null ? STATUS_TERLIHAT : [f.status]` — dan `?status=terbuka`
+  // menembusnya utuh, karena permintaan itu MENGGANTI daftar alih-alih
+  // menyempitkannya. Ditemukan oleh test, bukan oleh review.
+  //
+  // Status di luar daftar terlihat menghasilkan larik kosong, jadi jawabannya
+  // nol baris — bukan kebocoran, dan bukan error yang memberi tahu penebak
+  // bahwa tebakannya hampir benar.
+  const diminta: readonly string[] = f.status === null ? STATUS_TERLIHAT : [f.status];
+  p.push(diminta.filter((s) => (STATUS_TERLIHAT as readonly string[]).includes(s)));
+  const statusSql = `AND st.status_tampil = ANY($${p.length}::text[])`;
 
   const { rows } = await client.query<BarisDb>(
     `WITH dasar AS (
@@ -219,7 +298,8 @@ export async function ambilRiwayat(
         WHERE o.business_date BETWEEN $1 AND $2
           AND ($3::text IS NULL OR o.outlet_id = $3)
           AND ($4::text IS NULL OR o.created_by = $4)
-          AND ($5::text IS NULL OR o.receipt_number = $5)
+          -- Lihat catatan ESCAPE di kepala berkas.
+          AND ($5::text IS NULL OR o.receipt_number ILIKE $5 ESCAPE '\\')
           -- ⛔ Order PEMBATAL tidak pernah menjadi baris daftar. Ia catatan
           -- koreksi, dan nilainya salinan dari order yang dibatalkannya.
           AND o.voided_by_order_id IS NULL
