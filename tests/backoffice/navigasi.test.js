@@ -366,3 +366,15 @@ test('⛔ B-14 dan B-15 TIDAK ditandai siap — endpointnya belum ada', async ()
     assert.ok(!LAYAR_SIAP.has(id), `${id} ditandai siap padahal endpointnya belum ada`);
   }
 });
+
+test('B-04 sudah ditandai siap — blokadenya dibuka endpoint tutup shift', async () => {
+  // B-04 diblokir dua penyelidikan lamanya karena shift yang ditutup tidak
+  // pernah sampai ke server: setiap baris akan menampilkan kolom uang NULL.
+  // `POST /shifts/{id}/close` menutup itu.
+  //
+  // ⛔ B-05 tidak punya layar sendiri — ia panel di atas B-04, dan `IA:§3.3`
+  // memang menaruhnya sebagai layar DETAIL yang dicapai dari daftarnya. Ada
+  // test lain yang menahannya tetap di luar sidebar.
+  const { LAYAR_SIAP } = await import(NAV);
+  assert.ok(LAYAR_SIAP.has('B-04'), 'B-04 sudah dibangun tapi masih menampilkan keadaan kosong');
+});

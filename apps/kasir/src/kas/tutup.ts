@@ -1,7 +1,7 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
-import { saldoLaci } from '../../../../packages/domain/src/buku-kas.ts';
+import { butuhOtorisasiSelisih, saldoLaci } from '../../../../packages/domain/src/buku-kas.ts';
 import { bangunUlangSnapshot } from '../inventori/stok.ts';
 import {
   posisiPenjualan,
@@ -40,7 +40,10 @@ import {
  */
 
 /** `spec-d` FR-D4. Inklusif — selisih tepat sebesar ini MEMICU otorisasi. */
-export const AMBANG_SELISIH = 20000;
+// Dipindah ke packages/domain — server kini juga menutup shift, dan dua
+// salinan angka yang sama akan menyimpang. Di-re-export supaya permukaan
+// publik berkas ini tidak berubah.
+export { AMBANG_SELISIH, butuhOtorisasiSelisih } from '../../../../packages/domain/src/buku-kas.ts';
 
 export const ALASAN_SELISIH = [
   { kode: 'kelebihan_kembalian', label: 'Kelebihan kembalian' },
@@ -272,10 +275,8 @@ export async function catatHitungan({
   return { percobaan: riwayat.length, selisih: hitungan - seharusnya, saldoSeharusnya: seharusnya };
 }
 
-/** `spec-d` FR-D4 — inklusif, dan berlaku untuk kelebihan maupun kekurangan. */
-export function butuhOtorisasiSelisih(selisih: number): boolean {
-  return Math.abs(selisih) >= AMBANG_SELISIH;
-}
+// `butuhOtorisasiSelisih` dan `AMBANG_SELISIH` di-re-export dari
+// `packages/domain/src/buku-kas.ts` di atas — lihat alasannya di sana.
 
 export type HasilTutup =
   | { status: 'tertutup'; selisih: number; saldoSeharusnya: number }
