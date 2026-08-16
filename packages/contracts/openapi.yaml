@@ -2110,6 +2110,84 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
   /orders:
+    get:
+      operationId: listOrders
+      summary: B-02 -- daftar transaksi pada rentang tanggal bisnis.
+      description: >-
+        Satu baris per TRANSAKSI, bukan per baris tabel. Penjualan yang
+        dibatalkan menghasilkan dua baris di tabel order (yang asli tetap
+        berstatus open selamanya karena AC FR-B7 melarang UPDATE padanya, dan
+        pembatalnya baris tersendiri ber-status voided yang nilainya salinan).
+        Yang dikembalikan di sini order aslinya, ber-status turunan
+        "dibatalkan", dengan penunjuk ke pembatalnya.
+
+
+        Keranjang yang belum dibayar disembunyikan -- ia bukan transaksi, dan
+        belum ada jalan menutupnya. Status yang mungkin muncul hanya terjual,
+        dibatalkan, dan direfund.
+
+
+        Paginasi KEYSET. Order dari perangkat yang baru tersambung membawa
+        tanggal bisnis historis dan menyisip di TENGAH urutan; dengan OFFSET
+        satu sisipan membuat satu transaksi terlewat tanpa error. Kirim
+        cursorBerikut dari respons sebelumnya apa adanya -- ia buram dan tidak
+        untuk disusun klien.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: created_by
+          in: query
+          required: false
+          description: Id kasir pembuat order.
+          schema: { type: string }
+        - name: receipt_number
+          in: query
+          required: false
+          description: >-
+            Pencarian SEBAGIAN dan tidak peka huruf besar-kecil. Karakter
+            wildcard yang diketik pengguna dicari harfiah.
+          schema: { type: string }
+        - name: status
+          in: query
+          required: false
+          description: 'terjual | dibatalkan | direfund'
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          description: cursorBerikut dari respons sebelumnya, apa adanya.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Satu halaman transaksi, terbaru lebih dulu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaftarTransaksi'
+        '400':
+          description: Rentang, limit, status, atau cursor tidak valid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     post:
       operationId: createOrder
       requestBody:
@@ -3181,6 +3259,41 @@ paths:
 
 components:
   schemas:
+    DaftarTransaksi:
+      type: object
+      required: [from, to, outletId, items, cursorBerikut]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        cursorBerikut:
+          type: string
+          nullable: true
+          description: null berarti halaman terakhir.
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              [id, receiptNumber, businessDate, sequence, outletId, deviceId,
+               createdBy, occurredAt, total, status, dibatalkanOleh,
+               nilaiRefund, hasCalculationVariance]
+            properties:
+              id: { type: string }
+              receiptNumber: { type: string }
+              businessDate: { type: string }
+              sequence: { type: integer }
+              outletId: { type: string }
+              deviceId: { type: string }
+              createdBy: { type: string }
+              occurredAt: { type: string, format: date-time }
+              total: { type: string }
+              status:
+                type: string
+                enum: [terjual, dibatalkan, direfund]
+              dibatalkanOleh: { type: string, nullable: true }
+              nilaiRefund: { type: string }
+              hasCalculationVariance: { type: boolean }
     LaporanException:
       type: object
       required: [from, to, outletId, perAktor, peristiwa]

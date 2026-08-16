@@ -100,7 +100,19 @@ export interface FilterRiwayat {
    * `K1-20260810-0007`.
    */
   receiptNumber: string | null;
-  status: StatusTerlihat | null;
+  /**
+   * Status yang diminta. `null` berarti seluruh `STATUS_TERLIHAT`.
+   *
+   * ⛔ LARIK, bukan satu nilai. B-02 menyaringnya lewat pilihan ganda, dan
+   * "Dibatalkan + Refund" adalah pertanyaan yang wajar — koreksi apa saja yang
+   * terjadi minggu ini. Bentuk tunggal memaksa layar memilih antara satu
+   * status atau semuanya, dan tidak ada di antaranya.
+   *
+   * Larik KOSONG berarti tidak ada yang cocok, dan itu jawaban yang benar
+   * untuk penyaring yang tidak memilih apa pun — bukan alasan menampilkan
+   * segalanya.
+   */
+  status: readonly StatusTerlihat[] | null;
   limit: number;
   /** Keyset dari halaman sebelumnya: `{businessDate, sequence, id}`. */
   cursor: Kursor | null;
@@ -277,7 +289,7 @@ export async function ambilRiwayat(
   // Status di luar daftar terlihat menghasilkan larik kosong, jadi jawabannya
   // nol baris — bukan kebocoran, dan bukan error yang memberi tahu penebak
   // bahwa tebakannya hampir benar.
-  const diminta: readonly string[] = f.status === null ? STATUS_TERLIHAT : [f.status];
+  const diminta: readonly string[] = f.status === null ? STATUS_TERLIHAT : f.status;
   p.push(diminta.filter((s) => (STATUS_TERLIHAT as readonly string[]).includes(s)));
   const statusSql = `AND st.status_tampil = ANY($${p.length}::text[])`;
 

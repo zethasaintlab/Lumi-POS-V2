@@ -152,7 +152,7 @@ test('⛔ penyaring status tidak dapat DILEWATI lewat parameter', async () => {
   // `?status=terbuka`. Nilainya datang dari query string, dan tipe TypeScript
   // tidak menahan apa pun di sana.
   await order({ status: 'open', total: 9000 });
-  const { items } = await ambil({ status: 'terbuka' });
+  const { items } = await ambil({ status: ['terbuka'] });
   assert.deepEqual(items, [], 'keranjang terbuka tembus lewat parameter status');
 });
 
@@ -277,7 +277,7 @@ test('penyaring status berjalan atas status TURUNAN, bukan kolom', async () => {
   await order({ status: 'voided', total: 25000, voidedBy: asli });
   await order({ status: 'closed', total: 50000 });
 
-  const { items } = await ambil({ status: 'dibatalkan' });
+  const { items } = await ambil({ status: ['dibatalkan'] });
   assert.equal(items.length, 1);
   assert.equal(items[0].id, asli);
 });
