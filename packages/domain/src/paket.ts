@@ -30,6 +30,8 @@
  *    dipakai untuk metering dan penagihan, tidak pernah untuk penolakan.
  */
 
+import { DIMENSI_KUOTA, type DimensiKuota } from './kuota.ts';
+
 export type NamaPaket = 'free' | 'standard' | 'pro' | 'enterprise';
 
 export interface KuotaPaket {
@@ -66,3 +68,128 @@ export const KUOTA_PAKET: Readonly<Record<NamaPaket, KuotaPaket>> = {
  * billing, dan billing tidak dibangun di sini.
  */
 export const PAKET_PENDAFTARAN: NamaPaket = 'free';
+
+// ---------------------------------------------------------------------------
+// Perpindahan paket
+// ---------------------------------------------------------------------------
+
+/**
+ * Pemakaian tenant pada keempat dimensi kuota.
+ *
+ * ⛔ Keempatnya WAJIB, tidak ada `?? 0`. Pemanggil yang lupa satu dimensi akan
+ * lolos diam-diam kalau nilai hilang dianggap nol — dan dimensi yang lupa
+ * dihitung adalah persis dimensi yang tidak dijaga. Angkanya dihitung modul
+ * pemilik tabelnya masing-masing (invariant #4), sama seperti `periksaKuota`.
+ */
+export type PemakaianTenant = Readonly<Record<DimensiKuota, number>>;
+
+export interface PelanggaranKuota {
+  dimensi: DimensiKuota;
+  terpakai: number;
+  batas: number;
+}
+
+export type HasilPerpindahan =
+  | { ok: true }
+  | {
+      ok: false;
+      kode: 'PLAN_DOWNGRADE_BLOCKED';
+      pelanggaran: PelanggaranKuota[];
+      pesan: string;
+    };
+
+/**
+ * Bolehkah tenant dengan pemakaian ini berpindah ke paket tujuan.
+ *
+ * ## ⛔ Lubang yang `periksaKuota` tidak jaga
+ *
+ * `periksaKuota` berjalan saat MEMBUAT sesuatu. Tidak ada apa pun yang
+ * memeriksa kuota saat batasnya SENDIRI yang berubah — dan perpindahan paket
+ * adalah satu-satunya operasi yang mengubah batas.
+ *
+ * Tanpa fungsi ini, tenant dengan 8 outlet dapat turun ke `free` (1 outlet)
+ * dan sistem masuk keadaan yang **tidak dapat dicapai lewat jalur mana pun**:
+ * 8 outlet hidup di bawah kuota 1, tanpa satu pun error, dan setiap layar
+ * "pemakaian vs kuota" menampilkan 8/1. Tidak ada operasi yang memperbaikinya
+ * sendiri, karena `periksaKuota` meloloskan operasi yang tidak menambah apa
+ * pun — dengan sengaja, supaya penurunan paket tidak mengunci katalog.
+ *
+ * Kedua sifat itu benar sendiri-sendiri dan berbahaya bersama. Yang menutupnya
+ * adalah menolak transisinya, bukan melonggarkan salah satunya.
+ *
+ * ## Kenapa SELURUH pelanggaran dikembalikan
+ *
+ * Merchant yang memperbaiki satu dimensi lalu ditolak lagi karena dimensi
+ * kedua — dan lagi karena ketiga — akan menyerah. Penolakan yang menyebut satu
+ * sebab pada satu waktu adalah penolakan yang menyembunyikan pekerjaan.
+ *
+ * Murni: tanpa I/O, tanpa waktu, tanpa database.
+ */
+export function periksaPerpindahanPaket(
+  pemakaian: PemakaianTenant,
+  paketTujuan: string
+): HasilPerpindahan {
+  // Fail-closed, sama seperti `periksaKuota` untuk dimensi tak dikenal.
+  // Meloloskan paket asing berarti mematikan satu-satunya penjaga yang berdiri
+  // di sini, tanpa satu pun error.
+  if (!Object.prototype.hasOwnProperty.call(KUOTA_PAKET, paketTujuan)) {
+    throw new Error(`Paket tidak dikenal: ${paketTujuan}`);
+  }
+  const kuota = KUOTA_PAKET[paketTujuan as NamaPaket];
+
+  const pelanggaran: PelanggaranKuota[] = [];
+  for (const dimensi of DIMENSI_KUOTA) {
+    const terpakai = pemakaian[dimensi];
+    if (typeof terpakai !== 'number' || !Number.isFinite(terpakai)) {
+      throw new Error(`Pemakaian dimensi ${dimensi} tidak diberikan.`);
+    }
+
+    const batas = BATAS_PER_DIMENSI[dimensi](kuota);
+    // `null` = tanpa batas. Diperiksa sebelum aritmetika apa pun, alasan yang
+    // sama dengan `periksaKuota`.
+    if (batas === null) continue;
+
+    // `>` bukan `>=`: batas adalah maksimum yang MUAT. `periksaKuota` memakai
+    // `terpakai + tambahan <= batas`, dan dua tempat yang memperlakukan batas
+    // secara berbeda akan menolak tenant yang sebenarnya muat.
+    if (terpakai > batas) pelanggaran.push({ dimensi, terpakai, batas });
+  }
+
+  if (pelanggaran.length === 0) return { ok: true };
+
+  // Pesan membawa ANGKANYA, pola `spec-e:152`.
+  const rincian = pelanggaran
+    .map((p) => `${LABEL_DIMENSI[p.dimensi]} ${p.terpakai} dari ${p.batas}`)
+    .join(', ');
+  return {
+    ok: false,
+    kode: 'PLAN_DOWNGRADE_BLOCKED',
+    pelanggaran,
+    pesan:
+      `Paket ${paketTujuan} tidak memuat pemakaian saat ini: ${rincian}. ` +
+      'Kurangi dulu sampai muat, lalu ulangi perpindahan.',
+  };
+}
+
+/**
+ * ⛔ Diturunkan dari `DIMENSI_KUOTA`, bukan daftar kedua.
+ *
+ * Dimensi kelima yang ditambahkan kelak akan gagal TYPECHECK di sini alih-alih
+ * diam-diam tidak diperiksa — dan dimensi yang lupa diperiksa adalah persis
+ * dimensi yang tidak dijaga.
+ */
+const BATAS_PER_DIMENSI: Readonly<
+  Record<DimensiKuota, (k: KuotaPaket) => number | null>
+> = {
+  outlet: (k) => k.maxOutlets,
+  device: (k) => k.maxDevices,
+  pengguna: (k) => k.maxUsers,
+  produk: (k) => k.maxProducts,
+};
+
+const LABEL_DIMENSI: Readonly<Record<DimensiKuota, string>> = {
+  outlet: 'outlet',
+  device: 'perangkat',
+  pengguna: 'pengguna',
+  produk: 'produk',
+};
