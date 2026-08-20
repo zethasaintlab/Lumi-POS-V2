@@ -97,6 +97,11 @@ const TABLES = [
   },
   { name: 'outbox', module: 'sync', partitioned: false },
   { name: 'oversell_event', module: 'sync', partitioned: false },
+  // Tagihan langganan (F5, migrasi 0026). Kebocoran di sini menunjukkan
+  // paket, harga, dan jumlah outlet satu merchant kepada merchant lain --
+  // seluruhnya data komersial, dan `outlet_count` adalah ukuran bisnis
+  // yang tidak seorang pun setuju untuk dibagikan.
+  { name: 'subscription_invoice', module: 'tenancy', partitioned: false },
 ].map((t) => ({
   whereForRow: byId,
   buildImpersonationRow: (row, _seededRows, freshId) => cloneWithFreshId(row, freshId),

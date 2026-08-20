@@ -295,6 +295,21 @@ async function seedTenantBase(appClient, { suffix }) {
   rows.sessionToken = sessionToken;
   rows.authHeader = `Bearer ${sessionToken}`;
 
+  rows.subscription_invoice = await insertReturning(appClient, 'subscription_invoice', {
+    id: freshId(),
+    tenant_id: tenantId,
+    plan: 'standard',
+    outlet_count: 2,
+    unit_price: 349000,
+    // `amount` WAJIB = unit_price * outlet_count (CHECK di migrasi 0026).
+    amount: 698000,
+    status: 'pending_confirmation',
+    provider: null,
+    provider_reference: null,
+    confirmed_at: null,
+    requested_by: rows.user.id,
+  });
+
   await appClient.query('COMMIT');
   return rows;
 }
