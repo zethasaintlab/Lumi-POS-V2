@@ -54,8 +54,13 @@ export const KUOTA_PAKET: Readonly<Record<NamaPaket, KuotaPaket>> = {
   // upgrade di hari pertama, dan itu bukan tier gratis melainkan trial yang
   // tidak diberi nama.
   free: { maxOutlets: 1, maxDevices: 2, maxUsers: 3, maxProducts: 200 },
-  standard: { maxOutlets: 5, maxDevices: 10, maxUsers: 15, maxProducts: 5_000 },
-  pro: { maxOutlets: 20, maxDevices: 50, maxUsers: 60, maxProducts: 20_000 },
+  // ⛔ `maxOutlets: null` di kedua tier berbayar, dan itu KEP-38, bukan
+  // kelonggaran. Unit harga adalah **per outlet per bulan** — membatasi
+  // outlet sekaligus menagih per-outlet berarti menolak hal yang sama yang
+  // ditagih. Tier gratis tetap berbatas; kalau tidak, pendaftaran mandiri
+  // memberi outlet tanpa batas seharga Rp0.
+  standard: { maxOutlets: null, maxDevices: 10, maxUsers: 15, maxProducts: 5_000 },
+  pro: { maxOutlets: null, maxDevices: 50, maxUsers: 60, maxProducts: 20_000 },
   enterprise: { maxOutlets: null, maxDevices: null, maxUsers: null, maxProducts: null },
 };
 
@@ -193,3 +198,82 @@ const LABEL_DIMENSI: Readonly<Record<DimensiKuota, string>> = {
   pengguna: 'pengguna',
   produk: 'produk',
 };
+
+// ---------------------------------------------------------------------------
+// Harga — KEP-38 / KEP-39
+// ---------------------------------------------------------------------------
+
+/**
+ * Harga per **outlet per bulan**, rupiah utuh.
+ *
+ * ## ⛔ Per outlet, dan itu menentukan bentuk kuota
+ *
+ * KEP-38: *"Unit harga adalah per outlet per bulan, bukan per terminal atau
+ * per user. Per-terminal menghukum merchant yang menambah kasir di jam sibuk —
+ * persis perilaku yang seharusnya didorong."*
+ *
+ * Konsekuensi yang mudah terlewat: outlet karena itu **bukan dimensi kuota**
+ * di tier berbayar. `KUOTA_PAKET.standard.maxOutlets` dan `.pro` bernilai
+ * `null` justru karena harganya per outlet — membatasinya sekaligus menagih
+ * per-outlet berarti menolak hal yang sama yang ditagih.
+ *
+ * ## ⛔ `bigint`, bukan `number`
+ *
+ * Aturan uang `CLAUDE.md` berlaku penuh di sini. Tagihan langganan adalah uang
+ * sungguhan yang merchant bayar; ia tidak dikecualikan karena bukan penjualan.
+ * Pada skala ini float akan "kebetulan benar", dan itu justru alasannya —
+ * aturan yang punya satu pengecualian akan disalin ke kolom berikutnya.
+ *
+ * ## ⛔ Angkanya `[ASUMSI]`, dan sumbernya menyatakannya sendiri
+ *
+ * `research/11` KEP-39: *"angka harga adalah rekomendasi berdasarkan posisi
+ * kompetitif, bukan hasil riset kemauan bayar"*. Rp349.000 ditempatkan
+ * Rp50.000 di atas anchor Moka Basic; Rp699.000 di bawah batas atas Moka.
+ * Belum divalidasi ke satu merchant pun.
+ *
+ * ⛔ **Kuota `device`, `pengguna`, dan `produk` di `KUOTA_PAKET` MASIH
+ * berbeda dari tabel KEP-39** (KEP-39: gratis 1 device/2 pengguna; standar 3
+ * device/10 pengguna; pro 6 device/pengguna tanpa batas). Yang disamakan
+ * sekarang hanya outlet, karena hanya itu yang diputuskan — dan karena
+ * `free.maxDevices >= 2` dipertahankan test dengan alasan produk yang berdiri
+ * sendiri: kafe takeaway dengan dua terminal adalah kasus normal, dan tier
+ * gratis satu-perangkat adalah trial yang tidak diberi nama. Selisih ini
+ * dinyatakan, bukan kelalaian.
+ */
+export const HARGA_PAKET: Readonly<Record<NamaPaket, bigint | null>> = {
+  free: 0n,
+  standard: 349_000n,
+  pro: 699_000n,
+  // ⛔ `null`, bukan angka. Harga angka untuk enterprise berarti seseorang
+  // dapat membelinya sendiri di B-29 dengan harga yang tidak pernah
+  // disepakati siapa pun. Enterprise adalah negosiasi.
+  enterprise: null,
+};
+
+/**
+ * Tagihan satu bulan untuk paket ini dengan sejumlah outlet.
+ *
+ * Murni: tanpa I/O, tanpa waktu. Yang MENGHITUNG jumlah outlet adalah modul
+ * tenancy (invariant #4) — fungsi ini menerimanya sebagai angka, pola yang
+ * sama dengan `periksaKuota`.
+ */
+export function hitungTagihanBulanan(paket: string, jumlahOutlet: number): bigint {
+  if (!Object.prototype.hasOwnProperty.call(HARGA_PAKET, paket)) {
+    throw new Error(`Paket tidak dikenal: ${paket}`);
+  }
+  const harga = HARGA_PAKET[paket as NamaPaket];
+  if (harga === null) {
+    throw new Error(
+      `Paket ${paket} adalah negosiasi (custom), bukan self-serve — tagihannya tidak dapat dihitung.`
+    );
+  }
+
+  // Tenant tanpa outlet tidak dapat berjualan sama sekali, jadi angka ini
+  // selalu berarti pemanggil salah menghitung. Menagih Rp0 diam-diam untuk
+  // paket berbayar adalah tagihan yang tidak akan pernah ditanyakan siapa pun.
+  if (!Number.isInteger(jumlahOutlet) || jumlahOutlet < 1) {
+    throw new Error(`Jumlah outlet harus bilangan bulat >= 1, diterima ${jumlahOutlet}.`);
+  }
+
+  return harga * BigInt(jumlahOutlet);
+}
