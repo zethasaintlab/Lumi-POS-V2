@@ -258,9 +258,13 @@ async function main() {
   } finally {
     await db.end();
   }
+  // `null` berarti TANPA BATAS, dan mencetaknya apa adanya menghasilkan
+  // "null outlet" — yang terbaca seperti kegagalan, bukan seperti tak
+  // berbatas. Sejak KEP-38 tier berbayar memang tidak membatasi outlet.
+  const batas = (n) => (n === null ? 'tanpa batas' : String(n));
   console.log(
     `paket                   : free → ${PAKET} ` +
-      `(${kuota.maxOutlets} outlet · ${kuota.maxUsers} pengguna)`
+      `(${batas(kuota.maxOutlets)} outlet · ${batas(kuota.maxUsers)} pengguna)`
   );
 
   // --- 4. outlet kedua -------------------------------------------------------
