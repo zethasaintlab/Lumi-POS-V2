@@ -108,6 +108,25 @@ test('⛔ setiap endpoint yang runbook sebut terdaftar di OpenAPI', () => {
   assert.deepEqual(hilang, [], hilang.join('\n  '));
 });
 
+test('⛔ setiap alat yang runbook suruh JALANKAN benar-benar ada di repo', () => {
+  // Runbook §10 mendaftar alat koreksi, dan operator yang sedang menangani
+  // insiden akan mengetik perintahnya apa adanya. Alat yang dipindah atau
+  // dinamai ulang meninggalkan perintah yang menjawab "Cannot find module" —
+  // tepat pada saat yang paling buruk untuk mencari tahu di mana berkasnya.
+  const disebut = [...RUNBOOK.matchAll(/\btools\/[\w.-]+\.mjs\b/g)].map((m) => m[0]);
+  assert.ok(disebut.length > 0, 'runbook harus menyebut setidaknya satu alat koreksi yang dapat dijalankan');
+
+  const hilang = disebut.filter((jalur) => {
+    try {
+      statSync(join(AKAR, jalur));
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  assert.deepEqual(hilang, [], `alat yang runbook sebut tidak ada:\n  ${hilang.join('\n  ')}`);
+});
+
 test('⛔ angka ambang yang runbook sebut sama dengan yang kode tegakkan', async () => {
   // Angka yang disalin ke dokumen akan menyimpang pada perubahan berikutnya,
   // dan operator yang membaca "Rp 20.000" lalu melihat sistem menolak

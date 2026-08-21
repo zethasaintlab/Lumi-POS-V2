@@ -46,7 +46,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 9 | K-16 buka laci · K-17 scanner | utang F2 | belum |
 | 10 | **F6** — runbook | `ARCH:400` | selesai |
 | 11 | **F6** — observability sisi server | `ARCH:294` | selesai (sisi server) |
-| 12 | **F6** — alat koreksi append-only | `ARCH:400` | belum |
+| 12 | **F6** — alat koreksi append-only | `ARCH:400` | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -464,3 +464,76 @@ tidak dapat dibedakan dari 10% tanpa membaca konteks. Yang diperbaiki adalah
 kodeku: ember kini **milidetik bilangan bulat**, dibagi 1.000 saat render.
 Daftar pengecualian akan bertambah panjang sampai penjaganya tidak menjaga apa
 pun — dan `ARCH:300` memang menyebut ambangnya dalam milidetik.
+
+### Task 12 — F6: alat koreksi append-only
+
+**Bagian terakhir gate F6.** `ARCH:400` menuntut alat koreksi ada **sebelum**
+insiden pertama, dan §10 runbook sendiri mencatat lubangnya: perangkat yang
+rusak, hilang, atau di-reset membawa penjualan yang belum terkirim, dan
+satu-satunya ekspor yang ada hanya dapat **dibaca orang**. Jalan masuknya
+kembali ke server adalah mengetik ulang dari kertas — untuk transaksi yang
+uangnya sudah masuk laci merchant.
+
+Tiga potong:
+
+1. `buatEksporPemulihan` di `packages/sync-client/src/status.ts` — ekspor JSON
+   yang dapat dibaca mesin, di samping ekspor teks yang sudah ada.
+2. `tools/pulihkan-antrean.mjs` — memutar ulang berkas itu lewat endpoint REST
+   yang **sama** dengan relay outbox.
+3. Tombol kedua **"Ekspor pemulihan (JSON)"** di K-14, di sebelah ekspor
+   darurat.
+
+⛔ **Tidak melanggar invariant #2.** Alat ini tidak meng-`UPDATE` apa pun. Ia
+menyampaikan penjualan yang **belum pernah sampai**, dengan id dan idempotency
+key aslinya; server memperlakukannya persis seperti perangkat yang akhirnya
+online.
+
+⛔ **Idempotency key ASLI ikut di berkas, dan payload dikirim APA ADANYA** —
+tidak diurai lalu dirangkai ulang. Dua alasan, keduanya keras: key yang
+di-generate ulang menghasilkan penjualan **ganda** pada setiap item yang
+sebenarnya sudah sampai, dan server mem-*hash* body untuk mendeteksi
+`IDEMPOTENCY_KEY_REUSED` — `JSON.parse` lalu `JSON.stringify` mengubah urutan
+kunci dan spasi, jadi retry yang sah akan terbaca sebagai isi yang berubah.
+
+**Aman dijalankan dua kali** adalah sifat yang wajib, bukan kemewahan: yang
+menjalankannya adalah orang yang sedang panik. Ada `--kering` (dry run), dan
+jenis entitas tanpa rute diperiksa **sebelum satu permintaan pun dikirim** —
+berhenti di tengah adalah keadaan yang paling sulit dijelaskan ke merchant.
+
+Item dikirim **berurutan** mengikuti urutan berkas (`created_at, id`).
+`payment` menunjuk order yang harus mendarat lebih dulu.
+
+**Masalah + solusinya:** ⛔ **alat pemulihanku sendiri punya cacat, dan hanya
+menjalankannya terhadap server sungguhan yang menemukannya.** Versi pertama
+memperlakukan **setiap 409** sebagai "sudah ada di server". Saat diuji,
+`POST /shifts` menjawab `409 SHIFT_ALREADY_OPEN` — perangkat itu punya shift
+LAIN yang masih terbuka — dan alatnya melaporkan keberhasilan. Shift-nya tidak
+pernah dibuat, order berikutnya gagal `SHIFT_NOT_FOUND`, dan ringkasan akhirnya
+menyebut satu keberhasilan yang tidak pernah terjadi.
+
+**Sukses karena alasan yang salah adalah bentuk kegagalan terburuk untuk alat
+pemulihan**: operator menutup insiden dengan penjualan yang masih hilang.
+Perbaikannya menyempit ke `ID_ALREADY_EXISTS` saja — semua sisanya kegagalan —
+plus petunjuk terarah untuk `SHIFT_ALREADY_OPEN` dan `SHIFT_NOT_FOUND`, dua
+kode yang paling mudah salah dibaca sebagai kerusakan data. Ini kelas yang sama
+dengan yang F3 catat: test hijau karena memeriksa keadaan yang tidak dapat
+terjadi. Fake tidak dapat menghasilkan `SHIFT_ALREADY_OPEN`.
+
+**Test** (`tests/sync-client/status.test.js`, 4 baru): key asli dipertahankan,
+payload identik byte demi byte, baris `sent` dikecualikan, dan setiap jenis di
+`RUTE_DIDUKUNG` punya rute di alat — penjaga dua arah, supaya jenis entitas
+baru tidak diam-diam kehilangan jalur pemulihannya.
+
+**Runbook**: §10 kehilangan tanda ⛔ "BELUM ADA", dan §10.1 baru memuat
+prosedurnya beserta tabel arti keluaran. §1 langkah 3 kini menuntut **kedua**
+ekspor sebelum perangkat diganti. Ditambah penjaga baru di
+`tests/domain/runbook.test.js`: setiap `tools/*.mjs` yang runbook suruh
+jalankan harus benar-benar ada di repo — perintah yang menjawab "Cannot find
+module" saat insiden adalah tepat cara terburuk untuk mengetahui berkasnya
+dipindah. Sabotase: nama alat diketik salah → 1 merah.
+
+**Gate F6 tertutup sejauh yang dapat dibuktikan tanpa deployment.** Yang
+tersisa dari F6 dan dicatat sebagai batas, bukan kelalaian: telemetri klien
+untuk lima metrik `ARCH:296` yang server tidak dapat lihat, metrik ops
+lintas-tenant (menuntut pembaca ber-`BYPASSRLS` — keputusan deployment), dan
+staged rollout.

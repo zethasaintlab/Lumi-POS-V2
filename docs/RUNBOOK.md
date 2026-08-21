@@ -89,7 +89,10 @@ Alasan gagal sudah diterjemahkan ke bahasa manusia (`pesanGagal` di
 2. Kalau item tetap `failed`: **ambil ekspor darurat** dari K-14 sebelum
    melakukan apa pun. Ia berkas teks yang dapat dibaca manusia dan memuat
    seluruh transaksi yang belum tercatat (`spec-h:256`).
-3. ⛔ **Jangan menghapus database lokal perangkat** sebelum ekspor darurat
+3. Ambil juga **ekspor pemulihan (JSON)** — tombol kedua di K-14. Yang teks
+   dibaca orang; yang JSON dapat diputar ulang ke server lewat §10.1. Perangkat
+   yang akan diganti atau di-reset **wajib** punya keduanya.
+4. ⛔ **Jangan menghapus database lokal perangkat** sebelum kedua ekspor
    tersimpan di luar perangkat. `outbox_local` adalah satu-satunya salinan
    penjualan itu.
 
@@ -430,26 +433,56 @@ pengguna di dalamnya.
 
 ## 10. Alat koreksi append-only
 
-⛔ **BELUM ADA.** Gate F6 menuntut *"alat koreksi ada sebelum insiden
-pertama"*, dan bagian itu **masih terbuka**.
-
-Yang ADA hari ini, dan semuanya append-only:
+Gate F6 menuntut *"alat koreksi ada sebelum insiden pertama"*. Yang ADA hari
+ini, dan semuanya append-only:
 
 | Kebutuhan | Alat |
 |---|---|
 | Membatalkan penjualan | `POST /orders/{id}/cancel` — server memilih void atau refund dari status order |
 | Mengoreksi stok | `POST /inventory/movements` (`adjustment`, wajib beralasan) · opname B-14 |
 | Menutup order terbengkalai | `POST /orders/cleanup-abandoned` |
-| Menyelamatkan antrean perangkat | Ekspor darurat K-14 |
+| Menyelamatkan antrean perangkat | Ekspor darurat K-14 (teks, untuk dibaca orang) |
+| **Memasukkan antrean perangkat kembali ke server** | Ekspor pemulihan K-14 (JSON) → `node tools/pulihkan-antrean.mjs` — lihat §10.1 |
 
 Yang **tidak** ada, dan harus dibangun sebelum insiden pertama:
 
-- Menyisipkan penjualan dari ekspor darurat kembali ke server (hari ini: hanya
-  dapat dibaca manusia, tidak ada jalur impor).
 - Menurunkan paket / membatalkan langganan.
 - Membatalkan tagihan langganan yang terlanjur dibuat.
 - Mengoreksi `refund.method` yang salah tersimpan (kolomnya tanpa default sejak
   migrasi `0021`, jadi salah nilai hanya mungkin dari klien yang cacat).
+
+### 10.1 Memutar ulang antrean perangkat yang rusak atau hilang
+
+Dipakai saat perangkat rusak, hilang, atau di-reset dengan penjualan yang belum
+terkirim. Ambil **Ekspor pemulihan (JSON)** dari K-14 — tombol kedua, di
+sebelah ekspor darurat yang dibaca manusia — lalu:
+
+```
+node tools/pulihkan-antrean.mjs antrean.json --tenant <tenant-id> --kering
+node tools/pulihkan-antrean.mjs antrean.json --tenant <tenant-id>
+```
+
+`--kering` mencetak apa yang akan dikirim tanpa mengirim apa pun. Jalankan itu
+lebih dulu, selalu.
+
+Alat ini mengirim lewat endpoint REST yang **sama** dengan relay outbox, jadi
+ia tidak melanggar invariant #2: ia tidak meng-`UPDATE` apa pun, ia
+menyampaikan penjualan yang belum pernah sampai.
+
+| Yang tercetak | Artinya |
+|---|---|
+| `✔ … → 201` | Mendarat di server. |
+| `• … → sudah ada di server` | `ID_ALREADY_EXISTS`. Idempotensi bekerja; item itu memang sudah sampai sebelumnya. |
+| `✖ … → HTTP 409 SHIFT_ALREADY_OPEN` | ⛔ **Bukan "sudah ada".** Perangkat itu punya shift LAIN yang terbuka. Shift dari berkas ini tidak dibuat, dan order yang menunjuknya akan gagal 404. Tutup shift terbuka itu (B-04), jalankan ulang. |
+| `✖ … → HTTP 404 SHIFT_NOT_FOUND` | Order menunjuk shift yang belum mendarat. Perbaiki kegagalan shift di atasnya lebih dulu. |
+
+⛔ **Aman dijalankan dua kali** — dan itu sifat yang wajib dimiliki alat yang
+dipakai orang panik. Idempotency key asli ikut di berkas dan dikirim apa
+adanya; payload tidak pernah diurai lalu dirangkai ulang, karena server
+mem-*hash* body untuk mendeteksi `IDEMPOTENCY_KEY_REUSED`.
+
+⛔ **Jangan membuang berkas ekspornya** selama masih ada baris yang gagal. Ia
+satu-satunya salinan penjualan itu setelah perangkatnya hilang.
 
 ---
 

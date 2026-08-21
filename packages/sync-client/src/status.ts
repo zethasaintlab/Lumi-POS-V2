@@ -313,3 +313,88 @@ export async function buatEksporDarurat(
 
   return [...kepala, ...blok].join('\n');
 }
+
+/**
+ * Ekspor PEMULIHAN — JSON, untuk mesin.
+ *
+ * ## ⛔ Kenapa ada DUA ekspor, dan kenapa yang satu tidak cukup
+ *
+ * `buatEksporDarurat` di atas menghasilkan TEKS, dan `spec-h:263` menuntut
+ * itu: *"dapat dibaca manusia"*. Yang membacanya orang support saat perangkat
+ * rusak, bukan parser.
+ *
+ * Konsekuensinya baru terasa saat perangkat benar-benar mati: teks itu **tidak
+ * dapat dikirim ulang**. Satu-satunya jalan memasukkan penjualannya kembali
+ * adalah mengetiknya ulang satu per satu dari kertas — untuk transaksi yang
+ * uangnya sudah masuk laci merchant. Runbook §10 mencatatnya sebagai alat
+ * koreksi yang harus ada **sebelum insiden pertama** (gate F6).
+ *
+ * ## ⛔ Yang membuat pemulihan AMAN adalah idempotency key yang IKUT
+ *
+ * Setiap baris membawa `idempotency_key` yang dibuat saat item lahir, bukan
+ * saat dikirim. Memutar ulang berkas ini karena itu **tidak dapat**
+ * menghasilkan penjualan ganda: server mengenali key-nya dan mengembalikan
+ * respons aslinya. Menjalankan pemulihan dua kali aman; itu sifat yang harus
+ * dimiliki alat yang dipakai orang panik.
+ *
+ * ⛔ Key yang di-generate ulang saat pemulihan akan menghasilkan penjualan
+ * ganda pada setiap item yang SEBENARNYA sudah sampai — persis kelas cacat
+ * yang `enqueue` ada untuk mencegah.
+ *
+ * ## Yang TIDAK ikut
+ *
+ * Baris `sent`. Server sudah punya, dan menyertakannya membuat berkas ini
+ * besar tanpa menyelamatkan apa pun — aturan yang sama dengan ekspor teks.
+ */
+export interface EksporPemulihan {
+  versi: 1;
+  deviceCode: string;
+  dibuatPada: string;
+  item: Array<{
+    id: string;
+    entityType: string;
+    entityId: string;
+    operation: string;
+    idempotencyKey: string;
+    actorId: string | null;
+    createdAt: string;
+    /** Payload APA ADANYA — string, bukan objek. Lihat komentar di bawah. */
+    payload: string;
+  }>;
+}
+
+export async function buatEksporPemulihan(
+  db: DbLokal,
+  { deviceCode, sekarang }: { deviceCode: string; sekarang: number }
+): Promise<EksporPemulihan> {
+  const baris = await db.getAll<BarisOutbox>(
+    `SELECT * FROM outbox_local WHERE status IN ('pending','sending','failed')
+      ORDER BY created_at, id`
+  );
+
+  return {
+    versi: 1,
+    deviceCode,
+    dibuatPada: new Date(sekarang).toISOString(),
+    item: baris.map((b) => ({
+      id: b.id,
+      entityType: b.entity_type,
+      entityId: b.entity_id,
+      operation: b.operation,
+      idempotencyKey: b.idempotency_key,
+      actorId: b.actor_id ?? null,
+      createdAt: b.created_at,
+      // ⛔ Payload disimpan sebagai STRING, tidak diurai lalu dirangkai ulang.
+      //
+      // Alasannya sama persis dengan yang tertulis di `http.ts`: server
+      // menghitung hash request dari BODY untuk mendeteksi "key sama, body
+      // berbeda" (`IDEMPOTENCY_KEY_REUSED`). Apa pun yang mengubah byte body
+      // mengubah retry yang sah menjadi 422 permanen — dan V8 mengurutkan
+      // ulang kunci yang menyerupai integer saat parse.
+      //
+      // Berkas pemulihan yang mengubah byte-nya adalah berkas yang setiap
+      // itemnya ditolak, di hari yang paling buruk untuk menemukannya.
+      payload: b.payload,
+    })),
+  };
+}

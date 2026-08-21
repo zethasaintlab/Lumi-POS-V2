@@ -405,3 +405,86 @@ test('H3-4 antrean kosong tetap menghasilkan berkas yang menjelaskan', async () 
     db.tutup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Alat koreksi F6 — ekspor pemulihan (JSON, dapat diputar ulang)
+// ---------------------------------------------------------------------------
+
+test('⛔ ekspor pemulihan membawa idempotency key ASLI', async () => {
+  // Ini yang membuat pemulihan aman dijalankan DUA KALI — sifat yang harus
+  // dimiliki alat yang dipakai orang panik. Key yang di-generate ulang saat
+  // pemulihan akan menghasilkan penjualan GANDA pada setiap item yang
+  // sebenarnya sudah sampai.
+  const { buatEksporPemulihan } = await import(STATUS);
+  const db = buatDb();
+  try {
+    await isi(db, [
+      { id: 'o1', entityType: 'order', createdAt: '2026-08-08T09:00:00.000Z', status: 'failed' },
+      { id: 'o2', entityType: 'payment', createdAt: '2026-08-08T09:01:00.000Z' },
+    ]);
+
+    const hasil = await buatEksporPemulihan(db, { deviceCode: 'K1', sekarang: T0 });
+    assert.equal(hasil.versi, 1);
+    assert.equal(hasil.deviceCode, 'K1');
+    assert.deepEqual(
+      hasil.item.map((i) => i.idempotencyKey),
+      ['key-o1', 'key-o2'],
+      'key yang sama dengan yang dipakai relay — bukan yang baru'
+    );
+    assert.deepEqual(hasil.item.map((i) => i.entityType), ['order', 'payment']);
+  } finally {
+    db.tutup();
+  }
+});
+
+test('⛔ payload disimpan sebagai STRING, byte demi byte', async () => {
+  // Server menghitung hash request dari BODY untuk mendeteksi "key sama, body
+  // berbeda" (`IDEMPOTENCY_KEY_REUSED`). Apa pun yang mengubah byte body
+  // mengubah retry yang sah menjadi 422 permanen — dan berkas pemulihan yang
+  // mengubah byte-nya adalah berkas yang SETIAP itemnya ditolak, di hari yang
+  // paling buruk untuk menemukannya.
+  const { buatEksporPemulihan } = await import(STATUS);
+  const db = buatDb();
+  try {
+    await isi(db, [{ id: 'o1', createdAt: '2026-08-08T09:00:00.000Z', payload: { total: 44400 } }]);
+
+    const [tersimpan] = await db.getAll('SELECT payload FROM outbox_local WHERE id = ?', ['o1']);
+    const hasil = await buatEksporPemulihan(db, { deviceCode: 'K1', sekarang: T0 });
+
+    assert.equal(typeof hasil.item[0].payload, 'string');
+    assert.equal(hasil.item[0].payload, tersimpan.payload, 'byte body tidak boleh berubah');
+  } finally {
+    db.tutup();
+  }
+});
+
+test('yang sudah `sent` tidak ikut — server sudah punya', async () => {
+  const { buatEksporPemulihan } = await import(STATUS);
+  const db = buatDb();
+  try {
+    await isi(db, [
+      { id: 'o1', createdAt: '2026-08-08T09:00:00.000Z', status: 'sent' },
+      { id: 'o2', createdAt: '2026-08-08T09:01:00.000Z', status: 'failed' },
+      { id: 'o3', createdAt: '2026-08-08T09:02:00.000Z' },
+    ]);
+    const hasil = await buatEksporPemulihan(db, { deviceCode: 'K1', sekarang: T0 });
+    assert.deepEqual(hasil.item.map((i) => i.id), ['o2', 'o3']);
+  } finally {
+    db.tutup();
+  }
+});
+
+test('⛔ setiap jenis yang punya rute relay juga punya rute di alat pemulihan', async () => {
+  // Alat pemulihan memeriksa jenis SEBELUM mengirim satu permintaan pun —
+  // berhenti di tengah adalah keadaan yang paling sulit dijelaskan kepada
+  // merchant: sebagian penjualannya masuk, sebagian tidak, dan tidak ada yang
+  // tahu batasnya di mana. Penjaga ini memastikan daftarnya tidak menyimpang
+  // dari `RUTE_DIDUKUNG`.
+  const { readFileSync } = require('node:fs');
+  const { join } = require('node:path');
+  const { RUTE_DIDUKUNG } = await import('../../packages/sync-client/src/http.ts');
+  const alat = readFileSync(join(__dirname, '..', '..', 'tools', 'pulihkan-antrean.mjs'), 'utf8');
+
+  const hilang = RUTE_DIDUKUNG.filter((jenis) => !new RegExp(`^\\s*${jenis}:`, 'm').test(alat));
+  assert.deepEqual(hilang, [], `tools/pulihkan-antrean.mjs tidak punya rute untuk: ${hilang.join(', ')}`);
+});

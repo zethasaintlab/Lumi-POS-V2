@@ -625,10 +625,11 @@ lebih kecil dan tidak punya kuota.
 
 ---
 
-## F6 dimulai — runbook & observability, 21 Agustus 2026
+## F6 — runbook, observability & alat koreksi, 21 Agustus 2026
 
 Gate F6 (`ARCH:400`): *"Runbook lengkap; alat koreksi ada **sebelum** insiden
-pertama."* Bagian pertama tertutup; bagian kedua **masih terbuka**.
+pertama."* **Kedua bagiannya tertutup** sejauh yang dapat dibuktikan tanpa
+deployment; yang tersisa terdaftar di § "Yang MASIH TERBUKA" di bawah.
 
 ### `docs/RUNBOOK.md`
 
@@ -658,11 +659,44 @@ Teks Prometheus, tanpa sesi, nol dependensi baru.
   ditandai penjaga invariant #7 sebagai angka tarif pajak — dan penjaganya
   benar. Yang diperbaiki kodenya, bukan penjaganya.
 
+### Alat koreksi: ekspor pemulihan + `tools/pulihkan-antrean.mjs`
+
+Lubang yang ditutupnya: perangkat rusak, hilang, atau di-reset dengan penjualan
+yang belum terkirim. Ekspor darurat K-14 hanya dapat **dibaca orang** — jalan
+masuknya kembali ke server adalah mengetik ulang dari kertas.
+
+K-14 kini punya tombol kedua, **"Ekspor pemulihan (JSON)"**
+(`buatEksporPemulihan` di `packages/sync-client/src/status.ts`), dan alatnya
+memutar ulang berkas itu lewat endpoint REST yang sama dengan relay outbox.
+Prosedurnya di runbook §10.1.
+
+- ⛔ **Tidak melanggar invariant #2.** Tidak ada `UPDATE`; yang dikirim adalah
+  penjualan yang **belum pernah sampai**, dengan id aslinya. Server
+  memperlakukannya seperti perangkat yang akhirnya online.
+- ⛔ **Idempotency key ASLI, payload APA ADANYA.** Key yang di-generate ulang
+  menghasilkan penjualan **ganda** pada setiap item yang sudah sampai; payload
+  yang diurai lalu dirangkai ulang mengubah urutan kunci dan spasi, dan server
+  mem-*hash* body untuk mendeteksi `IDEMPOTENCY_KEY_REUSED` — retry yang sah
+  akan terbaca sebagai isi yang berubah.
+- ⛔ **HANYA `ID_ALREADY_EXISTS` yang dihitung "sudah ada".** Versi pertama
+  memperlakukan setiap 409 begitu, dan itu ditemukan **hanya** dengan
+  menjalankannya terhadap server sungguhan: `POST /shifts` menjawab
+  `409 SHIFT_ALREADY_OPEN` — perangkat punya shift LAIN yang terbuka — dan
+  alatnya melaporkan keberhasilan yang tidak pernah terjadi. Sukses karena
+  alasan yang salah adalah bentuk kegagalan terburuk untuk alat pemulihan:
+  operator menutup insiden dengan penjualan yang masih hilang. Fake tidak
+  dapat menghasilkan kode itu.
+- **Aman dijalankan dua kali**, punya `--kering`, mengirim **berurutan**, dan
+  memeriksa jenis entitas tanpa rute **sebelum satu permintaan pun dikirim**.
+- Penjaga dua arah: setiap jenis di `RUTE_DIDUKUNG` wajib punya rute di alat,
+  jadi jenis entitas baru tidak diam-diam kehilangan jalur pemulihannya. Dan
+  setiap `tools/*.mjs` yang runbook sebut wajib ada di repo.
+
 ### ⛔ Yang MASIH TERBUKA di F6
 
 | Bagian | Keadaan |
 |---|---|
-| Alat koreksi append-only | **Belum ada.** Runbook §10 mendaftar apa yang ada dan apa yang harus dibangun sebelum insiden pertama |
 | Telemetri klien | Belum ada. Lima metrik `ARCH:296` menunggunya |
 | Staged rollout | Belum ada |
 | Metrik lintas-tenant | Menunggu keputusan deployment (pembaca ber-`BYPASSRLS`) |
+| Koreksi langganan | Menurunkan paket, membatalkan tagihan yang terlanjur dibuat — runbook §10 mendaftarnya sebagai yang belum ada |
