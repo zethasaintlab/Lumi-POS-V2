@@ -1138,3 +1138,65 @@ payment · identity · tenancy · dst-server             PASS
 ```
 
 Tujuh belas suite, nol kegagalan.
+
+### Task 16 — Diskon order + otorisasi step-up (FR-B8 & FR-B9, P0)
+
+**Selesai sisi server dan domain.** P0 yang tertinggal, dan yang paling
+mengejutkan tentangnya: **`order_discount` SELALU NOL sebelum ini.** Kolomnya
+ada sejak F0, `computeOrderTotals` sudah menghitungnya sejak Modul C — tapi
+`POST /orders` menulis nol ke sana. Tidak ada satu pun jalan bagi merchant
+untuk memberi diskon, dan tidak ada satu pun test yang merah karenanya.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Ambang diputuskan dari NILAI RUPIAH, bukan dari bentuk yang diketik
+  kasir.** `spec-b:273` menulis "> 20% **atau** > Rp 50.000", dan keduanya
+  harus berlaku apa pun bentuk masukannya: Rp 60.000 atas Rp 1.000.000 hanya
+  6% tapi melewati ambang nominal; 30% atas Rp 10.000 hanya Rp 3.000 tapi
+  melewati ambang persen. Memeriksa satu bentuk saja membuat setengah ambang
+  tidak pernah menyala — dan yang tidak menyala adalah yang dipakai untuk
+  melewatinya.
+- ⛔ **Perbandingan persen memakai perkalian silang.** Pembagian bigint
+  memotong, dan 20,004% akan terbaca persis 20% lalu lolos.
+- ⛔ **403 `APPROVAL_REQUIRED`, bukan 400.** Permintaannya tidak cacat, ia
+  hanya belum disetujui. Kasir yang menerima 400 akan mengira ia salah
+  memasukkan angka.
+- ⛔ **Ambang dihitung dari subtotal SERVER.** Perangkat yang di-root dapat
+  mengirim subtotal apa pun; ambang yang dihitung atasnya adalah ambang yang
+  dapat dipilih penyerang sendiri.
+- ⛔ **Alasan dituntut untuk SETIAP diskon, bukan hanya yang melewati
+  ambang**, dan audit ditulis untuk keduanya. Pola diskon kecil yang berulang
+  adalah persis yang laporan exception FR-G5 ada untuk menemukannya.
+- **Aturan catatan "lainnya" diangkat ke `alasan.ts`.** Ia sebelumnya
+  konstanta privat di `cancellation.ts`, dan daftar kelima yang lahir akan
+  menyalinnya.
+- **`SKALA_TARIF` diekspor dari `numeric.ts`.** Sudah ada DUA salinan (`SCALE`
+  dan `RATE_SCALE` di `tax.ts`); menambah yang ketiga untuk diskon akan
+  menjadikannya tiga.
+- **Ambang turun ke perangkat.** FR-B8 harus bekerja offline: klien yang tidak
+  tahu ambangnya akan menerapkan diskon 90% tanpa satu pun PIN, lalu server
+  menolaknya berjam-jam kemudian — saat uangnya sudah diterima dan
+  pelanggannya sudah pulang. Ia kemunculan KEEMPAT kelas cacat
+  `numeric → INTEGER berskala`.
+
+**⛔ Dua test HAMPA yang ditemukan sabotase, bukan review:**
+
+| Yang hampa | Kenapa ia hijau |
+|---|---|
+| Test saya sendiri: "order berdiskon tidak ditandai selisih" | Ia mengirim total yang COCOK dengan hitungan server, jadi jalur pemeriksaan selisih **tidak pernah berjalan**. Meneruskan diskon `0n` ke `hitungTotalVersiKlien` tidak membuat satu pun test merah |
+| Parser DDL PostgreSQL hanya membaca `ADD COLUMN` **pertama** dalam satu pernyataan | Migrasi 0030 menambahkan `outlet.update_window_end_hour` dan `device.update_deferred_version` lewat bentuk itu, dan **keduanya lolos tanpa pernah dibandingkan** dengan skema lokal |
+
+Yang pertama diganti test yang benar-benar menguji aturannya: harga basi
+(total klien berbeda) **dan** ada diskon. Itu juga yang mengungkap keputusan
+yang belum diambil — **diskon persen di jalur pemeriksaan selisih diturunkan
+dari subtotal KLIEN, bukan subtotal server.** Pertanyaannya "apakah total
+klien konsisten dengan harga-harganya sendiri", dan perangkat yang harganya
+basi menghitung 10% dari 10.000, bukan dari 25.000.
+
+Yang kedua ketahuan hanya karena migrasi 0031 kebetulan menambahkan kolom yang
+ADA di skema lokal — arah kesalahan yang berlawanan, dan satu-satunya yang
+berteriak. Parsernya diperbaiki; kini ia membaca setiap `ADD COLUMN`.
+
+**Belum digarap, dan dinyatakan:** UI diskon di K-03 dan dialog step-up K-11
+(klien). Aturannya sudah di `packages/domain`, jadi klien tinggal
+memanggilnya — tapi sampai itu ada, diskon hanya dapat diberikan lewat API.

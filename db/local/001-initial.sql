@@ -105,6 +105,17 @@ CREATE TABLE outlet (
   rounding_mode TEXT NOT NULL DEFAULT 'half_up',
   service_charge_rate INTEGER NOT NULL DEFAULT 0,   -- x10000
   vertical_profile_id TEXT,
+  -- FR-B8 — ambang otorisasi diskon. Turun ke perangkat karena otorisasi
+  -- step-up harus bekerja OFFLINE: klien yang tidak tahu ambangnya akan
+  -- menerapkan diskon 90% tanpa satu pun PIN, lalu server menolaknya
+  -- berjam-jam kemudian — saat uangnya sudah diterima dan pelanggannya sudah
+  -- pulang.
+  --
+  -- ⛔ NULL berarti "pakai bawaan", dan bawaannya di
+  -- `packages/domain/src/diskon.ts`. Bukan DEFAULT kolom: outlet lama akan
+  -- diam-diam memakai angka lama selamanya.
+  discount_threshold_percent INTEGER,   -- x10000
+  discount_threshold_amount INTEGER,
   archived_at TEXT
 );
 

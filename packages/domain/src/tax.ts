@@ -26,8 +26,10 @@
  */
 
 import { allocateProportionally } from './alokasi.ts';
+import { SKALA_TARIF } from './numeric.ts';
 
-const RATE_SCALE = 10000n;
+// Satu sumber untuk skala tarif — lihat `SKALA_TARIF` di `numeric.ts`.
+const RATE_SCALE = SKALA_TARIF;
 
 export type TaxChannel = 'all' | 'dine_in' | 'takeaway';
 export type TaxAppliesTo = 'all_items' | 'category' | 'item';

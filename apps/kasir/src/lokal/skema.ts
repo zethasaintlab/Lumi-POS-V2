@@ -114,7 +114,10 @@ export const TABEL_LOKAL_SAJA = [
 export const SKALA_KOLOM: Record<string, Record<string, number>> = {
   tax_rate: { rate: 10000 },
   // Kemunculan KETIGA dari kelas cacat yang sama (numeric -> INTEGER berskala).
-  outlet: { service_charge_rate: 10000 },
+  // FR-B8 menambah `discount_threshold_percent` — kemunculan KEEMPAT kelas
+  // cacat yang sama. Ia NULLABLE, dan itu tetap aman: `ROUND(NULL * 10000)`
+  // adalah NULL, dan NULL berarti "pakai bawaan domain".
+  outlet: { service_charge_rate: 10000, discount_threshold_percent: 10000 },
   order_line: { tax_rate: 10000 },
   item_variation: { conversion_factor: 1000 },
 };

@@ -67,6 +67,16 @@ export interface OutletSettings {
    * konfigurasi akan menagih berbeda dari yang diharapkan merchant.
    */
   roundingMode: string;
+  /**
+   * FR-B8 — ambang otorisasi diskon. `null` berarti pakai bawaan, dan
+   * bawaannya hidup di `packages/domain/src/diskon.ts`.
+   *
+   * ⛔ Persen berskala 10.000 seperti tarif pajak, bukan `number`. Ia masuk
+   * perbandingan yang memutuskan apakah PIN manajer dituntut; float di sana
+   * membuat 20,004% terbaca persis 20% pada sebagian nilai.
+   */
+  discountThresholdPercentScaled: bigint | null;
+  discountThresholdAmount: bigint | null;
 }
 
 // T3 (PLAN-ordering-fondasi.md) -- dipakai modul ordering di jalur createOrder
@@ -81,8 +91,16 @@ export interface OutletSettings {
 // `service_charge_rate` bertipe `numeric(6,4)` -- pg mengembalikannya sebagai
 // string berpresisi penuh, dan diubah lewat parseRateToScaled, bukan Number().
 export async function getOutletSettings(client: PoolClient, outletId: string): Promise<OutletSettings> {
-  const { rows } = await client.query<{ rounding_increment: number; rounding_mode: string; service_charge_rate: string }>(
-    'SELECT rounding_increment, rounding_mode, service_charge_rate FROM outlet WHERE id = $1 AND archived_at IS NULL',
+  const { rows } = await client.query<{
+    rounding_increment: number;
+    rounding_mode: string;
+    service_charge_rate: string;
+    discount_threshold_percent: string | null;
+    discount_threshold_amount: string | null;
+  }>(
+    `SELECT rounding_increment, rounding_mode, service_charge_rate,
+            discount_threshold_percent, discount_threshold_amount
+       FROM outlet WHERE id = $1 AND archived_at IS NULL`,
     [outletId]
   );
   if (rows.length === 0) {
@@ -92,6 +110,14 @@ export async function getOutletSettings(client: PoolClient, outletId: string): P
     roundingIncrement: BigInt(rows[0].rounding_increment),
     serviceChargeRateScaled: parseRateToScaled(rows[0].service_charge_rate),
     roundingMode: rows[0].rounding_mode,
+    // `numeric` kembali sebagai STRING berpresisi penuh dari pg; lewat
+    // `parseRateToScaled`, tidak pernah lewat `Number()`.
+    discountThresholdPercentScaled:
+      rows[0].discount_threshold_percent === null
+        ? null
+        : parseRateToScaled(rows[0].discount_threshold_percent),
+    discountThresholdAmount:
+      rows[0].discount_threshold_amount === null ? null : BigInt(rows[0].discount_threshold_amount),
   };
 }
 

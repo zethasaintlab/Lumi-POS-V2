@@ -2802,6 +2802,32 @@ paths:
                 #
                 # Klien versi N-1 tidak mengirimnya, dan tidak boleh patah.
                 total: {}
+                # FR-B8 -- diskon tingkat order. SENGAJA tanpa `type` di
+                # dalamnya: `bacaPermintaanDiskon` (handlers/orders.ts) adalah
+                # satu-satunya sumber kebenaran, pola sama dengan
+                # quantityMilli dan total. Klien versi N-1 tidak mengirimnya.
+                #
+                # `nilai` berskala 10.000 untuk `persen` (1500 = 15%), rupiah
+                # utuh untuk `nominal`.
+                discount:
+                  type: object
+                  nullable: true
+                  properties:
+                    tipe: { type: string, enum: [persen, nominal] }
+                    nilai: {}
+                # Daftar TERTUTUP; "lainnya" wajib catatan >= 10 karakter.
+                # Dituntut untuk SETIAP diskon, bukan hanya yang melewati
+                # ambang: yang di bawah ambang tetap masuk laporan exception
+                # FR-G5, dan baris tanpa alasan tidak dapat diagregasi.
+                discountReasonCode:
+                  type: string
+                  enum:
+                    - promo_berjalan
+                    - karyawan
+                    - pelanggan_langganan
+                    - kompensasi_keluhan
+                    - lainnya
+                discountReasonNote: { type: string, nullable: true }
                 lines:
                   type: array
                   minItems: 1
