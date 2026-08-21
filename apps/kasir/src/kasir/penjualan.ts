@@ -10,7 +10,8 @@ import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import { bangunDokumenStruk } from '../cetak/dokumen.ts';
-import { cetakStruk, type HasilCetak, type PeripheralPort } from '../cetak/port.ts';
+import { type HasilCetak, type PeripheralPort } from '../cetak/port.ts';
+import { cetakDanCatat } from '../cetak/antrean.ts';
 import type { PrinterProfile } from '../cetak/escpos.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
@@ -482,7 +483,12 @@ export async function simpanPenjualan({
   // Ini juga urutan yang `ARCH:201` sebut mengikat: commit → SigningHook →
   // ReceiptRenderer. `SigningHook` masih no-op di Indonesia; tempatnya ada di
   // sini bila kelak dibutuhkan.
-  const cetak = await cetakStruk(
+  // ⛔ `cetakDanCatat`, bukan `cetakStruk` telanjang. Satu pintu, supaya tidak
+  // ada jalur cetak yang lupa mencatat ke `print_job` — dan jalur yang lupa
+  // adalah jalur yang struknya HILANG saat gagal, yaitu tepat jalur yang paling
+  // membutuhkan antreannya. Ia tetap tidak pernah melempar (invariant #3).
+  const cetak = await cetakDanCatat(
+    db,
     peripheral,
     bangunDokumenStruk({
       namaMerchant: outlet?.name ?? '',
@@ -511,7 +517,8 @@ export async function simpanPenjualan({
       pembayaran: [{ nama: 'Tunai', jumlah: Number(tendered) }],
       kembalian: Number(kembalian),
     }),
-    printerProfile
+    printerProfile,
+    { id: idBaru(), orderId, waktu: occurredAt }
   );
 
   return {

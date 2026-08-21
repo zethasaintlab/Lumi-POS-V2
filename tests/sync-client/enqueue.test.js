@@ -76,9 +76,22 @@ test('enqueue MENOLAK entity_type yang tidak punya endpoint', async () => {
   }
 });
 
-test('enqueue menerima keempat jenis yang punya endpoint', async () => {
+test('⛔ ENTITY_TYPES dan peta RUTE memuat jenis yang SAMA PERSIS', async () => {
+  // Dulu daftar ini ditulis tangan di sini, dan itu memeriksa hal yang salah:
+  // yang berbahaya bukan "daftarnya berubah" melainkan **kedua daftar
+  // menyimpang**. Jenis yang ditambahkan ke `ENTITY_TYPES` tanpa rute akan
+  // MELEMPAR saat relay mengirimnya — dan lemparan itu terjadi berjam-jam
+  // setelah penjualan ditulis, di perangkat merchant, bukan di sini.
+  //
+  // Arah sebaliknya sama buruknya: rute tanpa jenis berarti endpoint yang
+  // tidak pernah dapat dicapai antrean.
+  const { ENTITY_TYPES } = await import(ENQUEUE);
+  const { RUTE_DIDUKUNG } = await import('../../packages/sync-client/src/http.ts');
+  assert.deepEqual([...ENTITY_TYPES].sort(), [...RUTE_DIDUKUNG].sort());
+});
+
+test('enqueue menerima SETIAP jenis yang punya endpoint', async () => {
   const { enqueue, ENTITY_TYPES } = await import(ENQUEUE);
-  assert.deepEqual([...ENTITY_TYPES].sort(), ['order', 'order_cancel', 'payment', 'shift']);
 
   const db = buatDb();
   try {
@@ -90,7 +103,7 @@ test('enqueue menerima keempat jenis yang punya endpoint', async () => {
       );
     }
     const rows = await db.getAll('SELECT entity_type FROM outbox_local ORDER BY id');
-    assert.equal(rows.length, 4);
+    assert.equal(rows.length, ENTITY_TYPES.length);
   } finally {
     db.tutup();
   }

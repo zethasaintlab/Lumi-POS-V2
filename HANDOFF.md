@@ -221,7 +221,7 @@ melihatnya. Yang melihatnya: membangun potongan berikutnya di atasnya.
 
 | Utang | Kenapa belum |
 |---|---|
-| Endpoint REST `sold_out_flag` + relay | Penandaan habis berlaku LOKAL saja. Meng-enqueue item tanpa rute akan membakar hitungan percobaannya sampai `failed` permanen — antrean merah tanpa ada yang salah. `spec-e:211` menuntut ia masuk antrean; itu menunggu endpointnya |
+| ~~Endpoint REST `sold_out_flag` + relay~~ | **Ditutup 21 Agustus 2026** — `POST /inventory/sold-out`. Lihat § FR-E5 di bawah |
 | Tekan-tahan kartu produk + penimpaan manajer (FR-E5) | Blokirnya sudah berlaku; jalur menandai dan menimpanya belum ada di layar |
 | Notifikasi manajer untuk oversell (FR-E6) | `spec-e:195` menuntut "notifikasi, bukan hanya entri di laporan yang mungkin tidak dibuka". Eventnya sudah lengkap dan dapat diselidiki; yang belum ada jalur pemberitahuannya dan layar penyelesaiannya |
 | ~~Opname (FR-E7)~~ | **Keputusan dibalik dan dikerjakan 16 Agustus 2026** (PR #43, B-14). Yang membuka blokirnya: pertanyaan `spec-e:343` ternyata tentang *kapan* delta dihitung, bukan tentang apakah opname perlu ada — dan jawabannya ada di spec, bukan pada merchant. Lihat § G1 |
@@ -271,10 +271,10 @@ data, dan cetak ulang FR-B11.
 | Utang | Kenapa belum |
 |---|---|
 | Adapter Network (TCP 9100), Tauri/Rust, WebUSB | `ARCH:235`: WebUSB gagal di Windows, jadi jalur universalnya Rust atau printer network. Keduanya menuntut shell Tauri, yang belum ada |
-| Tombol cetak ulang di K-09 | `cetakUlangStruk` siap dan teruji; tombolnya belum ada di layar detail transaksi |
-| Retry antrean `print_job` | Tabel dan dokumen tersimpan; penjadwal retry belum ditulis. Sampai ada, cetak yang gagal harus diulang manual lewat K-09 |
+| ~~Tombol cetak ulang di K-09~~ | **Ditutup 21 Agustus 2026** — lihat § F4 antrean cetak di bawah |
+| ~~Retry antrean `print_job`~~ | **Separuh ditutup 21 Agustus 2026** — antreannya kini benar-benar ditulis dan dapat dicoba ulang dari K-15. Penjadwal OTOMATIS sengaja belum ada: ia tidak dapat diamati sama sekali sampai adapter printer ada |
 | Nama tarif pajak di cetak ulang | Baris pajak berbunyi "Pajak" tanpa nama tarif — meresolusinya menuntut query ke `tax_rate`, yang `spec-b:145` larang. **DIPUTUSKAN 15 Agustus 2026: denormalisasi di F5** — nama tarif disalin ke `order_line` saat checkout. Larangan query katalog tidak dilonggarkan; yang berubah adalah apa yang tersimpan sebagai snapshot. Struk adalah rekaman historis, dan snapshot-nya harus lengkap sejak ditulis |
-| Endpoint REST `sold_out_flag` + relay (dari F3) | Penandaan habis masih lokal saja |
+| ~~Endpoint REST `sold_out_flag` + relay (dari F3)~~ | **Ditutup 21 Agustus 2026** — `POST /inventory/sold-out`, lihat § FR-E5 di bawah |
 | Notifikasi manajer untuk oversell (dari F3) | `spec-e:195` menuntut lebih dari entri laporan. **Separuh tertutup di G1**: B-15 "Perlu diperiksa" memberi layar penyelesaiannya; yang belum ada jalur pemberitahuan aktifnya |
 | ~~Laporan back-office B-16/B-17 (dari F3)~~ | **Berlayar sejak G1** — lihat § G1 di bawah |
 
@@ -507,3 +507,75 @@ dibagi lewat `packages/domain/src/antrean-menua.ts` (pola `AMBANG_SELISIH`).
 - **Pita kasir belum pernah dilihat di browser.** Logikanya teruji penuh dan
   `vite build` hijau; tampilannya menunggu perangkat ber-kredensial +
   PowerSync berjalan.
+
+
+---
+
+## FR-E5 — jalur naik penandaan habis, 21 Agustus 2026
+
+`POST /inventory/sold-out`. Penandaan sudah berjalan di perangkat sejak F3 tapi
+**lokal saja**; jalur turunnya sudah ada sejak F2 (`sold_out_flag` adalah raw
+table yang direplikasi). Yang hilang hanya jalur naiknya — dan akibatnya
+barista menandai kopi habis di terminal 1 sementara kasir di terminal 2 tetap
+menerima pesanannya.
+
+**Keputusan yang mengikat kode:**
+
+- **Jalur PERANGKAT.** Ia di `RUTE_TERBUKA` bersama `/orders` dan `/shifts`:
+  relay outbox tidak mengirim `Authorization` sama sekali.
+- ⛔ **`ON CONFLICT (id) DO NOTHING`, bukan `DO UPDATE`.** Menimpanya berarti
+  server menulis ulang penanda yang mungkin sudah kalah dari penanda perangkat
+  lain yang tiba di antaranya — retry penanda lama menghidupkan kembali
+  keadaan yang sudah dibatalkan.
+- ⛔ **`entity_id` outbox adalah id BARIS penandaan, bukan variation.** Satu
+  produk ditandai berkali-kali, dan `statusRecordBanyak` memakai aturan
+  terburuk-menang per entitas.
+- ⛔ **Satu transaksi di klien: penanda + `hlc_teks` + outbox.**
+- **Server tidak menyimpulkan apa pun** — tidak menyentuh `stock_movement`
+  (`spec-e:220`), dan siapa yang menang dijawab saat DIBACA.
+- **`variation_id` dan `set_by` sama-sama tanpa FK.** Keduanya divalidasi lewat
+  SELECT yang tunduk RLS; sabotase membuktikan penjaganya menyala.
+
+**Batas:** belum ada layar kasir yang memanggil `tandaiHabis`. Modul dan jalur
+naiknya lengkap dan teruji; tombolnya milik K-03/K-04.
+
+
+---
+
+## F4 — antrean cetak, 21 Agustus 2026
+
+⛔ **Tabel `print_job` ada sejak F0 dan tidak pernah ditulis siapa pun.**
+Skemanya bahkan memuat komentar yang menjelaskan kenapa `document` disimpan apa
+adanya — untuk retry yang mencetak persis yang gagal. Tidak ada satu baris kode
+pun yang mengisinya, jadi struk yang gagal dicetak hilang seketika.
+
+**Keputusan yang mengikat kode:**
+
+- **`cetakDanCatat` adalah satu-satunya pintu cetak** (`cetak/antrean.ts`),
+  dipakai jalur penjualan dan cetak ulang. Jalur yang lupa mencatat adalah
+  jalur yang struknya hilang saat gagal.
+- ⛔ **`tanpa_printer` tidak menulis apa pun.** Merchant tanpa printer adalah
+  kasus sah; menuliskan setiap penjualan sebagai job menghasilkan antrean yang
+  tumbuh tanpa batas dan tidak pernah dapat terkuras.
+- ⛔ **Retry mencetak dokumen yang TERSIMPAN**, bukan hasil render kedua
+  (FR-B11: cetak ulang identik dengan cetakan pertama).
+- ⛔ **`MAKS_PERCOBAAN_CETAK` = 5**, lalu berhenti dicoba otomatis — job yang
+  dicoba tanpa batas akan mencetak struk kemarin saat printer akhirnya menyala.
+  Barisnya **tetap tersimpan** dan masih dapat dicetak manual dari K-09.
+- ⛔ **`peripheralAktif()` mengembalikan `null`, BUKAN `noopPeripheral()`.**
+  Noop selalu "berhasil": dipakai di jalur penjualan, setiap struk dilaporkan
+  "tercetak" kepada kasir sementara tidak ada satu byte pun yang meninggalkan
+  perangkat. K-15 tetap memakai noop dengan sengaja — yang dibuktikannya adalah
+  byte-nya terbentuk, dan layarnya menyatakan itu. **Saat adapter sungguhan
+  lahir, yang berubah adalah satu baris di `cetak/aktif.ts`.**
+- **Cetak ulang K-09 membangun ulang dokumen dari database**, bukan dari
+  `print_job` — transaksi yang dicetak di perangkat lain tidak punya baris di
+  sana sama sekali.
+
+### ⛔ Batas
+
+- **Tidak ada penjadwal otomatis.** Retry dipicu manual dari K-15; penjadwal
+  yang berjalan sendiri tidak dapat diamati sampai adapter printer ada, dan
+  `prosesAntreanCetak` adalah fungsi yang akan dipanggilnya.
+- **Tidak satu byte pun pernah sampai ke printer sungguhan.** Gate F4 bagian
+  pertama tetap terbuka; ia menuntut perangkat fisik.

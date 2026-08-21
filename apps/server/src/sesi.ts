@@ -127,6 +127,14 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   { metode: 'POST', pola: '/orders/:orderId/payments', alasan: 'jalur perangkat: relay outbox' },
   {
     metode: 'POST',
+    pola: '/inventory/sold-out',
+    alasan:
+      'jalur perangkat: relay outbox. FR-E5 — barista menandai kopi habis di terminal 1, ' +
+      'dan kasir di terminal 2 harus berhenti menerimanya. Memblokirnya berarti penandaan ' +
+      'itu tidak pernah sampai ke perangkat lain',
+  },
+  {
+    metode: 'POST',
     pola: '/payments/:paymentId/check-status',
     alasan:
       'jalur perangkat: kasir menunggu konfirmasi QRIS (FR-C14). Memblokirnya menahan kasir ' +

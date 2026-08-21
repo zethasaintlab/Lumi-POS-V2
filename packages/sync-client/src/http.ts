@@ -10,7 +10,22 @@ const RUTE: Record<string, (entityId: string) => string> = {
   order: () => '/orders',
   order_cancel: (id) => `/orders/${encodeURIComponent(id)}/cancel`,
   payment: (id) => `/orders/${encodeURIComponent(id)}/payments`,
+  // FR-E5. `entity_id`-nya adalah id BARIS penandaan, bukan variation:
+  // satu produk ditandai berkali-kali, dan `statusRecordBanyak` memetakan
+  // status per entitas — memakai variation membuat penandaan kemarin yang
+  // gagal terkirim menampilkan status merah pada penandaan hari ini.
+  sold_out: () => '/inventory/sold-out',
 };
+
+/**
+ * Jenis yang PUNYA rute. Diekspor untuk satu tujuan: penjaga yang menuntutnya
+ * sama persis dengan `ENTITY_TYPES` di `enqueue.ts`.
+ *
+ * ⛔ Dua daftar yang menyimpang adalah cacat yang muncul JAUH dari tempat
+ * kesalahannya. Jenis yang masuk antrean tanpa rute melempar saat relay
+ * mengirimnya — berjam-jam setelah penjualan ditulis, di perangkat merchant.
+ */
+export const RUTE_DIDUKUNG: readonly string[] = Object.keys(RUTE);
 
 export interface KonfigHttp {
   baseUrl: string;

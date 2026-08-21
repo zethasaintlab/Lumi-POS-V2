@@ -37,9 +37,9 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 |---|---|---|---|
 | 1 | B-29 — pilih paket, lihat harga, bayar | F5 §8 langkah 6 | selesai |
 | 2 | FR-H8 — notifikasi antrean menua | utang F2 | selesai |
-| 3 | `sold_out_flag` REST + relay | utang F3 | belum |
-| 4 | Tombol cetak ulang di K-09 | utang F4 | belum |
-| 5 | Retry antrean `print_job` | utang F4 | belum |
+| 3 | `sold_out_flag` REST + relay | utang F3 | selesai |
+| 4 | Tombol cetak ulang di K-09 | utang F4 | selesai (digabung dgn 5) |
+| 5 | Retry antrean `print_job` | utang F4 | selesai |
 | 6 | Modul C-3 — rekonsiliasi & ekspor | P1 | belum |
 | 7 | Paginasi + pencarian katalog sisi server | utang G1 | belum |
 | 8 | Refund parsial dengan pemilihan baris di UI | utang F2 | belum |
@@ -194,3 +194,130 @@ Jadi fitur ini punya dua sisi yang sengaja dinamai berbeda, dan hanya
   perangkat ber-kredensial + PowerSync berjalan; logikanya teruji penuh
   (`node --test`) dan `vite build` hijau, tapi tampilannya belum
   diverifikasi mata. Dicatat, bukan diklaim.
+
+
+### Task 3 — `sold_out_flag`: REST + relay
+
+**Selesai.** Penandaan habis sudah berjalan di perangkat sejak F3, tapi **lokal
+saja**. `apps/kasir/src/inventori/sold-out.ts` mencatat alasannya sendiri:
+meng-enqueue item yang tidak punya rute membakar hitungan percobaannya sampai
+`failed` permanen — antrean merah tanpa ada yang salah.
+
+**Akibat dari ketiadaannya, dan alasan ia akhirnya dibangun:** barista menandai
+kopi habis di terminal 1, dan kasir di terminal 2 tetap menerima pesanannya
+lima menit kemudian — dengan pelanggan berdiri di depannya. Jalur turunnya
+sudah ada sejak F2 (`sold_out_flag` adalah raw table yang direplikasi); yang
+hilang hanya jalur naiknya.
+
+**Keputusan yang diambil:**
+
+- **`POST /inventory/sold-out` adalah jalur PERANGKAT**, bukan back-office. Ia
+  dipanggil relay outbox, yang tidak mengirim `Authorization` sama sekali —
+  jadi ia masuk `RUTE_TERBUKA` bersama `/orders` dan `/shifts`. Melindunginya
+  dengan sesi berarti setiap penandaan yang menyusul dari perangkat offline
+  dijawab 401.
+- ⛔ **`ON CONFLICT (id) DO NOTHING`, bukan `DO UPDATE`.** Menimpanya berarti
+  server menulis ulang penanda yang mungkin sudah kalah dari penanda perangkat
+  lain yang tiba di antaranya — retry sebuah penanda lama menghidupkan kembali
+  keadaan yang sudah dibatalkan.
+- ⛔ **`entity_id` outbox adalah id BARIS penandaan, bukan variation.** Satu
+  produk ditandai berkali-kali, dan `statusRecordBanyak` memetakan status per
+  entitas dengan aturan terburuk-menang: memakai variation membuat penandaan
+  kemarin yang gagal terkirim menampilkan status merah pada penandaan hari ini.
+- ⛔ **Satu transaksi: penanda + HLC + outbox.** Bentuk yang sama dengan
+  penjualan. Penanda yang ter-commit tanpa item outbox-nya tidak akan pernah
+  naik dan tidak ada yang memperbaikinya sendiri; HLC yang tidak tersimpan
+  lebih halus — boot berikutnya memuat nilai lama dan tick berikutnya dapat
+  menghasilkan HLC yang **sudah dipakai** (pelanggaran I10 tanpa satu pun
+  error).
+- **Server tidak menyimpulkan apa pun.** Tidak menyentuh `stock_movement`
+  (`spec-e:220` — penandaan habis dan stok terhitung tidak pernah saling
+  menyimpulkan), dan siapa yang menang dijawab saat DIBACA, bukan saat ditulis.
+
+**Masalah + solusinya:**
+
+- Test lama `enqueue menerima keempat jenis yang punya endpoint` **menulis
+  daftarnya dengan tangan** dan langsung merah begitu jenis kelima lahir.
+  Memperbaikinya dengan menambah satu string akan mempertahankan penjaga yang
+  memeriksa hal yang salah: yang berbahaya bukan "daftarnya berubah" melainkan
+  **kedua daftar menyimpang**. Jenis di `ENTITY_TYPES` tanpa rute MELEMPAR saat
+  relay mengirimnya — berjam-jam setelah penjualan ditulis, di perangkat
+  merchant. Diganti penjaga turunan: `ENTITY_TYPES` wajib sama persis dengan
+  `RUTE_DIDUKUNG` (kunci peta `RUTE`), dua arah.
+- Test HLC merah karena fixture SQLite tidak punya baris `device_config`, dan
+  `simpanHlc` melakukan `UPDATE` — nol baris, tanpa error. Bukan bug produksi
+  (barisnya lahir saat perangkat dipasang), tapi fixture yang tidak meniru
+  perangkat terpasang membuktikan hal yang salah. Fixture-nya yang diperbaiki.
+
+**Sabotase** — dua dijalankan, keduanya merah lalu pulih: `assertVariationVisible`
+dimatikan (1 merah) · `DO NOTHING` → `DO UPDATE` (1 merah, dan ia hanya menyala
+setelah test-nya diperbaiki mengirim isi yang BERBEDA dengan id yang sama —
+sebelum itu kedua bentuk menghasilkan hasil identik dan test-nya tidak
+membuktikan apa pun).
+
+**Batas yang dinyatakan:** belum ada layar kasir yang memanggil `tandaiHabis`.
+Modul dan jalur naiknya lengkap dan teruji; tombolnya milik K-03/K-04, bukan
+task ini.
+
+
+### Task 4 + 5 — antrean cetak `print_job` dan tombol cetak ulang K-09
+
+**Digabung, dan itu keputusan.** Keduanya utang F4 yang terpisah di daftar,
+tapi satu fitur di kode: tombol cetak ulang yang gagal harus masuk antrean yang
+sama, dan antrean tanpa satu pun penulis adalah tabel kosong. Mengerjakannya
+terpisah berarti menulis jalur cetak dua kali.
+
+**⛔ Temuan: tabel `print_job` ada sejak F0 dan TIDAK PERNAH DITULIS SIAPA
+PUN.** Skemanya bahkan memuat komentar yang menjelaskan kenapa `document`
+disimpan apa adanya — untuk retry yang mencetak persis yang gagal. Tidak ada
+satu baris kode pun yang mengisinya. Struk yang gagal dicetak hilang seketika.
+
+**Keputusan yang diambil:**
+
+- **`cetakDanCatat` adalah satu-satunya pintu cetak**, dipakai jalur penjualan
+  dan cetak ulang. Jalur yang lupa mencatat adalah jalur yang struknya hilang
+  saat gagal — yaitu tepat jalur yang paling membutuhkan antreannya.
+- ⛔ **`tanpa_printer` TIDAK menulis apa pun.** Merchant tanpa printer adalah
+  kasus sah dan perangkatnya mencetak nol struk selamanya; menuliskan setiap
+  penjualan sebagai job menghasilkan antrean yang tumbuh tanpa batas dan tidak
+  pernah dapat terkuras.
+- ⛔ **Retry mencetak DOKUMEN YANG TERSIMPAN**, bukan hasil render kedua.
+  FR-B11 menuntut cetak ulang identik dengan cetakan pertama.
+- ⛔ **`MAKS_PERCOBAAN_CETAK` = 5.** Job yang dicoba tanpa batas akan mencetak
+  struk kemarin saat printer akhirnya menyala — di tengah antrean pelanggan,
+  tanpa ada yang memintanya. Setelah batas, job **tetap tersimpan** dan masih
+  dapat dicetak manual dari K-09; yang berhenti hanya percobaan otomatisnya.
+- ⛔ **`peripheralAktif()` mengembalikan `null`, dan itu BUKAN `noopPeripheral`.**
+  Noop selalu "berhasil": dipakai di jalur penjualan, setiap struk akan
+  dilaporkan **"tercetak"** kepada kasir sementara tidak ada satu byte pun yang
+  meninggalkan perangkat — dan kasir yang percaya itu tidak akan mencari
+  struknya. K-15 tetap memakai noop dengan sengaja, karena yang dibuktikannya
+  adalah byte-nya terbentuk, dan layarnya menyatakan itu.
+- **Satu tempat memutuskan port**, bukan satu per layar. Saat adapter sungguhan
+  lahir, yang berubah adalah satu baris.
+- **Cetak ulang K-09 membangun ulang dokumen dari database**, bukan dari
+  `print_job`: transaksi yang dicetak di perangkat LAIN tidak punya baris di
+  sana sama sekali.
+
+**Masalah + solusinya:**
+
+- ⛔ **Sabotase menemukan CABANG MATI di kodeku sendiri.** `prosesAntreanCetak`
+  memeriksa `cetak.status === 'tanpa_printer'` di dalam loop; melepasnya tidak
+  menjatuhkan satu test pun. Sebabnya: `cetakStruk` mengembalikan
+  `tanpa_printer` hanya untuk `!port || !profil`, dan keduanya sudah dijawab
+  `return` di baris pertama fungsi. Kode mati yang menyamar sebagai
+  kehati-hatian — kelas yang sama dengan cabang `arah = -1` di tutup kas.
+  Dihapus, dan **typecheck yang membuktikannya**: tanpa cabang itu TypeScript
+  menolak `cetak.pesan`, karena tipenya masih memuat varian yang runtime tidak
+  akan pernah hasilkan.
+- Test merah karena fixture `PrinterProfile` memakai `null` untuk
+  `initCommand`/`cutCommand`; `renderEscPos` memanggil `.trim()` padanya.
+  Fixture disamakan dengan yang sudah dipakai `cetak-invariant.test.js`.
+
+**Batas yang dinyatakan:**
+
+- ⛔ **Tidak ada penjadwal otomatis.** Retry dipicu manual dari K-15. Penjadwal
+  yang berjalan sendiri tidak dapat diamati sama sekali sampai ada adapter
+  printer — dan `prosesAntreanCetak` adalah fungsi yang akan dipanggilnya.
+- ⛔ **Tidak satu byte pun pernah sampai ke printer sungguhan.** Gate F4 bagian
+  pertama tetap terbuka; ia menuntut perangkat fisik.

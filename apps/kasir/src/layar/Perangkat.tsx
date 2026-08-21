@@ -10,6 +10,12 @@ import { Bidang } from '../Bidang.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { bacaProfilPrinter, dokumenUjiCetak } from '../cetak/profil.ts';
+import {
+  jumlahCetakTertunda,
+  prosesAntreanCetak,
+  MAKS_PERCOBAAN_CETAK,
+} from '../cetak/antrean.ts';
+import { peripheralAktif } from '../cetak/aktif.ts';
 import type { PrinterProfile } from '../cetak/escpos.ts';
 import { cetakStruk, noopPeripheral, type HasilCetak } from '../cetak/port.ts';
 
@@ -54,6 +60,9 @@ export function Perangkat() {
   const [profil, setProfil] = useState<PrinterProfile[]>([]);
   const [profilId, setProfilId] = useState('');
   const [hasilUji, setHasilUji] = useState<{ hasil: HasilCetak; byte: number } | null>(null);
+  const [tertunda, setTertunda] = useState(0);
+  const [pesanAntrean, setPesanAntrean] = useState<string | null>(null);
+  const [memproses, setMemproses] = useState(false);
 
   useEffect(() => {
     let hidup = true;
@@ -67,6 +76,7 @@ export function Perangkat() {
           setProfil(daftar);
           setProfilId((kini) => kini || daftar[0]?.id || '');
         });
+        void jumlahCetakTertunda(db).then((n) => hidup && setTertunda(n), () => {});
         setMemuat(false);
       },
       () => hidup && setMemuat(false)
@@ -86,6 +96,30 @@ export function Perangkat() {
     // menyambungkan PowerSync dua kali dalam satu proses belum pernah kami
     // uji, dan menebaknya di layar pengaturan bukan tempat yang benar.
     setPesan('Tersimpan. Muat ulang aplikasi untuk menyalakan sinkronisasi.');
+  }
+
+  /* F4 — antrean cetak (`ERD:447`).
+
+     ⛔ Memakai `peripheralAktif()`, BUKAN `noopPeripheral()`. Uji cetak boleh
+     memakai noop karena yang dibuktikannya adalah byte-nya terbentuk, dan
+     layarnya menyatakan itu. Antrean cetak berbeda: menandai job `printed`
+     lewat noop berarti struk yang benar-benar gagal hilang dari antrean tanpa
+     pernah dicetak. */
+  async function prosesAntrean() {
+    const dipilih = profil.find((p) => p.id === profilId) ?? profil[0] ?? null;
+    setMemproses(true);
+    setPesanAntrean(null);
+    try {
+      const hasil = await prosesAntreanCetak(db, peripheralAktif(), dipilih);
+      setTertunda(await jumlahCetakTertunda(db));
+      setPesanAntrean(
+        hasil.dicoba === 0
+          ? 'Tidak ada yang dicoba — belum ada printer terpasang di perangkat ini.'
+          : `${hasil.berhasil} tercetak, ${hasil.gagal} masih gagal dari ${hasil.dicoba} percobaan.`
+      );
+    } finally {
+      setMemproses(false);
+    }
   }
 
   async function ujiCetak() {
@@ -178,6 +212,33 @@ export function Perangkat() {
             : hasilUji.hasil.status === 'tanpa_printer'
               ? 'Belum ada printer yang terpasang di perangkat ini.'
               : `Gagal mencetak: ${hasilUji.hasil.pesan}`}
+        </p>
+      )}
+
+      <span className="t-title">Antrean cetak</span>
+
+      <Card>
+        <div className="t-body-md">
+          {tertunda === 0 ? 'Tidak ada struk yang tertunda' : `${tertunda} struk belum tercetak`}
+        </div>
+        {/* ⛔ Dokumen dicetak ulang APA ADANYA dari baris `print_job`, bukan
+            dibangun ulang. FR-B11 menuntut cetak ulang identik dengan cetakan
+            pertama, dan itu hanya dapat dijamin bila byte-nya sama. */}
+        <div className="t-caption">
+          Struk yang gagal dicetak tersimpan di perangkat ini beserta dokumennya.
+          Setelah {MAKS_PERCOBAAN_CETAK} percobaan ia berhenti dicoba otomatis, tapi tetap
+          tersimpan dan masih dapat dicetak dari layar Detail Transaksi.
+        </div>
+        <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+          <Tombol varian="secondary" disabled={memproses || tertunda === 0} onClick={() => void prosesAntrean()}>
+            {memproses ? 'Mencoba…' : 'Coba cetak lagi'}
+          </Tombol>
+        </div>
+      </Card>
+
+      {pesanAntrean && (
+        <p className="t-caption" role="status">
+          {pesanAntrean}
         </p>
       )}
 

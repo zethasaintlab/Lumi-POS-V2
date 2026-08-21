@@ -3617,6 +3617,103 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /inventory/sold-out:
+    post:
+      operationId: markSoldOut
+      summary: FR-E5 -- menandai (atau membatalkan penandaan) produk habis.
+      description: >-
+        `spec-e:203`: *"Barista tahu kopi habis sebelum sistem tahu. Alur ini
+        lebih andal daripada hitungan otomatis dan wajib ada."*
+
+
+        ⛔ Penandaan sudah berjalan di perangkat sejak F3, tapi LOKAL SAJA --
+        endpoint ini yang menutup jalur naiknya. Tanpa itu, barista yang
+        menandai kopi habis di terminal 1 tidak menghentikan kasir di terminal
+        2 menerima pesanannya.
+
+
+        ⛔ Jalur PERANGKAT: dipanggil relay outbox, yang tidak mengirim
+        `Authorization` sama sekali. Ia karena itu ada di `RUTE_TERBUKA`
+        bersama `/orders` dan `/shifts`.
+
+
+        ⛔ Tabel LOG, tanpa `UPDATE`. Dua perangkat yang menandai produk yang
+        sama saat offline sama-sama menulis, dan yang menang ditentukan HLC --
+        bukan baris yang kebetulan tiba belakangan. Server hanya menyisipkan;
+        siapa yang menang dijawab saat DIBACA.
+
+
+        ⛔ Penandaan habis TIDAK PERNAH menyimpulkan stok, dan stok tidak
+        pernah menyimpulkan penandaan (`spec-e:220`). Endpoint ini tidak
+        menyentuh `stock_movement` sama sekali.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: >-
+            WAJIB, dan sengaja tidak ditandai `required` -- validator menjawab
+            `400 VALIDATION_ERROR`, sementara yang dimaksud adalah
+            `MISSING_IDEMPOTENCY_KEY`. Pola yang sama dengan endpoint idempoten
+            lain di API ini.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outletId, variationId, isSoldOut]
+              properties:
+                id:
+                  type: string
+                  description: Di-generate klien. Dikosongkan berarti server yang membuatnya.
+                outletId: { type: string, minLength: 1 }
+                variationId: { type: string, minLength: 1 }
+                isSoldOut:
+                  type: boolean
+                  description: >-
+                    ⛔ Membatalkan penandaan adalah baris tersendiri bernilai
+                    `false`, bukan penghapusan. Kalau hanya baris bernilai
+                    `true` yang pernah ditulis, produk yang sudah tersedia lagi
+                    tetap terlihat habis selamanya.
+                hlc:
+                  type: string
+                  description: >-
+                    HLC perangkat, string bilangan bulat desimal. Klien yang
+                    tidak mengirimnya memakai jam server.
+                occurredAt:
+                  type: string
+                  description: Waktu perangkat. Dikosongkan berarti jam database.
+      responses:
+        '201':
+          description: Penandaan tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, outletId, variationId, isSoldOut, hlc]
+                properties:
+                  id: { type: string }
+                  outletId: { type: string }
+                  variationId: { type: string }
+                  isSoldOut: { type: boolean }
+                  hlc: { type: string }
+        '400':
+          description: Payload tidak valid atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Aktor, outlet, atau variation tidak ditemukan (VARIATION_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Idempotency-Key sedang diproses (IDEMPOTENCY_KEY_CONFLICT).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /reports/inventory/stocks:
     get:
       operationId: getInventoryStocks

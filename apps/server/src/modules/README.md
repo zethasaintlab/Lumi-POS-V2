@@ -18,7 +18,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `cash` | `cash_drawer_shift`, `cash_movement` |
 | `reporting` | — **tidak memiliki tabel apa pun**. Satu-satunya modul yang boleh MEMBACA lintas domain (keputusan user 16 Agustus 2026); tidak menulis apa pun |
 | `sync` | `idempotency_key`, `outbox` |
-| `peripheral` | `peripheral`, `printer_profile`, `print_job` |
+| `peripheral` | `peripheral`, `printer_profile`. ⛔ `print_job` **murni lokal di perangkat** (`db/local/001-initial.sql`) — struk adalah artefak perangkat, dan printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh kasir 2 |
 | `audit` | `audit_event` |
 
 3. Lint rule melarang import dalam-dalam antar modul.
@@ -35,14 +35,14 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` · `selectSubscriptionProvider` |
 | `tenancy` | Pendaftaran merchant mandiri + kuota + langganan (F5) | `POST /tenants` · `POST /outlets` · `GET /tenants/usage` · `POST /tenants/subscription/invoices` · `GET /tenants/subscription/invoices` · `POST /tenants/subscription/invoices/{id}/check-status` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` · `terapkanStatusTagihan` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
-| `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
+| `inventory` | Pergerakan stok, opname, penandaan habis | `POST /inventory/movements` · `POST /inventory/stocktakes` · `POST /inventory/sold-out` · `recordStockMovements` · `detectOversell` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
 
 Belum ada kode: `reporting`, `peripheral`.
 
-`inventory` dan `audit` lahir masing-masing dengan **satu fungsi**, dan itu bukan penundaan yang malas. Keputusan produk 1 Agustus 2026 menetapkan void berjalan **tanpa PIN manajer**, dengan syarat alasan daftar tertutup + audit + restock otomatis — jadi keduanya bukan pelengkap void, melainkan kontrol yang tersisa untuknya. Invariant #1 menuntut keduanya ditulis dalam transaksi yang sama, dan aturan 2 melarang `ordering` menyentuh `stock_movement` maupun `audit_event` langsung.
+`audit` lahir dengan **satu fungsi**, dan itu bukan penundaan yang malas. Keputusan produk 1 Agustus 2026 menetapkan void berjalan **tanpa PIN manajer**, dengan syarat alasan daftar tertutup + audit + restock otomatis — jadi keduanya bukan pelengkap void, melainkan kontrol yang tersisa untuknya. Invariant #1 menuntut keduanya ditulis dalam transaksi yang sama, dan aturan 2 melarang `ordering` menyentuh `stock_movement` maupun `audit_event` langsung.
 
-Perhitungan stok (`SUM(delta)`), stocktake, oversell, sold-out tetap Modul E penuh. RBAC, PIN, sesi, dan seluruh permukaan query/laporan audit tetap Modul F penuh.
+Perhitungan stok (`SUM(delta)`) tetap dibaca modul `reporting`, yang boleh menggabungkan `stock_movement` dengan katalog. RBAC, PIN, sesi, dan seluruh permukaan query/laporan audit tetap Modul F penuh.
 
 ## Kenapa modul-modul kecil itu ada
 

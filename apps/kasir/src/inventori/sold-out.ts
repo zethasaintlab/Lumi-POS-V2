@@ -1,4 +1,6 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
+import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
+import { simpanHlc } from '../lokal/hlc.ts';
 
 /**
  * FR-E5 — penandaan habis MANUAL.
@@ -22,13 +24,27 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
  * sama saat offline sama-sama menulis, dan yang menang ditentukan HLC — bukan
  * baris yang kebetulan ditulis belakangan. Bentuknya sama dengan servernya.
  *
- * ## Belum naik ke server
+ * ## Naik lewat outbox, sejak `POST /inventory/sold-out` ada
  *
- * `spec-e:211` menyebut penandaan masuk antrean sinkronisasi. Endpoint-nya
- * belum ada, dan meng-enqueue item yang tidak punya rute akan membakar
- * hitungan percobaannya sampai `failed` permanen — antrean yang merah tanpa
- * ada yang salah. Karena itu penandaan saat ini LOKAL saja, dan itu utang yang
- * dicatat, bukan yang disembunyikan.
+ * `spec-e:211` menyebut penandaan masuk antrean sinkronisasi. Sampai endpoint
+ * itu dibangun, penandaan LOKAL saja — meng-enqueue item yang tidak punya rute
+ * akan membakar hitungan percobaannya sampai `failed` permanen, antrean merah
+ * tanpa ada yang salah. Endpoint itu kini ada, dan batas itu hilang bersamanya.
+ *
+ * Akibat dari ketiadaannya, dan alasan ia akhirnya dibangun: barista menandai
+ * kopi habis di terminal 1, dan kasir di terminal 2 tetap menerima pesanannya.
+ * Jalur turunnya sudah ada sejak F2 (`sold_out_flag` adalah raw table yang
+ * direplikasi); yang hilang hanya jalur naiknya.
+ *
+ * ## ⛔ SATU transaksi: penanda + HLC + outbox
+ *
+ * Bentuk yang sama dengan penjualan dan buka shift, dan alasannya sama.
+ * Penanda yang ter-commit tanpa item outbox-nya tidak akan pernah naik, dan
+ * tidak ada apa pun yang akan memperbaikinya sendiri. HLC yang tidak
+ * tersimpan lebih halus: boot berikutnya memuat nilai lama, dan tick
+ * berikutnya dapat menghasilkan HLC yang SUDAH DIPAKAI penanda yang ada —
+ * pelanggaran I10 yang tidak menghasilkan error, hanya membuat "mana yang
+ * lebih baru" tidak terjawab di tempat yang justru memutuskannya.
  */
 
 export interface KonfigOutlet {
@@ -68,21 +84,62 @@ export async function tandaiHabis(
     hlc: () => bigint;
   }
 ): Promise<void> {
-  await db.execute(
-    `INSERT INTO sold_out_flag
-       (id, tenant_id, outlet_id, variation_id, is_sold_out, set_by, set_at, hlc)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      idBaru(),
-      konfig.tenantId,
-      konfig.outletId,
-      variationId,
-      habis ? 1 : 0,
-      userId,
-      waktu().toISOString(),
-      Number(hlc()),
-    ]
-  );
+  const id = idBaru();
+  const idOutbox = idBaru();
+  const occurredAt = waktu().toISOString();
+  const hlcValue = hlc();
+
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      `INSERT INTO sold_out_flag
+         (id, tenant_id, outlet_id, variation_id, is_sold_out, set_by, set_at, hlc)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        konfig.tenantId,
+        konfig.outletId,
+        variationId,
+        habis ? 1 : 0,
+        userId,
+        occurredAt,
+        // ⛔ `Number`, bukan string: kolom lokalnya `INTEGER`, dan bentuk yang
+        // sama sudah dipakai `cash_movement.hlc`. Keadaan HLC yang disimpan
+        // di `device_config` tetap TEXT — lihat `simpanHlc`.
+        Number(hlcValue),
+      ]
+    );
+
+    await simpanHlc(tx, hlcValue);
+
+    await enqueue(tx, {
+      id: idOutbox,
+      entityType: 'sold_out',
+      // ⛔ id BARIS penandaan, bukan variation. Satu produk ditandai
+      // berkali-kali; memakai variation membuat penandaan kemarin yang gagal
+      // terkirim menampilkan status merah pada penandaan hari ini
+      // (`statusRecordBanyak` memakai aturan terburuk-menang per entitas).
+      entityId: id,
+      operation: 'create',
+      // Bentuknya PERSIS `required` di `POST /inventory/sold-out`. Payload
+      // yang tidak cocok baru ketahuan saat relay mengirimnya — dan item itu
+      // membakar hitungan percobaannya sampai `failed` permanen.
+      payload: {
+        id,
+        outletId: konfig.outletId,
+        variationId,
+        isSoldOut: habis,
+        hlc: hlcValue.toString(),
+        occurredAt,
+      },
+      // Idempotency-Key = id penanda. Retry membawa kunci yang sama, dan
+      // server menjawab respons aslinya alih-alih menulis penanda kedua.
+      idempotencyKey: id,
+      createdAt: occurredAt,
+      // Aktor DIBEKUKAN sekarang, bukan dibaca saat pengiriman. Antrean dapat
+      // terkuras setelah pergantian shift.
+      actorId: userId,
+    });
+  });
 }
 
 /**
