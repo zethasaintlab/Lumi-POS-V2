@@ -1200,3 +1200,19 @@ berteriak. Parsernya diperbaiki; kini ia membaca setiap `ADD COLUMN`.
 **Belum digarap, dan dinyatakan:** UI diskon di K-03 dan dialog step-up K-11
 (klien). Aturannya sudah di `packages/domain`, jadi klien tinggal
 memanggilnya — tapi sampai itu ada, diskon hanya dapat diberikan lewat API.
+
+**Verifikasi Task 16 selesai penuh.** Commit `fc6fde5` dibuat saat enam suite
+ber-database masih berjalan. Hasil akhirnya, dijalankan berurutan tanpa satu
+pun proses test lain:
+
+```
+typecheck · lint:ds                                   PASS
+runtime · domain · sqlite-local · oxlint-ds-adherence PASS
+dst · sync-client · kasir · backoffice                PASS
+isolation · schema · server · catalog · ordering      PASS
+payment · identity · tenancy · dst-server             PASS
+```
+
+Tujuh belas suite, nol kegagalan. `ordering` yang paling berisiko — seluruh
+jalur `POST /orders` disentuh — dan ia hijau tanpa satu pun test lama yang
+perlu diubah.
