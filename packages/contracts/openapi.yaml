@@ -5326,7 +5326,8 @@ components:
       type: object
       required:
         [id, plan, outletCount, unitPrice, amount, status, provider,
-         providerReference, createdAt, confirmedAt, requestedBy]
+         providerReference, createdAt, confirmedAt, requestedBy, qrString,
+         expiresAt]
       properties:
         id: { type: string }
         plan:
@@ -5365,6 +5366,22 @@ components:
             Owner yang meminta kenaikan. Kolomnya tanpa FK, jadi yang menjaga
             isinya adalah SELECT yang tunduk RLS di jalur pembuatan -- pola
             yang sama dengan `price_history.changed_by`.
+        qrString:
+          type: string
+          nullable: true
+          description: >-
+            ⛔ DISIMPAN, bukan hanya dikembalikan sekali saat tagihan dibuat.
+            QR yang hanya hidup di respons berarti merchant yang memuat ulang
+            halaman kehilangan satu-satunya cara membayar tagihan yang masih
+            terbuka -- dan index unik parsial menolak tagihan kedua, jadi ia
+            terkunci sampai yang pertama kedaluwarsa sendiri. Menanyakan ulang
+            ke gateway tidak menolong: respons status Midtrans tidak memuat
+            `actions`.
+        expiresAt:
+          type: string
+          nullable: true
+          description: >-
+            Kedaluwarsa QR menurut GATEWAY, bukan dihitung dari jam kami.
     PemakaianKuota:
       type: object
       required: [terpakai, batas]

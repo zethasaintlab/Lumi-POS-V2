@@ -38,12 +38,14 @@ export interface TagihanRow {
   created_at: Date;
   confirmed_at: Date | null;
   requested_by: string;
+  qr_string: string | null;
+  expires_at: Date | null;
 }
 
 const KOLOM = `
   id, tenant_id, plan, outlet_count, unit_price::text AS unit_price,
   amount::text AS amount, status, provider, provider_reference,
-  created_at, confirmed_at, requested_by
+  created_at, confirmed_at, requested_by, qr_string, expires_at
 `;
 
 export interface PaketTenant {
@@ -135,16 +137,33 @@ export async function daftarTagihan(client: PoolClient, batas: number): Promise<
   return rows;
 }
 
+/**
+ * Menyimpan apa yang gateway jawab: rujukan, QR, dan kedaluwarsanya.
+ *
+ * ## ⛔ QR DISIMPAN, dan itu bukan kenyamanan
+ *
+ * `qrString` yang hanya hidup di respons berarti merchant yang memuat ulang
+ * halaman — atau membukanya besok dari perangkat lain — kehilangan
+ * satu-satunya cara membayar tagihan yang masih terbuka. Index unik parsial
+ * menolak tagihan kedua, jadi ia terkunci sampai yang pertama kedaluwarsa
+ * sendiri. Ditemukan di browser, bukan lewat test.
+ *
+ * Menanyakan ulang ke gateway tidak menolong: respons `/v2/{id}/status`
+ * Midtrans tidak memuat `actions`.
+ *
+ * `AND provider_reference IS NULL` — retry yang sudah punya rujukan tidak
+ * menimpanya. Pola yang sama dengan QRIS dinamis di modul payment.
+ */
 export async function catatRujukanGateway(
   client: PoolClient,
   id: string,
-  providerReference: string
+  hasil: { providerReference: string; qrString: string; expiresAt: Date | null }
 ): Promise<void> {
-  // `AND provider_reference IS NULL` — retry yang sudah punya rujukan tidak
-  // menimpanya. Pola yang sama dengan QRIS dinamis di modul payment.
   await client.query(
-    'UPDATE subscription_invoice SET provider_reference = $2 WHERE id = $1 AND provider_reference IS NULL',
-    [id, providerReference]
+    `UPDATE subscription_invoice
+        SET provider_reference = $2, qr_string = $3, expires_at = $4
+      WHERE id = $1 AND provider_reference IS NULL`,
+    [id, hasil.providerReference, hasil.qrString === '' ? null : hasil.qrString, hasil.expiresAt]
   );
 }
 
@@ -315,5 +334,10 @@ export function toTagihan(row: TagihanRow) {
     createdAt: row.created_at.toISOString(),
     confirmedAt: row.confirmed_at === null ? null : row.confirmed_at.toISOString(),
     requestedBy: row.requested_by,
+    // ⛔ QR ikut di SETIAP pembacaan, bukan hanya di respons pembuatan.
+    // Itulah yang membuat tagihan terbuka tetap dapat dibayar setelah
+    // halaman dimuat ulang.
+    qrString: row.qr_string,
+    expiresAt: row.expires_at === null ? null : row.expires_at.toISOString(),
   };
 }

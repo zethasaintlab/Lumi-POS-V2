@@ -209,14 +209,20 @@ export function createSubscriptionHandlers(
 
       const responseBody = await withTenantTransaction(pool, tenantId, async (client) => {
         if (hasil !== null) {
-          await catatRujukanGateway(client, awal.tagihan.id, hasil.providerReference);
+          await catatRujukanGateway(client, awal.tagihan.id, hasil);
         }
         const rb = {
           invoice: {
             ...toTagihan(awal.tagihan),
             providerReference: hasil === null ? null : hasil.providerReference,
+            // Baris `awal.tagihan` dibaca SEBELUM gateway menjawab, jadi
+            // ketiga kolom ini masih kosong di sana. Yang dikembalikan adalah
+            // nilai yang baru saja ditulis — bukan pembacaan ulang, yang akan
+            // menjadi query keempat untuk data yang sudah dipegang.
+            qrString: hasil === null || hasil.qrString === '' ? null : hasil.qrString,
+            expiresAt: hasil === null || hasil.expiresAt === null ? null : hasil.expiresAt.toISOString(),
           },
-          qrString: hasil === null ? null : hasil.qrString,
+          qrString: hasil === null || hasil.qrString === '' ? null : hasil.qrString,
           expiresAt: hasil === null || hasil.expiresAt === null ? null : hasil.expiresAt.toISOString(),
           gatewayReachable: hasil !== null,
         };

@@ -194,6 +194,41 @@ test('harga = harga paket × jumlah outlet, keduanya SNAPSHOT (KEP-38)', async (
   assert.equal(dua.invoice.amount, Number(HARGA_PAKET.pro) * 2);
 });
 
+test('⛔ QR TERSIMPAN — ia ikut di setiap pembacaan, bukan hanya di respons pembuatan', async () => {
+  // Cacat yang ditutup, dan ia ditemukan DI BROWSER: `qrString` yang hanya
+  // hidup di respons berarti merchant yang memuat ulang halaman kehilangan
+  // satu-satunya cara membayar tagihan yang masih terbuka — sementara index
+  // unik parsial menolak tagihan kedua. Ia terkunci sampai tagihan pertama
+  // kedaluwarsa sendiri, tanpa satu pun error.
+  const hasil = await tagihanBaru('standard');
+  assert.ok(hasil.qrString, 'respons pembuatan tetap membawa QR');
+  assert.equal(hasil.invoice.qrString, hasil.qrString, 'baris tagihan membawa QR yang sama');
+
+  // Pembacaan BERIKUTNYA — inilah yang dulu kosong.
+  const riwayat = await get('/tenants/subscription/invoices');
+  assert.equal(riwayat.statusCode, 200, riwayat.body);
+  const dari_riwayat = JSON.parse(riwayat.body).invoices[0];
+  assert.equal(dari_riwayat.qrString, hasil.qrString);
+  assert.ok(dari_riwayat.expiresAt, 'kedaluwarsa datang dari gateway, bukan dari jam kami');
+
+  // …dan tetap ada setelah cek status yang tidak mengubah apa pun.
+  const cek = await cekStatus(hasil.invoice.id);
+  assert.equal(cek.statusCode, 200, cek.body);
+  assert.equal(JSON.parse(cek.body).invoice.qrString, hasil.qrString);
+});
+
+test('gateway tidak menjawab: qrString `null`, bukan string kosong', async () => {
+  // String kosong terbaca "ada QR" oleh setiap pemeriksaan kebenaran di
+  // klien, dan menghasilkan tautan yang tidak menuju ke mana-mana.
+  fake.failNextInitiate(new Error('gateway timeout'));
+  const res = await mintaTagihan('standard');
+  assert.equal(res.statusCode, 201, res.body);
+  const body = JSON.parse(res.body);
+  assert.equal(body.qrString, null);
+  assert.equal(body.invoice.qrString, null);
+  assert.equal(body.invoice.expiresAt, null);
+});
+
 test('⛔ gateway menjawab pending: paket tetap, dan tagihan tetap terbuka', async () => {
   const hasil = await tagihanBaru('standard');
 
