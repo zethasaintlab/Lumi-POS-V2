@@ -401,3 +401,29 @@ export function kueriDaftarProduk(
   if (after) q.set('after', after);
   return `/items?${q.toString()}`;
 }
+
+/**
+ * B-10 — daftar produk untuk PEMILIH, dengan yang sedang dipilih dijamin ada.
+ *
+ * ## ⛔ Kenapa yang dipilih harus ikut
+ *
+ * Pemilih B-10 memakai pencarian sisi server. Merchant memilih "Kopi Susu",
+ * panel riwayat harganya terbuka, lalu ia mengetik pencarian lain — dan hasil
+ * baru tidak memuat Kopi Susu.
+ *
+ * Tanpa fungsi ini, tombol produk yang aktif lenyap dari layar sementara
+ * panelnya masih menampilkan harganya. Merchant menyimpulkan pilihannya
+ * hilang dan mengulang dari awal, atau lebih buruk: ia menyunting harga
+ * produk yang ia kira sudah tidak dipilih.
+ *
+ * Yang dipilih diletakkan di DEPAN, dan urutan sisanya dipertahankan — tombol
+ * yang melompat posisi saat mengetik adalah tombol yang salah diklik.
+ */
+export function daftarPemilih(
+  hasil: readonly Item[],
+  dipilih: Item | null
+): Item[] {
+  if (dipilih === null) return [...hasil];
+  if (hasil.some((i) => i.id === dipilih.id)) return [...hasil];
+  return [dipilih, ...hasil];
+}

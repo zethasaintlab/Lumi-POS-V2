@@ -307,3 +307,48 @@ test('kursor hanya ikut bila diberikan', async () => {
   assert.ok(!kueriDaftarProduk(saringan, { limit: 50, after: null }).includes('after='));
   assert.match(kueriDaftarProduk(saringan, { limit: 50, after: '0:abc' }), /after=0%3Aabc/);
 });
+
+// ===========================================================================
+// B-10 — pemilih produk yang memakai pencarian sisi server
+// ===========================================================================
+
+const PRODUK = (over = {}) => ({
+  id: 'p1', name: 'Kopi Susu', categoryId: null, sortOrder: 0,
+  archivedAt: null, variations: [], modifierLists: [], ...over,
+});
+
+test('⛔ produk yang SEDANG DIPILIH tetap ada meski hasil pencarian tidak memuatnya', async () => {
+  const { daftarPemilih } = await import(MOD);
+  // Merchant memilih Kopi Susu, panel riwayat harganya terbuka, lalu ia
+  // mengetik pencarian lain. Tanpa aturan ini tombol yang aktif lenyap
+  // sementara panelnya masih menampilkan harganya — dan merchant menyunting
+  // harga produk yang ia kira sudah tidak dipilih.
+  const dipilih = PRODUK({ id: 'kopi', name: 'Kopi Susu' });
+  const hasil = [PRODUK({ id: 'teh', name: 'Teh Tarik' })];
+
+  const daftar = daftarPemilih(hasil, dipilih);
+  assert.deepEqual(daftar.map((i) => i.id), ['kopi', 'teh']);
+});
+
+test('yang dipilih TIDAK digandakan bila ia memang ada di hasil', async () => {
+  const { daftarPemilih } = await import(MOD);
+  const dipilih = PRODUK({ id: 'kopi' });
+  const hasil = [PRODUK({ id: 'kopi' }), PRODUK({ id: 'teh' })];
+  assert.deepEqual(daftarPemilih(hasil, dipilih).map((i) => i.id), ['kopi', 'teh']);
+});
+
+test('urutan hasil dipertahankan — tombol tidak melompat saat mengetik', async () => {
+  const { daftarPemilih } = await import(MOD);
+  const hasil = [PRODUK({ id: 'a' }), PRODUK({ id: 'b' }), PRODUK({ id: 'c' })];
+  assert.deepEqual(daftarPemilih(hasil, null).map((i) => i.id), ['a', 'b', 'c']);
+});
+
+test('tanpa pilihan, daftarnya apa adanya — dan SALINAN, bukan larik yang sama', async () => {
+  const { daftarPemilih } = await import(MOD);
+  const hasil = [PRODUK({ id: 'a' })];
+  const daftar = daftarPemilih(hasil, null);
+  assert.deepEqual(daftar.map((i) => i.id), ['a']);
+  // Larik yang dikembalikan apa adanya membuat pemanggil yang menyortirnya
+  // diam-diam menyortir state React.
+  assert.notEqual(daftar, hasil);
+});

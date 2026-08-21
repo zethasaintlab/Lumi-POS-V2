@@ -47,6 +47,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 10 | **F6** — runbook | `ARCH:400` | selesai |
 | 11 | **F6** — observability sisi server | `ARCH:294` | selesai (sisi server) |
 | 12 | **F6** — alat koreksi append-only | `ARCH:400` | selesai |
+| 13 | B-10 Harga — pemilih produk sisi server | utang Task 10 | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -926,3 +927,38 @@ payment · identity · tenancy · dst-server             PASS
 ```
 
 Tujuh belas suite, nol kegagalan.
+
+### Task 13 — B-10 Harga memakai pemilih sisi server
+
+**Selesai.** Menutup batas yang Task 10 catat sendiri: *"B-10 Harga masih
+memuat `/items` tanpa paginasi."*
+
+**Yang sebenarnya terjadi di layar itu lebih buruk daripada terpotong.** B-06
+setidaknya berhenti di 50 baris tabel; B-10 merender **setiap** produk sebagai
+tombol di satu baris yang membungkus. Pada katalog paket Pro (5.000 produk)
+itu 5.000 tombol — bukan sekadar lambat, melainkan layar yang tidak dapat
+dipakai memilih apa pun.
+
+**Keputusan yang diambil:**
+
+- **Pencarian, bukan paginasi.** Layar ini memilih SATU varian untuk diberi
+  harga, dan merchant tahu produk mana yang ia maksud. Daftar panjang bukan
+  bantuan melainkan dinding yang harus dipindai mata; yang menemukan produk
+  adalah kotak pencariannya. Batasnya 20.
+- **`kueriDaftarProduk` dipakai ulang** dari B-06 — sudah teruji, dan dua
+  pembangun kueri akan menyimpang pada saringan berikutnya yang ditambahkan.
+- ⛔ **Produk yang SEDANG DIPILIH dijamin tetap ada di daftar.** Merchant
+  memilih Kopi Susu, panel riwayat harganya terbuka, lalu ia mengetik
+  pencarian lain — dan hasil baru tidak memuat Kopi Susu. Tanpa aturan ini
+  tombol yang aktif lenyap sementara panelnya masih menampilkan harganya, dan
+  merchant menyunting harga produk yang ia kira sudah tidak dipilih. Aturannya
+  di modul murni (`daftarPemilih`), diuji tanpa DOM; sabotase yang
+  mengembalikan hasil apa adanya → 1 merah.
+- **Urutan hasil dipertahankan.** Tombol yang melompat posisi saat mengetik
+  adalah tombol yang salah diklik.
+- **Daftar terpotong dinyatakan**, beserta kalimat bahwa pencariannya mencakup
+  seluruh katalog.
+
+**Verifikasi:** `typecheck` · `lint:ds` · 8 suite non-DB — hijau. Perubahannya
+**hanya klien** (`Harga.tsx`, `produk.ts`, testnya); tidak satu baris pun kode
+server atau skema berubah sejak commit sebelumnya, yang ke-17 suitenya hijau.
