@@ -621,3 +621,48 @@ yang kebetulan sudah dimuat.
 
 `GET /categories` dan `GET /modifier-lists` belum menerima `q` — keduanya jauh
 lebih kecil dan tidak punya kuota.
+
+
+---
+
+## F6 dimulai — runbook & observability, 21 Agustus 2026
+
+Gate F6 (`ARCH:400`): *"Runbook lengkap; alat koreksi ada **sebelum** insiden
+pertama."* Bagian pertama tertutup; bagian kedua **masih terbuka**.
+
+### `docs/RUNBOOK.md`
+
+Sebelas bagian, dipetakan dari kalimat yang merchant ucapkan ke prosedurnya.
+Ditulis dari kode yang benar-benar ada.
+
+⛔ **Runbook yang salah lebih berbahaya daripada yang tidak ada** — karena itu
+`tests/domain/runbook.test.js` menuntut setiap kode error, environment
+variable, endpoint, dan angka ambang yang runbook sebut benar-benar ada di
+kode. Angka ambang **diimpor**, bukan diketik ulang.
+
+### `GET /metrics`
+
+Teks Prometheus, tanpa sesi, nol dependensi baru.
+
+- ⛔ **Lima dari delapan metrik `ARCH:296` tidak dapat dihasilkan server ini.**
+  Umur antrean dan item gagal sinkron hidup di perangkat; latensi keranjang,
+  crash rate, dan rasio offline adalah klien. Ketiganya menuntut telemetri
+  klien (buffer offline-first + endpoint ingest) yang **belum ada**. Ada test
+  yang menolak nama-nama itu muncul — metrik bernama benar yang selalu nol
+  lebih buruk daripada metrik yang tidak ada.
+- ⛔ **Nol data merchant** (`ARCH:309`, batas etis). Agregasi lintas-tenant
+  menuntut pembaca ber-`BYPASSRLS` — keputusan deployment, bukan kode.
+- ⛔ **Label rute memakai POLA**, bukan URL mentah: kardinalitas yang meledak
+  baru terlihat berminggu kemudian.
+- ⛔ Ember histogram **milidetik bilangan bulat**. Ditulis sebagai detik, ia
+  ditandai penjaga invariant #7 sebagai angka tarif pajak — dan penjaganya
+  benar. Yang diperbaiki kodenya, bukan penjaganya.
+
+### ⛔ Yang MASIH TERBUKA di F6
+
+| Bagian | Keadaan |
+|---|---|
+| Alat koreksi append-only | **Belum ada.** Runbook §10 mendaftar apa yang ada dan apa yang harus dibangun sebelum insiden pertama |
+| Telemetri klien | Belum ada. Lima metrik `ARCH:296` menunggunya |
+| Staged rollout | Belum ada |
+| Metrik lintas-tenant | Menunggu keputusan deployment (pembaca ber-`BYPASSRLS`) |

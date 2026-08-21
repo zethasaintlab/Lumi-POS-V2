@@ -95,6 +95,14 @@ interface Terbuka {
 const RUTE_TERBUKA: readonly Terbuka[] = [
   { metode: 'GET', pola: '/health', alasan: 'probe kesehatan; tidak menyentuh data' },
   {
+    metode: 'GET',
+    pola: '/metrics',
+    alasan:
+      'metrik PROSES saja — nol data merchant (F6, `metrik.ts`). Scraper tidak punya sesi ' +
+      'back-office, dan memberinya satu berarti kredensial manusia dipakai mesin. Dibatasi ' +
+      'di lapisan jaringan',
+  },
+  {
     metode: 'POST',
     pola: '/tenants',
     alasan: 'pendaftaran mandiri — tenantnya belum ada. Dijaga rate limit, bukan sesi',

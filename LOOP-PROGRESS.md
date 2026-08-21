@@ -44,6 +44,9 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 7 | Paginasi + pencarian katalog sisi server | utang G1 | selesai (server) |
 | 8 | Refund parsial dengan pemilihan baris di UI | utang F2 | belum |
 | 9 | K-16 buka laci · K-17 scanner | utang F2 | belum |
+| 10 | **F6** — runbook | `ARCH:400` | selesai |
+| 11 | **F6** — observability sisi server | `ARCH:294` | selesai (sisi server) |
+| 12 | **F6** — alat koreksi append-only | `ARCH:400` | belum |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -392,3 +395,72 @@ kalimat untuk katalog yang terpotong. Menyetengahinya — memuat satu halaman
 lalu tetap menyaring di klien — menghasilkan pencarian yang hanya menemukan
 apa yang kebetulan sudah dimuat, yaitu regresi yang sama dengan barcode di
 atas. Dicatat sebagai langkah berikutnya, bukan dikerjakan setengah.
+
+
+### Task 7 + 8 — F6: runbook dan observability
+
+**Fase terakhir dimulai.** Gate F6 (`ARCH:400`): *"Runbook lengkap; alat
+koreksi ada **sebelum** insiden pertama."*
+
+#### `docs/RUNBOOK.md`
+
+Ditulis dari kode yang benar-benar ada, bukan dari yang seharusnya. Sebelas
+bagian, dipetakan dari **kalimat yang merchant ucapkan** ("penjualan hari ini
+tidak muncul di laporan") ke prosedurnya.
+
+⛔ **Runbook yang salah lebih berbahaya daripada runbook yang tidak ada** —
+orang yang sedang panik akan memercayainya. Karena itu ia datang bersama
+`tests/domain/runbook.test.js`, penjaga statis yang menuntut:
+
+- setiap **kode error** yang runbook sebut benar-benar ada di kode
+- setiap **environment variable** yang ia suruh periksa ada di kode
+- setiap **endpoint** yang ia suruh panggil terdaftar di OpenAPI
+- setiap **angka ambang** sama dengan yang kode tegakkan (`AMBANG_SELISIH`,
+  `AMBANG_ANTREAN`, `MAKS_PERCOBAAN_CETAK` — diimpor, bukan diketik ulang)
+- runbook **tidak menyuruh siapa pun** meng-`UPDATE`/`DELETE` tabel jalur uang
+
+Sabotase: `Rp 20.000` → `Rp 15.000` dan satu kode error diganti nama → 2 merah.
+
+**Masalah + solusinya:** penjaga "tidak menyuruh melanggar invariant" mula-mula
+memeriksa **per baris**, dan langsung menandai dokumen yang benar — markdown
+membungkus di 80 kolom, jadi larangan dan kata `UPDATE`-nya jatuh di baris
+berbeda. Diubah memeriksa per **paragraf**.
+
+#### `GET /metrics`
+
+Teks eksposisi Prometheus, nol dependensi baru.
+
+⛔ **Lima dari delapan metrik `ARCH:296` TIDAK dapat dihasilkan server ini,
+dan itu dinyatakan alih-alih dikarang.** Umur antrean sinkronisasi dan item
+gagal sinkron hidup di `outbox_local` **di perangkat** — server tidak punya
+baris untuk dihitung. Latensi keranjang, crash rate, dan rasio offline terjadi
+di klien. Ketiganya menuntut telemetri klien (buffer offline-first + endpoint
+ingest), yang belum ada. **Metrik bernama benar yang selalu nol lebih buruk
+daripada metrik yang tidak ada** — ada test yang menolak nama-nama itu muncul.
+
+⛔ **Nol data merchant, dan itu batas ETIS** (`ARCH:309`). Metrik operasional
+bersifat lintas-tenant menurut sifatnya, sementara aplikasi tunduk RLS
+(invariant #8) — agregasi lintas-tenant menuntut pembaca ber-`BYPASSRLS`, yaitu
+keputusan deployment. Yang diekspor adalah metrik **proses**. Ada test yang
+menembak `/metrics` lalu mencari id tenant, nama outlet, nama produk, dan email
+pengguna di dalamnya.
+
+⛔ **Label rute memakai POLA Fastify, bukan URL mentah.** URL mentah membuat
+setiap `/orders/<uuid>` menjadi deret waktu tersendiri — monitoring yang penuh
+deret sekali-pakai berhenti dapat dipakai, dan gejalanya baru terlihat
+berminggu kemudian saat penyimpanan metriknya penuh.
+
+⛔ **`onResponse`, bukan `onSend`**: yang diukur adalah permintaan yang
+SELESAI, termasuk yang gagal. Hook yang hanya berjalan pada jalur sukses
+menghasilkan grafik yang paling cerah tepat saat server paling sakit.
+
+Sabotase: URL mentah + `/metrics` mencatat dirinya sendiri → 3 merah.
+
+**Masalah + solusinya:** ⛔ **Penjaga invariant #7 menandai kodeku sendiri.**
+Batas histogram ditulis sebagai detik berbunyi `[0.01, 0.025, 0.05, 0.1, …]`,
+dan `tests/domain/tax-invariant.test.js` membacanya sebagai angka tarif pajak
+di luar `TaxCalculator`. **Penjaganya benar** — `0.1` telanjang di kode server
+tidak dapat dibedakan dari 10% tanpa membaca konteks. Yang diperbaiki adalah
+kodeku: ember kini **milidetik bilangan bulat**, dibagi 1.000 saat render.
+Daftar pengecualian akan bertambah panjang sampai penjaganya tidak menjaga apa
+pun — dan `ARCH:300` memang menyebut ambangnya dalam milidetik.

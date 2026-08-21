@@ -22,6 +22,7 @@ import type { PaymentProvider } from './modules/payment/providers/index.ts';
 import type { SubscriptionProvider } from './modules/payment/providers/langganan.ts';
 import { createHlc } from '../../../packages/domain/src/hlc.ts';
 import { pasangPenjagaSesi } from './sesi.ts';
+import { buatMetrik, pasangMetrik } from './metrik.ts';
 
 const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
 
@@ -413,6 +414,20 @@ async function buildAppInner(
    * eksplisit di `RUTE_TERBUKA` (`sesi.ts`). Endpoint yang ditambahkan besok
    * terlindungi tanpa ada yang perlu ingat melindunginya. */
   pasangPenjagaSesi(app, pool);
+
+  /* F6 — observability (`ARCH:294`).
+     ⛔ Dipasang SESUDAH penjaga sesi, dan itu penting: `/metrics` didaftarkan
+     lewat `app.get` langsung, bukan lewat OpenAPI, jadi ia tidak punya pola
+     yang terdaftar di `RUTE_TERBUKA`. `ruteTerbuka()` menjawab `true` untuk
+     pola yang tidak dikenal (`pola === undefined` → biarkan router yang
+     menjawab 404) — dan pada rute yang BENAR-BENAR terdaftar seperti ini,
+     hook sesi berjalan lebih dulu dan akan menolaknya 401.
+
+     Karena itu `/metrics` terdaftar di `RUTE_TERBUKA` juga. Ia tidak memuat
+     satu pun data merchant (lihat `metrik.ts`), tapi ia tetap permukaan
+     operasional — batasi di lapisan jaringan, bukan dengan menyembunyikannya
+     di balik sesi back-office yang tidak dimiliki scraper mana pun. */
+  pasangMetrik(app, buatMetrik(pool));
 
   await app.register(openapiGlue, {
     specification: specPath,
