@@ -1269,3 +1269,16 @@ berbahaya daripada runbook yang tidak ada.
 perangkat harus diuji SEBAGAI transport. Test yang memanggil endpoint dengan
 header buatan sendiri membuktikan servernya benar; ia tidak dapat membuktikan
 kliennya memanggil dengan benar.
+
+**Verifikasi Task 17 selesai penuh.** Commit `4870ca1` dibuat saat tujuh suite
+ber-database masih berjalan. Hasil akhirnya:
+
+```
+typecheck · lint:ds                                   PASS
+runtime · domain · sqlite-local · oxlint-ds-adherence PASS
+dst · sync-client · kasir · backoffice                PASS
+isolation · schema · server · catalog · ordering      PASS
+payment · identity · tenancy · dst-server             PASS
+```
+
+Tujuh belas suite, nol kegagalan.
