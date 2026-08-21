@@ -5,11 +5,20 @@ import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createRegisterHandlers } from './handlers/register.ts';
 import { createOutletHandlers } from './handlers/outlets.ts';
 import { createUsageHandlers } from './handlers/usage.ts';
+import { createSubscriptionHandlers } from './handlers/langganan.ts';
+import type { SubscriptionProvider } from '../payment/providers/langganan.ts';
 
 // Penegakan kuota. Implementasinya di `./kuota.ts` supaya handler di dalam
 // modul ini dapat memakainya tanpa impor melingkar; ia tetap keluar lewat
 // `index.ts` karena itulah satu-satunya permukaan publik bagi modul lain.
 export { batasKuota, assertKuota, hitungOutlet } from './kuota.ts';
+
+// F5 — tagihan langganan. `subscription_invoice` milik modul ini
+// (`0026_subscription_invoice.sql`), jadi webhook Midtrans yang merutekan
+// notifikasi langganan memanggil fungsi ini alih-alih meng-query tabelnya
+// sendiri (invariant #4). `client` WAJIB dari transaksi pemanggil yang sudah
+// men-`SET LOCAL app.tenant_id`, pola yang sama dengan `recordAuditEvent`.
+export { terapkanStatusTagihan } from './langganan.ts';
 
 // Permukaan publik modul tenancy (apps/server/src/modules/README.md --
 // kepemilikan tabel DITEGAKKAN). Modul catalog DILARANG query `outlet`
@@ -89,10 +98,15 @@ export async function getOutletSettings(client: PoolClient, outletId: string): P
  * sebagai guard lintas modul. `tenant`, `outlet`, dan `vertical_profile`
  * miliknya, jadi di sinilah pendaftaran berada.
  */
-export function createTenancyHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
+export function createTenancyHandlers(
+  pool: Pool,
+  hlc: Hlc,
+  subscriptionProvider: SubscriptionProvider
+): Record<string, unknown> {
   return {
     ...createRegisterHandlers(pool, hlc),
     ...createOutletHandlers(pool, hlc),
     ...createUsageHandlers(pool),
+    ...createSubscriptionHandlers(pool, hlc, subscriptionProvider),
   };
 }

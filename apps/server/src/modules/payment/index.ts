@@ -26,6 +26,22 @@ export {
 } from './providers/index.ts';
 export type { PaymentProvider, GatewayStatus, FakePaymentProvider } from './providers/index.ts';
 
+// Port KEDUA — tagihan langganan (F5). Ia berbicara ke gateway yang sama
+// lewat pipa HTTP yang sama, tapi `InitiateRequest` mewajibkan `orderId` dan
+// `paymentId` yang tagihan langganan tidak punya; melonggarkan keduanya
+// berarti menyentuh jalur uang yang sudah terbukti demi sesuatu yang bukan
+// penjualan.
+export {
+  selectSubscriptionProvider,
+  createFakeSubscriptionProvider,
+  createMidtransSubscriptionProvider,
+  rujukanGatewayUntukTagihan,
+  adalahRujukanLangganan,
+  idTagihanDari,
+  PREFIKS_LANGGANAN,
+} from './providers/langganan.ts';
+export type { SubscriptionProvider, FakeSubscriptionProvider } from './providers/langganan.ts';
+
 export function createPaymentHandlers(
   pool: Pool,
   hlc: Hlc,
@@ -36,6 +52,6 @@ export function createPaymentHandlers(
     ...createTaxRateHandlers(pool),
     ...createPaymentEntryHandlers(pool, hlc, provider),
     ...createPaymentStatusHandlers(pool, provider),
-    ...createWebhookHandlers(pool, webhookSecret),
+    ...createWebhookHandlers(pool, webhookSecret, hlc),
   };
 }

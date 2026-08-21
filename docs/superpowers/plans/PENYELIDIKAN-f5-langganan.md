@@ -149,3 +149,43 @@ dengan nilai `[ASUMSI]` yang ditandai.
 
 Langkah 2 dapat dikerjakan lebih dulu dan berdiri sendiri — ia tidak menunggu
 satu pun jawaban S-1..S-5.
+
+---
+
+## 9. Status, 21 Agustus 2026
+
+| Langkah §8 | Status |
+|---|---|
+| 1. Migrasi tabel tagihan + RLS | selesai — `0026_subscription_invoice.sql`, isolasi 204/204 |
+| 2. Penjaga turun-paket | selesai — `periksaPerpindahanPaket`, murni, diuji sebagai property |
+| 3. Port langganan + adapter | selesai — `payment/providers/langganan.ts`, pipa HTTP dipakai ulang |
+| 4. Endpoint buat → bayar → konfirmasi | selesai — tiga operasi REST, `tenancy` |
+| 5. Routing webhook | selesai — prefiks `sub-`, jalan (a) |
+| 6. B-29 pilih paket & bayar | **belum** — endpointnya belum punya konsumen UI |
+
+### Jawaban atas S-1..S-5, dan mana yang masih terbuka
+
+| # | Keadaan |
+|---|---|
+| S-1 harga | **Terjawab** KEP-38/KEP-39: Rp349.000 / Rp699.000 **per outlet per bulan**. Tetap `[ASUMSI]` — belum divalidasi ke merchant |
+| S-2 siklus tagihan | **Masih terbuka.** Skema sengaja tanpa kolom periode; menebaknya berarti setiap tagihan membawa periode yang salah |
+| S-3 kapan paket naik | **Terjawab: saat DIKONFIRMASI**, tidak pernah saat tagihan dibuat. `spec-c:320` — sistem tidak menandai lunas tanpa konfirmasi gateway |
+| S-4 langganan berakhir | **Di luar scope** (keputusan user). Konsekuensi yang dinyatakan: membayar satu tagihan menaikkan paket **permanen** |
+| S-5 auto-charge | **Tidak dibangun.** Tagihan per permintaan, dibayar QRIS. Tokenisasi kartu adalah keputusan tersendiri |
+
+### Yang §6 tuntut, dan kenapa ia belum dipanggil
+
+§6 menyebut lubang yang `assertKuota` tidak jaga: kuota tidak diperiksa saat
+**batasnya sendiri** yang berubah. Penjaganya ada (`periksaPerpindahanPaket`)
+dan **belum dipanggil dari mana pun** — dengan sengaja, dan itu bukan
+kelalaian:
+
+- Satu-satunya operasi yang mengubah `plan` hari ini adalah **kenaikan**, dan
+  `periksaKenaikanPaket` menolak arah lain sebelum tagihan dibuat.
+- Kuota naik monoton sepanjang `URUTAN_PAKET`, jadi kenaikan tidak dapat
+  melanggar kuota. Itu **diuji sebagai property**, bukan diasumsikan.
+
+Memanggilnya di jalur kenaikan akan menjadi cabang yang tidak pernah menyala —
+kelas cacat yang sama dengan `arah = -1` di tutup kas. Ia menyala pada hari
+endpoint penurunan paket lahir, dan pada hari itu ia sudah ada dan sudah
+teruji.

@@ -9,7 +9,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 
 | Modul | Tabel yang dimiliki |
 |---|---|
-| `tenancy` | `tenant`, `outlet`, `vertical_profile`, `subscription`, `usage_metric` |
+| `tenancy` | `tenant`, `outlet`, `vertical_profile`, `subscription_invoice`, `usage_metric` |
 | `identity` | `user`, `role`, `user_role`, `device`, `support_session` |
 | `catalog` | `category`, `item`, `item_variation`, `modifier_list`, `modifier`, `item_modifier_list`, `price_history` |
 | `ordering` | `order`, `check`, `order_line`, `order_line_modifier`, `refund` |
@@ -32,8 +32,8 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `ordering` | Penulisan penjualan, void & refund | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` |
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
-| `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` |
-| `tenancy` | Pendaftaran merchant mandiri + kuota (F5) | `POST /tenants` · `POST /outlets` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` |
+| `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` · `selectSubscriptionProvider` |
+| `tenancy` | Pendaftaran merchant mandiri + kuota + langganan (F5) | `POST /tenants` · `POST /outlets` · `GET /tenants/usage` · `POST /tenants/subscription/invoices` · `GET /tenants/subscription/invoices` · `POST /tenants/subscription/invoices/{id}/check-status` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` · `terapkanStatusTagihan` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
 | `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
@@ -95,6 +95,12 @@ Midtrans tidak tahu apa-apa soal tenant kami. Karena itu `POST /webhooks/midtran
 2. **Tenant dibaca dari `custom_field1`** yang kami titipkan sendiri saat charge, lalu dipakai sebagai `app.tenant_id` — sehingga pencarian payment tetap tunduk RLS. Notifikasi bertanda tangan sah tapi bertenant salah dijawab `404`.
 
 Alternatifnya adalah query yang melewati RLS, dan itu melanggar invariant #8.
+
+3. **⛔ Satu URL, dua jenis tagihan (F5).** Midtrans mengirim SELURUH notifikasi ke URL yang sama. Sebelum F5, handler ini memperlakukan `order_id` notifikasi sebagai id payment kami dan menjawab `404 PAYMENT_NOT_FOUND` bila tidak ditemukan — sementara Midtrans **mengirim ulang notifikasi yang tidak dijawab 200**. Notifikasi tagihan langganan pertama karena itu akan dijawab 404 lalu diulang selamanya.
+
+   Yang menutupnya adalah **prefiks** (`sub-`) pada id yang dititipkan ke gateway, dan rutenya diputuskan dari string-nya — **sebelum satu query pun jalan**. Alternatifnya (mencari di kedua tabel) menghasilkan dua pencarian yang keduanya gagal untuk notifikasi asing, dan jenis tagihan berikutnya menambah pencarian ketiga.
+
+   Tabel `subscription_invoice` milik `tenancy`, jadi yang menyentuhnya adalah `terapkanStatusTagihan` yang diekspor modul itu; transaksinya tetap dibuka di webhook supaya batasnya satu dan sama untuk kedua jenis.
 
 ## Kuota: empat titik administratif, nol di jalur kasir
 

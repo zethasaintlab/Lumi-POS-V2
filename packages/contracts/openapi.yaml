@@ -194,6 +194,206 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /tenants/subscription/invoices:
+    get:
+      operationId: listSubscriptionInvoices
+      summary: Riwayat tagihan langganan, terbaru dulu. Daftar di B-29.
+      description: >-
+        Owner-only (`spec-f:52`). Menyertakan paket yang berlaku sekarang,
+        supaya layar tidak perlu memanggil `/tenants/usage` hanya untuk
+        menampilkan satu kata.
+      responses:
+        '200':
+          description: Paket saat ini dan riwayat tagihan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan, status, invoices]
+                properties:
+                  plan:
+                    type: string
+                    enum: [free, standard, pro, enterprise]
+                  status:
+                    type: string
+                    enum: [active, suspended, cancelled]
+                  invoices:
+                    type: array
+                    items: { $ref: '#/components/schemas/TagihanLangganan' }
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: createSubscriptionInvoice
+      summary: >-
+        F5 -- minta tagihan untuk MENAIKKAN paket, lalu bayar lewat QRIS.
+      description: >-
+        ⛔ HANYA naik. Menurunkan paket dan membatalkan langganan tidak
+        dibangun di epik ini (keputusan user 21 Agustus 2026), dan itu
+        berakibat: kuota naik monoton sepanjang `URUTAN_PAKET`, jadi tidak
+        pernah ada keadaan di mana merchant membayar lalu kenaikannya ditolak
+        karena pemakaiannya tidak muat.
+
+
+        ⛔ Paketnya BELUM naik saat endpoint ini menjawab 201. Yang menaikkan
+        adalah konfirmasi gateway -- lewat webhook Midtrans atau lewat
+        `check-status` (`spec-c:320`: sistem tidak pernah menandai lunas tanpa
+        konfirmasi).
+
+
+        ⛔ Tagihannya bukan `payment`. Tabel `payment` punya empat kolom NOT
+        NULL yang tagihan langganan tidak punya (`order_id`, `outlet_id`,
+        `device_id`, `check_id`) -- dan itu kabar baik: kalau ia menumpang di
+        sana, biaya langganan merchant akan muncul sebagai omzet kafenya
+        sendiri di B-19.
+
+
+        Harga dihitung PER OUTLET per bulan (KEP-38). `outletCount`,
+        `unitPrice`, dan `amount` ketiganya SNAPSHOT: menaikkan harga bulan
+        depan tidak mengubah arti tagihan yang sudah dibayar.
+
+
+        Owner-only (`spec-f:52`).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: >-
+            WAJIB, dan sengaja TIDAK ditandai `required` di sini -- pola yang
+            sama dengan header `Authorization` (lihat `CLAUDE.md` § FR-F12).
+            Validator akan menjawab `400 VALIDATION_ERROR`, sementara yang
+            dimaksud adalah `MISSING_IDEMPOTENCY_KEY`: kode yang menyebutkan
+            APA yang kurang, bukan "permintaanmu cacat". Penjaganya di handler,
+            sama seperti seluruh endpoint idempoten lain di API ini.
+
+
+            Key yang SAMA diulang tidak membuat tagihan kedua. Ia diselesaikan
+            hanya bila gateway menjawab -- retry setelah gateway timeout
+            menjalankan ulang panggilan gateway dengan key yang sama alih-alih
+            menerima respons "tanpa QR" dari cache selamanya.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, plan]
+              properties:
+                id:
+                  type: string
+                  minLength: 1
+                  description: Di-generate klien (konvensi ID repo ini).
+                plan:
+                  type: string
+                  enum: [standard, pro]
+                  description: >-
+                    ⛔ `free` dan `enterprise` sengaja TIDAK ada di sini.
+                    `free` tidak berbayar (tidak ada yang dapat ditagih), dan
+                    `enterprise` adalah negosiasi -- harga angka untuknya
+                    berarti seseorang dapat membelinya sendiri dengan harga
+                    yang tidak pernah disepakati siapa pun.
+      responses:
+        '201':
+          description: >-
+            Tagihan tercipta. `qrString` kosong bila gateway tidak menjawab --
+            tagihannya tetap ada dan dapat dicek ulang.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice, qrString, expiresAt, gatewayReachable]
+                properties:
+                  invoice: { $ref: '#/components/schemas/TagihanLangganan' }
+                  qrString: { type: string, nullable: true }
+                  expiresAt: { type: string, nullable: true }
+                  gatewayReachable:
+                    type: boolean
+                    description: >-
+                      `false` berarti tagihan tersimpan tapi QR belum didapat.
+                      Klien menampilkan "Cek status", BUKAN "pembayaran
+                      gagal" -- merchant mungkin sudah membayar (FR-C14).
+        '400':
+          description: Payload tidak valid atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            Bukan kenaikan paket (PLAN_NOT_AN_UPGRADE), paket tidak dapat
+            dibeli sendiri (PLAN_NOT_SELF_SERVE / PLAN_NOT_BILLABLE), masih
+            ada tagihan terbuka (SUBSCRIPTION_INVOICE_OPEN), id sudah dipakai
+            (ID_ALREADY_EXISTS), atau key sedang diproses
+            (IDEMPOTENCY_KEY_CONFLICT).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tenants/subscription/invoices/{invoiceId}/check-status:
+    post:
+      operationId: checkSubscriptionInvoiceStatus
+      summary: Tanyakan status tagihan ke gateway, dan terapkan hasilnya.
+      description: >-
+        POST, bukan GET: ia mengubah keadaan. Bersama webhook Midtrans, ia
+        satu dari dua jalan sebuah tagihan menjadi `confirmed` -- dan paket
+        naik hanya di sana.
+
+
+        Tagihan yang sudah final TIDAK ditanyakan lagi ke gateway; respons
+        memuat `gatewayStatus: null` untuk membedakannya dari "ditanyakan dan
+        dijawab pending".
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Keadaan tagihan setelah status gateway diterapkan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice, plan, gatewayStatus]
+                properties:
+                  invoice: { $ref: '#/components/schemas/TagihanLangganan' }
+                  plan:
+                    type: string
+                    description: Paket tenant SETELAH pemanggilan ini.
+                    enum: [free, standard, pro, enterprise]
+                  gatewayStatus:
+                    type: string
+                    nullable: true
+                    enum: [pending, confirmed, failed, expired]
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Tagihan tidak ditemukan (SUBSCRIPTION_INVOICE_NOT_FOUND), atau
+            aktor tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /outlets:
     get:
       operationId: listOutlets
@@ -5122,6 +5322,49 @@ components:
             Apakah kredensial sudah pernah diterbitkan. BUKAN nilainya --
             secret hanya dapat dibaca sekali, pada respons yang menerbitkannya.
         credentialsExpireAt: { type: string, nullable: true }
+    TagihanLangganan:
+      type: object
+      required:
+        [id, plan, outletCount, unitPrice, amount, status, provider,
+         providerReference, createdAt, confirmedAt, requestedBy]
+      properties:
+        id: { type: string }
+        plan:
+          type: string
+          enum: [standard, pro]
+          description: >-
+            Hanya tier berbayar. `free` tidak perlu dibayar dan `enterprise`
+            adalah negosiasi -- keduanya ditolak CHECK constraint tabelnya.
+        outletCount:
+          type: integer
+          description: >-
+            SNAPSHOT jumlah outlet aktif saat tagihan dibuat. Harga per outlet
+            per bulan (KEP-38), jadi angka ini yang mengalikan.
+        unitPrice:
+          type: integer
+          description: Rupiah utuh per outlet per bulan. SNAPSHOT.
+        amount:
+          type: integer
+          description: >-
+            `unitPrice * outletCount`. Konsistensinya ditegakkan CHECK
+            constraint di database, bukan hanya di aplikasi.
+        status:
+          type: string
+          enum: [pending_confirmation, confirmed, failed, expired]
+          description: >-
+            `expired` dibedakan dari `failed` supaya layar dapat berkata "QR
+            kedaluwarsa, minta yang baru" alih-alih "pembayaran gagal" -- dua
+            kalimat yang menuntut tindakan berbeda.
+        provider: { type: string, nullable: true }
+        providerReference: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        confirmedAt: { type: string, nullable: true }
+        requestedBy:
+          type: string
+          description: >-
+            Owner yang meminta kenaikan. Kolomnya tanpa FK, jadi yang menjaga
+            isinya adalah SELECT yang tunduk RLS di jalur pembuatan -- pola
+            yang sama dengan `price_history.changed_by`.
     PemakaianKuota:
       type: object
       required: [terpakai, batas]

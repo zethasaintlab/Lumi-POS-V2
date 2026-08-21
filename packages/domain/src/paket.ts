@@ -277,3 +277,100 @@ export function hitungTagihanBulanan(paket: string, jumlahOutlet: number): bigin
 
   return harga * BigInt(jumlahOutlet);
 }
+
+// ---------------------------------------------------------------------------
+// Kenaikan paket — scope epik F5 pertama
+// ---------------------------------------------------------------------------
+
+/**
+ * Urutan tingkat paket, dari terendah.
+ *
+ * ⛔ Daftar KEDUA di berkas ini, dan itu tidak dapat dihindari: urutan tidak
+ * dapat diturunkan dari `KUOTA_PAKET` karena `null` berarti tanpa batas, dan
+ * `standard.maxOutlets` sudah `null` sejak KEP-38 — membandingkan kuota akan
+ * menyatakan `standard` setara `enterprise` pada dimensi itu.
+ *
+ * Yang menjaganya tetap sepakat adalah test, bukan ingatan: ada test yang
+ * menuntut daftar ini memuat PERSIS kunci `KUOTA_PAKET`. Paket kelima yang
+ * ditambahkan tanpa tingkat akan merah di sana, bukan diam-diam dianggap
+ * tingkat `-1` dan lolos setiap perbandingan.
+ */
+export const URUTAN_PAKET: readonly NamaPaket[] = ['free', 'standard', 'pro', 'enterprise'];
+
+export function tingkatPaket(paket: string): number {
+  const i = URUTAN_PAKET.indexOf(paket as NamaPaket);
+  if (i === -1) throw new Error(`Paket tidak dikenal: ${paket}`);
+  return i;
+}
+
+export type HasilKenaikan =
+  | { ok: true }
+  | { ok: false; kode: 'PLAN_NOT_SELF_SERVE' | 'PLAN_NOT_BILLABLE' | 'PLAN_NOT_AN_UPGRADE'; pesan: string };
+
+/**
+ * Bolehkah tenant di `paketSaatIni` MEMBELI `paketTujuan` sendiri.
+ *
+ * ## ⛔ Kenapa hanya kenaikan, dan kenapa itu bukan kemalasan
+ *
+ * Keputusan user 21 Agustus 2026 membatasi epik F5 pertama pada **jalan
+ * menaikkan paket**. Batasan itu punya konsekuensi yang membuat seluruh jalur
+ * pembayaran aman, dan ia layak dinyatakan di sini karena ia yang menjawab
+ * pertanyaan "apa yang terjadi kalau merchant sudah membayar tapi kuota
+ * tujuan tidak memuat pemakaiannya":
+ *
+ * **Pertanyaan itu tidak dapat muncul.** Kuota naik monoton sepanjang
+ * `URUTAN_PAKET` (dijaga test tersendiri), jadi pemakaian yang muat di paket
+ * sekarang selalu muat di paket yang lebih tinggi. Tidak ada keadaan di mana
+ * merchant membayar lalu kenaikannya ditolak — dan itulah alasan
+ * `periksaPerpindahanPaket` TIDAK dipanggil di jalur ini. Ia dibangun untuk
+ * penurunan paket, satu-satunya arah yang dapat melanggar kuota, dan
+ * penurunan belum punya endpoint. Memanggilnya di sini akan menjadi cabang
+ * yang tidak pernah menyala — kelas cacat yang sama dengan `arah = -1` di
+ * tutup kas (`CLAUDE.md` § F3).
+ *
+ * ## Dua penolakan yang bukan soal tingkat
+ *
+ * Keduanya diturunkan dari `HARGA_PAKET`, bukan dari daftar nama yang ditulis
+ * ulang di sini:
+ *
+ * - `null` (enterprise) — negosiasi. Harga angka untuknya berarti seseorang
+ *   dapat membelinya sendiri dengan harga yang tidak pernah disepakati.
+ * - `0n` (free) — tidak ada yang dapat ditagih. Turun ke gratis adalah
+ *   pembatalan langganan, operasi yang berbeda dan belum dibangun.
+ *
+ * Murni: tanpa I/O, tanpa waktu.
+ */
+export function periksaKenaikanPaket(paketSaatIni: string, paketTujuan: string): HasilKenaikan {
+  const sekarang = tingkatPaket(paketSaatIni);
+  const tujuan = tingkatPaket(paketTujuan);
+
+  const harga = HARGA_PAKET[paketTujuan as NamaPaket];
+  if (harga === null) {
+    return {
+      ok: false,
+      kode: 'PLAN_NOT_SELF_SERVE',
+      pesan:
+        `Paket ${paketTujuan} tidak dapat dibeli sendiri — harganya dinegosiasikan. ` +
+        'Hubungi tim Lumi untuk mengaturnya.',
+    };
+  }
+  if (harga === 0n) {
+    return {
+      ok: false,
+      kode: 'PLAN_NOT_BILLABLE',
+      pesan: `Paket ${paketTujuan} tidak berbayar, jadi tidak ada tagihan yang dapat dibuat untuknya.`,
+    };
+  }
+
+  if (tujuan <= sekarang) {
+    return {
+      ok: false,
+      kode: 'PLAN_NOT_AN_UPGRADE',
+      pesan:
+        `Paket saat ini ${paketSaatIni}; ${paketTujuan} bukan kenaikan. ` +
+        'Menurunkan paket belum dapat dilakukan sendiri — hubungi tim Lumi.',
+    };
+  }
+
+  return { ok: true };
+}

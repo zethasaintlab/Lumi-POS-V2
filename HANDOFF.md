@@ -373,3 +373,81 @@ komentar di ketiga berkas: koneksi tambahan berarti transaksi tambahan, dan
   `node --test`, dan komponennya dijaga tipis oleh disiplin. Verifikasi
   layarnya dilakukan **di browser**, manual, dan tercatat di tiap PR.
 
+
+---
+
+## F5 — kenaikan paket self-serve, 21 Agustus 2026
+
+Sampai sekarang **tidak ada satu pun cara mengubah `tenant.plan`**, sementara
+pesan penolakan kuota berbunyi *"Naikkan paket atau kurangi … yang ada"* —
+kalimat yang menunjuk ke jalan yang belum dibangun. Jalannya kini ada:
+
+```
+POST /tenants/subscription/invoices   → tagihan + QRIS
+POST /tenants/subscription/invoices/{id}/check-status
+POST /webhooks/midtrans               → notifikasi ber-prefiks `sub-`
+GET  /tenants/subscription/invoices   → riwayat (B-29)
+```
+
+**Keputusan yang mengikat kode langganan:**
+
+- ⛔ **Tagihan langganan TIDAK DAPAT masuk tabel `payment`, secara
+  struktural.** Empat kolom NOT NULL (`order_id`, `outlet_id`, `device_id`,
+  `check_id`) yang tagihan langganan tidak punya. Itu kabar baik: kalau
+  keempatnya nullable, jalan termudah membuat **biaya langganan merchant
+  muncul sebagai omzet kafenya sendiri** di `posisi-penjualan.ts` dan B-19.
+- ⛔ **Prefiks `sub-` pada id yang dititipkan ke gateway.** Midtrans mengirim
+  seluruh notifikasi ke satu URL dan **mengirim ulang yang tidak dijawab
+  200**; tanpa prefiks, notifikasi langganan pertama dijawab
+  `404 PAYMENT_NOT_FOUND` lalu diulang selamanya. Rutenya diputuskan dari
+  string, sebelum satu query pun jalan.
+- ⛔ **Paket naik HANYA lewat `terapkanStatusTagihan`, dan hanya setelah
+  gateway mengonfirmasi** (`spec-c:320`). Fake provider selalu menjawab
+  `pending` lebih dulu, jadi test yang lupa mengonfirmasi merah — bukan hijau
+  karena kebetulan.
+- ⛔ **Keempat kolom `tenant.max_*` ikut ditulis, bukan hanya `plan`.**
+  `batasKuota` membaca kolomnya. Menaikkan `plan` saja menghasilkan merchant
+  yang **membayar paket pro dan tetap ditolak pada kuota free** — tanpa satu
+  pun error, dengan layar yang menyebut paket baru sambil menampilkan batas
+  lama.
+- **Port `SubscriptionProvider` adalah port KEDUA, bukan `PaymentProvider`
+  yang dilonggarkan.** Pipa HTTP-nya (`createMidtransHttp`) dipakai ulang,
+  termasuk `fetch` yang di-inject — nol test menyentuh jaringan.
+- **DUA transaksi**, alasan yang sama persis dengan QRIS dinamis: tagihan
+  di-commit sebelum gateway dipanggil, dan Idempotency-Key diselesaikan hanya
+  bila gateway menjawab.
+- **`periksaPerpindahanPaket` SENGAJA belum dipanggil di jalur mana pun.** Ia
+  dibangun untuk penurunan paket, satu-satunya arah yang dapat melanggar
+  kuota, dan penurunan belum punya endpoint. Yang membuat itu aman adalah
+  property test `tests/domain/kenaikan-paket.test.js`: untuk setiap kenaikan
+  yang diizinkan, pemakaian yang muat di paket asal selalu muat di tujuan —
+  jadi merchant tidak pernah membayar lalu ditolak.
+
+### ⛔ Batas yang harus dibaca sebelum menyebut F5 aman
+
+- ⛔ **Membayar satu tagihan menaikkan paket SECARA PERMANEN.** Tidak ada
+  periode tagihan di skema dan tidak ada penanganan langganan berakhir
+  (keputusan user: di luar scope epik ini). Tidak ada apa pun yang menurunkan
+  paket kembali.
+- ⛔ **Turun paket tidak dapat dilakukan sendiri sama sekali** — dijawab
+  `409 PLAN_NOT_AN_UPGRADE` dengan kalimat "hubungi tim Lumi". Jalur manualnya
+  belum ada.
+- ⛔ **`enterprise` tidak dapat dibeli** (`HARGA_PAKET.enterprise = null`).
+  Ia negosiasi; harga angka untuknya berarti seseorang dapat membelinya
+  sendiri dengan harga yang tidak pernah disepakati siapa pun.
+- **Harga Rp349.000 / Rp699.000 per outlet per bulan tetap `[ASUMSI]`**
+  (KEP-39: rekomendasi posisi kompetitif, bukan riset kemauan bayar). Belum
+  divalidasi ke satu merchant pun.
+- **B-29 belum menampilkan tombol upgrade.** Layarnya masih "pemakaian versus
+  kuota" saja; ketiga endpoint di atas belum punya konsumen UI.
+- **Jabat tangan sungguhan dengan Midtrans belum pernah terjadi** — batas yang
+  sama dengan webhook pembayaran, dan alasannya sama (butuh URL publik).
+- **Audit `subscription_plan_upgraded` dilewati bila peminta sudah
+  dinonaktifkan.** `recordAuditEvent` melempar untuk aktor tidak aktif, dan di
+  jalur webhook lemparan itu berarti Midtrans mengulang selamanya sementara
+  kenaikan yang sudah dibayar tidak pernah mendarat. Catatan yang tidak pernah
+  hilang adalah baris `subscription_invoice` sendiri.
+- **Notifikasi langganan yang tagihannya tidak ditemukan dijawab 404**
+  (`SUBSCRIPTION_INVOICE_NOT_FOUND`), sama seperti jalur payment. Midtrans akan
+  mengulangnya; itu disengaja supaya keadaan itu terlihat, bukan tertelan —
+  tapi ia belum punya alarm.

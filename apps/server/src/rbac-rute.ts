@@ -121,6 +121,14 @@ export const PETA_PERAN: readonly AturanRute[] = [
   // --- outlet & komersial --------------------------------------------------
   { metode: 'POST', pola: '/outlets', operasi: 'outlet_manage' },
   { metode: 'GET', pola: '/tenants/usage', operasi: 'billing' },
+
+  // F5 — menaikkan paket. `spec-f:52` menandai "Billing & langganan" ✅ hanya
+  // untuk Owner, dan di sini kata itu berarti uang sungguhan yang keluar dari
+  // rekening merchant: manajer outlet yang dapat menaikkan paket dapat
+  // menaikkan tagihan bulanan tanpa sepengetahuan pemiliknya.
+  { metode: 'POST', pola: '/tenants/subscription/invoices', operasi: 'billing' },
+  { metode: 'GET', pola: '/tenants/subscription/invoices', operasi: 'billing' },
+  { metode: 'POST', pola: '/tenants/subscription/invoices/:invoiceId/check-status', operasi: 'billing' },
 ];
 
 const PETA = new Map(PETA_PERAN.map((r) => [`${r.metode} ${r.pola}`, r.operasi]));
