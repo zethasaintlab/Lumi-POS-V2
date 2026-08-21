@@ -3,6 +3,7 @@
  *
  * Jalankan:
  *   node tools/pulihkan-antrean.mjs <berkas.json> --tenant <id> [--server URL]
+ *   node tools/pulihkan-antrean.mjs <berkas.json> --tenant <id> --penyetuju <id>
  *   node tools/pulihkan-antrean.mjs <berkas.json> --tenant <id> --kering
  *
  * Gate F6 (`ARCH:400`): *"alat koreksi ada **sebelum** insiden pertama."*
@@ -61,11 +62,19 @@ function argumen(nama, bawaan) {
 const berkas = process.argv[2];
 const tenantId = argumen('tenant');
 const server = argumen('server', process.env.LUMI_API ?? 'http://localhost:3000');
+/**
+ * Penyetuju CADANGAN untuk item yang barisnya tidak membawanya.
+ *
+ * Dipakai hanya oleh refund dari perangkat yang databasenya dibuat sebelum
+ * `outbox_local.approver_id` ada. Item yang membawa penyetujunya sendiri
+ * selalu menang atas nilai ini.
+ */
+const penyetuju = argumen('penyetuju', null);
 const kering = process.argv.includes('--kering');
 
 if (!berkas || !tenantId) {
   console.error(
-    'Pemakaian: node tools/pulihkan-antrean.mjs <berkas.json> --tenant <id> [--server URL] [--kering]'
+    'Pemakaian: node tools/pulihkan-antrean.mjs <berkas.json> --tenant <id> [--server URL] [--penyetuju <id>] [--kering]'
   );
   process.exit(2);
 }
@@ -117,6 +126,21 @@ for (const [n, item] of ekspor.item.entries()) {
         // Antrean yang dipulihkan harus tetap menisbatkan penjualan kepada
         // kasir yang benar-benar melakukannya — sama seperti relay.
         'X-Actor-Id': item.actorId ?? '',
+        // ⛔ Penyetuju dari BARIS, dengan `--penyetuju` sebagai cadangan.
+        //
+        // Cadangannya bukan kenyamanan: `outbox_local.approver_id` baru ada
+        // sejak 21 Agustus 2026, dan refund yang dibuat perangkat SEBELUM
+        // pembaruan itu tidak menyimpan penyetuju di mana pun. Berkas
+        // pemulihannya karena itu tidak dapat memuatnya, dan satu-satunya
+        // jalan memutar ulang refund itu adalah operator menyebutkan
+        // penyetujunya — yang memang tercatat di struk dan di ingatan orang
+        // yang berdiri di sana.
+        //
+        // Header KOSONG lebih buruk daripada tidak ada: `getApproverId`
+        // menolaknya dengan pesan yang sama.
+        ...(item.approverId || penyetuju
+          ? { 'X-Approver-Id': item.approverId ?? penyetuju }
+          : {}),
         // ⛔ Key ASLI. Lihat komentar kepala berkas.
         'Idempotency-Key': item.idempotencyKey,
       },

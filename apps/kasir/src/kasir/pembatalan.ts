@@ -430,6 +430,10 @@ export async function batalkan({
       idempotencyKey: id,
       createdAt: occurredAt,
       actorId: sesi.userId,
+      // ⛔ Penyetuju ikut, dan itu yang membuat refund offline dapat
+      // mendarat di server sama sekali. Lihat `approver_id` di
+      // `db/local/001-initial.sql`.
+      approverId,
     });
 
     await simpanHlc(tx, hlcValue);

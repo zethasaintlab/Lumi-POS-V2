@@ -86,6 +86,18 @@ export function buatPengirimHttp(konfig: KonfigHttp): (baris: BarisOutbox) => Pr
           // yang disabotase di T9 property test, dan ia terlihat hanya di
           // bawah kegagalan jaringan -- tidak pernah pada jalur bahagia.
           'Idempotency-Key': baris.idempotency_key,
+          // ⛔ Dikirim HANYA bila barisnya membawanya. Refund menuntutnya di
+          // server; tanpa baris ini setiap refund offline dijawab
+          // `400 MISSING_APPROVER_ID` dan diklasifikasi `gagal-permanen` —
+          // kasir sudah mengembalikan uangnya, dan servernya tidak pernah
+          // tahu. Direproduksi terhadap server sungguhan
+          // (`tests/ordering/refund-offline-relay.test.js`), bukan
+          // disimpulkan dari membaca kode.
+          //
+          // Header KOSONG lebih buruk daripada tidak ada: `getApproverId`
+          // menolak string kosong dengan pesan yang sama, jadi mengirimnya
+          // selalu hanya memindahkan kegagalan tanpa memperbaikinya.
+          ...(baris.approver_id ? { 'X-Approver-Id': baris.approver_id } : {}),
         },
         // Dikirim APA ADANYA, dan itu pilihan yang disengaja: server
         // menghitung hash request dari body untuk mendeteksi "key sama, body

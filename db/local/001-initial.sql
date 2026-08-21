@@ -364,7 +364,22 @@ CREATE TABLE outbox_local (
   -- Antrean dapat terkuras berjam-jam kemudian, mungkin setelah pergantian
   -- shift: memakai "siapa yang sedang masuk" akan mencatat penjualan Sari
   -- atas nama Budi di `X-Actor-Id`, dan audit server percaya begitu saja.
-  actor_id TEXT
+  actor_id TEXT,
+  -- ⛔ PENYETUJU, dibekukan dengan alasan yang sama — dan ketiadaannya adalah
+  -- cacat yang PERNAH TERJADI, bukan kemungkinan teoretis.
+  --
+  -- Sebelum kolom ini ada, relay tidak pernah mengirim `X-Approver-Id` sama
+  -- sekali, sementara `POST /orders/{id}/cancel` menuntutnya untuk setiap
+  -- refund. Akibatnya SETIAP REFUND YANG DIBUAT OFFLINE dijawab
+  -- `400 MISSING_APPROVER_ID`, diklasifikasi `gagal-permanen`, dan tidak
+  -- pernah sampai ke server — sementara kasir sudah mengembalikan uangnya,
+  -- stok sudah kembali, dan laci sudah berkurang. Buku merchant dan server
+  -- berpisah tanpa satu pun error.
+  --
+  -- Direproduksi terhadap server sungguhan lewat transport relay yang sama,
+  -- bukan disimpulkan dari membaca kode. Testnya
+  -- `tests/ordering/refund-offline-relay.test.js`.
+  approver_id TEXT
 );
 -- Identitas perangkat + counter lokalnya. Satu baris, dipaksa CHECK: satu
 -- pemasangan aplikasi adalah satu perangkat, dan `device_code` sebagai

@@ -229,3 +229,57 @@ test('enqueue menyimpan actor_id saat item DIBUAT', async () => {
     db.tutup();
   }
 });
+
+test('⛔ enqueue menyimpan approver_id — tanpanya refund offline berhenti permanen', async () => {
+  const { enqueue } = await import('../../packages/sync-client/src/enqueue.ts');
+  const db = buatDb();
+  try {
+    await db.transaction(async (tx) => {
+      await enqueue(tx, {
+        id: 'obx-2',
+        entityType: 'order_cancel',
+        entityId: 'ord-2',
+        operation: 'cancel',
+        payload: {},
+        idempotencyKey: 'k2',
+        createdAt: '2026-08-21T10:00:00.000Z',
+        actorId: 'usr-sari',
+        approverId: 'usr-budi',
+      });
+    });
+    // Dibekukan bersama itemnya, alasan yang sama dengan `actor_id`: antrean
+    // dapat terkuras setelah pergantian shift, dan manajer yang menyetujui
+    // refund sore ini bukan manajer yang sedang masuk besok pagi.
+    const [baris] = await db.getAll('SELECT actor_id, approver_id FROM outbox_local');
+    assert.equal(baris.approver_id, 'usr-budi');
+    assert.notEqual(baris.approver_id, baris.actor_id);
+  } finally {
+    db.tutup();
+  }
+});
+
+test('item tanpa penyetuju menyimpan NULL, bukan string kosong', async () => {
+  const { enqueue } = await import('../../packages/sync-client/src/enqueue.ts');
+  const db = buatDb();
+  try {
+    await db.transaction(async (tx) => {
+      await enqueue(tx, {
+        id: 'obx-3',
+        entityType: 'order',
+        entityId: 'ord-3',
+        operation: 'create',
+        payload: {},
+        idempotencyKey: 'k3',
+        createdAt: '2026-08-21T10:00:00.000Z',
+        actorId: 'usr-sari',
+      });
+    });
+    // String kosong akan membuat relay MENGIRIM header kosong, dan
+    // `getApproverId` menolaknya dengan pesan yang sama persis dengan header
+    // yang hilang — kegagalan yang berpindah tempat tanpa berubah.
+    const [baris] = await db.getAll('SELECT approver_id FROM outbox_local');
+    assert.equal(baris.approver_id, null);
+  } finally {
+    db.tutup();
+  }
+});

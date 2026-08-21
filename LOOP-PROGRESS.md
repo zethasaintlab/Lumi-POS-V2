@@ -1216,3 +1216,56 @@ payment · identity · tenancy · dst-server             PASS
 Tujuh belas suite, nol kegagalan. `ordering` yang paling berisiko — seluruh
 jalur `POST /orders` disentuh — dan ia hijau tanpa satu pun test lama yang
 perlu diubah.
+
+### Task 17 — ⛔ Refund offline TIDAK PERNAH sampai ke server
+
+**Cacat yang sudah hidup di kode ter-merge, ditemukan sambil membaca jalur
+diskon — bukan dari test yang merah.**
+
+`POST /orders/{id}/cancel` menuntut `X-Approver-Id` untuk setiap refund.
+Relay outbox **tidak pernah mengirim header itu**, dan `outbox_local` tidak
+punya kolom untuk menyimpannya. Akibatnya:
+
+```
+refund dibuat offline → uang dikembalikan, stok kembali, laci berkurang
+                      → relay mengirim → 400 MISSING_APPROVER_ID
+                      → gagal-permanen → berhenti di antrean SELAMANYA
+```
+
+Server tetap mencatat penjualannya tertutup dengan omzet penuh. Buku merchant
+dan buku server berpisah, tanpa satu pun error di mana pun.
+
+**Direproduksi terhadap server sungguhan** lewat `buatPengirimHttp` dan
+`klasifikasi` yang asli — bukan disimpulkan dari membaca kode. Yang dipalsukan
+hanya `fetch`, dan ia meneruskan ke server.
+
+**⛔ Kenapa 18 test void/refund yang sudah ada tidak menangkapnya:** semuanya
+memanggil endpoint LANGSUNG dengan header lengkap — bentuk yang dipakai
+back-office, bukan bentuk yang dipakai perangkat kasir. Yang tidak pernah
+diuji adalah JALAN MASUKNYA. `buatPengirimHttp` menyusun headernya sendiri,
+dan header yang tidak pernah disusunnya tidak dapat hilang dari test yang
+menuliskan headernya sendiri.
+
+**Perbaikannya:** penyetuju dibekukan di `outbox_local.approver_id`, persis
+seperti `actor_id` — antrean dapat terkuras setelah pergantian shift, dan
+manajer yang menyetujui refund sore ini bukan manajer yang sedang masuk besok
+pagi. Relay mengirimnya hanya bila barisnya membawanya; header KOSONG ditolak
+dengan pesan yang sama persis, jadi mengirimnya selalu hanya memindahkan
+kegagalan tanpa memperbaikinya.
+
+**Perangkat yang sudah terpasang** mendapat kolomnya lewat migrasi aditif di
+boot berikutnya. Refund yang dibuat SEBELUM itu tidak menyimpan penyetuju di
+mana pun dan tidak dapat diperbaiki dari perangkat — jalannya ekspor pemulihan
+plus `--penyetuju <id>` pada `tools/pulihkan-antrean.mjs`, yang ditambahkan di
+task ini. Ekspor pemulihan kini juga membawa `approverId`.
+
+⛔ **Runbook §1 sempat menjanjikan sesuatu yang alatnya belum bisa lakukan.**
+Baris pertama yang saya tulis menyuruh operator "kirim ulang lewat alat, yang
+dapat menyebutkan penyetujunya" — dan alat itu belum punya flag-nya. Diperiksa
+sebelum di-commit, lalu alatnya yang dibuat benar. Runbook yang salah lebih
+berbahaya daripada runbook yang tidak ada.
+
+**Pelajarannya, dan ia sejajar dengan pelajaran F3:** transport yang dipakai
+perangkat harus diuji SEBAGAI transport. Test yang memanggil endpoint dengan
+header buatan sendiri membuktikan servernya benar; ia tidak dapat membuktikan
+kliennya memanggil dengan benar.

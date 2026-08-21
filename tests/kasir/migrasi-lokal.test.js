@@ -232,6 +232,16 @@ test('T5 kolom lokal yang hilang ditambahkan lewat ALTER, bukan lewat drop', asy
     alter.some((a) => /ALTER TABLE "outbox_local" ADD COLUMN "actor_id"/.test(a)),
     `actor_id tidak ditambahkan: ${alter.join(' | ')}`
   );
+  // ⛔ `approver_id` ditambahkan lewat jalur yang SAMA, dan itu yang membuat
+  // perangkat yang SUDAH terpasang dapat mengirim refund sama sekali.
+  // Perangkat yang databasenya dibuat sebelum kolom ini ada tidak akan pernah
+  // punya tempat menyimpan penyetuju — dan setiap refund-nya berhenti
+  // permanen di antrean, seperti sebelum perbaikan
+  // `tests/ordering/refund-offline-relay.test.js`.
+  assert.ok(
+    alter.some((a) => /ALTER TABLE "outbox_local" ADD COLUMN "approver_id"/.test(a)),
+    `approver_id tidak ditambahkan: ${alter.join(' | ')}`
+  );
   assert.ok(alter.some((a) => /ALTER TABLE "device_config" ADD COLUMN "token_secret"/.test(a)));
   assert.ok(
     !alter.some((a) => /DROP/i.test(a)),

@@ -462,6 +462,18 @@ Lima dari delapan metrik `ARCH:296` **tidak dapat dihasilkan server** — dan it
 - **`double precision` di `device_telemetry` bukan pengecualian aturan float.** Larangan itu berlaku di jalur uang; yang menjaga kolom-kolom ini tetap di luar jalur itu adalah CHECK `event` — tidak ada nama event yang menyebut jumlah uang, dan tidak boleh ada.
 - **Agregasi lintas-tenant TIDAK dibangun**, batas yang sama dengan `metrik.ts`: ia menuntut pembaca ber-`BYPASSRLS`, dan itu keputusan deployment.
 
+### ⛔ Transport perangkat diuji SEBAGAI transport — pelajaran 21 Agustus 2026
+
+**Setiap refund yang dibuat offline tidak pernah sampai ke server**, dan itu hidup di kode ter-merge sampai ditemukan tanpa sengaja. `POST /orders/{id}/cancel` menuntut `X-Approver-Id`; relay outbox tidak pernah mengirimnya, dan `outbox_local` tidak punya kolom untuk menyimpannya. Hasilnya `400 MISSING_APPROVER_ID` → `gagal-permanen` → berhenti di antrean selamanya, sementara kasir sudah mengembalikan uangnya dan server tetap mencatat penjualannya tertutup dengan omzet penuh.
+
+**Delapan belas test void/refund hijau selama itu.** Semuanya memanggil endpoint LANGSUNG dengan header yang ditulis test itu sendiri — bentuk yang dipakai back-office, bukan yang dipakai perangkat. Header yang tidak pernah disusun `buatPengirimHttp` tidak dapat hilang dari test yang menuliskan headernya sendiri.
+
+Aturannya sekarang: **setiap operasi yang perangkat kirim lewat outbox wajib punya satu test yang memakai `buatPengirimHttp` dan `klasifikasi` yang ASLI**, dengan hanya `fetch` yang dipalsukan dan diteruskan ke server sungguhan (`tests/ordering/refund-offline-relay.test.js`). Yang dibuktikan test endpoint langsung adalah servernya benar; ia tidak dapat membuktikan kliennya memanggil dengan benar.
+
+Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_id`**, alasan yang sama dengan `actor_id` — antrean dapat terkuras setelah pergantian shift. Header KOSONG tidak pernah dikirim: `getApproverId` menolaknya dengan pesan yang sama persis dengan header yang hilang, jadi mengirimnya hanya memindahkan kegagalan.
+
+---
+
 ### F6 — staged rollout, keputusan yang mengikat kode
 
 `ARCH:§12` dan KEP-36 menolak dua jalan yang lebih mudah: auto-update paksa **menghentikan outlet di jam makan siang**, dan update manual berarti delapan versi di lapangan setelah setahun. Yang tersisa adalah rollout bertahap dengan jendela waktu. Aturannya di `packages/domain/src/rilis.ts`; keadaannya di `app_release` (migrasi `0030`).

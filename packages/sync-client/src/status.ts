@@ -357,6 +357,15 @@ export interface EksporPemulihan {
     operation: string;
     idempotencyKey: string;
     actorId: string | null;
+    /**
+     * Penyetuju, bila operasinya menuntutnya (refund).
+     *
+     * ⛔ Ikut dalam ekspor karena tanpanya berkas pemulihan tidak dapat
+     * memutar ulang satu pun refund — server menolaknya
+     * `400 MISSING_APPROVER_ID`, persis kegagalan yang membuat kolom
+     * `outbox_local.approver_id` ada.
+     */
+    approverId: string | null;
     createdAt: string;
     /** Payload APA ADANYA — string, bukan objek. Lihat komentar di bawah. */
     payload: string;
@@ -383,6 +392,7 @@ export async function buatEksporPemulihan(
       operation: b.operation,
       idempotencyKey: b.idempotency_key,
       actorId: b.actor_id ?? null,
+      approverId: b.approver_id ?? null,
       createdAt: b.created_at,
       // ⛔ Payload disimpan sebagai STRING, tidak diurai lalu dirangkai ulang.
       //

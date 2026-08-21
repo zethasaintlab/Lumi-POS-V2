@@ -87,6 +87,7 @@ Alasan gagal sudah diterjemahkan ke bahasa manusia (`pesanGagal` di
 | "Server sedang bermasalah (HTTP 5xx)" | Akan dicoba lagi otomatis. Periksa kesehatan server. |
 | "Koneksi terputus sebelum server menjawab" | Akan dicoba lagi otomatis. |
 | "Transaksi ini dikirim ulang dengan isi berbeda" (`IDEMPOTENCY_KEY_REUSED`) | Datanya perlu diperiksa. **Jangan hapus.** Eskalasi. |
+| Item `order_cancel` gagal dengan `MISSING_APPROVER_ID` | ⛔ **Perangkat lama.** Refund membawa penyetujunya di `outbox_local.approver_id`, dan kolom itu baru ada sejak 21 Agustus 2026. Perangkat yang refund-nya dibuat SEBELUM pembaruan itu tidak menyimpan penyetuju di mana pun — barisnya tidak dapat diperbaiki dari perangkat. Ambil ekspor pemulihan (§10.1) dan kirim ulang dengan `--penyetuju <id manajer>`. Perangkat yang sudah diperbarui membawa penyetujunya sendiri, dan barisnya selalu menang atas flag itu. |
 
 ### Tindakan
 
