@@ -161,6 +161,16 @@ export async function bukaLaci({
       idempotencyKey: id,
       createdAt: occurredAt,
       actorId: sesi.userId,
+      // ⛔ Penyetuju ikut, dan HANYA bila ambangnya terlewati — nilai yang
+      // sama persis dengan yang ditulis ke `audit_event` di atas.
+      //
+      // Tanpa ini, pembukaan laci KEEMPAT dan seterusnya yang dilakukan
+      // offline dijawab `403 APPROVAL_REQUIRED` lalu berhenti permanen di
+      // antrean: laci sudah terbuka, PIN manajer sudah dimasukkan, dan
+      // servernya tidak pernah tahu. Bentuk cacat yang SAMA dengan refund
+      // offline (`tests/ordering/refund-offline-relay.test.js`) — dan yang
+      // kedua ini ditemukan justru karena yang pertama menghasilkan aturan.
+      approverId: rencana.butuhPenyetuju ? approverId : null,
     });
   });
 

@@ -87,6 +87,8 @@ Alasan gagal sudah diterjemahkan ke bahasa manusia (`pesanGagal` di
 | "Server sedang bermasalah (HTTP 5xx)" | Akan dicoba lagi otomatis. Periksa kesehatan server. |
 | "Koneksi terputus sebelum server menjawab" | Akan dicoba lagi otomatis. |
 | "Transaksi ini dikirim ulang dengan isi berbeda" (`IDEMPOTENCY_KEY_REUSED`) | Datanya perlu diperiksa. **Jangan hapus.** Eskalasi. |
+| Item `no_sale` gagal dengan `401 SESSION_INVALID` | ⛔ **Server lama.** `POST /shifts/{id}/no-sale` tidak ada di daftar rute perangkat sampai 21 Agustus 2026, jadi setiap no-sale yang dibuat offline ditolak 401 dan berhenti permanen. Perbarui server; item yang sudah `failed` dikirim ulang lewat ekspor pemulihan (§10.1). |
+| Item `no_sale` gagal dengan `403 APPROVAL_REQUIRED` | Pembukaan keempat dan seterusnya dalam satu shift menuntut PIN manajer, dan penyetujunya dibawa `outbox_local.approver_id` — kolom yang baru ada sejak 21 Agustus 2026. Sama seperti refund: `--penyetuju <id>` pada alat pemulihan. |
 | Item `order_cancel` gagal dengan `MISSING_APPROVER_ID` | ⛔ **Perangkat lama.** Refund membawa penyetujunya di `outbox_local.approver_id`, dan kolom itu baru ada sejak 21 Agustus 2026. Perangkat yang refund-nya dibuat SEBELUM pembaruan itu tidak menyimpan penyetuju di mana pun — barisnya tidak dapat diperbaiki dari perangkat. Ambil ekspor pemulihan (§10.1) dan kirim ulang dengan `--penyetuju <id manajer>`. Perangkat yang sudah diperbarui membawa penyetujunya sendiri, dan barisnya selalu menang atas flag itu. |
 
 ### Tindakan

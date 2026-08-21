@@ -166,6 +166,16 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/no-sale',
+    alasan:
+      'jalur perangkat: relay outbox. FR-D7 — kasir membuka laci DI KASIR, sering saat ' +
+      'perangkat offline, dan `IA:66` menandai K-16 "Kasir + alasan". Sebelum baris ini ' +
+      'ada, SETIAP no-sale yang dibuat offline dijawab 401 dan berhenti permanen di ' +
+      'antrean: laci sudah terbuka dan servernya tidak pernah tahu. Yang menjaganya ' +
+      'tetap `assertBoleh(shift_open_close)` di handler plus AMBANG FREKUENSI',
+  },
+  {
+    metode: 'POST',
     pola: '/payments/:paymentId/check-status',
     alasan:
       'jalur perangkat: kasir menunggu konfirmasi QRIS (FR-C14). Memblokirnya menahan kasir ' +

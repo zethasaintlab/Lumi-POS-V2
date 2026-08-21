@@ -1282,3 +1282,33 @@ payment · identity · tenancy · dst-server             PASS
 ```
 
 Tujuh belas suite, nol kegagalan.
+
+### Task 18 — Aturan transport diterapkan ke SELURUH jenis, dan ia menemukan dua lagi
+
+Task 17 menghasilkan aturan; menulis aturan lalu tidak menerapkannya adalah
+setengah pekerjaan. `tests/ordering/relay-transport.test.js` kini mengirim
+**setiap** jenis di `RUTE_DIDUKUNG` lewat `buatPengirimHttp` dan `klasifikasi`
+yang ASLI, dengan penjaga dua arah: jenis yang ditambahkan besok tanpa test
+transport membuatnya merah.
+
+**Dua cacat lagi, kelas yang sama, keduanya di kode ter-merge:**
+
+| Cacat | Akibatnya |
+|---|---|
+| `no_sale` tidak membawa penyetuju di baris outbox | Pembukaan laci KEEMPAT dan seterusnya yang dilakukan offline dijawab `403` dan berhenti permanen. Laci sudah terbuka, PIN manajer sudah dimasukkan, servernya tidak pernah tahu |
+| ⛔ `POST /shifts/{id}/no-sale` **tidak pernah ada di `RUTE_TERBUKA`** | **SETIAP** no-sale offline dijawab `401 SESSION_INVALID` — bahkan yang pertama, yang tidak menuntut PIN sama sekali. Relay tidak pernah punya sesi back-office |
+
+Yang kedua lebih luas daripada yang pertama dan tidak ada hubungannya dengan
+penyetuju: rutenya cuma tidak pernah didaftarkan sebagai jalur perangkat.
+K-16 tercatat "selesai" di `CLAUDE.md` sejak 21 Agustus, dan jalur relay-nya
+tidak pernah berfungsi sama sekali.
+
+**Yang menemukan keduanya adalah penjaga, bukan pembacaan kode.** Saya menulis
+test untuk enam jenis dengan harapan semuanya hijau; empat merah, dua di
+antaranya karena kesalahan test saya sendiri (`soldOut` vs `isSoldOut`,
+`tukar_uang_kecil` vs `tukar_uang`) dan dua karena cacat sungguhan. Itu
+perbandingan yang sehat: penjaga yang hanya menemukan kesalahan penulisnya
+sendiri tidak menjaga apa pun.
+
+**Sabotase diverifikasi:** melepas `/shifts/:shiftId/no-sale` dari
+`RUTE_TERBUKA` → 3 merah.
