@@ -912,3 +912,17 @@ teruji; layarnya belum memakainya."*
   kegagalan yang terbaca seperti bug harga. Dijalankan ulang bersih; nol
   kegagalan. Peringatan di kepala berkas ini ternyata belum cukup — yang
   kurang adalah **menunggu**, bukan mengetahui.
+
+**Verifikasi Task 9 + 10 selesai penuh.** Commit `93c65e4` dibuat saat lima
+suite ber-database masih berjalan, dan itu dinyatakan di pesan commit-nya.
+Hasil akhirnya, dijalankan bersih tanpa satu pun proses test lain:
+
+```
+typecheck · lint:ds                                   PASS
+runtime · domain · sqlite-local · oxlint-ds-adherence PASS
+dst · sync-client · kasir · backoffice                PASS
+isolation · schema · server · catalog · ordering      PASS
+payment · identity · tenancy · dst-server             PASS
+```
+
+Tujuh belas suite, nol kegagalan.
