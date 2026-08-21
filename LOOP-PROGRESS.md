@@ -962,3 +962,85 @@ dipakai memilih apa pun.
 **Verifikasi:** `typecheck` · `lint:ds` · 8 suite non-DB — hijau. Perubahannya
 **hanya klien** (`Harga.tsx`, `produk.ts`, testnya); tidak satu baris pun kode
 server atau skema berubah sejak commit sebelumnya, yang ke-17 suitenya hijau.
+
+### Task 14 — Telemetri klien (F6)
+
+**Selesai.** Menutup lima dari delapan metrik `ARCH:296` yang
+`apps/server/src/metrik.ts` sendiri daftarkan sebagai **tidak dapat
+dihasilkan server**: umur antrean, item gagal sinkron, latensi keranjang,
+crash rate, dan rasio offline. Semuanya terjadi di perangkat, sebagian besar
+justru saat perangkat tidak terhubung.
+
+Rantainya: `catat()` → buffer `telemetry_local` → penjadwal →
+`POST /devices/{id}/telemetry` → `device_telemetry` → `GET .../telemetry`.
+
+**Keputusan yang mengikat kode:**
+
+- ⛔ **Batas etis `ARCH:309` ditegakkan di TIGA lapisan, dan lapisan ketiga
+  membaca KODE.** Daftar event tertutup + nilai wajib angka menjaga data;
+  yang tidak dijaga keduanya adalah slot `tipe` — ia memang string, dan
+  string apa pun lolos. `tests/kasir/telemetri-batas-etis.test.js` karena itu
+  memindai setiap pemanggilan `catat()` di `apps/kasir/src` dan menolak
+  `.message`, template literal, dan properti selain `.name`. Sabotase
+  (`e.name` → `e.message`) → 2 merah.
+- ⛔ **Variabel `VITE_TELEMETRY` yang TIDAK DISET berarti `off`, bukan
+  `full`.** `ARCH:262` tetap berlaku — yang menetapkan `full` adalah
+  konfigurasi deployment SaaS, bukan ketiadaan konfigurasi. Alasannya
+  asimetri akibat: on-premise yang lupa menyetelnya akan MENGUMPULKAN data
+  tanpa ada yang menyetujuinya, dan itu tidak terlihat siapa pun; SaaS yang
+  lupa hanya menghasilkan metrik kosong, dan kosong itu terlihat.
+- ⛔ **`mode === 'off'` berarti tidak ada yang dipasang** — bukan sink yang
+  membuang. Tidak ada pendengar, tidak ada timer, tidak ada baris database.
+  "Dikumpulkan lalu dibuang" adalah jawaban yang berbeda dari "tidak
+  dikumpulkan".
+- ⛔ **`rekam()` menelan SETIAP kegagalan**, termasuk `no such table` pada
+  perangkat yang migrasi lokalnya belum jalan. Pemanggilnya jalur penjualan
+  dan jalur cetak (`ARCH:307`).
+- ⛔ **Pemangkasan buffer membuang yang TERLAMA.** Jaminan itu hidup di
+  `ORDER BY`, dan fake `DbLokal` tidak menegakkan `ORDER BY` sama sekali —
+  jadi testnya di atas SQLite sungguhan, disisipkan dalam urutan acak.
+  Sabotase `ASC` → `DESC` → 2 merah.
+- ⛔ **`susunMuatan` tidak menghapus; penghapusan menunggu server menjawab.**
+  Menghapus lebih dulu berarti kegagalan jaringan membuang metrik yang justru
+  menjelaskan kegagalan itu.
+- ⛔ **Percobaan ulang mengirim BATCH YANG SAMA**, dengan kunci idempotensi
+  yang diturunkan dari daftar id (FNV-1a). Batch yang melebar di antara dua
+  percobaan akan menghitung ganda bila yang pertama sebenarnya sampai.
+- ⛔ **`401` DIPERTAHANKAN, `400` DIBUANG.** Perangkat yang kredensialnya
+  kedaluwarsa akan di-provisioning ulang, dan metrik dari masa ia tidak
+  terhubung justru yang menjelaskan kenapa. Muatan yang bentuknya salah tidak
+  akan pernah diterima, dan batch yang diulang selamanya akhirnya memangkas
+  metrik yang masih baik.
+- ⛔ **Latensi keranjang diukur HANYA untuk jalur langsung.** Penanda
+  dikosongkan begitu dialog modifier terbuka — angka yang memuat waktu
+  berpikir orang mengukur menu, bukan aplikasi.
+- **`app_version` disimpan bersama angkanya**, bukan dibaca dari
+  `device.app_version` saat laporan dibuat: `ARCH:302` memakai crash rate per
+  versi sebagai gate rollout, dan versi perangkat sekarang sudah berubah saat
+  rollout gagal.
+- **Kesehatan antrean dibaca lewat `ringkasanAntrean`** — fungsi yang sama
+  dengan indikator sinkronisasi dan K-14. Antrean kosong TIDAK mengirim
+  `umur_antrean_jam: 0`; nol akan menurunkan rata-rata umur tepat pada
+  perangkat yang paling sehat.
+- **`double precision` di `device_telemetry` bukan pelanggaran aturan float:**
+  larangan itu berlaku di jalur uang, dan yang menjaga kolom-kolom ini tetap
+  di luar jalur itu adalah CHECK `event` — tidak ada nama event yang menyebut
+  jumlah uang, dan tidak boleh ada.
+
+**Dua cacat yang ditemukan test, bukan review:**
+
+| Temuan | Yang menyembunyikannya |
+|---|---|
+| **Koersi AJV mengubah `null` menjadi `0`** pada kolom bertipe `number`, sebelum handler melihatnya — pengukuran yang tidak pernah terjadi, tidak dapat dibedakan dari nol yang sungguhan | `typeof === 'number'` di handler tidak melihat apa pun; muatan menjawab `202` |
+| **Migrasi lokal tidak pernah membuat tabel murni-lokal yang BARU** — `jalankanDdl` hanya berjalan saat sidik jari raw table berubah, dan sidik jari itu tidak menghitung tabel lokal | Test memakai skema `001-initial.sql` yang sudah lengkap; hanya perangkat yang SUDAH terpasang yang terkena |
+
+Yang menangkap cacat pertama bukan pemeriksaan tipe melainkan **aritmetika**:
+setiap sampel ada di `[min, max]`, jadi `total` ada di
+`[min × count, max × count]`. `total = 0` dengan `min = 20` melanggar itu, apa
+pun sebabnya. Yang kedua diperbaiki `rencanaBuatLokalHilang`.
+
+**Yang TIDAK dibangun, dan dinyatakan:** agregasi lintas-tenant beserta ambang
+alarmnya. Ia menuntut pembaca ber-`BYPASSRLS` — koneksi kedua, kredensial
+kedua, keputusan deployment. Batas yang sama yang sudah tercatat di
+`metrik.ts` sejak F6 dimulai. Yang ada sekarang: `GET /devices/{id}/telemetry`
+per perangkat, tunduk RLS, siap dipakai B-28.

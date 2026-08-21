@@ -647,10 +647,11 @@ Teks Prometheus, tanpa sesi, nol dependensi baru.
 
 - ⛔ **Lima dari delapan metrik `ARCH:296` tidak dapat dihasilkan server ini.**
   Umur antrean dan item gagal sinkron hidup di perangkat; latensi keranjang,
-  crash rate, dan rasio offline adalah klien. Ketiganya menuntut telemetri
-  klien (buffer offline-first + endpoint ingest) yang **belum ada**. Ada test
-  yang menolak nama-nama itu muncul — metrik bernama benar yang selalu nol
-  lebih buruk daripada metrik yang tidak ada.
+  crash rate, dan rasio offline adalah klien. Kelimanya menuntut telemetri
+  klien — yang kini **ada** (di bawah), dan mendarat di `device_telemetry`,
+  bukan di `/metrics`. Test yang menolak nama-nama itu muncul di `/metrics`
+  tetap berlaku: metrik bernama benar yang selalu nol lebih buruk daripada
+  metrik yang tidak ada, dan `/metrics` masih tidak membaca satu tabel pun.
 - ⛔ **Nol data merchant** (`ARCH:309`, batas etis). Agregasi lintas-tenant
   menuntut pembaca ber-`BYPASSRLS` — keputusan deployment, bukan kode.
 - ⛔ **Label rute memakai POLA**, bukan URL mentah: kardinalitas yang meledak
@@ -692,11 +693,44 @@ Prosedurnya di runbook §10.1.
   jadi jenis entitas baru tidak diam-diam kehilangan jalur pemulihannya. Dan
   setiap `tools/*.mjs` yang runbook sebut wajib ada di repo.
 
+### Telemetri klien — 21 Agustus 2026
+
+Rantainya: `catat()` → buffer `telemetry_local` → penjadwal →
+`POST /devices/{id}/telemetry` → `device_telemetry` (migrasi `0029`) →
+`GET /devices/{id}/telemetry`. Tujuh event, daftar TERTUTUP, semuanya angka.
+
+- ⛔ **`ARCH:309` ditegakkan di TIGA lapisan, dan yang ketiga membaca KODE.**
+  Daftar tertutup + nilai wajib angka menjaga datanya; yang tidak dijaga
+  keduanya adalah slot `tipe` — ia memang string, dan string apa pun lolos.
+  `tests/kasir/telemetri-batas-etis.test.js` memindai setiap pemanggilan
+  `catat()` dan menolak `.message`, template literal, dan properti selain
+  `.name`.
+- ⛔ **`VITE_TELEMETRY` yang tidak diset berarti `off`.** `ARCH:262` tetap
+  berlaku — yang menetapkan `full` adalah konfigurasi deployment SaaS, bukan
+  ketiadaannya. On-premise yang lupa menyetelnya tidak boleh MENGUMPULKAN
+  tanpa persetujuan; SaaS yang lupa hanya menghasilkan metrik kosong, dan
+  kosong itu terlihat.
+- ⛔ **`mode === 'off'` tidak memasang apa pun** — bukan sink yang membuang.
+- ⛔ **Koersi AJV mengubah `null` menjadi `0`** sebelum handler melihatnya,
+  dan `typeof === 'number'` tidak melihat apa pun. Yang menangkapnya
+  aritmetika: `total` wajib ada di `[min × count, max × count]`. Ditemukan
+  lewat test, bukan review.
+- ⛔ **Percobaan ulang mengirim BATCH yang SAMA**, kunci idempotensi
+  diturunkan dari daftar id. Batch yang melebar di antara dua percobaan
+  menghitung ganda bila yang pertama sebenarnya sampai.
+- ⛔ **`401` dipertahankan, `400` dibuang.** Metrik dari masa perangkat tidak
+  terhubung justru yang menjelaskan kenapa ia tidak terhubung.
+- ⛔ **Pemangkasan buffer membuang yang TERLAMA**, dan jaminan itu hidup di
+  `ORDER BY` — jadi diuji di atas SQLite sungguhan, bukan fake.
+- **Utang yang ditemukan sambil jalan:** migrasi lokal tidak pernah membuat
+  tabel murni-lokal yang BARU (sidik jari skema hanya menghitung raw table).
+  Diperbaiki `rencanaBuatLokalHilang`; tanpa itu setiap tabel lokal baru
+  adalah `no such table` di setiap perangkat yang sudah terpasang.
+
 ### ⛔ Yang MASIH TERBUKA di F6
 
 | Bagian | Keadaan |
 |---|---|
-| Telemetri klien | Belum ada. Lima metrik `ARCH:296` menunggunya |
 | Staged rollout | Belum ada |
 | Metrik lintas-tenant | Menunggu keputusan deployment (pembaca ber-`BYPASSRLS`) |
 | Koreksi langganan | Menurunkan paket, membatalkan tagihan yang terlanjur dibuat — runbook §10 mendaftarnya sebagai yang belum ada |

@@ -2320,6 +2320,159 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/telemetry:
+    post:
+      operationId: ingestDeviceTelemetry
+      summary: >-
+        F6 -- ingest telemetri klien (`ARCH:294` § 10). Lima dari delapan
+        metrik `ARCH:296` tidak dapat dihasilkan server; ini jalan masuknya.
+        BATAS ETIS `ARCH:309` ditegakkan di skema ini: daftar event TERTUTUP,
+        nilai wajib angka, dan tidak ada satu pun properti bebas.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: >-
+            'Bearer <secret perangkat>'. SENGAJA tidak `required`: validator
+            akan menjawab 400 untuk header yang hilang, dan kredensial yang
+            hilang berarti 401.
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [windowStart, windowEnd, events]
+              additionalProperties: false
+              properties:
+                appVersion:
+                  type: string
+                  description: >-
+                    Versi aplikasi saat jendela ini DIUKUR -- bukan versi
+                    perangkat sekarang. `ARCH:302` memakai crash rate per
+                    versi sebagai gate rollout.
+                windowStart: { type: string, format: date-time }
+                windowEnd: { type: string, format: date-time }
+                events:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [event, count, total, min, max, p95]
+                    additionalProperties: false
+                    properties:
+                      event:
+                        type: string
+                        enum:
+                          - latensi_keranjang_ms
+                          - umur_antrean_jam
+                          - antrean_gagal
+                          - cetak_percobaan
+                          - offline_detik
+                          - selisih_jam_detik
+                          - crash
+                      type:
+                        type: string
+                        nullable: true
+                        description: >-
+                          Tipe error, BUKAN pesannya. SENGAJA tanpa `maxLength`:
+                          server MEMOTONG di 64 karakter alih-alih menolak, dan
+                          `maxLength` di sini akan menolak seluruh muatan --
+                          membuang metrik yang baik bersama satu label yang
+                          kepanjangan.
+                      count: { type: integer, minimum: 1 }
+                      total: { type: number }
+                      min: { type: number }
+                      max: { type: number }
+                      p95: { type: number }
+      responses:
+        '202':
+          description: >-
+            Diterima dan disimpan. 202 dan bukan 201 -- barisnya agregat,
+            bukan entitas yang punya alamat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, diterima]
+                properties:
+                  deviceId: { type: string }
+                  diterima: { type: integer }
+        '400':
+          description: Muatan cacat, atau Idempotency-Key hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Kredensial perangkat tidak sah, dicabut, atau kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Idempotency-Key sedang diproses permintaan lain
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: getDeviceTelemetry
+      summary: >-
+        Ringkasan telemetri satu perangkat (B-28). TIDAK lintas-tenant --
+        ambang alarm operasional menuntut pembaca ber-BYPASSRLS, lihat
+        `apps/server/src/metrik.ts`.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sejak
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, events]
+                properties:
+                  deviceId: { type: string }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event: { type: string }
+                        type: { type: string, nullable: true }
+                        count: { type: integer }
+                        total: { type: number }
+                        min: { type: number }
+                        max: { type: number }
+                        p95Terburuk:
+                          type: number
+                          description: >-
+                            MAX dari p95 tiap jendela, bukan p95 dari p95 --
+                            persentil tidak dapat dirata-ratakan.
+                        terakhirPada: { type: string, format: date-time }
+        '404':
+          description: Perangkat tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /.well-known/jwks.json:
     get:
       operationId: getJwks

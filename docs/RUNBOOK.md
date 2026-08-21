@@ -42,6 +42,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
 | "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
 | "Barcode dipindai tapi tidak ada yang terjadi" | §8.6 scanner |
+| "Data apa saja yang kalian kumpulkan dari kasir kami?" | §9.2 telemetri klien |
 
 ---
 
@@ -532,12 +533,45 @@ Yang pertama dilihat saat server terasa sakit:
 item gagal sinkron, latensi keranjang, crash rate, rasio offline. Lima dari
 delapan metrik `ARCH:296` **tidak dapat dihasilkan server** — tiga terjadi di
 perangkat, dan dua tentang antrean yang menurut definisinya belum pernah
-sampai ke server. Semuanya menuntut telemetri klien (buffer offline-first +
-endpoint ingest), yang **belum ada**.
+sampai ke server. Semuanya datang dari telemetri klien, dan mendarat di
+`device_telemetry` — dibaca lewat `GET /devices/{deviceId}/telemetry`, bukan
+lewat `/metrics`. Lihat §9.2.
 
 ⛔ **Nol data merchant.** `ARCH:309` menyebutnya batas etis. Ada test yang
 menembak `/metrics` lalu mencari id tenant, nama outlet, nama produk, dan email
 pengguna di dalamnya.
+
+### 9.2 Telemetri klien
+
+Perangkat kasir mengirim **agregat** ke `POST /devices/{deviceId}/telemetry`,
+diautentikasi secret perangkat (bukan sesi orang). Dibaca kembali lewat
+`GET /devices/{deviceId}/telemetry`.
+
+⛔ **Apa yang dikumpulkan, dan itu daftar TERTUTUP:** `latensi_keranjang_ms` ·
+`umur_antrean_jam` · `antrean_gagal` · `cetak_percobaan` · `offline_detik` ·
+`selisih_jam_detik` · `crash`. Semuanya **angka**, ditambah satu label
+kategori (`type`) untuk tipe error.
+
+⛔ **Yang TIDAK pernah dikirim** (`ARCH:309`): nama produk, harga, nilai
+transaksi, data pelanggan, nama merchant. Kalau merchant menanyakannya,
+kalimat itu dapat dikatakan apa adanya — yang menjaganya bukan janji melainkan
+tiga lapisan: daftar event tertutup, kolom yang hanya menerima angka (tidak
+ada satu pun kolom JSON di tabelnya), dan penjaga statis yang memindai kode
+pemanggil.
+
+| Gejala | Periksa |
+|---|---|
+| Satu perangkat tidak pernah mengirim apa pun | `VITE_TELEMETRY` pada build yang terpasang di perangkat itu. ⛔ **Variabel yang tidak diset berarti `off`**, bukan `full`. |
+| Merchant minta berhenti mengumpulkan | `VITE_TELEMETRY=off`. Ia tidak memasang apa pun — bukan mengumpulkan lalu membuang. `minimal` menyimpan metrik kesehatan saja. |
+| `401` pada endpoint telemetri | Kredensial perangkat kedaluwarsa atau dicabut. Metriknya **tidak hilang**: buffer perangkat menahannya sampai server menjawab, jadi ia menyusul setelah perangkat di-provisioning ulang. |
+| `400` berulang | Muatan yang bentuknya salah — klien membuangnya, dan itu disengaja. Batch yang diulang selamanya akhirnya memangkas metrik yang masih baik. |
+| Metrik tiba-tiba berhenti setelah perangkat lama offline | Buffer lokal berbatas (5.000 baris) dan memangkas yang **terlama**. Yang tersisa selalu menjelaskan keadaan sekarang. |
+| `selisih_jam_detik` besar | Jam perangkat melenceng. Sebab akar yang menjelaskan gejala lain: nomor struk yang mundur, umur antrean yang terbaca aneh. Lihat §1. |
+
+⛔ **Tidak ada agregasi lintas-tenant, dan itu bukan kelalaian.** Pertanyaan
+"berapa crash di SELURUH merchant" menuntut pembaca ber-`BYPASSRLS` — koneksi
+kedua dan keputusan deployment. Yang dapat dijawab hari ini: satu perangkat,
+satu tenant, tunduk RLS.
 
 ---
 

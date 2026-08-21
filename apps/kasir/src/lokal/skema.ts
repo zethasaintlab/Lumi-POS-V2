@@ -76,6 +76,11 @@ export const TABEL_LOKAL_SAJA = [
   // printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh kasir 2.
   'print_job',
   'outbox_local',
+  // F6 — telemetri klien. Murni lokal: ia tidak pernah turun dari server, dan
+  // ia dapat DIBUANG. Perangkat yang berbulan-bulan offline tidak boleh
+  // mengisi disk yang `outbox_local` butuhkan — telemetri dapat hilang,
+  // penjualan tidak.
+  'telemetry_local',
   'device_config',
   'skema_lokal',
   // Keduanya SENGAJA tidak didaftarkan: sesi kasir tidak punya padanan di

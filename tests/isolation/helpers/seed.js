@@ -345,6 +345,25 @@ async function seedTransactionCycle(appClient, base, { cycleLabel, printerProfil
     revoked_at: null,
   });
 
+  // Telemetri perangkat (F6, migrasi 0029). Kebocoran di sini menunjukkan
+  // kesehatan operasional satu merchant kepada merchant lain -- seberapa
+  // sering kasirnya crash, seberapa lama outletnya offline.
+  rows.device_telemetry = await insertReturning(appClient, 'device_telemetry', {
+    id: freshId(),
+    tenant_id: tenantId,
+    device_id: rows.device.id,
+    app_version: '0.0.0',
+    event: 'antrean_gagal',
+    type: null,
+    window_start: new Date(occurredAt.getTime() - 3600_000).toISOString(),
+    window_end: occurredAt.toISOString(),
+    sample_count: 3,
+    total_value: 6,
+    min_value: 1,
+    max_value: 3,
+    p95_value: 3,
+  });
+
   rows.cash_drawer_shift = await insertReturning(appClient, 'cash_drawer_shift', {
     id: freshId(),
     tenant_id: tenantId,

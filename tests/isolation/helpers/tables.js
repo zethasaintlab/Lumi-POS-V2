@@ -102,6 +102,11 @@ const TABLES = [
   // seluruhnya data komersial, dan `outlet_count` adalah ukuran bisnis
   // yang tidak seorang pun setuju untuk dibagikan.
   { name: 'subscription_invoice', module: 'tenancy', partitioned: false },
+  // Telemetri perangkat (F6, migrasi 0029). Ia tidak memuat satu pun angka
+  // uang -- `ARCH:309` melarangnya -- tapi ia memuat kesehatan operasional:
+  // seberapa sering kasir satu merchant crash, dan seberapa lama outletnya
+  // offline. Itu bukan milik merchant lain.
+  { name: 'device_telemetry', module: 'identity', partitioned: false },
 ].map((t) => ({
   whereForRow: byId,
   buildImpersonationRow: (row, _seededRows, freshId) => cloneWithFreshId(row, freshId),

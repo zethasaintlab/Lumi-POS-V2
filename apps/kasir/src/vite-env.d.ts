@@ -15,6 +15,22 @@ interface ImportMetaEnv {
    * (`bacaAmbangAntrean`).
    */
   readonly VITE_AMBANG_ANTREAN_JAM?: string;
+
+  /**
+   * Telemetri klien: `full` | `minimal` | `off` (`ARCH:262`).
+   *
+   * ⛔ Variabel yang TIDAK DISET berarti `off`, bukan `full` — lihat
+   * `bacaModeTelemetri` di `packages/domain/src/telemetri.ts` untuk alasan
+   * asimetrinya. Nilai asing juga `off`.
+   */
+  readonly VITE_TELEMETRY?: string;
+
+  /**
+   * Versi aplikasi yang dilaporkan bersama metrik. `ARCH:302` memakai crash
+   * rate PER VERSI sebagai gate rollout bertahap, jadi ia dibekukan bersama
+   * angkanya alih-alih dibaca dari `device.app_version` saat laporan dibuat.
+   */
+  readonly VITE_APP_VERSION?: string;
 }
 
 interface ImportMeta {

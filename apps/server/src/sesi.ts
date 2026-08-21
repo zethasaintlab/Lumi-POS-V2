@@ -123,6 +123,15 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
     pola: '/devices/:deviceId/sync-token',
     alasan: 'diautentikasi SECRET PERANGKAT di Bearer — kredensial berbeda, bukan sesi orang',
   },
+  {
+    metode: 'POST',
+    pola: '/devices/:deviceId/telemetry',
+    alasan:
+      'idem: diautentikasi SECRET PERANGKAT di Bearer. Telemetri dikirim penjadwal latar, ' +
+      'sering saat tidak ada orang yang login — menuntut sesi berarti metrik hanya ada ' +
+      'untuk perangkat yang kebetulan sedang dipakai, dan yang hilang justru perangkat ' +
+      'yang bermasalah',
+  },
 
   // --- jalur perangkat kasir ------------------------------------------------
   //

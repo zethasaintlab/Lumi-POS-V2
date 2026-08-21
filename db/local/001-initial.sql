@@ -150,6 +150,35 @@ CREATE TABLE print_job (
 );
 CREATE INDEX ix_print_job_pending ON print_job(status, created_at);
 
+-- F6 — telemetri klien (`ARCH:294` § 10). MURNI LOKAL.
+--
+-- Lima dari delapan metrik `ARCH:296` tidak dapat dihasilkan server: umur
+-- antrean, item gagal sinkron, latensi keranjang, crash rate, dan rasio
+-- offline. Semuanya terjadi di perangkat, sebagian besar justru saat
+-- perangkat TIDAK terhubung.
+--
+-- ⛔ TIDAK didaftarkan sebagai raw table. Ia tidak pernah turun dari server,
+-- dan mendaftarkannya berarti PowerSync membuat VIEW bernama sama di atas
+-- `ps_data__telemetry_local` yang bertabrakan dengan tabel ini.
+--
+-- ⛔ Nilai selalu REAL, tidak pernah TEXT. `ARCH:309` menetapkan batas etis:
+-- "tidak pernah mengirim nama produk, harga, nilai transaksi, data pelanggan,
+-- atau nama merchant. Metrik dan tipe error saja." Kolom bertipe angka adalah
+-- lapisan pertama yang menegakkannya — string tidak punya tempat untuk
+-- singgah.
+--
+-- `tipe` adalah LABEL KATEGORI (`TypeError`, `IDEMPOTENCY_KEY_REUSED`), bukan
+-- pesan error: pesan dapat memuat nama produk dan nilai transaksi.
+CREATE TABLE telemetry_local (
+  id TEXT PRIMARY KEY NOT NULL,
+  event TEXT NOT NULL,
+  nilai REAL NOT NULL,
+  tipe TEXT,
+  pada_waktu TEXT NOT NULL
+);
+-- Pemangkasan buffer membuang yang TERLAMA; index ini yang membuatnya murah.
+CREATE INDEX ix_telemetry_waktu ON telemetry_local(pada_waktu);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.

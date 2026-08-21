@@ -12,6 +12,7 @@ import {
   type VariationKatalog,
 } from '../katalog/baca.ts';
 import { hapusBaris, qtyDiKeranjang, subtotalKeranjang, tambah, ubahQty } from '../kasir/keranjang.ts';
+import { catat } from '../telemetri/sink.ts';
 import { bacaStokBanyak } from '../inventori/stok.ts';
 import { bacaProfilVertikal } from '../inventori/profil.ts';
 import { bacaHabis } from '../inventori/sold-out.ts';
@@ -115,6 +116,9 @@ export function Kasir() {
      dipanggil lewat ref: memindahkan `dipindai` ke atas berarti memindahkan
      `pilihVariation` dan seluruh keputusan stok bersamanya. */
   const pindai = useRef<(kode: string) => void>(() => {});
+  /* Penanda awal pengukuran latensi keranjang. `null` = tidak ada ketukan
+     yang sedang diukur; lihat `pilihVariation`. */
+  const mulaiKetuk = useRef<number | null>(null);
   usePemindaiGlobal({
     onScan: (kode) => pindai.current(kode),
     /* Dimatikan saat dialog modifier terbuka atau saat layar pembayaran
@@ -201,6 +205,18 @@ export function Kasir() {
     setPesanStok(k.peringatan ? `Stok ${item.nama} tersisa ${k.sisaMilli / 1000}` : null);
     setKeranjang((c) => tambah(c, { item, variation, modifier, idBaris: () => crypto.randomUUID() }));
     setPilihan(null);
+
+    /* `ARCH:300` — latensi p95 tambah item ke keranjang.
+
+       ⛔ Diukur HANYA untuk jalur langsung. `mulaiKetuk` dikosongkan begitu
+       dialog modifier terbuka, jadi waktu kasir MEMILIH tidak pernah ikut
+       terhitung — angka yang memuat waktu berpikir orang mengukur menu, bukan
+       aplikasi, dan ambang alarm di atasnya akan menyala untuk kasir yang
+       sedang bertanya ke pelanggan. */
+    if (mulaiKetuk.current !== null) {
+      catat('latensi_keranjang_ms', performance.now() - mulaiKetuk.current);
+      mulaiKetuk.current = null;
+    }
   };
 
   /* K-17 — barcode dari scanner HID.
@@ -211,6 +227,7 @@ export function Kasir() {
      kotak pencarian, jadi kasir melihat apa yang terjadi alih-alih menerima
      produk yang salah. */
   const dipindai = (kode: string) => {
+    mulaiKetuk.current = performance.now();
     const cocok = cariBarcode(katalog, kode);
     if (cocok === null) {
       setKueri(kode);
@@ -227,6 +244,7 @@ export function Kasir() {
   pindai.current = dipindai;
 
   const ketuk = async (item: ItemKatalog) => {
+    mulaiKetuk.current = performance.now();
     const daftar = await bacaModifier(db, item.id);
     // K-04/K-05 muncul HANYA bila ada yang harus dipilih (`IA:63-64`).
     // Dialog yang selalu muncul menambah satu ketukan pada setiap penjualan.
@@ -234,6 +252,9 @@ export function Kasir() {
       pilihVariation(item, item.variations[0], []);
       return;
     }
+    /* Dialog terbuka: pengukuran DIBATALKAN, bukan ditunda. Yang menyusul
+       adalah waktu kasir memilih modifier — lihat `pilihVariation`. */
+    mulaiKetuk.current = null;
     setPilihan({ item, daftar });
   };
 

@@ -17,9 +17,15 @@ import type { Pool } from './db.ts';
  * | Crash rate per versi | Klien |
  * | Rasio waktu offline per outlet | Klien |
  *
- * Ketiganya menuntut **telemetri klien**: buffer persisten di perangkat +
- * endpoint ingest. `ARCH:307` menuntut buffer itu offline-first dan
- * fire-and-forget, dan itu subsistem tersendiri yang belum ada.
+ * Kelimanya menuntut **telemetri klien**: buffer persisten di perangkat +
+ * endpoint ingest. Itu ADA sejak 21 Agustus 2026 —
+ * `apps/kasir/src/telemetri/` dan `POST /devices/{id}/telemetry` — dan
+ * hasilnya mendarat di `device_telemetry`, bukan di berkas ini.
+ *
+ * ⛔ Ia tidak mendarat di sini justru karena alasan di bawah: baris
+ * `device_telemetry` milik tenant, dan berkas ini tidak membaca satu tabel
+ * pun. Yang membacanya `GET /devices/{id}/telemetry`, per perangkat, tunduk
+ * RLS. Agregasi LINTAS-tenant tetap menunggu pembaca ber-`BYPASSRLS`.
  *
  * ## ⛔ Kenapa TANPA data tenant sama sekali
  *

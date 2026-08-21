@@ -443,6 +443,27 @@ Jaminan urutan yang kodenya sendiri harus berikan hanya dapat diuji lewat sumber
 
 ---
 
+## F6 — telemetri klien, keputusan yang mengikat kode
+
+Lima dari delapan metrik `ARCH:296` **tidak dapat dihasilkan server** — dan itu bukan kelalaian, melainkan sifat: keadaan yang mereka ukur hidup di perangkat, sebagian besar justru saat perangkat tidak terhubung. Rantainya: `catat()` → `telemetry_local` → penjadwal → `POST /devices/{id}/telemetry` → `device_telemetry` (migrasi `0029`) → `GET /devices/{id}/telemetry`.
+
+- ⛔ **Batas etis `ARCH:309` ditegakkan di TIGA lapisan, dan yang ketiga membaca KODE.** Daftar event tertutup dan nilai yang wajib angka menjaga datanya; yang tidak dijaga keduanya adalah slot `tipe` — ia memang string, dan string apa pun lolos. `tests/kasir/telemetri-batas-etis.test.js` memindai setiap pemanggilan `catat()` di `apps/kasir/src` dan menolak `.message`, template literal, serta properti selain `.name`. Pesan error memuat nama produk ("Kopi Susu tidak ditemukan"); tidak satu pun lapisan di bawah dapat mengetahuinya.
+- ⛔ **`VITE_TELEMETRY` yang TIDAK DISET berarti `off`, bukan `full`.** `ARCH:262` tetap berlaku — yang menetapkan `full` adalah konfigurasi deployment SaaS, bukan ketiadaan konfigurasi. Asimetri akibatnya yang memutuskan: on-premise yang lupa menyetelnya akan MENGUMPULKAN data tanpa ada yang menyetujuinya, dan itu tidak terlihat siapa pun; SaaS yang lupa hanya menghasilkan metrik kosong, dan kosong itu terlihat.
+- ⛔ **`mode === 'off'` tidak memasang apa pun** — bukan sink yang membuang, bukan penjadwal yang mengirim nol. "Dikumpulkan lalu dibuang" adalah jawaban yang berbeda dari "tidak dikumpulkan".
+- ⛔ **`rekam()` menelan SETIAP kegagalan**, termasuk `no such table` pada perangkat yang migrasi lokalnya belum jalan (`ARCH:307`). Pemanggilnya jalur penjualan dan jalur cetak; telemetri yang menggagalkan keduanya lebih berbahaya daripada telemetri yang tidak ada.
+- ⛔ **Buffer BERBATAS dan memangkas yang TERLAMA.** Disk yang penuh membuat `outbox_local` gagal menulis penjualan — telemetri dapat dibuang, penjualan tidak. Jaminan urutannya hidup di `ORDER BY`, dan fake `DbLokal` tidak menegakkan `ORDER BY` sama sekali; testnya karena itu di atas SQLite sungguhan, disisipkan dalam urutan acak.
+- ⛔ **Percobaan ulang mengirim BATCH YANG SAMA**, dengan kunci idempotensi yang diturunkan dari daftar id. Batch yang melebar di antara dua percobaan akan menghitung ganda bila yang pertama sebenarnya sampai — dan respons yang hilang adalah kejadian normal di jalur ini.
+- ⛔ **`401` dipertahankan, `400` dibuang.** Perangkat yang kredensialnya kedaluwarsa akan di-provisioning ulang, dan metrik dari masa ia tidak terhubung justru yang menjelaskan kenapa. Muatan yang bentuknya salah tidak akan pernah diterima, dan batch yang diulang selamanya akhirnya memangkas metrik yang masih baik.
+- ⛔ **Koersi AJV mengubah `null` menjadi `0`** pada properti bertipe `number`, sebelum handler melihatnya — pengukuran yang tidak pernah terjadi, tidak dapat dibedakan dari nol yang sungguhan, tanpa satu pun error. `typeof === 'number'` tidak melihat apa pun. Yang menangkapnya **aritmetika**: setiap sampel ada di `[min, max]`, jadi `total` ada di `[min × count, max × count]`.
+- ⛔ **Migrasi lokal sekarang MEMBUAT tabel murni-lokal yang baru.** `jalankanDdl` hanya berjalan saat sidik jari raw table berubah, dan sidik jari itu tidak menghitung tabel lokal — jadi setiap tabel lokal baru adalah `no such table` permanen di setiap perangkat yang sudah terpasang. `rencanaBuatLokalHilang` menutupnya; ia berjalan sebelum ALTER kolom, di setiap boot.
+- **Latensi keranjang diukur HANYA untuk jalur langsung.** Penandanya dikosongkan begitu dialog modifier terbuka — angka yang memuat waktu berpikir orang mengukur menu, bukan aplikasi.
+- **`app_version` disimpan bersama angkanya**, bukan dibaca dari `device.app_version` saat laporan dibuat: `ARCH:302` memakai crash rate per versi sebagai gate rollout, dan versi perangkat sekarang sudah berubah saat rollout gagal.
+- **Kesehatan antrean dibaca lewat `ringkasanAntrean`** — fungsi yang sama dengan indikator sinkronisasi dan K-14. Antrean kosong TIDAK mengirim `umur_antrean_jam: 0`; nol akan menurunkan rata-rata umur tepat pada perangkat yang paling sehat.
+- **`double precision` di `device_telemetry` bukan pengecualian aturan float.** Larangan itu berlaku di jalur uang; yang menjaga kolom-kolom ini tetap di luar jalur itu adalah CHECK `event` — tidak ada nama event yang menyebut jumlah uang, dan tidak boleh ada.
+- **Agregasi lintas-tenant TIDAK dibangun**, batas yang sama dengan `metrik.ts`: ia menuntut pembaca ber-`BYPASSRLS`, dan itu keputusan deployment.
+
+---
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---
