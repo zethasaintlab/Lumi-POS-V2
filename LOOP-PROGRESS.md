@@ -1044,3 +1044,22 @@ alarmnya. Ia menuntut pembaca ber-`BYPASSRLS` — koneksi kedua, kredensial
 kedua, keputusan deployment. Batas yang sama yang sudah tercatat di
 `metrik.ts` sejak F6 dimulai. Yang ada sekarang: `GET /devices/{id}/telemetry`
 per perangkat, tunduk RLS, siap dipakai B-28.
+
+**Verifikasi Task 14 selesai penuh.** Commit `7b3959a` dibuat saat enam suite
+ber-database masih berjalan, dan itu dinyatakan di pesan commit-nya. Hasil
+akhirnya, dijalankan berurutan tanpa satu pun proses test lain:
+
+```
+typecheck · lint:ds                                   PASS
+runtime · domain · sqlite-local · oxlint-ds-adherence PASS
+dst · sync-client · kasir · backoffice                PASS
+isolation · schema · server · catalog · ordering      PASS
+payment · identity · tenancy · dst-server             PASS
+```
+
+Tujuh belas suite, nol kegagalan.
+
+⛔ **PostgreSQL mati di tengah putaran pertama** — kesembilan suite ber-database
+melaporkan FAIL dengan `ECONNREFUSED`, dan tidak satu pun kegagalan itu tentang
+kode. Kalau seluruh suite ber-database merah sekaligus, periksa `pg_isready`
+**sebelum** membaca satu pun log kegagalan.
