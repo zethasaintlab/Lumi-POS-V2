@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { batalkan, rencanaPembatalan, type HasilPembatalan } from '../kasir/pembatalan.ts';
+import { nilaiRefundBaris } from '../../../../packages/domain/src/pilihan-refund.ts';
+import { tampilkanKuantitas } from '../../../../packages/domain/src/kuantitas.ts';
+import type { BarisDetail } from '../riwayat/baca.ts';
 import { ALASAN_REFUND, ALASAN_VOID, validasiAlasan } from '../identitas/otorisasi.ts';
 import { DialogOtorisasi } from './DialogOtorisasi.tsx';
 import { Tombol } from '../Tombol.tsx';
@@ -29,6 +32,10 @@ interface Props {
   orderId: string;
   statusOrder: string;
   sisaDapatDirefund: number;
+  /** Baris order, untuk pemilihan refund parsial (FR-B7). */
+  baris: readonly BarisDetail[];
+  /** `order.total` — bobot alokasi nilai refund per baris. */
+  orderTotal: number;
   konfig: KonfigPerangkat;
   sesi: Sesi;
   onBatal: () => void;
@@ -39,6 +46,8 @@ export function DialogPembatalan({
   orderId,
   statusOrder,
   sisaDapatDirefund,
+  baris,
+  orderTotal,
   konfig,
   sesi,
   onBatal,
@@ -48,6 +57,14 @@ export function DialogPembatalan({
   const [kode, setKode] = useState('');
   const [catatan, setCatatan] = useState('');
   const [jumlah, setJumlah] = useState(sisaDapatDirefund);
+  /* FR-B7 — kuantitas per baris yang dipilih kasir (×1000), lineId → milli.
+
+     ⛔ Bermula KOSONG, bukan penuh. `lines: []` berarti "uang kembali tanpa
+     barang kembali", dan itu keadaan yang SAH — pelanggan yang kopinya tumpah
+     tidak mengembalikan kopinya. Memulai dengan seluruh baris terpilih
+     membuat restock menjadi bawaan diam-diam, dan stok yang mengembang baru
+     ketahuan saat opname. */
+  const [pilihan, setPilihan] = useState<Record<string, number>>({});
   const [mintaOtorisasi, setMintaOtorisasi] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
@@ -71,6 +88,39 @@ export function DialogPembatalan({
     );
   }
 
+  // Bentuk yang `batalkan` terima. Kuantitas nol dibuang di sini, bukan
+  // dikirim — `periksaPilihan` MENOLAKNYA, dan sengaja: baris ber-kuantitas
+  // nol terbaca sebagai "baris ini kembali" oleh mata dan "tidak ada yang
+  // kembali" oleh server.
+  const terpilih = Object.entries(pilihan)
+    .filter(([, q]) => q > 0)
+    .map(([lineId, quantityMilli]) => ({ lineId, quantityMilli }));
+
+  /* Nilai yang SEPADAN dengan baris terpilih.
+
+     ⛔ Dihitung `packages/domain/src/pilihan-refund.ts`, bukan dijumlahkan
+     dari `lineTotal` di sini: `line_total` belum kena pajak eksklusif, jadi
+     penjumlahannya mengembalikan uang lebih sedikit daripada yang pelanggan
+     bayar — dan salahnya diam. */
+  const nilaiSepadan = nilaiRefundBaris(
+    baris.map((b) => ({
+      lineId: b.id,
+      variationId: b.variationId,
+      quantityMilli: BigInt(b.quantityMilli),
+      lineTotal: BigInt(b.lineTotal),
+    })),
+    BigInt(orderTotal),
+    terpilih.map((t) => ({ lineId: t.lineId, quantityMilli: BigInt(t.quantityMilli) }))
+  );
+
+  const ubahBaris = (lineId: string, milli: number) =>
+    setPilihan((p) => {
+      const berikut = { ...p };
+      if (milli <= 0) delete berikut[lineId];
+      else berikut[lineId] = milli;
+      return berikut;
+    });
+
   const daftarAlasan = rencana.operasi === 'void' ? ALASAN_VOID : ALASAN_REFUND;
   const galatAlasan = kode === '' ? null : validasiAlasan(daftarAlasan, kode, catatan || null);
   const siap = kode !== '' && galatAlasan === null && (rencana.operasi === 'void' || jumlah > 0);
@@ -88,11 +138,10 @@ export function DialogPembatalan({
           alasan: { kode, catatan: catatan || null },
           approverId,
           jumlah: rencana.operasi === 'refund' ? jumlah : undefined,
-          // Refund penuh mengembalikan seluruh baris; refund sebagian yang
-          // memilih baris menunggu UI pemilihan baris. Sampai itu ada,
-          // `lines: []` — uang kembali tanpa barang kembali, dan itu
-          // DINYATAKAN di layar alih-alih ditebak.
-          lines: [],
+          // ⛔ Baris yang benar-benar DIPILIH kasir. Daftar kosong tetap sah
+          // dan berarti "uang kembali tanpa barang kembali"; layar
+          // menyatakannya alih-alih menebak.
+          lines: terpilih,
           waktu: () => new Date(),
           idBaru: () => crypto.randomUUID(),
           hlc: () => hlc.tick(),
@@ -140,6 +189,45 @@ export function DialogPembatalan({
             : `Transaksi sudah dibayar. Maksimal ${rupiah(sisaDapatDirefund)}.`}
         </p>
 
+        {rencana.operasi === 'refund' && baris.length > 0 && (
+          <fieldset className="kasir-alasan">
+            <legend className="t-body-md">Barang yang kembali</legend>
+            {/* ⛔ Terpisah dari nominal, dan sengaja. Uang yang kembali dan
+                barang yang kembali adalah dua keputusan berbeda: pelanggan
+                yang kopinya tumpah menerima uangnya tanpa mengembalikan
+                kopinya. Menggabungkannya jadi satu tombol "refund penuh" akan
+                menambah stok yang tidak pernah kembali ke rak. */}
+            {baris.map((b) => {
+              const dipilih = pilihan[b.id] ?? 0;
+              const habis = b.sisaKembaliMilli <= 0;
+              return (
+                <div key={b.id} className="kasir-alasan-opsi t-body-md">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={dipilih > 0}
+                      disabled={habis || menyimpan}
+                      onChange={() => ubahBaris(b.id, dipilih > 0 ? 0 : b.sisaKembaliMilli)}
+                    />
+                    {b.itemName}
+                    {b.variationName ? ` — ${b.variationName}` : ''}
+                  </label>{' '}
+                  <span className="t-caption num">
+                    {habis
+                      ? 'sudah dikembalikan'
+                      : `maks ${tampilkanKuantitas(String(b.sisaKembaliMilli))}`}
+                  </span>
+                </div>
+              );
+            })}
+            <p className="t-caption">
+              {terpilih.length === 0
+                ? 'Tidak ada barang yang kembali ke rak. Uang tetap dikembalikan.'
+                : `Nilai barang terpilih: ${rupiah(Number(nilaiSepadan))}.`}
+            </p>
+          </fieldset>
+        )}
+
         {rencana.operasi === 'refund' && (
           <>
             <p className="t-body-md">Jumlah dikembalikan</p>
@@ -147,6 +235,18 @@ export function DialogPembatalan({
             <div className="kasir-pecahan">
               <Tombol kritis disabled={menyimpan} onClick={() => setJumlah(sisaDapatDirefund)}>
                 Seluruhnya
+              </Tombol>
+              {/* ⛔ Menyalin nilai barang terpilih ke nominal, bukan mengunci
+                  keduanya. Kasir tetap boleh mengembalikan uang tanpa barang,
+                  dan barang tanpa seluruh uangnya (potongan ongkos kirim,
+                  misalnya) — keduanya keadaan nyata. */}
+              <Tombol
+                varian="ghost"
+                kritis
+                disabled={menyimpan || terpilih.length === 0}
+                onClick={() => setJumlah(Math.min(sisaDapatDirefund, Number(nilaiSepadan)))}
+              >
+                Sesuai barang
               </Tombol>
               <Tombol
                 varian="ghost"

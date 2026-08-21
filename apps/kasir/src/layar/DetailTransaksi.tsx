@@ -286,6 +286,8 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
           orderId={order.id}
           statusOrder={order.status}
           sisaDapatDirefund={sisaDapatDirefund}
+          baris={baris}
+          orderTotal={order.total}
           konfig={konfig}
           sesi={sesi}
           onBatal={() => setMembatalkan(false)}

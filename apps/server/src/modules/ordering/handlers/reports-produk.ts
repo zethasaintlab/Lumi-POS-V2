@@ -6,6 +6,10 @@ import { assertUserVisible } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { STATUS_PENJUALAN_LIST } from '../../../../../../packages/domain/src/posisi-penjualan.ts';
 import { assertRentang } from './rentang.ts';
+// ⛔ Aturan tampilan kuantitas dibagi dengan layar kasir — dua salinan akan
+// menyimpang pada pemisah desimal, dan angka kuantitas yang berbeda antara
+// struk dan laporan adalah perbedaan yang paling sulit dijelaskan.
+import { tampilkanKuantitas } from '../../../../../../packages/domain/src/kuantitas.ts';
 
 /**
  * `GET /reports/products` — FR-G1, BARANG yang keluar pada rentang tanggal
@@ -63,29 +67,6 @@ interface BarisDb {
   nilai_kotor: string;
 }
 
-/**
- * `2000` → `"2"`, `500` → `"0,5"`.
- *
- * ⛔ Dihitung dari STRING lewat `bigint`, bukan `Number(x) / 1000`. Kuantitas
- * adalah `bigint` di database, dan pembagian float akan menghasilkan
- * `0.30000000000000004` untuk nilai yang seharusnya `0,3`.
- *
- * Koma sebagai pemisah desimal — format Indonesia (`CLAUDE.md`).
- */
-export function tampilkanKuantitas(skala: string): string {
-  let n: bigint;
-  try {
-    n = BigInt(String(skala).trim());
-  } catch {
-    return '—';
-  }
-  const negatif = n < 0n;
-  const abs = negatif ? -n : n;
-  const utuh = abs / 1000n;
-  const sisa = (abs % 1000n).toString().padStart(3, '0').replace(/0+$/, '');
-  const teks = sisa.length > 0 ? `${utuh},${sisa}` : utuh.toString();
-  return negatif ? `−${teks}` : teks;
-}
 
 /** Data laporan produk. Diekspor untuk dipakai `GET /reports/export`. */
 export async function ambilProduk(
@@ -126,6 +107,8 @@ export async function ambilProduk(
     nilaiKotor: String(r.nilai_kotor),
   }));
 }
+
+export { tampilkanKuantitas };
 
 export function createProductReportHandlers(pool: Pool): Record<string, unknown> {
   return {

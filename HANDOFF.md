@@ -782,3 +782,73 @@ menyimpulkan POS-nya salah — atau kasirnya mencuri.
   yang tidak cocok apa pun tidak menghasilkan error — teksnya dirender pada
   ukuran warisan, dan hasilnya terlihat *hampir* benar. Lint dan typecheck
   tidak tahu apa pun tentang nama kelas CSS di dalam string.
+
+---
+
+## FR-B7 — refund parsial dengan pemilihan baris, 21 Agustus 2026
+
+Utang F2 terakhir yang menyentuh jalur uang. `spec-b:237` menuntutnya sejak
+awal; sampai sekarang K-10 selalu mengirim `lines: []`.
+
+### Keputusan yang mengikat kode
+
+- ⛔ **Nilai refund BUKAN jumlah `order_line.line_total`.** `line_total` belum
+  kena pajak eksklusif sementara `order.total` sudah — menjumlahkannya
+  mengembalikan uang **lebih sedikit** daripada yang pelanggan bayar, dan
+  salahnya diam. Untuk pajak inklusif ia justru sudah termasuk; tidak ada satu
+  rumus penjumlahan yang benar untuk keduanya.
+
+  Yang dipakai: `allocateProportionally(order.total, line_total[])`
+  (`packages/domain/src/pilihan-refund.ts`). Memilih seluruh baris
+  mengembalikan **tepat** `order.total` — diuji sebagai **property**, bukan
+  contoh, dan sabotase yang menggantinya dengan penjumlahan `line_total`
+  menghasilkan 3 merah.
+
+- ⛔ **Batas per baris diturunkan per VARIASI, bukan per baris.** Itu aturan
+  server (`planRestock` → `RESTOCK_EXCEEDS_SOLD`), ditiru persis:
+  `stock_movement` tidak menyimpan `line_id`, jadi kebenaran per baris tidak
+  ada di mana pun. Yang dijamin adalah jumlahnya per variasi tidak melebihi
+  yang server izinkan. Dua baris dapat menunjuk variasi yang sama — modifier
+  memisahkan baris, stoknya satu.
+
+- **Ditegakkan di KLIEN juga.** Kalau hanya server yang memeriksanya, kasir
+  baru tahu berjam-jam kemudian saat antrean terkuras.
+
+- ⛔ **Pilihan bermula KOSONG.** `lines: []` sah — pelanggan yang kopinya
+  tumpah tidak mengembalikan kopinya. Memulai penuh membuat restock menjadi
+  bawaan diam-diam.
+
+- **Barang dan uang tetap dua keputusan.** Tombol "Sesuai barang" menyalin
+  nilai ke nominal alih-alih mengunci keduanya.
+
+### ⛔ Kosakata `stock_movement.type` yang berbeda antara klien dan server
+
+Klien menulis `void_return`/`refund_return`; `0010_inventory.sql` punya
+`CHECK (type IN ('sale','void','refund',…))` yang **menolak keduanya**.
+
+Ia tidak pernah gagal karena baris `stock_movement` klien murni lokal, dan
+skema lokal tidak punya CHECK. Yang membuatnya berbahaya: `stock_movement`
+**sudah** terdaftar sebagai raw table — hari ia masuk sync rules, dua kosakata
+untuk satu peristiwa menjadi laporan yang menghitung sebagian pengembalian dan
+melewatkan sisanya, tanpa satu pun error.
+
+Disamakan ke kosakata server, dan dijaga
+`tests/kasir/kosakata-stock-movement.test.js` (membaca CHECK constraint dari
+migrasi, bukan dari daftar tulis tangan).
+
+### Modul domain baru
+
+| Modul | Isi | Kenapa dibagi |
+|---|---|---|
+| `packages/domain/src/alokasi.ts` | `allocateProportionally`, diangkat dari `tax.ts` | Dua salinan = dua aturan pembulatan sisa |
+| `packages/domain/src/pilihan-refund.ts` | `sisaPerBaris` · `periksaPilihan` · `nilaiRefundBaris` | Klien dan server harus menjawab sama, atau kasir menjanjikan angka yang lalu ditolak |
+| `packages/domain/src/kuantitas.ts` | `tampilkanKuantitas`, diangkat dari handler laporan | Layar kasir menulis `quantityMilli / 1000` — float, kelas `0.30000000000000004` |
+
+### ⛔ Batas yang harus dibaca
+
+| Batas | Keadaan |
+|---|---|
+| Picker di alur perangkat sungguhan | **Belum dijalankan** (login → shift → jual → refund parsial). Menuntut PowerSync tersambung dan katalog tersinkron |
+| Bentuk SQL baru | **Sudah** diverifikasi di browser: harness T14, `SUM(...) WHERE type IN (...) GROUP BY` di atas wa-sqlite + OPFS |
+| Sisa per baris | **Perkiraan yang aman**, bukan kebenaran per baris — `stock_movement` tidak menyimpan `line_id`. Pengembalian sebelumnya dibagi baris-pertama-lebih-dulu, deterministik dan sama di klien dan server |
+| Baris ber-`type` lama (`refund_return`) di perangkat yang sudah ada | Dibiarkan. Tidak ada yang membacanya, dan `UPDATE` massal pada jejak stok bukan koreksi yang sah |

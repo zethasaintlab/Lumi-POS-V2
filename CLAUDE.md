@@ -195,7 +195,14 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 
 **Gate F2 hijau:** `npm run test:dst` — 10.000 iterasi fault injection, nol pelanggaran atas sepuluh invariant.
 
-**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · FR-F5 (menunggu keputusan `cost` di jalur turun) · refund parsial dengan pemilihan baris di UI. (FR-H8 dan Modul C-3 sudah ditutup, 21 Agustus 2026.)
+**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · FR-F5 (menunggu keputusan `cost` di jalur turun). (FR-H8, Modul C-3, dan refund parsial dengan pemilihan baris sudah ditutup, 21 Agustus 2026.)
+
+**Keputusan yang mengikat refund parsial (FR-B7, 21 Agustus 2026):**
+
+- ⛔ **Nilai refund BUKAN jumlah `order_line.line_total`.** `line_total` belum kena pajak eksklusif sementara `order.total` sudah; menjumlahkannya mengembalikan uang **lebih sedikit** daripada yang pelanggan bayar, dan salahnya diam. Untuk pajak inklusif ia justru sudah termasuk — tidak ada satu rumus penjumlahan yang benar untuk keduanya. Yang dipakai: `allocateProportionally(order.total, line_total[])` di `packages/domain/src/pilihan-refund.ts`, sehingga memilih seluruh baris mengembalikan **tepat** `order.total`.
+- ⛔ **Batas per baris diturunkan per VARIASI**, meniru `planRestock` server. `stock_movement` tidak menyimpan `line_id`, jadi kebenaran per baris tidak ada di mana pun; yang dijamin adalah jumlahnya per variasi tidak melebihi yang server izinkan.
+- **Pilihan bermula KOSONG.** `lines: []` sah — uang kembali tanpa barang kembali. Memulai penuh membuat restock jadi bawaan diam-diam, dan stok yang mengembang baru ketahuan saat opname.
+- ⛔ **Kosakata `stock_movement.type` klien kini SAMA dengan server.** Klien sempat menulis `void_return`/`refund_return` — nilai yang `CHECK` di server tolak. Ia tidak pernah gagal karena barisnya murni lokal dan skema lokal tanpa CHECK, tapi `stock_movement` sudah terdaftar sebagai raw table: hari ia masuk sync rules, dua kosakata untuk satu peristiwa menjadi laporan yang menghitung sebagian pengembalian dan melewatkan sisanya. Dijaga `tests/kasir/kosakata-stock-movement.test.js`.
 
 Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)

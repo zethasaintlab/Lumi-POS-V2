@@ -42,7 +42,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 5 | Retry antrean `print_job` | utang F4 | selesai |
 | 6 | Modul C-3 — rekonsiliasi & ekspor | P1 | selesai |
 | 7 | Paginasi + pencarian katalog sisi server | utang G1 | selesai (server) |
-| 8 | Refund parsial dengan pemilihan baris di UI | utang F2 | belum |
+| 8 | Refund parsial dengan pemilihan baris di UI | utang F2 | selesai |
 | 9 | K-16 buka laci · K-17 scanner | utang F2 | belum |
 | 10 | **F6** — runbook | `ARCH:400` | selesai |
 | 11 | **F6** — observability sisi server | `ARCH:294` | selesai (sisi server) |
@@ -673,3 +673,100 @@ browser dua kali membuat "Simpan kategori" **tidak dapat diklik** pada putaran
 kedua — tombolnya `disabled` karena nilai pilihan sama dengan yang tersimpan.
 Itu perilaku yang diinginkan, dan cara ia terbukti adalah kegagalan skrip, bukan
 assertion yang ditulis untuk itu.
+
+### Task 8 — refund parsial dengan pemilihan baris di UI
+
+**Selesai.** Utang F2 terakhir yang menyentuh jalur uang. `spec-b:237`:
+*"Kasir memilih baris mana yang direfund."* Sampai sekarang K-10 selalu
+mengirim `lines: []` — uang kembali, barang tidak pernah tercatat kembali —
+dan itu **dinyatakan** di komentar kode alih-alih ditebak.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Nilai refund BUKAN jumlah `line_total`.** `order_line.line_total`
+  belum kena pajak eksklusif sementara `order.total` sudah; menjumlahkannya
+  mengembalikan uang **lebih sedikit** daripada yang pelanggan bayar, dan
+  salahnya diam karena angkanya masuk akal. Untuk pajak inklusif ia justru
+  sudah termasuk — tidak ada satu rumus penjumlahan yang benar untuk keduanya.
+
+  Yang dipakai: bagi `order.total` itu sendiri dengan `line_total` sebagai
+  bobot (`allocateProportionally`). Apa pun bentuk pajaknya, pembulatannya,
+  dan service charge-nya, memilih seluruh baris mengembalikan **tepat**
+  `order.total`. Diuji sebagai **property**, bukan contoh.
+
+- ⛔ **Batas per baris diturunkan per VARIASI**, meniru aturan server
+  (`planRestock` → `RESTOCK_EXCEEDS_SOLD`). `stock_movement` tidak menyimpan
+  `line_id`, jadi kebenaran per baris tidak ada di mana pun; yang dijamin
+  adalah jumlahnya per variasi tidak pernah melebihi yang server izinkan. Dua
+  baris dapat menunjuk variasi yang sama — modifier memisahkan baris, stoknya
+  satu.
+
+- **Ditegakkan di KLIEN juga, bukan hanya server.** Kalau hanya server yang
+  memeriksanya, kasir baru tahu berjam-jam kemudian saat antrean terkuras —
+  uang sudah keluar laci dan barangnya sudah di rak.
+
+- ⛔ **Pilihan bermula KOSONG, bukan penuh.** `lines: []` adalah keadaan yang
+  sah: pelanggan yang kopinya tumpah tidak mengembalikan kopinya. Memulai
+  dengan seluruh baris terpilih membuat restock menjadi bawaan diam-diam, dan
+  stok yang mengembang baru ketahuan saat opname.
+
+- **Barang dan uang tetap DUA keputusan.** Tombol "Sesuai barang" menyalin
+  nilai baris terpilih ke nominal alih-alih mengunci keduanya — mengembalikan
+  uang tanpa barang, dan barang tanpa seluruh uangnya, keduanya nyata.
+
+- **`baris_melebihi_sisa` terpisah dari `melebihi_sisa`.** Yang pertama soal
+  BARANG, yang kedua soal UANG. Kasir yang diberi tahu "melebihi sisa" untuk
+  kuantitas yang salah akan mengurangi nominalnya — dan nominalnya sudah benar.
+
+**Masalah + solusinya:**
+
+- ⛔ **Kosakata `stock_movement.type` klien BERBEDA dari server.** Klien
+  menulis `void_return`/`refund_return`; `0010_inventory.sql` punya
+  `CHECK (type IN ('sale','void','refund',…))` yang **menolak keduanya**.
+
+  Kenapa tidak pernah gagal: baris `stock_movement` klien murni lokal — jalur
+  naik mengirim PERMINTAAN pembatalan dan server menulis barisnya sendiri, dan
+  `stock_movement` tidak ada di sync rules jalur turun. Skema lokal juga tidak
+  punya CHECK, jadi SQLite tidak menangkapnya.
+
+  Yang membuatnya berbahaya justru kalimat itu: `stock_movement` **sudah**
+  terdaftar sebagai raw table. Hari ia ditambahkan ke sync rules, dua kosakata
+  untuk satu peristiwa menjadi laporan yang menghitung sebagian pengembalian
+  dan melewatkan sisanya — tanpa satu pun error. Disamakan, dan dijaga
+  `tests/kasir/kosakata-stock-movement.test.js`.
+
+- **Dua salinan aturan tampilan kuantitas.** `tampilkanKuantitas` hidup di
+  handler laporan server, dan layar kasir menulis `quantityMilli / 1000`
+  (float, kelas `0.30000000000000004`). Diangkat ke
+  `packages/domain/src/kuantitas.ts`; server mengimpornya, klien memakainya.
+
+- **`allocateProportionally` diangkat dari `tax.ts`** ke
+  `packages/domain/src/alokasi.ts`. Menyalinnya ke modul kedua berarti dua
+  aturan pembulatan sisa.
+
+**Sabotase — tiga, semuanya merah:**
+
+```
+nilai refund dijumlahkan dari line_total   → 3 merah (property "tepat total")
+batas per baris dilewati                   → 3 merah (tests/kasir/pembatalan)
+type kembali ke `refund_return`            → 1 merah (penjaga kosakata)
+```
+
+**Verifikasi browser** (harness kasir di atas wa-sqlite + OPFS sungguhan):
+
+```
+T14 sisa refund per variasi terbaca di wa-sqlite
+    var-1=1000 (number) · var-2=500 (number)     LULUS
+```
+
+Bentuk SQL barunya — `SUM(...) WHERE type IN (...) GROUP BY` — dijalankan di
+browser sebelum dipercaya, aturan `CLAUDE.md` yang lahir dari `ON CONFLICT(id)`.
+Baris `sale` (−2000) benar dikecualikan: kalau ia ikut, sisa per baris menjadi
+negatif dan setiap pemilihan ditolak — gejalanya "tidak bisa refund apa pun",
+bukan error.
+
+**Batas yang dinyatakan:** picker-nya belum dijalankan lewat alur perangkat
+sungguhan (login → shift → jual → refund parsial), karena itu menuntut
+PowerSync tersambung dan katalog tersinkron. Yang sudah dibuktikan di browser
+adalah bentuk SQL-nya; aturannya diuji sebagai property, dan wiring-nya lewat
+fake `DbLokal`.

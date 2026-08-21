@@ -39,6 +39,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
+| "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
 
 ---
 
@@ -232,6 +233,32 @@ Penanda ber-HLC terbaru yang menang.
 Reset saat buka shift **menuntut konfirmasi** dan tidak pernah otomatis
 (`spec-e:229`): kopi yang memang masih habis akan kembali terjual tanpa ada
 yang tahu.
+
+### 4.5 Refund parsial ditolak: "barangnya sudah kembali"
+
+FR-B7 — kasir memilih baris mana yang barangnya kembali ke rak. Yang membatasi
+pilihan itu adalah berapa banyak dari **variasi** itu yang sudah pernah
+dikembalikan dari order yang sama.
+
+| Yang terlihat | Artinya |
+|---|---|
+| Kotak baris tidak dapat dicentang, tertulis "sudah dikembalikan" | Seluruh kuantitas variasi itu sudah kembali lewat refund atau void sebelumnya. |
+| Server menjawab `409 RESTOCK_EXCEEDS_SOLD` | Sama, tapi ditemukan server — berarti perangkat mengirim pilihan yang batasnya sudah berubah sejak layar dimuat. Muat ulang detail transaksinya. |
+
+⛔ **Batasnya per VARIASI, bukan per baris**, dan itu bukan penyederhanaan:
+`stock_movement` tidak menyimpan `line_id`, jadi "baris mana yang sudah
+kembali" tidak tercatat di mana pun. Dua baris dapat menunjuk variasi yang
+sama — modifier memisahkan baris, stoknya satu.
+
+⛔ **Refund uang TANPA barang kembali adalah keadaan yang SAH.** Pelanggan yang
+kopinya tumpah menerima uangnya tanpa mengembalikan kopinya. Kasir cukup tidak
+mencentang baris apa pun; layar menyatakannya ("Tidak ada barang yang kembali
+ke rak. Uang tetap dikembalikan.").
+
+⛔ **Jangan menambah `stock_movement` manual** untuk "memperbaiki" restock yang
+tertolak. Kalau barangnya memang kembali dan sistem menolak, angka yang salah
+ada di pengembalian SEBELUMNYA — perbaiki lewat B-13 Penyesuaian dengan
+`reasonCode`, yang meninggalkan jejak.
 
 ---
 

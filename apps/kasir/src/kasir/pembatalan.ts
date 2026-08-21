@@ -9,6 +9,7 @@ import {
   type CancellationOperation,
 } from '../../../../packages/domain/src/cancellation.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
+import { periksaPilihan } from '../../../../packages/domain/src/pilihan-refund.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import {
   counterpartUntuk,
@@ -74,7 +75,16 @@ export type HasilPembatalan =
   | { status: 'butuh_penyetuju' }
   | { status: 'penyetuju_sama_dengan_aktor' }
   | { status: 'alasan_tidak_berlaku'; pesan: string }
-  | { status: 'melebihi_sisa'; sisa: number };
+  | { status: 'melebihi_sisa'; sisa: number }
+  /**
+   * FR-B7 — baris yang dipilih melampaui yang masih dapat dikembalikan.
+   *
+   * ⛔ Terpisah dari `melebihi_sisa`, yang soal UANG. Ini soal BARANG, dan
+   * pesannya harus berbeda: kasir yang diberi tahu "melebihi sisa" untuk
+   * kuantitas yang salah akan mengurangi nominalnya — dan nominalnya memang
+   * sudah benar.
+   */
+  | { status: 'baris_melebihi_sisa'; lineId: string; sisaMilli: number; dimintaMilli: number };
 
 interface BarisOrder {
   id: string;
@@ -225,11 +235,62 @@ export async function batalkan({
     metodeRefund = metodeRefundDari(metode.map((m) => m.method));
   }
 
-  const barisOrder = await db.getAll<{ id: string; variation_id: string; quantity: number }>(
-    `SELECT id, variation_id, quantity FROM order_line WHERE order_id = ?`,
+  const barisOrder = await db.getAll<{
+    id: string;
+    variation_id: string;
+    quantity: number;
+    line_total: number;
+  }>(
+    `SELECT id, variation_id, quantity, line_total FROM order_line WHERE order_id = ?`,
     [orderId]
   );
   const perBaris = new Map(barisOrder.map((b) => [b.id, b]));
+
+  // ⛔ FR-B7 — batas per baris, ditegakkan SEBELUM apa pun ditulis.
+  //
+  // Server menegakkannya sendiri (`planRestock` → `RESTOCK_EXCEEDS_SOLD`),
+  // dan aturannya ditiru di sini lewat `packages/domain/src/pilihan-refund.ts`
+  // supaya keduanya tidak pernah menjawab berbeda. Kalau hanya server yang
+  // memeriksanya, kasir baru tahu berjam-jam kemudian saat antrean terkuras —
+  // uang sudah keluar laci dan barangnya sudah di rak.
+  if (rencana.operasi === 'refund' && lines.length > 0) {
+    const kembali = await db.getAll<{ variation_id: string; total: number | bigint | string }>(
+      `SELECT variation_id, SUM(delta) AS total
+         FROM stock_movement
+        WHERE order_id = ? AND type IN ('refund', 'void')
+        GROUP BY variation_id`,
+      [orderId]
+    );
+    const galat = periksaPilihan(
+      barisOrder.map((b) => ({
+        lineId: b.id,
+        variationId: b.variation_id,
+        quantityMilli: BigInt(b.quantity),
+        lineTotal: BigInt(b.line_total),
+      })),
+      // ⛔ Ketiga bentuk diterima: `@powersync/web` mengembalikan INTEGER besar
+      // sebagai `bigint`, `node:sqlite` sebagai `number`. Guard yang hanya
+      // memeriksa satu bentuk hijau di test dan salah di aplikasi.
+      kembali.map((k) => ({ variationId: k.variation_id, quantityMilli: BigInt(k.total ?? 0) })),
+      lines.map((l) => ({ lineId: l.lineId, quantityMilli: BigInt(l.quantityMilli) }))
+    );
+    if (galat !== null) {
+      if (galat.kode === 'MELEBIHI_SISA') {
+        return {
+          status: 'baris_melebihi_sisa',
+          lineId: galat.lineId,
+          sisaMilli: Number(galat.sisaMilli),
+          dimintaMilli: Number(galat.dimintaMilli),
+        };
+      }
+      return {
+        status: 'baris_melebihi_sisa',
+        lineId: galat.lineId,
+        sisaMilli: 0,
+        dimintaMilli: 0,
+      };
+    }
+  }
 
   await db.transaction(async (tx) => {
     if (rencana.operasi === 'void') {
@@ -322,7 +383,13 @@ export async function batalkan({
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           idBaru(), konfig.tenantId, order.outlet_id, order.device_id, b.variation_id,
-          rencana.operasi === 'void' ? 'void_return' : 'refund_return',
+          // ⛔ Kosakata yang SAMA dengan server (`0010_inventory.sql` CHECK).
+          // Klien sempat menulis `void_return`/`refund_return` — nilai yang
+          // `CHECK (type IN (...))` di server TOLAK. Ia tidak pernah gagal
+          // karena baris ini murni lokal (`stock_movement` tidak ada di sync
+          // rules jalur turun), tapi dua kosakata untuk satu peristiwa adalah
+          // cacat yang menunggu tabel ini ikut direplikasi.
+          rencana.operasi,
           // Delta POSITIF: barang kembali ke rak.
           l.quantityMilli,
           orderId, alasan.kode, sesi.userId, occurredAt, Number(hlcValue),
