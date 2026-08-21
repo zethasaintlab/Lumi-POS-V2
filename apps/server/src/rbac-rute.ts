@@ -105,6 +105,7 @@ export const PETA_PERAN: readonly AturanRute[] = [
   // dari penjualan, dan yang di luar itu adalah koreksi yang harus disetujui.
   { metode: 'POST', pola: '/inventory/movements', operasi: 'stock_adjust' },
 
+
   // Opname — seluruh siklus hidupnya tingkat manajer. `spec-e` FR-E7 menyebut
   // "Manajer menyetujui" untuk penyelesaian; memulai dan menghitung diberi
   // operasi yang sama karena hitungan fisik yang dapat disimpan siapa pun
@@ -184,6 +185,18 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
       'Peta ini hanya dapat menyatakan yang pertama, dan memakainya di sini akan menolak ' +
       'kasir yang menutup shiftnya SENDIRI — jalur normalnya. Dijaga di handler: ' +
       '`opened_by === aktor` atau `approve_cash_variance`',
+  },
+  {
+    metode: 'POST',
+    pola: '/shifts/:shiftId/no-sale',
+    alasan:
+      'FR-D7. Kasir BOLEH membuka laci — `IA:66` menandai K-16 "Kasir + alasan", dan ' +
+      'menukar uang pecahan tidak dapat menunggu manajer. Peta ini hanya menyatakan ' +
+      '"peran X boleh operasi Y", dan setiap entri di dalamnya diuji MENOLAK kasir; ' +
+      'menaruh rute ini di sana akan menuntut test yang menyatakan kebalikan dari ' +
+      'perilaku yang benar. Yang menjaganya: `assertBoleh(shift_open_close)` di handler ' +
+      '(menutup akuntan, `spec-f:82`) plus AMBANG FREKUENSI — PIN manajer mulai ' +
+      'pembukaan ke-4 dalam shift',
   },
   {
     metode: 'POST',

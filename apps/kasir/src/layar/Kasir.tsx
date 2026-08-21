@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { EmptyState } from 'ds';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import {
   bacaKatalog,
   bacaModifier,
+  cariBarcode,
   cariItem,
   type DaftarModifier,
   type ItemKatalog,
@@ -23,6 +24,9 @@ import { Bidang } from '../Bidang.tsx';
 import { Pembayaran } from './Pembayaran.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
+import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
+import { DialogNoSale } from '../komponen/DialogNoSale.tsx';
+import { useSesi } from '../konteks/useSesi.ts';
 
 /* K-03 — layar kasir: grid produk + keranjang (IA §2.1, §2.2).
 
@@ -39,6 +43,7 @@ function rupiah(n: number | bigint): string {
 
 export function Kasir() {
   const { db } = useDbLokal();
+  const { sesi } = useSesi();
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [shift, setShift] = useState<ShiftAktif | null>(null);
   const [katalog, setKatalog] = useState<ItemKatalog[]>([]);
@@ -68,6 +73,9 @@ export function Kasir() {
   /* FR-E5 — penandaan habis MANUAL, terpisah dari stok terhitung. Produk
      dapat habis meski stoknya masih 10 (bahan habis, mesin rusak). */
   const [habis, setHabis] = useState<Set<string>>(new Set());
+  /* K-16 — dialog, bukan rute (`IA:66`). */
+  const [bukaLaci, setBukaLaci] = useState(false);
+  const [pesanLaci, setPesanLaci] = useState<string | null>(null);
 
   useEffect(() => {
     let hidup = true;
@@ -101,6 +109,20 @@ export function Kasir() {
 
   const terlihat = useMemo(() => cariItem(katalog, kueri), [katalog, kueri]);
   const subtotal = subtotalKeranjang(keranjang);
+
+  /* ⛔ Hook dipasang SEBELUM setiap `return` bersyarat di bawah — aturan hooks
+     React. Penanganannya (`dipindai`) baru terdefinisi di bawah, jadi ia
+     dipanggil lewat ref: memindahkan `dipindai` ke atas berarti memindahkan
+     `pilihVariation` dan seluruh keputusan stok bersamanya. */
+  const pindai = useRef<(kode: string) => void>(() => {});
+  usePemindaiGlobal({
+    onScan: (kode) => pindai.current(kode),
+    /* Dimatikan saat dialog modifier terbuka atau saat layar pembayaran
+       aktif. Keduanya punya masukan sendiri, dan K-06 khususnya menerima
+       angka yang diketik cepat lalu Enter — bentuk yang PERSIS sama dengan
+       scan. */
+    aktif: pilihan === null && !membayar,
+  });
 
   if (!siap) return <EmptyState title="Menyiapkan kasir" body="Membaca katalog dari perangkat." />;
 
@@ -180,6 +202,29 @@ export function Kasir() {
     setKeranjang((c) => tambah(c, { item, variation, modifier, idBaris: () => crypto.randomUUID() }));
     setPilihan(null);
   };
+
+  /* K-17 — barcode dari scanner HID.
+
+     ⛔ `cariBarcode`, BUKAN `cariItem`. Pencarian menyaring daftar untuk
+     dilihat kasir; scan harus memutuskan SATU produk tanpa kasir melihat apa
+     pun. Barcode yang tidak dikenal — atau yang cocok dua produk — jatuh ke
+     kotak pencarian, jadi kasir melihat apa yang terjadi alih-alih menerima
+     produk yang salah. */
+  const dipindai = (kode: string) => {
+    const cocok = cariBarcode(katalog, kode);
+    if (cocok === null) {
+      setKueri(kode);
+      setPesanStok(`Barcode ${kode} tidak dikenali. Cari manual di daftar.`);
+      return;
+    }
+    setPesanStok(null);
+    /* Langsung ke `pilihVariation`, melewati dialog modifier: scan menunjuk
+       VARIATION tertentu, dan barcode yang menunjuk varian sudah menjawab
+       pertanyaan yang K-05 ajukan. Modifier tetap dapat ditambahkan dari
+       keranjang. */
+    pilihVariation(cocok.item, cocok.variation, []);
+  };
+  pindai.current = dipindai;
 
   const ketuk = async (item: ItemKatalog) => {
     const daftar = await bacaModifier(db, item.id);
@@ -301,7 +346,52 @@ export function Kasir() {
         >
           Bayar
         </Tombol>
+
+        {/* K-16 — Buka laci (no-sale). `IA:102` menempatkannya di menu ⋮,
+            tapi menu itu diturunkan dari `TABEL_RUTE` dan K-16 BUKAN rute
+            (`IA:66`: "Dialog, bukan layar"). Ia diletakkan di sini karena
+            layar ini yang memegang shift, konfig, dan sesi — dan karena
+            "maksimal 2 tap dari K-03" (`IA:104`) terpenuhi dengan satu.
+
+            ⛔ `ghost`, bukan `primary`: satu aksi utama per layar (aturan
+            design system #2), dan aksi utama K-03 adalah Bayar. Membuka laci
+            adalah pola fraud paling dasar (`spec-d:229`); ia tidak boleh
+            terlihat seperti langkah biasa. */}
+        <Tombol
+          varian="ghost"
+          disabled={sesi === null}
+          onClick={() => setBukaLaci(true)}
+        >
+          Buka laci
+        </Tombol>
+
+        {pesanLaci && (
+          <p className="t-caption" role="status">
+            {pesanLaci}
+          </p>
+        )}
       </aside>
+
+      {bukaLaci && konfig && sesi && (
+        <DialogNoSale
+          shiftId={shift.id}
+          konfig={konfig}
+          sesi={sesi}
+          onBatal={() => setBukaLaci(false)}
+          onSelesai={(h) => {
+            setBukaLaci(false);
+            /* ⛔ Keadaan laci DIKEMBALIKAN, bukan didiamkan. Perangkat tanpa
+               printer tidak dapat memerintahkan laci terbuka sama sekali, dan
+               kasir yang mengira sistem sudah membukanya akan menunggu di
+               depan laci yang tertutup. */
+            setPesanLaci(
+              h.laciTerbuka
+                ? `Laci dibuka (pembukaan ke-${h.urutan}). Tercatat di audit.`
+                : `Pembukaan ke-${h.urutan} tercatat. Laci harus dibuka manual — belum ada printer terpasang di perangkat ini.`
+            );
+          }}
+        />
+      )}
 
       {pilihan && (
         <PilihModifier

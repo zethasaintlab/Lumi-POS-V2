@@ -41,9 +41,9 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 4 | Tombol cetak ulang di K-09 | utang F4 | selesai (digabung dgn 5) |
 | 5 | Retry antrean `print_job` | utang F4 | selesai |
 | 6 | Modul C-3 — rekonsiliasi & ekspor | P1 | selesai |
-| 7 | Paginasi + pencarian katalog sisi server | utang G1 | selesai (server) |
+| 7 | Paginasi + pencarian katalog sisi server | utang G1 | selesai (server + B-06) |
 | 8 | Refund parsial dengan pemilihan baris di UI | utang F2 | selesai |
-| 9 | K-16 buka laci · K-17 scanner | utang F2 | belum |
+| 9 | K-16 buka laci · K-17 scanner | utang F2 | selesai |
 | 10 | **F6** — runbook | `ARCH:400` | selesai |
 | 11 | **F6** — observability sisi server | `ARCH:294` | selesai (sisi server) |
 | 12 | **F6** — alat koreksi append-only | `ARCH:400` | selesai |
@@ -770,3 +770,145 @@ sungguhan (login → shift → jual → refund parsial), karena itu menuntut
 PowerSync tersambung dan katalog tersinkron. Yang sudah dibuktikan di browser
 adalah bentuk SQL-nya; aturannya diuji sebagai property, dan wiring-nya lewat
 fake `DbLokal`.
+
+### Task 9 — K-16 buka laci (FR-D7) dan K-17 scanner
+
+**Selesai.** Dua utang F2 terakhir yang tidak menuntut perangkat keras.
+
+#### K-16 — no-sale
+
+`spec-d:229`: *"Membuka laci tanpa transaksi adalah pola fraud kasir paling
+dasar."* Yang dibangun karena itu bukan tombolnya — tombolnya sepele —
+melainkan **kontrolnya**.
+
+- ⛔ **Yang dicatat adalah PERINTAH sistem, bukan bukti laci terbuka.**
+  `spec-d:231`: sinyalnya **satu arah**. Sistem tidak tahu apakah laci
+  benar-benar terbuka, dan tidak dapat mendeteksi laci yang dibuka manual
+  dengan kunci. Dinyatakan di layar, di runbook, dan di kontrak endpoint —
+  merchant yang mengira laporan ini menghitung SETIAP pembukaan akan
+  menyimpulkan selisih kas dari angka yang buta pada separuhnya.
+- ⛔ **Ambang dihitung dari `audit_event`, bukan dari kolom hitungan.** Kolom
+  hitungan adalah angka kedua yang harus dijaga sepakat dengan jejaknya, dan
+  yang menyimpang di antaranya tidak dapat diputuskan mana yang benar. Jejak
+  itu juga yang laporan exception FR-G5 baca.
+- ⛔ **Pembukaan KEEMPAT yang menuntut PIN, bukan ketiga** (`spec-d:239`).
+  Ambang yang bergeser satu membuat kasir dimintai PIN pada pembukaan yang
+  merchant janjikan bebas. Sabotase `>=` → `>` menghasilkan 3 merah di server
+  dan 3 di domain.
+- ⛔ **TIDAK menulis `cash_movement`.** No-sale tidak memindahkan uang;
+  movement bernilai nol membuat buku kas memuat baris yang tidak menjelaskan
+  apa pun.
+- **Catatan ditulis MESKI laci tidak dapat dibuka.** v1 belum punya printer
+  sama sekali, jadi "laci tidak terbuka" adalah keadaan NORMAL. Kalau
+  catatannya ikut gagal saat lacinya gagal, tidak ada kontrol sama sekali.
+- **Berjalan penuh tanpa jaringan** (`IA:66`). Menukar uang pecahan terjadi
+  justru saat sibuk, dan sibuk adalah saat jaringan paling sering putus.
+
+#### K-17 — scanner
+
+`research/07` §4: mayoritas scanner USB adalah **HID keyboard** — ia mengetik
+isi barcode lalu Enter. Dari sudut pandang aplikasi, scanner dan kasir memakai
+pintu yang **sama persis**; yang membedakan hanya kecepatan.
+
+- ⛔ **Heuristik, bukan kepastian**, dan yang diuji adalah perilaku saat ia
+  SALAH: kasir cepat yang dianggap scan → pencarian barcode yang tidak
+  menemukan apa-apa; scanner lambat yang dianggap ketikan → kasir mengetik
+  ulang. Keduanya menjengkelkan, bukan berbahaya. Yang TIDAK boleh terjadi
+  adalah scan yang menambahkan produk salah — dijaga di tempat lain.
+- ⛔ **`cariBarcode`, BUKAN `cariItem`.** Pencarian menyaring daftar untuk
+  dilihat kasir; scan harus memutuskan SATU produk tanpa kasir melihat apa
+  pun. Memakai pencarian untuk scan akan menambahkan produk pertama yang
+  NAMANYA memuat angka barcode.
+- ⛔ **Barcode ganda tidak memilih siapa pun.** Menebak berarti setengah
+  penjualan produk itu tercatat pada produk lain, tanpa satu pun error.
+- ⛔ **Listener global, tapi TIDAK menangkap ketukan di kolom teks.** PIN di
+  K-01 dan K-11 diketik cepat dan diakhiri Enter — bentuk yang PERSIS sama
+  dengan scan. Menangkapnya berarti PIN mendarat sebagai pencarian barcode.
+- **Waktu di-INJECT** di modul domain, jadi setiap kasus batas dapat ditulis
+  persis dan tidak ada test yang merah sesekali. Ada penjaga yang memindai
+  modulnya untuk `Date.now`.
+
+**Masalah + solusinya:**
+
+- ⛔ **Test yang HAMPA karena `X-Actor-Id` diabaikan.** Test "akuntan ditolak"
+  hijau… dengan status **201**. Sebabnya: `getActorId` mengabaikan
+  `X-Actor-Id` sepenuhnya di rute terlindungi — *"itu yang mengubahnya dari
+  klaim menjadi bukti"* — jadi yang diuji adalah **owner**, bukan akuntan.
+  Diperbaiki dengan `buatSesi` sungguhan. Sabotase menghapus `assertBoleh` →
+  1 merah, jadi guardnya kini benar-benar dijaga.
+
+- **Penempatan RBAC yang salah, ditemukan penjaga cakupan.** `POST
+  /shifts/:shiftId/no-sale` mula-mula masuk `PETA_PERAN` dengan
+  `shift_open_close`. Penjaga `jumlah kasus MENUTUPI seluruh PETA_PERAN`
+  menuntut kasus penolakan untuk setiap entri — dan setiap kasus di sana
+  menyatakan kasir DITOLAK, sementara kasir justru BOLEH membuka laci.
+  Dipindah ke `DIKECUALIKAN` dengan alasan tertulis, dan penjaganya menjadi
+  `assertBoleh` di handler (menutup akuntan, `spec-f:82`).
+
+- **Penjaga dua arah alat pemulihan merah** setelah jenis `no_sale`
+  ditambahkan — bekerja sesuai desain. `tools/pulihkan-antrean.mjs` mendapat
+  rutenya.
+
+- **Ambang test-ku sendiri salah baca.** Saya menulis "ambang 1 → pembukaan
+  pertama sudah menuntut PIN"; semantiknya "ambang = berapa pembukaan yang
+  BEBAS". Kodenya benar, assertion-nya salah — diperbaiki beserta komentar
+  yang menyatakan semantiknya, supaya pembaca berikutnya tidak menggeser
+  seluruh tangga.
+
+**Batas yang dinyatakan:** perintah fisik ke laci belum ada
+(`peripheralAktif()` mengembalikan `null` di v1; laci di-kick lewat printer).
+Layar menyatakan itu apa adanya alih-alih diam. Scanner belum pernah diuji
+dengan perangkat sungguhan — `JEDA_MAKS_MS` ditandai `[ASUMSI]` dan menunggu
+OQ-14 bersama printer Bluetooth.
+
+### Task 10 — B-06 memakai pencarian sisi server
+
+**Selesai.** Menutup batas yang Task 7 nyatakan: *"kemampuan servernya ada dan
+teruji; layarnya belum memakainya."*
+
+**Keputusan yang diambil:**
+
+- ⛔ **Seluruh saringan dikirim ke server, bukan sebagian.** Task 7 sudah
+  mencatat kenapa menyetengahinya berbahaya: memuat satu halaman lalu tetap
+  menyaring di klien menghasilkan pencarian yang hanya menemukan apa yang
+  **kebetulan sudah dimuat** — merchant mengetik barcode produk ke-300, tidak
+  ada yang muncul, tanpa satu pun error. `q`, `categoryId`, dan
+  `includeArchived` semuanya berangkat.
+- ⛔ **`saringProduk` DIHAPUS, bukan dibiarkan menganggur.** Dua tempat yang
+  memutuskan "produk mana yang cocok" akan menyimpang, dan yang menyimpang
+  menghasilkan pencarian yang menemukan hal berbeda tergantung layar mana yang
+  bertanya. Testnya ikut dihapus — aturannya sudah diuji di sisi server, dan
+  komentar di kedua tempat menunjuk ke sana.
+- **Jeda ketik 300 ms.** Tanpa itu "kopi susu" adalah sembilan permintaan, dan
+  urutan kembalinya tidak dijamin: hasil untuk "kop" dapat mendarat SESUDAH
+  hasil untuk "kopi susu" dan menimpanya.
+- ⛔ **Dua keadaan kosong yang BERBEDA.** Sejak pencarian pindah ke server,
+  `semua.length === 0` tidak lagi berarti "katalog kosong" — ia berarti
+  "halaman ini kosong". "Belum ada produk" mengarahkan merchant ke impor
+  katalog; "tidak ada yang cocok" mengarahkannya mengubah pencarian. Satu
+  kalimat untuk keduanya salah untuk salah satunya.
+- **Katalog yang terpotong DINYATAKAN.** Daftar yang berhenti di 50 tanpa
+  berkata apa-apa membuat merchant menyimpulkan produknya hilang, dan
+  mencarinya di tempat yang salah. Kalimatnya juga menyebut bahwa
+  **pencariannya mencakup seluruh katalog**, bukan hanya yang tampil.
+
+**Masalah + solusinya:**
+
+- ⛔ **Lubang yang ditemukan saat merencanakan wiring: server tidak punya
+  saringan "tanpa kategori".** Klien mengirim `categoryId=__tanpa__`; server
+  akan mencari kategori ber-id itu, tidak menemukannya, dan mengembalikan
+  **nol produk** — bukan produk tanpa kategori. Nol terlihat persis seperti
+  "memang tidak ada".
+
+  Ini kelas regresi yang **sama** dengan barcode di Task 7, dan ditemukan
+  dengan cara yang sama: membaca `saringProduk` sebelum menggantinya, bukan
+  dari test. Server mendapat cabang `category_id IS NULL`, dan konstantanya
+  diangkat ke `packages/domain/src/katalog-saringan.ts` supaya klien dan
+  server tidak punya dua salinan string ajaib.
+
+- ⛔ **Saya menjalankan satu suite ber-database bersamaan dengan yang berjalan
+  di latar, dan keduanya saling menghapus data.** Persis bahaya yang tertulis
+  di kepala berkas ini. Hasilnya: `catalog` dan `ordering` merah dengan
+  kegagalan yang terbaca seperti bug harga. Dijalankan ulang bersih; nol
+  kegagalan. Peringatan di kepala berkas ini ternyata belum cukup — yang
+  kurang adalah **menunggu**, bukan mengetahui.

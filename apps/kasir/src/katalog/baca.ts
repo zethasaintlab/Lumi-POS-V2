@@ -196,3 +196,33 @@ export async function bacaModifier(db: DbLokal, itemId: string): Promise<DaftarM
       .map((m) => ({ id: m.id, nama: m.name, harga: m.price, bawaan: m.is_default === 1 })),
   }));
 }
+
+/**
+ * K-17 — barcode hasil SCAN → variation yang dituju.
+ *
+ * ⛔ Terpisah dari `cariItem`, dan sengaja. Pencarian menyaring daftar untuk
+ * dilihat kasir; scan harus memutuskan SATU produk tanpa kasir melihat apa
+ * pun. Memakai `cariItem` untuk scan akan menambahkan produk pertama yang
+ * NAMANYA memuat angka barcode — dan itu produk yang salah, ditambahkan tanpa
+ * ada yang menekan apa pun.
+ *
+ * ⛔ Kecocokan PERSIS, dan kalau ada lebih dari satu, TIDAK ADA yang dipilih.
+ * Barcode ganda adalah data katalog yang cacat; menebak salah satunya berarti
+ * setengah penjualan produk itu tercatat pada produk lain, dan tidak ada satu
+ * pun error. Layar menampilkannya sebagai pencarian biasa dan kasir memilih.
+ */
+export function cariBarcode(
+  katalog: readonly ItemKatalog[],
+  barcode: string
+): { item: ItemKatalog; variation: VariationKatalog } | null {
+  const kode = barcode.trim();
+  if (kode === '') return null;
+
+  const cocok: { item: ItemKatalog; variation: VariationKatalog }[] = [];
+  for (const item of katalog) {
+    for (const variation of item.variations) {
+      if (variation.barcode === kode) cocok.push({ item, variation });
+    }
+  }
+  return cocok.length === 1 ? cocok[0] : null;
+}

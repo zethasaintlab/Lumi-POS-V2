@@ -219,40 +219,8 @@ const ITEM = (over) => ({
   archivedAt: null, variations: [], modifierLists: [], ...over,
 });
 
-test('daftar disaring per kategori, teks, dan status arsip', async () => {
-  const { saringProduk } = await import(MOD);
-  const semua = [
-    ITEM({}),
-    ITEM({ id: 'i2', name: 'Teh Tarik', categoryId: 'c2' }),
-    ITEM({ id: 'i3', name: 'Kopi Hitam', archivedAt: '2026-01-01T00:00:00Z' }),
-  ];
 
-  assert.deepEqual(saringProduk(semua, { kategoriId: null, cari: '', tampilArsip: false }).map((i) => i.id), ['i1', 'i2']);
-  assert.deepEqual(saringProduk(semua, { kategoriId: 'c1', cari: '', tampilArsip: false }).map((i) => i.id), ['i1']);
-  assert.deepEqual(saringProduk(semua, { kategoriId: null, cari: 'kopi', tampilArsip: true }).map((i) => i.id), ['i1', 'i3']);
-});
 
-test('⛔ pencarian juga menjangkau SKU dan barcode variation', async () => {
-  // Merchant mencari produk lewat kode yang tertempel di rak, bukan lewat
-  // nama yang ia tulis berbulan-bulan lalu.
-  const { saringProduk } = await import(MOD);
-  const semua = [ITEM({ variations: [{ id: 'v1', name: 'R', sku: 'KS-99', barcode: '8991', price: 1000, archivedAt: null }] })];
-  assert.equal(saringProduk(semua, { kategoriId: null, cari: 'ks-99', tampilArsip: false }).length, 1);
-  assert.equal(saringProduk(semua, { kategoriId: null, cari: '8991', tampilArsip: false }).length, 1);
-  assert.equal(saringProduk(semua, { kategoriId: null, cari: 'tidak ada', tampilArsip: false }).length, 0);
-});
-
-test('produk TANPA kategori dapat ditemukan lewat saringan khusus', async () => {
-  // Impor katalog membuat produk tanpa kategori, dan itu justru yang harus
-  // dibereskan merchant. Kalau ia hanya dapat dilihat dengan "semua kategori",
-  // ia tenggelam di antara ratusan yang lain.
-  const { saringProduk, TANPA_KATEGORI } = await import(MOD);
-  const semua = [ITEM({}), ITEM({ id: 'i2', categoryId: null })];
-  assert.deepEqual(
-    saringProduk(semua, { kategoriId: TANPA_KATEGORI, cari: '', tampilArsip: false }).map((i) => i.id),
-    ['i2']
-  );
-});
 
 // ---------------------------------------------------------------------------
 // ⛔ Produk BARU wajib membawa varian pertama
@@ -291,4 +259,51 @@ test('kegagalan varian pertama menunjuk field varian, bukan field produk', async
   );
   assert.equal(hasil.ok, false);
   assert.equal(hasil.bidang, 'harga');
+});
+
+// ⛔ `saringProduk` DIHAPUS bersama testnya, 21 Agustus 2026.
+//
+// Penyaringan pindah ke server; membiarkan keduanya hidup berarti dua tempat
+// memutuskan "produk mana yang cocok", dan yang menyimpang menghasilkan
+// pencarian yang menemukan hal berbeda tergantung layar mana yang bertanya.
+//
+// Aturan yang dulu diuji di sini kini diuji di `tests/catalog/items-paginasi.test.js`:
+// nama/deskripsi item · nama/SKU/barcode varian · kategori (termasuk
+// `TANPA_KATEGORI` → `category_id IS NULL`) · arsip. Yang tersisa di sini
+// adalah penyusunan KUERI-nya.
+
+test('kueri daftar produk meneruskan seluruh saringan ke server', async () => {
+  const { kueriDaftarProduk, TANPA_KATEGORI } = await import(MOD);
+
+  const kosong = kueriDaftarProduk({ kategoriId: null, cari: '', tampilArsip: false }, { limit: 50 });
+  assert.ok(!kosong.includes('q='), 'kueri kosong tidak dikirim');
+  assert.ok(!kosong.includes('includeArchived'), 'arsip disembunyikan secara bawaan');
+  assert.ok(kosong.includes('limit=50'));
+
+  const penuh = kueriDaftarProduk(
+    { kategoriId: 'kat-1', cari: '  kopi susu  ', tampilArsip: true },
+    { limit: 50 }
+  );
+  assert.match(penuh, /includeArchived=true/);
+  assert.match(penuh, /categoryId=kat-1/);
+  // Dipangkas, tapi spasi di TENGAH dipertahankan — "kopi susu" adalah dua
+  // kata yang merchant memang ketik.
+  assert.match(penuh, /q=kopi\+susu/);
+
+  // ⛔ `TANPA_KATEGORI` diteruskan APA ADANYA. Server punya cabangnya
+  // (`category_id IS NULL`); mengubahnya jadi string kosong di sini akan
+  // membuat "Tanpa kategori" berperilaku seperti "Semua".
+  const tanpa = kueriDaftarProduk(
+    { kategoriId: TANPA_KATEGORI, cari: '', tampilArsip: false },
+    { limit: 50 }
+  );
+  assert.ok(tanpa.includes(`categoryId=${encodeURIComponent(TANPA_KATEGORI)}`), tanpa);
+});
+
+test('kursor hanya ikut bila diberikan', async () => {
+  const { kueriDaftarProduk } = await import(MOD);
+  const saringan = { kategoriId: null, cari: '', tampilArsip: false };
+  assert.ok(!kueriDaftarProduk(saringan, { limit: 50 }).includes('after='));
+  assert.ok(!kueriDaftarProduk(saringan, { limit: 50, after: null }).includes('after='));
+  assert.match(kueriDaftarProduk(saringan, { limit: 50, after: '0:abc' }), /after=0%3Aabc/);
 });

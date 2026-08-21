@@ -40,6 +40,8 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
 | "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
+| "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
+| "Barcode dipindai tapi tidak ada yang terjadi" | §8.6 scanner |
 
 ---
 
@@ -461,6 +463,41 @@ menyiapkan jalannya (`order.status = 'open'` + `owned_by_device_id`, KEP-21).
 `POST /orders/cleanup-abandoned` ada dan teruji, **sengaja tanpa tombol UI** —
 ia dijalankan sebagai cron dari luar aplikasi. ⛔ **Sampai cron itu dipasang,
 keranjang `open` yang ditinggalkan mengunci stok selamanya.**
+
+### 8.5 Buka laci (no-sale): "lacinya tidak terbuka" / "kok minta PIN"
+
+⛔ **Sistem TIDAK dapat mengetahui apakah laci benar-benar terbuka, dan TIDAK
+dapat mendeteksi laci yang dibuka manual dengan kunci** (`spec-d:231`).
+Sinyalnya satu arah. Yang tercatat adalah pembukaan yang **diperintahkan
+sistem** — jangan menjanjikan ke merchant bahwa laporan ini menghitung setiap
+pembukaan, karena ia tidak dapat.
+
+| Yang merchant katakan | Artinya |
+|---|---|
+| "Tercatat tapi lacinya tidak terbuka" | **Normal di v1.** Belum ada adapter perangkat keras (`peripheralAktif()` = `null`); laci di-kick lewat printer. Layar menyatakannya. Catatan auditnya tetap ditulis — itu seluruh kontrolnya. |
+| "Kok minta PIN manajer" | Pembukaan **ke-4 dan seterusnya** dalam satu shift (`AMBANG_NO_SALE = 3`, `[ASUMSI]`). Tiga pertama bebas. Layar menyebut urutannya. |
+| "Alasannya tidak ada di daftar" | Daftarnya **tertutup**, dan itu seluruh gunanya: free text tidak dapat diagregasi jadi laporan fraud (`spec-f:378`). Pakai "Lainnya" + catatan ≥ 10 karakter. |
+| "Setelah tutup kas tidak bisa buka laci" | Benar — `409 SHIFT_NOT_OPEN`. Membuka laci setelah kas dihitung berarti selisih yang sudah disetujui manajer tidak lagi menjelaskan isinya. |
+
+⛔ **Jangan menyisipkan `audit_event` manual** untuk "memperbaiki" hitungan.
+Ambang PIN dihitung DARI jejak itu; menambah baris menggeser ambangnya, dan
+menghapus baris menghapus kontrolnya.
+
+### 8.6 Scanner: "dipindai tapi tidak ada yang terjadi"
+
+Scanner USB dan Bluetooth bekerja sebagai **HID keyboard** — tidak ada driver,
+tidak ada pengaturan, tidak ada izin browser. Yang membedakannya dari ketikan
+manusia hanya kecepatan.
+
+| Yang terlihat | Artinya |
+|---|---|
+| Barcode muncul di kotak pencarian | Kursor sedang di kotak itu. Listener global sengaja **tidak** menangkap ketukan di kolom teks — PIN diketik cepat dan diakhiri Enter, bentuk yang persis sama dengan scan. Klik di luar kotak, lalu pindai. |
+| "Barcode … tidak dikenali" | Barcode-nya tidak ada di katalog perangkat ini, atau **cocok dua produk**. Barcode ganda tidak memilih siapa pun — menebak berarti setengah penjualan produk itu tercatat pada produk lain. Perbaiki di B-08. |
+| Tidak ada reaksi sama sekali | Scanner mungkin terlalu lambat (jeda > 50 ms antar karakter) atau tidak mengirim Enter. Sebagian scanner dapat dikonfigurasi menambahkan terminator Enter — ikuti manualnya. |
+| Kasir mengetik cepat lalu Enter, produk tertambah | Heuristiknya salah ke arah yang tidak berbahaya: hasilnya pencarian barcode yang tidak menemukan apa-apa. |
+
+⛔ **Scanner 2D untuk memindai QR pelanggan TIDAK didukung** (`research/07`
+§4). Itu alur yang berbeda — POS memindai pelanggan, bukan sebaliknya.
 
 ---
 

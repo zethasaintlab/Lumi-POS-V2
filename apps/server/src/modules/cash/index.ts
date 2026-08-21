@@ -3,6 +3,7 @@ import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { HttpError } from '../../http-error.ts';
 import { createShiftHandlers } from './handlers/shifts.ts';
 import { createTutupHandlers } from './handlers/tutup.ts';
+import { createNoSaleHandlers } from './handlers/no-sale.ts';
 
 // Modul cash lahir kecil dan disengaja demikian (keputusan Q1,
 // PLAN-ordering-fondasi.md §8.0): hanya "buka shift". Tutup shift, hitung
@@ -15,6 +16,9 @@ export function createCashHandlers(pool: Pool, hlc: Hlc): Record<string, unknown
   return {
     ...createShiftHandlers(pool),
     ...createTutupHandlers(pool, hlc),
+    // FR-D7 — no-sale. `cash_drawer_shift` milik modul ini, dan ambangnya
+    // dihitung dari jejak audit shift itu.
+    ...createNoSaleHandlers(pool, hlc),
   };
 }
 

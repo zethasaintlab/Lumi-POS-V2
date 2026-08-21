@@ -15,6 +15,9 @@ const RUTE: Record<string, (entityId: string) => string> = {
   // status per entitas — memakai variation membuat penandaan kemarin yang
   // gagal terkirim menampilkan status merah pada penandaan hari ini.
   sold_out: () => '/inventory/sold-out',
+  // FR-D7. `entity_id`-nya adalah id SHIFT — rutenya bersarang di bawahnya,
+  // dan ambang frekuensinya dihitung per shift.
+  no_sale: (id) => `/shifts/${encodeURIComponent(id)}/no-sale`,
 };
 
 /**

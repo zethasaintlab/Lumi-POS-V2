@@ -48,6 +48,8 @@ const RUTE = {
   order_cancel: (id) => `/orders/${encodeURIComponent(id)}/cancel`,
   payment: (id) => `/orders/${encodeURIComponent(id)}/payments`,
   sold_out: () => '/inventory/sold-out',
+  // FR-D7. `entityId`-nya adalah id SHIFT — rutenya bersarang di bawahnya.
+  no_sale: (id) => `/shifts/${encodeURIComponent(id)}/no-sale`,
 };
 
 function argumen(nama, bawaan) {

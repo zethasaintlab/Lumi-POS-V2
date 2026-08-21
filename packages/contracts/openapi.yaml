@@ -3948,6 +3948,93 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /shifts/{shiftId}/no-sale:
+    post:
+      operationId: recordNoSale
+      summary: FR-D7 -- membuka laci tanpa transaksi (no-sale).
+      description: >-
+        `spec-d:229`: membuka laci tanpa transaksi adalah pola fraud kasir
+        paling dasar. Yang ditulis endpoint ini adalah KONTROLNYA — alasan dari
+        daftar tertutup, ambang frekuensi, dan jejak audit — bukan perintah ke
+        lacinya, yang merupakan efek samping di perangkat.
+
+
+        ⛔ Yang dicatat adalah PERINTAH sistem, BUKAN bukti laci terbuka.
+        `spec-d:231`: sinyalnya satu arah. Sistem tidak dapat mengetahui apakah
+        laci benar-benar terbuka, dan tidak dapat mendeteksi laci yang dibuka
+        manual dengan kunci. Ini harus dinyatakan ke merchant.
+
+
+        ⛔ Ambang dihitung dari `audit_event`, bukan dari kolom hitungan: kolom
+        hitungan adalah angka kedua yang harus dijaga sepakat dengan jejaknya,
+        dan yang menyimpang di antaranya tidak dapat diputuskan mana yang benar.
+
+
+        Pembukaan ke-4 dan seterusnya dalam satu shift menuntut
+        `X-Approver-Id` (403 APPROVAL_REQUIRED tanpa itu). Shift yang sudah
+        ditutup menolak dengan 409.
+
+
+        TIDAK menulis `cash_movement`: no-sale tidak memindahkan uang.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, reasonCode]
+              properties:
+                id:
+                  type: string
+                  description: ULID/UUIDv7 dari klien; juga id `audit_event`-nya.
+                reasonCode:
+                  type: string
+                  # SENGAJA tanpa `enum`: handler adalah satu-satunya sumber
+                  # kebenaran, dan pesannya MENYEBUT pilihan yang sah.
+                reasonNote: { type: string, nullable: true }
+                hlc: { type: string, nullable: true }
+                occurredAt: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Pembukaan tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, shiftId, urutan, butuhPenyetuju]
+                properties:
+                  id: { type: string }
+                  shiftId: { type: string }
+                  urutan:
+                    type: integer
+                    description: Pembukaan ke berapa dalam shift ini.
+                  butuhPenyetuju: { type: boolean }
+        '400':
+          description: Alasan tidak dikenal, atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Ambang terlampaui tanpa X-Approver-Id (APPROVAL_REQUIRED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Shift, aktor, atau penyetuju tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Shift sudah ditutup (SHIFT_NOT_OPEN), atau id sudah ada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /shifts/{shiftId}/close:
     post:
       operationId: closeShift

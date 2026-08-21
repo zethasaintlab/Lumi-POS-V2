@@ -312,3 +312,76 @@ test('⛔ isolasi tenant: pencarian tidak menembus tenant lain', async () => {
   assert.equal(res.statusCode, 200, res.body);
   assert.deepEqual(JSON.parse(res.body).items, []);
 });
+
+// ===========================================================================
+// Saringan "tanpa kategori" — prasyarat B-06 sisi server
+// ===========================================================================
+//
+// ⛔ Produk tanpa kategori adalah saringan TERSENDIRI, bukan ketiadaan
+// saringan. Impor katalog membuat produk tanpa kategori, dan justru itu yang
+// harus dibereskan merchant — kalau ia hanya terlihat lewat "semua kategori",
+// ia tenggelam di antara ratusan yang lain.
+//
+// Tanpa cabang ini, B-06 yang berpindah ke pencarian sisi server akan
+// mengirim `categoryId=__tanpa__`, tidak menemukan kategori dengan id itu,
+// dan menampilkan NOL produk. Kelas regresi yang sama dengan barcode: diam,
+// dan menunjuk ke tempat yang salah.
+
+async function buatKategori(nama) {
+  const id = crypto.randomUUID();
+  const res = await req('POST', '/categories', { id, name: nama });
+  assert.equal(res.statusCode, 201, res.body);
+  return id;
+}
+
+async function buatItemBerkategori(nama, categoryId) {
+  const id = crypto.randomUUID();
+  const res = await req('POST', '/items', {
+    id,
+    name: nama,
+    categoryId,
+    variations: [{ id: crypto.randomUUID(), price: 25000 }],
+  });
+  assert.equal(res.statusCode, 201, res.body);
+  return id;
+}
+
+test('⛔ `categoryId=__tanpa__` mengembalikan produk TANPA kategori', async () => {
+  const { TANPA_KATEGORI } = await import('../../packages/domain/src/katalog-saringan.ts');
+  const token = tokenBaru();
+  const kategoriId = await buatKategori(`Kat ${token}`);
+  const tanpa = await buatItem(`${token} yatim`);
+  const dengan = await buatItemBerkategori(`${token} berkategori`, kategoriId);
+
+  const b = await daftar(`?categoryId=${encodeURIComponent(TANPA_KATEGORI)}`);
+  const ids = b.items.map((i) => i.id);
+  assert.ok(ids.includes(tanpa), 'produk tanpa kategori harus muncul');
+  assert.ok(!ids.includes(dengan), 'produk berkategori tidak boleh muncul');
+  // ⛔ Dan hasilnya BUKAN kosong — nol terlihat persis seperti "memang tidak
+  // ada", dan itu jawaban yang cabang ini ada untuk mencegah.
+  assert.ok(b.items.length > 0);
+});
+
+test('kategori sungguhan tetap menyaring seperti sebelumnya', async () => {
+  const token = tokenBaru();
+  const kategoriId = await buatKategori(`Kat ${token}`);
+  const dengan = await buatItemBerkategori(`${token} berkategori`, kategoriId);
+  await buatItem(`${token} yatim`);
+
+  const b = await daftar(`?categoryId=${kategoriId}`);
+  assert.deepEqual(b.items.map((i) => i.id), [dengan]);
+});
+
+test('saringan tanpa-kategori dapat digabung dengan `q`', async () => {
+  const { TANPA_KATEGORI } = await import('../../packages/domain/src/katalog-saringan.ts');
+  const token = tokenBaru();
+  await buatItem(`${token} yatim satu`);
+  await buatItem(`${token} yatim dua`);
+  const kategoriId = await buatKategori(`Kat ${token}`);
+  await buatItemBerkategori(`${token} berkategori`, kategoriId);
+
+  const b = await daftar(
+    `?categoryId=${encodeURIComponent(TANPA_KATEGORI)}&q=${encodeURIComponent(`${token} yatim`)}`
+  );
+  assert.equal(b.items.length, 2);
+});

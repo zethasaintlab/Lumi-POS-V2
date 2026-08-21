@@ -852,3 +852,97 @@ migrasi, bukan dari daftar tulis tangan).
 | Bentuk SQL baru | **Sudah** diverifikasi di browser: harness T14, `SUM(...) WHERE type IN (...) GROUP BY` di atas wa-sqlite + OPFS |
 | Sisa per baris | **Perkiraan yang aman**, bukan kebenaran per baris — `stock_movement` tidak menyimpan `line_id`. Pengembalian sebelumnya dibagi baris-pertama-lebih-dulu, deterministik dan sama di klien dan server |
 | Baris ber-`type` lama (`refund_return`) di perangkat yang sudah ada | Dibiarkan. Tidak ada yang membacanya, dan `UPDATE` massal pada jejak stok bukan koreksi yang sah |
+
+---
+
+## K-16 no-sale (FR-D7) dan K-17 scanner, 21 Agustus 2026
+
+Dua utang F2 terakhir yang tidak menuntut perangkat keras.
+
+### K-16 — no-sale
+
+`POST /shifts/{shiftId}/no-sale` + `apps/kasir/src/kasir/no-sale.ts` +
+`DialogNoSale`. Tanpa migrasi: `audit_event.event_type` adalah `text` bebas.
+
+- ⛔ **Yang dicatat adalah PERINTAH sistem, bukan bukti laci terbuka.**
+  `spec-d:231`: sinyalnya satu arah — sistem tidak tahu apakah laci
+  benar-benar terbuka, dan tidak dapat mendeteksi laci yang dibuka manual
+  dengan kunci. AC FR-D7 kelima menuntut ini **dinyatakan ke merchant**; ia
+  ada di layar K-16, di runbook §8.4, dan di kontrak endpoint.
+- ⛔ **Ambang dari `audit_event`, bukan kolom hitungan.** Kolom hitungan
+  adalah angka kedua yang harus dijaga sepakat dengan jejaknya; yang
+  menyimpang di antaranya tidak dapat diputuskan. Diuji dengan menyisipkan
+  baris audit langsung — ambangnya ikut bergerak.
+- ⛔ **Pembukaan KEEMPAT yang menuntut PIN** (`spec-d:239`), bukan ketiga.
+  `AMBANG_NO_SALE = 3` berarti **tiga yang bebas**. Sabotase `>=` → `>`
+  menghasilkan merah di kedua sisi.
+- ⛔ **TIDAK menulis `cash_movement`.** No-sale tidak memindahkan uang.
+- **Catatan ditulis meski laci gagal dibuka**, dan `laciTerbuka` dikembalikan
+  ke layar. v1 belum punya printer sama sekali; "laci tidak terbuka" adalah
+  keadaan NORMAL, dan kontrol yang tersisa adalah catatannya.
+
+**⛔ RBAC-nya di `DIKECUALIKAN`, bukan `PETA_PERAN`.** Setiap entri
+`PETA_PERAN` diuji MENOLAK kasir, sementara kasir justru BOLEH membuka laci
+(`IA:66`, "Kasir + alasan"). Yang menjaganya:
+`assertBoleh(shift_open_close)` di handler — menutup akuntan (`spec-f:82`) —
+plus ambang frekuensi. Keduanya diuji.
+
+### K-17 — scanner
+
+`packages/domain/src/pemindai.ts` (heuristik, murni, waktu di-inject) +
+`usePemindaiGlobal` + `cariBarcode`.
+
+- ⛔ **Heuristik, bukan kepastian.** Tidak ada cara membedakan scanner dari
+  keyboard di web. Salah dua arah pasti terjadi, dan keduanya dibuat tidak
+  berbahaya; yang tidak boleh terjadi — scan yang menambahkan produk salah —
+  dijaga oleh pencocokan barcode PERSIS dan penolakan barcode ganda.
+- ⛔ **`cariBarcode` ≠ `cariItem`.** Pencarian menyaring daftar untuk dilihat;
+  scan memutuskan SATU produk tanpa kasir melihat apa pun.
+- ⛔ **Listener global TIDAK menangkap ketukan di `<input>`/`<textarea>`.**
+  PIN diketik cepat dan diakhiri Enter — bentuk yang persis sama dengan scan.
+
+### ⛔ Batas yang harus dibaca
+
+| Batas | Keadaan |
+|---|---|
+| Perintah fisik ke laci | **Belum ada.** `peripheralAktif()` mengembalikan `null` di v1; laci di-kick lewat printer. Layar menyatakannya apa adanya |
+| `JEDA_MAKS_MS = 50` | `[ASUMSI]` — belum diukur terhadap scanner sungguhan. `research/07` menyebut < 30 ms; angka di sini lebih longgar untuk Bluetooth. Menunggu OQ-14 |
+| Scanner 2D untuk QRIS | Tidak didukung. `research/07` §4 menyebutnya alur berbeda (POS memindai pelanggan) yang harus diputuskan tersendiri |
+| Deteksi pembukaan manual | **Mustahil**, permanen. Sinyalnya satu arah |
+
+---
+
+## B-06 memakai pencarian sisi server, 21 Agustus 2026
+
+Menutup batas yang dinyatakan bersama paginasi katalog: kemampuan servernya
+ada dan teruji, layarnya belum memakainya.
+
+- ⛔ **Seluruh saringan dikirim ke server** — `q`, `categoryId`,
+  `includeArchived`. Memuat satu halaman lalu menyaring di klien menghasilkan
+  pencarian yang hanya menemukan apa yang **kebetulan sudah dimuat**: merchant
+  mengetik barcode produk ke-300, tidak ada yang muncul, tanpa satu pun error.
+- ⛔ **`saringProduk` DIHAPUS.** Dua tempat yang memutuskan "produk mana yang
+  cocok" akan menyimpang. Aturannya dipindah, bukan hilang; testnya kini di
+  `tests/catalog/items-paginasi.test.js`.
+- ⛔ **Server mendapat saringan `category_id IS NULL`.** Tanpa itu,
+  `categoryId=__tanpa__` mengembalikan **nol produk** alih-alih produk tanpa
+  kategori — dan nol terlihat persis seperti "memang tidak ada". Kelas regresi
+  yang sama dengan barcode, ditemukan dengan cara yang sama: membaca kode
+  klien sebelum menggantinya.
+- **Konstanta `TANPA_KATEGORI` diangkat ke
+  `packages/domain/src/katalog-saringan.ts`.** Ia dikirim sebagai query string
+  dan dibaca sebagai cabang `WHERE`; dua salinan yang menyimpang tidak
+  menghasilkan error.
+- **Jeda ketik 300 ms**, dan `q` yang dikirim terpisah dari yang diketik:
+  urutan kembalinya respons tidak dijamin, jadi hasil untuk "kop" dapat
+  mendarat sesudah "kopi susu" dan menimpanya.
+- **Katalog terpotong dinyatakan**, beserta kalimat bahwa pencariannya
+  mencakup seluruh katalog — bukan hanya yang tampil.
+
+### ⛔ Batas
+
+| Batas | Keadaan |
+|---|---|
+| Ukuran halaman 50 | `[ASUMSI]`. Server membatasi `limit` ke 200 (`BATAS_MAKS_ITEM`) |
+| B-10 Harga | Masih memuat `/items` tanpa paginasi. Layar itu memilih varian untuk diberi harga per outlet; ia akan terpotong pada katalog besar dengan cara yang sama, dan belum diperbaiki |
+| Verifikasi browser | **Belum dijalankan** untuk alur pencarian + muat-lebih-banyak |

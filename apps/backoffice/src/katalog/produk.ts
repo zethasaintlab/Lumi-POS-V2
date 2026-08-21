@@ -329,8 +329,18 @@ export function buatMuatanVariationUbah(
 
 /* --------------------------------------------------------------- daftar -- */
 
-/** Saringan khusus untuk produk yang belum punya kategori. */
-export const TANPA_KATEGORI = '__tanpa__';
+/**
+ * Saringan khusus untuk produk yang belum punya kategori.
+ *
+ * ⛔ Di-*re-export* dari `packages/domain`, bukan didefinisikan ulang di sini.
+ * Nilainya dikirim ke server sebagai `categoryId` dan dibaca di sana sebagai
+ * cabang `category_id IS NULL`; dua salinan yang menyimpang menghasilkan
+ * saringan yang mengembalikan NOL produk alih-alih produk tanpa kategori —
+ * dan nol terlihat persis seperti "memang tidak ada".
+ */
+import { TANPA_KATEGORI } from '../../../../packages/domain/src/katalog-saringan.ts';
+
+export { TANPA_KATEGORI };
 
 export interface Saringan {
   kategoriId: string | null;
@@ -338,31 +348,56 @@ export interface Saringan {
   tampilArsip: boolean;
 }
 
-export function saringProduk(semua: readonly Item[], saringan: Saringan): Item[] {
-  const cari = saringan.cari.trim().toLowerCase();
+/* ⛔ `saringProduk` DIHAPUS, 21 Agustus 2026.
+   
+   Penyaringan pindah ke server (`GET /items?q=&categoryId=&includeArchived=`).
+   Membiarkannya hidup berarti dua tempat memutuskan "produk mana yang cocok",
+   dan yang menyimpang menghasilkan pencarian yang menemukan hal berbeda
+   tergantung layar mana yang bertanya.
+   
+   Aturannya tidak hilang — ia dipindah, beserta testnya:
+   nama/deskripsi item, nama/SKU/barcode varian, kategori (termasuk
+   `TANPA_KATEGORI` → `category_id IS NULL`), dan arsip. Lihat
+   `apps/server/src/modules/catalog/handlers/items.ts` dan
+   `tests/catalog/items-paginasi.test.js`. */
 
-  return semua.filter((item) => {
-    if (!saringan.tampilArsip && item.archivedAt !== null) return false;
+/* ------------------------------------------------------- pencarian server -- */
 
-    if (saringan.kategoriId === TANPA_KATEGORI) {
-      // Impor katalog membuat produk tanpa kategori, dan justru itu yang harus
-      // dibereskan merchant. Kalau ia hanya terlihat lewat "semua kategori",
-      // ia tenggelam di antara ratusan yang lain.
-      if (item.categoryId !== null) return false;
-    } else if (saringan.kategoriId !== null && item.categoryId !== saringan.kategoriId) {
-      return false;
-    }
-
-    if (cari.length === 0) return true;
-
-    // ⛔ SKU dan barcode ikut dicari. Merchant mencari produk lewat kode yang
-    // tertempel di rak, bukan lewat nama yang ia tulis berbulan-bulan lalu.
-    if (item.name.toLowerCase().includes(cari)) return true;
-    return item.variations.some(
-      (v) =>
-        (v.sku ?? '').toLowerCase().includes(cari) ||
-        (v.barcode ?? '').toLowerCase().includes(cari) ||
-        v.name.toLowerCase().includes(cari)
-    );
-  });
+/**
+ * B-06 sisi server — menyusun query string `GET /items` dari saringan layar.
+ *
+ * ## ⛔ Kenapa pencarian pindah ke server
+ *
+ * Layar ini memuat SELURUH katalog dengan `includeArchived=true` lalu
+ * menyaringnya di klien. Itu benar untuk katalog kecil dan mustahil untuk
+ * yang besar: paket Pro mengizinkan 5.000 produk, dan setiap satu membawa
+ * varian dan modifier list-nya sendiri.
+ *
+ * ## ⛔ Kenapa TIDAK setengah jalan
+ *
+ * Memuat satu halaman lalu tetap menyaring di klien menghasilkan pencarian
+ * yang hanya menemukan apa yang **kebetulan sudah dimuat** — merchant
+ * mengetik barcode produk ke-300, tidak ada yang muncul, dan tidak ada satu
+ * pun error. Seluruh saringan karena itu dikirim ke server: `q`,
+ * `categoryId`, dan `includeArchived`.
+ *
+ * ⛔ `TANPA_KATEGORI` diteruskan APA ADANYA. Server punya cabangnya
+ * (`category_id IS NULL`); mengubahnya menjadi string kosong di sini akan
+ * membuat "Tanpa kategori" berperilaku seperti "Semua".
+ */
+export function kueriDaftarProduk(
+  saringan: Saringan,
+  { limit, after }: { limit: number; after?: string | null } = { limit: 50 }
+): string {
+  const q = new URLSearchParams();
+  if (saringan.tampilArsip) q.set('includeArchived', 'true');
+  if (saringan.kategoriId !== null) q.set('categoryId', saringan.kategoriId);
+  const cari = saringan.cari.trim();
+  if (cari !== '') q.set('q', cari);
+  q.set('limit', String(limit));
+  // ⛔ Kursor hanya ikut bila SARINGANNYA tidak berubah — pemanggil yang
+  // mengubah `q` lalu mengoper kursor lama akan melewatkan hasil yang berada
+  // sebelum kursor itu. Layar mengosongkannya pada setiap perubahan saringan.
+  if (after) q.set('after', after);
+  return `/items?${q.toString()}`;
 }

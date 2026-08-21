@@ -152,6 +152,7 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 - **Top-N diambil `slice`, bukan `LIMIT` di query kedua.** Query kedua dengan urutannya sendiri adalah tempat kedua yang memutuskan "terlaris".
 - **Ringkasan stok `null` tanpa `outlet_id`.** Stok per outlet; satu angka gabungan lintas outlet tidak dapat dipakai memutuskan apa pun — kekurangan di satu cabang tertutup kelebihan di cabang lain.
 - **`order` TIDAK berisi satu baris per transaksi.** Order pembatal adalah baris tersendiri dan order asli tetap `open` (lihat § void & refund). Setiap layar riwayat harus menurunkan status dari ada/tidaknya pembatal, bukan dari kolom `status`.
+- **B-06 memakai pencarian SISI SERVER**, dan `saringProduk` dihapus (21 Agustus 2026). Dua tempat yang memutuskan "produk mana yang cocok" akan menyimpang; yang menyimpang menghasilkan pencarian yang menemukan hal berbeda tergantung layar mana yang bertanya. ⛔ Server punya cabang `category_id IS NULL` untuk `TANPA_KATEGORI` — tanpa itu, saringan "tanpa kategori" mengembalikan **nol produk** alih-alih produk tanpa kategori, dan nol terlihat persis seperti "memang tidak ada". Konstantanya di `packages/domain/src/katalog-saringan.ts`.
 - **Paginasi riwayat wajib keyset, bukan offset.** Perangkat offline menyisipkan baris ber-`business_date` historis di tengah urutan; offset akan melewatkan atau menggandakan baris tepat saat antrean terkuras.
 - **Delta opname dihitung dari snapshot pada T**, bukan dari stok saat tombol ditekan (FR-E7) — penjualan yang terjadi SELAMA opname tidak boleh ikut terkoreksi. Dibuktikan di browser: stok 5, bukan 8.
 - **Ambang stok menipis dan `AMBANG_SELISIH` hidup di `packages/domain`**, dibagi server dan klien. Konstanta yang dipanggang di satu sisi akan menyimpang dari sisi lain.
@@ -195,7 +196,17 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 
 **Gate F2 hijau:** `npm run test:dst` — 10.000 iterasi fault injection, nol pelanggaran atas sepuluh invariant.
 
-**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · FR-F5 (menunggu keputusan `cost` di jalur turun). (FR-H8, Modul C-3, dan refund parsial dengan pemilihan baris sudah ditutup, 21 Agustus 2026.)
+**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4) · FR-F5 (menunggu keputusan `cost` di jalur turun). (FR-H8, Modul C-3, refund parsial dengan pemilihan baris, K-16 buka laci, dan K-17 scanner sudah ditutup, 21 Agustus 2026.)
+
+**Keputusan yang mengikat K-16 (FR-D7) dan K-17:**
+
+- ⛔ **Yang dicatat no-sale adalah PERINTAH sistem, bukan bukti laci terbuka.** `spec-d:231`: sinyalnya **satu arah** — sistem tidak tahu apakah laci benar-benar terbuka, dan **tidak dapat mendeteksi laci yang dibuka manual dengan kunci**. AC FR-D7 kelima menuntut ini dinyatakan ke merchant; ia ada di layar, runbook §8.5, dan kontrak endpoint.
+- ⛔ **Ambang no-sale dihitung dari `audit_event`, bukan dari kolom hitungan.** Kolom hitungan adalah angka kedua yang harus dijaga sepakat dengan jejaknya, dan yang menyimpang di antaranya tidak dapat diputuskan mana yang benar. Pembukaan **KEEMPAT** yang menuntut PIN (`AMBANG_NO_SALE = 3` berarti tiga yang bebas).
+- ⛔ **No-sale TIDAK menulis `cash_movement`** — ia tidak memindahkan uang, dan movement bernilai nol membuat buku kas memuat baris yang tidak menjelaskan apa pun.
+- ⛔ **RBAC no-sale ada di `DIKECUALIKAN`, bukan `PETA_PERAN`.** Setiap entri `PETA_PERAN` diuji MENOLAK kasir, sementara kasir justru BOLEH membuka laci (`IA:66`). Yang menjaganya `assertBoleh(shift_open_close)` di handler — menutup akuntan (`spec-f:82`) — plus ambang frekuensi.
+- ⛔ **Scanner: `cariBarcode` BUKAN `cariItem`.** Pencarian menyaring daftar untuk dilihat kasir; scan memutuskan SATU produk tanpa kasir melihat apa pun. Barcode ganda **tidak memilih siapa pun** — menebak berarti setengah penjualan produk itu tercatat pada produk lain, tanpa satu pun error.
+- ⛔ **Listener scanner global TIDAK menangkap ketukan di kolom teks.** PIN di K-01/K-11 diketik cepat dan diakhiri Enter — bentuk yang PERSIS sama dengan scan.
+- ⛔ **`X-Actor-Id` diabaikan sepenuhnya di rute terlindungi** (`getActorId`: "sesi menang"). Test yang mengganti header itu untuk menguji peran lain sebenarnya menguji pemilik sesi — ditemukan lewat test "akuntan ditolak" yang hijau dengan status **201**. Pakai `buatSesi`.
 
 **Keputusan yang mengikat refund parsial (FR-B7, 21 Agustus 2026):**
 

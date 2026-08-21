@@ -1,6 +1,10 @@
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
+// ⛔ Konstanta yang SAMA dengan yang back-office kirim. Dua salinan yang
+// menyimpang menghasilkan saringan yang mengembalikan nol produk alih-alih
+// produk tanpa kategori — dan nol terlihat seperti "memang tidak ada".
+import { TANPA_KATEGORI } from '../../../../../../packages/domain/src/katalog-saringan.ts';
 import { getTenantId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import { toModifierList, fetchModifierListsByIds, fetchModifiersForLists } from './modifier-lists.ts';
@@ -257,6 +261,7 @@ async function fetchItemOrThrow(client: PoolClient, itemId: string): Promise<Ite
  * permukaan yang tersedia bagi siapa pun yang punya sesi.
  */
 const BATAS_MAKS_ITEM = 200;
+
 
 function assertBatas(nilai: unknown): number | null {
   // ⛔ `undefined` berarti TANPA paginasi, bukan halaman bawaan. Lihat
@@ -697,7 +702,20 @@ export function createItemHandlers(pool: Pool) {
         if (!query.includeArchived) {
           conditions.push('archived_at IS NULL');
         }
-        if (query.categoryId) {
+        if (query.categoryId === TANPA_KATEGORI) {
+          // ⛔ Produk tanpa kategori adalah saringan tersendiri, bukan
+          // ketiadaan saringan. Impor katalog membuat produk tanpa kategori,
+          // dan justru itu yang harus dibereskan merchant — kalau ia hanya
+          // terlihat lewat "semua kategori", ia tenggelam di antara ratusan
+          // yang lain.
+          //
+          // Tanpa cabang ini, B-06 yang berpindah ke pencarian sisi server
+          // akan mengirim `categoryId=__tanpa__`, tidak menemukan kategori
+          // dengan id itu, dan menampilkan NOL produk — bukan produk tanpa
+          // kategori. Kelas regresi yang sama dengan barcode: diam, dan
+          // menunjuk ke tempat yang salah.
+          conditions.push('category_id IS NULL');
+        } else if (query.categoryId) {
           params.push(query.categoryId);
           conditions.push(`category_id = $${params.length}`);
         }
