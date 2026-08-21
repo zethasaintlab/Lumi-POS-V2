@@ -4391,7 +4391,7 @@ components:
               reasonCode: { type: string, nullable: true }
     RingkasanDasbor:
       type: object
-      required: [from, to, outletId, penjualan, terlaris, stok]
+      required: [from, to, outletId, penjualan, terlaris, stok, perangkat]
       properties:
         from: { type: string }
         to: { type: string }
@@ -4447,6 +4447,43 @@ components:
                   itemName: { type: string }
                   variationName: { type: string }
                   saldo: { type: string }
+        perangkat:
+          type: object
+          description: >-
+            FR-H8 sisi OWNER (`spec-h:311` -- "> 24 jam: notifikasi ke owner").
+
+
+            ⛔ Ini BUKAN umur antrean. Antrean yang menua adalah penjualan yang
+            belum pernah sampai ke server, jadi server tidak dapat melihatnya
+            sama sekali. Yang dapat dilihatnya adalah perangkat yang berhenti
+            menyapa. Keduanya dinamai berbeda di UI; hanya AMBANGNYA yang
+            dibagi lewat `packages/domain`.
+          required: [total, menua, belumPernah]
+          properties:
+            total:
+              type: integer
+              description: Perangkat aktif yang punya kredensial.
+            belumPernah:
+              type: integer
+              description: >-
+                Dibuat dan sudah berkredensial, tapi belum sekali pun menyapa
+                server. Bukan hal yang sama dengan basi.
+            menua:
+              type: array
+              description: Yang melewati ambang, terlama dulu. Yang sehat tidak ikut.
+              items:
+                type: object
+                required:
+                  [deviceId, code, outletId, lastSeenAt, jamSejakTerlihat, tingkat]
+                properties:
+                  deviceId: { type: string }
+                  code: { type: string }
+                  outletId: { type: string }
+                  lastSeenAt: { type: string, nullable: true }
+                  jamSejakTerlihat: { type: integer, nullable: true }
+                  tingkat:
+                    type: string
+                    enum: [peringatan, kritis, darurat]
     DaftarStok:
       type: object
       required: [outletId, items]

@@ -451,3 +451,59 @@ GET  /tenants/subscription/invoices   → riwayat (B-29)
   (`SUBSCRIPTION_INVOICE_NOT_FOUND`), sama seperti jalur payment. Midtrans akan
   mengulangnya; itu disengaja supaya keadaan itu terlihat, bukan tertelan —
   tapi ia belum punya alarm.
+
+---
+
+## FR-H8 — antrean menua, 21 Agustus 2026
+
+Utang F2 yang paling lama tercatat. `spec-h:304`: *"Antrean yang tua berarti
+uang merchant belum tercatat — metrik kesehatan #1."*
+
+⛔ **Server TIDAK DAPAT melihat antrean yang menua, dan itu menentukan bentuk
+fitur ini.** Antrean yang menua adalah penjualan yang **belum pernah sampai**
+ke server — tidak ada baris untuk dihitung. Yang server lihat adalah perangkat
+yang **berhenti menyapa** (`device.last_seen_at`).
+
+Keduanya bukan hal yang sama, dan menyamakannya berbohong dua arah: perangkat
+yang **mati** terlihat seperti antrean menua meski tidak ada penjualan
+tertahan, dan perangkat yang **online tapi selalu ditolak** server terlihat
+sehat. Karena itu keduanya dinamai berbeda di UI — "penjualan belum tercatat"
+di kasir, "perangkat belum terhubung" di B-01 — dan hanya **ambangnya** yang
+dibagi lewat `packages/domain/src/antrean-menua.ts` (pola `AMBANG_SELISIH`).
+
+| Sisi | Sumber data | Layar |
+|---|---|---|
+| Kasir | `outbox_local` tertua yang belum terkirim | pita di `ShellKasir` |
+| Owner | `device.last_seen_at` | kartu di B-01 |
+
+**Keputusan yang mengikat kode:**
+
+- ⛔ **Pita, bukan dialog, dan TANPA tombol tutup.** AC FR-H8 kedua menuliskan
+  yang pertama sebagai aturan; yang kedua diturunkan darinya. Yang menutup
+  pita adalah antrean yang terkuras — peringatan yang dapat ditutup akan
+  ditutup, dan uang yang belum tercatat tidak berhenti belum tercatat karena
+  kasir menekan silang.
+- ⛔ **Detak satu menit di `PitaAntrean`.** Umur berubah karena WAKTU
+  BERJALAN, bukan karena data berubah. Komponen yang menghitungnya saat render
+  menyeberangi ambang 4 jam tanpa merender ulang, dan pitanya baru muncul saat
+  ada penjualan berikutnya — tepat saat kasir sedang sibuk.
+- ⛔ **Ambang `>=`, bukan `>`.** `spec-h:308` menulis "> 4 jam". Yang dipilih
+  memperingatkan lebih dulu.
+- **Ambang dikonfigurasi lewat `VITE_AMBANG_ANTREAN_JAM`** (`"4,24,72"`), satu
+  variabel karena ketiganya hanya berarti bersama-sama. Apa pun yang cacat —
+  termasuk tiga angka sah yang **tidak menaik** — jatuh ke bawaan secara utuh.
+- ⛔ **Umur perangkat dihitung di DATABASE**, bukan di Node. Aturan repo yang
+  lahir dari bug nyata (skew ±2 ms, 4 dari 12 run gagal).
+- ⛔ **Perangkat tanpa kredensial tidak pernah dilaporkan menua.**
+
+### ⛔ Batas yang harus dibaca sebelum menyebut FR-H8 selesai
+
+- ⛔ **Tidak ada kanal notifikasi.** `spec-h:311` menulis "notifikasi ke
+  owner"; yang ada adalah **keadaan layar**. Push, email, atau SMS adalah
+  layanan baru dan biaya baru — keputusan pemilik produk, bukan agent.
+- ⛔ **AC ketiga tidak dibangun** — "dashboard internal menampilkan merchant
+  dengan antrean tua". Ia perkakas operasional **lintas-tenant**; 52 layar
+  `IA` tidak memuatnya, dan query lintas-tenant menabrak invariant #8.
+- **Pita kasir belum pernah dilihat di browser.** Logikanya teruji penuh dan
+  `vite build` hijau; tampilannya menunggu perangkat ber-kredensial +
+  PowerSync berjalan.

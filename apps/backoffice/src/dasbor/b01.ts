@@ -78,6 +78,21 @@ export interface PosisiPenjualan {
   rataRataPerTransaksi: string;
 }
 
+export interface PerangkatMenua {
+  deviceId: string;
+  code: string;
+  outletId: string;
+  lastSeenAt: string | null;
+  jamSejakTerlihat: number | null;
+  tingkat: 'peringatan' | 'kritis' | 'darurat';
+}
+
+export interface RingkasPerangkat {
+  total: number;
+  menua: PerangkatMenua[];
+  belumPernah: number;
+}
+
 export interface Dasbor {
   from: string;
   to: string;
@@ -85,6 +100,7 @@ export interface Dasbor {
   penjualan: PosisiPenjualan;
   terlaris: ProdukTerlaris[];
   stok: RingkasStok | null;
+  perangkat: RingkasPerangkat;
 }
 
 export type Keadaan =
@@ -165,6 +181,57 @@ export function pesanKeadaan(k: Keadaan): PesanLayar | null {
 /** Apakah periode ini benar-benar kosong — dipakai untuk pesan di dalam kartu. */
 export function periodeKosong(d: Dasbor): boolean {
   return d.penjualan.jumlahTransaksi === 0;
+}
+
+/**
+ * FR-H8 sisi owner — kalimat perangkat yang berhenti menyapa.
+ *
+ * `null` berarti tidak ada yang perlu ditampilkan. Kartu yang selalu muncul
+ * dengan tulisan "semua sehat" adalah kartu yang berhenti dibaca, dan ketika
+ * ia akhirnya berubah, tidak ada yang memperhatikan.
+ *
+ * ## ⛔ "Belum terhubung", BUKAN "antrean menua"
+ *
+ * Server tidak dapat melihat antrean yang belum sampai kepadanya — tidak ada
+ * baris untuk dihitung. Yang dilihatnya adalah perangkat yang berhenti
+ * menyapa, dan itu pertanyaan yang berbeda: perangkat yang mati terlihat basi
+ * meski tidak ada penjualan tertahan. Kalimat yang menyamakan keduanya
+ * menjanjikan ketepatan yang datanya tidak punya.
+ *
+ * ⛔ Membawa ANGKA dan KODE perangkatnya. "Ada perangkat yang belum
+ * terhubung" tidak dapat ditindaklanjuti; "K2 di Cabang Selatan, 3 hari"
+ * dapat.
+ */
+export function kalimatPerangkat(p: RingkasPerangkat | null | undefined): string | null {
+  if (!p || p.menua.length === 0) return null;
+
+  const sebut = p.menua.slice(0, 3).map((d) => `${d.code} (${umurKasar(d.jamSejakTerlihat)})`);
+  const sisa = p.menua.length - sebut.length;
+  const daftar = sisa > 0 ? `${sebut.join(', ')}, dan ${sisa} lainnya` : sebut.join(', ');
+
+  return (
+    `${p.menua.length} dari ${p.total} perangkat belum terhubung ke server: ${daftar}. ` +
+    'Penjualan di perangkat itu belum tercatat di laporan mana pun.'
+  );
+}
+
+/** Umur kasar untuk kalimat — jam di bawah sehari, hari di atasnya. */
+export function umurKasar(jam: number | null): string {
+  if (jam === null) return 'belum pernah';
+  if (jam < 24) return `${Math.floor(jam)} jam`;
+  return `${Math.floor(jam / 24)} hari`;
+}
+
+/**
+ * Nada lencana perangkat. Yang TERBURUK menang.
+ *
+ * Satu perangkat `darurat` di antara sepuluh yang `peringatan` menentukan
+ * warnanya — kalau tidak, perangkat yang tiga hari diam tersembunyi di balik
+ * rata-rata yang terlihat wajar.
+ */
+export function nadaPerangkat(p: RingkasPerangkat | null | undefined): 'success' | 'warning' | 'danger' {
+  if (!p || p.menua.length === 0) return 'success';
+  return p.menua.some((d) => d.tingkat !== 'peringatan') ? 'danger' : 'warning';
 }
 
 export interface BarisRincian {

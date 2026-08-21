@@ -293,3 +293,121 @@ test('⛔ tanpa sesi ditolak 401', async () => {
   });
   assert.equal(res.statusCode, 401, res.body);
 });
+
+// ---------------------------------------------------------------------------
+// FR-H8 sisi owner — perangkat yang berhenti menyapa (`spec-h:311`)
+// ---------------------------------------------------------------------------
+
+/**
+ * ⛔ `last_seen_at` disetel RELATIF terhadap jam DATABASE (`now() - interval`),
+ * bukan terhadap jam Node. Umurnya juga dihitung di database; dua jam berbeda
+ * di kedua sisi perbandingan adalah bug yang pernah nyata di repo ini
+ * (resolusi harga, 4 dari 12 run gagal karena skew ±2 ms).
+ */
+async function setelTerlihat(deviceId, interval) {
+  await db.query('BEGIN');
+  await db.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await db.query(
+    `UPDATE device SET token_hash = 'x', last_seen_at = now() - $2::interval WHERE id = $1`,
+    [deviceId, interval]
+  );
+  await db.query('COMMIT');
+}
+
+async function buatPerangkat(kode) {
+  const id = crypto.randomUUID();
+  await db.query('BEGIN');
+  await db.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await db.query(
+    `INSERT INTO device (id, tenant_id, outlet_id, code, name, platform, app_version, schema_version)
+     VALUES ($1,$2,$3,$4,$4,'tauri','0','1')`,
+    [id, tenant.id, outletId, kode]
+  );
+  await db.query('COMMIT');
+  return id;
+}
+
+test('⛔ perangkat TANPA kredensial tidak pernah dilaporkan menua', async () => {
+  // Ia belum pernah dapat menyapa server. Menandainya "belum terhubung 30
+  // hari" adalah memberi tahu owner tentang perangkat yang memang belum
+  // dipasang — dan peringatan yang selalu menyala adalah peringatan yang
+  // diabaikan.
+  await buatPerangkat('K9');
+  const res = await dasbor();
+  assert.equal(res.statusCode, 200, res.body);
+  const p = JSON.parse(res.body).perangkat;
+  assert.deepEqual(p.menua, []);
+  assert.equal(p.total, 0, 'yang tanpa kredensial tidak ikut dihitung sama sekali');
+});
+
+test('perangkat yang baru menyapa tidak muncul', async () => {
+  await setelTerlihat(device, '1 hour');
+  const p = JSON.parse((await dasbor()).body).perangkat;
+  assert.deepEqual(p.menua, []);
+  assert.equal(p.total, 1);
+  assert.equal(p.belumPernah, 0);
+});
+
+test('tangga 4 / 24 / 72 jam berlaku di server juga', async () => {
+  const tingkatUntuk = async (interval) => {
+    await setelTerlihat(device, interval);
+    const p = JSON.parse((await dasbor()).body).perangkat;
+    return p.menua[0]?.tingkat ?? 'aman';
+  };
+
+  assert.equal(await tingkatUntuk('3 hours'), 'aman');
+  assert.equal(await tingkatUntuk('5 hours'), 'peringatan');
+  assert.equal(await tingkatUntuk('30 hours'), 'kritis');
+  assert.equal(await tingkatUntuk('100 hours'), 'darurat');
+});
+
+test('⛔ belum pernah menyapa DIBEDAKAN dari basi', async () => {
+  // Keduanya bukan hal yang sama: yang pertama belum dipasang, yang kedua
+  // sedang menahan penjualan. Menggabungkannya membuat owner menindaklanjuti
+  // hal yang salah.
+  const k2 = await buatPerangkat('K2');
+  await db.query('BEGIN');
+  await db.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await db.query(`UPDATE device SET token_hash = 'x' WHERE id = $1`, [k2]);
+  await db.query('COMMIT');
+  await setelTerlihat(device, '100 hours');
+
+  const p = JSON.parse((await dasbor()).body).perangkat;
+  assert.equal(p.total, 2);
+  assert.equal(p.belumPernah, 1);
+  assert.equal(p.menua.length, 1);
+  assert.equal(p.menua[0].code, 'K1');
+});
+
+test('yang menua terurut TERLAMA dulu', async () => {
+  const k2 = await buatPerangkat('K2');
+  const k3 = await buatPerangkat('K3');
+  await setelTerlihat(device, '5 hours');
+  await setelTerlihat(k2, '200 hours');
+  await setelTerlihat(k3, '30 hours');
+
+  const p = JSON.parse((await dasbor()).body).perangkat;
+  assert.deepEqual(
+    p.menua.map((d) => d.code),
+    ['K2', 'K3', 'K1'],
+    'yang paling lama diam adalah yang paling lama tidak mencatat penjualan'
+  );
+});
+
+test('⛔ isolasi tenant: perangkat tenant lain tidak muncul', async () => {
+  await setelTerlihat(device, '100 hours');
+  const lain = await seedTenantBase(db, { suffix: 'DasborLain' });
+  const res = await app.inject({
+    method: 'GET',
+    url: `/reports/dashboard/summary?${RENTANG}`,
+    headers: {
+      'x-tenant-id': lain.tenant.id,
+      authorization: lain.authHeader,
+      'x-actor-id': lain.user.id,
+    },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const p = JSON.parse(res.body).perangkat;
+  assert.deepEqual(p.menua, []);
+  assert.equal(p.total, 0);
+});

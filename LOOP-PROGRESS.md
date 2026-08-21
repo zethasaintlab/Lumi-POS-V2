@@ -36,7 +36,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | # | Task | Asal | Status |
 |---|---|---|---|
 | 1 | B-29 — pilih paket, lihat harga, bayar | F5 §8 langkah 6 | selesai |
-| 2 | FR-H8 — notifikasi antrean menua | utang F2 | belum |
+| 2 | FR-H8 — notifikasi antrean menua | utang F2 | selesai |
 | 3 | `sold_out_flag` REST + relay | utang F3 | belum |
 | 4 | Tombol cetak ulang di K-09 | utang F4 | belum |
 | 5 | Retry antrean `print_job` | utang F4 | belum |
@@ -122,3 +122,75 @@ galat konsol           : []
 
 Alur penuh terlihat: pilih paket → tagihan Rp 349.000 (1 outlet) → QR →
 cek status (fake menjawab `pending`, paket TETAP `Gratis`) → riwayat terisi.
+
+
+### Task 2 — FR-H8: notifikasi antrean menua
+
+**Selesai.** `spec-h:304`: *"Antrean yang tua berarti uang merchant belum
+tercatat — metrik kesehatan #1."* Tangga 4 / 24 / 72 jam.
+
+**⛔ Temuan yang menentukan bentuk fitur ini: server TIDAK DAPAT melihat
+antrean yang menua.**
+
+Antrean yang menua adalah penjualan yang belum pernah sampai ke server — tidak
+ada baris untuk dihitung. Yang server lihat adalah perangkat yang **berhenti
+menyapa** (`device.last_seen_at`). Keduanya bukan hal yang sama, dan
+menyamakannya berbohong dua arah:
+
+- perangkat yang **mati** terlihat seperti antrean menua meski tidak ada
+  penjualan tertahan;
+- perangkat yang **online tapi selalu ditolak** server terlihat sehat.
+
+Jadi fitur ini punya dua sisi yang sengaja dinamai berbeda, dan hanya
+**ambangnya** yang dibagi (`packages/domain/src/antrean-menua.ts`, pola
+`AMBANG_SELISIH`):
+
+| Sisi | Sumber | Yang ditampilkan |
+|---|---|---|
+| Kasir | `outbox_local` tertua yang belum terkirim | pita "penjualan belum tercatat sejak N" |
+| Owner (B-01) | `device.last_seen_at` | kartu "perangkat belum terhubung" |
+
+**Keputusan yang diambil:**
+
+- ⛔ **PITA, bukan dialog** — AC FR-H8 kedua menuliskannya sebagai aturan.
+  Pitanya tidak mengambil fokus, tidak melayang (ia mendorong isi), dan
+  **tidak punya tombol tutup**: yang menutupnya adalah antrean yang terkuras.
+  Peringatan yang dapat ditutup akan ditutup, dan uang yang belum tercatat
+  tidak berhenti belum tercatat karena kasir menekan silang.
+- ⛔ **Detak satu menit di komponen.** Umur antrean berubah karena WAKTU
+  BERJALAN, bukan karena data berubah — komponen yang menghitungnya saat
+  render menyeberangi ambang 4 jam tanpa merender ulang, dan pitanya baru
+  muncul saat ada penjualan berikutnya, yaitu tepat saat kasir sedang sibuk.
+  Satu menit, bukan satu detik: ambang terkecil 4 jam.
+- ⛔ **Ambang `>=`, bukan `>`.** `spec-h:308` menulis "> 4 jam"; yang dipilih
+  memperingatkan LEBIH DULU. Selisihnya satu titik waktu, dan antrean tepat 4
+  jam sudah berarti uang belum tercatat sejak sarapan.
+- **Ambang dapat dikonfigurasi** (AC pertama) lewat `VITE_AMBANG_ANTREAN_JAM`
+  = `"4,24,72"` — satu variabel, bukan tiga, karena ketiganya hanya berarti
+  bersama-sama.
+- ⛔ **Konfigurasi cacat jatuh ke bawaan SECARA UTUH.** Termasuk tiga angka
+  sah yang tidak menaik (`"72,24,4"`) — diterima apa adanya, setiap antrean
+  langsung berstatus `darurat`, dan peringatan yang selalu menyala adalah
+  peringatan yang diabaikan.
+- ⛔ **Kartu owner hanya muncul bila ada yang perlu ditindaklanjuti.** Kartu
+  yang selalu ada dengan tulisan "semua sehat" berhenti dibaca.
+- ⛔ **Perangkat tanpa kredensial tidak pernah dilaporkan menua** — ia belum
+  pernah dapat menyapa server. Sabotase membuktikan penjaganya menyala:
+  filternya dilepas → 1 merah.
+- ⛔ **Umur dihitung di DATABASE** (`now() - last_seen_at`), bukan di Node.
+  Aturan repo, dan ia lahir dari bug nyata (skew ±2 ms, 4 dari 12 run gagal).
+
+**Batas yang dinyatakan:**
+
+- ⛔ **Tidak ada kanal notifikasi.** `spec-h:311` menulis "notifikasi ke
+  owner"; yang dibangun adalah **keadaan layar**, bukan push/email/SMS —
+  transport notifikasi adalah layanan baru dan biaya baru, dan itu bukan
+  keputusan agent.
+- ⛔ **AC ketiga — "dashboard internal menampilkan merchant dengan antrean
+  tua" — TIDAK dibangun.** Ia perkakas operasional internal lintas-tenant;
+  52 layar `IA` tidak memuatnya, dan query lintas-tenant melanggar invariant
+  #8. Ia menuntut keputusan produk tersendiri.
+- **Pita kasir belum pernah dilihat di browser.** Aplikasi kasir menuntut
+  perangkat ber-kredensial + PowerSync berjalan; logikanya teruji penuh
+  (`node --test`) dan `vite build` hijau, tapi tampilannya belum
+  diverifikasi mata. Dicatat, bukan diklaim.
