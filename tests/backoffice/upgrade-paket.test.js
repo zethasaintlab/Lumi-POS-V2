@@ -167,3 +167,41 @@ test('tagihanTerbuka menemukan yang pending, mengabaikan sisanya', async () => {
   };
   assert.equal(tagihanTerbuka(tertutup), null);
 });
+
+// ===========================================================================
+// FR-C12 — label kategori merchant
+// ===========================================================================
+
+test('⛔ setiap kategori di domain punya label, dan labelnya menyebut singkatannya', async () => {
+  const { labelKategoriMerchant, LABEL_KATEGORI } = await modul();
+  const { KATEGORI_MERCHANT } = await import('../../packages/domain/src/mdr.ts');
+
+  // Daftar label diturunkan dari domain, bukan sebaliknya: kategori yang
+  // ditambahkan kelak akan muncul sebagai kodenya sendiri di layar — jelek,
+  // tapi bukan layar yang mati. Yang tidak boleh terjadi adalah label yang
+  // tertinggal untuk kategori yang sudah dihapus.
+  assert.deepEqual(
+    Object.keys(LABEL_KATEGORI).sort(),
+    [...KATEGORI_MERCHANT].sort(),
+    'daftar label menyimpang dari daftar kategori domain'
+  );
+
+  for (const k of KATEGORI_MERCHANT) {
+    const label = labelKategoriMerchant(k);
+    // ⛔ Singkatan penyelenggara ikut di dalam kurung. Merchant mencocokkan
+    // kategorinya dengan surat pendaftaran QRIS, dan di sana tertulis "UMI",
+    // bukan "usaha mikro".
+    assert.ok(
+      label.includes(k.toUpperCase()),
+      `label "${label}" tidak menyebut singkatan ${k.toUpperCase()}`
+    );
+  }
+});
+
+test('kategori yang belum diatur tidak dirender sebagai "undefined"', async () => {
+  const { labelKategoriMerchant } = await modul();
+  // Server versi N-1 tidak mengirim field ini sama sekali.
+  assert.equal(labelKategoriMerchant(undefined), 'Belum diatur');
+  // Nilai asing dirender apa adanya — jelek, tapi jujur, dan bukan layar mati.
+  assert.equal(labelKategoriMerchant('koperasi'), 'koperasi');
+});

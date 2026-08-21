@@ -195,7 +195,7 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 
 **Gate F2 hijau:** `npm run test:dst` — 10.000 iterasi fault injection, nol pelanggaran atas sepuluh invariant.
 
-**Yang TIDAK termasuk, dan tercatat sebagai utang:** FR-H8 (notifikasi antrean menua, P1) · enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · Modul C-3 rekonsiliasi (P1) · FR-F5 (menunggu keputusan `cost` di jalur turun) · refund parsial dengan pemilihan baris di UI.
+**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · FR-F5 (menunggu keputusan `cost` di jalur turun) · refund parsial dengan pemilihan baris di UI. (FR-H8 dan Modul C-3 sudah ditutup, 21 Agustus 2026.)
 
 Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)
@@ -234,7 +234,20 @@ Sisa Modul B, belum digarap: **FR-B8/B9** (otorisasi step-up — butuh PIN, Modu
 - **Webhook adalah satu-satunya endpoint tanpa `X-Tenant-Id`.** Signature diverifikasi sebelum satu query pun jalan; tenant dibaca dari `custom_field1` lalu dipakai sebagai `app.tenant_id`, sehingga pencariannya tetap tunduk RLS. Kunci kosong → `503`, bukan diterima apa adanya.
 - **Redaksi log dipasang di lapisan logging** (`logMethod` pino), bukan dipanggil dari tiap handler — AC FR-C5 ketiga menuntut kata itu. Ia menyaring bentuk nomor kartu **dan** nilai rahasia yang didaftarkan saat boot; penyaringan berbasis nama field saja tidak menangkap kunci yang menyelinap ke pesan error.
 
-Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
+**Modul C sub-project 3 — rekonsiliasi & ekspor: selesai** (21 Agustus 2026). FR-C12 dan FR-C13, keduanya P1. `IA:§3.3` menamai B-19 "Laporan Pembayaran **& Rekonsiliasi**" sejak awal; kata kedua itu kini punya kode di baliknya.
+
+**Keputusan yang mengikat kode rekonsiliasi:**
+
+- ⛔ **MDR bukan pajak.** Ia hidup di `packages/domain/src/mdr.ts`, bukan di `tax.ts` — biaya jasa akuisisi yang tidak masuk `order.tax_amount`, tidak muncul di struk, dan tidak mengubah satu pun angka di `order`. Tarifnya `bigint` berskala 10.000, konvensi yang sama dengan `tax_rate.rate`.
+- ⛔ **`null` BERBEDA dari `0`, dan perbedaannya sampai ke layar.** `0` = diperkirakan tidak dipotong (UMI ≤ Rp 500.000); `null` = metode itu tidak punya perkiraan sama sekali. Kartu EDC masuk yang kedua — tarifnya per-acquirer dan `spec-c` tidak memberikan satu pun angkanya. Layar menulis "— tidak ada perkiraan", CSV menulis sel kosong. "Rp 0" untuk kartu adalah pernyataan yang **salah**.
+- ⛔ **`payment.mdr_estimated` SNAPSHOT**, ditulis di transaksi pembayaran. Menghitungnya saat dibaca membuat dua ekspor untuk periode yang sama berbeda begitu kategori atau tarif regulator berubah. Konsekuensinya dinyatakan: memperbaiki `tenant.merchant_category` **tidak** mengubah baris lama.
+- ⛔ **Angka kepala rekapitulasi dari `posisiPenjualan`**, lewat `rekapPenjualan` di berkas yang sama. AC FR-C13 kedua menuntut totalnya cocok dengan laporan penjualan; memakai fungsi yang sama membuat itu benar menurut **konstruksi**, dan testnya `assert.deepEqual` terhadap respons `GET /reports/sales`.
+- ⛔ **Pajak dipisah dari kolom SNAPSHOT** `order_line.tax_rate_name` (`0022`) dan `order_line.tax_jurisdiction` (`0028`), bukan JOIN ke `tax_rate`. Tarif yang di-rename setelah pelaporan tidak boleh mengubah rekapitulasi periode yang sudah dilaporkan.
+- **`tax_jurisdiction` sengaja TIDAK turun ke perangkat.** Menambah kolom raw table mengubah sidik jari skema lokal, dan itu menuntut `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant — biaya nyata untuk kolom yang tidak satu pun layar kasir baca.
+- **`totalDiskonOrder` dan `totalServiceCharge` masih selalu NOL**: `POST /orders` menulis nol ke kolomnya. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya. ⛔ Test integrasi untuk keduanya akan hijau karena **hampa**; aturannya diuji di `tests/domain/posisi-penjualan.test.js`.
+- **XLSX tidak dibuat.** `spec-c:444` menulis "CSV + XLSX"; XLSX menuntut dependensi baru dan CSV terbuka apa adanya di Excel dan Google Sheets. Batas yang dinyatakan.
+
+Sisa Modul C: FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
 
 **Keputusan produk yang mengikat kode katalog:**
 
@@ -280,7 +293,7 @@ Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktif
 - **Refund sebagian wajib menyebut `lines`.** Tanpa itu server harus menebak apakah barang fisik kembali ke rak. `lines: []` berarti uang kembali tanpa barang kembali.
 - **Void berjalan tanpa `X-Approver-Id`; refund selalu menuntutnya.** Header itu diabaikan pada jalur void. Bahwa penyetuju berbeda dari aktor ditegakkan `CHECK` di `audit_event` — **database**, bukan aplikasi.
 
-**Exit criteria F1 terpenuhi.** Satu penjualan tersimpan atomik dengan pajak benar, dapat dibayar tunai/QRIS/EDC, dan dapat dikoreksi lewat void & refund. `ARCH:395` menuntut modul `payment` — ia ada, beserta port gateway-nya. Yang tersisa di Modul C adalah C-3 (rekonsiliasi dan ekspor, keduanya P1).
+**Exit criteria F1 terpenuhi.** Satu penjualan tersimpan atomik dengan pajak benar, dapat dibayar tunai/QRIS/EDC, dan dapat dikoreksi lewat void & refund. `ARCH:395` menuntut modul `payment` — ia ada, beserta port gateway-nya. C-3 (rekonsiliasi dan ekspor) ditutup 21 Agustus 2026.
 
 ---
 

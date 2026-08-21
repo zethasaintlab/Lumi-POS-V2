@@ -1,10 +1,14 @@
 import type { Pool, PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
 import { parseRateToScaled } from '../../../../../packages/domain/src/numeric.ts';
+import {
+  adalahKategoriMerchant,
+  type KategoriMerchant,
+} from '../../../../../packages/domain/src/mdr.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createRegisterHandlers } from './handlers/register.ts';
 import { createOutletHandlers } from './handlers/outlets.ts';
-import { createUsageHandlers } from './handlers/usage.ts';
+import { createUsageHandlers, createSettingsHandlers } from './handlers/usage.ts';
 import { createSubscriptionHandlers } from './handlers/langganan.ts';
 import type { SubscriptionProvider } from '../payment/providers/langganan.ts';
 
@@ -92,6 +96,31 @@ export async function getOutletSettings(client: PoolClient, outletId: string): P
 }
 
 /**
+ * FR-C12 — kategori merchant, untuk memperkirakan potongan MDR.
+ *
+ * `tenant` milik modul ini (`modules/README.md`), jadi modul `payment` yang
+ * membutuhkannya memanggil lewat sini alih-alih meng-query tabelnya sendiri
+ * (invariant #4).
+ *
+ * ⛔ Nilai tak dikenal jatuh ke `umi`, TIDAK melempar. Kolomnya punya CHECK
+ * constraint dan bawaan, jadi nilai asing praktis mustahil — tapi kalau ia
+ * tetap terjadi, jalur yang benar bukan menggagalkan pembayaran. Perkiraan
+ * MDR adalah angka pelengkap; menolak penjualan karena kategori merchant
+ * tidak terbaca melanggar `research/09:213` (*"penjualan tidak pernah boleh
+ * dihentikan"*) untuk sesuatu yang bahkan tidak menyentuh total.
+ *
+ * `client` WAJIB dari transaksi pemanggil yang sudah men-`SET LOCAL
+ * app.tenant_id` — pola yang sama dengan `assertOutletVisible`.
+ */
+export async function getMerchantCategory(client: PoolClient): Promise<KategoriMerchant> {
+  const { rows } = await client.query<{ merchant_category: string }>(
+    'SELECT merchant_category FROM tenant LIMIT 1'
+  );
+  const nilai = rows[0]?.merchant_category;
+  return adalahKategoriMerchant(nilai) ? nilai : 'umi';
+}
+
+/**
  * F5 — pendaftaran merchant mandiri (`POST /tenants`).
  *
  * Modul ini tidak punya endpoint sama sekali sebelum ini; ia hidup hanya
@@ -107,6 +136,7 @@ export function createTenancyHandlers(
     ...createRegisterHandlers(pool, hlc),
     ...createOutletHandlers(pool, hlc),
     ...createUsageHandlers(pool),
+    ...createSettingsHandlers(pool),
     ...createSubscriptionHandlers(pool, hlc, subscriptionProvider),
   };
 }

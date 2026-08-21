@@ -162,7 +162,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [plan, status, kuota]
+                required: [plan, status, merchantCategory, kuota]
                 properties:
                   plan:
                     type: string
@@ -170,6 +170,13 @@ paths:
                   status:
                     type: string
                     enum: [active, suspended, cancelled]
+                  merchantCategory:
+                    type: string
+                    enum: [umi, uke, ume, ube]
+                    description: >-
+                      FR-C12. Menentukan tarif MDR yang dipakai untuk
+                      MEMPERKIRAKAN potongan settlement. Bawaan `umi`
+                      ([ASUMSI] -- belum divalidasi ke merchant).
                   kuota:
                     type: object
                     description: >-
@@ -183,6 +190,64 @@ paths:
                       device: { $ref: '#/components/schemas/PemakaianKuota' }
                       pengguna: { $ref: '#/components/schemas/PemakaianKuota' }
                       produk: { $ref: '#/components/schemas/PemakaianKuota' }
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tenants/settings:
+    patch:
+      operationId: updateTenantSettings
+      summary: FR-C12 -- kategori merchant, untuk perkiraan potongan MDR.
+      description: >-
+        AC FR-C12 ketiga: kategori merchant dapat dikonfigurasi per tenant.
+        Kategori ditetapkan penyelenggara QRIS saat merchant didaftarkan; POS
+        tidak dapat menurunkannya dari data apa pun yang dimilikinya.
+
+
+        ⛔ Perubahannya berlaku KE DEPAN saja. `payment.mdr_estimated` adalah
+        SNAPSHOT saat transaksi; memperbaiki kategori yang salah tidak
+        menghitung ulang baris yang sudah ada. Itu disengaja -- dua ekspor
+        untuk periode yang sama tidak boleh berbeda.
+
+
+        Owner-only (`billing`, `spec-f:52`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchantCategory]
+              properties:
+                merchantCategory:
+                  type: string
+                  # SENGAJA tanpa `enum`: handler adalah satu-satunya sumber
+                  # kebenaran untuk penolakan ini, dan pesannya MENYEBUT
+                  # pilihan yang sah. Pola sama dengan reports/export type.
+      responses:
+        '200':
+          description: Kategori setelah perubahan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [merchantCategory]
+                properties:
+                  merchantCategory:
+                    type: string
+                    enum: [umi, uke, ume, ube]
+        '400':
+          description: Kategori tidak dikenal (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '403':
           description: Aktor bukan Owner (FORBIDDEN).
           content:
@@ -3315,12 +3380,16 @@ paths:
   /reports/payments:
     get:
       operationId: getPaymentReport
-      summary: FR-G1 -- uang masuk per metode pembayaran.
+      summary: FR-G1 -- uang masuk per metode pembayaran, dengan rekonsiliasi MDR.
       description: >-
-        ⛔ Rekonsiliasi TIDAK termasuk. `IA:§3.3` menamai layarnya "Laporan
-        Pembayaran & Rekonsiliasi", tapi Modul C-3 belum dibangun sama sekali
-        (P1). Endpoint ini murni agregasi per metode; batasnya dinyatakan,
-        bukan disamarkan dengan field kosong.
+        Sejak Modul C-3, setiap baris membawa PERKIRAAN potongan dan perkiraan
+        settlement di samping nilai transaksinya (FR-C12). Nilainya dibaca dari
+        `payment.mdr_estimated` -- SNAPSHOT saat transaksi, bukan dihitung
+        ulang saat laporan dibuat.
+
+
+        ⛔ `perkiraanMdr` null BERBEDA dari "0": null berarti metode itu tidak
+        punya perkiraan sama sekali.
 
 
         ⛔ Hanya payment `confirmed` (spec-c:223). Yang masih
@@ -3358,6 +3427,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LaporanPembayaran'
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reports/recap:
+    get:
+      operationId: getRecapReport
+      summary: FR-C13 -- rekapitulasi penjualan untuk pelaporan pajak.
+      description: >-
+        Menggantikan integrasi API Coretax (OQ-04). Merchant atau akuntannya
+        memakai hasil ini untuk pelaporan.
+
+
+        ⛔ Angka kepalanya datang dari `rekapPenjualan`, yang memanggil
+        `posisiPenjualan` -- fungsi yang SAMA dengan `GET /reports/sales`.
+        AC FR-C13 kedua menuntut totalnya cocok dengan laporan penjualan pada
+        periode yang sama, dan memakai fungsi yang sama membuat itu benar
+        menurut konstruksi, bukan menurut kehati-hatian.
+
+
+        ⛔ Pajak dipisah per NAMA TARIF dan per YURISDIKSI, dari kolom
+        SNAPSHOT `order_line.tax_rate_name` dan `order_line.tax_jurisdiction`.
+        Meresolusinya lewat JOIN ke `tax_rate` membuat tarif yang di-rename
+        mengubah rekapitulasi periode yang sudah dilaporkan. Baris lama yang
+        belum punya snapshot dikelompokkan sebagai null -- jujur, bukan
+        ditebak.
+
+
+        ⛔ `perkiraanMdr` dan `perkiraanSettlement` adalah PERKIRAAN
+        (FR-C12), bukan nilai final. Yang menentukan potongan sebenarnya
+        adalah penyelenggara, per settlement. `null` berarti metode itu tidak
+        punya perkiraan sama sekali -- kartu EDC tidak punya, karena
+        tarifnya per-acquirer dan spec tidak memberikan satu pun angkanya.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rekapitulasi periode.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaporanRekap'
         '400':
           description: Rentang tidak valid (VALIDATION_ERROR).
           content:
@@ -4870,7 +4999,9 @@ components:
                 $ref: '#/components/schemas/PosisiPenjualan'
     LaporanPembayaran:
       type: object
-      required: [from, to, outletId, metode, totalDiterima]
+      required:
+        [from, to, outletId, metode, totalDiterima, totalPerkiraanMdr,
+         totalPerkiraanSettlement]
       properties:
         from: { type: string }
         to: { type: string }
@@ -4878,17 +5009,106 @@ components:
         totalDiterima:
           type: string
           description: Rupiah utuh sebagai STRING -- bigint, bukan number.
+        totalPerkiraanMdr:
+          type: string
+          description: >-
+            FR-C12. PERKIRAAN potongan settlement, bukan nilai final. Yang
+            menentukan potongan sebenarnya adalah penyelenggara, per
+            settlement.
+        totalPerkiraanSettlement: { type: string }
         metode:
           type: array
           items:
             type: object
-            required: [method, jumlahTransaksi, totalDiterima]
+            required:
+              [method, jumlahTransaksi, totalDiterima, perkiraanMdr,
+               perkiraanSettlement]
             properties:
               method:
                 type: string
                 enum: [cash, qris_dynamic, qris_static, card_edc, other]
               jumlahTransaksi: { type: integer }
               totalDiterima: { type: string }
+              perkiraanMdr:
+                type: string
+                nullable: true
+                description: >-
+                  null = metode ini tidak punya perkiraan potongan sama sekali
+                  (tunai tidak dipotong; kartu EDC dipotong dengan tarif
+                  per-acquirer yang spec tidak berikan angkanya). BERBEDA dari
+                  "0", yang berarti diperkirakan tidak ada potongan.
+              perkiraanSettlement: { type: string }
+              tanpaPerkiraan:
+                type: integer
+                description: >-
+                  Baris yang belum punya perkiraan tersimpan (ditulis sebelum
+                  FR-C12).
+    LaporanRekap:
+      type: object
+      required: [from, to, outletId, rekap]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        rekap:
+          type: object
+          required:
+            [jumlahTransaksi, omzetKotor, omzetBersih, pajakTerkumpul, pajak,
+             pembayaran, totalDiterima, totalPerkiraanMdr, totalPerkiraanSettlement]
+          properties:
+            jumlahTransaksi: { type: integer }
+            omzetKotor: { type: string }
+            voidAmount: { type: string }
+            refundAmount: { type: string }
+            omzetBersih: { type: string }
+            pajakTerkumpul: { type: string }
+            rataRataPerTransaksi: { type: string }
+            totalDiskonOrder: { type: string }
+            totalDiskonBaris: { type: string }
+            totalServiceCharge: { type: string }
+            totalPembulatan: { type: string }
+            totalDiterima: { type: string }
+            totalPerkiraanMdr:
+              type: string
+              description: PERKIRAAN, bukan nilai final (AC FR-C12 kedua).
+            totalPerkiraanSettlement: { type: string }
+            pajak:
+              type: array
+              items:
+                type: object
+                required: [nama, yurisdiksi, total]
+                properties:
+                  nama:
+                    type: string
+                    nullable: true
+                    description: Snapshot nama tarif. null = ditulis sebelum migrasi 0022.
+                  yurisdiksi:
+                    type: string
+                    nullable: true
+                    description: Snapshot yurisdiksi. null = ditulis sebelum migrasi 0028.
+                  total: { type: string }
+            pembayaran:
+              type: array
+              items:
+                type: object
+                required: [method, jumlahTransaksi, totalDiterima, perkiraanMdr, perkiraanSettlement]
+                properties:
+                  method:
+                    type: string
+                    enum: [cash, qris_dynamic, qris_static, card_edc, other]
+                  jumlahTransaksi: { type: integer }
+                  totalDiterima: { type: string }
+                  perkiraanMdr:
+                    type: string
+                    nullable: true
+                    description: >-
+                      null = metode ini tidak punya perkiraan potongan sama
+                      sekali. Berbeda dari "0", yang berarti diperkirakan tidak
+                      ada potongan.
+                  perkiraanSettlement: { type: string }
+                  tanpaPerkiraan:
+                    type: integer
+                    description: Baris yang belum punya perkiraan tersimpan (ditulis sebelum FR-C12).
     LaporanProduk:
       type: object
       required: [from, to, outletId, produk]

@@ -195,3 +195,77 @@ export function posisiPenjualan({
     rataRataPerTransaksi: jumlahTransaksi === 0 ? 0n : omzetBersih / BigInt(jumlahTransaksi),
   };
 }
+
+/**
+ * Order dengan kolom yang hanya rekapitulasi FR-C13 butuhkan.
+ *
+ * Ketiganya kolom `order`, dan itu sebabnya penjumlahannya harus terjadi DI
+ * SINI: `tests/domain/satu-sumber-omzet.test.js` menolak `SUM(...)` atas tabel
+ * `"order"` di berkas mana pun selain berkas ini, dan penjaga itu benar —
+ * laporan yang menjumlahkan sendiri adalah laporan yang mendefinisikan ulang
+ * apa yang dianggap batal.
+ */
+export interface OrderUntukRekap extends OrderUntukPosisi {
+  /** `order.order_discount` — diskon tingkat order, bukan tingkat baris. */
+  orderDiscount: NilaiUang;
+  serviceChargeAmount: NilaiUang;
+  /** `order.rounding_adjustment` — FR-C9, hanya terisi bila ada tunai. */
+  roundingAdjustment: NilaiUang;
+}
+
+export interface RekapPenjualan extends PosisiPenjualan {
+  totalDiskonOrder: bigint;
+  totalServiceCharge: bigint;
+  totalPembulatan: bigint;
+}
+
+/**
+ * FR-C13 — angka kepala rekapitulasi penjualan.
+ *
+ * ⛔ Ia MEMANGGIL `posisiPenjualan` untuk omzet, void, refund, pajak, dan
+ * jumlah transaksi — tidak menghitungnya ulang. AC FR-C13 kedua menuntut
+ * *"total di ekspor cocok dengan laporan penjualan pada periode yang sama"*,
+ * dan satu-satunya cara membuat itu benar **menurut konstruksi** alih-alih
+ * menurut kehati-hatian adalah memakai fungsi yang sama.
+ *
+ * Yang ditambahkan hanyalah tiga penjumlahan yang laporan penjualan tidak
+ * punya, dan ketiganya memakai aturan "order mana yang dihitung" yang **sama
+ * persis** — status penjualan, dan tidak punya pembatal.
+ *
+ * ## ⛔ Pembulatan dijumlahkan apa adanya, termasuk yang negatif
+ *
+ * `rounding_adjustment` dapat bernilai negatif (pembulatan ke bawah). Ia
+ * bagian dari rekonsiliasi: jumlah seluruhnya menjelaskan selisih antara
+ * `SUM(total)` dan uang yang benar-benar diterima. Mengambil nilai mutlaknya
+ * akan menghasilkan angka yang tidak menjelaskan apa pun.
+ */
+export function rekapPenjualan({
+  orders,
+  refunds,
+}: {
+  orders: readonly OrderUntukRekap[];
+  refunds: readonly RefundUntukPosisi[];
+}): RekapPenjualan {
+  const posisi = posisiPenjualan({ orders, refunds });
+
+  const dibatalkan = new Set<string>();
+  for (const o of orders) {
+    if (o.voidedByOrderId !== null && o.voidedByOrderId !== undefined) {
+      dibatalkan.add(o.voidedByOrderId);
+    }
+  }
+
+  let totalDiskonOrder = 0n;
+  let totalServiceCharge = 0n;
+  let totalPembulatan = 0n;
+
+  for (const o of orders) {
+    if (!STATUS_PENJUALAN.has(o.status)) continue;
+    if (dibatalkan.has(o.id)) continue;
+    totalDiskonOrder += keBigInt(o.orderDiscount);
+    totalServiceCharge += keBigInt(o.serviceChargeAmount);
+    totalPembulatan += keBigInt(o.roundingAdjustment);
+  }
+
+  return { ...posisi, totalDiskonOrder, totalServiceCharge, totalPembulatan };
+}

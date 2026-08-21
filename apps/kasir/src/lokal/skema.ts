@@ -264,6 +264,22 @@ export const KOLOM_SENGAJA_TIDAK_TURUN = [
   'item_variation.cost',
   'modifier.tenant_id',
   'item_modifier_list.tenant_id',
+  // ⛔ FR-C13 — yurisdiksi tarif pajak (migrasi 0028) SENGAJA berhenti di
+  // server.
+  //
+  // Ia dipakai satu tempat saja: rekapitulasi pajak di back-office, yang
+  // online-only (`IA:§3.3`). Cetak ulang struk tidak menampilkannya, dan
+  // laporan harian di perangkat tidak memisahkan pajak per yurisdiksi.
+  //
+  // Alasan menahannya bukan sekadar "tidak terpakai": menambah kolom raw
+  // table mengubah SIDIK JARI skema lokal, dan setiap perubahan itu menuntut
+  // `disconnectAndClear()` beserta unduh ulang seluruh katalog di setiap
+  // perangkat merchant (prototipe 05). Itu biaya nyata untuk kolom yang tidak
+  // ada satu pun layar kasir baca.
+  //
+  // `tax_rate_name` BERBEDA dan memang turun — cetak ulang struk (`spec-b:145`)
+  // tidak boleh menyentuh tabel katalog, jadi namanya harus ada di perangkat.
+  'order_line.tax_jurisdiction',
   // Kolom audit — tidak dipakai layar kasir mana pun, dan `changed_by` adalah
   // id pengguna yang bisa saja bukan staf outlet ini.
   'price_history.changed_by',

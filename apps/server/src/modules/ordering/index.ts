@@ -6,6 +6,7 @@ import { createReportHandlers } from './handlers/reports.ts';
 import { createProductReportHandlers } from './handlers/reports-produk.ts';
 import { createCashierReportHandlers } from './handlers/reports-kasir.ts';
 import { createPaymentReportHandlers } from './handlers/reports-pembayaran.ts';
+import { createRecapReportHandlers } from './handlers/reports-rekap.ts';
 import { createExportHandlers } from './handlers/reports-ekspor.ts';
 import { createExceptionReportHandlers } from './handlers/reports-exception.ts';
 import { createRiwayatHandlers } from './handlers/riwayat.ts';
@@ -43,6 +44,7 @@ export function createOrderingHandlers(pool: Pool, hlc: Hlc): Record<string, unk
     ...createProductReportHandlers(pool),
     ...createCashierReportHandlers(pool),
     ...createPaymentReportHandlers(pool),
+    ...createRecapReportHandlers(pool),
     ...createExportHandlers(pool),
     ...createExceptionReportHandlers(pool),
     ...createRiwayatHandlers(pool),

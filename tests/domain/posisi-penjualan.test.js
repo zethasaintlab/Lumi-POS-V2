@@ -235,3 +235,121 @@ test('⛔ property: urutan baris tidak mengubah satu angka pun', async () => {
   });
   assert.deepEqual(terbalik, lurus);
 });
+
+// ===========================================================================
+// FR-C13 — rekapPenjualan
+// ===========================================================================
+//
+// ⛔ Ketiga angka di bawah TIDAK dapat diuji lewat endpoint hari ini:
+// `order.order_discount` dan `order.service_charge_amount` masih ditulis nol
+// oleh `POST /orders` (FR-B12 diskon order belum ada di jalur itu). Test
+// integrasi yang mencoba membuktikannya karena itu akan hijau karena HAMPA —
+// ia memeriksa keadaan yang tidak dapat terjadi, kelas cacat yang `CLAUDE.md`
+// catat berulang.
+//
+// Di sini barisnya disusun langsung, jadi aturan "order yang punya pembatal
+// dikeluarkan" benar-benar diuji untuk ketiga kolom.
+
+const REKAP = '../../packages/domain/src/posisi-penjualan.ts';
+
+function orderRekap(over = {}) {
+  return {
+    id: 'o1',
+    status: 'closed',
+    total: 100000n,
+    taxAmount: 0n,
+    orderDiscount: 0n,
+    serviceChargeAmount: 0n,
+    roundingAdjustment: 0n,
+    voidedByOrderId: null,
+    ...over,
+  };
+}
+
+test('rekapPenjualan menjumlahkan diskon order, service charge, dan pembulatan', async () => {
+  const { rekapPenjualan } = await import(REKAP);
+  const r = rekapPenjualan({
+    orders: [
+      orderRekap({ id: 'a', orderDiscount: 5000n, serviceChargeAmount: 3000n, roundingAdjustment: 50n }),
+      orderRekap({ id: 'b', orderDiscount: 2000n, serviceChargeAmount: 1000n, roundingAdjustment: -30n }),
+    ],
+    refunds: [],
+  });
+  assert.equal(r.totalDiskonOrder, 7000n);
+  assert.equal(r.totalServiceCharge, 4000n);
+  // ⛔ Pembulatan negatif dijumlahkan APA ADANYA. Nilai mutlaknya akan
+  // menghasilkan angka yang tidak menjelaskan selisih apa pun.
+  assert.equal(r.totalPembulatan, 20n);
+});
+
+test('⛔ order yang PUNYA pembatal tidak menyumbang ketiganya', async () => {
+  const { rekapPenjualan } = await import(REKAP);
+  const r = rekapPenjualan({
+    orders: [
+      orderRekap({ id: 'hidup', orderDiscount: 5000n, serviceChargeAmount: 3000n, roundingAdjustment: 50n }),
+      orderRekap({ id: 'mati', orderDiscount: 9000n, serviceChargeAmount: 8000n, roundingAdjustment: 70n }),
+      // Pembatal: statusnya `voided`, dan ia menunjuk order yang dibatalkan.
+      orderRekap({
+        id: 'pembatal',
+        status: 'voided',
+        orderDiscount: 9000n,
+        serviceChargeAmount: 8000n,
+        roundingAdjustment: 70n,
+        voidedByOrderId: 'mati',
+      }),
+    ],
+    refunds: [],
+  });
+  assert.equal(r.totalDiskonOrder, 5000n, 'order yang dibatalkan ikut terhitung');
+  assert.equal(r.totalServiceCharge, 3000n, 'order yang dibatalkan ikut terhitung');
+  assert.equal(r.totalPembulatan, 50n, 'order yang dibatalkan ikut terhitung');
+});
+
+test('⛔ order `open` dan `abandoned` tidak menyumbang ketiganya', async () => {
+  const { rekapPenjualan } = await import(REKAP);
+  const r = rekapPenjualan({
+    orders: [
+      orderRekap({ id: 'a', status: 'open', orderDiscount: 4000n, serviceChargeAmount: 4000n, roundingAdjustment: 40n }),
+      orderRekap({ id: 'b', status: 'abandoned', orderDiscount: 4000n, serviceChargeAmount: 4000n, roundingAdjustment: 40n }),
+    ],
+    refunds: [],
+  });
+  assert.equal(r.totalDiskonOrder, 0n);
+  assert.equal(r.totalServiceCharge, 0n);
+  assert.equal(r.totalPembulatan, 0n);
+});
+
+test('⛔ angka kepala rekapPenjualan IDENTIK dengan posisiPenjualan', async () => {
+  const { rekapPenjualan, posisiPenjualan } = await import(REKAP);
+  const orders = [
+    orderRekap({ id: 'a', total: 100000n, taxAmount: 11000n, orderDiscount: 5000n }),
+    orderRekap({ id: 'b', total: 50000n, taxAmount: 5000n, serviceChargeAmount: 2000n }),
+    orderRekap({ id: 'v', status: 'voided', total: 50000n, voidedByOrderId: 'b' }),
+  ];
+  const refunds = [{ orderId: 'a', amount: 20000n }];
+
+  const rekap = rekapPenjualan({ orders, refunds });
+  const posisi = posisiPenjualan({ orders, refunds });
+
+  // Field per field akan meleset saat salah satunya bertambah; objek utuh
+  // tidak.
+  const { totalDiskonOrder, totalServiceCharge, totalPembulatan, ...kepala } = rekap;
+  assert.deepEqual(kepala, posisi);
+  assert.ok(totalDiskonOrder >= 0n && totalServiceCharge >= 0n && totalPembulatan >= 0n);
+});
+
+test('nilai uang dari database diterima dalam ketiga bentuknya', async () => {
+  const { rekapPenjualan } = await import(REKAP);
+  // `pg` mengembalikan bigint sebagai STRING; `node:sqlite` sebagai number;
+  // `@powersync/web` sebagai bigint. Fungsi yang hanya menerima satu bentuk
+  // hijau di test dan salah di salah satu aplikasi.
+  const r = rekapPenjualan({
+    orders: [
+      orderRekap({ id: 'a', orderDiscount: '5000', serviceChargeAmount: 3000, roundingAdjustment: 50n }),
+    ],
+    refunds: [],
+  });
+  assert.equal(r.totalDiskonOrder, 5000n);
+  assert.equal(r.totalServiceCharge, 3000n);
+  assert.equal(r.totalPembulatan, 50n);
+});

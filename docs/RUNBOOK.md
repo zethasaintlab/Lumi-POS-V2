@@ -35,6 +35,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Struk tidak keluar" | §3 cetak |
 | "Stok minus padahal barang ada" | §4 stok & oversell |
 | "Sudah bayar QRIS tapi order belum lunas" | §5 pembayaran gateway |
+| "Uang yang masuk rekening kurang dari yang tercatat" | §5.5 potongan MDR |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
@@ -277,6 +278,51 @@ tagihan langganan, tanpa = pembayaran penjualan.
 ⛔ Seluruh jalur webhook teruji dengan payload BUATAN. Jabat tangan sungguhan
 menuntut URL publik (tunnel) dan **belum pernah dilakukan**. Perlakukan
 integrasi pertama di produksi sebagai langkah yang butuh pengawasan.
+
+### 5.5 "Uang yang masuk rekening kurang dari yang tercatat"
+
+Ini **bukan** kerusakan data. MDR dipotong di sisi settlement, jadi yang masuk
+rekening merchant memang lebih kecil dari nilai transaksi (FR-C12). Tanpa
+ditampilkan, merchant menyimpulkan POS-nya salah — atau kasirnya mencuri.
+
+**Tunjukkan B-19 Laporan Pembayaran & Rekonsiliasi.** Kolom "Perkiraan
+potongan" dan "Perkiraan diterima" berdiri di samping nilai transaksinya.
+
+⛔ **Angkanya PERKIRAAN, dan jangan pernah dipakai menagih penyelenggara.**
+Yang menentukan potongan sebenarnya adalah penyelenggara, per settlement.
+
+| Yang terlihat | Artinya |
+|---|---|
+| Kolom potongan berisi angka | Perkiraan tersimpan saat transaksi (snapshot). |
+| "— tidak ada perkiraan" | Metode itu tidak punya perkiraan: tunai tidak dipotong; kartu/EDC tarifnya per-acquirer dan `spec-c` tidak memberikan angkanya. |
+| Perkiraan meleset konsisten | Kategori merchantnya kemungkinan salah. Lihat di bawah. |
+
+**Kategori merchant salah.** Ia menentukan tarif (UMI ≤ Rp 500.000 bebas, UMI
+di atasnya 0,3%, selain UMI 0,7%) dan ditetapkan **penyelenggara QRIS** saat
+merchant mendaftar — bukan oleh Lumi. Perbaiki di **B-29 Langganan & Batas** →
+Kategori merchant.
+
+⛔ **Perubahannya berlaku KE DEPAN saja.** `payment.mdr_estimated` adalah
+snapshot; laporan periode yang sudah lewat tetap memakai kategori yang berlaku
+saat transaksi terjadi. Itu disengaja — dua ekspor untuk periode yang sama
+tidak boleh berbeda. Katakan ini ke merchant sebelum ia membuka laporan lama
+dan menyimpulkan tombolnya tidak bekerja.
+
+⛔ **Jangan meng-`UPDATE` `payment.mdr_estimated`** untuk "memperbaiki" laporan
+lama. Itu `UPDATE` pada transaksi yang sudah selesai (invariant #2), dan yang
+diperbaikinya hanyalah angka yang sejak awal berlabel perkiraan.
+
+### 5.6 Akuntan minta rekapitulasi pajak
+
+**B-20 Ekspor → Rekapitulasi pajak.** Pajak dipisah per jenis dan yurisdiksi,
+plus diskon, service charge, dan pembulatan. Periode dan tanggal dibuat ada
+**di dalam** berkas — nama berkas hilang begitu seseorang menyimpannya ulang.
+
+| Yang terlihat di berkas | Artinya |
+|---|---|
+| Yurisdiksi "(tidak tercatat)" | Baris ditulis sebelum migrasi `0028`. Nilainya tidak dapat direkonstruksi tanpa menebak, dan menebak akan mengubah rekapitulasi periode yang sudah dilaporkan. |
+| `diskon_order` dan `service_charge` selalu 0 | Benar hari ini: jalur pembuatan order belum menulis keduanya. Bukan kerusakan. |
+| Total berbeda dari Laporan Penjualan | ⛔ **Tidak boleh terjadi** — keduanya memakai fungsi yang sama, dan ada test yang membandingkannya. Eskalasi. |
 
 ---
 

@@ -340,3 +340,60 @@ test('⛔ batas `null` dikembalikan apa adanya, bukan 0', async () => {
   assert.equal(b.kuota.produk.batas, null);
   assert.equal(b.kuota.outlet.batas, 1, 'dimensi lain tidak ikut berubah');
 });
+
+// ===========================================================================
+// FR-C12 — kategori merchant (`PATCH /tenants/settings`)
+// ===========================================================================
+
+const patchSettings = (payload, headers = {}) =>
+  app.inject({ method: 'PATCH', url: '/tenants/settings', payload, headers: H(headers) });
+
+test('kategori merchant bawaan `umi`, dan ikut di GET /tenants/usage', async () => {
+  // ⛔ [ASUMSI] — bawaan `umi` dipilih karena target produk kafe takeaway
+  // 2–20 outlet, TAPI belum divalidasi ke merchant mana pun. Test ini mengunci
+  // nilainya supaya perubahannya menjadi keputusan sadar, bukan kelalaian.
+  const b = await pemakaian();
+  assert.equal(b.merchantCategory, 'umi');
+});
+
+test('kategori dapat diubah, dan perubahannya terbaca di pemakaian', async () => {
+  const res = await patchSettings({ merchantCategory: 'uke' });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(JSON.parse(res.body).merchantCategory, 'uke');
+
+  const b = await pemakaian();
+  assert.equal(b.merchantCategory, 'uke');
+});
+
+test('⛔ kategori tak dikenal ditolak dengan pesan yang MENYEBUT pilihan sah', async () => {
+  const { KATEGORI_MERCHANT } = await import('../../packages/domain/src/mdr.ts');
+  for (const buruk of ['UMI', 'mikro', '', null, 7]) {
+    const res = await patchSettings({ merchantCategory: buruk });
+    assert.equal(res.statusCode, 400, `${String(buruk)} seharusnya ditolak: ${res.body}`);
+    const pesan = JSON.parse(res.body).error.message;
+    // Pesan yang tidak menyebut pilihannya memaksa operator menebak.
+    for (const k of KATEGORI_MERCHANT) {
+      assert.ok(pesan.includes(k), `pesan tidak menyebut ${k}: ${pesan}`);
+    }
+  }
+});
+
+test('⛔ kategori tenant lain tidak dapat diubah', async () => {
+  const lain = await daftarkanMerchant();
+  // Header sesi tenant ini, tapi `X-Tenant-Id` milik tenant lain: RLS membuat
+  // `UPDATE`-nya tidak menyentuh satu baris pun, dan handler menjawab 404
+  // alih-alih diam-diam sukses.
+  const res = await app.inject({
+    method: 'PATCH',
+    url: '/tenants/settings',
+    payload: { merchantCategory: 'ube' },
+    headers: { ...H(), 'x-tenant-id': lain.id },
+  });
+  assert.ok(res.statusCode >= 400, `perubahan lintas tenant diterima: ${res.body}`);
+
+  // Dan tenant lain benar-benar tidak berubah.
+  const { rows } = await appDb.query('SELECT merchant_category FROM tenant WHERE id = $1', [
+    lain.id,
+  ]);
+  assert.equal(rows[0].merchant_category, 'umi');
+});

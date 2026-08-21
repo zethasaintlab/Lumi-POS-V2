@@ -197,3 +197,23 @@ export function tagihanTerbuka(riwayat: RiwayatTagihan | null): Tagihan | null {
   if (riwayat === null) return null;
   return riwayat.invoices.find((i) => i.status === 'pending_confirmation') ?? null;
 }
+
+/**
+ * FR-C12 — label kategori merchant yang merchant baca, bukan singkatannya.
+ *
+ * ⛔ Singkatan penyelenggara ikut di dalam kurung, tidak dibuang. Yang
+ * menetapkan kategori adalah penyelenggara QRIS, dan merchant yang
+ * mencocokkannya dengan surat pendaftarannya mencari kata "UMI", bukan
+ * "usaha mikro".
+ */
+export const LABEL_KATEGORI: Record<string, string> = {
+  umi: 'Usaha mikro (UMI)',
+  uke: 'Usaha kecil (UKE)',
+  ume: 'Usaha menengah (UME)',
+  ube: 'Usaha besar (UBE)',
+};
+
+export function labelKategoriMerchant(nilai: string | undefined): string {
+  if (nilai === undefined) return 'Belum diatur';
+  return LABEL_KATEGORI[nilai] ?? nilai;
+}

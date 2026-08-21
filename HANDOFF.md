@@ -700,3 +700,85 @@ Prosedurnya di runbook §10.1.
 | Staged rollout | Belum ada |
 | Metrik lintas-tenant | Menunggu keputusan deployment (pembaca ber-`BYPASSRLS`) |
 | Koreksi langganan | Menurunkan paket, membatalkan tagihan yang terlanjur dibuat — runbook §10 mendaftarnya sebagai yang belum ada |
+
+---
+
+## Modul C-3 — rekonsiliasi & ekspor rekapitulasi, 21 Agustus 2026
+
+FR-C12 dan FR-C13, keduanya P1, dan sisa terakhir Modul C. `IA:§3.3` menamai
+B-19 "Laporan Pembayaran **& Rekonsiliasi**" sejak awal; sampai sekarang kata
+kedua itu tidak punya kode di baliknya.
+
+### FR-C12 — perkiraan potongan MDR
+
+Masalahnya (`spec-c:422`): kasir mencatat QRIS Rp 100.000, rekening menerima
+Rp 99.300, dan tanpa satu baris pun yang menjelaskan selisihnya merchant
+menyimpulkan POS-nya salah — atau kasirnya mencuri.
+
+- **`packages/domain/src/mdr.ts`** — tarif `spec-c:426` sebagai `bigint`
+  berskala 10.000 (0,3% → `30n`). ⛔ **Ini BUKAN pajak** dan tidak boleh
+  tersesat ke `tax.ts`: ia biaya jasa akuisisi, tidak masuk `order.tax_amount`,
+  tidak muncul di struk, tidak mengubah satu pun angka di `order`.
+- ⛔ **`null` BERBEDA dari `0`.** `0` = diperkirakan tidak ada potongan (UMI di
+  bawah ambang Rp 500.000); `null` = metode itu tidak punya perkiraan sama
+  sekali. Kartu EDC masuk yang kedua — tarifnya per-acquirer dan `spec-c` tidak
+  memberikan satu pun angkanya. "Rp 0" untuk kartu adalah pernyataan yang
+  SALAH, bukan sekadar kosong; layar dan CSV menampilkan tanda hubung / sel
+  kosong.
+- ⛔ **`<=` pada ambang UMI**, bukan `<`. `spec-c:427` menulis "≤ Rp 500.000",
+  dan `<` memotong transaksi tepat 500.000 — nilai bulat yang paling sering
+  terjadi.
+- ⛔ **`payment.mdr_estimated` adalah SNAPSHOT**, ditulis di transaksi
+  pembayaran. Menghitungnya ulang saat laporan dibuat membuat dua ekspor untuk
+  periode yang sama berbeda begitu kategori atau tarif regulator berubah, dan
+  yang kedua akan dibaca sebagai koreksi meski tidak ada transaksi yang
+  berubah. **Konsekuensinya dinyatakan**: memperbaiki kategori yang salah
+  tidak mengubah baris lama (runbook §5.5).
+- **`tenant.merchant_category`** (migrasi `0028`), bawaan **`umi`** —
+  `[ASUMSI]`, belum divalidasi ke merchant. Yang membuat bawaan salah tidak
+  berbahaya: seluruh angka turunannya berlabel PERKIRAAN dan tidak satu pun
+  masuk `order`, struk, atau omzet. Disetel di B-29 lewat
+  `PATCH /tenants/settings` (`billing`, owner-only).
+
+### FR-C13 — rekapitulasi penjualan
+
+`GET /reports/recap` + `GET /reports/export?type=recap`.
+
+- ⛔ **Angka kepalanya dari `rekapPenjualan`**, yang memanggil
+  `posisiPenjualan`. AC FR-C13 kedua menuntut totalnya cocok dengan laporan
+  penjualan; memakai fungsi yang sama membuat itu benar menurut KONSTRUKSI.
+  Testnya `assert.deepEqual` terhadap respons `GET /reports/sales`, bukan
+  terhadap angka tulisan tangan.
+- ⛔ **Rincian per metode DIPANGGIL dari `ambilPembayaran`, bukan disalin.**
+  Query kedua akan menyimpang pada tiga aturan sekaligus: hanya `confirmed`,
+  order berpembatal dikeluarkan, dan `null` yang dibedakan dari `0`.
+- ⛔ **Pajak dipisah dari SNAPSHOT** `order_line.tax_rate_name` (0022) dan
+  `order_line.tax_jurisdiction` (0028), bukan JOIN ke `tax_rate`. Tarif yang
+  di-rename setelah pelaporan tidak boleh mengubah rekapitulasi periode yang
+  sudah dilaporkan. Baris lama dikelompokkan "(tidak tercatat)" — jujur.
+- **Periode dan tanggal dibuat ADA DI DALAM berkas** (AC ketiga). Nama berkas
+  hilang begitu seseorang menyimpannya ulang. `dibuatPada` dari jam
+  **database**, tidak pernah `new Date()` di Node.
+- **Bentuk PANJANG** (`bagian,keterangan,rincian,nilai`), bukan satu baris
+  lebar: kolom pajak dinamis akan membuat berkas dua periode punya jumlah
+  kolom berbeda, dan akuntan yang menumpuknya mendapat kolom yang bergeser.
+
+### ⛔ Batas yang harus dibaca sebelum menyebut C-3 selesai
+
+| Batas | Keadaan |
+|---|---|
+| `totalDiskonOrder` dan `totalServiceCharge` | **Selalu nol hari ini.** `POST /orders` menulis nol ke `order.order_discount` dan `order.service_charge_amount`; diskon tingkat order belum ada di jalur itu. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya dan skemanya sudah ada. ⛔ Test integrasi untuk keduanya akan hijau karena HAMPA — aturannya diuji di `tests/domain/posisi-penjualan.test.js` |
+| MDR kartu EDC | Tidak ada perkiraan. `spec-c` tidak memberikan tarifnya, dan menebak satu tarif untuk semua acquirer menghasilkan perkiraan yang salah dengan percaya diri |
+| Tarif MDR | `[FAKTA]` per 15 Maret 2025 (`spec-c:424`). Ditetapkan regulator dan **dapat berubah**; satu-satunya tempat yang perlu disunting `packages/domain/src/mdr.ts` |
+| XLSX | **Tidak dibuat.** `spec-c:444` menulis "CSV + XLSX"; XLSX menuntut dependensi baru, dan CSV terbuka apa adanya di Excel dan Google Sheets. Batas yang dinyatakan, bukan kelalaian |
+| `order_line.tax_jurisdiction` di perangkat | **Sengaja tidak turun.** Menambah kolom raw table mengubah sidik jari skema lokal, dan itu menuntut `disconnectAndClear()` + unduh ulang katalog di setiap perangkat — biaya nyata untuk kolom yang tidak satu pun layar kasir baca |
+| Kategori merchant bawaan `umi` | `[ASUMSI]`, belum divalidasi ke merchant |
+
+### Penjaga baru
+
+- **`tests/oxlint-ds-adherence/kelas-tipografi.test.js`** — setiap kelas `t-*`
+  yang dipakai aplikasi harus ADA di `/ds-bundle`. Lahir dari cacat nyata:
+  `t-body-lg` ditulis di B-19 dan tidak ada di `tokens/typography.css`. Kelas
+  yang tidak cocok apa pun tidak menghasilkan error — teksnya dirender pada
+  ukuran warisan, dan hasilnya terlihat *hampir* benar. Lint dan typecheck
+  tidak tahu apa pun tentang nama kelas CSS di dalam string.

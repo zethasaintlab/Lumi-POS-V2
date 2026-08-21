@@ -40,7 +40,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 3 | `sold_out_flag` REST + relay | utang F3 | selesai |
 | 4 | Tombol cetak ulang di K-09 | utang F4 | selesai (digabung dgn 5) |
 | 5 | Retry antrean `print_job` | utang F4 | selesai |
-| 6 | Modul C-3 — rekonsiliasi & ekspor | P1 | belum |
+| 6 | Modul C-3 — rekonsiliasi & ekspor | P1 | selesai |
 | 7 | Paginasi + pencarian katalog sisi server | utang G1 | selesai (server) |
 | 8 | Refund parsial dengan pemilihan baris di UI | utang F2 | belum |
 | 9 | K-16 buka laci · K-17 scanner | utang F2 | belum |
@@ -537,3 +537,139 @@ tersisa dari F6 dan dicatat sebagai batas, bukan kelalaian: telemetri klien
 untuk lima metrik `ARCH:296` yang server tidak dapat lihat, metrik ops
 lintas-tenant (menuntut pembaca ber-`BYPASSRLS` — keputusan deployment), dan
 staged rollout.
+
+### Task 6 — Modul C-3: rekonsiliasi & ekspor rekapitulasi
+
+**Selesai.** Sisa terakhir Modul C: FR-C12 (rekonsiliasi pembayaran digital)
+dan FR-C13 (ekspor rekapitulasi), keduanya P1.
+
+`IA:§3.3` menamai B-19 "Laporan Pembayaran **& Rekonsiliasi**" sejak awal, dan
+sampai sekarang kata kedua itu tidak punya kode di baliknya — layarnya sendiri
+menyatakan batas itu di komentar kepalanya.
+
+#### FR-C12 — perkiraan MDR
+
+**Keputusan yang diambil:**
+
+- ⛔ **MDR bukan pajak, dan tidak boleh diperlakukan seperti pajak.** Ia hidup
+  di `packages/domain/src/mdr.ts`, bukan di `tax.ts`. Ia biaya jasa akuisisi:
+  tidak masuk `order.tax_amount`, tidak muncul di struk, tidak mengubah satu
+  pun angka di `order`. Menaruhnya di `tax.ts` akan membuatnya ikut terhitung
+  sebagai pajak pada laporan berikutnya yang menjumlahkan isi berkas itu.
+- ⛔ **`null` BERBEDA dari `0`, dan perbedaannya sampai ke layar.** `0` =
+  diperkirakan tidak dipotong (UMI ≤ Rp 500.000); `null` = tidak ada perkiraan
+  sama sekali. Kartu EDC masuk yang kedua — `spec-c` tidak memberikan satu pun
+  tarifnya. Layar menampilkan "— tidak ada perkiraan", CSV menulis sel kosong.
+  "Rp 0" untuk kartu adalah pernyataan yang **salah**, bukan sekadar kosong.
+- ⛔ **`payment.mdr_estimated` adalah SNAPSHOT**, ditulis di transaksi
+  pembayaran. Menghitungnya saat laporan dibaca membuat dua ekspor untuk
+  periode yang sama berbeda begitu kategori atau tarif regulator berubah — dan
+  yang kedua akan dibaca sebagai koreksi meski tidak ada transaksi yang
+  berubah. Konsekuensinya **dinyatakan**, bukan disembunyikan: memperbaiki
+  kategori tidak mengubah baris lama (runbook §5.5).
+- **Tarif berskala 10.000 (`bigint`)**, konvensi yang sama dengan
+  `tax_rate.rate`. Bukan karena float akan meleset di skala ini — ia tidak —
+  melainkan supaya aturan "jalur uang tidak menyentuh float" tidak punya
+  pengecualian yang akan disalin ke kolom lain.
+- **Kategori merchant bawaan `umi`**, ditandai `[ASUMSI]`. Yang membuat bawaan
+  salah tidak berbahaya: seluruh angka turunannya berlabel PERKIRAAN dan tidak
+  satu pun masuk `order`, struk, atau omzet.
+
+#### FR-C13 — rekapitulasi
+
+- ⛔ **Angka kepalanya dari fungsi yang SAMA dengan `/reports/sales`.** AC
+  kedua menuntut totalnya cocok; `rekapPenjualan` memanggil `posisiPenjualan`,
+  jadi itu benar menurut **konstruksi**. Testnya `assert.deepEqual` terhadap
+  respons endpoint yang lain, bukan terhadap angka tulisan tangan.
+- ⛔ **Rincian per metode DIPANGGIL dari `ambilPembayaran`.** Versi pertama
+  menyalin query-nya, dan salinan itu akan menyimpang pada tiga aturan
+  sekaligus. Diubah sebelum sempat mendarat.
+- ⛔ **Pajak dari kolom SNAPSHOT**, bukan JOIN ke `tax_rate`. Migrasi `0028`
+  menambah `order_line.tax_jurisdiction` dengan alasan yang sama persis
+  dengan `tax_rate_name` di `0022`: nullable, tanpa backfill.
+- **Periode dan tanggal dibuat ADA DI DALAM berkas** (AC ketiga) — nama berkas
+  hilang begitu seseorang menyimpannya ulang. `dibuatPada` dari jam
+  **database**.
+
+**Masalah + solusinya:**
+
+- ⛔ **Sabotase menemukan test yang HAMPA — punyaku sendiri.** Test integrasi
+  "order yang dibatalkan tidak menyumbang diskon/service charge/pembulatan"
+  tetap **hijau** saat aturan `dibatalkan.has(o.id)` dihapus dari
+  `rekapPenjualan`. Sebabnya: `POST /orders` menulis **nol** ke
+  `order.order_discount` dan `order.service_charge_amount` — diskon tingkat
+  order belum ada di jalur itu, jadi assertion-nya memeriksa keadaan yang
+  tidak dapat terjadi. Persis kelas cacat yang F3 catat.
+
+  Perbaikannya bukan menghapus fieldnya, melainkan memindahkan pengujian ke
+  tempat barisnya dapat disusun langsung: lima test baru di
+  `tests/domain/posisi-penjualan.test.js`. Sabotase yang sama sekarang
+  menghasilkan merah. Batasnya dicatat di komentar handler dan di `HANDOFF.md`.
+
+- ⛔ **Kelas tipografi yang tidak ada, dan tidak ada yang menangkapnya.**
+  `t-body-lg` ditulis di B-19; `/ds-bundle` hanya punya `t-body`, `t-body-md`,
+  `t-caption`, `t-display`, `t-heading`, `t-hero`, `t-title`, `t-title-lg`.
+  Kelas yang tidak cocok apa pun **tidak menghasilkan error** — teksnya
+  dirender pada ukuran warisan, dan hasilnya terlihat *hampir* benar.
+  `typecheck` dan `lint:ds` sama-sama buta: keduanya tidak tahu apa pun
+  tentang nama kelas CSS di dalam string.
+
+  Yang menangkapnya adalah membaca `tokens/typography.css`. Supaya tidak
+  bergantung pada itu lagi: `tests/oxlint-ds-adherence/kelas-tipografi.test.js`
+  menuntut setiap `t-*` yang dipakai aplikasi ada di design system. Sabotase →
+  1 merah.
+
+- **Penjaga drift lokal menuntut keputusan, dan itu benar.**
+  `order_line.tax_jurisdiction` membuat `tests/kasir/tipe-divergen.test.js`
+  merah: kolom server baru harus ada di skema lokal ATAU terdaftar sebagai
+  keputusan. Ia didaftarkan **sengaja tidak turun** — menambah kolom raw table
+  mengubah sidik jari skema lokal, dan itu menuntut `disconnectAndClear()` +
+  unduh ulang katalog di setiap perangkat merchant. Biaya nyata untuk kolom
+  yang tidak satu pun layar kasir baca.
+
+- **Penjaga cakupan RBAC merah** setelah `PATCH /tenants/settings` masuk
+  `PETA_PERAN` — bekerja sesuai desain. Kasus penolakannya ditambahkan.
+
+- Void di test menuntut `receiptNumber` **dan** `sequence`: order pembatal
+  adalah baris tersendiri dengan nomor struknya sendiri.
+
+**Yang TIDAK dibuat, dan alasannya:**
+
+- **XLSX.** `spec-c:444` menulis "CSV + XLSX". XLSX menuntut dependensi baru;
+  CSV terbuka apa adanya di Excel dan Google Sheets. Batas yang dinyatakan.
+- **Perkiraan MDR kartu EDC.** Tarifnya per-acquirer dan per-jenis kartu;
+  `spec-c` tidak memberikan satu pun angkanya. Menebak satu tarif untuk
+  semuanya menghasilkan perkiraan yang salah dengan percaya diri, pada laporan
+  yang gunanya justru menjelaskan selisih.
+
+**Verifikasi browser** (Chromium + Playwright, server + Vite sungguhan, merchant
+`free` yang baru didaftarkan lewat API — 1 penjualan tunai + 2 QRIS statis):
+
+```
+B-19 judul memuat "Rekonsiliasi"     : true
+B-19 kolom perkiraan potongan        : true
+B-19 kolom perkiraan diterima        : true
+B-19 tunai → "— tidak ada perkiraan" : true
+B-29 kategori awal                   : umi
+B-29 setelah simpan                  : uke
+B-29 setelah MUAT ULANG penuh        : uke   ← dari server, bukan state lokal
+B-20 tombol "Rekapitulasi pajak"     : true
+galat konsol                         : hanya favicon.ico 404 (Vite dev)
+```
+
+Tabelnya terbaca apa adanya:
+
+```
+Metode          Transaksi  Nilai transaksi  Perkiraan potongan       Perkiraan diterima
+QRIS (statis)   2          Rp 2.640.000     − Rp 7.920               Rp 2.632.080
+Tunai           1          Rp 1.320.000     — tidak ada perkiraan    Rp 1.320.000
+```
+
+Rp 7.920 = 0,3% dari Rp 2.640.000 — UMI di atas ambang, dihitung per baris
+payment lalu dijumlahkan.
+
+**Efek samping yang menyenangkan dari pengujian ulang:** menjalankan skrip
+browser dua kali membuat "Simpan kategori" **tidak dapat diklik** pada putaran
+kedua — tombolnya `disabled` karena nilai pilihan sama dengan yang tersimpan.
+Itu perilaku yang diinginkan, dan cara ia terbukti adalah kegagalan skrip, bukan
+assertion yang ditulis untuk itu.

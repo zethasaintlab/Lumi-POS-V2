@@ -29,16 +29,16 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | Modul | Isi | Permukaan publik |
 |---|---|---|
 | `catalog` | Kategori, item/variation, modifier, harga per outlet | 32 operasi REST · `resolvePrice` · `getVariationSnapshot` |
-| `ordering` | Penulisan penjualan, void & refund | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` |
+| `ordering` | Penulisan penjualan, void & refund, seluruh laporan atas `order` | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` · `GET /reports/sales` · `GET /reports/recap` · `GET /reports/export` · `ambilPenjualan` · `ambilProduk` |
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
 | `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` · `selectSubscriptionProvider` |
-| `tenancy` | Pendaftaran merchant mandiri + kuota + langganan (F5) | `POST /tenants` · `POST /outlets` · `GET /tenants/usage` · `POST /tenants/subscription/invoices` · `GET /tenants/subscription/invoices` · `POST /tenants/subscription/invoices/{id}/check-status` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` · `terapkanStatusTagihan` |
+| `tenancy` | Pendaftaran merchant mandiri + kuota + langganan (F5) + kategori merchant (FR-C12) | `POST /tenants` · `POST /outlets` · `GET /tenants/usage` · `PATCH /tenants/settings` · `POST /tenants/subscription/invoices` · `GET /tenants/subscription/invoices` · `POST /tenants/subscription/invoices/{id}/check-status` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` · `getMerchantCategory` · `terapkanStatusTagihan` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
 | `inventory` | Pergerakan stok, opname, penandaan habis | `POST /inventory/movements` · `POST /inventory/stocktakes` · `POST /inventory/sold-out` · `recordStockMovements` · `detectOversell` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
 
-Belum ada kode: `reporting`, `peripheral`.
+Belum ada kode: `peripheral`.
 
 `audit` lahir dengan **satu fungsi**, dan itu bukan penundaan yang malas. Keputusan produk 1 Agustus 2026 menetapkan void berjalan **tanpa PIN manajer**, dengan syarat alasan daftar tertutup + audit + restock otomatis — jadi keduanya bukan pelengkap void, melainkan kontrol yang tersisa untuknya. Invariant #1 menuntut keduanya ditulis dalam transaksi yang sama, dan aturan 2 melarang `ordering` menyentuh `stock_movement` maupun `audit_event` langsung.
 

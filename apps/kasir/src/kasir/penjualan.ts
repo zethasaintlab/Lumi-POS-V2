@@ -70,6 +70,7 @@ interface BarisTarif {
   name: string;
   rate: number;
   is_inclusive: number;
+  jurisdiction: string | null;
   channel: string;
   applies_to: string;
   applies_to_ids: string | null;
@@ -123,6 +124,12 @@ function keTarifSpec(b: BarisTarif): TaxRateSpec {
     // `put` raw table, bukan di sini.
     rateScaled: BigInt(b.rate),
     isInclusive: b.is_inclusive === 1,
+    // FR-C13 — ikut supaya klien dan server memberi `TaxBreakdown` yang
+    // BENTUKNYA sama. Klien tidak menyimpannya di `order_line` lokal: yang
+    // memakainya adalah rekapitulasi back-office, dan back-office online-only
+    // (`IA:§3.3`). Menghilangkannya di sini akan membuat perbandingan hitungan
+    // klien-vs-server punya satu field yang selalu berbeda.
+    jurisdiction: b.jurisdiction,
     outletId: b.outlet_id,
     channel: b.channel as TaxRateSpec['channel'],
     appliesTo: b.applies_to as TaxRateSpec['appliesTo'],
@@ -189,7 +196,7 @@ export async function simpanPenjualan({
   );
 
   const tarif = await db.getAll<BarisTarif>(
-    `SELECT id, outlet_id, name, rate, is_inclusive, channel, applies_to, applies_to_ids
+    `SELECT id, outlet_id, name, rate, is_inclusive, jurisdiction, channel, applies_to, applies_to_ids
        FROM tax_rate
       WHERE (outlet_id IS NULL OR outlet_id = ?)
         AND effective_from <= ?

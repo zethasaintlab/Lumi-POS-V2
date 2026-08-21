@@ -122,6 +122,11 @@ export const PETA_PERAN: readonly AturanRute[] = [
   { metode: 'POST', pola: '/outlets', operasi: 'outlet_manage' },
   { metode: 'GET', pola: '/tenants/usage', operasi: 'billing' },
 
+  // FR-C12 — kategori merchant. `billing` karena ia klasifikasi KOMERSIAL
+  // merchant di mata penyelenggara QRIS, dan karena angka turunannya adalah
+  // yang merchant pakai untuk menjelaskan selisih uang yang masuk rekening.
+  { metode: 'PATCH', pola: '/tenants/settings', operasi: 'billing' },
+
   // F5 — menaikkan paket. `spec-f:52` menandai "Billing & langganan" ✅ hanya
   // untuk Owner, dan di sini kata itu berarti uang sungguhan yang keluar dari
   // rekening merchant: manajer outlet yang dapat menaikkan paket dapat

@@ -386,12 +386,12 @@ const INSERT_LINE_SQL = `
     id, tenant_id, outlet_id, device_id, order_id, check_id, variation_id,
     item_name, variation_name, unit_price, quantity, modifier_snapshot, discount_amount,
     tax_rate_id, tax_rate, tax_amount, is_tax_inclusive, cost_at_sale, line_total,
-    created_by, occurred_at, hlc, tax_rate_name
+    created_by, occurred_at, hlc, tax_rate_name, tax_jurisdiction
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13,
     $14, $15::numeric, $16, $17, $18, $19,
-    $20, $21, $22, $23
+    $20, $21, $22, $23, $24
   )
   RETURNING *
 `;
@@ -518,6 +518,11 @@ async function insertOrderTree(
         // `null` bila baris ini tidak kena tarif apa pun — string kosong akan
         // tercetak sebagai baris pajak tanpa nama di struk.
         taxForLine?.name ?? null,
+        // FR-C13 — yurisdiksi sebagai SNAPSHOT, dari `TaxBreakdown` yang sama.
+        // Rekapitulasi memisahkan pajak per jenis DAN per yurisdiksi; tarif
+        // yang dipindah yurisdiksi setelah transaksi tidak boleh mengubah
+        // rekapitulasi periode yang sudah dilaporkan.
+        taxForLine?.jurisdiction ?? null,
       ]);
       const lineRow = lineRows[0];
 

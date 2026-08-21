@@ -4,6 +4,7 @@ import { useSesi } from '../sesi.tsx';
 import { GalatHttp } from '../http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { DIMENSI_KUOTA } from '../../../../packages/domain/src/kuota.ts';
+import { KATEGORI_MERCHANT } from '../../../../packages/domain/src/mdr.ts';
 import {
   susunBaris,
   labelPaket,
@@ -12,6 +13,7 @@ import {
   type Pemakaian,
 } from './kuota-tampilan.ts';
 import {
+  labelKategoriMerchant,
   labelStatusTagihan,
   rupiah,
   susunPilihan,
@@ -296,6 +298,93 @@ function Riwayat({ invoices }: { invoices: Tagihan[] }) {
   );
 }
 
+/**
+ * FR-C12 AC ketiga — kategori merchant, dapat dikonfigurasi per tenant.
+ *
+ * ⛔ Ia di B-29, bukan di layar Pajak (B-25). Kategori ini BUKAN pajak: ia
+ * biaya jasa akuisisi yang dipotong penyelenggara QRIS, tidak masuk
+ * `order.tax_amount`, dan tidak muncul di struk. Menempatkannya di layar Pajak
+ * akan membuat merchant — dan pemeriksa pajaknya — mengira ia kewajiban
+ * fiskal.
+ *
+ * ⛔ Layar menyatakan bahwa perubahannya berlaku KE DEPAN saja. Merchant yang
+ * memperbaiki kategori lalu membuka laporan bulan lalu dan melihat angka lama
+ * akan menyimpulkan tombolnya tidak bekerja.
+ */
+function KartuKategori({
+  kategori,
+  sibuk,
+  onSimpan,
+}: {
+  kategori: string | undefined;
+  sibuk: boolean;
+  onSimpan: (nilai: string) => void;
+}) {
+  const [pilih, setPilih] = useState(kategori ?? 'umi');
+
+  // Server adalah sumber kebenaran; nilai yang datang setelah muat ulang
+  // menimpa pilihan lokal yang belum disimpan.
+  useEffect(() => {
+    if (kategori !== undefined) setPilih(kategori);
+  }, [kategori]);
+
+  return (
+    <Card>
+      <div className="card-pad">
+        <div className="stack" style={{ gap: 'var(--space-4)' }}>
+          <div className="stack" style={{ gap: 'var(--space-1)' }}>
+            <span className="t-body-md">Kategori merchant</span>
+            <span className="t-caption">
+              Menentukan perkiraan potongan penyelenggara QRIS yang tampil di Laporan Pembayaran.
+              Kategorinya ditetapkan penyelenggara saat Anda mendaftar — bukan oleh Lumi.
+            </span>
+          </div>
+
+          <div className="stack" style={{ gap: 'var(--space-2)' }}>
+            <label className="label" htmlFor="kategori-merchant">
+              Golongan usaha
+            </label>
+            <select
+              id="kategori-merchant"
+              className="input"
+              value={pilih}
+              disabled={sibuk}
+              onChange={(e) => setPilih(e.target.value)}
+            >
+              {KATEGORI_MERCHANT.map((k) => (
+                <option key={k} value={k}>
+                  {labelKategoriMerchant(k)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center' }}>
+            <Tombol
+              varian="secondary"
+              disabled={sibuk || pilih === kategori}
+              onClick={() => onSimpan(pilih)}
+            >
+              Simpan kategori
+            </Tombol>
+            {pilih === kategori ? (
+              <span className="t-caption" role="status">
+                Tersimpan: {labelKategoriMerchant(kategori)}
+              </span>
+            ) : null}
+          </div>
+
+          <span className="t-caption">
+            Perubahan berlaku untuk transaksi <strong>berikutnya</strong>. Perkiraan pada transaksi
+            yang sudah terjadi tidak dihitung ulang — laporan periode yang sudah Anda unduh tetap
+            sama.
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function Langganan() {
   const { api } = useSesi();
   const [keadaan, setKeadaan] = useState<Keadaan>({ jenis: 'memuat' });
@@ -367,6 +456,20 @@ export function Langganan() {
       // Memuat ulang riwayat membuat keadaan itu terlihat alih-alih menjadi
       // tagihan hantu yang menolak setiap percobaan berikutnya.
       muatUlang();
+    }
+  }
+
+  async function simpanKategori(nilai: string) {
+    setAksi({ jenis: 'sibuk' });
+    try {
+      await api.minta<unknown>('/tenants/settings', {
+        metode: 'PATCH',
+        body: { merchantCategory: nilai },
+      });
+      setAksi({ jenis: 'diam' });
+      muatUlang();
+    } catch (err) {
+      setAksi({ jenis: 'gagal', pesan: pesanGalat(err) });
     }
   }
 
@@ -457,6 +560,14 @@ export function Langganan() {
             />
           </div>
         </Card>
+      ) : null}
+
+      {keadaan.jenis === 'siap' ? (
+        <KartuKategori
+          kategori={keadaan.data.merchantCategory}
+          sibuk={sibuk}
+          onSimpan={simpanKategori}
+        />
       ) : null}
 
       {terbuka !== null ? (
