@@ -351,7 +351,7 @@ komentar di ketiga berkas: koneksi tambahan berarti transaksi tambahan, dan
 
 | Utang | Kenapa belum |
 |---|---|
-| Paginasi + pencarian sisi server untuk Katalog (B-06/B-08/B-09/B-10) | Keempat layarnya ada dan berjalan. Penyelidikan #37 menemukan bahwa keduanya belum ada di backend katalog, dan keputusan user adalah **tidak melakukan optimasi prematur**. Ia akan menggigit pada katalog besar, bukan sekarang |
+| ~~Paginasi + pencarian sisi server untuk Katalog~~ | **Sisi SERVER ditutup 21 Agustus 2026** — `GET /items` menerima `q`, `limit`, `after`, dan N+1 varian dihapus. ⛔ **B-06 masih menyaring di klien**; lihat § katalog di bawah |
 | Modul C-3 — rekonsiliasi & ekspor | P1, dan tidak berubah oleh G1 |
 | Cron `POST /orders/cleanup-abandoned` | Endpointnya ada dan teruji; **sengaja tanpa tombol UI** (keputusan user) — ia dijalankan sebagai cron job dari luar aplikasi. Sampai cron itu dipasang, keranjang `open` yang ditinggalkan tetap mengunci stok |
 | Notifikasi aktif untuk oversell | B-15 memberi layar penyelesaiannya; jalur pemberitahuannya belum ada |
@@ -579,3 +579,45 @@ pun yang mengisinya, jadi struk yang gagal dicetak hilang seketika.
   `prosesAntreanCetak` adalah fungsi yang akan dipanggilnya.
 - **Tidak satu byte pun pernah sampai ke printer sungguhan.** Gate F4 bagian
   pertama tetap terbuka; ia menuntut perangkat fisik.
+
+
+---
+
+## Katalog — paginasi & pencarian sisi server, 21 Agustus 2026
+
+Sebelum ini `GET /items` mengembalikan **seluruh** item tenant dan menjalankan
+satu query varian **per item**: katalog 5.000 produk = 5.001 query dalam satu
+transaksi.
+
+**Keputusan yang mengikat kode:**
+
+- ⛔ **Tanpa `limit`, seluruh baris dikembalikan.** Bawaan yang memotong
+  membuat klien N-1 menampilkan katalog terpotong tanpa satu pun error.
+- ⛔ **Keyset atas `(sort_order, id)`**, bukan `sort_order` saja — `sort_order`
+  DEFAULT 0 membuat seri menjadi keadaan normal, dan perbandingan satu kolom
+  melompati sisa baris bernilai sama.
+- ⛔ **Alasan keyset di sini BUKAN alasan riwayat.** Riwayat memakai keyset
+  karena perangkat offline menyisipkan baris di tengah urutan; katalog memakai
+  keyset karena `OFFSET n` memindai lalu membuang `n` baris. Konsekuensi:
+  tidak dapat melompat ke halaman tertentu.
+- ⛔ **Pencarian mencakup nama/SKU/barcode VARIAN**, bukan hanya nama item.
+  `saringProduk` di B-06 sudah begitu sejak layar itu lahir; server yang tidak
+  menyamainya membuat layar yang berpindah ke pencarian sisi server diam-diam
+  berhenti menemukan barcode.
+- ⛔ **`%` dan `_` di masukan di-escape.**
+- **`ILIKE`, bukan full-text.** `[ASUMSI]`: sequential scan atas satu tenant
+  cukup cepat — belum diukur. `pg_trgm` adalah jawaban bila kelak tidak cukup.
+- **Kursor `sortOrder:id` tidak di-base64** — ia tidak membawa kewenangan;
+  hasilnya tetap tunduk RLS.
+
+### ⛔ Batas
+
+**B-06 masih menyaring di klien.** Kemampuan servernya ada dan teruji; layarnya
+belum memakainya. Berpindah menukar penyaringan seketika dengan perjalanan
+pulang-pergi dan menuntut UX yang dirancang (debounce, keadaan memuat, kalimat
+untuk katalog terpotong). **Menyetengahinya berbahaya**: memuat satu halaman
+lalu tetap menyaring di klien menghasilkan pencarian yang hanya menemukan apa
+yang kebetulan sudah dimuat.
+
+`GET /categories` dan `GET /modifier-lists` belum menerima `q` — keduanya jauh
+lebih kecil dan tidak punya kuota.

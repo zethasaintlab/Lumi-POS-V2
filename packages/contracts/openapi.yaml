@@ -795,6 +795,19 @@ paths:
                 $ref: '#/components/schemas/Error'
     get:
       operationId: listItems
+      description: >-
+        ⛔ TANPA `limit`, SELURUH baris dikembalikan — kompatibilitas klien
+        N-1, dan bukan formalitas: `limit` dengan nilai bawaan membuat klien
+        lama menerima 100 dari 5.000 produk lalu menampilkan katalog yang
+        terpotong TANPA satu pun error. Kasir yang tidak menemukan produknya
+        akan menyalahkan katalognya, bukan aplikasinya.
+
+
+        Paginasi KEYSET, bukan offset. Alasannya berbeda dari riwayat
+        transaksi (yang keyset karena perangkat offline menyisipkan baris di
+        tengah urutan): di sini alasannya biaya — `OFFSET n` menyuruh
+        PostgreSQL memindai lalu MEMBUANG `n` baris. Konsekuensi yang
+        dinyatakan: tidak dapat melompat ke halaman 17.
       parameters:
         - name: includeArchived
           in: query
@@ -802,6 +815,40 @@ paths:
         - name: categoryId
           in: query
           schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+          description: >-
+            Pencarian pada nama item, deskripsi, dan **nama/SKU/barcode
+            varian**. `ILIKE`, tanpa peka huruf besar.
+
+
+            ⛔ Varian ikut karena `saringProduk` di B-06 sudah mencarinya sejak
+            layar itu lahir: merchant mencari produk lewat kode yang tertempel
+            di rak. Server yang hanya mencari nama item membuat layar yang
+            berpindah ke pencarian sisi server diam-diam berhenti menemukan
+            barcode -- kasir memindai, tidak ada yang muncul, tanpa satu pun
+            error.
+
+
+            Bukan full-text: nama produk kafe adalah dua sampai empat kata
+            Indonesia, dan yang merchant ketik adalah POTONGAN kata -- "kop"
+            untuk "Kopi Susu". `%` dan `_` di masukan di-escape.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200 }
+          description: >-
+            Dikosongkan berarti TANPA paginasi (perilaku lama). Batas atasnya
+            wajib: `limit` yang diteruskan apa adanya membuat satu permintaan
+            menarik seluruh katalog ke memori server.
+        - name: after
+          in: query
+          schema: { type: string }
+          description: >-
+            `nextCursor` dari respons sebelumnya. Bentuknya `sortOrder:id`,
+            sengaja TIDAK di-base64: ia tidak membawa kewenangan apa pun --
+            hasilnya tetap tunduk RLS, dan kursor yang dipalsukan hanya
+            membuat pemanggil melompati barisnya sendiri.
       responses:
         '200':
           description: OK
@@ -815,6 +862,12 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Item'
+                  nextCursor:
+                    type: string
+                    nullable: true
+                    description: >-
+                      `null` berarti habis. Kursor yang tetap terisi di halaman
+                      terakhir membuat klien meminta halaman kosong selamanya.
         '400':
           description: Header X-Tenant-Id hilang
           content:

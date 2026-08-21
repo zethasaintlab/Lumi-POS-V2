@@ -41,7 +41,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 4 | Tombol cetak ulang di K-09 | utang F4 | selesai (digabung dgn 5) |
 | 5 | Retry antrean `print_job` | utang F4 | selesai |
 | 6 | Modul C-3 — rekonsiliasi & ekspor | P1 | belum |
-| 7 | Paginasi + pencarian katalog sisi server | utang G1 | belum |
+| 7 | Paginasi + pencarian katalog sisi server | utang G1 | selesai (server) |
 | 8 | Refund parsial dengan pemilihan baris di UI | utang F2 | belum |
 | 9 | K-16 buka laci · K-17 scanner | utang F2 | belum |
 
@@ -321,3 +321,74 @@ satu baris kode pun yang mengisinya. Struk yang gagal dicetak hilang seketika.
   printer — dan `prosesAntreanCetak` adalah fungsi yang akan dipanggilnya.
 - ⛔ **Tidak satu byte pun pernah sampai ke printer sungguhan.** Gate F4 bagian
   pertama tetap terbuka; ia menuntut perangkat fisik.
+
+
+### Task 6 — paginasi & pencarian katalog sisi server
+
+**Selesai di sisi server.** Penyelidikannya ditulis lebih dulu:
+`docs/superpowers/plans/PENYELIDIKAN-katalog-paginasi.md`.
+
+**Apa yang sebenarnya terjadi sebelum ini:** `GET /items` mengembalikan
+**seluruh** item tenant, dan menjalankan satu query varian **per item**.
+Komentar `FIX 5` di berkas itu menyebut modifier list sebagai N+1 yang sudah
+diperbaiki — lalu di baris berikutnya meninggalkan N+1 kedua dengan catatan
+"pre-existing, out of scope". Katalog 5.000 produk (kuota tier `standard`) =
+**5.001 query** dalam satu transaksi.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Tanpa `limit`, SELURUH baris dikembalikan.** Kompatibilitas klien N-1,
+  dan bukan formalitas: bawaan yang memotong membuat klien lama menerima 100
+  dari 5.000 produk lalu menampilkan katalog terpotong **tanpa satu pun
+  error** — dan kasir yang tidak menemukan produknya akan menyalahkan
+  katalognya, bukan aplikasinya. Paginasi adalah sesuatu yang klien MINTA.
+- ⛔ **Keyset, tapi alasannya BUKAN alasan riwayat.** `CLAUDE.md` menuntut
+  keyset untuk riwayat karena perangkat offline menyisipkan baris di tengah
+  urutan; katalog tidak punya sifat itu. Yang membuat keyset tetap dipilih
+  adalah biaya: `OFFSET n` memindai lalu MEMBUANG `n` baris. Konsekuensi yang
+  dinyatakan: tidak dapat melompat ke halaman 17.
+- ⛔ **Keyset atas `(sort_order, id)`, bukan `sort_order` saja.** `sort_order`
+  DEFAULT 0, jadi katalog yang belum diurutkan seluruhnya seri — perbandingan
+  satu kolom melompati sisa baris bernilai sama, dan produk lenyap dari daftar
+  tanpa error. Sabotase membuktikannya: 2 merah.
+- ⛔ **N+1 varian diperbaiki BERSAMA paginasi, bukan sesudahnya.** Paginasi
+  tanpa itu memindahkan masalahnya — halaman 100 item tetap 101 query — dan
+  sesudah paginasi mendarat, N+1-nya jadi **lebih sulit terlihat**: 101 query
+  terasa wajar, 5.001 tidak.
+- **`ILIKE`, bukan full-text.** Nama produk kafe adalah dua sampai empat kata
+  Indonesia dan yang merchant ketik adalah POTONGAN kata — "kop" untuk "Kopi
+  Susu". `pg_trgm` tidak dipasang: extension baru adalah keputusan operasional
+  dan angka yang membenarkannya belum ada. `[ASUMSI]` bahwa sequential scan
+  atas satu tenant cukup cepat — belum diukur.
+- ⛔ **`%` dan `_` di masukan di-ESCAPE.** Merchant yang mencari "50%" tidak
+  boleh mendapat seluruh katalog. Sabotase: 1 merah.
+- **Kursor `sortOrder:id`, sengaja TIDAK di-base64.** Ia tidak membawa
+  kewenangan apa pun — hasilnya tetap tunduk RLS, dan kursor palsu hanya
+  membuat pemanggil melompati barisnya sendiri. Base64 membeli kesan aman
+  tanpa membeli keamanan, dan menyembunyikan nilai yang berguna saat debug.
+
+**Masalah + solusinya:**
+
+- ⛔ **Risiko regresi yang hampir lolos: pencarian klien mencakup SKU dan
+  BARCODE varian; versi pertama server hanya mencari nama item.** `saringProduk`
+  di B-06 sudah mencarinya sejak layar itu lahir, dengan alasannya tertulis di
+  sana: *"merchant mencari produk lewat kode yang tertempel di rak."* Layar
+  yang berpindah ke pencarian sisi server akan **diam-diam berhenti menemukan
+  barcode** — kasir memindai, tidak ada yang muncul, tanpa satu pun error.
+  Ditemukan saat membaca `saringProduk` untuk merencanakan wiring UI-nya, bukan
+  dari test. Server kini mencari nama/deskripsi item **dan** nama/SKU/barcode
+  varian lewat `EXISTS`.
+- Test awal memakai jumlah ABSOLUT dan merah karena `seedTenantBase` membuat
+  itemnya sendiri. Diperbaiki memakai token unik per test dan hitungan relatif
+  — angka absolut akan merah pada hari seed berubah, dan itu kegagalan yang
+  menunjuk ke tempat yang salah.
+
+**⛔ Batas yang dinyatakan: B-06 MASIH menyaring di klien.**
+
+Kemampuan servernya ada dan teruji; layarnya belum memakainya. Berpindah ke
+pencarian sisi server menukar penyaringan seketika dengan perjalanan
+pulang-pergi, dan menuntut UX yang dirancang: debounce, keadaan memuat, dan
+kalimat untuk katalog yang terpotong. Menyetengahinya — memuat satu halaman
+lalu tetap menyaring di klien — menghasilkan pencarian yang hanya menemukan
+apa yang kebetulan sudah dimuat, yaitu regresi yang sama dengan barcode di
+atas. Dicatat sebagai langkah berikutnya, bukan dikerjakan setengah.
