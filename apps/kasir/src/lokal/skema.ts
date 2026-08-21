@@ -289,6 +289,19 @@ export const KOLOM_SENGAJA_TIDAK_TURUN = [
   // id pengguna yang bisa saja bukan staf outlet ini.
   'price_history.changed_by',
   'price_history.reason',
+  // ⛔ F6 — jendela update (migrasi 0030) SENGAJA berhenti di server.
+  //
+  // Keputusan "boleh pasang sekarang" dijawab `GET /devices/{id}/update`, dan
+  // permintaan itu menuntut jaringan menurut sifatnya: perangkat yang offline
+  // tidak dapat mengunduh versi baru, jadi tidak ada yang perlu diputuskan
+  // secara lokal.
+  //
+  // Alasan menahannya sama dengan `order_line.tax_jurisdiction`: menambah
+  // kolom raw table mengubah SIDIK JARI skema lokal, dan setiap perubahan itu
+  // menuntut `disconnectAndClear()` beserta unduh ulang seluruh katalog di
+  // setiap perangkat merchant.
+  'outlet.update_window_start_hour',
+  'outlet.update_window_end_hour',
   // Tidak ada layar kasir yang menampilkan alamat outlet.
   //
   // `outlet.vertical_profile_id` TIDAK lagi ada di daftar ini — ia turun

@@ -121,6 +121,60 @@ export async function getMerchantCategory(client: PoolClient): Promise<KategoriM
 }
 
 /**
+ * F6 — konteks yang dibutuhkan keputusan rilis (`ARCH:§12`, KEP-36).
+ *
+ * `tenant` dan `outlet` milik modul ini, jadi modul `rilis` memanggil lewat
+ * sini alih-alih meng-query keduanya sendiri (invariant #4).
+ *
+ * ⛔ **Jam lokal dibaca dari jam DATABASE**, bukan `new Date()` di Node.
+ * Aturan yang sama dengan resolusi harga, dan alasannya lebih tajam di sini:
+ * jendela update selebar tiga jam, dan dua mesin yang jamnya berselisih
+ * memasang update di luar jendela yang merchant setujui.
+ *
+ * ⛔ Jendela `null` diteruskan APA ADANYA, bukan diisi bawaan di sini.
+ * Bawaannya hidup di `packages/domain/src/rilis.ts`; mengisinya di dua tempat
+ * berarti mengubah bawaan hanya berlaku di salah satunya.
+ */
+export interface KonteksRilis {
+  tenantId: string;
+  isCanary: boolean;
+  /** Jam lokal outlet, 0–23, dari jam database. */
+  jamLokal: number;
+  jendelaMulai: number | null;
+  jendelaSelesai: number | null;
+}
+
+export async function getKonteksRilis(client: PoolClient, outletId: string): Promise<KonteksRilis> {
+  const { rows } = await client.query<{
+    tenant_id: string;
+    is_canary: boolean;
+    jam_lokal: string | number;
+    update_window_start_hour: number | null;
+    update_window_end_hour: number | null;
+  }>(
+    `SELECT o.tenant_id,
+            t.is_canary,
+            EXTRACT(hour FROM now() AT TIME ZONE o.timezone) AS jam_lokal,
+            o.update_window_start_hour,
+            o.update_window_end_hour
+       FROM outlet o
+       JOIN tenant t ON t.id = o.tenant_id
+      WHERE o.id = $1 AND o.archived_at IS NULL`,
+    [outletId]
+  );
+  if (rows.length === 0) {
+    throw new HttpError(404, 'OUTLET_NOT_FOUND', `Outlet ${outletId} tidak ditemukan.`);
+  }
+  return {
+    tenantId: rows[0].tenant_id,
+    isCanary: rows[0].is_canary,
+    jamLokal: Number(rows[0].jam_lokal),
+    jendelaMulai: rows[0].update_window_start_hour,
+    jendelaSelesai: rows[0].update_window_end_hour,
+  };
+}
+
+/**
  * F5 — pendaftaran merchant mandiri (`POST /tenants`).
  *
  * Modul ini tidak punya endpoint sama sekali sebelum ini; ia hidup hanya

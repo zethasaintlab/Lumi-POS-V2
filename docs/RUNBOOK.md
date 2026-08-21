@@ -43,6 +43,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
 | "Barcode dipindai tapi tidak ada yang terjadi" | §8.6 scanner |
 | "Data apa saja yang kalian kumpulkan dari kasir kami?" | §9.2 telemetri klien |
+| "Kapan kami dapat versi baru?" · "Update muncul di jam sibuk" | §12 rilis bertahap |
 
 ---
 
@@ -627,6 +628,84 @@ mem-*hash* body untuk mendeteksi `IDEMPOTENCY_KEY_REUSED`.
 
 ⛔ **Jangan membuang berkas ekspornya** selama masih ada baris yang gagal. Ia
 satu-satunya salinan penjualan itu setelah perangkatnya hilang.
+
+---
+
+## 12. Rilis bertahap
+
+`ARCH:§12`, KEP-36. Aturannya di `packages/domain/src/rilis.ts`; keadaannya di
+tabel `app_release`.
+
+⛔ **Yang ADA hari ini adalah KEPUTUSAN, bukan pemasangan.**
+`GET /devices/{deviceId}/update` menjawab "versi mana yang seharusnya, dan
+boleh dipasang sekarang atau tidak". Mengunduh dan memasangnya menuntut shell
+Tauri, dan itu utang F4 yang tercatat. Jangan menjanjikan update otomatis ke
+merchant.
+
+### 12.1 Tahap dan gate
+
+| Tahap | Cakupan | Naik ke tahap berikutnya bila |
+|---|---|---|
+| `kanari` | 0% — hanya tenant ber-`is_canary` | ≥ 24 jam DAN crash rate tidak naik |
+| `lima` | 5% merchant | idem |
+| `duapuluhlima` | 25% merchant | idem |
+| `penuh` | 100% | — |
+
+⛔ **Persentase MERCHANT, bukan perangkat.** Satu outlet dengan tiga kasir
+tidak pernah terbelah dua versi — ketiganya berbagi shift, printer, dan nomor
+struk.
+
+⛔ **Kanari adalah PILIHAN** (`tenant.is_canary`), bukan undian. Merchant
+sungguhan tidak pernah menjadi kelinci percobaan tanpa memilihnya.
+
+Menaikkan tahap:
+
+```
+node --env-file=.env tools/naikkan-tahap.mjs 1.2.0 --status
+node --env-file=.env tools/naikkan-tahap.mjs 1.2.0 \
+  --crash-kandidat=2.1 --crash-baseline=3.0 --kering
+node --env-file=.env tools/naikkan-tahap.mjs 1.2.0 \
+  --crash-kandidat=2.1 --crash-baseline=3.0
+```
+
+⛔ **Angka crash rate WAJIB diketik, dan alat tidak menghitungnya sendiri.**
+Crash rate satu versi bersifat lintas-tenant, dan `device_telemetry` tunduk
+RLS — `FORCE ROW LEVEL SECURITY` berlaku untuk owner juga, jadi bahkan
+`DATABASE_MIGRATION_URL` tidak dapat mengagregasinya. Angka yang dipakai
+DISIMPAN di `app_release.gate_crash_*`; kalau tahap ternyata dinaikkan atas
+angka yang salah, angkanya masih ada untuk dibaca. Menjalankan tanpa keduanya
+tidak menaikkan apa pun.
+
+### 12.2 Menghentikan rilis
+
+```sql
+UPDATE app_release
+   SET halted_at = now(), halted_reason = '<sebab>'
+ WHERE version = '<versi>';
+```
+
+Permintaan berikutnya berhenti menawarkannya. ⛔ **Jangan `DELETE`** — baris
+itu justru yang menjelaskan perangkat yang terlanjur memasangnya.
+
+Menariknya kembali dari perangkat yang SUDAH memasang menuntut rilis baru
+bernomor lebih rendah (`app_release` memilih yang **terbaru dibuat**, bukan
+yang tertinggi nomornya). ⛔ Rollback skema SQLite lokal **hampir mustahil**
+setelah data ditulis dengan skema baru (KEP-36) — periksa apakah versi yang
+ditarik menambah tabel atau kolom lokal sebelum menjanjikan rollback.
+
+### 12.3 Jendela update dan penundaan
+
+| Gejala | Periksa |
+|---|---|
+| "Update muncul di jam sibuk" | `outlet.update_window_start_hour` / `_end_hour`. Kosong = bawaan 03:00–06:00 waktu **lokal outlet**. |
+| Outlet 24 jam | Jendela boleh melewati tengah malam (mis. 23–2). Yang ditolak adalah `mulai = selesai` — itu jendela KOSONG, bukan 24 jam penuh, dan CHECK constraint menolaknya. |
+| "Kami tidak bisa menunda lagi" | Maksimal 2× per versi. Penghitungnya di `device.update_deferrals`, dan **direset saat versinya berganti**. |
+| "Update dipasang padahal kami belum setuju" | Periksa `app_release.mandatory_reason`. Hanya `keamanan` dan `kehilangan_data` menembus jendela dan penundaan — daftar itu CHECK constraint, bukan kebijakan lisan. |
+
+⛔ **Merchant yang belum masuk tahap tidak memasang apa pun, termasuk update
+yang wajib segera.** Yang menaikkan tahap adalah orang. Kalau sebuah perbaikan
+keamanan harus mencapai semua merchant sekarang, naikkan tahapnya ke `penuh`
+— jangan mencari jalan lain.
 
 ---
 

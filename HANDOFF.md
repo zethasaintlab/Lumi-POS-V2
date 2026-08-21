@@ -727,11 +727,40 @@ Rantainya: `catat()` → buffer `telemetry_local` → penjadwal →
   Diperbaiki `rencanaBuatLokalHilang`; tanpa itu setiap tabel lokal baru
   adalah `no such table` di setiap perangkat yang sudah terpasang.
 
+### Staged rollout — 21 Agustus 2026
+
+Aturannya di `packages/domain/src/rilis.ts`, keadaannya di `app_release`
+(migrasi `0030`), keputusannya lewat `GET /devices/{id}/update`.
+
+⛔ **Yang ADA adalah keputusan, bukan pemasangan.** Mengunduh dan memasang
+versi menuntut shell Tauri — utang F4. Jangan menandai "staged rollout"
+selesai sebagai fitur merchant sampai updater itu ada; yang selesai adalah
+separuh yang tidak menuntut perangkat keras.
+
+- ⛔ **Kohort per MERCHANT dan wajib SUBSET** (5% ⊂ 25% ⊂ 100%). Merchant yang
+  keluar dari cakupan saat tahap naik harus turun versi, dan rollback skema
+  lokal "hampir mustahil" (KEP-36). Diuji sebagai property atas 2.000 tenant.
+- ⛔ **Kanari adalah pilihan (`tenant.is_canary`), bukan undian.**
+- ⛔ **Jendela boleh melewati tengah malam**; `mulai = selesai` adalah jendela
+  KOSONG dan ditolak CHECK constraint, bukan ditafsirkan 24 jam penuh.
+- ⛔ **Belum-giliran mendahului wajib-segera.** Yang menaikkan tahap adalah
+  orang, bukan tingkat kegentingan rilis.
+- ⛔ **Penundaan per VERSI**, maksimal 2×; jatah habis membuat update wajib,
+  bukan batal.
+- ⛔ **Gate crash rate menahan saat datanya belum ada**, dan angkanya diketik
+  operator: agregasi lintas-tenant menuntut pembaca ber-`BYPASSRLS`. Angka
+  yang dipakai disimpan di `app_release.gate_crash_*` — kalau tahap ternyata
+  dinaikkan atas angka yang salah, angkanya masih ada untuk dibaca.
+- **Tidak ada endpoint menaikkan tahap.** Seluruh peran di `spec-f` adalah
+  peran merchant; endpoint operator menuntut otentikasi staf yang tidak ada di
+  sistem ini. `tools/naikkan-tahap.mjs` memakai kredensial database.
+
 ### ⛔ Yang MASIH TERBUKA di F6
 
 | Bagian | Keadaan |
 |---|---|
-| Staged rollout | Belum ada |
+| Updater perangkat (Tauri) | Belum ada — separuh kedua staged rollout |
+| Feature flag & kill switch per merchant | `ARCH:358` menyebutnya "kebutuhan operasional, bukan kemewahan". Belum ada |
 | Metrik lintas-tenant | Menunggu keputusan deployment (pembaca ber-`BYPASSRLS`) |
 | Koreksi langganan | Menurunkan paket, membatalkan tagihan yang terlanjur dibuat — runbook §10 mendaftarnya sebagai yang belum ada |
 

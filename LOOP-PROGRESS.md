@@ -1063,3 +1063,64 @@ Tujuh belas suite, nol kegagalan.
 melaporkan FAIL dengan `ECONNREFUSED`, dan tidak satu pun kegagalan itu tentang
 kode. Kalau seluruh suite ber-database merah sekaligus, periksa `pg_isready`
 **sebelum** membaca satu pun log kegagalan.
+
+### Task 15 — Staged rollout (F6)
+
+**Selesai sejauh yang dapat dibangun tanpa updater.** Item F6 terakhir yang
+bernama. `ARCH:§12` dan KEP-36 menolak dua jalan yang lebih mudah: auto-update
+paksa menghentikan outlet di jam makan siang, dan update manual berarti
+delapan versi di lapangan setelah setahun.
+
+**⛔ Batas yang dinyatakan sejak awal, bukan ditemukan belakangan:** yang
+dibangun adalah **KEPUTUSAN**, bukan **PEMASANGAN**. Mengunduh dan memasang
+versi menuntut shell Tauri, dan itu utang F4. Membangun "staged rollout"
+sebagai distributor update hari ini akan menjadi fiksi; yang dibangun adalah
+separuh yang tidak menuntut perangkat keras, disusun supaya updater yang lahir
+kelak tinggal menempel alih-alih memutuskan ulang.
+
+**Keputusan yang diambil:**
+
+- **Kohort per MERCHANT, bukan per perangkat.** Satu outlet dengan tiga kasir
+  tidak boleh terbelah dua versi — ketiganya berbagi shift, printer, dan nomor
+  struk, dan selisih versi di antara mereka adalah tepat beban multi-versi
+  yang KEP-36 ingin hindari, dialami dalam satu ruangan.
+- ⛔ **Kohort wajib SUBSET dan di-garam per versi.** Subset karena merchant
+  yang keluar dari cakupan saat tahap naik harus TURUN versi, dan rollback
+  skema lokal "hampir mustahil". Di-garam karena tanpa itu merchant berkohort
+  rendah menjadi kelinci percobaan untuk setiap rilis, selamanya. Diuji
+  sebagai property atas 2.000 tenant.
+- ⛔ **Jendela update boleh melewati tengah malam.** Outlet yang tutup 02:00
+  memilih 23:00–02:00, dan perbandingan naif menjawab "tidak pernah" —
+  update yang tidak pernah terpasang terlihat persis seperti tidak ada rilis.
+  `mulai = selesai` adalah jendela KOSONG, ditolak CHECK constraint; menafsir-
+  kannya 24 jam penuh membuat satu salah ketik mengizinkan update jam makan
+  siang.
+- ⛔ **Belum-giliran mendahului wajib-segera.** Yang menaikkan tahap adalah
+  orang, bukan tingkat kegentingan rilis.
+- ⛔ **Gate crash rate MENAHAN saat datanya belum ada.** Gate yang meloloskan
+  ketidaktahuan hanya menyala pada rilis yang sudah tidak membutuhkannya.
+- ⛔ **Angka crash rate diketik operator, bukan dihitung alat.** Agregasi
+  lintas-tenant menuntut pembaca ber-`BYPASSRLS`; `FORCE ROW LEVEL SECURITY`
+  berlaku untuk owner juga, jadi bahkan `DATABASE_MIGRATION_URL` tidak dapat
+  membacanya. Yang dilakukan `tools/naikkan-tahap.mjs`: menuntut angkanya
+  disebutkan, menegakkan aturannya, lalu **menyimpan** angka yang dipakai.
+- **Tidak ada endpoint untuk menaikkan tahap.** Seluruh peran di `spec-f`
+  adalah peran merchant; endpoint operator menuntut permukaan otentikasi staf
+  yang tidak ada di sistem ini. Batas yang dinyatakan, bukan kelalaian.
+- **Modul `rilis` lahir untuk satu tabel**, alasan yang sama dengan `sync` dan
+  `audit`: keputusannya menunjuk `device` (identity) DAN `outlet`/`tenant`
+  (tenancy), dan alternatifnya adalah salah satu meng-query tabel milik yang
+  lain.
+
+**Dua hal yang ditemukan test, bukan review:**
+
+| Temuan | Yang menyembunyikannya |
+|---|---|
+| Guard drift skema menolak dua kolom `outlet` baru | `outlet` raw table; kolom server yang tidak punya padanan lokal harus dinyatakan sebagai keputusan, bukan didiamkan. Keduanya memang berhenti di server — keputusan update menuntut jaringan menurut sifatnya |
+| Helper test membaca `outlet` lewat koneksi owner | Gagal dengan `unrecognized configuration parameter "app.tenant_id"` — pesan yang tidak menyebut RLS sama sekali. `FORCE ROW LEVEL SECURITY` berlaku untuk owner juga |
+
+**Alat diverifikasi terhadap database sungguhan**, bukan hanya test: tahap
+dinaikkan `kanari → lima`, angka gate tersimpan, dan percobaan kedua langsung
+ditahan "belum 24 jam". Penjaga angka runbook diperluas ke ketiganya (jeda 24
+jam, 2× penundaan, jendela 03:00–06:00) dan disabotase — `MAKS_TUNDA = 3`
+membuatnya merah.

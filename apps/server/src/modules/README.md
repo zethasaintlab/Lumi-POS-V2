@@ -11,6 +11,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 |---|---|
 | `tenancy` | `tenant`, `outlet`, `vertical_profile`, `subscription_invoice`, `usage_metric` |
 | `identity` | `user`, `role`, `user_role`, `device`, `support_session`, `device_telemetry` |
+| `rilis` | `app_release` |
 | `catalog` | `category`, `item`, `item_variation`, `modifier_list`, `modifier`, `item_modifier_list`, `price_history` |
 | `ordering` | `order`, `check`, `order_line`, `order_line_modifier`, `refund` |
 | `payment` | `payment`, `tax_rate` |
@@ -32,6 +33,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `ordering` | Penulisan penjualan, void & refund, seluruh laporan atas `order` | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` · `GET /reports/sales` · `GET /reports/recap` · `GET /reports/export` · `ambilPenjualan` · `ambilProduk` |
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
 | `identity` | Telemetri perangkat (F6) | `POST /devices/{id}/telemetry` · `GET /devices/{id}/telemetry` — barisnya berkunci perangkat, dan penjaganya kredensial perangkat (`kredensial-perangkat.ts`), yang sudah dimiliki modul ini |
+| `rilis` | Staged rollout (F6) | `GET /devices/{id}/update` · `POST /devices/{id}/update/defer` — keputusannya menunjuk `device` (identity) DAN `outlet`/`tenant` (tenancy), jadi ia modul tersendiri alih-alih membuat salah satu dari keduanya meng-query tabel milik yang lain |
 | `cash` | Buka shift, tutup kas, no-sale (FR-D7) | `POST /shifts` · `POST /shifts/{id}/close` · `POST /shifts/{id}/no-sale` · `assertShiftOpen` |
 | `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` · `selectSubscriptionProvider` |
 | `tenancy` | Pendaftaran merchant mandiri + kuota + langganan (F5) + kategori merchant (FR-C12) | `POST /tenants` · `POST /outlets` · `GET /tenants/usage` · `PATCH /tenants/settings` · `POST /tenants/subscription/invoices` · `GET /tenants/subscription/invoices` · `POST /tenants/subscription/invoices/{id}/check-status` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` · `getMerchantCategory` · `terapkanStatusTagihan` |

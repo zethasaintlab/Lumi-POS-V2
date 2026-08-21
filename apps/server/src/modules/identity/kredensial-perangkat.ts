@@ -45,6 +45,11 @@ export interface BarisDevice {
   token_hash: string | null;
   credentials_expire_at: string | null;
   revoked_at: string | null;
+  /** Versi aplikasi yang terakhir dilaporkan perangkat. */
+  app_version: string | null;
+  /** F6 — penundaan update, dihitung PER VERSI. Lihat migrasi 0030. */
+  update_deferrals: number;
+  update_deferred_version: string | null;
 }
 
 /**
@@ -59,7 +64,9 @@ export interface BarisDevice {
  */
 export async function ambilDevice(client: PoolClient, deviceId: string): Promise<BarisDevice | null> {
   const { rows } = await client.query<BarisDevice>(
-    'SELECT id, tenant_id, outlet_id, token_hash, credentials_expire_at, revoked_at FROM device WHERE id = $1',
+    `SELECT id, tenant_id, outlet_id, token_hash, credentials_expire_at, revoked_at,
+            app_version, update_deferrals, update_deferred_version
+       FROM device WHERE id = $1`,
     [deviceId]
   );
   return rows[0] ?? null;

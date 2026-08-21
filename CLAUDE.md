@@ -462,6 +462,25 @@ Lima dari delapan metrik `ARCH:296` **tidak dapat dihasilkan server** — dan it
 - **`double precision` di `device_telemetry` bukan pengecualian aturan float.** Larangan itu berlaku di jalur uang; yang menjaga kolom-kolom ini tetap di luar jalur itu adalah CHECK `event` — tidak ada nama event yang menyebut jumlah uang, dan tidak boleh ada.
 - **Agregasi lintas-tenant TIDAK dibangun**, batas yang sama dengan `metrik.ts`: ia menuntut pembaca ber-`BYPASSRLS`, dan itu keputusan deployment.
 
+### F6 — staged rollout, keputusan yang mengikat kode
+
+`ARCH:§12` dan KEP-36 menolak dua jalan yang lebih mudah: auto-update paksa **menghentikan outlet di jam makan siang**, dan update manual berarti delapan versi di lapangan setelah setahun. Yang tersisa adalah rollout bertahap dengan jendela waktu. Aturannya di `packages/domain/src/rilis.ts`; keadaannya di `app_release` (migrasi `0030`).
+
+- ⛔ **Yang dibangun adalah KEPUTUSAN, bukan PEMASANGAN.** `GET /devices/{id}/update` menjawab "versi mana yang seharusnya, dan boleh dipasang sekarang atau tidak". Mengunduh dan memasangnya menuntut shell Tauri — utang F4 yang tercatat. Memisahkan keduanya membuat updater yang lahir kelak tinggal menempel, bukan memutuskan ulang; aturannya tidak akan pernah punya dua salinan.
+- ⛔ **Persentase MERCHANT, bukan perangkat.** Satu outlet dengan tiga kasir tidak boleh terbelah dua versi: ketiganya berbagi shift, printer, dan nomor struk, dan selisih versi di antara mereka adalah tepat beban multi-versi yang KEP-36 ingin hindari — dialami dalam satu ruangan.
+- ⛔ **Kohort wajib SUBSET: 5% ⊂ 25% ⊂ 100%.** Merchant yang keluar dari cakupan saat tahap naik harus TURUN versi, dan rollback skema SQLite lokal "hampir mustahil" setelah data ditulis dengan skema baru (KEP-36). Diuji sebagai property atas 2.000 tenant.
+- ⛔ **Kohort DI-GARAM per versi.** Tanpa garam, merchant yang kebetulan berkohort rendah menjadi kelinci percobaan untuk **setiap** rilis, selamanya.
+- ⛔ **Kanari adalah PILIHAN (`tenant.is_canary`), bukan undian**, dan cakupannya nol persen. Merchant sungguhan tidak pernah menjadi kelinci percobaan tanpa memilihnya.
+- ⛔ **Jendela update boleh MELEWATI TENGAH MALAM.** Outlet yang tutup 02:00 memilih 23:00–02:00, dan perbandingan naif (`mulai <= jam && jam < selesai`) menjawab "tidak pernah" untuknya — update yang tidak pernah terpasang terlihat persis seperti tidak ada rilis. `mulai = selesai` adalah jendela KOSONG, bukan 24 jam penuh; CHECK constraint menolaknya, karena menafsirkannya sebagai penuh membuat satu salah ketik mengizinkan update di jam makan siang.
+- ⛔ **Jam lokal outlet dibaca dari jam DATABASE.** Jendela selebar tiga jam, dan dua mesin yang jamnya berselisih memasang update di luar jendela yang merchant setujui.
+- ⛔ **Urutan pemeriksaan bukan selera.** "Belum giliran" mendahului segalanya — termasuk update yang wajib segera; yang menaikkan tahap adalah orang. "Wajib segera" mendahului jendela dan penundaan justru karena kategorinya tertutup (`keamanan`, `kehilangan_data`): yang lolos ke sana hanya kehilangan data dan lubang keamanan, dan menunggu 03:00 untuk keduanya berarti membiarkan kerusakan berjalan semalaman.
+- ⛔ **Penundaan dihitung PER VERSI** (`device.update_deferred_version`). Tanpa itu, penundaan yang terkumpul untuk versi lama membuat versi berikutnya wajib segera saat pertama kali muncul — merchant kehilangan haknya tanpa pernah memakainya. Jatah yang habis membuat update **wajib**, bukan batal.
+- ⛔ **Gate crash rate MENAHAN saat datanya belum ada.** Gate yang meloloskan ketidaktahuan hanya menyala pada rilis yang sudah cukup lama berjalan untuk tidak membutuhkannya. Dan crash rate yang naik SEDIKIT PUN menahan: `ARCH:304` menulis ambangnya `> baseline`, dan toleransi adalah angka yang harus dipilih seseorang — tidak ada di dokumen mana pun, jadi ia tidak dikarang di kode.
+- ⛔ **Angka crash rate DIKETIK operator, bukan dihitung alat.** Crash rate satu versi bersifat lintas-tenant, dan `device_telemetry` tunduk RLS — `FORCE ROW LEVEL SECURITY` berlaku untuk owner juga, jadi bahkan `DATABASE_MIGRATION_URL` tidak dapat mengagregasinya. `tools/naikkan-tahap.mjs` menuntut angkanya disebutkan, menegakkan aturannya, lalu **menyimpan** angka yang dipakai di `app_release.gate_crash_*`.
+- **`app_release` dikecualikan RLS**, sejajar `printer_profile`: rilis milik KAMI, tidak ada tenant yang memilikinya. Konsekuensinya dinyatakan — setiap merchant dapat membaca barisnya, dan tidak satu pun kolomnya menyebut merchant lain.
+- **Rilis yang dihentikan TIDAK dihapus.** Barisnya justru yang menjelaskan perangkat yang terlanjur memasangnya. Yang berlaku adalah rilis **terbaru dibuat**, bukan yang tertinggi nomornya — itulah yang membuat penarikan lewat versi bernomor lebih rendah mungkin.
+- **Tidak ada endpoint untuk menaikkan tahap**, dan itu batas yang dinyatakan: seluruh peran di `spec-f` adalah peran merchant, dan endpoint operator menuntut permukaan otentikasi staf yang tidak ada di sistem ini. Alat memakai kredensial database yang memang sudah dipegang operator.
+
 ---
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.

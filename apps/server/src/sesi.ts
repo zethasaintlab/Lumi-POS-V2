@@ -124,6 +124,20 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
     alasan: 'diautentikasi SECRET PERANGKAT di Bearer — kredensial berbeda, bukan sesi orang',
   },
   {
+    metode: 'GET',
+    pola: '/devices/:deviceId/update',
+    alasan:
+      'idem: diautentikasi SECRET PERANGKAT di Bearer. Perangkat menanyakan versinya ' +
+      'sendiri, dan jendela update bawaan 03:00-06:00 adalah jam tidak ada orang yang login',
+  },
+  {
+    metode: 'POST',
+    pola: '/devices/:deviceId/update/defer',
+    alasan:
+      'idem: diautentikasi SECRET PERANGKAT di Bearer. "Nanti saja" ditekan di layar ' +
+      'kasir, dan perangkat yang belum ada yang login tetap harus dapat menundanya',
+  },
+  {
     metode: 'POST',
     pola: '/devices/:deviceId/telemetry',
     alasan:

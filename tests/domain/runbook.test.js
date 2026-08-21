@@ -148,6 +148,27 @@ test('⛔ angka ambang yang runbook sebut sama dengan yang kode tegakkan', async
     RUNBOOK.includes(`**${MAKS_PERCOBAAN_CETAK} percobaan**`),
     `runbook harus menyebut MAKS_PERCOBAAN_CETAK (${MAKS_PERCOBAAN_CETAK})`
   );
+
+  // F6 — rilis bertahap. Ketiganya angka yang merchant DENGAR dari support
+  // ("update dipasang jam 3 pagi", "bisa ditunda dua kali"), jadi dokumen dan
+  // kode yang menyimpang di sini menghasilkan janji yang tidak dipenuhi.
+  const { JEDA_TAHAP_JAM, MAKS_TUNDA, JENDELA_BAWAAN } = await import(
+    '../../packages/domain/src/rilis.ts'
+  );
+  assert.ok(
+    RUNBOOK.includes(`≥ ${JEDA_TAHAP_JAM} jam`),
+    `runbook harus menyebut jeda tahap (${JEDA_TAHAP_JAM} jam)`
+  );
+  assert.ok(
+    RUNBOOK.includes(`Maksimal ${MAKS_TUNDA}× per versi`),
+    `runbook harus menyebut batas penundaan (${MAKS_TUNDA})`
+  );
+  const jam = (n) => `${String(n).padStart(2, '0')}:00`;
+  const jendela = `${jam(JENDELA_BAWAAN.mulaiJam)}–${jam(JENDELA_BAWAAN.selesaiJam)}`;
+  assert.ok(
+    RUNBOOK.includes(jendela),
+    `runbook harus menyebut jendela update bawaan (${jendela})`
+  );
 });
 
 test('⛔ runbook menyatakan batas yang HANDOFF juga nyatakan', () => {

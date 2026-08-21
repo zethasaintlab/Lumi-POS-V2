@@ -113,8 +113,12 @@ const TABLES = [
   ...t,
 }));
 
-// Exempt from RLS entirely — root of tenancy, and global hardware reference
-// data respectively. Asserted absent-on-purpose, never fed into the CRUD loop.
-const EXEMPT = ['tenant', 'printer_profile'];
+// Exempt from RLS entirely — root of tenancy, global hardware reference data,
+// and the release ledger. `app_release` has no tenant_id because no tenant
+// owns it: rilis adalah milik KAMI. Consequence stated on purpose — every
+// merchant can read those rows, and every column in them is a version number
+// or a rollout stage. None names another merchant.
+// Asserted absent-on-purpose, never fed into the CRUD loop.
+const EXEMPT = ['tenant', 'printer_profile', 'app_release'];
 
 module.exports = { TABLES, EXEMPT };

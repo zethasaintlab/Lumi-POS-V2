@@ -2320,6 +2320,113 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/update:
+    get:
+      operationId: getDeviceUpdate
+      summary: >-
+        F6 -- versi mana yang seharusnya dipakai perangkat ini, dan boleh
+        dipasang sekarang atau tidak (`ARCH:§12`, KEP-36). Ia MEMUTUSKAN,
+        tidak memasang: pemasangannya menuntut shell Tauri (utang F4).
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: "'Bearer <secret perangkat>'. Tidak `required` -- kredensial hilang berarti 401, bukan 400."
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versi, pasangSekarang, bolehTunda, alasan]
+                properties:
+                  versi:
+                    type: string
+                    nullable: true
+                    description: Versi yang seharusnya, atau null.
+                  pasangSekarang: { type: boolean }
+                  bolehTunda: { type: boolean }
+                  alasan:
+                    type: string
+                    enum:
+                      - tidak_ada_rilis
+                      - sudah_terbaru
+                      - belum_giliran
+                      - di_luar_jendela
+                      - wajib_segera
+                      - terjadwal
+                    description: >-
+                      Kode, bukan kalimat. Layar yang menerjemahkannya --
+                      kalimat yang lahir di server tidak dapat diterjemahkan
+                      ulang.
+                  sisaTunda: { type: integer }
+                  jamLokal:
+                    type: integer
+                    description: Jam lokal outlet dari jam DATABASE, bukan jam Node.
+                  jendela:
+                    type: object
+                    properties:
+                      mulaiJam: { type: integer }
+                      selesaiJam: { type: integer }
+        '401':
+          description: Kredensial perangkat tidak sah, dicabut, atau kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Outlet perangkat tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/update/defer:
+    post:
+      operationId: deferDeviceUpdate
+      summary: >-
+        Merchant menekan "nanti saja". Maksimal 2x per versi (KEP-36);
+        pembaruan wajib segera tidak dapat ditunda sama sekali.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Penundaan tercatat
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versi, sudahTunda, sisaTunda]
+                properties:
+                  versi: { type: string }
+                  sudahTunda: { type: integer }
+                  sisaTunda: { type: integer }
+        '401':
+          description: Kredensial perangkat tidak sah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Tidak ada rilis aktif (NO_ACTIVE_RELEASE), jatah penundaan habis,
+            atau pembaruan wajib segera (DEFERRAL_NOT_ALLOWED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /devices/{deviceId}/telemetry:
     post:
       operationId: ingestDeviceTelemetry
