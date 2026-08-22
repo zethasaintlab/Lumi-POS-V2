@@ -291,7 +291,19 @@ Sisa Modul B, belum digarap: FR-B11 (cetak ulang struk, P1, butuh printer F4). *
 - **`totalDiskonOrder` dan `totalServiceCharge` masih selalu NOL**: `POST /orders` menulis nol ke kolomnya. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya. ⛔ Test integrasi untuk keduanya akan hijau karena **hampa**; aturannya diuji di `tests/domain/posisi-penjualan.test.js`.
 - **XLSX tidak dibuat.** `spec-c:444` menulis "CSV + XLSX"; XLSX menuntut dependensi baru dan CSV terbuka apa adanya di Excel dan Google Sheets. Batas yang dinyatakan.
 
-Sisa Modul C: FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
+**K-06 menerima QRIS statis dan EDC, 22 Agustus 2026.** Server menerima keempat metode sejak sub-project 2; yang tidak ada adalah jalan bagi KASIR memakainya — `MetodeBayar` di klien secara harfiah `'cash'`, jadi merchant yang pelanggannya membayar QRIS mencatatnya sebagai tunai dan saldo laci berbohong sebesar seluruh omzet QRIS.
+
+**Keputusan yang mengikat kode pembayaran di perangkat:**
+
+- ⛔ **Aturan validasi QRIS statis dan EDC hidup di `packages/domain/src/pembayaran-manual.ts`, dan SERVER memakainya juga.** Keduanya berfungsi offline; aturan yang hanya hidup di server berarti kasir mengetik referensi kosong, penjualan tersimpan, dan barisnya berhenti `gagal-permanen` di antrean berjam-jam kemudian — bentuk cacat yang sama dengan refund offline. Kode galatnya ikut dikembalikan: `POSSIBLE_CARD_NUMBER` berbeda dari `VALIDATION_ERROR`, dan menyamakannya membuang satu-satunya sinyal bahwa seseorang mengetik nomor kartu ke POS.
+- ⛔ **Non-tunai TIDAK menulis `cash_movement`.** Laci yang naik pada setiap penjualan QRIS membuat tutup kas menuntut otorisasi manajer untuk selisih yang tidak pernah ada — cacat yang PERSIS sama bentuknya dengan yang F3 temukan pada refund tunai, arahnya terbalik.
+- ⛔ **Pembulatan tunai berhenti tanpa syarat** (FR-C9). Sebelum metode kedua lahir, membulatkan selalu kebetulan benar; QRIS memindahkan angka, bukan lembaran.
+- ⛔ **`tendered_amount` dan `change_amount` NULL untuk non-tunai.** Mengisinya sama dengan `amount` membuat laporan tidak dapat membedakan uang yang benar-benar diserahkan dari nominal transaksi, dan `spec-d:201` memakai perbedaan itu.
+- ⛔ **Muatan outbox berbeda PER METODE.** Kartu yang membawa `tenderedAmount` terlihat seperti tunai di setiap laporan yang membacanya.
+- ⛔ **`card_last4` dipotong di titik MASUKNYA di layar**, bukan hanya ditolak saat simpan. Membiarkan digit kelima masuk state berarti nomor kartu sempat ada di dalam aplikasi.
+- **`LABEL_METODE` satu sumber** (`cetak/metode.ts`), dipakai cetakan pertama dan cetak ulang. Dua peta nama yang menyimpang menghasilkan struk kedua yang menyebut metode berbeda — tepat yang `spec-b:145` larang.
+
+Sisa Modul C: **FR-C3 dan QRIS dinamis di kasir**. QRIS dinamis menuntut gateway menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur penjualan perangkat menulis lokal lebih dulu lalu me-relay. Ia menuntut jalur penjualan **online-first** yang belum ada, dan FR-C3 ("nonaktifkan metode online saat offline") menuntut metode online ada lebih dulu. Pembayaran campuran juga belum: server sudah mendukung sisa tagihan, layarnya belum.
 
 **Keputusan produk yang mengikat kode katalog:**
 

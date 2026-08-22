@@ -1097,3 +1097,30 @@ error yang menunjukkannya.
 |---|---|
 | Penegakan di server | `POST /orders` menerima modifier apa adanya. Menegakkannya menuntut server membaca `modifier_list` pada setiap penjualan, dan aturannya dapat berubah setelah order antre offline berjam-jam |
 | Verifikasi browser | **Belum dijalankan** untuk stepper `allow_duplicate` dan pilihan yang dinonaktifkan |
+
+---
+
+## K-06 QRIS statis + EDC (22 Agustus 2026)
+
+Server menerima keempat metode sejak Modul C sub-project 2. Yang tidak ada
+adalah jalan bagi **kasir** memakainya — `MetodeBayar` di klien secara harfiah
+`'cash'`. Merchant yang pelanggannya membayar QRIS harus mencatatnya sebagai
+tunai, dan saldo laci lalu berbohong sebesar seluruh omzet QRIS.
+
+### ⛔ Cacat yang ikut lahir bila non-tunai menyentuh laci
+
+Bentuknya PERSIS sama dengan yang F3 temukan pada refund tunai, arahnya
+terbalik: `cash_movement` untuk QRIS membuat saldo laci naik pada penjualan
+yang tidak memindahkan satu lembar pun, dan tutup kas lalu menuntut otorisasi
+manajer untuk selisih yang tidak pernah ada. Klien dan server sama-sama
+menulisnya hanya untuk `cash`, dan ada test relay yang membuktikan keduanya
+sepakat.
+
+### Yang masih terbuka di Modul C
+
+| Batas | Kenapa |
+|---|---|
+| **QRIS dinamis di kasir** | Menuntut gateway menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur penjualan perangkat menulis lokal lebih dulu lalu me-relay. Ia menuntut jalur penjualan **online-first** yang belum ada, dan itu keputusan arsitektur, bukan penambahan layar |
+| **FR-C3** | "Nonaktifkan metode online saat offline" menuntut metode online ADA lebih dulu. Ketiga metode yang kini ada semuanya berfungsi tanpa jaringan |
+| **Pembayaran campuran** | Satu penjualan = satu payment di jalur perangkat. Server sudah mengembalikan `outstanding`; layarnya belum memakainya |
+| Verifikasi browser | **Belum dijalankan** untuk pemilih metode dan kedua form |
