@@ -195,18 +195,26 @@ async function muatanDariPerangkat(pembayaran, orderId, amountDue) {
   });
 
   const outbox = tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
-  const bayar = outbox.find((t) => t.params.includes('payment'));
-  const muatan = JSON.parse(bayar.params.find((p) => typeof p === 'string' && p.startsWith('{')));
-  // Order-nya sudah ada di server lewat jalur di atas; hanya muatannya yang
-  // dipinjam dari perangkat.
-  return { ...muatan, id: crypto.randomUUID(), orderId };
+  const bayar = outbox.filter((t) => t.params.includes('payment'));
+  // ⛔ URUTANNYA dipertahankan. Pada pembayaran campuran, server menghitung
+  // nominal tunai dari `total − SUM(confirmed)` lalu MEMBULATKANNYA: bagian
+  // tunai yang mendarat lebih dulu membuat server membulatkan seluruh total
+  // dan menagih lebih, lalu bagian QRIS berikutnya ditolak sebagai kelebihan
+  // bayar non-tunai. Test yang menyusun ulang urutannya sendiri tidak dapat
+  // menangkap itu.
+  return bayar.map((t) => {
+    const muatan = JSON.parse(t.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+    // Order-nya sudah ada di server lewat jalur di atas; hanya muatannya yang
+    // dipinjam dari perangkat.
+    return { ...muatan, id: crypto.randomUUID(), orderId };
+  });
 }
 
 // ---------------------------------------------------------------------------
 
 test('⛔ QRIS statis dari perangkat MENDARAT di server', async () => {
   const { orderId, total } = await orderTerbuka(1);
-  const muatan = await muatanDariPerangkat(
+  const [muatan] = await muatanDariPerangkat(
     { metode: 'qris_static', referensi: '22000 · ref 4821' },
     orderId,
     total
@@ -234,7 +242,7 @@ test('⛔ QRIS statis dari perangkat MENDARAT di server', async () => {
 
 test('⛔ EDC dari perangkat MENDARAT di server', async () => {
   const { orderId, total } = await orderTerbuka(2);
-  const muatan = await muatanDariPerangkat(
+  const [muatan] = await muatanDariPerangkat(
     { metode: 'card_edc', approvalCode: 'A12345', cardLast4: '4821' },
     orderId,
     total
@@ -257,7 +265,7 @@ test('⛔ EDC dari perangkat MENDARAT di server', async () => {
 
 test('⛔ QRIS statis TIDAK menghasilkan cash_movement di server', async () => {
   const { orderId, total } = await orderTerbuka(3);
-  const muatan = await muatanDariPerangkat(
+  const [muatan] = await muatanDariPerangkat(
     { metode: 'qris_static', referensi: 'ref 4821' },
     orderId,
     total
@@ -272,4 +280,93 @@ test('⛔ QRIS statis TIDAK menghasilkan cash_movement di server', async () => {
     [orderId]
   );
   assert.equal(rows[0].n, 0);
+});
+
+test('⛔ pembayaran CAMPURAN mendarat utuh, dan urutannya yang membuatnya bisa', async () => {
+  const { orderId, total } = await orderTerbuka(4);
+  // QRIS 10.000, sisanya tunai. Tarif pajak tidak di-seed di suite ini, jadi
+  // totalnya persis harga item — yang diperiksa perbandingannya, bukan
+  // angkanya, supaya test ini tidak ikut pecah saat seed berubah.
+  const muatan = await muatanDariPerangkat(
+    [
+      { metode: 'cash', tendered: 20000 },
+      { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+    ],
+    orderId,
+    total
+  );
+
+  assert.equal(muatan.length, 2);
+  // Perangkat menyusun ulang sendiri: tunai TERAKHIR.
+  assert.equal(muatan[0].method, 'qris_static');
+  assert.equal(muatan[1].method, 'cash');
+
+  for (const m of muatan) {
+    const hasil = await relay()(barisOutbox(orderId, m));
+    assert.equal(
+      klasifikasi(hasil),
+      'terkirim',
+      `bagian ${m.method} berhenti di antrean: ${hasil.status}`
+    );
+  }
+
+  const { rows } = await kueriTenant(
+    `SELECT method, amount FROM payment WHERE order_id = $1 ORDER BY method`,
+    [orderId]
+  );
+  assert.equal(rows.length, 2, 'pembayaran campuran tidak mendarat utuh');
+
+  const { rows: ord } = await kueriTenant(
+    `SELECT status FROM "order" WHERE id = $1`,
+    [orderId]
+  );
+  // Order berpindah ke CLOSED hanya ketika SUM(payment confirmed) menutupinya
+  // (`spec-c:223`).
+  assert.equal(ord[0].status, 'closed', 'order tidak tertutup oleh dua payment');
+
+  // Laci hanya menerima bagian tunainya.
+  const { rows: kas } = await kueriTenant(
+    `SELECT delta FROM cash_movement WHERE order_id = $1`,
+    [orderId]
+  );
+  assert.equal(kas.length, 1);
+  assert.equal(
+    Number(kas[0].delta),
+    Number(total) - 10000,
+    'laci menerima nominal non-tunai juga'
+  );
+});
+
+test('⛔ SABOTASE: tunai yang mendarat lebih dulu MENOLAK bagian berikutnya', async () => {
+  const { orderId, total } = await orderTerbuka(5);
+  const muatan = await muatanDariPerangkat(
+    [
+      { metode: 'cash', tendered: 20000 },
+      { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+    ],
+    orderId,
+    total
+  );
+
+  // Urutan yang perangkat susun sengaja DIBALIK di sini. Ini yang membuat
+  // aturan "tunai terakhir" bukan sekadar kerapian: server menghitung nominal
+  // tunai dari sisa yang belum terbayar, jadi tunai yang datang pertama
+  // menagih SELURUH total dan menutup ordernya.
+  const dibalik = [...muatan].reverse();
+  assert.equal(klasifikasi(await relay()(barisOutbox(orderId, dibalik[0]))), 'terkirim');
+
+  const hasil = await relay()(barisOutbox(orderId, dibalik[1]));
+  assert.notEqual(
+    klasifikasi(hasil),
+    'terkirim',
+    'bagian kedua diterima padahal ordernya sudah tertutup oleh bagian pertama'
+  );
+
+  // Dan uangnya berpisah: laci menerima seluruh total, sementara pelanggan
+  // membayar sebagian lewat QRIS.
+  const { rows } = await kueriTenant(
+    `SELECT delta FROM cash_movement WHERE order_id = $1`,
+    [orderId]
+  );
+  assert.equal(Number(rows[0].delta), Number(total));
 });

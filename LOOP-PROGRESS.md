@@ -51,6 +51,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 19 | FR-B8 di layar kasir — K-03 diskon + K-11 | utang Task 16 | selesai |
 | 20 | FR-A3 — aturan pemilihan modifier di kasir | `spec-a:113`, P0 | selesai |
 | 21 | K-06 QRIS statis + EDC | FR-C2, FR-C4 | selesai |
+| 22 | Pembayaran campuran di perangkat | FR-C1, P0 | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1591,3 +1592,59 @@ dilepas dari muatan klien → `400`, 2 merah.
 | **FR-C3** tetap terbuka | "Nonaktifkan metode online saat offline" menuntut metode online ADA lebih dulu. Ketiga metode yang kini ada semuanya berfungsi tanpa jaringan |
 | Pembayaran campuran | Satu penjualan = satu payment di jalur perangkat. Server sudah mendukung sisa tagihan (`outstanding`); layarnya belum |
 | Verifikasi browser | **Belum dijalankan** untuk pemilih metode dan kedua form |
+
+---
+
+### Task 22 — Pembayaran campuran di perangkat (FR-C1, P0)
+
+*"Pembayaran campuran (tunai + QRIS) adalah alur harian di kafe Indonesia,
+bukan edge case"* (`spec-c:197`). Server sudah mendukungnya sejak Modul C;
+jalur perangkat hanya pernah menulis **satu** payment.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Yang dibulatkan adalah SISA TUNAI setelah bagian non-tunai**
+  (`spec-c:181`), bukan totalnya. Diukur di test: total 93.555 dengan QRIS
+  50.020 menagih tunai 43.500, sementara membulatkan total lebih dulu menagih
+  43.580 — **80 rupiah per transaksi**, besaran yang tidak pernah dilaporkan
+  siapa pun tapi muncul di rekonsiliasi. Aturannya di
+  `packages/domain/src/pembayaran-campuran.ts`, dan itu sebabnya ia menerima
+  seluruh bagian sekaligus: menghitung per bagian berarti membulatkan sisa
+  yang belum lengkap.
+- ⛔ **Bagian TUNAI dikirim TERAKHIR, dan rantainya `depends_on` eksplisit.**
+  Server menghitung nominal tunai dari `total − SUM(confirmed)` lalu
+  membulatkannya — bagian tunai yang mendarat lebih dulu menagih SELURUH total
+  dan menutup ordernya, lalu bagian QRIS berikutnya **ditolak**. Penjualannya
+  sempurna; yang salah hanya urutan kedatangannya. Dibuktikan lewat test
+  sabotase yang membalik urutannya terhadap server sungguhan: bagian kedua
+  ditolak, dan laci menerima seluruh total sementara pelanggan membayar
+  sebagian lewat QRIS.
+- ⛔ **`delta` laci adalah BAGIAN TUNAI-nya, bukan `amount_due`.** Pada
+  pembayaran campuran, `amount_due` memuat uang yang masuk lewat bank;
+  mencatatnya sebagai movement membuat kasir terlihat KELEBIHAN sebesar bagian
+  non-tunai — bentuk ketiga dari cacat yang sama yang F3 temukan.
+- ⛔ **Satu baris payment per bagian.** Menggabungkan dua metode menjadi satu
+  baris membuat rekonsiliasi FR-C12 tidak dapat memisahkan uang yang masuk
+  lewat bank dari uang di laci — dua saluran yang settlement-nya berbeda hari.
+- ⛔ **Kelebihan bayar non-tunai DITOLAK dengan angkanya** (`spec-c:225`).
+  Tidak ada mekanisme mengembalikan kembalian non-tunai: QRIS yang kelebihan
+  Rp 10.000 berarti merchant berutang lewat saluran yang tidak dapat
+  mengembalikannya, dan yang mengetahuinya hanya pelanggan.
+- ⛔ **Hanya SATU bagian tunai.** Dua baris tunai tidak menambah informasi apa
+  pun — uang tunai tidak punya identitas yang membedakan — sementara "berapa
+  kembaliannya" jadi punya lebih dari satu jawaban yang sama benarnya.
+- ⛔ **`hitungKeranjang` diekstrak, dan LAYAR memakainya.** K-06 harus
+  menampilkan TOTAL sebelum kasir membaginya, dan subtotal tidak cukup: ia
+  belum kena pajak. Menghitungnya sendiri di layar berarti kasir membagi angka
+  yang berbeda dari angka yang tersimpan.
+- **Penjualan tetap ditulis hanya saat LUNAS.** Order `open` yang tidak pernah
+  dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21,
+  belum dibangun). Batas yang dinyatakan, bukan kelalaian.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 394 · `test:kasir` 393
+· `test:payment` 132 · `test:ordering` 178 · `test:dst` 14 ·
+`test:backoffice` 370 · `test:sync-client` 102 · `test:sqlite-local` ·
+`test:runtime` · `test:oxlint-ds-adherence` · build kasir.
+
+**Sabotase:** laci diberi `amount_due` → 1 merah; tunai tidak diurutkan
+terakhir → 1 merah di suite klien dan 1 merah di suite relay.

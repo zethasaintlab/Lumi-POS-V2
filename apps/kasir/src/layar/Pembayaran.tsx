@@ -5,12 +5,17 @@ import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
 import { muatHlc } from '../lokal/hlc.ts';
 import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
 import {
+  hitungKeranjang,
   simpanPenjualan,
   type HasilPenjualan,
   type MetodeBayar,
   type Pembayaran,
 } from '../kasir/penjualan.ts';
 import { MIN_PANJANG_REFERENSI } from '../../../../packages/domain/src/pembayaran-manual.ts';
+import {
+  sisaTagihan,
+  type BagianBayar,
+} from '../../../../packages/domain/src/pembayaran-campuran.ts';
 import { Bidang } from '../Bidang.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
@@ -26,9 +31,23 @@ import { Tombol } from '../Tombol.tsx';
    boleh gagal. Struk bisa dicetak ulang; penjualan yang hilang tidak bisa
    dipulihkan.
 
-   Metode online-only dinonaktifkan saat offline (FR-C3) — belum di sini:
-   hanya tunai yang dibangun, dan tunai justru yang berfungsi offline. QRIS
-   dan EDC menunggu K-06 penuh. */
+   ⛔ FR-C1 — satu order, banyak payment. Bagian NON-TUNAI dikumpulkan lebih
+   dulu; tunai selalu menyelesaikan sisanya, karena hanya tunai yang punya
+   kembalian. Penjualan baru ditulis saat seluruh tagihan tertutup: order
+   `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya
+   jalan penutupan (KEP-21, belum dibangun).
+
+   Metode online-only dinonaktifkan saat offline (FR-C3) — belum relevan:
+   ketiga metode yang ada semuanya berfungsi tanpa jaringan. */
+
+/** Bentuk layar → bentuk domain. Tunai tidak pernah masuk daftar `bagian`. */
+function keBagianDomain(p: Pembayaran): BagianBayar {
+  return {
+    metode: p.metode,
+    nominal: p.metode === 'cash' ? undefined : p.nominal,
+    tendered: p.metode === 'cash' ? BigInt(p.tendered) : undefined,
+  };
+}
 
 function rupiah(n: number | bigint): string {
   return `Rp ${n.toLocaleString('id-ID')}`;
@@ -65,6 +84,15 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const [referensi, setReferensi] = useState('');
   const [approvalCode, setApprovalCode] = useState('');
   const [cardLast4, setCardLast4] = useState('');
+  const [nominalBagian, setNominalBagian] = useState('');
+  /* Bagian NON-TUNAI yang sudah dimasukkan. Tunai tidak pernah masuk daftar
+     ini: ia dihitung dari sisa, dan dua bagian tunai tidak menambah informasi
+     apa pun (`packages/domain/src/pembayaran-campuran.ts`). */
+  const [bagian, setBagian] = useState<Pembayaran[]>([]);
+  /* Total yang benar-benar akan tersimpan — dari `hitungKeranjang`, fungsi
+     yang SAMA yang `simpanPenjualan` pakai. Menghitungnya sendiri di layar
+     berarti kasir membagi angka yang berbeda dari angka yang tersimpan. */
+  const [total, setTotal] = useState<bigint | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [selesai, setSelesai] = useState<Extract<HasilPenjualan, { status: 'tersimpan' }> | null>(null);
@@ -78,13 +106,26 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       const k = await bacaKonfigPerangkat(db);
       if (!hidup) return;
       setKonfig(k);
-      if (k) setShift(await shiftAktif(db, k.deviceId));
+      const s = k ? await shiftAktif(db, k.deviceId) : null;
+      if (!hidup) return;
+      setShift(s);
       // HLC melanjutkan dari keadaan tersimpan — bukan instance baru tiap
       // boot, yang akan membuat setiap order berikutnya ber-HLC lebih kecil
       // daripada yang sudah ada.
       const h = await muatHlc(db, () => Date.now());
       if (!hidup) return;
       setHlc(h);
+      if (k && s && keranjangSekarang().baris.length > 0) {
+        const hitung = await hitungKeranjang({
+          db,
+          konfig: k,
+          keranjang: keranjangSekarang(),
+          shift: s,
+          waktu: () => new Date(),
+        });
+        if (!hidup) return;
+        setTotal(hitung.totals.total);
+      }
       setSiap(true);
     })();
     return () => {
@@ -158,12 +199,37 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     );
   }
 
-  const susunPembayaran = (): Pembayaran => {
-    if (metode === 'qris_static') return { metode, referensi };
-    if (metode === 'card_edc') {
-      return { metode, approvalCode, cardLast4: cardLast4 || null };
-    }
-    return { metode: 'cash', tendered };
+  /* Sisa tagihan sesudah bagian yang sudah dimasukkan (AC FR-C1 kedua).
+     `null` selama total belum terbaca — layar TIDAK menebaknya dari subtotal:
+     subtotal belum kena pajak, dan angka yang dibagi kasir harus angka yang
+     benar-benar akan ditagihkan. */
+  const sisa = total === null ? null : sisaTagihan(total, bagian.map(keBagianDomain));
+
+  const nominalKetik = nominalBagian.trim() === '' ? null : BigInt(nominalBagian.replace(/\D/g, '') || '0');
+
+  const bagianBaru = (): Pembayaran | null => {
+    if (metode === 'cash') return { metode: 'cash', tendered };
+    // Nominal kosong berarti SELURUH sisa — bentuk yang dipakai pembayaran
+    // metode tunggal, dan yang paling sering ditekan.
+    const nominal = nominalKetik !== null && nominalKetik > 0n ? nominalKetik : (sisa ?? undefined);
+    if (metode === 'qris_static') return { metode, referensi, nominal };
+    return { metode, approvalCode, cardLast4: cardLast4 || null, nominal };
+  };
+
+  const kosongkanForm = () => {
+    setReferensi('');
+    setApprovalCode('');
+    setCardLast4('');
+    setNominalBagian('');
+    setTendered(0);
+  };
+
+  const tambahBagian = () => {
+    const b = bagianBaru();
+    if (b === null || b.metode === 'cash') return;
+    setBagian((d) => [...d, b]);
+    kosongkanForm();
+    setGalat(null);
   };
 
   /* Tombol simpan hidup hanya bila masukan metode ini sudah lengkap.
@@ -171,12 +237,16 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      aturan server. Yang di sini hanya mencegah ketukan yang pasti ditolak;
      dua tempat yang memvalidasi akan menyimpang, dan yang menyimpang membuat
      tombol mati tanpa pesan. */
-  const masukanLengkap =
+  const formLengkap =
     metode === 'cash'
       ? tendered > 0
       : metode === 'qris_static'
         ? referensi.trim().length >= MIN_PANJANG_REFERENSI
         : approvalCode.trim().length > 0;
+
+  /* Lunas tanpa tunai: seluruh tagihan sudah tertutup bagian non-tunai. */
+  const lunasTanpaTunai = sisa !== null && sisa === 0n && bagian.length > 0;
+  const masukanLengkap = lunasTanpaTunai || formLengkap;
 
   const bayar = () => {
     setMenyimpan(true);
@@ -187,7 +257,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       sesi,
       shift,
       keranjang,
-      pembayaran: susunPembayaran(),
+      // ⛔ Bagian tunai IKUT hanya bila kasir benar-benar memasukkannya.
+      // Bagian tunai ber-`tendered: 0` pada transaksi yang sudah lunas lewat
+      // QRIS akan ditulis sebagai baris payment bernilai nol — baris yang
+      // mengaku ada dan tidak memindahkan apa pun.
+      pembayaran: lunasTanpaTunai ? bagian : [...bagian, bagianBaru()!],
       waktu: () => new Date(),
       idBaru: () => crypto.randomUUID(),
       // I10 dijamin: HLC melanjutkan dari `device_config.hlc_state`, tidak
@@ -271,7 +345,40 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         </p>
       )}
 
-      {metode === 'cash' && (
+      {/* FR-C1 — bagian yang sudah dimasukkan, dan sisa tagihannya.
+          AC kedua menuntut sisa tagihan TERLIHAT; kasir yang tidak melihatnya
+          harus menghitung sendiri di depan pelanggan. */}
+      {bagian.length > 0 && (
+        <div className="kasir-baris-daftar">
+          {bagian.map((b, i) => (
+            <div key={`${b.metode}-${i}`} className="kasir-subtotal">
+              <span className="t-body-md">{NAMA_METODE[b.metode]}</span>
+              <span className="t-body-md num">
+                {rupiah(b.metode === 'cash' ? b.tendered : (b.nominal ?? 0n))}
+              </span>
+              <Tombol
+                varian="ghost"
+                disabled={menyimpan}
+                onClick={() => {
+                  setBagian((d) => d.filter((_, j) => j !== i));
+                  setGalat(null);
+                }}
+              >
+                Hapus
+              </Tombol>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sisa !== null && (
+        <div className="kasir-subtotal">
+          <span className="t-body-md">{sisa === 0n ? 'Lunas' : 'Sisa tagihan'}</span>
+          <span className="t-title num">{rupiah(sisa)}</span>
+        </div>
+      )}
+
+      {metode === 'cash' && !lunasTanpaTunai && (
         <>
           <p className="t-body-md">Uang diterima</p>
           <p className="t-display num">{rupiah(tendered)}</p>
@@ -298,7 +405,24 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           tidak ada sistem yang memverifikasi pembayaran ini, jadi tanpa
           referensi "sudah dibayar" hanyalah pernyataan kasir tanpa jejak yang
           dapat dicocokkan dengan mutasi bank. */}
-      {metode === 'qris_static' && (
+      {/* Nominal bagian — kosong berarti SELURUH sisa, bentuk yang paling
+          sering ditekan. Ia hanya muncul untuk non-tunai: nominal tunai
+          diturunkan dari sisa dan dibulatkan (`spec-c:181`), jadi mengetiknya
+          akan memberi kasir dua angka yang harus dijaga sepakat. */}
+      {metode !== 'cash' && !lunasTanpaTunai && (
+        <Bidang
+          label="Nominal bagian ini (kosongkan untuk seluruh sisa)"
+          inputMode="numeric"
+          value={nominalBagian}
+          onChange={(v) => {
+            setNominalBagian(v.replace(/\D/g, ''));
+            setGalat(null);
+          }}
+          placeholder={sisa === null ? '' : String(sisa)}
+        />
+      )}
+
+      {metode === 'qris_static' && !lunasTanpaTunai && (
         <>
           <p className="t-body-md">
             Tagihan <span className="num">{rupiah(subtotal)}</span> + pajak. Pelanggan memindai QR
@@ -318,7 +442,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       )}
 
       {/* FR-C4 — EDC. Mesinnya terpisah; yang mengonfirmasi struk terminal. */}
-      {metode === 'card_edc' && (
+      {metode === 'card_edc' && !lunasTanpaTunai && (
         <>
           <Bidang
             label="Kode approval"
@@ -348,6 +472,13 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       )}
 
       <div className="kasir-pecahan">
+        {/* ⛔ `ghost`: aksi utama layar ini tetap Simpan Penjualan. Menambah
+            bagian adalah langkah antara, bukan tujuannya. */}
+        {metode !== 'cash' && !lunasTanpaTunai && (
+          <Tombol varian="ghost" kritis disabled={menyimpan || !formLengkap} onClick={tambahBagian}>
+            Tambah pembayaran lain
+          </Tombol>
+        )}
         <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onKembali}>
           Kembali
         </Tombol>

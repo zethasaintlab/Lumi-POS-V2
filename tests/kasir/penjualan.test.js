@@ -831,3 +831,166 @@ test('struk menyebut metode yang benar, dan tanpa kembalian untuk non-tunai', as
   assert.match(teks, /QRIS/, 'metode tidak tercetak');
   assert.equal(/Kembali\s/.test(teks), false, 'baris kembalian tercetak untuk QRIS');
 });
+
+// ---------------------------------------------------------------------------
+// FR-C1 — pembayaran campuran di perangkat
+// ---------------------------------------------------------------------------
+//
+// "Pembayaran campuran (tunai + QRIS) adalah alur harian di kafe Indonesia,
+// bukan edge case" (`spec-c:197`). Server sudah mendukungnya sejak Modul C;
+// jalur perangkat hanya pernah menulis SATU payment.
+
+test('⛔ dua metode menghasilkan DUA baris payment', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  // Total 22.000. QRIS 10.000 + tunai 12.000.
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+        { metode: 'cash', tendered: 20000 },
+      ],
+    }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  const rows = db.state.tulis.filter((t) => /INSERT INTO payment/.test(t.sql));
+  // Menggabungkan dua metode jadi satu baris membuat rekonsiliasi FR-C12
+  // tidak dapat memisahkan uang yang masuk lewat bank dari uang di laci —
+  // dua saluran yang settlement-nya berbeda hari.
+  assert.equal(rows.length, 2, 'pembayaran campuran ditulis sebagai satu baris');
+  assert.equal(rows[0].params[3], 'qris_static');
+  assert.equal(rows[0].params[4], 10_000, 'nominal QRIS bukan yang diketik kasir');
+  assert.equal(rows[1].params[3], 'cash');
+  assert.equal(rows[1].params[4], 12_000, 'sisa tunai salah');
+  assert.equal(hasil.kembalian, 8_000n);
+});
+
+test('⛔ laci hanya menerima BAGIAN TUNAI-nya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+        { metode: 'cash', tendered: 12000 },
+      ],
+    }),
+  });
+
+  const m = cashMovement(db);
+  assert.equal(m.length, 1);
+  // Memakai `amount_due` di sini membuat kasir terlihat KELEBIHAN sebesar
+  // bagian non-tunai, dan tutup kasnya menuntut otorisasi manajer untuk
+  // selisih yang tidak pernah ada.
+  assert.ok(m[0].params.includes(12_000), `delta laci bukan bagian tunai: ${m[0].params}`);
+});
+
+test('⛔ pembulatan berlaku pada SISA TUNAI, bukan pada total', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  // Total 22.055 (unit 20.050 + PB1 10%). QRIS 10.020 → sisa 12.035 → 12.000.
+  const baris = [{ ...BARIS[0], unitPrice: 20050 }];
+  const hasil = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({
+      keranjang: { baris, diskon: null },
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 1', nominal: 10_020n },
+        { metode: 'cash', tendered: 20000 },
+      ],
+    }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  // Membulatkan total lebih dulu memberi 22.100 − 10.020 = 12.080. Selisihnya
+  // 80 rupiah per transaksi — besaran yang tidak pernah dilaporkan siapa pun
+  // tapi muncul di rekonsiliasi.
+  assert.equal(hasil.amountDue, 22_020n);
+  assert.equal(hasil.kembalian, 8_000n);
+});
+
+test('⛔ kelebihan bayar NON-TUNAI ditolak, dan tidak menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: [{ metode: 'qris_static', referensi: 'ref 1', nominal: 90_000n }] }),
+  });
+
+  // `spec-c:225`: tidak ada mekanisme mengembalikan kembalian non-tunai.
+  assert.equal(hasil.status, 'pembayaran_tidak_sah');
+  assert.equal(db.state.tulis.length, 0);
+});
+
+test('⛔ bagian TUNAI dikirim TERAKHIR, dan rantainya eksplisit', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({
+      pembayaran: [
+        { metode: 'cash', tendered: 20000 },
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+      ],
+    }),
+  });
+
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const bayar = outbox.filter((t) => t.params.includes('payment'));
+  assert.equal(bayar.length, 2);
+
+  const muatan = bayar.map((t) =>
+    JSON.parse(t.params.find((p) => typeof p === 'string' && p.startsWith('{')))
+  );
+  // Server menghitung nominal tunai dari `total − SUM(confirmed)` lalu
+  // MEMBULATKANNYA. Bila tunai mendarat lebih dulu, server membulatkan
+  // seluruh total dan menagih lebih — lalu bagian QRIS berikutnya menjadi
+  // kelebihan bayar non-tunai dan DITOLAK, untuk penjualan yang sempurna.
+  assert.equal(muatan[0].method, 'qris_static', 'tunai dikirim lebih dulu');
+  assert.equal(muatan[1].method, 'cash');
+
+  // Urutan antar-baris outbox tidak dijamin apa pun kecuali `depends_on`.
+  // Urutan bind `enqueue`: id, entity_type, entity_id, operation, payload,
+  // idempotency_key, created_at, depends_on, actor_id, approver_id.
+  const idOutbox = bayar.map((t) => t.params[0]);
+  const dependsOn = bayar.map((t) => t.params[7]);
+  assert.equal(
+    dependsOn[1],
+    idOutbox[0],
+    `bagian tunai tidak bergantung pada bagian sebelumnya: ${JSON.stringify(dependsOn)}`
+  );
+});
+
+test('struk mencetak SETIAP bagian pembayaran', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+        { metode: 'cash', tendered: 20000 },
+      ],
+    }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => {
+        dicetak.push(bytes);
+      },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  // Struk yang menyebut satu metode pada transaksi yang dibayar dua cara
+  // tidak dapat dipakai membuktikan apa pun.
+  assert.match(teks, /QRIS/);
+  assert.match(teks, /Tunai/);
+  assert.match(teks, /Kembali/);
+});
