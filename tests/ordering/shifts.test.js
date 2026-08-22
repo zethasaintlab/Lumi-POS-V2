@@ -279,21 +279,32 @@ test('openShift: deviceId milik tenant lain ditolak 404 DEVICE_NOT_FOUND, tidak 
 // --- guard lintas tenant: aktor (X-Actor-Id) ---
 
 test('openShift: aktor (X-Actor-Id) milik tenant lain ditolak 404 ACTOR_NOT_FOUND, tidak ada baris tersimpan', async () => {
+  // ⛔ TANPA `Authorization`, dan itu bukan kelalaian: yang diuji di sini
+  // adalah atribusi lewat HEADER, dan header hanya berlaku bila pemanggil
+  // TIDAK membawa sesi — persis bentuk relay outbox, yang tidak pernah
+  // mengirim Bearer sama sekali.
+  //
+  // Versi sebelumnya mengirim sesi DAN header. Ia hijau hanya selama rute
+  // perangkat sepenuhnya terbuka dan sesinya diabaikan; sejak `sesiOpsional`
+  // menegakkan sesi yang dibawa, `getActorId` memakai pemilik sesi dan
+  // headernya tidak berarti apa-apa. Itu tepat kelas test hampa yang
+  // `CLAUDE.md` catat pada "akuntan ditolak".
+
   const otherBase = await seedTenantBase(appSetup, { suffix: 'ShiftTestOtherActor' });
   const device = await createDevice(base.outlet.id, 'K1');
   const shiftId = crypto.randomUUID();
-  const res = await req(
-    'POST',
-    shiftsUrl(),
-    {
+  const res = await app.inject({
+    method: 'POST',
+    url: shiftsUrl(),
+    payload: {
       id: shiftId,
       outletId: base.outlet.id,
       deviceId: device.id,
       businessDate: BUSINESS_DATE,
       openingFloat: 50000,
     },
-    { 'x-actor-id': otherBase.user.id }
-  );
+    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': otherBase.user.id },
+  });
   assert.equal(res.statusCode, 404, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'ACTOR_NOT_FOUND');
 
@@ -346,7 +357,9 @@ test('openShift: header X-Actor-Id hilang ditolak 400 MISSING_ACTOR_ID', async (
       businessDate: BUSINESS_DATE,
       openingFloat: 50000,
     },
-    headers: { 'x-tenant-id': tenant.id , authorization: base.authHeader},
+    // Tanpa sesi DAN tanpa `X-Actor-Id`: bentuk relay yang barisnya tidak
+    // membawa aktor sama sekali. Yang menjawab adalah `getActorId`.
+    headers: { 'x-tenant-id': tenant.id },
   });
   assert.equal(res.statusCode, 400, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'MISSING_ACTOR_ID');

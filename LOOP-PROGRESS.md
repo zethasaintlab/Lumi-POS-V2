@@ -1354,3 +1354,21 @@ sama sekali, jadi test itu akan menyatakan penolakan yang tidak pernah
 dilakukan siapa pun — hijau atau merah karena alasan yang tidak berhubungan.
 Yang benar-benar menjaga sifat itu adalah `tests/server/no-sale.test.js`, dan
 ia sudah ada.
+
+**Tiga test yang hijau karena alasan yang salah, terungkap `sesiOpsional`.**
+
+`shifts.test.js` (dua) dan `void.test.js` (satu) menguji atribusi lewat
+`X-Actor-Id` — aktor lintas tenant ditolak 404, header hilang ditolak 400 —
+tetapi mengirim **sesi DAN header** sekaligus. Keduanya hijau hanya selama
+rute perangkat sepenuhnya terbuka dan sesinya diabaikan.
+
+Begitu sesi yang dibawa ditegakkan, `getActorId` memakai pemilik sesi dan
+headernya tidak berarti apa-apa: guard lintas-tenant (temuan F1) tidak pernah
+disentuh, dan test yang mengaku mengujinya sebenarnya menguji jalur yang
+selalu sah.
+
+⛔ Ini kelas yang PERSIS sama dengan yang `CLAUDE.md` catat pada "akuntan
+ditolak" — dan ia masih hidup di tiga tempat lain tanpa ada yang tahu.
+Perbaikannya membuat test lebih setia, bukan kurang: relay tidak pernah
+mengirim `Authorization`, jadi test atribusi header pun tidak boleh
+mengirimnya.
