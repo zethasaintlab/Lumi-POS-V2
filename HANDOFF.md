@@ -1009,3 +1009,51 @@ ada dan teruji, layarnya belum memakainya.
 | Ukuran halaman 50 | `[ASUMSI]`. Server membatasi `limit` ke 200 (`BATAS_MAKS_ITEM`) |
 | B-10 Harga | Masih memuat `/items` tanpa paginasi. Layar itu memilih varian untuk diberi harga per outlet; ia akan terpotong pada katalog besar dengan cara yang sama, dan belum diperbaiki |
 | Verifikasi browser | **Belum dijalankan** untuk alur pencarian + muat-lebih-banyak |
+
+---
+
+## FR-B8 di layar kasir — K-03 diskon + K-11 (22 Agustus 2026)
+
+Task 16 menutup server dan domain; FR-B8 tetap **tidak dapat dicapai
+merchant** sampai ini — satu-satunya jalan memberi diskon adalah memanggil
+REST langsung. Yang ditambahkan: `DialogDiskon` (K-03) yang merantai ke
+`DialogOtorisasi` (K-11), baris diskon di keranjang dan layar bayar, dan
+baris diskon **di struk**.
+
+### ⛔ Persetujuan berlaku untuk ANGKA, bukan untuk persentase
+
+Cacat yang ditemukan saat menulis alurnya, bukan dari spec. Manajer menyetujui
+30% dari Rp 100.000 — Rp 30.000 — lalu kasir menambahkan barang senilai
+Rp 900.000 dan potongannya menjadi Rp 300.000 dengan persetujuan yang sama.
+Persetujuan yang menempel pada persen adalah cek kosong yang ditandatangani di
+depan antrean.
+
+`DiskonKeranjang.nominalDisetujui` membekukan angka yang penyetuju lihat.
+Potongan yang **tumbuh** melewatinya menuntut persetujuan baru; yang
+**mengecil** tidak — meminta PIN untuk potongan yang lebih kecil hanya melatih
+manajer mengetik tanpa membaca. `approverId` tanpa `nominalDisetujui` tidak
+menutup apa pun: satu field yang hilang tidak boleh mematikan aturannya
+diam-diam.
+
+### ⛔ Struk sempat mencetak Diskon nol
+
+`penjualan.ts` memaku `diskon: 0` ke `bangunDokumenStruk`. `computeOrderTotals`
+**tidak** mengurangi `subtotal`, jadi struk mencetak Subtotal 20.000 lalu TOTAL
+20.900 dengan potongan Rp 1.000 yang tidak muncul di mana pun — selisih yang
+tidak dapat dijelaskan pelanggan mana pun, dan keluhan yang berakhir di kasir.
+
+### Yang tidak dibangun, dan kenapa
+
+| Batas | Keadaan |
+|---|---|
+| Diskon per BARIS | `spec-b:267` menyebutnya dan `order_line.discount_amount` ada di skema, tapi `POST /orders` hanya menerima diskon tingkat order. Membangun setengahnya di klien menghasilkan angka yang tidak dapat dikirim ke mana pun |
+| Verifikasi browser | **Belum dijalankan.** Seluruh alur diuji lewat `node --test` di atas fake `DbLokal` dan `node:sqlite`; dialog dan rantai ke K-11 belum dijalankan di browser sungguhan |
+| Angka ambang | Tetap `[ASUMSI]` — `spec-b:462` menuntut validasi tiga merchant untuk NILAINYA. Yang tidak dapat diubah adalah keberadaan ambangnya |
+
+### ⛔ Lubang pemindai yang ikut ditemukan
+
+Pemindai global dimatikan saat dialog terbuka. Kolom teksnya memang sudah
+diabaikan `usePemindaiGlobal`, tapi fokus yang berada di **radio button** tidak
+— dan scan di sana menambahkan produk ke keranjang **di belakang dialog**,
+perubahan yang tidak terlihat siapa pun sampai struk tercetak. `DialogNoSale`
+punya lubang yang sama dan ikut ditutup.

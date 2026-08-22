@@ -88,7 +88,7 @@ const ID = (() => { let n = 0; return () => `id-${++n}`; })();
 function args(over = {}) {
   return {
     konfig: KONFIG, sesi: SESI, shift: SHIFT,
-    keranjang: { baris: BARIS },
+    keranjang: { baris: BARIS, diskon: null },
     pembayaran: { metode: 'cash', tendered: 25000 },
     waktu: JAM, idBaru: ID, hlc: () => 42n,
     ...over,
@@ -149,7 +149,7 @@ test('⛔ pembulatan HANYA pada amount_due tunai, bukan pada total', async () =>
   const baris = [{ ...BARIS[0], unitPrice: 20050 }];
   const hasil = await simpanPenjualan({
     db: dbPalsu(),
-    ...args({ keranjang: { baris }, pembayaran: { metode: 'cash', tendered: 25000 } }),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 25000 } }),
   });
 
   // 20.050 + 10% = 22.055 -> dibulatkan ke 22.100 (increment 100, half_up)
@@ -163,7 +163,7 @@ test('kembalian dihitung dari amount_due yang SUDAH dibulatkan', async () => {
   const baris = [{ ...BARIS[0], unitPrice: 20050 }];
   const hasil = await simpanPenjualan({
     db: dbPalsu(),
-    ...args({ keranjang: { baris }, pembayaran: { metode: 'cash', tendered: 25000 } }),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 25000 } }),
   });
 
   // 25.000 - 22.100 = 2.900. Menghitungnya dari `total` yang tidak dibulatkan
@@ -251,7 +251,7 @@ test('payload order cocok dengan kontrak POST /orders', async () => {
 test('keranjang kosong ditolak', async () => {
   const { simpanPenjualan } = await import(MOD);
   const db = dbPalsu();
-  const hasil = await simpanPenjualan({ db, ...args({ keranjang: { baris: [] } }) });
+  const hasil = await simpanPenjualan({ db, ...args({ keranjang: { baris: [], diskon: null } }) });
   assert.equal(hasil.status, 'keranjang_kosong');
   assert.equal(db.state.tulis.length, 0);
 });
@@ -265,7 +265,7 @@ test('modifier ikut ke baris DAN ke harga', async () => {
   }];
   const hasil = await simpanPenjualan({
     db,
-    ...args({ keranjang: { baris }, pembayaran: { metode: 'cash', tendered: 30000 } }),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 30000 } }),
   });
 
   // (20.000 + 3.000) + 10% = 25.300 — melebihi Rp 25.000, jadi uang yang
@@ -327,6 +327,7 @@ test('⛔ modifier TIDAK menghasilkan movement di v1 (FR-E3)', async () => {
     db,
     ...args({
       keranjang: {
+        diskon: null,
         baris: [{
           id: 'b1', variationId: 'v1', itemName: 'Kopi Susu', variationName: 'Regular',
           unitPrice: 20000, quantityMilli: 1000,
@@ -351,6 +352,7 @@ test('jumlah movement = jumlah baris yang dilacak stoknya (FR-E3)', async () => 
     db,
     ...args({
       keranjang: {
+        diskon: null,
         baris: [
           { id: 'b1', variationId: 'v1', itemName: 'Kopi', variationName: 'R', unitPrice: 10000, quantityMilli: 2000, modifier: [] },
           { id: 'b2', variationId: 'v2', itemName: 'Roti', variationName: 'C', unitPrice: 10000, quantityMilli: 1000, modifier: [] },
@@ -364,4 +366,216 @@ test('jumlah movement = jumlah baris yang dilacak stoknya (FR-E3)', async () => 
   const m = movement(db);
   assert.equal(m.length, 2, 'jumlah movement tidak sama dengan baris yang dilacak');
   assert.ok(m[0].params.includes(-2000), 'kuantitas 2 unit harus jadi delta −2000');
+});
+
+// ---------------------------------------------------------------------------
+// FR-B8 — diskon tingkat order di perangkat
+// ---------------------------------------------------------------------------
+//
+// ⛔ Sebelum ini `order_discount` selalu nol di KEDUA sisi. Server sudah
+// menerimanya sejak `fc6fde5`; yang di sini adalah separuh yang membuat kasir
+// benar-benar dapat memberikannya — dan yang harus menghitung angka yang SAMA,
+// karena struk dicetak dari hitungan perangkat.
+
+const DISKON_KECIL = {
+  minta: { tipe: 'persen', nilai: 500n }, // 5%
+  alasanKode: 'promo_berjalan',
+  alasanCatatan: null,
+  approverId: null,
+  nominalDisetujui: null,
+};
+
+/** 30% atas subtotal 20.000 = 6.000, disetujui pada angka itu. */
+const DISKON_DISETUJUI = {
+  ...DISKON_KECIL,
+  minta: { tipe: 'persen', nilai: 3000n },
+  approverId: 'u-budi',
+  nominalDisetujui: 6000n,
+};
+
+function nilaiKolom(db, cocok, indeks) {
+  const baris = db.state.tulis.find((t) => cocok.test(t.sql));
+  return baris ? baris.params[indeks] : undefined;
+}
+
+test('diskon di bawah ambang: tersimpan dan MENGURANGI total', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan');
+  // 20.000 − 5% = 19.000; PB1 10% eksklusif → 19.000 + 1.900 = 20.900.
+  assert.equal(hasil.total, 20900n, 'diskon tidak masuk hitungan total');
+});
+
+test('⛔ `order_discount` benar-benar DITULIS ke baris order', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }) });
+
+  // Kolom ke-11 pada INSERT "order" (setelah subtotal) — lihat urutan
+  // kolomnya di `penjualan.ts`. Yang diperiksa NILAI yang di-bind, bukan
+  // sekadar bahwa tabelnya disentuh: fake `DbLokal` tidak menegakkan satu pun
+  // constraint (`CLAUDE.md`).
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.ok(order, 'baris order tidak ditulis');
+  assert.equal(order.params[10], 1000, 'order_discount bukan 5% dari 20.000');
+});
+
+test('tanpa diskon, `order_discount` nol dan total tidak berubah', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({ db, ...args() });
+  assert.equal(hasil.total, 22000n);
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.equal(order.params[10], 0);
+});
+
+test('⛔ diskon di ATAS ambang tanpa penyetuju DITOLAK, dan tidak menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: BARIS,
+        // 30% > ambang 20%.
+        diskon: { ...DISKON_KECIL, minta: { tipe: 'persen', nilai: 3000n } },
+      },
+    }),
+  });
+
+  assert.equal(hasil.status, 'butuh_penyetuju_diskon');
+  assert.equal(hasil.nominal, 6000n);
+  // ⛔ Berbeda dari selisih hitungan (`spec-h:95`): di sana uangnya sudah
+  // diterima merchant. Di sini kasir belum menerima apa pun, dan yang ditahan
+  // adalah potongan yang belum disetujui siapa pun.
+  assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
+});
+
+test('diskon di atas ambang DENGAN penyetuju tersimpan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: { baris: BARIS, diskon: DISKON_DISETUJUI },
+    }),
+  });
+  assert.equal(hasil.status, 'tersimpan');
+  // 20.000 − 30% = 14.000; + PB1 10% = 15.400.
+  assert.equal(hasil.total, 15400n);
+});
+
+test('⛔ penyetuju IKUT di baris outbox — tanpanya diskon offline berhenti permanen', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: { baris: BARIS, diskon: DISKON_DISETUJUI },
+    }),
+  });
+
+  // Bentuk cacat yang SAMA dengan refund offline: server menuntut
+  // `X-Approver-Id`, relay hanya mengirimkannya bila barisnya membawanya.
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const order = outbox.find((t) => t.params.includes('order'));
+  assert.ok(order, 'item outbox order tidak ada');
+  assert.ok(
+    order.params.includes('u-budi'),
+    `approver_id tidak dibekukan di baris outbox: ${JSON.stringify(order.params)}`
+  );
+});
+
+test('⛔ muatan outbox mengirim PERMINTAAN diskon, bukan nominalnya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }) });
+
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const order = outbox.find((t) => t.params.includes('order'));
+  const muatan = JSON.parse(order.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+
+  // Server menghitung ulang dari subtotalnya SENDIRI. Mengirim nominal
+  // membuatnya tidak dapat membedakan diskon yang wajar dari yang dikarang —
+  // dan membuat jalur pemeriksaan selisih FR-H6 salah menandai perangkat yang
+  // harganya basi.
+  assert.deepEqual(muatan.discount, { tipe: 'persen', nilai: 500 });
+  assert.equal(muatan.discountReasonCode, 'promo_berjalan');
+  assert.equal(muatan.orderDiscount, undefined, 'nominal ikut terkirim');
+});
+
+test('⛔ persetujuan TIDAK berlaku untuk potongan yang TUMBUH melewatinya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        // Keranjang DUA KALI lipat: 30% kini Rp 12.000, bukan Rp 6.000 yang
+        // manajer lihat. Tanpa aturan ini, satu persetujuan atas "30%"
+        // berlaku untuk keranjang berapa pun sesudahnya — kasir tinggal
+        // menambah barang setelah manajer pergi.
+        baris: [...BARIS, { ...BARIS[0], id: 'baris-2' }],
+        diskon: DISKON_DISETUJUI,
+      },
+    }),
+  });
+
+  assert.equal(hasil.status, 'butuh_penyetuju_diskon');
+  assert.equal(hasil.nominal, 12000n);
+  assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
+});
+
+test('potongan yang MENGECIL tetap sah dengan persetujuan yang sama', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: BARIS,
+        // Manajer menyetujui Rp 9.000; potongan sesungguhnya Rp 6.000.
+        // Meminta persetujuan ulang untuk yang lebih kecil hanya melatih
+        // manajer mengetik PIN tanpa membaca.
+        diskon: { ...DISKON_DISETUJUI, nominalDisetujui: 9000n },
+      },
+    }),
+  });
+  assert.equal(hasil.status, 'tersimpan');
+  assert.equal(hasil.total, 15400n);
+});
+
+test('⛔ diskon MUNCUL di struk — subtotal kotor tanpa barisnya tidak dapat dijelaskan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => {
+        dicetak.push(bytes);
+      },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+
+  assert.equal(hasil.status, 'tersimpan');
+  assert.equal(hasil.cetak.status, 'tercetak', JSON.stringify(hasil.cetak));
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  // `computeOrderTotals` TIDAK mengurangi subtotal, jadi struk mencetak
+  // 20.000 lalu TOTAL 20.900 — selisih yang mustahil dijelaskan pelanggan
+  // mana pun tanpa baris ini.
+  assert.match(teks, /Diskon/, 'baris diskon tidak dicetak');
+  assert.match(teks, /1\.000/, 'nominal diskon tidak muncul di struk');
 });

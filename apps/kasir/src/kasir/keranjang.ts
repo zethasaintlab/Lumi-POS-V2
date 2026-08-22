@@ -1,3 +1,4 @@
+import type { PermintaanDiskon } from '../../../../packages/domain/src/diskon.ts';
 import type { ItemKatalog, ModifierPilihan, VariationKatalog } from '../katalog/baca.ts';
 
 /**
@@ -31,12 +32,67 @@ export interface BarisKeranjang {
   modifier: ModifierPilihan[];
 }
 
+/**
+ * Diskon tingkat order yang menempel pada keranjang. FR-B8.
+ *
+ * ⛔ Yang disimpan adalah PERMINTAAN (`persen 15%`), bukan nominal hasilnya.
+ * Nominal bergantung pada subtotal, dan subtotal berubah setiap kali kasir
+ * menambah baris — diskon 10% yang dibekukan jadi Rp 10.000 saat keranjang
+ * berisi Rp 100.000 akan tetap Rp 10.000 setelah baris kedua masuk, dan
+ * merchant memberi separuh dari yang ia kira.
+ *
+ * `approverId` menempel di sini juga, dan itu bukan kenyamanan: ia harus ikut
+ * sampai ke `outbox_local.approver_id` saat penjualan disimpan. Tanpa itu
+ * diskon di atas ambang yang dibuat offline dijawab `403` oleh server lalu
+ * berhenti permanen di antrean — bentuk cacat yang sama dengan refund offline
+ * (`tests/ordering/refund-offline-relay.test.js`).
+ */
+export interface DiskonKeranjang {
+  minta: PermintaanDiskon;
+  alasanKode: string;
+  alasanCatatan: string | null;
+  /** Manajer yang menyetujui, bila ambangnya terlewati. */
+  approverId: string | null;
+  /**
+   * ⛔ Nominal rupiah yang DILIHAT manajer saat menyetujui. `null` bila tidak
+   * ada persetujuan.
+   *
+   * Tanpa ini, persetujuan atas "30%" berlaku untuk keranjang mana pun
+   * SESUDAHNYA: manajer menyetujui 30% dari Rp 100.000 — Rp 30.000 — lalu
+   * kasir menambahkan barang senilai Rp 900.000 dan potongannya menjadi
+   * Rp 300.000 dengan persetujuan yang sama. Yang disetujui adalah ANGKANYA,
+   * dan angka yang tumbuh melewatinya menuntut persetujuan baru.
+   *
+   * Potongan yang MENGECIL tetap sah — manajer sudah menyetujui yang lebih
+   * besar, dan meminta persetujuan ulang untuk itu hanya melatih manajer
+   * mengetik PIN tanpa membaca.
+   */
+  nominalDisetujui: bigint | null;
+}
+
 export interface Keranjang {
   baris: BarisKeranjang[];
+  /** `null` = tidak ada diskon. */
+  diskon: DiskonKeranjang | null;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [] };
+  return { baris: [], diskon: null };
+}
+
+export function setelDiskon(k: Keranjang, diskon: DiskonKeranjang | null): Keranjang {
+  return { ...k, diskon };
+}
+
+/**
+ * ⛔ Diskon DILEPAS saat keranjang menjadi kosong.
+ *
+ * Keranjang kosong yang masih memegang "diskon 30% disetujui Budi" akan
+ * menerapkannya pada pesanan BERIKUTNYA — pesanan pelanggan lain, dengan
+ * persetujuan yang tidak pernah diberikan untuknya.
+ */
+export function lepasDiskonBilaKosong(k: Keranjang): Keranjang {
+  return k.baris.length === 0 && k.diskon !== null ? { ...k, diskon: null } : k;
 }
 
 /**
@@ -79,10 +135,11 @@ export function tambah(
     const baris = keranjang.baris.map((b, i) =>
       i === adaIndex ? { ...b, quantityMilli: b.quantityMilli + qtyMilli } : b
     );
-    return { baris };
+    return { ...keranjang, baris };
   }
 
   return {
+    ...keranjang,
     baris: [
       ...keranjang.baris,
       {
@@ -105,12 +162,18 @@ export function tambah(
 export function ubahQty(keranjang: Keranjang, barisId: string, qtyMilli: number): Keranjang {
   if (qtyMilli <= 0) return hapusBaris(keranjang, barisId);
   return {
+    ...keranjang,
     baris: keranjang.baris.map((b) => (b.id === barisId ? { ...b, quantityMilli: qtyMilli } : b)),
   };
 }
 
 export function hapusBaris(keranjang: Keranjang, barisId: string): Keranjang {
-  return { baris: keranjang.baris.filter((b) => b.id !== barisId) };
+  // ⛔ `lepasDiskonBilaKosong`: baris terakhir yang dihapus membawa diskonnya
+  // pergi. Lihat alasannya di fungsi itu.
+  return lepasDiskonBilaKosong({
+    ...keranjang,
+    baris: keranjang.baris.filter((b) => b.id !== barisId),
+  });
 }
 
 export function kosongkan(_keranjang: Keranjang): Keranjang {

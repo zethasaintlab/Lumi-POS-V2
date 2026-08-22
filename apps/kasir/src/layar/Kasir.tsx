@@ -11,7 +11,19 @@ import {
   type ModifierPilihan,
   type VariationKatalog,
 } from '../katalog/baca.ts';
-import { hapusBaris, qtyDiKeranjang, subtotalKeranjang, tambah, ubahQty } from '../kasir/keranjang.ts';
+import {
+  hapusBaris,
+  qtyDiKeranjang,
+  setelDiskon,
+  subtotalKeranjang,
+  tambah,
+  ubahQty,
+} from '../kasir/keranjang.ts';
+import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
+import {
+  AMBANG_DISKON_BAWAAN,
+  type AmbangDiskon,
+} from '../../../../packages/domain/src/diskon.ts';
 import { catat } from '../telemetri/sink.ts';
 import { bacaStokBanyak } from '../inventori/stok.ts';
 import { bacaProfilVertikal } from '../inventori/profil.ts';
@@ -27,6 +39,7 @@ import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogNoSale } from '../komponen/DialogNoSale.tsx';
+import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 
 /* K-03 — layar kasir: grid produk + keranjang (IA §2.1, §2.2).
@@ -77,6 +90,11 @@ export function Kasir() {
   /* K-16 — dialog, bukan rute (`IA:66`). */
   const [bukaLaci, setBukaLaci] = useState(false);
   const [pesanLaci, setPesanLaci] = useState<string | null>(null);
+  /* FR-B8 — diskon tingkat order. Ambangnya per outlet, dibaca dari perangkat
+     supaya aturannya tetap berlaku offline; bawaan domain dipakai sampai
+     baris outlet terbaca. */
+  const [ambangDiskon, setAmbangDiskon] = useState<AmbangDiskon>(AMBANG_DISKON_BAWAAN);
+  const [dialogDiskon, setDialogDiskon] = useState(false);
 
   useEffect(() => {
     let hidup = true;
@@ -93,6 +111,9 @@ export function Kasir() {
       setKatalog(daftar);
 
       if (k) {
+        const ambang = await bacaAmbangDiskon(db, k.outletId);
+        if (!hidup) return;
+        setAmbangDiskon(ambang);
         const profil = await bacaProfilVertikal(db, { tenantId: k.tenantId, outletId: k.outletId });
         const ids = daftar.flatMap((i) => i.variations.map((v) => v.id));
         const peta = await bacaStokBanyak(db, { tenantId: k.tenantId, outletId: k.outletId }, ids);
@@ -110,6 +131,11 @@ export function Kasir() {
 
   const terlihat = useMemo(() => cariItem(katalog, kueri), [katalog, kueri]);
   const subtotal = subtotalKeranjang(keranjang);
+  /* ⛔ Dihitung ulang pada SETIAP render, terhadap subtotal sekarang — bukan
+     dibekukan saat diskon dipasang. Keranjang yang bertambah setelah manajer
+     menyetujui membuat potongannya tumbuh melewati angka yang ia lihat, dan
+     kasir harus mengetahuinya di sini, bukan setelah menekan Bayar. */
+  const diskon = statusDiskon(subtotal, keranjang.diskon, ambangDiskon);
 
   /* ⛔ Hook dipasang SEBELUM setiap `return` bersyarat di bawah — aturan hooks
      React. Penanganannya (`dipindai`) baru terdefinisi di bawah, jadi ia
@@ -121,11 +147,17 @@ export function Kasir() {
   const mulaiKetuk = useRef<number | null>(null);
   usePemindaiGlobal({
     onScan: (kode) => pindai.current(kode),
-    /* Dimatikan saat dialog modifier terbuka atau saat layar pembayaran
-       aktif. Keduanya punya masukan sendiri, dan K-06 khususnya menerima
+    /* Dimatikan saat dialog mana pun terbuka atau saat layar pembayaran
+       aktif. Semuanya punya masukan sendiri, dan K-06 khususnya menerima
        angka yang diketik cepat lalu Enter — bentuk yang PERSIS sama dengan
-       scan. */
-    aktif: pilihan === null && !membayar,
+       scan.
+
+       ⛔ Dialog juga dihitung meski kolom teksnya sendiri sudah diabaikan
+       (`usePemindaiGlobal`): fokus yang sedang berada di radio button TIDAK
+       diabaikan, dan scan di sana menambahkan produk ke keranjang di
+       BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
+       struk tercetak. */
+    aktif: pilihan === null && !membayar && !dialogDiskon && !bukaLaci,
   });
 
   if (!siap) return <EmptyState title="Menyiapkan kasir" body="Membaca katalog dari perangkat." />;
@@ -356,16 +388,53 @@ export function Kasir() {
           <span className="t-title num">{rupiah(subtotal)}</span>
         </div>
 
+        {/* FR-B8 — baris diskon. Alasannya ikut ditampilkan: potongan tanpa
+            alasan yang terlihat adalah potongan yang tidak dapat diperiksa
+            siapa pun di layar, dan `spec-b:293` menjadikan alasan bagian dari
+            diskon, bukan pelengkapnya. */}
+        {keranjang.diskon !== null && diskon !== null && (
+          <div className="kasir-subtotal">
+            <span className="t-body-md">
+              Diskon ·{' '}
+              {LABEL_ALASAN_DISKON[
+                keranjang.diskon.alasanKode as keyof typeof LABEL_ALASAN_DISKON
+              ] ?? keranjang.diskon.alasanKode}
+            </span>
+            <span className="t-body-md num">− {rupiah(diskon.nominal)}</span>
+          </div>
+        )}
+
+        {/* ⛔ Peringatan persetujuan-ulang. Aturan design system #5: status
+            tidak pernah warna saja — teksnya menyebut angkanya, karena yang
+            berubah justru angka itu. */}
+        {diskon?.perluPersetujuan && (
+          <p className="t-caption kasir-login-galat" role="alert">
+            Potongan kini {rupiah(diskon.nominal)} — melewati batas dan belum disetujui manajer.
+            Buka Diskon untuk meminta persetujuan.
+          </p>
+        )}
+
         {/* Satu aksi utama per layar (aturan #2), 56px karena menyangkut uang.
             Pajak dan pembulatan ditambahkan di K-06 — subtotal di atas
             sengaja TIDAK menyebut dirinya total. */}
         <Tombol
           varian="primary"
           kritis
-          disabled={keranjang.baris.length === 0}
+          disabled={keranjang.baris.length === 0 || diskon?.perluPersetujuan === true}
           onClick={() => setMembayar(true)}
         >
           Bayar
+        </Tombol>
+
+        {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
+            uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
+            setiap penjualan. */}
+        <Tombol
+          varian="ghost"
+          disabled={keranjang.baris.length === 0 || sesi === null}
+          onClick={() => setDialogDiskon(true)}
+        >
+          {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
         </Tombol>
 
         {/* K-16 — Buka laci (no-sale). `IA:102` menempatkannya di menu ⋮,
@@ -410,6 +479,20 @@ export function Kasir() {
                 ? `Laci dibuka (pembukaan ke-${h.urutan}). Tercatat di audit.`
                 : `Pembukaan ke-${h.urutan} tercatat. Laci harus dibuka manual — belum ada printer terpasang di perangkat ini.`
             );
+          }}
+        />
+      )}
+
+      {dialogDiskon && sesi && (
+        <DialogDiskon
+          subtotal={subtotal}
+          ambang={ambangDiskon}
+          aktorId={sesi.userId}
+          awal={keranjang.diskon}
+          onBatal={() => setDialogDiskon(false)}
+          onSimpan={(d) => {
+            setKeranjang((k) => setelDiskon(k, d));
+            setDialogDiskon(false);
           }}
         />
       )}

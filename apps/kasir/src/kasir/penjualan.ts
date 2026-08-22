@@ -6,6 +6,8 @@ import {
   computeLineTotal,
   computeOrderTotals,
 } from '../../../../packages/domain/src/money.ts';
+import { ambangDari } from '../../../../packages/domain/src/diskon.ts';
+import { statusDiskon } from './diskon.ts';
 import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
@@ -62,7 +64,17 @@ export type HasilPenjualan =
       cetak: HasilCetak;
     }
   | { status: 'keranjang_kosong' }
-  | { status: 'kurang_bayar'; amountDue: bigint; kurang: bigint };
+  | { status: 'kurang_bayar'; amountDue: bigint; kurang: bigint }
+  /**
+   * FR-B8 — diskon melewati ambang dan belum ada penyetuju.
+   *
+   * ⛔ Penjualan TIDAK ditulis. Berbeda dari selisih hitungan (`spec-h:95`,
+   * "tidak pernah menolak transaksi"): di sana uangnya sudah diterima
+   * merchant dan menolak berarti kehilangan penjualan. Di sini kasir belum
+   * menerima apa pun — yang ditahan adalah potongan yang belum disetujui
+   * siapa pun, dan menahannya justru yang FR-B8 minta.
+   */
+  | { status: 'butuh_penyetuju_diskon'; nominal: bigint };
 
 interface BarisTarif {
   id: string;
@@ -77,6 +89,8 @@ interface BarisTarif {
 }
 
 interface BarisOutlet {
+  discount_threshold_percent: number | null;
+  discount_threshold_amount: number | null;
   /** Dicetak di kepala struk (`spec-c:377`). */
   name: string;
   timezone: string;
@@ -174,7 +188,8 @@ export async function simpanPenjualan({
   const sekarang = waktu();
   const outlet = (
     await db.getAll<BarisOutlet>(
-      `SELECT name, timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate
+      `SELECT name, timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate,
+              discount_threshold_percent, discount_threshold_amount
          FROM outlet WHERE id = ?`,
       [konfig.outletId]
     )
@@ -194,6 +209,39 @@ export async function simpanPenjualan({
       discountAmount: 0n,
     })
   );
+
+  // ---- FR-B8: diskon tingkat order --------------------------------------
+  //
+  // ⛔ Dihitung dari subtotal yang SAMA yang dipakai `computeOrderTotals` di
+  // bawah, lewat fungsi domain yang SAMA dengan server. Menghitungnya dengan
+  // aritmetika sendiri di sini membuat angka di layar kasir menyimpang dari
+  // angka yang server simpan — dan yang menyimpang di jalur uang tidak
+  // menghasilkan error, hanya struk yang salah.
+  const subtotalDiskon = lineTotals.reduce((n, x) => n + x, 0n);
+  const ambangDiskon = ambangDari(
+    // Kolom lokal berskala ×10000 (lihat `SKALA_KOLOM`), sudah INTEGER saat
+    // tiba. `null` berarti pakai bawaan domain.
+    outlet?.discount_threshold_percent === null || outlet?.discount_threshold_percent === undefined
+      ? null
+      : BigInt(outlet.discount_threshold_percent),
+    outlet?.discount_threshold_amount === null || outlet?.discount_threshold_amount === undefined
+      ? null
+      : BigInt(outlet.discount_threshold_amount)
+  );
+  const statusDsk = statusDiskon(subtotalDiskon, keranjang.diskon, ambangDiskon);
+  const orderDiscount = statusDsk?.nominal ?? 0n;
+
+  // ⛔ Ambang diperiksa DI SINI juga, bukan hanya di layar. Layar dapat
+  // dilewati (keranjang yang bertahan, jalur lain yang lahir kelak); yang
+  // menulis penjualan adalah tempat terakhir yang dapat menolaknya sebelum
+  // uang berpindah.
+  //
+  // ⛔ Yang diperiksa bukan sekadar "ada penyetuju", melainkan apakah potongan
+  // SEKARANG masih tertutup angka yang penyetuju lihat — lihat
+  // `DiskonKeranjang.nominalDisetujui`.
+  if (statusDsk !== null && statusDsk.perluPersetujuan) {
+    return { status: 'butuh_penyetuju_diskon', nominal: statusDsk.nominal };
+  }
 
   const tarif = await db.getAll<BarisTarif>(
     `SELECT id, outlet_id, name, rate, is_inclusive, jurisdiction, channel, applies_to, applies_to_ids
@@ -217,7 +265,7 @@ export async function simpanPenjualan({
       amount: lineTotals[i],
     })),
     serviceChargeAmount: 0n,
-    orderDiscount: 0n,
+    orderDiscount,
     taxRates: tarif.map(keTarifSpec),
     channel,
     outletId: konfig.outletId,
@@ -225,7 +273,7 @@ export async function simpanPenjualan({
 
   const totals = computeOrderTotals({
     lineTotals,
-    orderDiscount: 0n,
+    orderDiscount,
     serviceChargeAmount: 0n,
     // Hanya yang MENAMBAH total. `totalTax` di sini akan menggandakan pajak
     // inklusif (`CLAUDE.md`).
@@ -286,11 +334,12 @@ export async function simpanPenjualan({
          (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
           status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
           rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
       [
         orderId, konfig.tenantId, konfig.outletId, konfig.deviceId, shift.id,
         receiptNumber, businessDate, sequence, channel,
         Number(totals.subtotal),
+        Number(orderDiscount),
         // SELURUH pajak — untuk struk. Yang menambah total hanya bagian
         // eksklusifnya, dan itu sudah masuk lewat `computeOrderTotals`.
         Number(pajak.totalTax),
@@ -424,6 +473,25 @@ export async function simpanPenjualan({
         // menembak server sungguhan; test pertama saya justru mengunci
         // bug-nya dengan mengharapkan string.
         total: Number(totals.total),
+        // FR-B8 — dikirim sebagai PERMINTAAN, bukan nominal hasilnya.
+        //
+        // ⛔ Server menghitung ulang dari subtotal-nya SENDIRI, dan itu yang
+        // membuat jalur pemeriksaan selisih (FR-H6) dapat memutuskan apakah
+        // diskon persen dari perangkat yang harganya basi masih konsisten
+        // dengan harga-harganya sendiri. Mengirim nominal membuat server
+        // tidak dapat membedakan diskon yang wajar dari yang dikarang.
+        ...(keranjang.diskon !== null
+          ? {
+              discount: {
+                tipe: keranjang.diskon.minta.tipe,
+                nilai: Number(keranjang.diskon.minta.nilai),
+              },
+              discountReasonCode: keranjang.diskon.alasanKode,
+              ...(keranjang.diskon.alasanCatatan
+                ? { discountReasonNote: keranjang.diskon.alasanCatatan }
+                : {}),
+            }
+          : {}),
         lines: keranjang.baris.map((b) => ({
           id: b.id,
           variationId: b.variationId,
@@ -442,6 +510,11 @@ export async function simpanPenjualan({
       idempotencyKey: orderId,
       createdAt: occurredAt,
       actorId: sesi.userId,
+      // ⛔ Penyetuju dibekukan bersama itemnya. Tanpa ini, diskon di atas
+      // ambang yang dibuat offline dijawab `403 APPROVAL_REQUIRED` lalu
+      // berhenti PERMANEN di antrean — bentuk cacat yang sama persis dengan
+      // refund offline, dan alasan `outbox_local.approver_id` ada.
+      approverId: keranjang.diskon?.approverId ?? null,
     });
 
     await enqueue(tx, {
@@ -512,7 +585,12 @@ export async function simpanPenjualan({
         modifier: b.modifier.map((m) => ({ nama: m.nama, harga: m.harga })),
       })),
       subtotal: Number(totals.subtotal),
-      diskon: 0,
+      // ⛔ Diskon SUNGGUHAN, bukan nol. `totals.subtotal` adalah subtotal KOTOR
+      // (`computeOrderTotals` tidak menguranginya), jadi struk yang mencetak
+      // subtotal dan TOTAL tanpa baris di antaranya menyodorkan dua angka yang
+      // selisihnya tidak dapat dijelaskan pelanggan mana pun — dan selisih tak
+      // terjelaskan pada struk adalah keluhan yang berakhir di kasir.
+      diskon: Number(orderDiscount),
       serviceCharge: 0,
       // `lines` adalah rincian PER TARIF — itu yang dicetak di struk
       // (`spec-c:404`: nama dari `TaxRate.name`). `perLine` adalah snapshot

@@ -14,18 +14,24 @@ interface Props {
   label: string;
   hint?: string;
   type?: 'text' | 'password';
+  /* Papan ketik yang muncul di tablet. `type` tetap `text` — `type="number"`
+     membawa spinner, menerima notasi eksponen, dan mengembalikan string kosong
+     untuk masukan yang setengah jadi, sehingga angka yang sedang diketik
+     hilang begitu saja. */
+  inputMode?: 'numeric' | 'decimal';
   value: string;
   onChange: (nilai: string) => void;
   placeholder?: string;
 }
 
-export function Bidang({ label, hint, type = 'text', value, onChange, placeholder }: Props) {
+export function Bidang({ label, hint, type = 'text', inputMode, value, onChange, placeholder }: Props) {
   return (
     <div className="stack">
       <label className="label">{label}</label>
       <input
         className="field"
         type={type}
+        inputMode={inputMode}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}

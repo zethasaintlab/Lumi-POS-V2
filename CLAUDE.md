@@ -236,7 +236,22 @@ Status F1 sekarang:
 
 Sengaja belum digarap: FR-A3/A5 (aturan pemilihan modifier — UI kasir), FR-A8 (import katalog, P1).
 
-Sisa Modul B, belum digarap: **FR-B8/B9** (otorisasi step-up — butuh PIN, Modul F), FR-B11 (cetak ulang struk, P1, butuh printer F4).
+Sisa Modul B, belum digarap: FR-B11 (cetak ulang struk, P1, butuh printer F4). **FR-B8/B9 ditutup 22 Agustus 2026** — server + domain lebih dulu, lalu layar kasir; keputusannya di § diskon di bawah.
+
+**Keputusan yang mengikat kode diskon (FR-B8/B9):**
+
+- ⛔ **Sebelum ini `order_discount` SELALU NOL.** Kolomnya ada sejak F0 dan `computeOrderTotals` sudah menghitungnya sejak Modul C, tapi `POST /orders` menulis nol ke sana — tidak ada satu pun jalan bagi merchant untuk memberi diskon, dan tidak ada satu pun test yang merah karenanya.
+- ⛔ **Ambang diputuskan dari NILAI RUPIAH, bukan dari bentuk yang diketik kasir.** `spec-b:273` menulis "> 20% **atau** > Rp 50.000", dan keduanya berlaku apa pun bentuk masukannya. Memeriksa satu bentuk saja membuat setengah ambang tidak pernah menyala — dan yang tidak menyala adalah yang dipakai untuk melewatinya. Perbandingannya **perkalian silang**: pembagian bigint memotong, dan 20,004% akan terbaca persis 20% lalu lolos.
+- ⛔ **Ambang dihitung dari subtotal SERVER**, dan **turun ke perangkat** supaya aturannya berlaku offline. Klien yang tidak tahu ambangnya menerapkan diskon 90% tanpa satu pun PIN, lalu server menolaknya berjam-jam kemudian — saat uangnya sudah diterima. Kolomnya kemunculan KEEMPAT kelas cacat `numeric → INTEGER berskala`.
+- ⛔ **Persetujuan manajer berlaku untuk ANGKA yang ia lihat, bukan untuk persentasenya** (`DiskonKeranjang.nominalDisetujui`). Manajer menyetujui 30% dari Rp 100.000 — Rp 30.000 — lalu kasir menambah barang senilai Rp 900.000 dan potongannya menjadi Rp 300.000 dengan persetujuan yang sama. Potongan yang **tumbuh** melewatinya menuntut persetujuan baru; yang **mengecil** tidak. `approverId` tanpa `nominalDisetujui` tidak menutup apa pun.
+- ⛔ **`statusDiskon` adalah SATU fungsi untuk layar dan untuk jalur penulisan.** K-03 memakainya untuk memberi tahu kasir sebelum ia menekan Bayar; `simpanPenjualan` memakainya untuk menolak. Dua salinan menghasilkan layar yang berkata "siap" pada penjualan yang ditolak sendiri.
+- ⛔ **Klien mengirim PERMINTAAN (`{tipe, nilai}`), bukan nominalnya.** Server menghitung ulang dari subtotalnya sendiri; itu yang membuat pemeriksaan selisih FR-H6 dapat membedakan perangkat berharga basi dari angka yang dikarang.
+- ⛔ **Penjualan berdiskon di atas ambang TIDAK ditulis tanpa penyetuju.** Berbeda dari selisih hitungan (`spec-h:95`, "tidak pernah menolak transaksi"): di sana uangnya sudah diterima merchant, di sini kasir belum menerima apa pun. `approver_id` dibekukan di `outbox_local` — tanpanya diskon offline dijawab `403` lalu berhenti permanen di antrean, bentuk cacat yang sama persis dengan refund offline.
+- ⛔ **403 `APPROVAL_REQUIRED`, bukan 400.** Permintaannya tidak cacat, ia hanya belum disetujui; kasir yang menerima 400 akan mengira ia salah memasukkan angka.
+- ⛔ **Alasan dituntut untuk SETIAP diskon**, bukan hanya yang melewati ambang, dan audit ditulis untuk keduanya. Pola diskon kecil yang berulang adalah persis yang laporan exception FR-G5 ada untuk menemukannya.
+- ⛔ **Digit desimal persen DITURUNKAN dari skalanya.** "15%" adalah rate 0,15, berskala 10.000 ia `1500` — jadi angka persennya berskala `SKALA_TARIF / 100`, tepat dua digit. Koma dan titik sama-sama diterima; nominal rupiah tidak menerima desimal sama sekali.
+- **Struk mencetak diskonnya.** `computeOrderTotals` tidak mengurangi `subtotal`, jadi `diskon: 0` yang sempat dipaku di jalur cetak menghasilkan struk bersubtotal 20.000 dan TOTAL 20.900 tanpa baris yang menjelaskan selisihnya.
+- **Diskon PER BARIS tidak dibangun.** `spec-b:267` menyebutnya dan `order_line.discount_amount` ada di skema, tapi `POST /orders` hanya menerima diskon tingkat order. Batas yang dinyatakan.
 
 **Modul C sub-project 1 selesai** (`docs/superpowers/plans/PLAN-pembayaran-pajak.md`): `TaxCalculator`, REST `tax_rate`, dan pembayaran tunai. `OPEN` → `PAID` → `CLOSED` kini hidup. Menutup FR-C6, C7, C8, C9, C11, dan FR-C1/C2 untuk tunai.
 

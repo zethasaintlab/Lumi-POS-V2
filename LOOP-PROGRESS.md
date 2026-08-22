@@ -48,6 +48,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 11 | **F6** — observability sisi server | `ARCH:294` | selesai (sisi server) |
 | 12 | **F6** — alat koreksi append-only | `ARCH:400` | selesai |
 | 13 | B-10 Harga — pemilih produk sisi server | utang Task 10 | selesai |
+| 19 | FR-B8 di layar kasir — K-03 diskon + K-11 | utang Task 16 | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1372,3 +1373,85 @@ ditolak" — dan ia masih hidup di tiga tempat lain tanpa ada yang tahu.
 Perbaikannya membuat test lebih setia, bukan kurang: relay tidak pernah
 mengirim `Authorization`, jadi test atribusi header pun tidak boleh
 mengirimnya.
+
+---
+
+### Task 19 — Diskon di layar kasir: K-03 + K-11 (FR-B8, separuh klien)
+
+Task 16 menutup server dan domain; FR-B8 tetap **tidak dapat dicapai
+merchant** — satu-satunya jalan memberi diskon adalah memanggil REST langsung.
+Yang di sini adalah separuh yang membuatnya nyata: dialog K-03, rantai ke
+K-11, baris diskon di keranjang, di layar bayar, dan **di struk**.
+
+**Yang dibangun:**
+
+| Berkas | Isi |
+|---|---|
+| `packages/domain/src/diskon.ts` | `parseNilaiDiskon` · `formatPersenDiskon` |
+| `apps/kasir/src/kasir/diskon.ts` | `bacaAmbangDiskon` · `statusDiskon` · `LABEL_ALASAN_DISKON` |
+| `apps/kasir/src/komponen/DialogDiskon.tsx` | K-03 diskon → K-11 otorisasi |
+| `Kasir.tsx` · `Pembayaran.tsx` | baris diskon, peringatan, penolakan yang menjelaskan |
+
+**Keputusan yang diambil:**
+
+- ⛔ **Persetujuan berlaku untuk ANGKA yang manajer lihat, bukan untuk
+  persentasenya.** Ini cacat yang saya temukan saat menulis alurnya, bukan
+  dari spec: manajer menyetujui 30% dari Rp 100.000 — Rp 30.000 — lalu kasir
+  menambahkan barang senilai Rp 900.000 dan potongannya menjadi Rp 300.000
+  dengan persetujuan yang sama. Persetujuan yang menempel pada persen adalah
+  cek kosong. `DiskonKeranjang.nominalDisetujui` membekukan angkanya; potongan
+  yang tumbuh melewatinya menuntut persetujuan baru, yang **mengecil** tidak
+  (meminta PIN untuk potongan yang lebih kecil hanya melatih manajer mengetik
+  tanpa membaca).
+- ⛔ **`approverId` tanpa `nominalDisetujui` TIDAK menutup apa pun.** Bentuk
+  yang lahir dari kode lama atau jalur yang lupa mengisinya; menganggapnya
+  tertutup berarti satu field yang hilang mematikan aturannya diam-diam.
+- ⛔ **Satu fungsi untuk layar dan untuk jalur penulisan** (`statusDiskon`).
+  K-03 memakainya untuk memberi tahu kasir sebelum ia menekan Bayar;
+  `simpanPenjualan` memakainya untuk menolak. Dua salinan akan menyimpang, dan
+  yang menyimpang menghasilkan layar yang berkata "siap" pada penjualan yang
+  ditolak sendiri.
+- ⛔ **Struk mencetak diskonnya — sebelumnya `diskon: 0` dipaku di
+  `penjualan.ts`.** `computeOrderTotals` TIDAK mengurangi `subtotal`, jadi
+  struk mencetak Subtotal 20.000 lalu TOTAL 20.900 dengan potongan 1.000 yang
+  tidak muncul di mana pun. Selisih tak terjelaskan di struk adalah keluhan
+  yang berakhir di kasir.
+- ⛔ **Angka dikosongkan saat bentuk diskon berubah.** "50" yang berarti Rp 50
+  menjadi 50% begitu radio ditekan — potongan ribuan kali lipat dari satu
+  ketukan yang tidak terlihat mengubah apa pun.
+- ⛔ **Digit desimal persen DITURUNKAN dari skalanya, bukan dipilih.** "15%"
+  adalah rate 0,15 dan berskala 10.000 ia 1500, jadi angka persennya berskala
+  `SKALA_TARIF / 100` — tepat dua digit. Digit ketiga adalah angka yang tidak
+  dapat disimpan; menerimanya berarti memotongnya diam-diam.
+- **Koma DAN titik diterima.** Kasir mengetik "12,5"; papan ketik numerik
+  perangkat mengetik "12.5". Menolak salah satunya berarti separuh perangkat
+  tidak dapat memberi diskon pecahan sama sekali. "12," di tengah pengetikan
+  dibaca 12%, bukan ditolak.
+- **Nominal TIDAK menerima desimal** — uang di sistem ini rupiah utuh, dan
+  "5000,50" yang diterima lalu dipotong adalah potongan yang berbeda dari yang
+  diketik.
+- **Alasan dikumpulkan di `DialogDiskon`, `DialogOtorisasi` dipanggil TANPA
+  `daftarAlasan`.** Pelajaran yang sama dengan K-10: meminta manajer mengulang
+  pilihan kasir membuang waktu di antrean dan membuang pilihan pertamanya.
+- ⛔ **Pemindai global dimatikan saat dialog terbuka.** Kolom teksnya sudah
+  diabaikan `usePemindaiGlobal`, tapi fokus yang berada di radio button TIDAK
+  — dan scan di sana menambahkan produk ke keranjang di BELAKANG dialog,
+  perubahan yang tidak terlihat siapa pun sampai struk tercetak. Berlaku juga
+  untuk `DialogNoSale`, yang punya lubang yang sama.
+- **`MIN_CATATAN` ketiga dihapus.** `identitas/otorisasi.ts` memegang salinan
+  ketiga angka 10 dan menghitungnya per unit UTF-16; kini `catatanCukup` dari
+  `alasan.ts`, yang menghitung per titik kode.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 371 · `test:kasir` 370
+(+11 berkas baru `tests/kasir/diskon.test.js`) · `test:sync-client` 102 ·
+`test:sqlite-local` · `test:runtime` · `test:oxlint-ds-adherence` ·
+`test:backoffice` 370 · `test:ordering` 178 · `apps/kasir` build.
+
+**Sabotase yang membuktikan test-nya tidak hampa:** perbandingan
+`nominal <= nominalDisetujui` diganti `true` → 1 merah; `diskon: Number(...)`
+dikembalikan ke `0` di jalur struk → 1 merah.
+
+**Batas yang dinyatakan:** diskon **per baris** tidak dibangun — `spec-b:267`
+menyebut keduanya, dan `order_line.discount_amount` ada di skema, tapi jalur
+server (`POST /orders`) hanya menerima diskon tingkat order. Membangun
+setengahnya di klien berarti angka yang tidak dapat dikirim ke mana pun.

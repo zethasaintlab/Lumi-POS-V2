@@ -8,7 +8,8 @@ import { simpanPenjualan, type HasilPenjualan } from '../kasir/penjualan.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
-import { subtotalKeranjang } from '../kasir/keranjang.ts';
+import { keranjangKosong, subtotalKeranjang } from '../kasir/keranjang.ts';
+import { nilaiDiskon } from '../../../../packages/domain/src/diskon.ts';
 import { Tombol } from '../Tombol.tsx';
 
 /* K-06 Pembayaran + K-07 Konfirmasi & Kembalian (IA §2.2).
@@ -100,7 +101,10 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           varian="primary"
           kritis
           onClick={() => {
-            setelKeranjang({ baris: [] });
+            // ⛔ `keranjangKosong()`, bukan `{ baris: [] }`: transaksi baru
+            // tidak boleh mewarisi diskon — apalagi persetujuan manajer —
+            // milik pelanggan sebelumnya.
+            setelKeranjang(keranjangKosong());
             onKembali();
           }}
         >
@@ -159,6 +163,17 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           setGalat(`Kurang ${rupiah(hasil.kurang)}. Total ${rupiah(hasil.amountDue)}.`);
           return;
         }
+        if (hasil.status === 'butuh_penyetuju_diskon') {
+          /* ⛔ Penjualan TIDAK ditulis, dan layar mengatakannya. Kasir yang
+             hanya membaca "gagal" akan menekan Bayar lagi; yang membaca
+             kalimat ini tahu bahwa yang harus terjadi berikutnya ada di K-03,
+             bukan di sini. */
+          setGalat(
+            `Diskon ${rupiah(hasil.nominal)} melewati batas dan belum disetujui manajer. ` +
+              'Penjualan belum tersimpan — kembali ke kasir untuk meminta persetujuan.'
+          );
+          return;
+        }
         setGalat('Keranjang kosong.');
       })
       .catch((e: Error) => setGalat(`Penjualan TIDAK tersimpan: ${e.message}`))
@@ -172,6 +187,15 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         Subtotal <span className="num">{rupiah(subtotal)}</span> · pajak dan pembulatan dihitung saat
         disimpan
       </p>
+
+      {/* FR-B8 — potongan ikut terlihat di layar yang menyebut uang diterima.
+          Nominalnya diturunkan dari permintaan yang sama yang akan disimpan
+          (`nilaiDiskon`), bukan diketik ulang di sini. */}
+      {keranjang.diskon !== null && (
+        <p className="t-body-md kasir-login-sub">
+          Diskon <span className="num">− {rupiah(nilaiDiskon(subtotal, keranjang.diskon.minta))}</span>
+        </p>
+      )}
 
       <p className="t-body-md">Uang diterima</p>
       <p className="t-display num">{rupiah(tendered)}</p>

@@ -1,6 +1,11 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import type { PinHasher } from '../../../../packages/domain/src/pin.ts';
 import { bolehkah } from '../../../../packages/domain/src/rbac.ts';
+import {
+  catatanCukup,
+  KODE_LAINNYA,
+  MIN_PANJANG_CATATAN,
+} from '../../../../packages/domain/src/alasan.ts';
 import { catatGagal, type BarisKunci } from './login.ts';
 
 /**
@@ -188,9 +193,17 @@ export const ALASAN_VOID: readonly Alasan[] = [
   { kode: 'lainnya', label: 'Lainnya' },
 ];
 
-const MIN_CATATAN = 10;
-
-/** `null` bila sah; pesan bila tidak. */
+/**
+ * `null` bila sah; pesan bila tidak.
+ *
+ * ⛔ Panjang minimum catatan datang dari `packages/domain/src/alasan.ts`, dan
+ * ia TIDAK disalin ke sini. Angka yang punya dua salinan akan menyimpang pada
+ * perubahan berikutnya — menghasilkan satu operasi yang menerima catatan lima
+ * karakter sementara server menolaknya, lalu berhenti permanen di antrean.
+ *
+ * `catatanCukup` juga menghitung per TITIK KODE, bukan per unit UTF-16;
+ * versi sebelumnya di sini memakai `.length` mentah.
+ */
 export function validasiAlasan(
   daftar: readonly Alasan[],
   kode: string,
@@ -199,8 +212,8 @@ export function validasiAlasan(
   if (!daftar.some((a) => a.kode === kode)) {
     return 'Pilih alasan dari daftar.';
   }
-  if (kode === 'lainnya' && (catatan ?? '').trim().length < MIN_CATATAN) {
-    return `Alasan "Lainnya" wajib disertai catatan minimal ${MIN_CATATAN} karakter.`;
+  if (kode === KODE_LAINNYA && !catatanCukup(catatan)) {
+    return `Alasan "Lainnya" wajib disertai catatan minimal ${MIN_PANJANG_CATATAN} karakter.`;
   }
   return null;
 }
