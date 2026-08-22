@@ -234,7 +234,18 @@ Status F1 sekarang:
 
 **FR-A7 belum tertutup penuh, dan itu disengaja.** Dua dari empat acceptance criteria-nya tidak bisa diuji sekarang: `cost_at_sale` butuh `order_line` (Modul B), dan "device mana yang belum menerima perubahan harga" butuh sync (F2) + laporan (Modul G). Jangan tandai FR-A7 selesai sampai keduanya ada.
 
-Sengaja belum digarap: FR-A3/A5 (aturan pemilihan modifier — UI kasir), FR-A8 (import katalog, P1).
+Sengaja belum digarap: FR-A8 (import katalog, P1). **FR-A5 ditutup bersama B-09**; **FR-A3 ditutup 22 Agustus 2026**.
+
+**Keputusan yang mengikat kode pemilihan modifier (FR-A3):**
+
+- ⛔ **Aturannya di `packages/domain/src/modifier-pilihan.ts`, bukan di komponen React.** `spec-a:117` menulis tabelnya sebagai "perilaku di layar kasir" dan itu benar, tapi aturannya bukan tata letak: `max_selections = 3` yang dilanggar menghasilkan `order_line_modifier` yang tidak dapat dibuat barista. Yang hanya dapat diuji lewat DOM biasanya tidak diuji sama sekali.
+- ⛔ **Batas menghitung UNIT, bukan baris.** `Extra Shot ×2` dihitung dua; menghitung baris membuat `max_selections = 3` meloloskan enam shot lewat tiga baris ber-qty 2. `[ASUMSI]` — `spec-a` tidak menyatakan interaksi `max_selections` dengan `allow_duplicate`.
+- ⛔ **Pilihan yang melewati batas DINONAKTIFKAN** (`spec-a:126`: "bukan menerima lalu menolak"), dan batasnya ikut terlihat di legend. Kasir yang tombolnya mati tanpa penjelasan menyimpulkan aplikasinya rusak.
+- ⛔ **`is_required` dan `min_selections` adalah SATU pertanyaan**, yang berlaku yang lebih besar. Dua sumber untuk satu pertanyaan menghasilkan dialog yang menolak karena alasan yang tidak ditampilkannya.
+- ⛔ **Kuantitas modifier masuk SIDIK JARI keranjang.** Tanpa itu "Extra Shot ×1" dan "×2" digabung jadi satu baris — pelanggan kedua menerima kopi pelanggan pertama, dan totalnya salah tanpa error.
+- ⛔ **`ModifierTerpilih` terpisah dari `ModifierPilihan` katalog.** `bawaan` sifat katalog, `qtyMilli` sifat pilihan; satu tipe untuk keduanya membuat `bawaan` ikut tersimpan ke keranjang dan terkirim ke server sebagai bagian dari pesanan.
+- ⛔ **`order_line.modifier_snapshot` lokal kini `[{nama, qtyMilli}]`, dan parsernya menerima KEDUA bentuk.** Baris lama ada di perangkat merchant dan tidak dapat ditulis ulang — `order_line` tidak pernah di-`UPDATE` (invariant #2). ⛔ Bentuk ini masih **berbeda** dari snapshot server (`[{id, modifierId, name, price, quantityMilli}]`); tidak berbahaya hari ini karena `order_line` tidak ada di sync rules jalur turun, dan menjadi berbahaya pada hari ia masuk.
+- **Server TIDAK menegakkan aturan ini.** `POST /orders` menerima modifier apa adanya; menegakkannya di sana menuntut server membaca `modifier_list` pada setiap penjualan, dan aturannya dapat berubah setelah order antre offline berjam-jam. Batas yang dinyatakan.
 
 Sisa Modul B, belum digarap: FR-B11 (cetak ulang struk, P1, butuh printer F4). **FR-B8/B9 ditutup 22 Agustus 2026** — server + domain lebih dulu, lalu layar kasir; keputusannya di § diskon di bawah.
 

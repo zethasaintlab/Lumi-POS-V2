@@ -1057,3 +1057,43 @@ diabaikan `usePemindaiGlobal`, tapi fokus yang berada di **radio button** tidak
 — dan scan di sana menambahkan produk ke keranjang **di belakang dialog**,
 perubahan yang tidak terlihat siapa pun sampai struk tercetak. `DialogNoSale`
 punya lubang yang sama dan ikut ditutup.
+
+---
+
+## FR-A3 — aturan pemilihan modifier di kasir (22 Agustus 2026)
+
+`max_selections` dan `allow_duplicate` ada di skema sejak F0, turun ke
+perangkat, dan dibaca `bacaModifier` — lalu **diabaikan**. Kasir dapat memilih
+enam topping pada list bermaksimal tiga; pesanannya tersimpan, barista tidak
+dapat membuatnya, dan tidak ada satu pun error di jalan.
+
+Aturannya kini di `packages/domain/src/modifier-pilihan.ts` sebagai fungsi
+murni, dan `DialogModifier.tsx` hanya bentuk layarnya.
+
+### ⛔ Batas menghitung UNIT, bukan baris — `[ASUMSI]`
+
+`spec-a:120` menulis batasnya sebagai "pilihan ke-4 dinonaktifkan" dan tidak
+menyatakan apa pun tentang interaksinya dengan `allow_duplicate`. Yang dipakai:
+`Extra Shot ×2` dihitung **dua**, karena pelanggan membayarnya dan barista
+membuatnya. Menghitung baris saja membuat `max_selections = 3` meloloskan enam
+shot lewat tiga baris ber-qty 2.
+
+### ⛔ Snapshot modifier lokal BERBEDA bentuk dari snapshot server
+
+Klien menulis `[{nama, qtyMilli}]`; server menulis
+`[{id, modifierId, name, price, quantityMilli}]`. Keduanya mengisi kolom yang
+sama (`order_line.modifier_snapshot`).
+
+Tidak berbahaya **hari ini**: `order_line` tidak ada di sync rules jalur turun,
+jadi baris server tidak pernah mendarat di perangkat. Ia menjadi berbahaya pada
+hari `order_line` masuk ke sana — `uraikanModifier` akan membaca `name` sebagai
+`undefined` dan menampilkan "undefined" di layar riwayat. Kelas yang sama
+dengan `tax_rate.rate`: bentuk yang berbeda antara dua sisi, tanpa satu pun
+error yang menunjukkannya.
+
+### Yang tidak dibangun
+
+| Batas | Keadaan |
+|---|---|
+| Penegakan di server | `POST /orders` menerima modifier apa adanya. Menegakkannya menuntut server membaca `modifier_list` pada setiap penjualan, dan aturannya dapat berubah setelah order antre offline berjam-jam |
+| Verifikasi browser | **Belum dijalankan** untuk stepper `allow_duplicate` dan pilihan yang dinonaktifkan |
