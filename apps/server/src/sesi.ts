@@ -90,6 +90,28 @@ interface Terbuka {
   metode: string;
   pola: string;
   alasan: string;
+  /**
+   * Sesi TIDAK dituntut, tapi DITEGAKKAN bila pemanggil membawanya.
+   *
+   * ⛔ Ini untuk jalur perangkat kasir, dan ia menutup lubang yang nyata:
+   * rute yang sepenuhnya terbuka membuat `X-Actor-Id` kembali dipercaya
+   * SEKALIPUN pemanggilnya sebenarnya punya sesi. Akibatnya akuntan yang
+   * login di back-office dapat memanggil rute perangkat atas nama siapa pun
+   * — kontrol peran yang `spec-f:82` tuntut menguap tanpa satu pun error.
+   *
+   * Ditemukan saat `/shifts/{id}/no-sale` ditambahkan ke daftar ini:
+   * test "AKUNTAN ditolak" berubah dari 403 menjadi 201.
+   *
+   * Relay outbox tidak mengirim `Authorization` sama sekali (lihat komentar
+   * kepala berkas), jadi ia lewat apa adanya. Yang membawa Bearer diverifikasi
+   * — dan Bearer yang tidak sah ditolak 401 alih-alih diabaikan.
+   *
+   * ⛔ TIDAK dipasang pada rute berkredensial PERANGKAT
+   * (`sync-token`, `telemetry`, `update`): Bearer di sana adalah secret
+   * perangkat, bukan token sesi, dan memverifikasinya sebagai sesi menolak
+   * perangkat yang sah.
+   */
+  sesiOpsional?: true;
 }
 
 const RUTE_TERBUKA: readonly Terbuka[] = [
@@ -152,10 +174,10 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   // ⛔ Keempat rute ini dipanggil relay outbox, yang tidak mengirim Bearer
   // sama sekali. Melindunginya = setiap penjualan offline yang menyusul
   // dijawab 401. Lihat komentar kepala berkas.
-  { metode: 'POST', pola: '/shifts', alasan: 'jalur perangkat: relay outbox' },
-  { metode: 'POST', pola: '/orders', alasan: 'jalur perangkat: relay outbox' },
-  { metode: 'POST', pola: '/orders/:orderId/cancel', alasan: 'jalur perangkat: relay outbox' },
-  { metode: 'POST', pola: '/orders/:orderId/payments', alasan: 'jalur perangkat: relay outbox' },
+  { metode: 'POST', pola: '/shifts', alasan: 'jalur perangkat: relay outbox', sesiOpsional: true },
+  { metode: 'POST', pola: '/orders', alasan: 'jalur perangkat: relay outbox', sesiOpsional: true },
+  { metode: 'POST', pola: '/orders/:orderId/cancel', alasan: 'jalur perangkat: relay outbox', sesiOpsional: true },
+  { metode: 'POST', pola: '/orders/:orderId/payments', alasan: 'jalur perangkat: relay outbox', sesiOpsional: true },
   {
     metode: 'POST',
     pola: '/inventory/sold-out',
@@ -163,6 +185,7 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
       'jalur perangkat: relay outbox. FR-E5 — barista menandai kopi habis di terminal 1, ' +
       'dan kasir di terminal 2 harus berhenti menerimanya. Memblokirnya berarti penandaan ' +
       'itu tidak pernah sampai ke perangkat lain',
+    sesiOpsional: true,
   },
   {
     metode: 'POST',
@@ -173,6 +196,7 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
       'ada, SETIAP no-sale yang dibuat offline dijawab 401 dan berhenti permanen di ' +
       'antrean: laci sudah terbuka dan servernya tidak pernah tahu. Yang menjaganya ' +
       'tetap `assertBoleh(shift_open_close)` di handler plus AMBANG FREKUENSI',
+    sesiOpsional: true,
   },
   {
     metode: 'POST',
@@ -180,10 +204,11 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
     alasan:
       'jalur perangkat: kasir menunggu konfirmasi QRIS (FR-C14). Memblokirnya menahan kasir ' +
       'menyelesaikan pembayaran yang pelanggannya sudah bayar',
+    sesiOpsional: true,
   },
 ];
 
-const PETA_TERBUKA = new Set(RUTE_TERBUKA.map((r) => `${r.metode} ${r.pola}`));
+const PETA_TERBUKA = new Map(RUTE_TERBUKA.map((r) => [`${r.metode} ${r.pola}`, r]));
 
 /** Dipakai test untuk membandingkan daftar ini dengan rute yang benar-benar terdaftar. */
 export const DAFTAR_RUTE_TERBUKA = RUTE_TERBUKA;
@@ -245,10 +270,26 @@ function tolak(): never {
  */
 export function pasangPenjagaSesi(app: FastifyInstance, pool: Pool): void {
   app.addHook('onRequest', async (req) => {
-    if (ruteTerbuka(req.method, req.routeOptions?.url)) return;
+    // ⛔ HEAD dinormalkan ke GET, sama seperti `ruteTerbuka`. Tanpa itu
+    // `HEAD /health` tidak cocok entri mana pun lalu dituntut sesi — probe
+    // kesehatan dijawab 401, dan yang membacanya menyimpulkan server mati.
+    const metode = req.method === 'HEAD' ? 'GET' : req.method;
+    const terbuka = req.routeOptions?.url
+      ? PETA_TERBUKA.get(`${metode} ${req.routeOptions.url}`)
+      : undefined;
+    // Pola yang tidak dikenal (404) dibiarkan router yang menjawab, sama
+    // seperti `ruteTerbuka`.
+    if (req.routeOptions?.url === undefined) return;
+    if (terbuka !== undefined && terbuka.sesiOpsional !== true) return;
 
     const token = bacaBearer(req);
-    if (token === null) tolak();
+    // ⛔ Jalur perangkat tanpa Bearer lewat apa adanya — relay outbox memang
+    // tidak mengirimnya, dan menuntutnya berarti setiap penjualan offline
+    // yang menyusul dijawab 401. Yang MEMBAWA Bearer tetap diverifikasi.
+    if (token === null) {
+      if (terbuka !== undefined) return;
+      tolak();
+    }
 
     // Petunjuk pencarian, BUKAN otoritas. Lihat komentar kepala berkas.
     const header = req.headers['x-tenant-id'];

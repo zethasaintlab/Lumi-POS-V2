@@ -470,6 +470,8 @@ Lima dari delapan metrik `ARCH:296` **tidak dapat dihasilkan server** — dan it
 
 Aturannya sekarang: **setiap operasi yang perangkat kirim lewat outbox wajib punya satu test yang memakai `buatPengirimHttp` dan `klasifikasi` yang ASLI**, dengan hanya `fetch` yang dipalsukan dan diteruskan ke server sungguhan (`tests/ordering/refund-offline-relay.test.js`). Yang dibuktikan test endpoint langsung adalah servernya benar; ia tidak dapat membuktikan kliennya memanggil dengan benar.
 
+⛔ **Membuka rute untuk jalur perangkat MENGEMBALIKAN kepercayaan pada `X-Actor-Id`.** Rute di `RUTE_TERBUKA` melewati penjaga sesi sepenuhnya, jadi `req.sesi` tidak pernah terisi dan `getActorId` kembali memakai header — pemanggil yang PUNYA sesi tetap dapat mengaku jadi orang lain. Karena itu jalur perangkat ditandai **`sesiOpsional`**: sesi tidak dituntut (relay tidak mengirimnya), tapi ditegakkan bila dibawa, dan Bearer tidak sah ditolak 401 alih-alih diabaikan. ⛔ Ia TIDAK dipasang pada rute berkredensial perangkat (`sync-token`, `telemetry`, `update`) — Bearer di sana secret perangkat, dan memverifikasinya sebagai sesi menolak perangkat yang sah.
+
 Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_id`**, alasan yang sama dengan `actor_id` — antrean dapat terkuras setelah pergantian shift. Header KOSONG tidak pernah dikirim: `getApproverId` menolaknya dengan pesan yang sama persis dengan header yang hilang, jadi mengirimnya hanya memindahkan kegagalan.
 
 ---

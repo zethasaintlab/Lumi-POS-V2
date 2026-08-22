@@ -1312,3 +1312,45 @@ sendiri tidak menjaga apa pun.
 
 **Sabotase diverifikasi:** melepas `/shifts/:shiftId/no-sale` dari
 `RUTE_TERBUKA` → 3 merah.
+
+### Task 18b — ⛔ Membuka rute perangkat MENGEMBALIKAN kepercayaan pada `X-Actor-Id`
+
+**Regresi yang saya buat sendiri di Task 18, ditangkap suite `server`.**
+Menambahkan `/shifts/{id}/no-sale` ke `RUTE_TERBUKA` membuat test "AKUNTAN
+ditolak" berubah dari **403 menjadi 201**.
+
+Sebabnya struktural, bukan salah ketik: rute yang sepenuhnya terbuka membuat
+penjaga sesi TIDAK BERJALAN, jadi `req.sesi` tidak pernah terisi dan
+`getActorId` kembali memakai header. Akuntan yang login di back-office dapat
+memanggil rute perangkat **atas nama siapa pun** — dan kontrol peran
+`spec-f:82` menguap tanpa satu pun error.
+
+⛔ **Dan itu sudah berlaku untuk empat rute perangkat lain sejak lama**
+(`/shifts`, `/orders`, `/orders/{id}/cancel`, `/orders/{id}/payments`). Yang
+membuatnya tidak terlihat: tidak satu pun dari keempatnya punya aturan peran
+di `rbac-rute.ts`, jadi tidak ada test yang dapat berubah warna.
+
+**Perbaikannya `sesiOpsional`:** sesi TIDAK dituntut, tapi DITEGAKKAN bila
+pemanggil membawanya.
+
+- Relay outbox tidak mengirim `Authorization` sama sekali → lewat apa adanya,
+  jalur naik tidak tersentuh.
+- Yang membawa Bearer diverifikasi, dan Bearer yang tidak sah ditolak `401`
+  alih-alih diabaikan.
+- ⛔ TIDAK dipasang pada rute berkredensial PERANGKAT (`sync-token`,
+  `telemetry`, `update`): Bearer di sana adalah secret perangkat, dan
+  memverifikasinya sebagai sesi menolak perangkat yang sah — seluruh armada
+  berhenti sinkron setelah satu perubahan middleware.
+
+**Cacat kedua di perbaikan pertama saya:** pencarian rute di hook tidak
+menormalkan `HEAD` → `GET` seperti `ruteTerbuka`, jadi `HEAD /health` tidak
+cocok entri mana pun lalu dituntut sesi. Probe kesehatan dijawab 401, dan yang
+membacanya menyimpulkan server mati. Ditemukan dengan membaca ulang perubahan
+sendiri, bukan oleh test.
+
+**Test yang saya tulis lalu HAPUS:** "sesi menang atas `X-Actor-Id` di jalur
+perangkat", diarahkan ke `POST /shifts`. Rute itu tidak punya aturan peran
+sama sekali, jadi test itu akan menyatakan penolakan yang tidak pernah
+dilakukan siapa pun — hijau atau merah karena alasan yang tidak berhubungan.
+Yang benar-benar menjaga sifat itu adalah `tests/server/no-sale.test.js`, dan
+ia sudah ada.
