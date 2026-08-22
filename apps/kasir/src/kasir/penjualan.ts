@@ -7,11 +7,21 @@ import {
   computeOrderTotals,
 } from '../../../../packages/domain/src/money.ts';
 import { ambangDari } from '../../../../packages/domain/src/diskon.ts';
+import {
+  dikonfirmasiManual,
+  metodeDibulatkan,
+  periksaApprovalCode,
+  periksaCardLast4,
+  periksaReferensi,
+  type GalatBayar,
+  type KodeGalatBayar,
+} from '../../../../packages/domain/src/pembayaran-manual.ts';
 import { statusDiskon } from './diskon.ts';
 import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import { bangunDokumenStruk } from '../cetak/dokumen.ts';
+import { labelMetode } from '../cetak/metode.ts';
 import { type HasilCetak, type PeripheralPort } from '../cetak/port.ts';
 import { cetakDanCatat } from '../cetak/antrean.ts';
 import type { PrinterProfile } from '../cetak/escpos.ts';
@@ -41,13 +51,42 @@ import type { Keranjang } from './keranjang.ts';
  * Yang menjadi tanggung jawab berkas ini hanya URUTAN dan PERSISTENSI.
  */
 
-export type MetodeBayar = 'cash';
+/**
+ * ⛔ QRIS DINAMIS tidak ada di daftar ini, dan itu batas yang dinyatakan.
+ *
+ * Ia menuntut gateway menjawab sebelum pembayaran dapat dinyatakan lunas
+ * (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur
+ * penjualan di perangkat ini menulis lokal lebih dulu dan me-relay kemudian.
+ * Membangunnya menuntut jalur penjualan online-first yang belum ada.
+ *
+ * Ketiga yang ADA di sini semuanya berfungsi tanpa jaringan, dan itu sengaja:
+ * merchant yang internetnya mati tetap dapat menerima ketiganya.
+ */
+export type MetodeBayar = 'cash' | 'qris_static' | 'card_edc';
 
-export interface Pembayaran {
-  metode: MetodeBayar;
+export interface PembayaranTunai {
+  metode: 'cash';
   /** Uang yang diserahkan pelanggan, rupiah utuh. */
   tendered: number;
 }
+
+/** FR-C2 — QR cetak merchant, dikonfirmasi kasir. Tanpa verifikasi sistem. */
+export interface PembayaranQrisStatis {
+  metode: 'qris_static';
+  /** WAJIB (`periksaReferensi`). Kontrol anti-fraud, bukan formalitas. */
+  referensi: string;
+}
+
+/** FR-C4 — mesin EDC terpisah; yang mengonfirmasi adalah struk terminal. */
+export interface PembayaranEdc {
+  metode: 'card_edc';
+  approvalCode: string;
+  cardLast4?: string | null;
+  acquirer?: string | null;
+  terminalReference?: string | null;
+}
+
+export type Pembayaran = PembayaranTunai | PembayaranQrisStatis | PembayaranEdc;
 
 export type HasilPenjualan =
   | {
@@ -65,6 +104,16 @@ export type HasilPenjualan =
     }
   | { status: 'keranjang_kosong' }
   | { status: 'kurang_bayar'; amountDue: bigint; kurang: bigint }
+  /**
+   * FR-C2/C4 — masukan pembayaran manual tidak sah.
+   *
+   * ⛔ Diperiksa di PERANGKAT, dengan aturan yang sama persis yang server
+   * pakai (`packages/domain/src/pembayaran-manual.ts`). Aturan yang hanya
+   * hidup di server berarti kasir menerima referensi kosong, penjualan
+   * tersimpan, lalu barisnya berhenti `gagal-permanen` di antrean — bentuk
+   * cacat yang sama dengan refund offline.
+   */
+  | { status: 'pembayaran_tidak_sah'; kode: KodeGalatBayar; pesan: string }
   /**
    * FR-B8 — diskon melewati ambang dan belum ada penyetuju.
    *
@@ -128,6 +177,51 @@ async function urutanBerikutnya(
     [berikutnya, businessDate]
   );
   return berikutnya;
+}
+
+/** `null` bila sah. Aturannya milik `packages/domain`. */
+function periksaPembayaran(p: Pembayaran): GalatBayar | null {
+  if (p.metode === 'qris_static') return periksaReferensi(p.referensi);
+  if (p.metode === 'card_edc') {
+    const galat = periksaApprovalCode(p.approvalCode);
+    if (galat !== null) return galat;
+    // ⛔ Opsional, tapi bila DIISI ia harus 1-4 digit. Kolomnya bernama
+    // `card_last4`; apa pun yang lebih panjang di sana adalah data kartu yang
+    // tidak boleh masuk POS sama sekali (`CLAUDE.md`, larangan permanen).
+    if (p.cardLast4 !== undefined && p.cardLast4 !== null && p.cardLast4 !== '') {
+      return periksaCardLast4(p.cardLast4);
+    }
+  }
+  return null;
+}
+
+function muatanPembayaran(
+  paymentId: string,
+  p: Pembayaran,
+  amountDue: bigint
+): Record<string, unknown> {
+  if (p.metode === 'cash') {
+    // Server yang menghitung `amount` dan kembalian dari `tenderedAmount`,
+    // karena keduanya bergantung pada pembulatan tunai milik outlet.
+    return { id: paymentId, method: 'cash', tenderedAmount: Number(p.tendered) };
+  }
+  if (p.metode === 'qris_static') {
+    return {
+      id: paymentId,
+      method: 'qris_static',
+      amount: Number(amountDue),
+      reference: p.referensi.trim(),
+    };
+  }
+  return {
+    id: paymentId,
+    method: 'card_edc',
+    amount: Number(amountDue),
+    approvalCode: p.approvalCode.trim(),
+    ...(p.cardLast4 ? { cardLast4: p.cardLast4 } : {}),
+    ...(p.acquirer ? { acquirer: p.acquirer } : {}),
+    ...(p.terminalReference ? { terminalReference: p.terminalReference } : {}),
+  };
 }
 
 function keTarifSpec(b: BarisTarif): TaxRateSpec {
@@ -287,14 +381,31 @@ export async function simpanPenjualan({
     taxAmount: pajak.totalTaxExclusive,
   });
 
-  // ⛔ Pembulatan HANYA saat ada pembayaran tunai (FR-C9), dan hanya pada
+  // ⛔ Pembulatan HANYA saat ada pembayaran TUNAI (FR-C9), dan hanya pada
   // `amount_due` — `total` tidak pernah dibulatkan.
-  const bulat = computeCashRounding({
-    outstanding: totals.total,
-    roundingIncrement: BigInt(outlet?.rounding_increment ?? 100),
-    roundingMode: outlet?.rounding_mode ?? 'half_up',
-  });
+  //
+  // Sebelum QRIS statis dan EDC ada, satu-satunya metode adalah tunai, jadi
+  // pembulatan tanpa syarat kebetulan benar. Ia berhenti benar begitu metode
+  // kedua lahir: QRIS memindahkan angka, bukan lembaran, dan membulatkannya
+  // menagih pelanggan beberapa rupiah lebih daripada nilai transaksinya lewat
+  // saluran yang mencatat nominalnya persis.
+  const bulat = metodeDibulatkan(pembayaran.metode)
+    ? computeCashRounding({
+        outstanding: totals.total,
+        roundingIncrement: BigInt(outlet?.rounding_increment ?? 100),
+        roundingMode: outlet?.rounding_mode ?? 'half_up',
+      })
+    : { roundedOutstanding: totals.total, roundingAdjustment: 0n };
   const amountDue = bulat.roundedOutstanding;
+
+  // ---- FR-C2/C4: masukan pembayaran manual --------------------------------
+  //
+  // Diperiksa SEBELUM satu baris pun ditulis, dengan aturan yang sama persis
+  // yang server pakai.
+  const galatBayar = periksaPembayaran(pembayaran);
+  if (galatBayar !== null) {
+    return { status: 'pembayaran_tidak_sah', kode: galatBayar.kode, pesan: galatBayar.pesan };
+  }
 
   // FR-E2 — `sale` HANYA untuk variation yang stoknya dilacak.
   //
@@ -312,13 +423,17 @@ export async function simpanPenjualan({
     for (const v of baris) lacak.set(v.id, v.track_stock === 1);
   }
 
-  const tendered = BigInt(pembayaran.tendered);
-  if (tendered < amountDue) {
+  // ⛔ `tendered` dan kembalian hanya ada untuk TUNAI. QRIS dan kartu
+  // memindahkan nominal yang persis; `tendered_amount` yang diisi sama dengan
+  // `amount` membuat laporan tidak dapat membedakan uang yang benar-benar
+  // diserahkan dari nominal transaksi — dan `spec-d:201` memakai perbedaan itu.
+  const tendered = pembayaran.metode === 'cash' ? BigInt(pembayaran.tendered) : null;
+  if (tendered !== null && tendered < amountDue) {
     return { status: 'kurang_bayar', amountDue, kurang: amountDue - tendered };
   }
   // Kembalian dari `amount_due` yang SUDAH dibulatkan. Menghitungnya dari
   // `total` memberi kembalian beberapa rupiah lebih banyak setiap transaksi.
-  const kembalian = tendered - amountDue;
+  const kembalian = tendered === null ? 0n : tendered - amountDue;
 
   // ---- persistensi: satu transaksi ---------------------------------------
 
@@ -423,11 +538,33 @@ export async function simpanPenjualan({
       }
     }
 
+    // ⛔ `confirmed` untuk ketiganya, dan itu BUKAN pelanggaran `spec-c:320`.
+    // Aturan itu berbunyi "tanpa konfirmasi dari GATEWAY" dan berlaku untuk
+    // pembayaran yang punya gateway. Yang mengonfirmasi ketiga metode di sini
+    // adalah ORANG — kasir yang melihat uangnya, notifikasi QRIS di ponsel
+    // merchant, atau struk terminal EDC.
+    //
+    // `confirmed_manually` menandai bahwa tidak ada SISTEM yang
+    // memverifikasinya, dan hanya QRIS statis yang mendapatkannya: EDC punya
+    // kode approval dari acquirer, bukti yang dapat dicocokkan.
     await tx.execute(
       `INSERT INTO payment
-         (id, order_id, check_id, method, amount, tendered_amount, change_amount, status, tendered_at)
-       VALUES (?, ?, ?, 'cash', ?, ?, ?, 'confirmed', ?)`,
-      [paymentId, orderId, checkId, Number(amountDue), Number(tendered), Number(kembalian), occurredAt]
+         (id, order_id, check_id, method, amount, tendered_amount, change_amount, status,
+          provider_reference, approval_code, card_last4, acquirer, terminal_reference,
+          confirmed_manually, tendered_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        paymentId, orderId, checkId, pembayaran.metode, Number(amountDue),
+        tendered === null ? null : Number(tendered),
+        tendered === null ? null : Number(kembalian),
+        pembayaran.metode === 'qris_static' ? pembayaran.referensi.trim() : null,
+        pembayaran.metode === 'card_edc' ? pembayaran.approvalCode.trim() : null,
+        pembayaran.metode === 'card_edc' ? (pembayaran.cardLast4 ?? null) : null,
+        pembayaran.metode === 'card_edc' ? (pembayaran.acquirer ?? null) : null,
+        pembayaran.metode === 'card_edc' ? (pembayaran.terminalReference ?? null) : null,
+        dikonfirmasiManual(pembayaran.metode) ? 1 : 0,
+        occurredAt,
+      ]
     );
 
     // Buku kas — `spec-d:14` menjadikan jumlah `delta` sebagai SATU-SATUNYA
@@ -441,21 +578,29 @@ export async function simpanPenjualan({
     // menambah laci Rp 73.000 — kembaliannya keluar lagi, dan `spec-d:201`
     // menegaskan kembalian TIDAK menghasilkan movement terpisah. Memakai
     // `tendered` membuat setiap penjualan berkembalian melebih-lebihkan laci.
-    await tx.execute(
-      `INSERT INTO cash_movement
-         (id, shift_id, type, delta, order_id, counterpart_type, created_by, occurred_at, hlc)
-       VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?)`,
-      [
-        idMovement,
-        shift.id,
-        deltaBertanda('sale', Number(amountDue)),
-        orderId,
-        counterpartUntuk('sale'),
-        sesi.userId,
-        occurredAt,
-        Number(hlcValue),
-      ]
-    );
+    //
+    // ⛔ HANYA tunai. QRIS dan kartu tidak memindahkan satu lembar pun ke
+    // laci; movement untuk keduanya membuat saldo laci naik pada setiap
+    // penjualan non-tunai, dan tutup kas menuntut otorisasi manajer untuk
+    // selisih yang tidak pernah ada. Itu cacat yang PERSIS sama bentuknya
+    // dengan yang F3 temukan pada refund tunai, hanya arahnya terbalik.
+    if (pembayaran.metode === 'cash') {
+      await tx.execute(
+        `INSERT INTO cash_movement
+           (id, shift_id, type, delta, order_id, counterpart_type, created_by, occurred_at, hlc)
+         VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?)`,
+        [
+          idMovement,
+          shift.id,
+          deltaBertanda('sale', Number(amountDue)),
+          orderId,
+          counterpartUntuk('sale'),
+          sesi.userId,
+          occurredAt,
+          Number(hlcValue),
+        ]
+      );
+    }
 
     await enqueue(tx, {
       id: idOutboxOrder,
@@ -534,11 +679,13 @@ export async function simpanPenjualan({
       entityType: 'payment',
       entityId: orderId,
       operation: 'create',
-      payload: {
-        id: paymentId,
-        method: 'cash',
-        tenderedAmount: Number(tendered),
-      },
+      // ⛔ Yang dikirim per METODE, bukan gabungan seluruh field. Server
+      // menuntut `tenderedAmount` untuk tunai dan `reference` untuk QRIS
+      // statis; mengirim keduanya membuat validasi server tidak pernah dapat
+      // menolak masukan yang salah tempat, dan pembayaran kartu yang membawa
+      // `tenderedAmount` terlihat seperti tunai di setiap laporan yang
+      // membacanya.
+      payload: muatanPembayaran(paymentId, pembayaran, amountDue),
       idempotencyKey: paymentId,
       createdAt: occurredAt,
       // ⛔ Pembayaran BERGANTUNG pada order-nya. Tanpa ini, relay dapat
@@ -615,7 +762,13 @@ export async function simpanPenjualan({
       pajak: pajak.lines.map((r) => ({ nama: r.name, jumlah: Number(r.amount) })),
       pembulatan: Number(bulat.roundingAdjustment),
       total: Number(amountDue),
-      pembayaran: [{ nama: 'Tunai', jumlah: Number(tendered) }],
+      // ⛔ Yang dicetak untuk tunai adalah uang yang DISERAHKAN (bersama
+      // kembaliannya); untuk metode lain, nominal transaksinya. Mencetak
+      // `amount_due` sebagai "Tunai" pada struk berkembalian membuat baris
+      // pembayaran dan baris kembalian tidak konsisten satu sama lain.
+      pembayaran: [
+        { nama: labelMetode(pembayaran.metode), jumlah: Number(tendered ?? amountDue) },
+      ],
       kembalian: Number(kembalian),
     }),
     printerProfile,

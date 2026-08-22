@@ -629,3 +629,205 @@ test('⛔ diskon MUNCUL di struk — subtotal kotor tanpa barisnya tidak dapat d
   assert.match(teks, /Diskon/, 'baris diskon tidak dicetak');
   assert.match(teks, /1\.000/, 'nominal diskon tidak muncul di struk');
 });
+
+// ---------------------------------------------------------------------------
+// FR-C2 & FR-C4 — QRIS statis dan EDC di perangkat
+// ---------------------------------------------------------------------------
+//
+// ⛔ Sampai sekarang kasir HANYA dapat menerima tunai. Server sudah menerima
+// keempat metode sejak Modul C sub-project 2; yang tidak ada adalah jalan bagi
+// kasir memakainya. Merchant yang pelanggannya membayar QRIS harus mencatatnya
+// sebagai tunai — dan saldo laci lalu berbohong sebesar seluruh omzet QRIS.
+
+function payment(db) {
+  return db.state.tulis.find((t) => /INSERT INTO payment/.test(t.sql));
+}
+
+function cashMovement(db) {
+  return db.state.tulis.filter((t) => /INSERT INTO cash_movement/.test(t.sql));
+}
+
+test('⛔ QRIS statis TIDAK menyentuh laci', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: '22000 · ref 4821' } }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  // Cacat yang PERSIS sama bentuknya dengan yang F3 temukan pada refund tunai,
+  // arahnya terbalik: laci yang naik pada setiap penjualan non-tunai membuat
+  // tutup kas menuntut otorisasi manajer untuk selisih yang tidak pernah ada.
+  assert.equal(cashMovement(db).length, 0, 'QRIS menulis cash_movement');
+});
+
+test('tunai TETAP menyentuh laci', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+  assert.equal(cashMovement(db).length, 1);
+});
+
+test('⛔ pembulatan tunai TIDAK berlaku untuk QRIS dan kartu (FR-C9)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const baris = [{ ...BARIS[0], unitPrice: 20050 }];
+
+  // Tunai: 22.055 → 22.100.
+  const tunai = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 25000 } }),
+  });
+  assert.equal(tunai.amountDue, 22100n);
+
+  // QRIS memindahkan angka, bukan lembaran: tidak ada pecahan yang tidak
+  // beredar, jadi tidak ada yang perlu dibulatkan. Membulatkannya menagih
+  // pelanggan 45 rupiah lebih daripada nilai transaksinya, lewat saluran yang
+  // mencatat nominalnya persis.
+  const qris = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({
+      keranjang: { baris, diskon: null },
+      pembayaran: { metode: 'qris_static', referensi: 'ref 4821' },
+    }),
+  });
+  assert.equal(qris.amountDue, 22055n, 'QRIS ikut dibulatkan');
+  assert.equal(qris.roundingAdjustment, 0n);
+});
+
+test('⛔ `tendered_amount` dan kembalian NULL untuk non-tunai', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+  });
+
+  const p = payment(db);
+  // Mengisinya sama dengan `amount` membuat laporan tidak dapat membedakan
+  // uang yang benar-benar diserahkan dari nominal transaksi — dan
+  // `spec-d:201` memakai perbedaan itu.
+  assert.equal(p.params[5], null, 'tendered_amount terisi untuk QRIS');
+  assert.equal(p.params[6], null, 'change_amount terisi untuk QRIS');
+});
+
+test('⛔ `confirmed_manually` HANYA untuk QRIS statis', async () => {
+  const { simpanPenjualan } = await import(MOD);
+
+  const qris = dbPalsu();
+  await simpanPenjualan({
+    db: qris,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+  });
+  // Indeks ke-12: tepat setelah terminal_reference. Yang diperiksa NILAI yang
+  // di-bind — fake `DbLokal` tidak menegakkan satu pun constraint.
+  assert.equal(payment(qris).params[12], 1);
+
+  const edc = dbPalsu();
+  await simpanPenjualan({
+    db: edc,
+    ...args({ pembayaran: { metode: 'card_edc', approvalCode: 'A12345' } }),
+  });
+  // EDC punya kode approval dari acquirer — bukti fisik yang dapat
+  // dicocokkan. QRIS statis tidak punya apa pun selain kalimat kasir.
+  assert.equal(payment(edc).params[12], 0);
+});
+
+test('⛔ referensi QRIS kosong DITOLAK, dan tidak menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: '' } }),
+  });
+
+  assert.equal(hasil.status, 'pembayaran_tidak_sah');
+  assert.equal(hasil.kode, 'VALIDATION_ERROR');
+  assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
+});
+
+test('⛔ referensi berbentuk NOMOR KARTU ditolak dengan kode sendiri', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: '4111 1111 1111 1111' } }),
+  });
+
+  // AC FR-C5 keempat. Kodenya BERBEDA dari validasi biasa — menyamakannya
+  // membuang satu-satunya sinyal bahwa seseorang mengetik nomor kartu ke POS.
+  assert.equal(hasil.status, 'pembayaran_tidak_sah');
+  assert.equal(hasil.kode, 'POSSIBLE_CARD_NUMBER');
+  assert.equal(db.state.tulis.length, 0);
+});
+
+test('⛔ EDC tanpa kode approval ditolak; `cardLast4` panjang ditolak', async () => {
+  const { simpanPenjualan } = await import(MOD);
+
+  const tanpaKode = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ pembayaran: { metode: 'card_edc', approvalCode: '  ' } }),
+  });
+  assert.equal(tanpaKode.status, 'pembayaran_tidak_sah');
+
+  // Kolomnya bernama `card_last4`; apa pun yang lebih panjang di sana adalah
+  // data kartu, dan larangannya permanen.
+  const panjang = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ pembayaran: { metode: 'card_edc', approvalCode: 'A1', cardLast4: '12345' } }),
+  });
+  assert.equal(panjang.status, 'pembayaran_tidak_sah');
+});
+
+test('⛔ muatan outbox berbeda PER METODE', async () => {
+  const { simpanPenjualan } = await import(MOD);
+
+  const ambilMuatan = (db) => {
+    const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+    const bayar = outbox.find((t) => t.params.includes('payment'));
+    return JSON.parse(bayar.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+  };
+
+  const tunai = dbPalsu();
+  await simpanPenjualan({ db: tunai, ...args() });
+  // Server yang menghitung `amount` dan kembalian dari `tenderedAmount`:
+  // keduanya bergantung pada pembulatan tunai milik outlet.
+  assert.equal(ambilMuatan(tunai).tenderedAmount, 25000);
+  assert.equal(ambilMuatan(tunai).amount, undefined);
+
+  const qris = dbPalsu();
+  await simpanPenjualan({
+    db: qris,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+  });
+  const m = ambilMuatan(qris);
+  assert.equal(m.method, 'qris_static');
+  assert.equal(m.reference, 'ref 4821');
+  // Kartu yang membawa `tenderedAmount` terlihat seperti tunai di setiap
+  // laporan yang membacanya.
+  assert.equal(m.tenderedAmount, undefined, 'tenderedAmount ikut terkirim untuk QRIS');
+});
+
+test('struk menyebut metode yang benar, dan tanpa kembalian untuk non-tunai', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => {
+        dicetak.push(bytes);
+      },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.match(teks, /QRIS/, 'metode tidak tercetak');
+  assert.equal(/Kembali\s/.test(teks), false, 'baris kembalian tercetak untuk QRIS');
+});

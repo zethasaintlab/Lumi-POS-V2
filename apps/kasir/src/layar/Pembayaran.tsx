@@ -4,7 +4,14 @@ import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
 import { muatHlc } from '../lokal/hlc.ts';
 import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
-import { simpanPenjualan, type HasilPenjualan } from '../kasir/penjualan.ts';
+import {
+  simpanPenjualan,
+  type HasilPenjualan,
+  type MetodeBayar,
+  type Pembayaran,
+} from '../kasir/penjualan.ts';
+import { MIN_PANJANG_REFERENSI } from '../../../../packages/domain/src/pembayaran-manual.ts';
+import { Bidang } from '../Bidang.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
@@ -33,6 +40,15 @@ function rupiah(n: number | bigint): string {
    Itu menghilangkan salah ketik nol pada angka yang menentukan kembalian. */
 const PECAHAN = [2000, 5000, 10000, 20000, 50000, 100000];
 
+/* Nama metode di LAYAR — bukan di struk. Struk memakai `labelMetode`
+   (`cetak/metode.ts`), yang namanya sengaja lebih pendek karena berbagi baris
+   32 kolom dengan nominalnya. */
+const NAMA_METODE: Record<MetodeBayar, string> = {
+  cash: 'Tunai',
+  qris_static: 'QRIS statis',
+  card_edc: 'Kartu (EDC)',
+};
+
 export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const { db, pemberitahu } = useDbLokal();
   const { sesi } = useSesi();
@@ -41,6 +57,14 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const [hlc, setHlc] = useState<Hlc | null>(null);
   const [siap, setSiap] = useState(false);
   const [tendered, setTendered] = useState(0);
+  /* FR-C1 — metode pembayaran. Ketiganya BERFUNGSI OFFLINE, dan itu yang
+     membuat daftarnya berhenti di sini: QRIS dinamis menuntut gateway
+     menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di
+     server — sementara jalur penjualan ini menulis lokal lebih dulu. */
+  const [metode, setMetode] = useState<MetodeBayar>('cash');
+  const [referensi, setReferensi] = useState('');
+  const [approvalCode, setApprovalCode] = useState('');
+  const [cardLast4, setCardLast4] = useState('');
   const [menyimpan, setMenyimpan] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [selesai, setSelesai] = useState<Extract<HasilPenjualan, { status: 'tersimpan' }> | null>(null);
@@ -134,6 +158,26 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     );
   }
 
+  const susunPembayaran = (): Pembayaran => {
+    if (metode === 'qris_static') return { metode, referensi };
+    if (metode === 'card_edc') {
+      return { metode, approvalCode, cardLast4: cardLast4 || null };
+    }
+    return { metode: 'cash', tendered };
+  };
+
+  /* Tombol simpan hidup hanya bila masukan metode ini sudah lengkap.
+     ⛔ Ia BUKAN validasi — validasinya milik `simpanPenjualan`, yang memakai
+     aturan server. Yang di sini hanya mencegah ketukan yang pasti ditolak;
+     dua tempat yang memvalidasi akan menyimpang, dan yang menyimpang membuat
+     tombol mati tanpa pesan. */
+  const masukanLengkap =
+    metode === 'cash'
+      ? tendered > 0
+      : metode === 'qris_static'
+        ? referensi.trim().length >= MIN_PANJANG_REFERENSI
+        : approvalCode.trim().length > 0;
+
   const bayar = () => {
     setMenyimpan(true);
     setGalat(null);
@@ -143,7 +187,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       sesi,
       shift,
       keranjang,
-      pembayaran: { metode: 'cash', tendered },
+      pembayaran: susunPembayaran(),
       waktu: () => new Date(),
       idBaru: () => crypto.randomUUID(),
       // I10 dijamin: HLC melanjutkan dari `device_config.hlc_state`, tidak
@@ -161,6 +205,14 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         }
         if (hasil.status === 'kurang_bayar') {
           setGalat(`Kurang ${rupiah(hasil.kurang)}. Total ${rupiah(hasil.amountDue)}.`);
+          return;
+        }
+        if (hasil.status === 'pembayaran_tidak_sah') {
+          /* ⛔ Pesan SERVER, kata demi kata — aturannya satu sumber
+             (`packages/domain/src/pembayaran-manual.ts`). Menulis ulang
+             kalimatnya di sini berarti kasir membaca dua penjelasan berbeda
+             untuk penolakan yang sama, tergantung apakah ia sedang online. */
+          setGalat(`${hasil.pesan} Penjualan belum tersimpan.`);
           return;
         }
         if (hasil.status === 'butuh_penyetuju_diskon') {
@@ -182,7 +234,29 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
 
   return (
     <div className="kasir-shift">
-      <h1 className="t-title">Pembayaran tunai</h1>
+      <h1 className="t-title">Pembayaran</h1>
+
+      {/* FR-C1 — pemilih metode. `IA:65` menempatkannya di K-06.
+
+          ⛔ TIDAK ada QRIS dinamis di sini, dan ketiadaannya disengaja: ia
+          online-only, dan menampilkannya lalu menonaktifkannya saat offline
+          (FR-C3) menuntut metode itu ADA lebih dulu. */}
+      <div className="kasir-pecahan">
+        {(['cash', 'qris_static', 'card_edc'] as const).map((m) => (
+          <Tombol
+            key={m}
+            varian={metode === m ? 'primary' : 'secondary'}
+            kritis
+            disabled={menyimpan}
+            onClick={() => {
+              setMetode(m);
+              setGalat(null);
+            }}
+          >
+            {NAMA_METODE[m]}
+          </Tombol>
+        ))}
+      </div>
       <p className="t-body-md kasir-login-sub">
         Subtotal <span className="num">{rupiah(subtotal)}</span> · pajak dan pembulatan dihitung saat
         disimpan
@@ -197,18 +271,83 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         </p>
       )}
 
-      <p className="t-body-md">Uang diterima</p>
-      <p className="t-display num">{rupiah(tendered)}</p>
+      {metode === 'cash' && (
+        <>
+          <p className="t-body-md">Uang diterima</p>
+          <p className="t-display num">{rupiah(tendered)}</p>
+
+          <div className="kasir-pecahan">
+            {PECAHAN.map((p) => (
+              <Tombol key={p} kritis disabled={menyimpan} onClick={() => setTendered((t) => t + p)}>
+                + {rupiah(p)}
+              </Tombol>
+            ))}
+            <Tombol
+              varian="ghost"
+              kritis
+              disabled={menyimpan || tendered === 0}
+              onClick={() => setTendered(0)}
+            >
+              Hapus
+            </Tombol>
+          </div>
+        </>
+      )}
+
+      {/* FR-C2 — QRIS statis. Referensi WAJIB, dan layar mengatakan kenapa:
+          tidak ada sistem yang memverifikasi pembayaran ini, jadi tanpa
+          referensi "sudah dibayar" hanyalah pernyataan kasir tanpa jejak yang
+          dapat dicocokkan dengan mutasi bank. */}
+      {metode === 'qris_static' && (
+        <>
+          <p className="t-body-md">
+            Tagihan <span className="num">{rupiah(subtotal)}</span> + pajak. Pelanggan memindai QR
+            cetak di meja kasir.
+          </p>
+          <Bidang
+            label="Referensi pembayaran"
+            value={referensi}
+            onChange={(v) => {
+              setReferensi(v);
+              setGalat(null);
+            }}
+            placeholder="Nominal + 4 digit terakhir nomor referensi"
+            hint="Wajib. Tidak ada sistem yang memverifikasi QRIS statis — referensi ini satu-satunya jejaknya."
+          />
+        </>
+      )}
+
+      {/* FR-C4 — EDC. Mesinnya terpisah; yang mengonfirmasi struk terminal. */}
+      {metode === 'card_edc' && (
+        <>
+          <Bidang
+            label="Kode approval"
+            value={approvalCode}
+            onChange={(v) => {
+              setApprovalCode(v);
+              setGalat(null);
+            }}
+            placeholder="Dari struk mesin EDC"
+            hint="Wajib. Tanpa kode approval, pembayaran kartu tidak dapat dicocokkan dengan settlement acquirer."
+          />
+          <Bidang
+            label="4 digit terakhir kartu (opsional)"
+            inputMode="numeric"
+            value={cardLast4}
+            onChange={(v) => {
+              // ⛔ Dipotong DI SINI, di titik masuknya. Kolomnya bernama
+              // `card_last4` dan larangan nomor kartu di repo ini permanen —
+              // membiarkan digit kelima masuk state, meski nanti ditolak,
+              // berarti nomor kartu sempat ada di dalam aplikasi.
+              setCardLast4(v.replace(/\D/g, '').slice(0, 4));
+              setGalat(null);
+            }}
+            placeholder="1234"
+          />
+        </>
+      )}
 
       <div className="kasir-pecahan">
-        {PECAHAN.map((p) => (
-          <Tombol key={p} kritis disabled={menyimpan} onClick={() => setTendered((t) => t + p)}>
-            + {rupiah(p)}
-          </Tombol>
-        ))}
-        <Tombol varian="ghost" kritis disabled={menyimpan || tendered === 0} onClick={() => setTendered(0)}>
-          Hapus
-        </Tombol>
         <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onKembali}>
           Kembali
         </Tombol>
@@ -220,7 +359,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         </p>
       )}
 
-      <Tombol varian="primary" kritis disabled={menyimpan || tendered === 0} onClick={bayar}>
+      <Tombol varian="primary" kritis disabled={menyimpan || !masukanLengkap} onClick={bayar}>
         {menyimpan ? 'Menyimpan…' : 'Simpan Penjualan'}
       </Tombol>
     </div>

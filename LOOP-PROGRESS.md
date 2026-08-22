@@ -50,6 +50,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 13 | B-10 Harga — pemilih produk sisi server | utang Task 10 | selesai |
 | 19 | FR-B8 di layar kasir — K-03 diskon + K-11 | utang Task 16 | selesai |
 | 20 | FR-A3 — aturan pemilihan modifier di kasir | `spec-a:113`, P0 | selesai |
+| 21 | K-06 QRIS statis + EDC | FR-C2, FR-C4 | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1522,3 +1523,71 @@ dilepas dari sidik jari keranjang → 1 merah.
 server membaca `modifier_list` pada setiap penjualan, dan aturannya dapat
 berubah setelah order antre offline berjam-jam. `modifier-pilihan.ts` duduk di
 tempat yang benar bila keputusan itu berubah.
+
+---
+
+### Task 21 — K-06 menerima QRIS statis dan EDC (FR-C2, FR-C4)
+
+Server menerima keempat metode sejak Modul C sub-project 2. Yang tidak ada
+adalah jalan bagi **kasir** memakainya: `MetodeBayar` di klien secara harfiah
+`'cash'`. Merchant yang pelanggannya membayar QRIS harus mencatatnya sebagai
+tunai — dan saldo laci lalu berbohong sebesar seluruh omzet QRIS, setiap hari,
+tanpa satu pun error.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Aturan validasi diangkat ke `packages/domain/src/pembayaran-manual.ts`,
+  dan SERVER memakainya juga.** QRIS statis dan EDC berfungsi offline; aturan
+  yang hanya hidup di server berarti kasir mengetik referensi kosong, layar
+  menerimanya, penjualan tersimpan, dan barisnya berhenti `gagal-permanen` di
+  antrean berjam-jam kemudian. Bentuk cacat yang sama dengan refund offline —
+  berkas itu ada supaya ia tidak terjadi untuk ketiga kalinya.
+- ⛔ **Kode galat ikut dikembalikan, bukan hanya pesannya.**
+  `POSSIBLE_CARD_NUMBER` berbeda dari `VALIDATION_ERROR`, dan menyamakannya
+  membuang satu-satunya sinyal bahwa seseorang mengetik nomor kartu ke POS.
+- ⛔ **Non-tunai TIDAK menulis `cash_movement`.** Laci yang naik pada setiap
+  penjualan QRIS membuat tutup kas menuntut otorisasi manajer untuk selisih
+  yang tidak pernah ada — cacat yang PERSIS sama bentuknya dengan yang F3
+  temukan pada refund tunai, arahnya terbalik.
+- ⛔ **Pembulatan tunai berhenti tanpa syarat.** Sebelum ini metode hanya ada
+  satu, jadi membulatkan selalu kebetulan benar. QRIS memindahkan angka, bukan
+  lembaran: tidak ada pecahan yang tidak beredar, dan membulatkannya menagih
+  pelanggan beberapa rupiah lebih lewat saluran yang mencatat nominalnya
+  persis.
+- ⛔ **`tendered_amount` dan `change_amount` NULL untuk non-tunai.**
+  Mengisinya sama dengan `amount` membuat laporan tidak dapat membedakan uang
+  yang benar-benar diserahkan dari nominal transaksi, dan `spec-d:201` memakai
+  perbedaan itu.
+- ⛔ **`confirmed_manually` hanya untuk QRIS statis.** EDC punya kode approval
+  dari acquirer — bukti yang dapat dicocokkan; QRIS statis tidak punya apa pun
+  selain kalimat kasir.
+- ⛔ **Muatan outbox berbeda PER METODE.** Kartu yang membawa `tenderedAmount`
+  terlihat seperti tunai di setiap laporan yang membacanya.
+- ⛔ **`cardLast4` dipotong di titik MASUKNYA**, bukan hanya ditolak saat
+  simpan. Membiarkan digit kelima masuk state berarti nomor kartu sempat ada
+  di dalam aplikasi, dan larangannya permanen.
+- **`LABEL_METODE` satu sumber** (`cetak/metode.ts`). Versi pertama saya
+  menulis peta kedua di `penjualan.ts` dengan "Kartu (EDC)" sementara
+  `ulang.ts` menulis "Kartu" — cetak ulang akan menyebut metode berbeda dari
+  cetakan pertama, tepat yang `spec-b:145` larang. Ditemukan dengan membaca
+  peta yang sudah ada sebelum menulis yang baru.
+
+**Test transport, sesuai aturan 21 Agustus:**
+`tests/payment/pembayaran-offline-relay.test.js` memakai `buatPengirimHttp`
+dan `klasifikasi` ASLI, dan **muatannya benar-benar disusun
+`simpanPenjualan`** — bukan ditulis tangan di test. Sabotase: `reference`
+dilepas dari muatan klien → `400`, 2 merah.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 382 · `test:kasir` 387
+· `test:payment` 130 · `test:ordering` 178 · `test:server` 295 ·
+`test:backoffice` 370 · `test:sync-client` 102 · `test:sqlite-local` ·
+`test:runtime` · `test:oxlint-ds-adherence` · build kasir.
+
+**Batas yang dinyatakan:**
+
+| Batas | Kenapa |
+|---|---|
+| QRIS **dinamis** tidak dibangun di kasir | Ia menuntut gateway menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur penjualan perangkat menulis lokal lebih dulu lalu me-relay. Membangunnya menuntut jalur penjualan **online-first** yang belum ada |
+| **FR-C3** tetap terbuka | "Nonaktifkan metode online saat offline" menuntut metode online ADA lebih dulu. Ketiga metode yang kini ada semuanya berfungsi tanpa jaringan |
+| Pembayaran campuran | Satu penjualan = satu payment di jalur perangkat. Server sudah mendukung sisa tagihan (`outstanding`); layarnya belum |
+| Verifikasi browser | **Belum dijalankan** untuk pemilih metode dan kedua form |

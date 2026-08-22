@@ -1,3 +1,4 @@
+import { labelMetode } from './metode.ts';
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { bangunDokumenStruk, type DataStruk } from './dokumen.ts';
 import type { PrinterProfile, ReceiptDocument } from './escpos.ts';
@@ -38,14 +39,6 @@ interface BarisOrderStruk {
   created_by: string;
   outlet_id: string;
 }
-
-const METODE: Record<string, string> = {
-  cash: 'Tunai',
-  qris_dynamic: 'QRIS',
-  qris_static: 'QRIS',
-  card_edc: 'Kartu',
-  other: 'Lainnya',
-};
 
 /**
  * Rincian pajak per TARIF, dari snapshot `order_line`.
@@ -187,7 +180,7 @@ export async function bangunUlangStruk(
     pembulatan: Number(order.rounding_adjustment),
     total: Number(order.amount_due),
     pembayaran: payment.map((p) => ({
-      nama: METODE[p.method] ?? p.method,
+      nama: labelMetode(p.method),
       jumlah: Number(p.amount),
     })),
     kembalian: payment.reduce((t, p) => t + Number(p.change_amount ?? 0), 0),
