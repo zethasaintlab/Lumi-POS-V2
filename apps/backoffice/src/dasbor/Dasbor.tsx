@@ -7,7 +7,9 @@ import { rupiah } from '../katalog/produk.ts';
 import type { Outlet } from '../laporan/RentangTanggal.tsx';
 import {
   LABEL_RENTANG,
+  kalimatPerangkat,
   lencanaStok,
+  nadaPerangkat,
   periodeKosong,
   pesanKeadaan,
   rentangDari,
@@ -226,6 +228,34 @@ export function DasborLayar({ onBuka }: { onBuka?: (layar: string) => void } = {
               </div>
             </div>
           </Card>
+
+          {/* --- FR-H8 sisi owner: perangkat yang berhenti menyapa ---
+
+               ⛔ Kartunya HANYA muncul bila ada yang perlu ditindaklanjuti.
+               Kartu yang selalu ada dengan tulisan "semua sehat" berhenti
+               dibaca, dan ketika ia akhirnya berubah tidak ada yang
+               memperhatikan.
+
+               Ditempatkan DI ATAS stok karena akibatnya lebih besar: stok
+               yang salah membuat satu keputusan pembelian meleset, sementara
+               perangkat yang belum terhubung berarti PENJUALANNYA belum
+               masuk angka mana pun di layar ini — termasuk angka besar di
+               atas. */}
+          {kalimatPerangkat(d.perangkat) !== null ? (
+            <Card>
+              <div className="card-pad">
+                <div className="stack" style={{ gap: 'var(--space-3)' }}>
+                  <div className="row between">
+                    <span className="t-body-md">Perangkat belum terhubung</span>
+                    <Badge tone={nadaPerangkat(d.perangkat)}>
+                      {d.perangkat.menua.length} perangkat
+                    </Badge>
+                  </div>
+                  <span className="t-caption">{kalimatPerangkat(d.perangkat)}</span>
+                </div>
+              </div>
+            </Card>
+          ) : null}
 
           {/* --- stok yang perlu perhatian --- */}
           <Card>

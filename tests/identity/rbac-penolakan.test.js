@@ -194,6 +194,18 @@ function kasus() {
     ['POST', `/tax-rates/${pajakId}/end`, { effectiveTo: new Date().toISOString() }],
     ['GET', '/tenants/usage', undefined],
 
+    // F5 — langganan. `billing` di `spec-f:52` berarti uang sungguhan yang
+    // keluar dari rekening merchant: kasir yang dapat menaikkan paket dapat
+    // menaikkan tagihan bulanan tanpa sepengetahuan pemiliknya.
+    ['POST', '/tenants/subscription/invoices', { id: crypto.randomUUID(), plan: 'standard' }],
+    ['GET', '/tenants/subscription/invoices', undefined],
+    ['POST', `/tenants/subscription/invoices/${crypto.randomUUID()}/check-status`, {}],
+
+    // FR-C12 — kategori merchant. Ia menentukan angka yang merchant pakai
+    // untuk menjelaskan selisih uang yang masuk rekening; kasir yang dapat
+    // mengubahnya dapat membuat selisih terlihat wajar.
+    ['PATCH', '/tenants/settings', { merchantCategory: 'uke' }],
+
     // Inventori: `stock_adjust`. Kasir tidak menyesuaikan stok — seluruh
     // pengurangan yang boleh ia sebabkan lahir dari penjualan.
     [

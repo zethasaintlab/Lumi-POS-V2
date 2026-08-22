@@ -8,8 +8,11 @@ import {
 import {
   bacaKonfigPerangkat,
   siapKirim,
+  type KonfigPerangkat,
 } from '../../../../packages/sync-client/src/perangkat.ts';
 import { jalankanSinkronisasi, type SinkronisasiHidup } from '../sync/jalankan.ts';
+import { bacaModeTelemetri } from '../../../../packages/domain/src/telemetri.ts';
+import { pasangTelemetri, type TelemetriHidup } from '../telemetri/pasang.ts';
 
 /* Penyedia database lokal.
 
@@ -63,6 +66,7 @@ let sinkronisasi: Promise<SinkronisasiHidup | null> | null = null;
 function nyalakanSinkronisasi(lokal: LokalTerpasang): Promise<SinkronisasiHidup | null> {
   sinkronisasi ??= bacaKonfigPerangkat(lokal.db).then((konfig) => {
     if (!siapKirim(konfig)) return null;
+    nyalakanTelemetri(lokal, konfig!);
     return jalankanSinkronisasi({
       db: lokal.db,
       ps: lokal.ps,
@@ -71,6 +75,29 @@ function nyalakanSinkronisasi(lokal: LokalTerpasang): Promise<SinkronisasiHidup 
     });
   });
   return sinkronisasi;
+}
+
+/* Telemetri dinyalakan bersama sinkronisasi, dan dengan syarat yang sama.
+
+   ⛔ Ia menuntut identitas perangkat karena endpoint-nya diautentikasi secret
+   perangkat — tanpa itu tidak ada ke mana mengirim. Yang TIDAK ikut menunggu
+   adalah pencatatannya: `catat()` menulis ke buffer lokal sejak boot, dan
+   perangkat yang belum terdaftar tetap mengumpulkan metrik tentang dirinya.
+
+   Modenya dari environment variable (invariant #5). Variabel yang tidak diset
+   berarti `off` — lihat `bacaModeTelemetri`. */
+let telemetri: TelemetriHidup | null = null;
+function nyalakanTelemetri(lokal: LokalTerpasang, konfig: KonfigPerangkat): void {
+  if (telemetri !== null) return;
+  telemetri = pasangTelemetri({
+    db: lokal.db,
+    mode: bacaModeTelemetri(import.meta.env.VITE_TELEMETRY),
+    baseUrl: konfig.baseUrl,
+    tenantId: konfig.tenantId,
+    deviceId: konfig.deviceId,
+    tokenSecret: konfig.tokenSecret as string,
+    appVersion: import.meta.env.VITE_APP_VERSION ?? '0.0.0',
+  });
 }
 
 /** Sinkronisasi yang sedang hidup, atau `null` bila perangkat belum terhubung. */

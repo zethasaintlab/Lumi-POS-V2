@@ -6,6 +6,10 @@ import { assertUserVisible, assertBoleh, hitungPengguna, hitungPerangkat } from 
 import { hitungProduk } from '../../catalog/index.ts';
 import { batasKuota, hitungOutlet } from '../kuota.ts';
 import { DIMENSI_KUOTA } from '../../../../../../packages/domain/src/kuota.ts';
+import {
+  KATEGORI_MERCHANT,
+  adalahKategoriMerchant,
+} from '../../../../../../packages/domain/src/mdr.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
@@ -58,10 +62,11 @@ export function createUsageHandlers(pool: Pool): Record<string, unknown> {
         await assertUserVisible(client, actorId);
         await assertBoleh(client, actorId, 'billing', 'melihat langganan dan batas');
 
-        const { rows } = await client.query<{ plan: string; status: string }>(
-          'SELECT plan, status FROM tenant WHERE id = $1',
-          [tenantId]
-        );
+        const { rows } = await client.query<{
+          plan: string;
+          status: string;
+          merchant_category: string;
+        }>('SELECT plan, status, merchant_category FROM tenant WHERE id = $1', [tenantId]);
         if (rows.length === 0) {
           throw new HttpError(404, 'TENANT_NOT_FOUND', `Tenant ${tenantId} tidak ditemukan.`);
         }
@@ -96,7 +101,67 @@ export function createUsageHandlers(pool: Pool): Record<string, unknown> {
           kuota[dimensi] = { terpakai: terpakai[dimensi], batas: kolom[dimensi] };
         }
 
-        return { plan: rows[0].plan, status: rows[0].status, kuota };
+        return {
+          plan: rows[0].plan,
+          status: rows[0].status,
+          // FR-C12 — kategori merchant menentukan tarif MDR yang dipakai untuk
+          // MEMPERKIRAKAN potongan settlement. Ia ikut di sini, bukan di
+          // endpoint tersendiri, karena layar yang menyetelnya (B-29) sudah
+          // memanggil endpoint ini — dan dua permintaan untuk satu layar
+          // membuka jendela tempat keduanya menjawab dari titik waktu berbeda.
+          merchantCategory: rows[0].merchant_category,
+          kuota,
+        };
+      });
+
+      reply.code(200);
+      return hasil;
+    },
+  };
+}
+
+/**
+ * `PATCH /tenants/settings` — FR-C12 AC ketiga, kategori merchant.
+ *
+ * ⛔ Ia satu-satunya `PATCH` pada baris `tenant` di seluruh repo, dan itu
+ * TIDAK melanggar invariant #2. Invariant itu melarang `UPDATE` pada
+ * **transaksi yang sudah selesai** — order, payment, refund, cash movement.
+ * `tenant` adalah konfigurasi, bukan transaksi; `plan` dan `status`-nya sudah
+ * berubah lewat jalur langganan sejak F5.
+ *
+ * ⛔ Perubahannya berlaku KE DEPAN saja. `payment.mdr_estimated` adalah
+ * snapshot; memperbaiki kategori yang salah tidak menghitung ulang baris yang
+ * sudah ada. Itu disengaja — dua ekspor untuk periode yang sama tidak boleh
+ * berbeda — dan konsekuensinya tercatat di runbook, bukan disembunyikan.
+ */
+export function createSettingsHandlers(pool: Pool): Record<string, unknown> {
+  return {
+    async updateTenantSettings(req: FastifyRequest, reply: FastifyReply) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const body = req.body as { merchantCategory?: unknown };
+
+      if (!adalahKategoriMerchant(body.merchantCategory)) {
+        throw new HttpError(
+          400,
+          'VALIDATION_ERROR',
+          `merchantCategory harus salah satu dari: ${KATEGORI_MERCHANT.join(', ')}.`
+        );
+      }
+      const kategori = body.merchantCategory;
+
+      const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'billing', 'mengubah kategori merchant');
+
+        const { rows } = await client.query<{ merchant_category: string }>(
+          'UPDATE tenant SET merchant_category = $1 WHERE id = $2 RETURNING merchant_category',
+          [kategori, tenantId]
+        );
+        if (rows.length === 0) {
+          throw new HttpError(404, 'TENANT_NOT_FOUND', `Tenant ${tenantId} tidak ditemukan.`);
+        }
+        return { merchantCategory: rows[0].merchant_category };
       });
 
       reply.code(200);

@@ -21,6 +21,7 @@ import {
   rencanaAlterLokal,
   type KeputusanMigrasi,
   type RencanaDdl,
+  rencanaBuatLokalHilang,
 } from './migrasi.ts';
 import { TABEL_LOKAL_SAJA, buatDefinisiRaw, kolomPerTabel } from './skema.ts';
 
@@ -94,6 +95,13 @@ async function migrasiAditifLokal(ps: PowerSyncDatabase): Promise<void> {
   for (const tabel of TABEL_LOKAL_SAJA) {
     const kolom = await ps.getAll<{ name: string }>(`PRAGMA table_info("${tabel}")`);
     if (kolom.length > 0) aktual[tabel] = kolom.map((k) => k.name);
+  }
+  // ⛔ CREATE lebih dulu, baru ALTER. Tabel murni lokal BARU tidak pernah
+  // dibuat oleh `jalankanDdl` — ia hanya berjalan saat sidik jari raw table
+  // berubah, dan sidik jari itu tidak menghitung tabel lokal sama sekali.
+  // Lihat catatan panjang di `rencanaBuatLokalHilang`.
+  for (const buat of rencanaBuatLokalHilang(SKEMA_SQL, aktual)) {
+    await ps.execute(buat);
   }
   for (const alter of rencanaAlterLokal(SKEMA_SQL, aktual)) {
     await ps.execute(alter);

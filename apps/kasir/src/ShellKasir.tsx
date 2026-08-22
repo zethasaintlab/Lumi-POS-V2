@@ -4,6 +4,7 @@ import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
 import { TABEL_RUTE, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
 import { useAntrean } from './konteks/useAntrean.ts';
+import { PitaAntrean } from './PitaAntrean.tsx';
 
 /* Kerangka aplikasi kasir.
 
@@ -110,6 +111,11 @@ export function ShellKasir({ outlet, device, pengguna, ruteAktif, children }: Pr
           ))}
         </nav>
       )}
+
+      {/* FR-H8. DI LUAR `kasir-konten`, jadi ia mendorong isi alih-alih
+          melayang di atasnya — "banner, bukan dialog" (AC FR-H8 kedua) juga
+          berarti tidak menutupi tombol yang sedang dituju jari kasir. */}
+      <PitaAntrean tertuaPada={siap ? ringkasan.tertuaPada : null} />
 
       <div className="kasir-konten">
         {children}

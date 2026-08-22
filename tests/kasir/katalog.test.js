@@ -147,3 +147,79 @@ test('katalog kosong bukan galat — ia keadaan yang harus punya layar', async (
   const hasil = await bacaKatalog(dbPalsu({}), { outletId: 'o1', pada: PADA });
   assert.deepEqual(hasil, []);
 });
+
+// ===========================================================================
+// K-17 — barcode hasil SCAN
+// ===========================================================================
+//
+// ⛔ `cariBarcode` sengaja BUKAN `cariItem`. Pencarian menyaring daftar untuk
+// dilihat kasir; scan harus memutuskan SATU produk tanpa kasir melihat apa
+// pun. Memakai pencarian untuk scan akan menambahkan produk pertama yang
+// NAMANYA memuat angka barcode — produk yang salah, masuk keranjang tanpa
+// ada yang menekan apa pun.
+
+async function katalogUji(item = ITEM) {
+  const { bacaKatalog } = await import(MOD);
+  return bacaKatalog(dbPalsu({ item }), { outletId: 'o1', pada: PADA });
+}
+
+test('scan: barcode yang cocok PERSIS menunjuk satu variation', async () => {
+  const { cariBarcode } = await import(MOD);
+  const katalog = await katalogUji();
+  const cocok = cariBarcode(katalog, '899123');
+  assert.equal(cocok?.item.id, 'i1');
+  assert.equal(cocok?.variation.id, 'v1', 'harus varian Regular, bukan item saja');
+});
+
+test('scan: spasi di sekitar barcode dipangkas', async () => {
+  // Sebagian scanner mengirim spasi atau tab sebelum terminator.
+  const { cariBarcode } = await import(MOD);
+  const katalog = await katalogUji();
+  assert.equal(cariBarcode(katalog, '  899123 ')?.variation.id, 'v1');
+});
+
+test('⛔ scan: kecocokan SUBSTRING tidak dianggap cocok', async () => {
+  const { cariBarcode, cariItem } = await import(MOD);
+  const katalog = await katalogUji();
+  // `cariItem` memang menyaring dengan substring pada NAMA — dan itu benar
+  // untuk pencarian. Untuk scan, satu digit yang terpotong tidak boleh
+  // menambahkan produk apa pun.
+  assert.equal(cariBarcode(katalog, '89912'), null);
+  assert.equal(cariBarcode(katalog, '8991234'), null);
+  // Sentinel: pencarian biasa tetap berperilaku seperti sebelumnya.
+  assert.equal(cariItem(katalog, 'kopi').length, 1);
+});
+
+test('⛔ barcode GANDA tidak memilih siapa pun', async () => {
+  // Barcode ganda adalah data katalog yang cacat. Menebak salah satunya
+  // berarti setengah penjualan produk itu tercatat pada produk lain, tanpa
+  // satu pun error.
+  const { cariBarcode } = await import(MOD);
+  const katalog = await katalogUji([
+    ...ITEM,
+    {
+      item_id: 'i2', item_name: 'Teh Tarik', category_id: 'c1',
+      variation_id: 'v3', variation_name: 'Regular', harga_dasar: 18000,
+      barcode: '899123', track_stock: 1, archived_at: null, sort_order: 0,
+    },
+  ]);
+  assert.equal(cariBarcode(katalog, '899123'), null);
+});
+
+test('scan: barcode kosong atau tidak dikenal → null', async () => {
+  const { cariBarcode } = await import(MOD);
+  const katalog = await katalogUji();
+  assert.equal(cariBarcode(katalog, ''), null);
+  assert.equal(cariBarcode(katalog, '   '), null);
+  assert.equal(cariBarcode(katalog, '000000'), null);
+});
+
+test('scan: variation TANPA barcode tidak pernah cocok dengan string kosong', async () => {
+  // `variation.barcode === null` dan `kode === ''` keduanya "kosong";
+  // perbandingan yang longgar akan membuat Enter tunggal menambahkan produk.
+  const { cariBarcode } = await import(MOD);
+  const katalog = await katalogUji();
+  const tanpaBarcode = katalog[0].variations.find((v) => v.barcode === null);
+  assert.ok(tanpaBarcode, 'fixture harus punya variation tanpa barcode');
+  assert.equal(cariBarcode(katalog, ''), null);
+});

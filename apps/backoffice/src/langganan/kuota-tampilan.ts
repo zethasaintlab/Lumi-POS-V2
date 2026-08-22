@@ -28,6 +28,14 @@ export interface PemakaianDimensi {
 export interface Pemakaian {
   plan: string;
   status: string;
+  /**
+   * FR-C12 — kategori merchant menurut penggolongan penyelenggara QRIS.
+   *
+   * Opsional di tipe ini, dan sengaja: server versi N-1 tidak mengirimnya, dan
+   * layar yang mati karena satu field tambahan tidak ada adalah layar yang
+   * melanggar kompatibilitas klien N-1 (`Definition of Done`).
+   */
+  merchantCategory?: string;
   kuota: Record<string, PemakaianDimensi>;
 }
 

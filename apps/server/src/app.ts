@@ -12,14 +12,18 @@ import type { KonfigToken } from './modules/identity/handlers/tokens.ts';
 import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
+import { createRilisHandlers } from './modules/rilis/index.ts';
 import { createTenancyHandlers } from './modules/tenancy/index.ts';
 import { createReportingHandlers } from './modules/reporting/index.ts';
 import { createInventoryHandlers } from './modules/inventory/index.ts';
 import { selectPaymentProvider } from './modules/payment/providers/index.ts';
+import { selectSubscriptionProvider } from './modules/payment/providers/langganan.ts';
 import { createRedactingLogMethod, redactSensitive, registerSecretValues } from './log-redaction.ts';
 import type { PaymentProvider } from './modules/payment/providers/index.ts';
+import type { SubscriptionProvider } from './modules/payment/providers/langganan.ts';
 import { createHlc } from '../../../packages/domain/src/hlc.ts';
 import { pasangPenjagaSesi } from './sesi.ts';
+import { buatMetrik, pasangMetrik } from './metrik.ts';
 
 const OPENAPI_SPEC_PATH = fileURLToPath(import.meta.resolve('contracts/openapi.yaml'));
 
@@ -68,6 +72,13 @@ export async function buildApp(
     pool?: Pool;
     specPath?: string;
     paymentProvider?: PaymentProvider;
+    /**
+     * Port KEDUA — tagihan langganan (F5). Seam TEST dengan aturan yang sama
+     * dengan `paymentProvider`: default-nya membaca `PAYMENT_PROVIDER` yang
+     * SAMA, jadi tidak ada lingkungan yang dapat berakhir dengan langganan
+     * memakai fake sementara penjualan memakai Midtrans.
+     */
+    subscriptionProvider?: SubscriptionProvider;
     logger?: { level: string; stream: NodeJS.WritableStream };
     webhookSecret?: string;
     /** FR-F12: PEM kunci privat RSA. String kosong = fitur tidak dikonfigurasi. */
@@ -96,6 +107,7 @@ export async function buildApp(
   // Midtrans dengan string kosong dan tidak ada test yang boleh menyentuh
   // jaringan.
   const paymentProvider = overrides.paymentProvider ?? selectPaymentProvider(process.env);
+  const subscriptionProvider = overrides.subscriptionProvider ?? selectSubscriptionProvider(process.env);
 
   // Whole-branch review FIX 8: `pool` above is a real pg Pool -- if anything
   // between here and `app.addHook('onClose', ...)` below throws (the
@@ -139,6 +151,7 @@ export async function buildApp(
       pool,
       specPath,
       paymentProvider,
+      subscriptionProvider,
       overrides.logger,
       webhookSecret,
       konfigToken,
@@ -155,6 +168,7 @@ async function buildAppInner(
   pool: Pool,
   specPath: string,
   paymentProvider: PaymentProvider,
+  subscriptionProvider: SubscriptionProvider,
   loggerOverride: { level: string; stream: NodeJS.WritableStream } | undefined,
   webhookSecret: string,
   konfigToken: KonfigToken,
@@ -178,7 +192,8 @@ async function buildAppInner(
     ...createCashHandlers(pool, hlc),
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
-    ...createTenancyHandlers(pool, hlc),
+    ...createRilisHandlers(pool),
+    ...createTenancyHandlers(pool, hlc, subscriptionProvider),
     // Agregator baca-saja; satu-satunya modul yang boleh membaca lintas domain.
     ...createReportingHandlers(pool),
     ...createInventoryHandlers(pool, hlc),
@@ -401,6 +416,20 @@ async function buildAppInner(
    * eksplisit di `RUTE_TERBUKA` (`sesi.ts`). Endpoint yang ditambahkan besok
    * terlindungi tanpa ada yang perlu ingat melindunginya. */
   pasangPenjagaSesi(app, pool);
+
+  /* F6 — observability (`ARCH:294`).
+     ⛔ Dipasang SESUDAH penjaga sesi, dan itu penting: `/metrics` didaftarkan
+     lewat `app.get` langsung, bukan lewat OpenAPI, jadi ia tidak punya pola
+     yang terdaftar di `RUTE_TERBUKA`. `ruteTerbuka()` menjawab `true` untuk
+     pola yang tidak dikenal (`pola === undefined` → biarkan router yang
+     menjawab 404) — dan pada rute yang BENAR-BENAR terdaftar seperti ini,
+     hook sesi berjalan lebih dulu dan akan menolaknya 401.
+
+     Karena itu `/metrics` terdaftar di `RUTE_TERBUKA` juga. Ia tidak memuat
+     satu pun data merchant (lihat `metrik.ts`), tapi ia tetap permukaan
+     operasional — batasi di lapisan jaringan, bukan dengan menyembunyikannya
+     di balik sesi back-office yang tidak dimiliki scraper mana pun. */
+  pasangMetrik(app, buatMetrik(pool));
 
   await app.register(openapiGlue, {
     specification: specPath,

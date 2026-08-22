@@ -76,6 +76,11 @@ export const TABEL_LOKAL_SAJA = [
   // printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh kasir 2.
   'print_job',
   'outbox_local',
+  // F6 — telemetri klien. Murni lokal: ia tidak pernah turun dari server, dan
+  // ia dapat DIBUANG. Perangkat yang berbulan-bulan offline tidak boleh
+  // mengisi disk yang `outbox_local` butuhkan — telemetri dapat hilang,
+  // penjualan tidak.
+  'telemetry_local',
   'device_config',
   'skema_lokal',
   // Keduanya SENGAJA tidak didaftarkan: sesi kasir tidak punya padanan di
@@ -109,7 +114,10 @@ export const TABEL_LOKAL_SAJA = [
 export const SKALA_KOLOM: Record<string, Record<string, number>> = {
   tax_rate: { rate: 10000 },
   // Kemunculan KETIGA dari kelas cacat yang sama (numeric -> INTEGER berskala).
-  outlet: { service_charge_rate: 10000 },
+  // FR-B8 menambah `discount_threshold_percent` — kemunculan KEEMPAT kelas
+  // cacat yang sama. Ia NULLABLE, dan itu tetap aman: `ROUND(NULL * 10000)`
+  // adalah NULL, dan NULL berarti "pakai bawaan domain".
+  outlet: { service_charge_rate: 10000, discount_threshold_percent: 10000 },
   order_line: { tax_rate: 10000 },
   item_variation: { conversion_factor: 1000 },
 };
@@ -264,10 +272,39 @@ export const KOLOM_SENGAJA_TIDAK_TURUN = [
   'item_variation.cost',
   'modifier.tenant_id',
   'item_modifier_list.tenant_id',
+  // ⛔ FR-C13 — yurisdiksi tarif pajak (migrasi 0028) SENGAJA berhenti di
+  // server.
+  //
+  // Ia dipakai satu tempat saja: rekapitulasi pajak di back-office, yang
+  // online-only (`IA:§3.3`). Cetak ulang struk tidak menampilkannya, dan
+  // laporan harian di perangkat tidak memisahkan pajak per yurisdiksi.
+  //
+  // Alasan menahannya bukan sekadar "tidak terpakai": menambah kolom raw
+  // table mengubah SIDIK JARI skema lokal, dan setiap perubahan itu menuntut
+  // `disconnectAndClear()` beserta unduh ulang seluruh katalog di setiap
+  // perangkat merchant (prototipe 05). Itu biaya nyata untuk kolom yang tidak
+  // ada satu pun layar kasir baca.
+  //
+  // `tax_rate_name` BERBEDA dan memang turun — cetak ulang struk (`spec-b:145`)
+  // tidak boleh menyentuh tabel katalog, jadi namanya harus ada di perangkat.
+  'order_line.tax_jurisdiction',
   // Kolom audit — tidak dipakai layar kasir mana pun, dan `changed_by` adalah
   // id pengguna yang bisa saja bukan staf outlet ini.
   'price_history.changed_by',
   'price_history.reason',
+  // ⛔ F6 — jendela update (migrasi 0030) SENGAJA berhenti di server.
+  //
+  // Keputusan "boleh pasang sekarang" dijawab `GET /devices/{id}/update`, dan
+  // permintaan itu menuntut jaringan menurut sifatnya: perangkat yang offline
+  // tidak dapat mengunduh versi baru, jadi tidak ada yang perlu diputuskan
+  // secara lokal.
+  //
+  // Alasan menahannya sama dengan `order_line.tax_jurisdiction`: menambah
+  // kolom raw table mengubah SIDIK JARI skema lokal, dan setiap perubahan itu
+  // menuntut `disconnectAndClear()` beserta unduh ulang seluruh katalog di
+  // setiap perangkat merchant.
+  'outlet.update_window_start_hour',
+  'outlet.update_window_end_hour',
   // Tidak ada layar kasir yang menampilkan alamat outlet.
   //
   // `outlet.vertical_profile_id` TIDAK lagi ada di daftar ini — ia turun

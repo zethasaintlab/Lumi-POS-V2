@@ -210,3 +210,77 @@ test('yang mengurangi omzet ditandai', async () => {
     ['Dibatalkan', 'Refund']
   );
 });
+
+
+// ---------------------------------------------------------------------------
+// FR-H8 sisi owner — perangkat yang berhenti menyapa (`spec-h:311`)
+// ---------------------------------------------------------------------------
+
+test('⛔ tanpa perangkat menua: TIDAK ada kartu sama sekali', async () => {
+  // Kartu yang selalu muncul dengan tulisan "semua sehat" berhenti dibaca,
+  // dan ketika ia akhirnya berubah tidak ada yang memperhatikan.
+  const { kalimatPerangkat, nadaPerangkat } = await import('../../apps/backoffice/src/dasbor/b01.ts');
+  assert.equal(kalimatPerangkat({ total: 3, menua: [], belumPernah: 1 }), null);
+  assert.equal(kalimatPerangkat(null), null);
+  assert.equal(kalimatPerangkat(undefined), null);
+  assert.equal(nadaPerangkat({ total: 3, menua: [], belumPernah: 0 }), 'success');
+});
+
+test('⛔ kalimat membawa KODE dan UMUR, bukan "ada perangkat bermasalah"', async () => {
+  const { kalimatPerangkat } = await import('../../apps/backoffice/src/dasbor/b01.ts');
+  const p = {
+    total: 4,
+    belumPernah: 0,
+    menua: [
+      { deviceId: 'a', code: 'K2', outletId: 'o1', lastSeenAt: 'x', jamSejakTerlihat: 80, tingkat: 'darurat' },
+      { deviceId: 'b', code: 'K5', outletId: 'o1', lastSeenAt: 'x', jamSejakTerlihat: 5, tingkat: 'peringatan' },
+    ],
+  };
+  const k = kalimatPerangkat(p);
+  assert.match(k, /K2/);
+  assert.match(k, /K5/);
+  assert.match(k, /3 hari/, '80 jam dibaca 3 hari');
+  assert.match(k, /5 jam/);
+  assert.match(k, /2 dari 4/);
+});
+
+test('daftar panjang dipotong, sisanya DIHITUNG bukan dibuang diam-diam', async () => {
+  const { kalimatPerangkat } = await import('../../apps/backoffice/src/dasbor/b01.ts');
+  const menua = ['K1', 'K2', 'K3', 'K4', 'K5'].map((code, i) => ({
+    deviceId: code, code, outletId: 'o1', lastSeenAt: 'x',
+    jamSejakTerlihat: 100 - i, tingkat: 'darurat',
+  }));
+  const k = kalimatPerangkat({ total: 6, menua, belumPernah: 0 });
+  assert.match(k, /dan 2 lainnya/);
+});
+
+test('⛔ nada: yang TERBURUK menang', async () => {
+  // Satu perangkat tiga hari diam tidak boleh tersembunyi di balik sembilan
+  // yang baru lima jam.
+  const { nadaPerangkat } = await import('../../apps/backoffice/src/dasbor/b01.ts');
+  const b = (tingkat) => ({ deviceId: 'x', code: 'K1', outletId: 'o', lastSeenAt: 'x', jamSejakTerlihat: 5, tingkat });
+
+  assert.equal(nadaPerangkat({ total: 1, menua: [b('peringatan')], belumPernah: 0 }), 'warning');
+  assert.equal(nadaPerangkat({ total: 2, menua: [b('peringatan'), b('kritis')], belumPernah: 0 }), 'danger');
+  assert.equal(nadaPerangkat({ total: 1, menua: [b('darurat')], belumPernah: 0 }), 'danger');
+});
+
+test('umurKasar: jam di bawah sehari, hari di atasnya', async () => {
+  const { umurKasar } = await import('../../apps/backoffice/src/dasbor/b01.ts');
+  assert.equal(umurKasar(null), 'belum pernah');
+  assert.equal(umurKasar(4), '4 jam');
+  assert.equal(umurKasar(23), '23 jam');
+  assert.equal(umurKasar(24), '1 hari');
+  assert.equal(umurKasar(73), '3 hari');
+});
+
+test('⛔ AMBANG yang dipakai server dan kasir adalah SATU', async () => {
+  // Angka yang dipanggang di satu sisi menyimpang dari sisi lain, dan
+  // gejalanya adalah kasir yang melihat peringatan sementara layar owner
+  // tetap hijau. Aturan yang sama dengan AMBANG_SELISIH.
+  const { AMBANG_ANTREAN, tingkatAntrean } = await import(
+    '../../packages/domain/src/antrean-menua.ts'
+  );
+  assert.deepEqual(AMBANG_ANTREAN, { peringatanJam: 4, kritisJam: 24, daruratJam: 72 });
+  assert.equal(tingkatAntrean(24), 'kritis', 'ambang owner spec-h:311');
+});

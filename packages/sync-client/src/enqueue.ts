@@ -14,7 +14,7 @@ import type { DbLokal } from './ports.ts';
  * (kas masuk/keluar, no-sale) memang belum punya endpoint -- itu pekerjaan
  * Modul D, dan sampai ia ada, item seperti itu TIDAK BOLEH masuk antrean.
  */
-export const ENTITY_TYPES = ['shift', 'order', 'order_cancel', 'payment'] as const;
+export const ENTITY_TYPES = ['shift', 'order', 'order_cancel', 'payment', 'sold_out', 'no_sale'] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
 export interface ItemOutbox {
@@ -36,6 +36,15 @@ export interface ItemOutbox {
    * percaya begitu saja.
    */
   actorId?: string | null;
+  /**
+   * Manajer yang menyetujui operasi ini, bila ada.
+   *
+   * ⛔ Dibekukan bersama itemnya, alasan yang sama dengan `actorId` — dan
+   * ketiadaannya adalah cacat yang PERNAH TERJADI: setiap refund offline
+   * dijawab `400 MISSING_APPROVER_ID` dan berhenti permanen di antrean,
+   * sementara kasir sudah mengembalikan uangnya.
+   */
+  approverId?: string | null;
 }
 
 /**
@@ -72,8 +81,9 @@ export async function enqueue(tx: DbLokal, item: ItemOutbox): Promise<void> {
   await tx.execute(
     `INSERT INTO outbox_local
        (id, entity_type, entity_id, operation, payload, idempotency_key,
-        status, attempts, last_error, last_attempt_at, created_at, depends_on, actor_id)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, ?, ?, ?)`,
+        status, attempts, last_error, last_attempt_at, created_at, depends_on, actor_id,
+        approver_id)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, ?, ?, ?, ?)`,
     [
       item.id,
       item.entityType,
@@ -84,6 +94,7 @@ export async function enqueue(tx: DbLokal, item: ItemOutbox): Promise<void> {
       item.createdAt,
       item.dependsOn ?? null,
       item.actorId ?? null,
+      item.approverId ?? null,
     ]
   );
 }

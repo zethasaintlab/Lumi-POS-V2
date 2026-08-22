@@ -4,6 +4,7 @@ import { HttpError } from '../../http-error.ts';
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createDeviceHandlers } from './handlers/devices.ts';
 import { createTokenHandlers, type KonfigToken } from './handlers/tokens.ts';
+import { createTelemetryHandlers } from './handlers/telemetry.ts';
 import { createUserHandlers } from './handlers/users.ts';
 import { createAuthHandlers } from './handlers/auth.ts';
 import { buatPinHasher } from './pin-hasher.ts';
@@ -246,6 +247,55 @@ export function buatHasher() {
   return buatPinHasher();
 }
 
+/**
+ * Permukaan kredensial perangkat, untuk modul lain yang endpoint-nya
+ * dipanggil PERANGKAT dan bukan orang (telemetri F6, rilis F6).
+ *
+ * `device` milik modul ini (`modules/README.md`), jadi yang membutuhkannya
+ * memanggil lewat sini alih-alih meng-query tabelnya sendiri (invariant #4).
+ */
+export {
+  ambilBearer,
+  ambilDevice,
+  verifikasiPerangkat,
+  type BarisDevice,
+} from './kredensial-perangkat.ts';
+
+/**
+ * F6 — mencatat satu penundaan update, dan mengembalikan jumlahnya SETELAH
+ * penambahan.
+ *
+ * ⛔ Penghitung direset saat versinya berganti, di query yang SAMA. Tanpa
+ * itu, penundaan yang terkumpul untuk versi lama membuat versi berikutnya
+ * wajib segera saat pertama kali muncul — merchant kehilangan hak menundanya
+ * tanpa pernah memakainya.
+ *
+ * ⛔ Ia tidak memeriksa batas. Batasnya (`MAKS_TUNDA`) adalah aturan domain,
+ * dan modul yang memutuskan memanggilnya lebih dulu; fungsi ini hanya
+ * mencatat. Dua tempat yang memutuskan hal yang sama akan menyimpang.
+ */
+export async function catatPenundaanUpdate(
+  client: PoolClient,
+  deviceId: string,
+  versi: string
+): Promise<number> {
+  const { rows } = await client.query<{ update_deferrals: number }>(
+    `UPDATE device
+        SET update_deferrals = CASE
+              WHEN update_deferred_version IS DISTINCT FROM $2 THEN 1
+              ELSE update_deferrals + 1
+            END,
+            update_deferred_version = $2
+      WHERE id = $1
+  RETURNING update_deferrals`,
+    [deviceId, versi]
+  );
+  if (rows.length === 0) {
+    throw new HttpError(404, 'DEVICE_NOT_FOUND', `Device ${deviceId} tidak ditemukan.`);
+  }
+  return rows[0].update_deferrals;
+}
+
 export function createIdentityHandlers(
   pool: Pool,
   konfigToken: KonfigToken,
@@ -258,6 +308,7 @@ export function createIdentityHandlers(
   return {
     ...createDeviceHandlers(pool),
     ...createTokenHandlers(pool, konfigToken),
+    ...createTelemetryHandlers(pool),
     ...createUserHandlers(pool, hasher, hlc),
     ...createAuthHandlers(pool, hasher),
   };

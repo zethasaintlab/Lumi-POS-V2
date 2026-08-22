@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
 import { bacaDetail, type DetailOrder } from '../riwayat/baca.ts';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
+import { bacaProfilPrinter } from '../cetak/profil.ts';
+import { bangunUlangStruk } from '../cetak/ulang.ts';
+import { cetakDanCatat } from '../cetak/antrean.ts';
+import { peripheralAktif } from '../cetak/aktif.ts';
+import type { PrinterProfile } from '../cetak/escpos.ts';
 import { DialogPembatalan } from '../komponen/DialogPembatalan.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
@@ -48,14 +53,70 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
   const [siap, setSiap] = useState(false);
   const [membatalkan, setMembatalkan] = useState(false);
   const [muatUlang, setMuatUlang] = useState(0);
+  const [profil, setProfil] = useState<PrinterProfile | null>(null);
+  const [pesanCetak, setPesanCetak] = useState<string | null>(null);
+  const [mencetak, setMencetak] = useState(false);
+
+  /* FR-B11 — cetak ulang struk (`spec-b:145`).
+
+     ⛔ Dokumennya DIBANGUN ULANG dari database, dan itu satu-satunya cara yang
+     mungkin di sini: `print_job` menyimpan byte cetakan pertama, tapi
+     transaksi yang dicetak di perangkat LAIN — atau sebelum antrean cetak ada
+     — tidak punya baris di sana sama sekali. `bangunUlangStruk` menandai
+     hasilnya sebagai cetak ulang, dan ia tidak menyentuh satu pun tabel
+     katalog (larangan `spec-b:145`).
+
+     ⛔ Hasilnya tetap dicatat ke `print_job` lewat `cetakDanCatat`: cetak ulang
+     yang GAGAL adalah kegagalan yang sama dengan cetakan pertama, dan ia
+     berhak masuk antrean yang sama. */
+  async function cetakUlang() {
+    if (!detail) return;
+    setMencetak(true);
+    setPesanCetak(null);
+    try {
+      // ⛔ Nama outlet dibaca dari tabel `outlet`, bukan dari `konfig` —
+      // `device_config` menyimpan id-nya, bukan namanya, dan struk yang
+      // menyebut UUID di baris pertama adalah struk yang salah cetak.
+      const [outlet] = await db.getAll<{ name: string }>(
+        'SELECT name FROM outlet WHERE id = ?',
+        [konfig?.outletId ?? '']
+      );
+      const dok = await bangunUlangStruk(db, detail.order.id, {
+        namaMerchant: outlet?.name ?? '',
+      });
+      if (!dok) {
+        setPesanCetak('Transaksi ini tidak dapat dibangun ulang menjadi struk.');
+        return;
+      }
+      const hasil = await cetakDanCatat(db, peripheralAktif(), dok, profil, {
+        id: crypto.randomUUID(),
+        orderId: detail.order.id,
+        waktu: new Date().toISOString(),
+      });
+      setPesanCetak(
+        hasil.status === 'tercetak'
+          ? 'Struk dicetak ulang.'
+          : hasil.status === 'tanpa_printer'
+            ? 'Belum ada printer terpasang di perangkat ini.'
+            : `Gagal mencetak: ${hasil.pesan} Struk masuk antrean cetak dan dapat dicoba lagi dari Perangkat.`
+      );
+    } finally {
+      setMencetak(false);
+    }
+  }
 
   useEffect(() => {
     let hidup = true;
     void (async () => {
-      const [d, k] = await Promise.all([bacaDetail(db, orderId), bacaKonfigPerangkat(db)]);
+      const [d, k, p] = await Promise.all([
+        bacaDetail(db, orderId),
+        bacaKonfigPerangkat(db),
+        bacaProfilPrinter(db),
+      ]);
       if (!hidup) return;
       setDetail(d);
       setKonfig(k);
+      setProfil(p[0] ?? null);
       if (hidup) setSiap(true);
     })();
     return () => {
@@ -200,6 +261,22 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
         </Tombol>
       )}
 
+      {/* FR-B11. Selalu tersedia — termasuk untuk transaksi yang sudah
+          dibatalkan: struk adalah rekaman historis, dan yang paling sering
+          diminta pelanggan justru struk transaksi yang bermasalah. */}
+      <Tombol disabled={mencetak} onClick={() => void cetakUlang()}>
+        {mencetak ? 'Mencetak…' : 'Cetak ulang struk'}
+      </Tombol>
+
+      {/* ⛔ Teks, bukan hanya warna (aturan design system #5). Ia juga tidak
+          menghilang sendiri: kasir yang berpaling sebentar harus tetap dapat
+          membacanya. */}
+      {pesanCetak && (
+        <span className="t-caption" role="status">
+          {pesanCetak}
+        </span>
+      )}
+
       <Tombol varian="ghost" kritis onClick={() => navigasi(`${BASIS}/riwayat`)}>
         Kembali ke riwayat
       </Tombol>
@@ -209,6 +286,8 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
           orderId={order.id}
           statusOrder={order.status}
           sisaDapatDirefund={sisaDapatDirefund}
+          baris={baris}
+          orderTotal={order.total}
           konfig={konfig}
           sesi={sesi}
           onBatal={() => setMembatalkan(false)}

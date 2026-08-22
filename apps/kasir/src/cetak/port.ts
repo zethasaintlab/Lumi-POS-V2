@@ -1,5 +1,6 @@
 import type { PrinterProfile, ReceiptDocument } from './escpos.ts';
 import { renderEscPos } from './escpos.ts';
+import { catat } from '../telemetri/sink.ts';
 
 /**
  * `PeripheralPort` — `ARCH:200`.
@@ -88,8 +89,16 @@ export async function cetakStruk(
   try {
     const bytes = renderEscPos(dok, profil);
     await port.printReceipt(bytes, perangkatId);
+    // `ARCH:296` — tingkat keberhasilan cetak. Dicatat DI SINI dan bukan di
+    // pemanggil: setiap layar yang mencetak akan lupa salah satu cabangnya,
+    // dan cabang yang terlupa selalu yang gagal.
+    catat('cetak_percobaan', 1);
     return { status: 'tercetak' };
   } catch (e) {
+    // ⛔ Yang dikirim NAMA tipe error, tidak pernah `e.message`. Pesan printer
+    // memuat konteks perangkat, dan `ARCH:309` tidak mengizinkan tebakan
+    // tentang apa yang ada di dalamnya.
+    catat('cetak_percobaan', 0, e instanceof Error ? e.name : 'Error');
     return { status: 'gagal', pesan: e instanceof Error ? e.message : String(e) };
   }
 }

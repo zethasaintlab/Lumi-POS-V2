@@ -232,6 +232,16 @@ test('T5 kolom lokal yang hilang ditambahkan lewat ALTER, bukan lewat drop', asy
     alter.some((a) => /ALTER TABLE "outbox_local" ADD COLUMN "actor_id"/.test(a)),
     `actor_id tidak ditambahkan: ${alter.join(' | ')}`
   );
+  // ⛔ `approver_id` ditambahkan lewat jalur yang SAMA, dan itu yang membuat
+  // perangkat yang SUDAH terpasang dapat mengirim refund sama sekali.
+  // Perangkat yang databasenya dibuat sebelum kolom ini ada tidak akan pernah
+  // punya tempat menyimpan penyetuju — dan setiap refund-nya berhenti
+  // permanen di antrean, seperti sebelum perbaikan
+  // `tests/ordering/refund-offline-relay.test.js`.
+  assert.ok(
+    alter.some((a) => /ALTER TABLE "outbox_local" ADD COLUMN "approver_id"/.test(a)),
+    `approver_id tidak ditambahkan: ${alter.join(' | ')}`
+  );
   assert.ok(alter.some((a) => /ALTER TABLE "device_config" ADD COLUMN "token_secret"/.test(a)));
   assert.ok(
     !alter.some((a) => /DROP/i.test(a)),
@@ -259,4 +269,82 @@ test('T5 tabel lokal yang sudah lengkap tidak menghasilkan ALTER apa pun', async
 test('T5 tabel lokal yang belum ada dilewati, bukan di-ALTER', async () => {
   const { rencanaAlterLokal } = await import(MIGRASI);
   assert.deepEqual(rencanaAlterLokal(sql(), {}), []);
+});
+
+// ===========================================================================
+// T5b — tabel murni lokal BARU pada perangkat yang sudah ada
+// ===========================================================================
+//
+// ⛔ Celah yang nyata, dan pertama kali tersentuh oleh `telemetry_local`.
+//
+// `jalankanDdl` — satu-satunya tempat `CREATE TABLE` dijalankan — hanya
+// berjalan saat `perluBangunUlang`, dan itu hanya terjadi bila SIDIK JARI RAW
+// TABLE berubah. Sidik jari itu tidak menghitung tabel murni lokal sama
+// sekali.
+//
+// Akibatnya tabel lokal BARU tidak pernah dibuat di perangkat yang sudah ada:
+// query pertama yang menyentuhnya gagal `no such table`, dan gejalanya muncul
+// di fitur yang tampaknya tidak berhubungan. `rencanaAlterLokal` tidak dapat
+// menutupinya — ia melewati tabel yang belum ada, karena `ALTER TABLE` pada
+// tabel yang tidak ada memang tidak berarti apa-apa.
+//
+// Tabel lokal SEBELUM ini semuanya lahir bersama `001-initial.sql`, jadi
+// celahnya tidak pernah terlihat.
+
+test('⛔ T5b tabel lokal BARU dibuat, meski sidik jari raw table tidak berubah', async () => {
+  const { rencanaBuatLokalHilang } = await import(MIGRASI);
+  const { kolomPerTabel } = await import(SKEMA);
+  const kolom = kolomPerTabel(sql());
+
+  // Perangkat lama: punya semua tabel lokal KECUALI telemetry_local.
+  const aktual = {};
+  for (const [t, k] of Object.entries(kolom)) {
+    if (t !== 'telemetry_local') aktual[t] = k;
+  }
+
+  const buat = rencanaBuatLokalHilang(sql(), aktual);
+  assert.ok(
+    buat.some((b) => /CREATE TABLE IF NOT EXISTS "?telemetry_local"?/i.test(b)),
+    `telemetry_local tidak dibuat: ${buat.join(' | ')}`
+  );
+  // ⛔ Indeksnya ikut. Tabel yang ada tanpa indeksnya bekerja benar dan
+  // lambat — kelas masalah yang paling sulit dihubungkan ke sebabnya.
+  assert.ok(
+    buat.some((b) => /CREATE INDEX IF NOT EXISTS ix_telemetry_waktu/i.test(b)),
+    `index telemetry tidak dibuat: ${buat.join(' | ')}`
+  );
+});
+
+test('⛔ T5b tabel lokal yang SUDAH ADA tidak dibuat ulang', async () => {
+  const { rencanaBuatLokalHilang } = await import(MIGRASI);
+  const { kolomPerTabel } = await import(SKEMA);
+  // `CREATE TABLE IF NOT EXISTS` memang tidak akan merusak apa pun, tapi
+  // menjalankannya untuk setiap tabel di setiap boot adalah pekerjaan yang
+  // tidak perlu — dan menyembunyikan tabel yang benar-benar hilang di antara
+  // belasan pernyataan yang tidak melakukan apa-apa.
+  assert.deepEqual(rencanaBuatLokalHilang(sql(), kolomPerTabel(sql())), []);
+});
+
+test('⛔ T5b rencana TIDAK PERNAH membuat ulang raw table', async () => {
+  const { rencanaBuatLokalHilang } = await import(MIGRASI);
+  const { TABEL_RAW } = await import(SKEMA);
+  // Raw table dibangun ulang lewat jalur DDL penuh (drop lalu create), dan
+  // membuatnya di sini akan melewatkan drop-nya — meninggalkan tabel
+  // berbentuk lama yang tidak cocok skema PowerSync.
+  const buat = rencanaBuatLokalHilang(sql(), {});
+  for (const t of TABEL_RAW) {
+    assert.ok(
+      !buat.some((b) => new RegExp(`(TABLE|ON)\\s+"?${t}"?\\b`, 'i').test(b)),
+      `raw table ${t} ikut dibuat`
+    );
+  }
+});
+
+test('⛔ T5b `telemetry_local` ada di TABEL_LOKAL_SAJA, bukan TABEL_RAW', async () => {
+  const { TABEL_LOKAL_SAJA, TABEL_RAW } = await import(SKEMA);
+  // Mendaftarkannya sebagai raw table membuat PowerSync core membuat VIEW
+  // bernama sama di atas `ps_data__telemetry_local` — dan ia bertabrakan
+  // dengan tabel nyata kami, gagal keras saat boot.
+  assert.ok(TABEL_LOKAL_SAJA.includes('telemetry_local'));
+  assert.ok(!TABEL_RAW.includes('telemetry_local'));
 });

@@ -4,7 +4,7 @@ import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
-import { getOutletSettings } from '../../tenancy/index.ts';
+import { getOutletSettings, getMerchantCategory } from '../../tenancy/index.ts';
 import {
   findIdempotencyKey,
   claimIdempotencyKey,
@@ -15,6 +15,7 @@ import {
 import { computeCashRounding } from '../../../../../../packages/domain/src/money.ts';
 import { assertTransition } from '../../../../../../packages/domain/src/order-state.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../../../packages/domain/src/buku-kas.ts';
+import { perkiraanMdr, metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/mdr.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { PaymentProvider, InitiateResult, GatewayStatus } from '../providers/index.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -422,6 +423,49 @@ async function ringkasan(
 }
 
 
+/**
+ * FR-C12 — perkiraan potongan MDR, sebagai SNAPSHOT di baris `payment`.
+ *
+ * ## ⛔ Kenapa disimpan, bukan dihitung saat laporan dibuat
+ *
+ * Sama persis dengan `order_line.tax_rate` dan `tax_rate_name`: yang
+ * menentukan tarif adalah aturan yang berlaku **saat transaksi terjadi**.
+ * Kategori merchant dapat diperbarui penyelenggara, dan tarif serta ambangnya
+ * ditetapkan regulator — `spec-c:424` menandainya `[FAKTA]` per tanggal
+ * tertentu justru karena ia berubah.
+ *
+ * Menghitungnya ulang saat laporan dibuat berarti dua ekspor untuk periode
+ * yang SAMA dapat berbeda, dan yang kedua akan dibaca sebagai koreksi atas
+ * yang pertama meski tidak ada satu pun transaksi yang berubah.
+ *
+ * ⛔ Konsekuensinya dinyatakan, bukan disembunyikan: memperbaiki kategori
+ * merchant yang salah **tidak** mengubah perkiraan yang sudah tersimpan. Itu
+ * tercatat di runbook.
+ *
+ * ## Kenapa `null`, bukan `0`
+ *
+ * `0` berarti "diperkirakan tidak ada potongan" (UMI di bawah ambang); `null`
+ * berarti "tidak ada perkiraan untuk metode ini" — tunai, kartu EDC, `other`.
+ * Laporan membedakan keduanya, dan merchant yang melihat "Rp 0" untuk kartu
+ * akan menyimpulkan kartu tidak dipotong.
+ *
+ * Kolomnya `bigint`, jadi nilainya dikirim sebagai **string**: `pg` menyerahkan
+ * `bigint` JavaScript apa adanya ke driver dan gagal.
+ */
+async function hitungMdrEstimasi(
+  client: PoolClient,
+  { method, amount }: { method: string; amount: bigint }
+): Promise<string | null> {
+  // ⛔ Query kategori dilewati sepenuhnya untuk metode yang tidak punya
+  // perkiraan. Tanpa penjaga ini setiap pembayaran tunai membayar satu SELECT
+  // tambahan untuk menghasilkan `null` — jalur tunai adalah jalur terpanas di
+  // seluruh sistem.
+  if (!metodePunyaPerkiraanMdr(method)) return null;
+  const kategori = await getMerchantCategory(client);
+  const nilai = perkiraanMdr({ kategori, method, amount });
+  return nilai === null ? null : nilai.toString();
+}
+
 // --- G8-G9: QRIS statis dan EDC ---
 
 interface ManualDeps {
@@ -433,11 +477,13 @@ const INSERT_MANUAL_PAYMENT_SQL = `
   INSERT INTO payment (
     id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
     status, confirmed_manually, provider_reference, approval_code, card_last4,
-    acquirer, terminal_reference, tendered_at, created_by, occurred_at, hlc
+    acquirer, terminal_reference, tendered_at, created_by, occurred_at, hlc,
+    mdr_estimated
   )
   SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
          'confirmed', $6, $7, $8, $9,
-         $10, $11, now(), $12, COALESCE($13::timestamptz, now()), $14
+         $10, $11, now(), $12, COALESCE($13::timestamptz, now()), $14,
+         $16
     FROM "order" o WHERE o.id = $15
   RETURNING *
 `;
@@ -522,12 +568,17 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
       throw new HttpError(409, 'ORDER_NOT_PAYABLE', (err as Error).message);
     }
 
+    // FR-C12 — perkiraan potongan settlement, SNAPSHOT di transaksi yang sama.
+    // Lihat `hitungMdrEstimasi`; `null` untuk metode tanpa perkiraan.
+    const mdr = await hitungMdrEstimasi(client, { method, amount });
+
     let paymentRow: PaymentRow;
     try {
       const { rows } = await client.query<PaymentRow>(INSERT_MANUAL_PAYMENT_SQL, [
         body.id, tenantId, order.check_id, method, amount.toString(),
         method === 'qris_static', reference, approvalCode, cardLast4,
         acquirer, terminalReference, actorId, body.occurredAt ?? null, hlcValue.toString(), orderId,
+        mdr,
       ]);
       paymentRow = rows[0];
     } catch (err) {
@@ -610,11 +661,13 @@ interface GatewayCtx {
 const INSERT_GATEWAY_PAYMENT_SQL = `
   INSERT INTO payment (
     id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
-    status, provider, confirmed_manually, tendered_at, created_by, occurred_at, hlc
+    status, provider, confirmed_manually, tendered_at, created_by, occurred_at, hlc,
+    mdr_estimated
   )
   SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
          'pending_confirmation', $6, false,
-         now(), $7, COALESCE($8::timestamptz, now()), $9
+         now(), $7, COALESCE($8::timestamptz, now()), $9,
+         $11
     FROM "order" o WHERE o.id = $10
   RETURNING *
 `;
@@ -705,11 +758,18 @@ async function initiateGatewayPayment(deps: GatewayDeps, ctx: GatewayCtx) {
       return { kind: 'fresh' as const, payment: sudahAda[0], order };
     }
 
+    // FR-C12 — perkiraan potongan settlement, SNAPSHOT. Ditulis SEKARANG,
+    // saat QR diminta, bukan saat webhook mengonfirmasi: yang menentukan
+    // tarifnya adalah nilai transaksi dan kategori merchant pada saat
+    // transaksi terjadi, dan keduanya diketahui di sini.
+    const mdr = await hitungMdrEstimasi(client, { method, amount });
+
     let paymentRow: PaymentRow;
     try {
       const { rows } = await client.query<PaymentRow>(INSERT_GATEWAY_PAYMENT_SQL, [
         body.id, tenantId, order.check_id, method, amount.toString(),
         provider.name, actorId, body.occurredAt ?? null, hlcValue.toString(), orderId,
+        mdr,
       ]);
       paymentRow = rows[0];
     } catch (err) {

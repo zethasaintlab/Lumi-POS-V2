@@ -10,15 +10,25 @@ import { rentangSiap, type Rentang } from './b16.ts';
 /**
  * B-19 — Laporan Pembayaran (`IA:§3.3`, akses minimum Manajer Outlet).
  *
- * ## ⛔ Tanpa rekonsiliasi, dan kata itu tidak muncul di layar
+ * ## Rekonsiliasi — FR-C12
  *
- * `IA:§3.3` menamai layarnya "Laporan Pembayaran & Rekonsiliasi", tapi Modul
- * C-3 belum dibangun sama sekali (P1). Menampilkan kata "rekonsiliasi" untuk
- * layar yang tidak merekonsiliasi apa pun adalah janji yang tidak ditepati —
- * dan merchant yang mencarinya akan mengira ia rusak.
+ * AC FR-C12 pertama: *"Laporan menampilkan nilai transaksi DAN perkiraan
+ * settlement berdampingan."* Masalah yang dijawabnya: kasir mencatat QRIS
+ * Rp 100.000, rekening menerima Rp 99.300, dan tanpa satu baris pun yang
+ * menjelaskan selisihnya merchant menyimpulkan POS-nya salah — atau kasirnya
+ * mencuri.
  *
- * Judul layar karena itu "Laporan Pembayaran" saja. Batasnya tercatat di
- * kontrak endpoint, bukan disamarkan dengan kolom kosong.
+ * ⛔ AC FR-C12 kedua menuntut angkanya ditandai **perkiraan**, dan di sini
+ * kata itu muncul tiga kali: di judul kolom, di badge, dan di catatan kaki.
+ * Itu bukan pengulangan yang berlebihan — angka rupiah di kolom bersebelahan
+ * dengan angka rupiah lain akan dibaca sebagai fakta kecuali dikatakan
+ * sebaliknya, dan merchant yang menagih penyelenggara berdasarkan angka ini
+ * akan kehilangan waktu untuk selisih yang wajar.
+ *
+ * ⛔ Metode tanpa perkiraan menampilkan **tanda hubung**, bukan "Rp 0". Tunai
+ * memang tidak dipotong; kartu EDC dipotong dengan tarif per-acquirer yang
+ * `spec-c` tidak memberikan satu pun angkanya. "Rp 0" untuk kartu adalah
+ * pernyataan yang salah, bukan sekadar kosong.
  *
  * ## ⛔ Hanya yang terkonfirmasi
  *
@@ -34,6 +44,11 @@ interface BarisMetode {
   method: string;
   jumlahTransaksi: number;
   totalDiterima: string;
+  /** `null` = metode ini tidak punya perkiraan potongan sama sekali. */
+  perkiraanMdr: string | null;
+  perkiraanSettlement: string;
+  /** Baris yang belum punya perkiraan tersimpan (ditulis sebelum FR-C12). */
+  tanpaPerkiraan?: number;
 }
 
 interface HasilLaporan {
@@ -42,6 +57,8 @@ interface HasilLaporan {
   outletId: string | null;
   metode: BarisMetode[];
   totalDiterima: string;
+  totalPerkiraanMdr: string;
+  totalPerkiraanSettlement: string;
 }
 
 type Keadaan =
@@ -111,10 +128,10 @@ export function PembayaranLayar() {
   return (
     <div className="stack" style={{ gap: 'var(--space-4)', maxWidth: '84ch' }}>
       <div className="stack" style={{ gap: 'var(--space-1)' }}>
-        {/* ⛔ "Laporan Pembayaran" saja — tanpa "& Rekonsiliasi". */}
-        <span className="t-title">Laporan Pembayaran</span>
+        <span className="t-title">Laporan Pembayaran &amp; Rekonsiliasi</span>
         <span className="t-caption">
-          Uang yang benar-benar <strong>diterima</strong>, dikelompokkan per metode.
+          Uang yang benar-benar <strong>diterima</strong>, dikelompokkan per metode — beserta
+          perkiraan yang masuk rekening setelah potongan penyelenggara.
         </span>
       </div>
 
@@ -169,27 +186,56 @@ export function PembayaranLayar() {
                 <Badge tone="neutral">{namaOutlet(keadaan.hasil.outletId)}</Badge>
               </div>
 
-              <div className="stack" style={{ gap: 'var(--space-1)' }}>
-                <span className="label">Total diterima</span>
-                <span className="t-display num">{rupiah(keadaan.hasil.totalDiterima)}</span>
+              <div className="row" style={{ gap: 'var(--space-6)', flexWrap: 'wrap' }}>
+                <div className="stack" style={{ gap: 'var(--space-1)' }}>
+                  <span className="label">Total diterima</span>
+                  <span className="t-display num">{rupiah(keadaan.hasil.totalDiterima)}</span>
+                </div>
+                <div className="stack" style={{ gap: 'var(--space-1)' }}>
+                  {/* ⛔ Kata "perkiraan" ada di LABELNYA, bukan hanya di catatan
+                      kaki. Label yang berbunyi "Masuk rekening" akan ditagihkan
+                      merchant ke penyelenggara. */}
+                  <span className="label">Perkiraan masuk rekening</span>
+                  <span className="t-title num">
+                    {rupiah(keadaan.hasil.totalPerkiraanSettlement)}
+                  </span>
+                  <Badge tone="warning">Perkiraan</Badge>
+                </div>
               </div>
 
               <Table
                 columns={[
                   { key: 'metode', header: 'Metode' },
                   { key: 'jumlah', header: 'Transaksi', align: 'right' },
-                  { key: 'total', header: 'Diterima', align: 'right' },
+                  { key: 'total', header: 'Nilai transaksi', align: 'right' },
+                  { key: 'mdr', header: 'Perkiraan potongan', align: 'right' },
+                  { key: 'settle', header: 'Perkiraan diterima', align: 'right' },
                 ]}
                 rows={keadaan.hasil.metode.map((m) => ({
                   metode: LABEL_METODE[m.method] ?? m.method,
                   jumlah: <span className="num">{m.jumlahTransaksi}</span>,
                   total: <span className="num">{rupiah(m.totalDiterima)}</span>,
+                  // ⛔ Tanda hubung, bukan "Rp 0" — lihat catatan kepala berkas.
+                  mdr:
+                    m.perkiraanMdr === null ? (
+                      <span className="t-caption">— tidak ada perkiraan</span>
+                    ) : (
+                      <span className="num">− {rupiah(m.perkiraanMdr)}</span>
+                    ),
+                  settle: <span className="num">{rupiah(m.perkiraanSettlement)}</span>,
                 }))}
               />
             </div>
           )}
         </div>
       </Card>
+
+      <span className="t-caption">
+        Angka potongan dan &ldquo;perkiraan diterima&rdquo; adalah <strong>perkiraan</strong>, bukan
+        nilai final. Yang menentukan potongan sebenarnya adalah penyelenggara, per settlement —
+        gunakan angka ini untuk menjelaskan selisih, bukan untuk menagih. Tunai tidak dipotong;
+        untuk kartu/EDC potongannya per-acquirer dan belum dapat diperkirakan.
+      </span>
 
       <span className="t-caption">
         Hanya pembayaran yang <strong>terkonfirmasi</strong> yang dihitung — QRIS yang masih

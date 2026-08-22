@@ -97,14 +97,28 @@ const TABLES = [
   },
   { name: 'outbox', module: 'sync', partitioned: false },
   { name: 'oversell_event', module: 'sync', partitioned: false },
+  // Tagihan langganan (F5, migrasi 0026). Kebocoran di sini menunjukkan
+  // paket, harga, dan jumlah outlet satu merchant kepada merchant lain --
+  // seluruhnya data komersial, dan `outlet_count` adalah ukuran bisnis
+  // yang tidak seorang pun setuju untuk dibagikan.
+  { name: 'subscription_invoice', module: 'tenancy', partitioned: false },
+  // Telemetri perangkat (F6, migrasi 0029). Ia tidak memuat satu pun angka
+  // uang -- `ARCH:309` melarangnya -- tapi ia memuat kesehatan operasional:
+  // seberapa sering kasir satu merchant crash, dan seberapa lama outletnya
+  // offline. Itu bukan milik merchant lain.
+  { name: 'device_telemetry', module: 'identity', partitioned: false },
 ].map((t) => ({
   whereForRow: byId,
   buildImpersonationRow: (row, _seededRows, freshId) => cloneWithFreshId(row, freshId),
   ...t,
 }));
 
-// Exempt from RLS entirely — root of tenancy, and global hardware reference
-// data respectively. Asserted absent-on-purpose, never fed into the CRUD loop.
-const EXEMPT = ['tenant', 'printer_profile'];
+// Exempt from RLS entirely — root of tenancy, global hardware reference data,
+// and the release ledger. `app_release` has no tenant_id because no tenant
+// owns it: rilis adalah milik KAMI. Consequence stated on purpose — every
+// merchant can read those rows, and every column in them is a version number
+// or a rollout stage. None names another merchant.
+// Asserted absent-on-purpose, never fed into the CRUD loop.
+const EXEMPT = ['tenant', 'printer_profile', 'app_release'];
 
 module.exports = { TABLES, EXEMPT };

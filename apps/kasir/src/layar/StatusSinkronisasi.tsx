@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Table } from 'ds';
 import {
   buatEksporDarurat,
+  buatEksporPemulihan,
   daftarGagal,
   formatUkuran,
   keadaanIndikator,
@@ -108,6 +109,34 @@ export function StatusSinkronisasi() {
     setPesan('Ekspor darurat diunduh. Simpan sampai antrean benar-benar kosong.');
   }, [db]);
 
+  /* Alat koreksi F6 — ekspor yang dapat DIPUTAR ULANG ke server.
+
+     ⛔ Ekspor darurat di atas adalah TEKS, dan `spec-h:263` menuntut itu: yang
+     membacanya orang support, bukan parser. Konsekuensinya baru terasa saat
+     perangkat benar-benar mati — teks itu tidak dapat dikirim ulang, dan
+     satu-satunya jalan memasukkan penjualannya kembali adalah mengetiknya
+     ulang dari kertas.
+
+     Berkas ini membawa payload dan idempotency key APA ADANYA, jadi
+     `tools/pulihkan-antrean.mjs` dapat mengirimkannya lewat endpoint yang SAMA
+     yang dipakai relay — dan menjalankannya dua kali aman. */
+  const eksporPemulihan = useCallback(async () => {
+    const konfig = await bacaKonfigPerangkat(db);
+    const data = await buatEksporPemulihan(db, {
+      deviceCode: konfig?.deviceCode ?? 'belum-dihubungkan',
+      sekarang: Date.now(),
+    });
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lumi-pemulihan-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setPesan('Ekspor pemulihan diunduh. Berikan berkas ini ke dukungan Lumi — ia dapat dikirim ulang ke server.');
+  }, [db]);
+
   const kolom = [
     { key: 'entity_type', header: 'Jenis' },
     { key: 'entity_id', header: 'ID transaksi' },
@@ -168,6 +197,12 @@ export function StatusSinkronisasi() {
         </Tombol>
         <Tombol varian="secondary" onClick={ekspor}>
           Ekspor darurat
+        </Tombol>
+        {/* ⛔ DUA ekspor, bukan satu yang serba bisa. Yang pertama dibaca
+            manusia (`spec-h:263`); yang kedua dibaca mesin dan dapat dikirim
+            ulang. Satu berkas yang mencoba keduanya akan buruk di keduanya. */}
+        <Tombol varian="secondary" onClick={eksporPemulihan}>
+          Ekspor pemulihan (JSON)
         </Tombol>
       </div>
       {!terhubung && (

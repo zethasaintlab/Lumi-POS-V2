@@ -1,6 +1,11 @@
 import type { PoolClient } from '../../../db.ts';
 import { ambilPenjualan, ambilProduk } from '../../ordering/index.ts';
 import { ambilStok, saldoTampil } from './stok.ts';
+import {
+  AMBANG_ANTREAN,
+  tingkatAntrean,
+  type TingkatAntrean,
+} from '../../../../../../packages/domain/src/antrean-menua.ts';
 
 /**
  * B-01 — dasbor beranda.
@@ -65,6 +70,40 @@ export interface RingkasStokDasbor {
   contoh: { variationId: string; itemName: string; variationName: string; saldo: string }[];
 }
 
+export interface PerangkatMenua {
+  deviceId: string;
+  code: string;
+  outletId: string;
+  /** `null` berarti BELUM PERNAH terhubung — bukan hal yang sama dengan basi. */
+  lastSeenAt: string | null;
+  /** Jam sejak terakhir menyapa, dibulatkan ke bawah. `null` bila belum pernah. */
+  jamSejakTerlihat: number | null;
+  tingkat: TingkatAntrean;
+}
+
+/**
+ * FR-H8 sisi OWNER (`spec-h:311` — "> 24 jam: notifikasi ke owner").
+ *
+ * ## ⛔ Ini BUKAN umur antrean, dan menyamakan keduanya berbohong dua arah
+ *
+ * Antrean yang menua adalah penjualan yang **belum pernah sampai** ke server.
+ * Server tidak dapat melihatnya sama sekali — tidak ada baris untuk dihitung.
+ * Yang dapat dilihatnya adalah perangkat yang **berhenti menyapa**.
+ *
+ * Perangkat yang mati (bukan offline) terlihat basi meski tidak ada penjualan
+ * tertahan; perangkat yang online tapi selalu ditolak server terlihat sehat.
+ * Karena itu keduanya dinamai berbeda di UI — "belum terhubung", bukan
+ * "antrean menua" — dan hanya AMBANGNYA yang dibagi (`packages/domain`).
+ */
+export interface RingkasPerangkat {
+  /** Perangkat aktif (belum dicabut) yang punya kredensial. */
+  total: number;
+  /** Yang melewati ambang, terlama dulu. Yang sehat TIDAK ikut. */
+  menua: PerangkatMenua[];
+  /** Sudah dibuat tapi belum sekali pun menyapa server. */
+  belumPernah: number;
+}
+
 export interface Dasbor {
   from: string;
   to: string;
@@ -72,6 +111,7 @@ export interface Dasbor {
   penjualan: Awaited<ReturnType<typeof ambilPenjualan>>;
   terlaris: ProdukTerlaris[];
   stok: RingkasStokDasbor | null;
+  perangkat: RingkasPerangkat;
 }
 
 /** Berapa produk terlaris yang ditampilkan. */
@@ -138,5 +178,70 @@ export async function ambilDasbor(
     ringkasStok = { minus, habis, contoh };
   }
 
-  return { from, to, outletId, penjualan, terlaris, stok: ringkasStok };
+  const perangkat = await ambilRingkasPerangkat(client, outletId);
+
+  return { from, to, outletId, penjualan, terlaris, stok: ringkasStok, perangkat };
+}
+
+/**
+ * ⛔ Umur dihitung DI DATABASE (`now() - last_seen_at`), bukan di Node.
+ *
+ * Aturan repo ini, dan ia lahir dari bug nyata: resolusi harga menstempel
+ * `effective_from` dengan jam PostgreSQL tapi membaca `at` dari jam Node, dan
+ * skew ±2 ms cukup membuat 4 dari 12 run gagal. Di produksi keduanya mesin
+ * terpisah — dan di sini selisihnya menentukan perangkat mana yang muncul di
+ * layar owner.
+ *
+ * ⛔ Perangkat TANPA kredensial tidak dihitung sama sekali. Ia belum pernah
+ * dapat menyapa server, jadi menandainya "belum terhubung 30 hari" adalah
+ * memberi tahu owner tentang perangkat yang memang belum dipasang — dan
+ * peringatan yang selalu menyala adalah peringatan yang diabaikan.
+ */
+async function ambilRingkasPerangkat(
+  client: PoolClient,
+  outletId: string | null
+): Promise<RingkasPerangkat> {
+  const { rows } = await client.query<{
+    id: string;
+    code: string;
+    outlet_id: string;
+    last_seen_at: string | null;
+    jam: string | null;
+  }>(
+    `SELECT id, code, outlet_id, last_seen_at,
+            floor(EXTRACT(EPOCH FROM (now() - last_seen_at)) / 3600)::text AS jam
+       FROM device
+      WHERE revoked_at IS NULL
+        AND token_hash IS NOT NULL
+        AND ($1::text IS NULL OR outlet_id = $1)
+      ORDER BY last_seen_at NULLS FIRST`,
+    [outletId]
+  );
+
+  const menua: PerangkatMenua[] = [];
+  let belumPernah = 0;
+
+  for (const r of rows) {
+    if (r.last_seen_at === null) {
+      belumPernah += 1;
+      continue;
+    }
+    const jam = Number(r.jam);
+    if (!Number.isFinite(jam)) continue;
+    const tingkat = tingkatAntrean(jam, AMBANG_ANTREAN);
+    if (tingkat === 'aman') continue;
+    menua.push({
+      deviceId: r.id,
+      code: r.code,
+      outletId: r.outlet_id,
+      lastSeenAt: r.last_seen_at,
+      jamSejakTerlihat: jam,
+      tingkat,
+    });
+  }
+
+  // Terlama dulu — itu yang paling lama tidak mencatat penjualan.
+  menua.sort((a, b) => (b.jamSejakTerlihat ?? 0) - (a.jamSejakTerlihat ?? 0));
+
+  return { total: rows.length, menua, belumPernah };
 }

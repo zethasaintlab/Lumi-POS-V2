@@ -8,7 +8,7 @@ import { EditProduk } from './EditProduk.tsx';
 import {
   buatMuatanProdukBaru,
   rupiah,
-  saringProduk,
+  kueriDaftarProduk,
   TANPA_KATEGORI,
   type FormVariation,
   type Item,
@@ -58,7 +58,14 @@ export function ProdukLayar() {
   const [kategori, setKategori] = useState<Kategori[]>([]);
   const [kategoriId, setKategoriId] = useState<string | null>(null);
   const [cari, setCari] = useState('');
+  /* ⛔ Kueri yang DIKIRIM, terpisah dari yang sedang diketik. Tanpa jeda,
+     setiap ketukan huruf adalah satu perjalanan pulang-pergi — dan yang
+     terakhir berangkat belum tentu yang terakhir kembali. */
+  const [cariDikirim, setCariDikirim] = useState('');
   const [tampilArsip, setTampilArsip] = useState(false);
+  /* Kursor keyset halaman berikutnya; `null` = katalog sudah habis. */
+  const [kursor, setKursor] = useState<string | null>(null);
+  const [memuatLagi, setMemuatLagi] = useState(false);
   const [pesan, setPesan] = useState<string | null>(null);
 
   const [namaBaru, setNamaBaru] = useState('');
@@ -72,20 +79,31 @@ export function ProdukLayar() {
     varian: crypto.randomUUID(),
   }));
 
-  /** `null` = daftar (B-06). Berisi id = detail (B-07). */
+  /* ⛔ Ukuran halaman. Server membatasi `limit` ke 200 (`BATAS_MAKS_ITEM`);
+   angka di sini jauh di bawahnya supaya perjalanan pertama tetap cepat pada
+   koneksi outlet, dan "Muat lebih banyak" menjadi langkah yang terlihat
+   alih-alih daftar yang diam-diam terpotong. */
+const BATAS_HALAMAN = 50;
+
+/** `null` = daftar (B-06). Berisi id = detail (B-07). */
   const [buka, setBuka] = useState<string | null>(null);
 
   const muat = useCallback(async () => {
     setKeadaan({ jenis: 'memuat' });
     try {
+      /* ⛔ SELURUH saringan dikirim ke server — `q`, `categoryId`, dan
+         `includeArchived`. Memuat satu halaman lalu menyaring di klien
+         menghasilkan pencarian yang hanya menemukan apa yang KEBETULAN sudah
+         dimuat: merchant mengetik barcode produk ke-300, tidak ada yang
+         muncul, tanpa satu pun error. */
       const [i, k] = await Promise.all([
-        // includeArchived: penyaringan terarsip dilakukan di klien supaya
-        // toggle tidak menuntut perjalanan pulang-pergi, dan supaya produk
-        // terarsip tetap dapat dibuka lewat tautannya.
-        api.minta<{ items: Item[] }>('/items?includeArchived=true'),
+        api.minta<{ items: Item[]; nextCursor?: string | null }>(
+          kueriDaftarProduk({ kategoriId, cari: cariDikirim, tampilArsip }, { limit: BATAS_HALAMAN })
+        ),
         api.minta<{ items: Kategori[] }>('/categories?includeArchived=true'),
       ]);
       setSemua(i.items);
+      setKursor(i.nextCursor ?? null);
       setKategori(k.items);
       setKeadaan({ jenis: 'siap' });
     } catch (err) {
@@ -97,11 +115,43 @@ export function ProdukLayar() {
             : 'Tidak dapat menghubungi server. Periksa koneksi lalu coba lagi.',
       });
     }
-  }, [api]);
+  }, [api, kategoriId, cariDikirim, tampilArsip]);
 
   useEffect(() => {
     void muat();
   }, [muat]);
+
+  /* ⛔ Jeda ketik 300 ms. Tanpa itu, "kopi susu" adalah sembilan permintaan,
+     dan urutan kembalinya tidak dijamin — hasil untuk "kop" dapat mendarat
+     SESUDAH hasil untuk "kopi susu" dan menimpanya. */
+  useEffect(() => {
+    const t = setTimeout(() => setCariDikirim(cari), 300);
+    return () => clearTimeout(t);
+  }, [cari]);
+
+  /* Halaman berikutnya. ⛔ Ia MENAMBAH, bukan mengganti — dan kursornya milik
+     saringan yang sedang aktif: setiap perubahan saringan memuat ulang dari
+     awal lewat `muat`, yang mengosongkan kursornya sendiri. */
+  const muatLagi = useCallback(async () => {
+    if (kursor === null) return;
+    setMemuatLagi(true);
+    try {
+      const i = await api.minta<{ items: Item[]; nextCursor?: string | null }>(
+        kueriDaftarProduk(
+          { kategoriId, cari: cariDikirim, tampilArsip },
+          { limit: BATAS_HALAMAN, after: kursor }
+        )
+      );
+      setSemua((lama) => [...lama, ...i.items]);
+      setKursor(i.nextCursor ?? null);
+    } catch (err) {
+      setPesan(
+        err instanceof GalatHttp ? err.message : 'Tidak dapat memuat halaman berikutnya.'
+      );
+    } finally {
+      setMemuatLagi(false);
+    }
+  }, [api, kursor, kategoriId, cariDikirim, tampilArsip]);
 
   async function tambahProduk() {
     setPesan(null);
@@ -168,7 +218,14 @@ export function ProdukLayar() {
     setBuka(null);
   }
 
-  const terlihat = saringProduk(semua, { kategoriId, cari, tampilArsip });
+  /* ⛔ TIDAK disaring lagi di sini. Server sudah melakukannya, dan menyaring
+     dua kali berarti dua aturan yang harus dijaga sepakat — persis kelas cacat
+     yang membuat pencarian berhenti menemukan barcode. */
+  const terlihat = semua;
+  /* Apakah daftar sedang disaring. Dipakai membedakan "katalog kosong" dari
+     "tidak ada yang cocok" — dua keadaan kosong yang mengarahkan merchant ke
+     tempat yang berbeda. */
+  const adaSaringan = cariDikirim.trim() !== '' || kategoriId !== null;
   const namaKategori = (id: string | null) =>
     id === null ? '—' : (kategori.find((k) => k.id === id)?.name ?? id);
 
@@ -310,11 +367,20 @@ export function ProdukLayar() {
           ) : terlihat.length === 0 && keadaan.jenis === 'siap' ? (
             <EmptyState
               icon={<Icon name="package" size={32} />}
-              title={semua.length === 0 ? 'Belum ada produk' : 'Tidak ada yang cocok'}
+              /* ⛔ Dua keadaan kosong yang BERBEDA, dan membedakannya penting:
+                 "belum ada produk" mengarahkan merchant ke impor katalog,
+                 sementara "tidak ada yang cocok" mengarahkannya mengubah
+                 pencarian. Satu kalimat untuk keduanya salah untuk salah
+                 satunya.
+
+                 Sejak pencarian pindah ke server, `semua.length === 0` tidak
+                 lagi berarti "katalog kosong" — ia berarti "halaman ini
+                 kosong". Yang membedakannya adalah ada-tidaknya saringan. */
+              title={adaSaringan ? 'Tidak ada yang cocok' : 'Belum ada produk'}
               body={
-                semua.length === 0
-                  ? 'Tambahkan produk satu per satu, atau impor seluruh katalog sekaligus lewat Impor katalog.'
-                  : 'Ubah kata pencarian atau pilih kategori lain. Produk yang diarsipkan disembunyikan kecuali toggle di atas dinyalakan.'
+                adaSaringan
+                  ? 'Ubah kata pencarian atau pilih kategori lain. Produk yang diarsipkan disembunyikan kecuali toggle di atas dinyalakan.'
+                  : 'Tambahkan produk satu per satu, atau impor seluruh katalog sekaligus lewat Impor katalog.'
               }
             />
           ) : (
@@ -359,6 +425,26 @@ export function ProdukLayar() {
                 };
               })}
             />
+          )}
+
+          {/* ⛔ Katalog yang TERPOTONG dinyatakan, bukan didiamkan. Daftar
+              yang berhenti di 50 tanpa berkata apa-apa membuat merchant
+              menyimpulkan produknya hilang — dan mencarinya di tempat yang
+              salah. */}
+          {keadaan.jenis === 'siap' && kursor !== null && (
+            <div
+              className="row"
+              style={{ gap: 'var(--space-3)', alignItems: 'center', marginTop: 'var(--space-4)' }}
+            >
+              <Tombol disabled={memuatLagi} onClick={() => void muatLagi()}>
+                {memuatLagi ? 'Memuat…' : 'Muat lebih banyak'}
+              </Tombol>
+              <span className="t-caption">
+                Menampilkan <span className="num">{terlihat.length}</span> produk pertama. Gunakan
+                pencarian untuk menemukan produk tertentu — pencarian mencakup{' '}
+                <strong>seluruh</strong> katalog, bukan hanya yang tampil.
+              </span>
+            </div>
           )}
         </div>
       </Card>

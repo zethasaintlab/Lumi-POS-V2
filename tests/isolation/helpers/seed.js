@@ -295,6 +295,21 @@ async function seedTenantBase(appClient, { suffix }) {
   rows.sessionToken = sessionToken;
   rows.authHeader = `Bearer ${sessionToken}`;
 
+  rows.subscription_invoice = await insertReturning(appClient, 'subscription_invoice', {
+    id: freshId(),
+    tenant_id: tenantId,
+    plan: 'standard',
+    outlet_count: 2,
+    unit_price: 349000,
+    // `amount` WAJIB = unit_price * outlet_count (CHECK di migrasi 0026).
+    amount: 698000,
+    status: 'pending_confirmation',
+    provider: null,
+    provider_reference: null,
+    confirmed_at: null,
+    requested_by: rows.user.id,
+  });
+
   await appClient.query('COMMIT');
   return rows;
 }
@@ -328,6 +343,25 @@ async function seedTransactionCycle(appClient, base, { cycleLabel, printerProfil
     credentials_expire_at: null,
     last_seen_at: null,
     revoked_at: null,
+  });
+
+  // Telemetri perangkat (F6, migrasi 0029). Kebocoran di sini menunjukkan
+  // kesehatan operasional satu merchant kepada merchant lain -- seberapa
+  // sering kasirnya crash, seberapa lama outletnya offline.
+  rows.device_telemetry = await insertReturning(appClient, 'device_telemetry', {
+    id: freshId(),
+    tenant_id: tenantId,
+    device_id: rows.device.id,
+    app_version: '0.0.0',
+    event: 'antrean_gagal',
+    type: null,
+    window_start: new Date(occurredAt.getTime() - 3600_000).toISOString(),
+    window_end: occurredAt.toISOString(),
+    sample_count: 3,
+    total_value: 6,
+    min_value: 1,
+    max_value: 3,
+    p95_value: 3,
   });
 
   rows.cash_drawer_shift = await insertReturning(appClient, 'cash_drawer_shift', {

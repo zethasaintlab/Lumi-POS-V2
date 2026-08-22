@@ -4,7 +4,12 @@ import { useSesi } from '../sesi.tsx';
 import { GalatHttp } from '../http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
-import { rupiah, type Item } from './produk.ts';
+import { daftarPemilih, kueriDaftarProduk, rupiah, type Item } from './produk.ts';
+
+/* ⛔ Pemilih menampilkan paling banyak segini. Layar ini memilih SATU varian;
+   daftar yang lebih panjang bukan bantuan melainkan dinding yang harus
+   dipindai mata. Yang menemukan produk adalah pencariannya. */
+const BATAS_PEMILIH = 20;
 import {
   buatMuatanHarga,
   ringkasRiwayat,
@@ -89,15 +94,38 @@ export function HargaLayar() {
   const [pesan, setPesan] = useState<string | null>(null);
   const [bidang, setBidang] = useState<keyof FormHarga | null>(null);
   const [idBaru, setIdBaru] = useState(() => crypto.randomUUID());
+  /* ⛔ Pemilih produk memakai pencarian SISI SERVER, sama seperti B-06.
+
+     Sebelumnya layar ini memuat `/items` tanpa batas dan merender SETIAP
+     produk sebagai tombol. Pada katalog paket Pro (5.000 produk) itu 5.000
+     tombol di satu baris yang membungkus — bukan sekadar lambat, melainkan
+     layar yang tidak dapat dipakai memilih apa pun.
+
+     Karena layar ini memilih SATU varian untuk diberi harga, pencarian justru
+     alur yang benar: merchant tahu produk mana yang harganya ingin ia ubah. */
+  const [cari, setCari] = useState('');
+  const [cariDikirim, setCariDikirim] = useState('');
+  const [adaLagi, setAdaLagi] = useState(false);
+  /* ⛔ Produk yang SEDANG DIPILIH disimpan terpisah dari hasil pencarian.
+     Tanpa ini, mengetik pencarian baru setelah memilih produk akan
+     mengosongkan panel riwayat harga di tengah penyuntingan — kasir mengira
+     pilihannya hilang, dan mengulang dari awal. */
+  const [dipilih, setDipilih] = useState<Item | null>(null);
 
   const muat = useCallback(async () => {
     setKeadaan({ jenis: 'memuat' });
     try {
       const [i, o] = await Promise.all([
-        api.minta<{ items: Item[] }>('/items'),
+        api.minta<{ items: Item[]; nextCursor?: string | null }>(
+          kueriDaftarProduk(
+            { kategoriId: null, cari: cariDikirim, tampilArsip: false },
+            { limit: BATAS_PEMILIH }
+          )
+        ),
         api.minta<Outlet[]>('/outlets'),
       ]);
       setItems(i.items);
+      setAdaLagi((i.nextCursor ?? null) !== null);
       setOutlet(o);
       setKeadaan({ jenis: 'siap' });
     } catch (err) {
@@ -109,7 +137,15 @@ export function HargaLayar() {
             : 'Tidak dapat menghubungi server. Periksa koneksi lalu coba lagi.',
       });
     }
-  }, [api]);
+  }, [api, cariDikirim]);
+
+  /* Jeda ketik 300 ms — alasannya sama dengan B-06: urutan kembalinya respons
+     tidak dijamin, jadi hasil untuk "kop" dapat mendarat sesudah "kopi susu"
+     dan menimpanya. */
+  useEffect(() => {
+    const t = setTimeout(() => setCariDikirim(cari), 300);
+    return () => clearTimeout(t);
+  }, [cari]);
 
   useEffect(() => {
     void muat();
@@ -162,7 +198,10 @@ export function HargaLayar() {
     }
   }
 
-  const item = items.find((i) => i.id === itemId) ?? null;
+  /* Aturannya di modul murni (`daftarPemilih`) supaya dapat diuji tanpa DOM —
+     pola yang sama dengan `kuotaTampilan` dan `susunPilihan`. */
+  const item = items.find((i) => i.id === itemId) ?? dipilih;
+  const terlihat = daftarPemilih(items, dipilih);
   const varian = item?.variations.find((v) => v.id === variationId) ?? null;
   const outletAktif = outlet.filter((o) => o.archivedAt === null);
   const namaOutlet = (id: string | null) =>
@@ -192,23 +231,36 @@ export function HargaLayar() {
               body={keadaan.pesan}
               action={<Tombol onClick={() => void muat()}>Coba lagi</Tombol>}
             />
-          ) : items.length === 0 && keadaan.jenis === 'siap' ? (
+          ) : terlihat.length === 0 && keadaan.jenis === 'siap' ? (
             <EmptyState
               icon={<Icon name="tag" size={32} />}
-              title="Belum ada produk"
-              body="Harga menempel pada varian produk. Tambahkan produk lebih dulu di layar Produk."
+              /* ⛔ Dua keadaan kosong yang berbeda — sejak pencarian pindah ke
+                 server, daftar kosong tidak lagi berarti "katalog kosong". */
+              title={cariDikirim.trim() === '' ? 'Belum ada produk' : 'Tidak ada yang cocok'}
+              body={
+                cariDikirim.trim() === ''
+                  ? 'Harga menempel pada varian produk. Tambahkan produk lebih dulu di layar Produk.'
+                  : 'Ubah kata pencarian. Pencarian mencakup nama produk, nama varian, SKU, dan barcode.'
+              }
             />
           ) : (
             <div className="stack" style={{ gap: 'var(--space-4)' }}>
               <div className="stack" style={{ gap: 'var(--space-2)' }}>
+                <Bidang
+                  id="cari-produk-harga"
+                  label="Cari produk (nama, SKU, atau barcode)"
+                  value={cari}
+                  onChange={setCari}
+                />
                 <span className="label">Produk</span>
                 <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                  {items.map((i) => (
+                  {terlihat.map((i) => (
                     <Tombol
                       key={i.id}
                       varian={itemId === i.id ? 'primary' : 'secondary'}
                       onClick={() => {
                         setItemId(i.id);
+                        setDipilih(i);
                         // Varian pertama yang aktif dipilih otomatis — layar
                         // yang menuntut dua klik sebelum menampilkan apa pun
                         // terbaca seperti layar yang belum dimuat.
@@ -221,6 +273,16 @@ export function HargaLayar() {
                     </Tombol>
                   ))}
                 </div>
+                {/* ⛔ Daftar yang TERPOTONG dinyatakan. Merchant yang tidak
+                    menemukan produknya di antara 20 tombol pertama akan
+                    menyimpulkan produknya belum ada — dan membuatnya lagi. */}
+                {adaLagi && (
+                  <span className="t-caption">
+                    Menampilkan <span className="num">{BATAS_PEMILIH}</span> produk pertama. Ketik
+                    di kotak pencarian untuk menemukan produk lain — pencarian mencakup{' '}
+                    <strong>seluruh</strong> katalog.
+                  </span>
+                )}
               </div>
 
               {item ? (

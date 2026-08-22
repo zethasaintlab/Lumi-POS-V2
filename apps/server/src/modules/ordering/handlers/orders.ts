@@ -5,8 +5,15 @@ import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import { computeRequestHash } from './request-hash.ts';
-import { assertDeviceVisible, assertUserVisible } from '../../identity/index.ts';
+import { assertApproverVisible, assertBoleh, assertDeviceVisible, assertUserVisible } from '../../identity/index.ts';
 import { getOutletSettings } from '../../tenancy/index.ts';
+import {
+  ambangDari,
+  nilaiDiskon,
+  periksaAlasanDiskon,
+  rencanaDiskon,
+  type PermintaanDiskon,
+} from '../../../../../../packages/domain/src/diskon.ts';
 import { recordStockMovements, detectOversell } from '../../inventory/index.ts';
 import { getVariationSnapshot, resolvePrice, wasPriceEverEffective } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
@@ -362,7 +369,7 @@ const INSERT_ORDER_SQL = `
     created_by, occurred_at, hlc
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    'open', $9, $10, 0, 0, $11,
+    'open', $9, $10, $18, 0, $11,
     0, $12, $12, $16, $17,
     $13, COALESCE($14::timestamptz, now()), $15
   )
@@ -386,12 +393,12 @@ const INSERT_LINE_SQL = `
     id, tenant_id, outlet_id, device_id, order_id, check_id, variation_id,
     item_name, variation_name, unit_price, quantity, modifier_snapshot, discount_amount,
     tax_rate_id, tax_rate, tax_amount, is_tax_inclusive, cost_at_sale, line_total,
-    created_by, occurred_at, hlc, tax_rate_name
+    created_by, occurred_at, hlc, tax_rate_name, tax_jurisdiction
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13,
     $14, $15::numeric, $16, $17, $18, $19,
-    $20, $21, $22, $23
+    $20, $21, $22, $23, $24
   )
   RETURNING *
 `;
@@ -418,7 +425,9 @@ async function insertOrderTree(
   lineCalcs: LineComputation[],
   totals: { subtotal: bigint; total: bigint },
   breakdown: TaxBreakdown,
-  variance: { flagged: boolean; amount: bigint | null }
+  variance: { flagged: boolean; amount: bigint | null },
+  /** FR-B8. Nol bila order ini tidak berdiskon. */
+  orderDiscount: bigint
 ): Promise<{ order: OrderRow; check: CheckRow; lines: LineWithModifiers[] }> {
   try {
     const { rows: orderRows } = await client.query<OrderRow>(INSERT_ORDER_SQL, [
@@ -449,6 +458,7 @@ async function insertOrderTree(
       hlcValue.toString(),
       variance.flagged,
       variance.amount === null ? null : variance.amount.toString(),
+      orderDiscount.toString(),
     ]);
     const orderRow = orderRows[0];
 
@@ -518,6 +528,11 @@ async function insertOrderTree(
         // `null` bila baris ini tidak kena tarif apa pun — string kosong akan
         // tercetak sebagai baris pajak tanpa nama di struk.
         taxForLine?.name ?? null,
+        // FR-C13 — yurisdiksi sebagai SNAPSHOT, dari `TaxBreakdown` yang sama.
+        // Rekapitulasi memisahkan pajak per jenis DAN per yurisdiksi; tarif
+        // yang dipindah yurisdiksi setelah transaksi tidak boleh mengubah
+        // rekapitulasi periode yang sudah dilaporkan.
+        taxForLine?.jurisdiction ?? null,
       ]);
       const lineRow = lineRows[0];
 
@@ -611,11 +626,31 @@ async function insertOrderTree(
  * jadi memakai `taxAmount` dari hitungan server akan membandingkan dua hal
  * yang tidak sebanding.
  */
+/**
+ * ⛔ Diskon dioper sebagai PERMINTAAN, bukan sebagai nominal yang sudah
+ * diresolusi — dan perbedaannya menentukan.
+ *
+ * Fungsi ini menghitung ulang total memakai HARGA KLIEN untuk memutuskan
+ * apakah selisih FR-H6 dapat dijelaskan. Pertanyaannya adalah "apakah total
+ * klien konsisten dengan harga-harganya sendiri", dan diskon PERSEN klien
+ * juga diturunkan dari subtotal klien: perangkat yang harganya basi
+ * menghitung 10% dari 10.000, bukan 10% dari 25.000.
+ *
+ * Memakai nominal server di sini menghasilkan selisih sebesar beda kedua
+ * diskon, dan setiap order berdiskon dari perangkat yang harganya basi
+ * ditandai `has_calculation_variance` lalu masuk laporan exception. Laporan
+ * yang penuh hal normal tidak akan dibaca siapa pun.
+ *
+ * ⛔ Otorisasi TIDAK ikut dihitung ulang di sini. Ambang selalu diputuskan
+ * dari subtotal SERVER; membiarkan klien memilih basisnya berarti membiarkan
+ * penyerang memilih ambangnya sendiri.
+ */
 function hitungTotalVersiKlien(
   lineCalcs: LineComputation[],
   breakdownInput: { channel: string; outletId: string },
   taxRates: Parameters<typeof calculateTax>[0]['taxRates'],
-  body: OrderInput
+  body: OrderInput,
+  mintaDiskon: PermintaanDiskon | null
 ): bigint {
   const lines = lineCalcs.map((l) => {
     const unitPrice = BigInt(l.input.unitPrice as number);
@@ -635,10 +670,13 @@ function hitungTotalVersiKlien(
     };
   });
 
+  const subtotalKlien = lines.reduce((n, l) => n + l.amount, 0n);
+  const orderDiscount = mintaDiskon === null ? 0n : nilaiDiskon(subtotalKlien, mintaDiskon);
+
   const breakdown = calculateTax({
     lines,
     serviceChargeAmount: 0n,
-    orderDiscount: 0n,
+    orderDiscount,
     taxRates,
     channel: body.channel as 'dine_in' | 'takeaway',
     outletId: body.outletId,
@@ -646,10 +684,33 @@ function hitungTotalVersiKlien(
 
   return computeOrderTotals({
     lineTotals: lines.map((l) => l.amount),
-    orderDiscount: 0n,
+    orderDiscount,
     serviceChargeAmount: 0n,
     taxAmount: breakdown.totalTaxExclusive,
   }).total;
+}
+
+/**
+ * Diskon tingkat order dari body. `null` bila tidak ada.
+ *
+ * ⛔ Divalidasi SEBELUM transaksi dibuka, sejajar `assertQuantityMilliValid`.
+ * Body cacat tidak boleh membuka transaksi database.
+ */
+function bacaPermintaanDiskon(body: OrderInput): PermintaanDiskon | null {
+  const d = (body as { discount?: unknown }).discount;
+  if (d === undefined || d === null) return null;
+  const obj = d as { tipe?: unknown; nilai?: unknown };
+  if (obj.tipe !== 'persen' && obj.tipe !== 'nominal') {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'discount.tipe harus "persen" atau "nominal".');
+  }
+  if (typeof obj.nilai !== 'number' || !Number.isInteger(obj.nilai) || obj.nilai < 0) {
+    throw new HttpError(
+      400,
+      'VALIDATION_ERROR',
+      'discount.nilai harus bilangan bulat >= 0 (persen berskala 10.000, atau rupiah utuh).'
+    );
+  }
+  return { tipe: obj.tipe, nilai: BigInt(obj.nilai) };
 }
 
 export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
@@ -665,6 +726,26 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
       // retry dengan body persis sama (termasuk yang gagal validasi) tetap
       // menghasilkan hash yang sama.
       const requestHash = computeRequestHash(body);
+      // FR-B8 -- penyetuju datang dari header, sejajar refund dan no-sale.
+      // Kosong berarti "tidak ada", bukan string kosong: `assertApproverVisible`
+      // atas string kosong akan menjawab 404 alih-alih 403 APPROVAL_REQUIRED,
+      // dan kasir melihat pesan yang menyalahkan orang yang tidak ada.
+      const approverHeader = req.headers['x-approver-id'];
+      const approverId =
+        typeof approverHeader === 'string' && approverHeader.trim() !== ''
+          ? approverHeader.trim()
+          : null;
+      const mintaDiskon = bacaPermintaanDiskon(body);
+      if (mintaDiskon !== null) {
+        const pesan = periksaAlasanDiskon(
+          (body as { discountReasonCode?: unknown }).discountReasonCode,
+          (body as { discountReasonNote?: string | null }).discountReasonNote
+        );
+        // ⛔ Alasan dituntut untuk SETIAP diskon, bukan hanya yang melewati
+        // ambang. Diskon di bawah ambang tetap masuk laporan exception FR-G5,
+        // dan baris tanpa alasan di sana tidak dapat diagregasi jadi apa pun.
+        if (pesan !== null) throw new HttpError(400, 'VALIDATION_ERROR', pesan);
+      }
 
       // Validasi fail-fast SEBELUM transaksi dibuka -- pola sama dengan
       // createItem (body.variations kosong) dan createPrice (assertPriceValid).
@@ -754,13 +835,13 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
         // (yang terakhir butuh device sudah valid untuk pengecekan kecocokan
         // device di dalamnya).
         //
-        // Nilai kembalian getOutletSettings sengaja TIDAK dipakai di sini:
-        // rounding_increment dan service_charge_rate baru dibutuhkan di jalur
-        // pembayaran (Modul C, FR-C9), sementara order yang baru dibuat belum
-        // punya pembayaran apa pun. Yang dipakai sekarang adalah efek
-        // sampingnya -- SELECT yang tunduk RLS, satu-satunya yang membuktikan
-        // outlet ini milik tenant pemanggil.
-        await getOutletSettings(client, body.outletId);
+        // `rounding_increment` dan `service_charge_rate` masih belum dipakai
+        // di sini -- keduanya milik jalur pembayaran (Modul C, FR-C9), dan
+        // order yang baru dibuat belum punya pembayaran apa pun. Yang dipakai
+        // sejak FR-B8 adalah AMBANG DISKON, ditambah efek samping yang sudah
+        // menjadi alasan panggilan ini sejak awal: SELECT yang tunduk RLS,
+        // satu-satunya yang membuktikan outlet ini milik tenant pemanggil.
+        const pengaturanOutlet = await getOutletSettings(client, body.outletId);
         await assertDeviceVisible(client, body.deviceId);
         await assertUserVisible(client, actorId);
         await assertShiftOpen(client, body.shiftId, body.deviceId);
@@ -808,6 +889,49 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
           lineCalcs.push({ input: line, snapshot, unitPrice, lineTotal });
         }
 
+        // ------------------------------------------------------------
+        // FR-B8 -- diskon tingkat order dan otorisasi step-up.
+        //
+        // ⛔ Dihitung dari SUBTOTAL SERVER, bukan dari angka klien. Perangkat
+        // yang di-root dapat mengirim subtotal apa pun; ambang yang dihitung
+        // atasnya adalah ambang yang dapat dipilih penyerang sendiri.
+        // ------------------------------------------------------------
+        let orderDiscount = 0n;
+        let butuhPenyetujuDiskon = false;
+        if (mintaDiskon !== null) {
+          const subtotalServer = lineCalcs.reduce((n, l) => n + l.lineTotal, 0n);
+          const ambang = ambangDari(
+            pengaturanOutlet.discountThresholdPercentScaled,
+            pengaturanOutlet.discountThresholdAmount
+          );
+          let rencana;
+          try {
+            rencana = rencanaDiskon(subtotalServer, mintaDiskon, ambang);
+          } catch (err) {
+            translateMoneyError(err);
+          }
+          orderDiscount = rencana.nominal;
+          butuhPenyetujuDiskon = rencana.butuhPenyetuju;
+
+          if (rencana.butuhPenyetuju) {
+            if (approverId === null) {
+              // ⛔ 403, bukan 400: permintaannya tidak cacat, ia hanya belum
+              // disetujui. Kasir yang menerima 400 akan mengira ia salah
+              // memasukkan angka.
+              throw new HttpError(
+                403,
+                'APPROVAL_REQUIRED',
+                `Diskon ${orderDiscount} melewati ambang outlet ini; otorisasi manajer dituntut.`
+              );
+            }
+            // Pesannya dibedakan dari `ACTOR_NOT_FOUND` -- manajer yang
+            // penyetujuannya ditolak tidak boleh diberi tahu bahwa KASIR-nya
+            // yang tidak ditemukan (pelajaran refund, 7 Agu 2026).
+            await assertApproverVisible(client, approverId);
+            await assertBoleh(client, approverId, 'approve_authorization', 'menyetujui diskon');
+          }
+        }
+
         // T12 (PLAN-pembayaran-pajak.md) -- pajak dihitung TaxCalculator,
         // tidak pernah di sini (invariant #7). Modul ini hanya mengambil
         // kandidat tarif lewat permukaan publik modul payment (invariant #4)
@@ -822,10 +946,10 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
             categoryId: l.snapshot.categoryId,
             amount: l.lineTotal,
           })),
-          // Keduanya 0 di sub-project ini; diskon order dan biaya layanan
-          // belum punya jalur masuk (PLAN-ordering-fondasi.md §3.6).
+          // Biaya layanan masih 0 -- ia belum punya jalur masuk. Diskon
+          // order TIDAK lagi 0 sejak FR-B8.
           serviceChargeAmount: 0n,
-          orderDiscount: 0n,
+          orderDiscount,
           taxRates,
           channel: body.channel as 'dine_in' | 'takeaway',
           outletId: body.outletId,
@@ -835,7 +959,7 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
         try {
           totals = computeOrderTotals({
             lineTotals: lineCalcs.map((l) => l.lineTotal),
-            orderDiscount: 0n,
+            orderDiscount,
             serviceChargeAmount: 0n,
             // totalTaxExclusive, BUKAN totalTax. Pajak inklusif sudah ada di
             // dalam harga baris; memakai totalTax di sini akan menggandakannya
@@ -912,7 +1036,7 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
               // dijalankan apa adanya — hanya saja dengan harga versi klien,
               // untuk menjawab satu pertanyaan: apakah angka klien konsisten
               // dengan harganya sendiri?
-              const totalVersiKlien = hitungTotalVersiKlien(lineCalcs, breakdownInput, taxRates, body);
+              const totalVersiKlien = hitungTotalVersiKlien(lineCalcs, breakdownInput, taxRates, body, mintaDiskon);
               semuaTerjelaskan = totalVersiKlien === clientTotal;
             }
 
@@ -922,7 +1046,42 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
           }
         }
 
-        const written = await insertOrderTree(client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown, variance);
+        const written = await insertOrderTree(
+          client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown, variance, orderDiscount
+        );
+
+        // ⛔ FR-B8 AC kedua: `audit_event` menyimpan DUA identitas terpisah.
+        //
+        // Dicatat untuk SETIAP diskon, bukan hanya yang menuntut PIN. Diskon
+        // di bawah ambang tetap masuk laporan exception FR-G5 -- pola diskon
+        // kecil yang berulang adalah persis yang laporan itu ada untuk
+        // menemukannya, dan baris tanpa jejak tidak dapat ditemukan siapa pun.
+        //
+        // `approverUserId` null bila ambangnya tidak terlewati. `CHECK` di
+        // `audit_event` menuntut penyetuju BERBEDA dari aktor -- database yang
+        // menegakkannya, bukan aplikasi.
+        if (orderDiscount > 0n) {
+          await recordAuditEvent(client, {
+            id: randomUUID(),
+            tenantId,
+            outletId: body.outletId,
+            deviceId: body.deviceId,
+            actorUserId: actorId,
+            approverUserId: butuhPenyetujuDiskon ? approverId : null,
+            eventType: 'discount_applied',
+            entityType: 'order',
+            entityId: written.order.id,
+            reasonCode: (body as { discountReasonCode?: string }).discountReasonCode ?? null,
+            reasonNote: (body as { discountReasonNote?: string | null }).discountReasonNote ?? null,
+            after: {
+              orderDiscount: Number(orderDiscount),
+              subtotal: Number(totals.subtotal),
+              butuhPenyetuju: butuhPenyetujuDiskon,
+            },
+            hlc: hlcValue,
+            occurredAt: written.order.occurred_at.toISOString(),
+          });
+        }
 
         // Audit hanya untuk selisih yang TIDAK terjelaskan. AC keempat
         // menuntut laporan menampilkan device, waktu, dan selisih -- Modul G

@@ -152,6 +152,7 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 - **Top-N diambil `slice`, bukan `LIMIT` di query kedua.** Query kedua dengan urutannya sendiri adalah tempat kedua yang memutuskan "terlaris".
 - **Ringkasan stok `null` tanpa `outlet_id`.** Stok per outlet; satu angka gabungan lintas outlet tidak dapat dipakai memutuskan apa pun — kekurangan di satu cabang tertutup kelebihan di cabang lain.
 - **`order` TIDAK berisi satu baris per transaksi.** Order pembatal adalah baris tersendiri dan order asli tetap `open` (lihat § void & refund). Setiap layar riwayat harus menurunkan status dari ada/tidaknya pembatal, bukan dari kolom `status`.
+- **B-06 memakai pencarian SISI SERVER**, dan `saringProduk` dihapus (21 Agustus 2026). Dua tempat yang memutuskan "produk mana yang cocok" akan menyimpang; yang menyimpang menghasilkan pencarian yang menemukan hal berbeda tergantung layar mana yang bertanya. ⛔ Server punya cabang `category_id IS NULL` untuk `TANPA_KATEGORI` — tanpa itu, saringan "tanpa kategori" mengembalikan **nol produk** alih-alih produk tanpa kategori, dan nol terlihat persis seperti "memang tidak ada". Konstantanya di `packages/domain/src/katalog-saringan.ts`.
 - **Paginasi riwayat wajib keyset, bukan offset.** Perangkat offline menyisipkan baris ber-`business_date` historis di tengah urutan; offset akan melewatkan atau menggandakan baris tepat saat antrean terkuras.
 - **Delta opname dihitung dari snapshot pada T**, bukan dari stok saat tombol ditekan (FR-E7) — penjualan yang terjadi SELAMA opname tidak boleh ikut terkoreksi. Dibuktikan di browser: stok 5, bukan 8.
 - **Ambang stok menipis dan `AMBANG_SELISIH` hidup di `packages/domain`**, dibagi server dan klien. Konstanta yang dipanggang di satu sisi akan menyimpang dari sisi lain.
@@ -195,7 +196,24 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 
 **Gate F2 hijau:** `npm run test:dst` — 10.000 iterasi fault injection, nol pelanggaran atas sepuluh invariant.
 
-**Yang TIDAK termasuk, dan tercatat sebagai utang:** FR-H8 (notifikasi antrean menua, P1) · enkripsi at-rest (menunggu Tauri, F4) · K-16 buka laci · K-17 scanner · Modul C-3 rekonsiliasi (P1) · FR-F5 (menunggu keputusan `cost` di jalur turun) · refund parsial dengan pemilihan baris di UI.
+**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4) · FR-F5 (menunggu keputusan `cost` di jalur turun). (FR-H8, Modul C-3, refund parsial dengan pemilihan baris, K-16 buka laci, dan K-17 scanner sudah ditutup, 21 Agustus 2026.)
+
+**Keputusan yang mengikat K-16 (FR-D7) dan K-17:**
+
+- ⛔ **Yang dicatat no-sale adalah PERINTAH sistem, bukan bukti laci terbuka.** `spec-d:231`: sinyalnya **satu arah** — sistem tidak tahu apakah laci benar-benar terbuka, dan **tidak dapat mendeteksi laci yang dibuka manual dengan kunci**. AC FR-D7 kelima menuntut ini dinyatakan ke merchant; ia ada di layar, runbook §8.5, dan kontrak endpoint.
+- ⛔ **Ambang no-sale dihitung dari `audit_event`, bukan dari kolom hitungan.** Kolom hitungan adalah angka kedua yang harus dijaga sepakat dengan jejaknya, dan yang menyimpang di antaranya tidak dapat diputuskan mana yang benar. Pembukaan **KEEMPAT** yang menuntut PIN (`AMBANG_NO_SALE = 3` berarti tiga yang bebas).
+- ⛔ **No-sale TIDAK menulis `cash_movement`** — ia tidak memindahkan uang, dan movement bernilai nol membuat buku kas memuat baris yang tidak menjelaskan apa pun.
+- ⛔ **RBAC no-sale ada di `DIKECUALIKAN`, bukan `PETA_PERAN`.** Setiap entri `PETA_PERAN` diuji MENOLAK kasir, sementara kasir justru BOLEH membuka laci (`IA:66`). Yang menjaganya `assertBoleh(shift_open_close)` di handler — menutup akuntan (`spec-f:82`) — plus ambang frekuensi.
+- ⛔ **Scanner: `cariBarcode` BUKAN `cariItem`.** Pencarian menyaring daftar untuk dilihat kasir; scan memutuskan SATU produk tanpa kasir melihat apa pun. Barcode ganda **tidak memilih siapa pun** — menebak berarti setengah penjualan produk itu tercatat pada produk lain, tanpa satu pun error.
+- ⛔ **Listener scanner global TIDAK menangkap ketukan di kolom teks.** PIN di K-01/K-11 diketik cepat dan diakhiri Enter — bentuk yang PERSIS sama dengan scan.
+- ⛔ **`X-Actor-Id` diabaikan sepenuhnya di rute terlindungi** (`getActorId`: "sesi menang"). Test yang mengganti header itu untuk menguji peran lain sebenarnya menguji pemilik sesi — ditemukan lewat test "akuntan ditolak" yang hijau dengan status **201**. Pakai `buatSesi`.
+
+**Keputusan yang mengikat refund parsial (FR-B7, 21 Agustus 2026):**
+
+- ⛔ **Nilai refund BUKAN jumlah `order_line.line_total`.** `line_total` belum kena pajak eksklusif sementara `order.total` sudah; menjumlahkannya mengembalikan uang **lebih sedikit** daripada yang pelanggan bayar, dan salahnya diam. Untuk pajak inklusif ia justru sudah termasuk — tidak ada satu rumus penjumlahan yang benar untuk keduanya. Yang dipakai: `allocateProportionally(order.total, line_total[])` di `packages/domain/src/pilihan-refund.ts`, sehingga memilih seluruh baris mengembalikan **tepat** `order.total`.
+- ⛔ **Batas per baris diturunkan per VARIASI**, meniru `planRestock` server. `stock_movement` tidak menyimpan `line_id`, jadi kebenaran per baris tidak ada di mana pun; yang dijamin adalah jumlahnya per variasi tidak melebihi yang server izinkan.
+- **Pilihan bermula KOSONG.** `lines: []` sah — uang kembali tanpa barang kembali. Memulai penuh membuat restock jadi bawaan diam-diam, dan stok yang mengembang baru ketahuan saat opname.
+- ⛔ **Kosakata `stock_movement.type` klien kini SAMA dengan server.** Klien sempat menulis `void_return`/`refund_return` — nilai yang `CHECK` di server tolak. Ia tidak pernah gagal karena barisnya murni lokal dan skema lokal tanpa CHECK, tapi `stock_movement` sudah terdaftar sebagai raw table: hari ia masuk sync rules, dua kosakata untuk satu peristiwa menjadi laporan yang menghitung sebagian pengembalian dan melewatkan sisanya. Dijaga `tests/kasir/kosakata-stock-movement.test.js`.
 
 Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)
@@ -234,7 +252,20 @@ Sisa Modul B, belum digarap: **FR-B8/B9** (otorisasi step-up — butuh PIN, Modu
 - **Webhook adalah satu-satunya endpoint tanpa `X-Tenant-Id`.** Signature diverifikasi sebelum satu query pun jalan; tenant dibaca dari `custom_field1` lalu dipakai sebagai `app.tenant_id`, sehingga pencariannya tetap tunduk RLS. Kunci kosong → `503`, bukan diterima apa adanya.
 - **Redaksi log dipasang di lapisan logging** (`logMethod` pino), bukan dipanggil dari tiap handler — AC FR-C5 ketiga menuntut kata itu. Ia menyaring bentuk nomor kartu **dan** nilai rahasia yang didaftarkan saat boot; penyaringan berbasis nama field saja tidak menangkap kunci yang menyelinap ke pesan error.
 
-Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
+**Modul C sub-project 3 — rekonsiliasi & ekspor: selesai** (21 Agustus 2026). FR-C12 dan FR-C13, keduanya P1. `IA:§3.3` menamai B-19 "Laporan Pembayaran **& Rekonsiliasi**" sejak awal; kata kedua itu kini punya kode di baliknya.
+
+**Keputusan yang mengikat kode rekonsiliasi:**
+
+- ⛔ **MDR bukan pajak.** Ia hidup di `packages/domain/src/mdr.ts`, bukan di `tax.ts` — biaya jasa akuisisi yang tidak masuk `order.tax_amount`, tidak muncul di struk, dan tidak mengubah satu pun angka di `order`. Tarifnya `bigint` berskala 10.000, konvensi yang sama dengan `tax_rate.rate`.
+- ⛔ **`null` BERBEDA dari `0`, dan perbedaannya sampai ke layar.** `0` = diperkirakan tidak dipotong (UMI ≤ Rp 500.000); `null` = metode itu tidak punya perkiraan sama sekali. Kartu EDC masuk yang kedua — tarifnya per-acquirer dan `spec-c` tidak memberikan satu pun angkanya. Layar menulis "— tidak ada perkiraan", CSV menulis sel kosong. "Rp 0" untuk kartu adalah pernyataan yang **salah**.
+- ⛔ **`payment.mdr_estimated` SNAPSHOT**, ditulis di transaksi pembayaran. Menghitungnya saat dibaca membuat dua ekspor untuk periode yang sama berbeda begitu kategori atau tarif regulator berubah. Konsekuensinya dinyatakan: memperbaiki `tenant.merchant_category` **tidak** mengubah baris lama.
+- ⛔ **Angka kepala rekapitulasi dari `posisiPenjualan`**, lewat `rekapPenjualan` di berkas yang sama. AC FR-C13 kedua menuntut totalnya cocok dengan laporan penjualan; memakai fungsi yang sama membuat itu benar menurut **konstruksi**, dan testnya `assert.deepEqual` terhadap respons `GET /reports/sales`.
+- ⛔ **Pajak dipisah dari kolom SNAPSHOT** `order_line.tax_rate_name` (`0022`) dan `order_line.tax_jurisdiction` (`0028`), bukan JOIN ke `tax_rate`. Tarif yang di-rename setelah pelaporan tidak boleh mengubah rekapitulasi periode yang sudah dilaporkan.
+- **`tax_jurisdiction` sengaja TIDAK turun ke perangkat.** Menambah kolom raw table mengubah sidik jari skema lokal, dan itu menuntut `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant — biaya nyata untuk kolom yang tidak satu pun layar kasir baca.
+- **`totalDiskonOrder` dan `totalServiceCharge` masih selalu NOL**: `POST /orders` menulis nol ke kolomnya. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya. ⛔ Test integrasi untuk keduanya akan hijau karena **hampa**; aturannya diuji di `tests/domain/posisi-penjualan.test.js`.
+- **XLSX tidak dibuat.** `spec-c:444` menulis "CSV + XLSX"; XLSX menuntut dependensi baru dan CSV terbuka apa adanya di Excel dan Google Sheets. Batas yang dinyatakan.
+
+Sisa Modul C: FR-C3 (nonaktifkan metode online saat offline) tidak bisa ditegakkan server dan menunggu klien + F2.
 
 **Keputusan produk yang mengikat kode katalog:**
 
@@ -280,7 +311,7 @@ Sisa Modul C: **C-3** — rekonsiliasi dan ekspor (keduanya P1). FR-C3 (nonaktif
 - **Refund sebagian wajib menyebut `lines`.** Tanpa itu server harus menebak apakah barang fisik kembali ke rak. `lines: []` berarti uang kembali tanpa barang kembali.
 - **Void berjalan tanpa `X-Approver-Id`; refund selalu menuntutnya.** Header itu diabaikan pada jalur void. Bahwa penyetuju berbeda dari aktor ditegakkan `CHECK` di `audit_event` — **database**, bukan aplikasi.
 
-**Exit criteria F1 terpenuhi.** Satu penjualan tersimpan atomik dengan pajak benar, dapat dibayar tunai/QRIS/EDC, dan dapat dikoreksi lewat void & refund. `ARCH:395` menuntut modul `payment` — ia ada, beserta port gateway-nya. Yang tersisa di Modul C adalah C-3 (rekonsiliasi dan ekspor, keduanya P1).
+**Exit criteria F1 terpenuhi.** Satu penjualan tersimpan atomik dengan pajak benar, dapat dibayar tunai/QRIS/EDC, dan dapat dikoreksi lewat void & refund. `ARCH:395` menuntut modul `payment` — ia ada, beserta port gateway-nya. C-3 (rekonsiliasi dan ekspor) ditutup 21 Agustus 2026.
 
 ---
 
@@ -409,6 +440,60 @@ Bucket storage boleh PostgreSQL — MongoDB tidak wajib. `client_auth.jwks` mene
 Aturannya selama ini "fake menyembunyikan, SQLite sungguhan membuktikan". F3 menemukan kebalikannya: test HLC penandaan habis tetap **hijau** saat perbandingan HLC diganti "baris terakhir menang", karena index `(outlet_id, variation_id, hlc)` membuat pemindaian terurut hlc menaik — kedua aturan memberi jawaban identik, secara struktural. Membalik urutan `INSERT` tidak menolong; index yang menentukan.
 
 Jaminan urutan yang kodenya sendiri harus berikan hanya dapat diuji lewat sumber yang mengembalikan baris dalam urutan **yang tidak dijamin SQL** — di sana fake bukan penyederhanaan, melainkan satu-satunya alat yang benar.
+
+---
+
+## F6 — telemetri klien, keputusan yang mengikat kode
+
+Lima dari delapan metrik `ARCH:296` **tidak dapat dihasilkan server** — dan itu bukan kelalaian, melainkan sifat: keadaan yang mereka ukur hidup di perangkat, sebagian besar justru saat perangkat tidak terhubung. Rantainya: `catat()` → `telemetry_local` → penjadwal → `POST /devices/{id}/telemetry` → `device_telemetry` (migrasi `0029`) → `GET /devices/{id}/telemetry`.
+
+- ⛔ **Batas etis `ARCH:309` ditegakkan di TIGA lapisan, dan yang ketiga membaca KODE.** Daftar event tertutup dan nilai yang wajib angka menjaga datanya; yang tidak dijaga keduanya adalah slot `tipe` — ia memang string, dan string apa pun lolos. `tests/kasir/telemetri-batas-etis.test.js` memindai setiap pemanggilan `catat()` di `apps/kasir/src` dan menolak `.message`, template literal, serta properti selain `.name`. Pesan error memuat nama produk ("Kopi Susu tidak ditemukan"); tidak satu pun lapisan di bawah dapat mengetahuinya.
+- ⛔ **`VITE_TELEMETRY` yang TIDAK DISET berarti `off`, bukan `full`.** `ARCH:262` tetap berlaku — yang menetapkan `full` adalah konfigurasi deployment SaaS, bukan ketiadaan konfigurasi. Asimetri akibatnya yang memutuskan: on-premise yang lupa menyetelnya akan MENGUMPULKAN data tanpa ada yang menyetujuinya, dan itu tidak terlihat siapa pun; SaaS yang lupa hanya menghasilkan metrik kosong, dan kosong itu terlihat.
+- ⛔ **`mode === 'off'` tidak memasang apa pun** — bukan sink yang membuang, bukan penjadwal yang mengirim nol. "Dikumpulkan lalu dibuang" adalah jawaban yang berbeda dari "tidak dikumpulkan".
+- ⛔ **`rekam()` menelan SETIAP kegagalan**, termasuk `no such table` pada perangkat yang migrasi lokalnya belum jalan (`ARCH:307`). Pemanggilnya jalur penjualan dan jalur cetak; telemetri yang menggagalkan keduanya lebih berbahaya daripada telemetri yang tidak ada.
+- ⛔ **Buffer BERBATAS dan memangkas yang TERLAMA.** Disk yang penuh membuat `outbox_local` gagal menulis penjualan — telemetri dapat dibuang, penjualan tidak. Jaminan urutannya hidup di `ORDER BY`, dan fake `DbLokal` tidak menegakkan `ORDER BY` sama sekali; testnya karena itu di atas SQLite sungguhan, disisipkan dalam urutan acak.
+- ⛔ **Percobaan ulang mengirim BATCH YANG SAMA**, dengan kunci idempotensi yang diturunkan dari daftar id. Batch yang melebar di antara dua percobaan akan menghitung ganda bila yang pertama sebenarnya sampai — dan respons yang hilang adalah kejadian normal di jalur ini.
+- ⛔ **`401` dipertahankan, `400` dibuang.** Perangkat yang kredensialnya kedaluwarsa akan di-provisioning ulang, dan metrik dari masa ia tidak terhubung justru yang menjelaskan kenapa. Muatan yang bentuknya salah tidak akan pernah diterima, dan batch yang diulang selamanya akhirnya memangkas metrik yang masih baik.
+- ⛔ **Koersi AJV mengubah `null` menjadi `0`** pada properti bertipe `number`, sebelum handler melihatnya — pengukuran yang tidak pernah terjadi, tidak dapat dibedakan dari nol yang sungguhan, tanpa satu pun error. `typeof === 'number'` tidak melihat apa pun. Yang menangkapnya **aritmetika**: setiap sampel ada di `[min, max]`, jadi `total` ada di `[min × count, max × count]`.
+- ⛔ **Migrasi lokal sekarang MEMBUAT tabel murni-lokal yang baru.** `jalankanDdl` hanya berjalan saat sidik jari raw table berubah, dan sidik jari itu tidak menghitung tabel lokal — jadi setiap tabel lokal baru adalah `no such table` permanen di setiap perangkat yang sudah terpasang. `rencanaBuatLokalHilang` menutupnya; ia berjalan sebelum ALTER kolom, di setiap boot.
+- **Latensi keranjang diukur HANYA untuk jalur langsung.** Penandanya dikosongkan begitu dialog modifier terbuka — angka yang memuat waktu berpikir orang mengukur menu, bukan aplikasi.
+- **`app_version` disimpan bersama angkanya**, bukan dibaca dari `device.app_version` saat laporan dibuat: `ARCH:302` memakai crash rate per versi sebagai gate rollout, dan versi perangkat sekarang sudah berubah saat rollout gagal.
+- **Kesehatan antrean dibaca lewat `ringkasanAntrean`** — fungsi yang sama dengan indikator sinkronisasi dan K-14. Antrean kosong TIDAK mengirim `umur_antrean_jam: 0`; nol akan menurunkan rata-rata umur tepat pada perangkat yang paling sehat.
+- **`double precision` di `device_telemetry` bukan pengecualian aturan float.** Larangan itu berlaku di jalur uang; yang menjaga kolom-kolom ini tetap di luar jalur itu adalah CHECK `event` — tidak ada nama event yang menyebut jumlah uang, dan tidak boleh ada.
+- **Agregasi lintas-tenant TIDAK dibangun**, batas yang sama dengan `metrik.ts`: ia menuntut pembaca ber-`BYPASSRLS`, dan itu keputusan deployment.
+
+### ⛔ Transport perangkat diuji SEBAGAI transport — pelajaran 21 Agustus 2026
+
+**Setiap refund yang dibuat offline tidak pernah sampai ke server**, dan itu hidup di kode ter-merge sampai ditemukan tanpa sengaja. `POST /orders/{id}/cancel` menuntut `X-Approver-Id`; relay outbox tidak pernah mengirimnya, dan `outbox_local` tidak punya kolom untuk menyimpannya. Hasilnya `400 MISSING_APPROVER_ID` → `gagal-permanen` → berhenti di antrean selamanya, sementara kasir sudah mengembalikan uangnya dan server tetap mencatat penjualannya tertutup dengan omzet penuh.
+
+**Delapan belas test void/refund hijau selama itu.** Semuanya memanggil endpoint LANGSUNG dengan header yang ditulis test itu sendiri — bentuk yang dipakai back-office, bukan yang dipakai perangkat. Header yang tidak pernah disusun `buatPengirimHttp` tidak dapat hilang dari test yang menuliskan headernya sendiri.
+
+Aturannya sekarang: **setiap operasi yang perangkat kirim lewat outbox wajib punya satu test yang memakai `buatPengirimHttp` dan `klasifikasi` yang ASLI**, dengan hanya `fetch` yang dipalsukan dan diteruskan ke server sungguhan (`tests/ordering/refund-offline-relay.test.js`). Yang dibuktikan test endpoint langsung adalah servernya benar; ia tidak dapat membuktikan kliennya memanggil dengan benar.
+
+⛔ **Membuka rute untuk jalur perangkat MENGEMBALIKAN kepercayaan pada `X-Actor-Id`.** Rute di `RUTE_TERBUKA` melewati penjaga sesi sepenuhnya, jadi `req.sesi` tidak pernah terisi dan `getActorId` kembali memakai header — pemanggil yang PUNYA sesi tetap dapat mengaku jadi orang lain. Karena itu jalur perangkat ditandai **`sesiOpsional`**: sesi tidak dituntut (relay tidak mengirimnya), tapi ditegakkan bila dibawa, dan Bearer tidak sah ditolak 401 alih-alih diabaikan. ⛔ Ia TIDAK dipasang pada rute berkredensial perangkat (`sync-token`, `telemetry`, `update`) — Bearer di sana secret perangkat, dan memverifikasinya sebagai sesi menolak perangkat yang sah.
+
+Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_id`**, alasan yang sama dengan `actor_id` — antrean dapat terkuras setelah pergantian shift. Header KOSONG tidak pernah dikirim: `getApproverId` menolaknya dengan pesan yang sama persis dengan header yang hilang, jadi mengirimnya hanya memindahkan kegagalan.
+
+---
+
+### F6 — staged rollout, keputusan yang mengikat kode
+
+`ARCH:§12` dan KEP-36 menolak dua jalan yang lebih mudah: auto-update paksa **menghentikan outlet di jam makan siang**, dan update manual berarti delapan versi di lapangan setelah setahun. Yang tersisa adalah rollout bertahap dengan jendela waktu. Aturannya di `packages/domain/src/rilis.ts`; keadaannya di `app_release` (migrasi `0030`).
+
+- ⛔ **Yang dibangun adalah KEPUTUSAN, bukan PEMASANGAN.** `GET /devices/{id}/update` menjawab "versi mana yang seharusnya, dan boleh dipasang sekarang atau tidak". Mengunduh dan memasangnya menuntut shell Tauri — utang F4 yang tercatat. Memisahkan keduanya membuat updater yang lahir kelak tinggal menempel, bukan memutuskan ulang; aturannya tidak akan pernah punya dua salinan.
+- ⛔ **Persentase MERCHANT, bukan perangkat.** Satu outlet dengan tiga kasir tidak boleh terbelah dua versi: ketiganya berbagi shift, printer, dan nomor struk, dan selisih versi di antara mereka adalah tepat beban multi-versi yang KEP-36 ingin hindari — dialami dalam satu ruangan.
+- ⛔ **Kohort wajib SUBSET: 5% ⊂ 25% ⊂ 100%.** Merchant yang keluar dari cakupan saat tahap naik harus TURUN versi, dan rollback skema SQLite lokal "hampir mustahil" setelah data ditulis dengan skema baru (KEP-36). Diuji sebagai property atas 2.000 tenant.
+- ⛔ **Kohort DI-GARAM per versi.** Tanpa garam, merchant yang kebetulan berkohort rendah menjadi kelinci percobaan untuk **setiap** rilis, selamanya.
+- ⛔ **Kanari adalah PILIHAN (`tenant.is_canary`), bukan undian**, dan cakupannya nol persen. Merchant sungguhan tidak pernah menjadi kelinci percobaan tanpa memilihnya.
+- ⛔ **Jendela update boleh MELEWATI TENGAH MALAM.** Outlet yang tutup 02:00 memilih 23:00–02:00, dan perbandingan naif (`mulai <= jam && jam < selesai`) menjawab "tidak pernah" untuknya — update yang tidak pernah terpasang terlihat persis seperti tidak ada rilis. `mulai = selesai` adalah jendela KOSONG, bukan 24 jam penuh; CHECK constraint menolaknya, karena menafsirkannya sebagai penuh membuat satu salah ketik mengizinkan update di jam makan siang.
+- ⛔ **Jam lokal outlet dibaca dari jam DATABASE.** Jendela selebar tiga jam, dan dua mesin yang jamnya berselisih memasang update di luar jendela yang merchant setujui.
+- ⛔ **Urutan pemeriksaan bukan selera.** "Belum giliran" mendahului segalanya — termasuk update yang wajib segera; yang menaikkan tahap adalah orang. "Wajib segera" mendahului jendela dan penundaan justru karena kategorinya tertutup (`keamanan`, `kehilangan_data`): yang lolos ke sana hanya kehilangan data dan lubang keamanan, dan menunggu 03:00 untuk keduanya berarti membiarkan kerusakan berjalan semalaman.
+- ⛔ **Penundaan dihitung PER VERSI** (`device.update_deferred_version`). Tanpa itu, penundaan yang terkumpul untuk versi lama membuat versi berikutnya wajib segera saat pertama kali muncul — merchant kehilangan haknya tanpa pernah memakainya. Jatah yang habis membuat update **wajib**, bukan batal.
+- ⛔ **Gate crash rate MENAHAN saat datanya belum ada.** Gate yang meloloskan ketidaktahuan hanya menyala pada rilis yang sudah cukup lama berjalan untuk tidak membutuhkannya. Dan crash rate yang naik SEDIKIT PUN menahan: `ARCH:304` menulis ambangnya `> baseline`, dan toleransi adalah angka yang harus dipilih seseorang — tidak ada di dokumen mana pun, jadi ia tidak dikarang di kode.
+- ⛔ **Angka crash rate DIKETIK operator, bukan dihitung alat.** Crash rate satu versi bersifat lintas-tenant, dan `device_telemetry` tunduk RLS — `FORCE ROW LEVEL SECURITY` berlaku untuk owner juga, jadi bahkan `DATABASE_MIGRATION_URL` tidak dapat mengagregasinya. `tools/naikkan-tahap.mjs` menuntut angkanya disebutkan, menegakkan aturannya, lalu **menyimpan** angka yang dipakai di `app_release.gate_crash_*`.
+- **`app_release` dikecualikan RLS**, sejajar `printer_profile`: rilis milik KAMI, tidak ada tenant yang memilikinya. Konsekuensinya dinyatakan — setiap merchant dapat membaca barisnya, dan tidak satu pun kolomnya menyebut merchant lain.
+- **Rilis yang dihentikan TIDAK dihapus.** Barisnya justru yang menjelaskan perangkat yang terlanjur memasangnya. Yang berlaku adalah rilis **terbaru dibuat**, bukan yang tertinggi nomornya — itulah yang membuat penarikan lewat versi bernomor lebih rendah mungkin.
+- **Tidak ada endpoint untuk menaikkan tahap**, dan itu batas yang dinyatakan: seluruh peran di `spec-f` adalah peran merchant, dan endpoint operator menuntut permukaan otentikasi staf yang tidak ada di sistem ini. Alat memakai kredensial database yang memang sudah dipegang operator.
 
 ---
 

@@ -9,8 +9,9 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 
 | Modul | Tabel yang dimiliki |
 |---|---|
-| `tenancy` | `tenant`, `outlet`, `vertical_profile`, `subscription`, `usage_metric` |
-| `identity` | `user`, `role`, `user_role`, `device`, `support_session` |
+| `tenancy` | `tenant`, `outlet`, `vertical_profile`, `subscription_invoice`, `usage_metric` |
+| `identity` | `user`, `role`, `user_role`, `device`, `support_session`, `device_telemetry` |
+| `rilis` | `app_release` |
 | `catalog` | `category`, `item`, `item_variation`, `modifier_list`, `modifier`, `item_modifier_list`, `price_history` |
 | `ordering` | `order`, `check`, `order_line`, `order_line_modifier`, `refund` |
 | `payment` | `payment`, `tax_rate` |
@@ -18,7 +19,7 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `cash` | `cash_drawer_shift`, `cash_movement` |
 | `reporting` | — **tidak memiliki tabel apa pun**. Satu-satunya modul yang boleh MEMBACA lintas domain (keputusan user 16 Agustus 2026); tidak menulis apa pun |
 | `sync` | `idempotency_key`, `outbox` |
-| `peripheral` | `peripheral`, `printer_profile`, `print_job` |
+| `peripheral` | `peripheral`, `printer_profile`. ⛔ `print_job` **murni lokal di perangkat** (`db/local/001-initial.sql`) — struk adalah artefak perangkat, dan printer yang gagal di kasir 1 tidak dapat dicetak ulang oleh kasir 2 |
 | `audit` | `audit_event` |
 
 3. Lint rule melarang import dalam-dalam antar modul.
@@ -29,20 +30,22 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | Modul | Isi | Permukaan publik |
 |---|---|---|
 | `catalog` | Kategori, item/variation, modifier, harga per outlet | 32 operasi REST · `resolvePrice` · `getVariationSnapshot` |
-| `ordering` | Penulisan penjualan, void & refund | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` |
+| `ordering` | Penulisan penjualan, void & refund, seluruh laporan atas `order` | `POST /orders` · `GET /orders/{id}` · `POST /orders/{id}/cancel` · `GET /reports/sales` · `GET /reports/recap` · `GET /reports/export` · `ambilPenjualan` · `ambilProduk` |
 | `identity` | Provisioning device (FR-B6) | `POST /devices` · `POST /devices/{id}/revoke` · `assertUserVisible` · `assertApproverVisible` · `assertDeviceVisible` |
-| `cash` | Buka shift saja — tutup kas tetap F3 | `POST /shifts` · `assertShiftOpen` |
-| `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` |
-| `tenancy` | Pendaftaran merchant mandiri + kuota (F5) | `POST /tenants` · `POST /outlets` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` |
+| `identity` | Telemetri perangkat (F6) | `POST /devices/{id}/telemetry` · `GET /devices/{id}/telemetry` — barisnya berkunci perangkat, dan penjaganya kredensial perangkat (`kredensial-perangkat.ts`), yang sudah dimiliki modul ini |
+| `rilis` | Staged rollout (F6) | `GET /devices/{id}/update` · `POST /devices/{id}/update/defer` — keputusannya menunjuk `device` (identity) DAN `outlet`/`tenant` (tenancy), jadi ia modul tersendiri alih-alih membuat salah satu dari keduanya meng-query tabel milik yang lain |
+| `cash` | Buka shift, tutup kas, no-sale (FR-D7) | `POST /shifts` · `POST /shifts/{id}/close` · `POST /shifts/{id}/no-sale` · `assertShiftOpen` |
+| `payment` | Tarif pajak; pembayaran tunai, QRIS dinamis, QRIS statis, EDC; webhook gateway | `POST /tax-rates` · `GET /tax-rates` · `POST /tax-rates/{id}/end` · `POST /orders/{id}/payments` · `POST /payments/{id}/check-status` · `POST /webhooks/midtrans` · `fetchEffectiveTaxRates` · `selectPaymentProvider` · `selectSubscriptionProvider` |
+| `tenancy` | Pendaftaran merchant mandiri + kuota + langganan (F5) + kategori merchant (FR-C12) | `POST /tenants` · `POST /outlets` · `GET /tenants/usage` · `PATCH /tenants/settings` · `POST /tenants/subscription/invoices` · `GET /tenants/subscription/invoices` · `POST /tenants/subscription/invoices/{id}/check-status` · `batasKuota` · `assertKuota` · `assertOutletVisible` · `getOutletSettings` · `getMerchantCategory` · `terapkanStatusTagihan` |
 | `sync` | Tidak punya endpoint; worker relay `outbox` adalah F2 | `findIdempotencyKey` · `claimIdempotencyKey` · `completeIdempotencyKey` · `insertOutboxEvent` |
-| `inventory` | Irisan minimal Modul E — hanya penulisan pergerakan stok | `recordStockMovements` |
+| `inventory` | Pergerakan stok, opname, penandaan habis | `POST /inventory/movements` · `POST /inventory/stocktakes` · `POST /inventory/sold-out` · `recordStockMovements` · `detectOversell` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
 
-Belum ada kode: `reporting`, `peripheral`.
+Belum ada kode: `peripheral`.
 
-`inventory` dan `audit` lahir masing-masing dengan **satu fungsi**, dan itu bukan penundaan yang malas. Keputusan produk 1 Agustus 2026 menetapkan void berjalan **tanpa PIN manajer**, dengan syarat alasan daftar tertutup + audit + restock otomatis — jadi keduanya bukan pelengkap void, melainkan kontrol yang tersisa untuknya. Invariant #1 menuntut keduanya ditulis dalam transaksi yang sama, dan aturan 2 melarang `ordering` menyentuh `stock_movement` maupun `audit_event` langsung.
+`audit` lahir dengan **satu fungsi**, dan itu bukan penundaan yang malas. Keputusan produk 1 Agustus 2026 menetapkan void berjalan **tanpa PIN manajer**, dengan syarat alasan daftar tertutup + audit + restock otomatis — jadi keduanya bukan pelengkap void, melainkan kontrol yang tersisa untuknya. Invariant #1 menuntut keduanya ditulis dalam transaksi yang sama, dan aturan 2 melarang `ordering` menyentuh `stock_movement` maupun `audit_event` langsung.
 
-Perhitungan stok (`SUM(delta)`), stocktake, oversell, sold-out tetap Modul E penuh. RBAC, PIN, sesi, dan seluruh permukaan query/laporan audit tetap Modul F penuh.
+Perhitungan stok (`SUM(delta)`) tetap dibaca modul `reporting`, yang boleh menggabungkan `stock_movement` dengan katalog. RBAC, PIN, sesi, dan seluruh permukaan query/laporan audit tetap Modul F penuh.
 
 ## Kenapa modul-modul kecil itu ada
 
@@ -95,6 +98,12 @@ Midtrans tidak tahu apa-apa soal tenant kami. Karena itu `POST /webhooks/midtran
 2. **Tenant dibaca dari `custom_field1`** yang kami titipkan sendiri saat charge, lalu dipakai sebagai `app.tenant_id` — sehingga pencarian payment tetap tunduk RLS. Notifikasi bertanda tangan sah tapi bertenant salah dijawab `404`.
 
 Alternatifnya adalah query yang melewati RLS, dan itu melanggar invariant #8.
+
+3. **⛔ Satu URL, dua jenis tagihan (F5).** Midtrans mengirim SELURUH notifikasi ke URL yang sama. Sebelum F5, handler ini memperlakukan `order_id` notifikasi sebagai id payment kami dan menjawab `404 PAYMENT_NOT_FOUND` bila tidak ditemukan — sementara Midtrans **mengirim ulang notifikasi yang tidak dijawab 200**. Notifikasi tagihan langganan pertama karena itu akan dijawab 404 lalu diulang selamanya.
+
+   Yang menutupnya adalah **prefiks** (`sub-`) pada id yang dititipkan ke gateway, dan rutenya diputuskan dari string-nya — **sebelum satu query pun jalan**. Alternatifnya (mencari di kedua tabel) menghasilkan dua pencarian yang keduanya gagal untuk notifikasi asing, dan jenis tagihan berikutnya menambah pencarian ketiga.
+
+   Tabel `subscription_invoice` milik `tenancy`, jadi yang menyentuhnya adalah `terapkanStatusTagihan` yang diekspor modul itu; transaksinya tetap dibuka di webhook supaya batasnya satu dan sama untuk kedua jenis.
 
 ## Kuota: empat titik administratif, nol di jalur kasir
 

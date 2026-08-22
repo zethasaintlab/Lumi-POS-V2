@@ -1,10 +1,13 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Pool, PoolClient } from '../../../db.ts';
+import type { Pool } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
 import { jwksDari, tandatanganiJwt } from '../jwt.ts';
+// Aturan kredensial perangkat tinggal di satu tempat sejak endpoint kedua
+// (telemetri klien, F6) membutuhkannya. Lihat `../kredensial-perangkat.ts`.
+import { ambilBearer, ambilDevice, hashSecret, verifikasiPerangkat } from '../kredensial-perangkat.ts';
 
 // FR-F12 -- token perangkat.
 //
@@ -12,32 +15,6 @@ import { jwksDari, tandatanganiJwt } from '../jwt.ts';
 // Segalanya di berkas ini mengikuti dari kalimat itu: kredensial dapat
 // dicabut, berumur terbatas, terikat satu perangkat, dan tidak pernah
 // tersimpan apa adanya.
-
-/**
- * `[KEPUTUSAN]` SHA-256, bukan Argon2id.
- *
- * `CLAUDE.md` menetapkan Argon2id untuk **password dan PIN** -- rahasia
- * berentropi rendah yang dipilih manusia, tempat KDF lambat adalah
- * satu-satunya pertahanan terhadap tebakan. Secret ini 256 bit dari CSPRNG:
- * tidak ada kamus yang menjangkaunya, dan KDF lambat hanya akan menambah
- * biaya pada setiap permintaan token yang sah.
- *
- * Yang tetap berlaku dari aturan itu: rahasianya tidak pernah disimpan apa
- * adanya, dan perbandingannya timing-safe.
- */
-function hashSecret(secret: string): string {
-  return createHash('sha256').update(secret).digest('hex');
-}
-
-function samaAman(a: string, b: string): boolean {
-  const bufA = Buffer.from(a, 'utf8');
-  const bufB = Buffer.from(b, 'utf8');
-  // `timingSafeEqual` melempar bila panjangnya berbeda -- itu sendiri
-  // membocorkan panjang, tapi keduanya di sini selalu hash heksadesimal
-  // 64 karakter, jadi panjangnya tidak membawa informasi.
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
 
 /** OQ-08, diputuskan 7 Agustus 2026: batas kredensial offline 30 hari. */
 const UMUR_KREDENSIAL_HARI = 30;
@@ -52,54 +29,6 @@ const UMUR_KREDENSIAL_HARI = 30;
  * orang yang perlu dicabut secara terpisah dari perangkatnya.
  */
 const UMUR_TOKEN_DETIK = 3600;
-
-interface BarisDevice {
-  id: string;
-  tenant_id: string;
-  outlet_id: string;
-  token_hash: string | null;
-  credentials_expire_at: string | null;
-  revoked_at: string | null;
-}
-
-/**
- * Pencarian device TUNDUK RLS, dan itu yang membuat `X-Tenant-Id` tetap
- * dituntut endpoint ini -- tidak seperti webhook Midtrans, yang satu-satunya
- * endpoint tanpa header itu.
- *
- * Perangkat tahu tenant-nya sendiri. Berbohong tentang tenant tidak memberi
- * apa pun: device id-nya tidak akan ditemukan di sana. Alternatifnya --
- * mencari device di SELURUH tenant lalu menetapkan tenant dari hasilnya --
- * akan menjadi satu-satunya query di repo ini yang berjalan di luar RLS,
- * dan itu harga yang tidak perlu dibayar untuk menghemat satu header.
- */
-async function ambilDevice(client: PoolClient, deviceId: string): Promise<BarisDevice | null> {
-  const { rows } = await client.query<BarisDevice>(
-    'SELECT id, tenant_id, outlet_id, token_hash, credentials_expire_at, revoked_at FROM device WHERE id = $1',
-    [deviceId]
-  );
-  return rows[0] ?? null;
-}
-
-/**
- * Satu pesan untuk SEMUA kegagalan otentikasi, dan itu disengaja.
- *
- * Membedakan "perangkat tidak ada" dari "secret salah" memberi tahu penyerang
- * bahwa id yang ditebaknya benar. Yang membedakannya hanya kode `EXPIRED`,
- * karena perangkat yang sah perlu tahu ia harus di-provisioning ulang alih-alih
- * mengira dirinya dicuri.
- */
-function tolak(kode = 'DEVICE_UNAUTHORIZED'): never {
-  throw new HttpError(401, kode, 'Kredensial perangkat tidak sah, sudah dicabut, atau kedaluwarsa.');
-}
-
-function ambilBearer(req: FastifyRequest): string {
-  const header = req.headers.authorization;
-  if (typeof header !== 'string' || !header.startsWith('Bearer ')) tolak();
-  const secret = header.slice('Bearer '.length).trim();
-  if (secret.length === 0) tolak();
-  return secret;
-}
 
 export interface KonfigToken {
   /** PEM kunci privat RSA. String kosong = fitur tidak dikonfigurasi. */
@@ -163,25 +92,9 @@ export function createTokenHandlers(pool: Pool, konfig: KonfigToken): Record<str
       const { deviceId } = req.params as { deviceId: string };
       const secret = ambilBearer(req);
 
-      const device = await withTenantTransaction(pool, tenantId, async (client) => {
-        const baris = await ambilDevice(client, deviceId);
-        if (baris === null || baris.revoked_at !== null) tolak();
-        if (baris.token_hash === null) tolak();
-        if (!samaAman(baris.token_hash, hashSecret(secret))) tolak();
-
-        // Kedaluwarsa diperiksa TERHADAP JAM DATABASE, di query yang sama
-        // yang memperbarui `last_seen_at` -- bukan dengan membandingkan
-        // string tanggal di Node.
-        const { rows } = await client.query<{ kedaluwarsa: boolean }>(
-          `UPDATE device
-              SET last_seen_at = now()
-            WHERE id = $1
-        RETURNING (credentials_expire_at IS NOT NULL AND credentials_expire_at <= now()) AS kedaluwarsa`,
-          [deviceId]
-        );
-        if (rows[0].kedaluwarsa) tolak('DEVICE_CREDENTIALS_EXPIRED');
-        return baris;
-      });
+      const device = await withTenantTransaction(pool, tenantId, (client) =>
+        verifikasiPerangkat(client, deviceId, secret)
+      );
 
       const pem = wajibAdaKunci();
       const token = tandatanganiJwt({

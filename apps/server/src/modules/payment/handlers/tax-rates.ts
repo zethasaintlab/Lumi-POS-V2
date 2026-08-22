@@ -180,6 +180,9 @@ export async function fetchEffectiveTaxRates(
     name: row.name,
     rateScaled: parseRateToScaled(row.rate),
     isInclusive: row.is_inclusive,
+    // FR-C13 — ikut ke domain supaya rekapitulasi dapat memisahkan pajak per
+    // yurisdiksi tanpa JOIN kedua ke `tax_rate` saat laporan dibuat.
+    jurisdiction: row.jurisdiction,
     outletId: row.outlet_id,
     channel: row.channel as TaxRateSpec['channel'],
     appliesTo: row.applies_to as TaxRateSpec['appliesTo'],

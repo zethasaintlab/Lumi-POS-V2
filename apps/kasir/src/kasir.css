@@ -291,3 +291,33 @@
   min-height: var(--space-5);
   margin: 0;
 }
+
+/* FR-H8 — pita antrean menua (`spec-h:310`).
+
+   BUKAN dialog dan bukan overlay: ia bagian dari aliran dokumen, jadi ia
+   mendorong isi ke bawah alih-alih menutupinya. AC FR-H8 kedua menuntut
+   "banner, bukan dialog"; tombol yang tertutup pita adalah dialog dengan nama
+   lain.
+
+   Seluruh nilai token (aturan design system #6). Tiga tingkat memakai tiga
+   warna semantik yang SUDAH ada — tidak ada token warna baru, dan teksnya
+   selalu ada di samping warnanya (aturan #5). */
+.kasir-pita {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.kasir-pita-peringatan {
+  background: var(--warning-soft);
+  border-bottom-color: var(--warning-border);
+}
+
+.kasir-pita-kritis,
+.kasir-pita-darurat {
+  background: var(--danger-soft);
+  border-bottom-color: var(--danger-border);
+}

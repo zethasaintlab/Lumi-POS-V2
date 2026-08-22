@@ -105,6 +105,17 @@ CREATE TABLE outlet (
   rounding_mode TEXT NOT NULL DEFAULT 'half_up',
   service_charge_rate INTEGER NOT NULL DEFAULT 0,   -- x10000
   vertical_profile_id TEXT,
+  -- FR-B8 — ambang otorisasi diskon. Turun ke perangkat karena otorisasi
+  -- step-up harus bekerja OFFLINE: klien yang tidak tahu ambangnya akan
+  -- menerapkan diskon 90% tanpa satu pun PIN, lalu server menolaknya
+  -- berjam-jam kemudian — saat uangnya sudah diterima dan pelanggannya sudah
+  -- pulang.
+  --
+  -- ⛔ NULL berarti "pakai bawaan", dan bawaannya di
+  -- `packages/domain/src/diskon.ts`. Bukan DEFAULT kolom: outlet lama akan
+  -- diam-diam memakai angka lama selamanya.
+  discount_threshold_percent INTEGER,   -- x10000
+  discount_threshold_amount INTEGER,
   archived_at TEXT
 );
 
@@ -149,6 +160,35 @@ CREATE TABLE print_job (
   created_at TEXT NOT NULL
 );
 CREATE INDEX ix_print_job_pending ON print_job(status, created_at);
+
+-- F6 — telemetri klien (`ARCH:294` § 10). MURNI LOKAL.
+--
+-- Lima dari delapan metrik `ARCH:296` tidak dapat dihasilkan server: umur
+-- antrean, item gagal sinkron, latensi keranjang, crash rate, dan rasio
+-- offline. Semuanya terjadi di perangkat, sebagian besar justru saat
+-- perangkat TIDAK terhubung.
+--
+-- ⛔ TIDAK didaftarkan sebagai raw table. Ia tidak pernah turun dari server,
+-- dan mendaftarkannya berarti PowerSync membuat VIEW bernama sama di atas
+-- `ps_data__telemetry_local` yang bertabrakan dengan tabel ini.
+--
+-- ⛔ Nilai selalu REAL, tidak pernah TEXT. `ARCH:309` menetapkan batas etis:
+-- "tidak pernah mengirim nama produk, harga, nilai transaksi, data pelanggan,
+-- atau nama merchant. Metrik dan tipe error saja." Kolom bertipe angka adalah
+-- lapisan pertama yang menegakkannya — string tidak punya tempat untuk
+-- singgah.
+--
+-- `tipe` adalah LABEL KATEGORI (`TypeError`, `IDEMPOTENCY_KEY_REUSED`), bukan
+-- pesan error: pesan dapat memuat nama produk dan nilai transaksi.
+CREATE TABLE telemetry_local (
+  id TEXT PRIMARY KEY NOT NULL,
+  event TEXT NOT NULL,
+  nilai REAL NOT NULL,
+  tipe TEXT,
+  pada_waktu TEXT NOT NULL
+);
+-- Pemangkasan buffer membuang yang TERLAMA; index ini yang membuatnya murah.
+CREATE INDEX ix_telemetry_waktu ON telemetry_local(pada_waktu);
 
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
@@ -324,7 +364,22 @@ CREATE TABLE outbox_local (
   -- Antrean dapat terkuras berjam-jam kemudian, mungkin setelah pergantian
   -- shift: memakai "siapa yang sedang masuk" akan mencatat penjualan Sari
   -- atas nama Budi di `X-Actor-Id`, dan audit server percaya begitu saja.
-  actor_id TEXT
+  actor_id TEXT,
+  -- ⛔ PENYETUJU, dibekukan dengan alasan yang sama — dan ketiadaannya adalah
+  -- cacat yang PERNAH TERJADI, bukan kemungkinan teoretis.
+  --
+  -- Sebelum kolom ini ada, relay tidak pernah mengirim `X-Approver-Id` sama
+  -- sekali, sementara `POST /orders/{id}/cancel` menuntutnya untuk setiap
+  -- refund. Akibatnya SETIAP REFUND YANG DIBUAT OFFLINE dijawab
+  -- `400 MISSING_APPROVER_ID`, diklasifikasi `gagal-permanen`, dan tidak
+  -- pernah sampai ke server — sementara kasir sudah mengembalikan uangnya,
+  -- stok sudah kembali, dan laci sudah berkurang. Buku merchant dan server
+  -- berpisah tanpa satu pun error.
+  --
+  -- Direproduksi terhadap server sungguhan lewat transport relay yang sama,
+  -- bukan disimpulkan dari membaca kode. Testnya
+  -- `tests/ordering/refund-offline-relay.test.js`.
+  approver_id TEXT
 );
 -- Identitas perangkat + counter lokalnya. Satu baris, dipaksa CHECK: satu
 -- pemasangan aplikasi adalah satu perangkat, dan `device_code` sebagai

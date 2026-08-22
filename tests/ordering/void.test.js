@@ -304,7 +304,26 @@ test('aktor milik tenant lain -> 404, tidak ada baris tersimpan', async () => {
   const lain = await seedTenantBase(appSetup, { suffix: 'VoidActorOther' });
 
   const payload = batalkanPayload();
-  const res = await batalkan(order.id, payload, { 'x-actor-id': lain.user.id });
+  // ⛔ TANPA `Authorization`, dan itu bukan kelalaian: yang diuji di sini
+  // adalah atribusi lewat HEADER, dan header hanya berlaku bila pemanggil
+  // TIDAK membawa sesi — persis bentuk relay outbox, yang tidak pernah
+  // mengirim Bearer sama sekali.
+  //
+  // Versi sebelumnya mengirim sesi DAN header. Ia hijau hanya selama rute
+  // perangkat sepenuhnya terbuka dan sesinya diabaikan; sejak `sesiOpsional`
+  // menegakkan sesi yang dibawa, `getActorId` memakai pemilik sesi dan
+  // headernya tidak berarti apa-apa. Itu tepat kelas test hampa yang
+  // `CLAUDE.md` catat pada "akuntan ditolak".
+  const res = await app.inject({
+    method: 'POST',
+    url: `/orders/${order.id}/cancel`,
+    payload,
+    headers: {
+      'x-tenant-id': tenant.id,
+      'x-actor-id': lain.user.id,
+      'idempotency-key': crypto.randomUUID(),
+    },
+  });
   assert.equal(res.statusCode, 404, res.body);
   assert.equal(JSON.parse(res.body).error.code, 'ACTOR_NOT_FOUND');
   assert.equal((await query('SELECT id FROM "order" WHERE id = $1', [payload.id])).length, 0);

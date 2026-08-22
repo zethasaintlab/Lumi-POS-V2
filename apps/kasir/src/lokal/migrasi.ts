@@ -165,6 +165,54 @@ export function rencanaAlterLokal(
   return alter;
 }
 
+/**
+ * Pernyataan `CREATE` untuk tabel murni lokal yang BELUM ADA di perangkat.
+ *
+ * ## ⛔ Kenapa ini perlu, dan kenapa `ALTER` saja tidak cukup
+ *
+ * `jalankanDdl` — satu-satunya tempat `CREATE TABLE` dijalankan — hanya
+ * berjalan saat `perluBangunUlang`, dan itu hanya terjadi bila **sidik jari
+ * raw table** berubah. Sidik jari itu tidak menghitung tabel murni lokal sama
+ * sekali (`sidikJariRawTable`).
+ *
+ * Akibatnya: tabel murni lokal BARU yang ditambahkan ke `001-initial.sql`
+ * tidak pernah dibuat di perangkat yang sudah ada. Query pertama yang
+ * menyentuhnya gagal dengan `no such table`, dan gejalanya muncul di fitur
+ * yang tampaknya tidak berhubungan.
+ *
+ * `rencanaAlterLokal` tidak dapat menutupinya: ia melewati tabel yang belum
+ * ada (`if (!ada) continue`) karena `ALTER TABLE` pada tabel yang tidak ada
+ * memang tidak berarti apa-apa.
+ *
+ * Ditemukan saat menambahkan `telemetry_local` — tabel murni lokal PERTAMA
+ * yang ditambahkan setelah `001-initial.sql` ditulis. Tabel lokal sebelumnya
+ * semuanya lahir bersama berkas itu, jadi celah ini tidak pernah tersentuh.
+ *
+ * ⛔ Indeksnya ikut. Tabel yang ada tanpa indeksnya adalah tabel yang bekerja
+ * benar dan lambat — kelas masalah yang paling sulit dihubungkan ke sebabnya.
+ */
+export function rencanaBuatLokalHilang(
+  sqlSkema: string,
+  aktual: Record<string, string[]>
+): string[] {
+  const lokalSaja = new Set(TABEL_LOKAL_SAJA);
+  const buat: string[] = [];
+
+  for (const p of pecahPernyataan(sqlSkema)) {
+    const tabel = namaTabelDari(p);
+    if (!tabel || !lokalSaja.has(tabel)) continue;
+    // Sudah ada di perangkat — `rencanaAlterLokal` yang mengurus kolomnya.
+    if (aktual[tabel]) continue;
+    buat.push(
+      p.replace(/^CREATE(\s+UNIQUE)?\s+(TABLE|INDEX)\s+/i, (_m, u, jenis) =>
+        `CREATE${u ?? ''} ${jenis} IF NOT EXISTS `
+      )
+    );
+  }
+
+  return buat;
+}
+
 export interface DepsMigrasi {
   /** Isi `db/local/001-initial.sql`. Di browser di-import dengan `?raw`. */
   sqlSkema: string;

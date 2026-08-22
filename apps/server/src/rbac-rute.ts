@@ -105,6 +105,7 @@ export const PETA_PERAN: readonly AturanRute[] = [
   // dari penjualan, dan yang di luar itu adalah koreksi yang harus disetujui.
   { metode: 'POST', pola: '/inventory/movements', operasi: 'stock_adjust' },
 
+
   // Opname — seluruh siklus hidupnya tingkat manajer. `spec-e` FR-E7 menyebut
   // "Manajer menyetujui" untuk penyelesaian; memulai dan menghitung diberi
   // operasi yang sama karena hitungan fisik yang dapat disimpan siapa pun
@@ -121,6 +122,19 @@ export const PETA_PERAN: readonly AturanRute[] = [
   // --- outlet & komersial --------------------------------------------------
   { metode: 'POST', pola: '/outlets', operasi: 'outlet_manage' },
   { metode: 'GET', pola: '/tenants/usage', operasi: 'billing' },
+
+  // FR-C12 — kategori merchant. `billing` karena ia klasifikasi KOMERSIAL
+  // merchant di mata penyelenggara QRIS, dan karena angka turunannya adalah
+  // yang merchant pakai untuk menjelaskan selisih uang yang masuk rekening.
+  { metode: 'PATCH', pola: '/tenants/settings', operasi: 'billing' },
+
+  // F5 — menaikkan paket. `spec-f:52` menandai "Billing & langganan" ✅ hanya
+  // untuk Owner, dan di sini kata itu berarti uang sungguhan yang keluar dari
+  // rekening merchant: manajer outlet yang dapat menaikkan paket dapat
+  // menaikkan tagihan bulanan tanpa sepengetahuan pemiliknya.
+  { metode: 'POST', pola: '/tenants/subscription/invoices', operasi: 'billing' },
+  { metode: 'GET', pola: '/tenants/subscription/invoices', operasi: 'billing' },
+  { metode: 'POST', pola: '/tenants/subscription/invoices/:invoiceId/check-status', operasi: 'billing' },
 ];
 
 const PETA = new Map(PETA_PERAN.map((r) => [`${r.metode} ${r.pola}`, r.operasi]));
@@ -171,6 +185,18 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
       'Peta ini hanya dapat menyatakan yang pertama, dan memakainya di sini akan menolak ' +
       'kasir yang menutup shiftnya SENDIRI — jalur normalnya. Dijaga di handler: ' +
       '`opened_by === aktor` atau `approve_cash_variance`',
+  },
+  {
+    metode: 'POST',
+    pola: '/shifts/:shiftId/no-sale',
+    alasan:
+      'FR-D7. Kasir BOLEH membuka laci — `IA:66` menandai K-16 "Kasir + alasan", dan ' +
+      'menukar uang pecahan tidak dapat menunggu manajer. Peta ini hanya menyatakan ' +
+      '"peran X boleh operasi Y", dan setiap entri di dalamnya diuji MENOLAK kasir; ' +
+      'menaruh rute ini di sana akan menuntut test yang menyatakan kebalikan dari ' +
+      'perilaku yang benar. Yang menjaganya: `assertBoleh(shift_open_close)` di handler ' +
+      '(menutup akuntan, `spec-f:82`) plus AMBANG FREKUENSI — PIN manajer mulai ' +
+      'pembukaan ke-4 dalam shift',
   },
   {
     metode: 'POST',

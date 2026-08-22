@@ -1,3 +1,4 @@
+import { KODE_LAINNYA, MIN_PANJANG_CATATAN, catatanCukup } from './alasan.ts';
 import { isTransitionAllowed } from './order-state.ts';
 
 /**
@@ -60,9 +61,16 @@ const REASONS: Record<CancellationOperation, ReadonlySet<string>> = {
   refund: new Set<string>(REFUND_REASON_CODES),
 };
 
-/** `spec-b:296` — "Lainnya wajib catatan bebas minimal 10 karakter." */
-const REASON_OTHER = 'lainnya';
-const MIN_NOTE_LENGTH = 10;
+/**
+ * `spec-b:296` — "Lainnya wajib catatan bebas minimal 10 karakter."
+ *
+ * ⛔ Diimpor, tidak ditulis ulang. Aturan yang sama berlaku untuk no-sale,
+ * selisih kas, dan diskon (FR-B8); angka yang punya dua salinan akan
+ * menyimpang, dan gejalanya adalah satu operasi yang menerima catatan lima
+ * karakter sementara yang lain menolaknya.
+ */
+const REASON_OTHER = KODE_LAINNYA;
+const MIN_NOTE_LENGTH = MIN_PANJANG_CATATAN;
 
 /**
  * Operasi mana yang berlaku untuk order berstatus `status`?
@@ -132,8 +140,7 @@ export function assertCancellationReason(
     );
   }
   if (reasonCode === REASON_OTHER) {
-    const isi = (reasonNote ?? '').trim();
-    if (Array.from(isi).length < MIN_NOTE_LENGTH) {
+    if (!catatanCukup(reasonNote)) {
       throw new Error(
         `Alasan "${REASON_OTHER}" wajib disertai catatan minimal ${MIN_NOTE_LENGTH} karakter.`
       );

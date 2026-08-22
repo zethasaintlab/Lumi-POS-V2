@@ -25,7 +25,11 @@
  * sama dengan menyimpan rupiah sebagai `REAL`.
  */
 
-const RATE_SCALE = 10000n;
+import { allocateProportionally } from './alokasi.ts';
+import { SKALA_TARIF } from './numeric.ts';
+
+// Satu sumber untuk skala tarif — lihat `SKALA_TARIF` di `numeric.ts`.
+const RATE_SCALE = SKALA_TARIF;
 
 export type TaxChannel = 'all' | 'dine_in' | 'takeaway';
 export type TaxAppliesTo = 'all_items' | 'category' | 'item';
@@ -36,6 +40,22 @@ export interface TaxRateSpec {
   /** `numeric(6,4)` x 10.000. 10% = `1000n`. */
   rateScaled: bigint;
   isInclusive: boolean;
+  /**
+   * Yurisdiksi yang memungut tarif ini — kabupaten/kota untuk PBJT, pusat
+   * untuk PPN. `null` bila tidak tercatat.
+   *
+   * ⛔ Ia ikut ke sini, bukan diresolusi pemanggil lewat `id`, dengan alasan
+   * yang sama persis dengan `name`: AC FR-C13 pertama menuntut rekapitulasi
+   * memisahkan pajak **per jenis DAN per yurisdiksi**, dan yurisdiksi yang
+   * diresolusi saat laporan dibuat akan berubah bila tarifnya dipindah —
+   * membuat dua ekspor untuk periode yang sama berbeda tanpa satu pun
+   * transaksi berubah.
+   *
+   * ⛔ TIDAK ikut menentukan tarif mana yang menang di `resolveRateForLine`.
+   * Yurisdiksi adalah label pelaporan; yang memilih tarif adalah outlet,
+   * channel, dan spesifisitas.
+   */
+  jurisdiction: string | null;
   /** `null` = berlaku untuk seluruh tenant. */
   outletId: string | null;
   channel: TaxChannel;
@@ -90,6 +110,8 @@ export interface TaxPerLine {
    * ini.
    */
   name: string;
+  /** Yurisdiksi, ikut sebagai SNAPSHOT. FR-C13 — lihat `TaxRateSpec`. */
+  jurisdiction: string | null;
   rateScaled: bigint;
   amount: bigint;
   isInclusive: boolean;
@@ -177,41 +199,6 @@ function resolveRateForLine(
   return winner;
 }
 
-/**
- * Alokasi proporsional sebuah nilai ke sekumpulan bobot, tanpa rupiah hilang
- * atau tercipta.
- *
- * AC FR-C8 kelima mewajibkan diskon order didistribusikan proporsional ke
- * baris. Pembagian yang tidak habis meninggalkan sisa; sisa itu diberikan ke
- * bobot terbesar alih-alih dibuang, sehingga `SUM(alokasi) === total` selalu.
- *
- * Prinsip yang sama dipakai untuk service charge: FR-C8 langkah 10 menetapkan
- * service charge masuk dasar pajak, dan ketika satu order punya beberapa
- * tarif, satu-satunya pembagian yang menjaga langkah 10 tetap benar adalah
- * proporsional. **[ASUMSI]** — spec menetapkannya eksplisit untuk diskon
- * order, tidak untuk service charge.
- */
-function allocateProportionally(total: bigint, weights: ReadonlyArray<bigint>): bigint[] {
-  const sum = weights.reduce((s, w) => s + w, 0n);
-  if (sum === 0n || total === 0n) return weights.map(() => 0n);
-
-  const allocated = weights.map((w) => (total * w) / sum);
-  let remainder = total - allocated.reduce((s, a) => s + a, 0n);
-
-  // Sisa dibagikan satu per satu mulai dari bobot terbesar — deterministik,
-  // bukan bergantung urutan masukan.
-  const order = weights
-    .map((w, i) => ({ w, i }))
-    .sort((a, b) => (b.w > a.w ? 1 : b.w < a.w ? -1 : a.i - b.i));
-  let k = 0;
-  while (remainder > 0n && order.length > 0) {
-    allocated[order[k % order.length].i] += 1n;
-    remainder -= 1n;
-    k += 1;
-  }
-  return allocated;
-}
-
 export function calculateTax(input: TaxCalculationInput): TaxBreakdown {
   assertBigint(input.serviceChargeAmount, 'serviceChargeAmount');
   assertBigint(input.orderDiscount, 'orderDiscount');
@@ -294,6 +281,7 @@ export function calculateTax(input: TaxCalculationInput): TaxBreakdown {
         lineId: members[i].lineId,
         taxRateId: rate.id,
         name: rate.name,
+        jurisdiction: rate.jurisdiction,
         rateScaled: rate.rateScaled,
         amount: bagian[i],
         isInclusive: rate.isInclusive,

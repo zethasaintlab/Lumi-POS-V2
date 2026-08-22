@@ -10,7 +10,25 @@ const RUTE: Record<string, (entityId: string) => string> = {
   order: () => '/orders',
   order_cancel: (id) => `/orders/${encodeURIComponent(id)}/cancel`,
   payment: (id) => `/orders/${encodeURIComponent(id)}/payments`,
+  // FR-E5. `entity_id`-nya adalah id BARIS penandaan, bukan variation:
+  // satu produk ditandai berkali-kali, dan `statusRecordBanyak` memetakan
+  // status per entitas — memakai variation membuat penandaan kemarin yang
+  // gagal terkirim menampilkan status merah pada penandaan hari ini.
+  sold_out: () => '/inventory/sold-out',
+  // FR-D7. `entity_id`-nya adalah id SHIFT — rutenya bersarang di bawahnya,
+  // dan ambang frekuensinya dihitung per shift.
+  no_sale: (id) => `/shifts/${encodeURIComponent(id)}/no-sale`,
 };
+
+/**
+ * Jenis yang PUNYA rute. Diekspor untuk satu tujuan: penjaga yang menuntutnya
+ * sama persis dengan `ENTITY_TYPES` di `enqueue.ts`.
+ *
+ * ⛔ Dua daftar yang menyimpang adalah cacat yang muncul JAUH dari tempat
+ * kesalahannya. Jenis yang masuk antrean tanpa rute melempar saat relay
+ * mengirimnya — berjam-jam setelah penjualan ditulis, di perangkat merchant.
+ */
+export const RUTE_DIDUKUNG: readonly string[] = Object.keys(RUTE);
 
 export interface KonfigHttp {
   baseUrl: string;
@@ -68,6 +86,18 @@ export function buatPengirimHttp(konfig: KonfigHttp): (baris: BarisOutbox) => Pr
           // yang disabotase di T9 property test, dan ia terlihat hanya di
           // bawah kegagalan jaringan -- tidak pernah pada jalur bahagia.
           'Idempotency-Key': baris.idempotency_key,
+          // ⛔ Dikirim HANYA bila barisnya membawanya. Refund menuntutnya di
+          // server; tanpa baris ini setiap refund offline dijawab
+          // `400 MISSING_APPROVER_ID` dan diklasifikasi `gagal-permanen` —
+          // kasir sudah mengembalikan uangnya, dan servernya tidak pernah
+          // tahu. Direproduksi terhadap server sungguhan
+          // (`tests/ordering/refund-offline-relay.test.js`), bukan
+          // disimpulkan dari membaca kode.
+          //
+          // Header KOSONG lebih buruk daripada tidak ada: `getApproverId`
+          // menolak string kosong dengan pesan yang sama, jadi mengirimnya
+          // selalu hanya memindahkan kegagalan tanpa memperbaikinya.
+          ...(baris.approver_id ? { 'X-Approver-Id': baris.approver_id } : {}),
         },
         // Dikirim APA ADANYA, dan itu pilihan yang disengaja: server
         // menghitung hash request dari body untuk mendeteksi "key sama, body

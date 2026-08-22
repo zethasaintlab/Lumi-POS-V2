@@ -31,7 +31,18 @@ const JENIS = [
   { nilai: 'sales', judul: 'Penjualan', catatan: 'Omzet, pembatalan, refund, pajak.' },
   { nilai: 'products', judul: 'Produk', catatan: 'Barang keluar per varian.' },
   { nilai: 'cashiers', judul: 'Kasir', catatan: 'Posisi penjualan per orang.' },
-  { nilai: 'payments', judul: 'Pembayaran', catatan: 'Uang diterima per metode.' },
+  {
+    nilai: 'payments',
+    judul: 'Pembayaran',
+    catatan: 'Uang diterima per metode, beserta perkiraan potongan penyelenggara.',
+  },
+  {
+    nilai: 'recap',
+    judul: 'Rekapitulasi pajak',
+    catatan:
+      'Untuk akuntan: pajak dipisah per jenis dan yurisdiksi, plus diskon, service charge, ' +
+      'dan pembulatan. Periode dan tanggal dibuat ikut di dalam berkas.',
+  },
 ] as const;
 
 type Keadaan =

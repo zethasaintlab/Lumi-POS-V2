@@ -247,7 +247,7 @@ interface ChargeResponse {
  * diketahui) lebih benar daripada `Invalid Date` yang akan tersimpan sebagai
  * NULL berisik atau melempar jauh dari sini.
  */
-function parseExpiry(raw: string | null | undefined): Date | null {
+export function parseExpiry(raw: string | null | undefined): Date | null {
   if (typeof raw !== 'string' || raw.length === 0) {
     return null;
   }
@@ -256,7 +256,29 @@ function parseExpiry(raw: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export function createMidtransProvider(options: MidtransOptions): PaymentProvider {
+export interface MidtransHttp {
+  panggil(
+    path: string,
+    init: { method: string; headers?: Record<string, string>; body?: string }
+  ): Promise<unknown>;
+}
+
+/**
+ * Pipa HTTP Midtrans — base URL, HTTP Basic, dan penulisan ULANG pesan galat.
+ *
+ * ## ⛔ Dipisah supaya port KEDUA memakai pipa yang sama, bukan salinannya
+ *
+ * `SubscriptionProvider` (`./langganan.ts`) berbicara ke gateway yang sama
+ * dengan kredensial yang sama. Menyalin fungsi ini ke sana berarti dua tempat
+ * yang memutuskan apakah kredensial boleh muncul di pesan error — dan yang
+ * kedua akan menyimpang tepat saat seseorang menambahkan `err.message` "biar
+ * lebih mudah didiagnosis".
+ *
+ * Yang dijaga di sini dan tidak boleh hilang: pesan galat menyebut **status
+ * HTTP dan nama error saja**. Error jaringan Node kadang memuat URL lengkap
+ * beserta kredensial yang tertanam di dalamnya, dan pesan ini berakhir di log.
+ */
+export function createMidtransHttp(options: MidtransOptions): MidtransHttp {
   const { serverKey, environment } = options;
   const fetchFn: FetchLike = options.fetchFn ?? (globalThis.fetch as unknown as FetchLike);
   const baseUrl = environment === 'production' ? MIDTRANS_PRODUCTION : MIDTRANS_SANDBOX;
@@ -293,6 +315,12 @@ export function createMidtransProvider(options: MidtransOptions): PaymentProvide
     }
     return res.json();
   }
+
+  return { panggil };
+}
+
+export function createMidtransProvider(options: MidtransOptions): PaymentProvider {
+  const { panggil } = createMidtransHttp(options);
 
   return {
     name: 'midtrans',

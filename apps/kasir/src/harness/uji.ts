@@ -252,6 +252,56 @@ export async function jalankan(vfs?: string): Promise<number> {
     melempar && sisa.length === 0
   );
 
+  // --- FR-B7: bentuk SQL sisa refund per baris, di atas wa-sqlite ---------
+  //
+  // ⛔ `CLAUDE.md`: *"Test klien berjalan di atas SQLite yang BERBEDA dari
+  // aplikasi. `ON CONFLICT(id)` diterima `node:sqlite` dan DITOLAK
+  // `wa-sqlite` — seluruh test hijau, hanya aplikasinya yang gagal. Bentuk
+  // SQL baru wajib dijalankan di browser sebelum dipercaya."*
+  //
+  // Yang baru di sini: `SUM(...) ... WHERE type IN (...) GROUP BY`. Ia
+  // menentukan berapa banyak dari tiap baris yang masih boleh dikembalikan —
+  // query yang gagal berarti pemilihan baris refund tidak dapat dibatasi sama
+  // sekali, dan stok mengembang diam-diam.
+  await db.execute(`DELETE FROM stock_movement WHERE order_id = 'ord-h1'`);
+  for (const [id, variasi, tipe, delta] of [
+    ['sm-h1', 'var-1', 'sale', -2000],
+    ['sm-h2', 'var-1', 'refund', 1000],
+    ['sm-h3', 'var-2', 'void', 500],
+  ] as const) {
+    await db.execute(
+      `INSERT INTO stock_movement
+         (id, tenant_id, outlet_id, device_id, variation_id, type, delta, order_id,
+          created_by, occurred_at, hlc)
+       VALUES (?, 'ten-1', 'out-1', 'dev-1', ?, ?, ?, 'ord-h1', 'usr-1',
+               '2026-08-08T10:00:00.000Z', 1)`,
+      [id, variasi, tipe, delta]
+    );
+  }
+  let bentukSql = '(gagal)';
+  let sqlLulus = false;
+  try {
+    const kembali = await db.getAll<{ variation_id: string; total: number | bigint | string }>(
+      `SELECT variation_id, SUM(delta) AS total
+         FROM stock_movement
+        WHERE order_id = ? AND type IN ('refund', 'void')
+        GROUP BY variation_id`,
+      ['ord-h1']
+    );
+    // ⛔ `sale` (-2000) TIDAK ikut: yang dihitung adalah barang yang KEMBALI.
+    // Kalau ia ikut, sisa per baris menjadi negatif dan setiap pemilihan
+    // ditolak — gejalanya "tidak bisa refund apa pun", bukan error.
+    const peta = new Map(kembali.map((k) => [k.variation_id, BigInt(k.total ?? 0)]));
+    bentukSql = kembali
+      .map((k) => `${k.variation_id}=${k.total} (${typeof k.total})`)
+      .sort()
+      .join(' · ');
+    sqlLulus = peta.get('var-1') === 1000n && peta.get('var-2') === 500n && peta.size === 2;
+  } catch (e) {
+    bentukSql = `${(e as Error).name}: ${(e as Error).message}`;
+  }
+  periksa('T14 sisa refund per variasi terbaca di wa-sqlite', bentukSql, sqlLulus);
+
   // Transaksi bersarang harus DITOLAK, bukan menggantung menunggu kuncinya
   // sendiri. Yang diuji di sini adalah bahwa penolakannya datang cepat.
   let pesanBersarang = '(tidak ditolak)';

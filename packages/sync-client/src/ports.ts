@@ -32,6 +32,14 @@ export interface BarisOutbox {
   depends_on: string | null;
   /** Kasir yang membuat item ini, dibekukan saat item dibuat. */
   actor_id?: string | null;
+  /**
+   * Manajer yang menyetujuinya, dibekukan saat item dibuat.
+   *
+   * ⛔ Ia WAJIB melakukan perjalanan bersama itemnya. Refund menuntut
+   * `X-Approver-Id` di server; sebelum kolom ini ada, relay tidak pernah
+   * mengirimnya dan setiap refund offline berhenti permanen di antrean.
+   */
+  approver_id?: string | null;
 }
 
 /** Hasil satu panggilan HTTP, sudah dilepas dari bentuk `fetch`. */

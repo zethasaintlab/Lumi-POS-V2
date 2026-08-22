@@ -221,3 +221,104 @@ test('⛔ penandaan TIDAK dihapus, ia ditimpa baris baru', async () => {
   assert.equal(baris[0].set_by, 'u-sari');
   assert.equal(baris[1].set_by, 'u-budi');
 });
+
+// ---------------------------------------------------------------------------
+// Jalur naik — `POST /inventory/sold-out` (FR-E5, `spec-e:211`)
+// ---------------------------------------------------------------------------
+
+test('⛔ penandaan masuk outbox DI TRANSAKSI YANG SAMA', async () => {
+  // Sebelum endpointnya ada, penandaan lokal saja — barista menandai kopi
+  // habis di terminal 1 dan kasir di terminal 2 tetap menerima pesanannya.
+  // Penanda yang ter-commit TANPA item outbox-nya tidak akan pernah naik, dan
+  // tidak ada apa pun yang memperbaikinya sendiri.
+  const { tandaiHabis } = await import(MOD);
+  const db = dbSungguhan();
+
+  await tandaiHabis(db, KONFIG, {
+    variationId: 'v1',
+    habis: true,
+    userId: 'u1',
+    waktu: jam('2026-08-21T03:00:00.000Z'),
+    idBaru,
+    hlc: () => 700n,
+  });
+
+  const flag = await db.getAll('SELECT id FROM sold_out_flag');
+  const outbox = await db.getAll('SELECT * FROM outbox_local');
+  assert.equal(flag.length, 1);
+  assert.equal(outbox.length, 1, 'penanda tanpa item outbox tidak akan pernah naik');
+
+  const b = outbox[0];
+  assert.equal(b.entity_type, 'sold_out');
+  assert.equal(b.entity_id, flag[0].id, 'id BARIS penandaan, bukan variation');
+  assert.equal(b.idempotency_key, flag[0].id, 'retry memakai kunci yang sama');
+  assert.equal(b.actor_id, 'u1', 'aktor dibekukan saat item dibuat');
+
+  // ⛔ Payload diperiksa NILAI-nya, bukan sekadar bahwa tabelnya disentuh.
+  // Bentuk yang tidak cocok dengan `required` endpoint baru ketahuan saat
+  // relay mengirimnya — dan item itu membakar percobaannya sampai `failed`
+  // permanen, di perangkat merchant.
+  assert.deepEqual(JSON.parse(b.payload), {
+    id: flag[0].id,
+    outletId: 'o1',
+    variationId: 'v1',
+    isSoldOut: true,
+    hlc: '700',
+    occurredAt: '2026-08-21T03:00:00.000Z',
+  });
+});
+
+test('⛔ membatalkan penandaan juga naik, sebagai baris `isSoldOut: false`', async () => {
+  // Kalau hanya penandaan yang naik, produk yang sudah tersedia lagi tetap
+  // terlihat habis di perangkat lain selamanya.
+  const { tandaiHabis, resetHabis } = await import(MOD);
+  const db = dbSungguhan();
+
+  await tandaiHabis(db, KONFIG, {
+    variationId: 'v1', habis: true, userId: 'u1',
+    waktu: jam('2026-08-21T03:00:00.000Z'), idBaru, hlc: () => 700n,
+  });
+  await resetHabis(db, KONFIG, {
+    variationIds: ['v1'], userId: 'u1',
+    waktu: jam('2026-08-21T04:00:00.000Z'), idBaru, hlc: () => 900n,
+  });
+
+  const outbox = await db.getAll('SELECT payload FROM outbox_local ORDER BY created_at, id');
+  assert.equal(outbox.length, 2);
+  assert.deepEqual(
+    outbox.map((b) => JSON.parse(b.payload).isSoldOut),
+    [true, false]
+  );
+});
+
+test('⛔ keadaan HLC ikut tersimpan, di transaksi yang sama', async () => {
+  // Di luar transaksi ada jendela tempat perangkat dapat mati setelah penanda
+  // ter-commit tapi sebelum HLC tersimpan; boot berikutnya memuat nilai lama,
+  // dan tick berikutnya dapat menghasilkan HLC yang SUDAH DIPAKAI. Dua penanda
+  // ber-HLC sama adalah pelanggaran I10 yang tidak menghasilkan error — ia
+  // hanya membuat "mana yang lebih baru" tidak terjawab, di tempat yang justru
+  // memutuskannya.
+  const { tandaiHabis } = await import(MOD);
+  const db = dbSungguhan();
+  // `simpanHlc` melakukan UPDATE, dan barisnya lahir saat perangkat dipasang
+  // (`simpanKonfigPerangkat`). Tanpa baris itu UPDATE-nya mengenai nol baris
+  // TANPA error — jadi fixture ini harus meniru perangkat yang sudah dipasang,
+  // bukan database kosong yang tidak pernah ada di produksi.
+  await db.execute(
+    `INSERT INTO device_config (id, device_id, device_code, tenant_id, outlet_id, base_url)
+     VALUES (1, 'd1', 'K1', 't1', 'o1', 'http://x')`
+  );
+
+  await tandaiHabis(db, KONFIG, {
+    variationId: 'v1', habis: true, userId: 'u1',
+    waktu: jam('2026-08-21T03:00:00.000Z'), idBaru, hlc: () => 12345678901234n,
+  });
+
+  const [cfg] = await db.getAll('SELECT hlc_teks FROM device_config WHERE id = 1');
+  assert.equal(cfg.hlc_teks, '12345678901234', 'TEXT, bukan kolom INTEGER — HLC 57-bit melampaui 2^53');
+});
+
+test('⛔ jenisnya PUNYA rute; item tanpa rute melempar saat dikirim, bukan saat dibuat', async () => {
+  const { RUTE_DIDUKUNG } = await import('../../packages/sync-client/src/http.ts');
+  assert.ok(RUTE_DIDUKUNG.includes('sold_out'), 'sold_out harus punya endpoint');
+});

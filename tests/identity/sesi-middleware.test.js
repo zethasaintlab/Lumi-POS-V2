@@ -277,3 +277,68 @@ test('logout menghapus barisnya dan token itu tidak dapat dipakai lagi', async (
   const lagi = await app.inject({ ...RUTE_UJI, headers: headerSesi(tenant.id, token) });
   assert.equal(lagi.statusCode, 401, 'token masih berlaku setelah logout');
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Jalur perangkat: sesi TIDAK dituntut, tapi DITEGAKKAN bila dibawa
+// ---------------------------------------------------------------------------
+//
+// Lubangnya nyata dan ditemukan lewat test yang berubah warna: menambahkan
+// `/shifts/{id}/no-sale` ke `RUTE_TERBUKA` membuat "AKUNTAN ditolak" berubah
+// dari 403 menjadi 201. Rute yang SEPENUHNYA terbuka mengembalikan
+// kepercayaan pada `X-Actor-Id` — sekalipun pemanggilnya punya sesi — dan
+// kontrol peran `spec-f:82` menguap tanpa satu pun error.
+
+const RUTE_PERANGKAT = { method: 'POST', url: '/shifts' };
+
+test('⛔ jalur perangkat TANPA Bearer tetap lewat — relay tidak pernah mengirimnya', async () => {
+  // Menuntut Bearer di sini berarti setiap penjualan offline yang menyusul
+  // dijawab 401. Itu menghancurkan jalur naik.
+  const res = await app.inject({
+    ...RUTE_PERANGKAT,
+    payload: { id: crypto.randomUUID(), outletId: tenant.outletId, deviceId: crypto.randomUUID(),
+      businessDate: '2026-08-21', openingFloat: 0 },
+    headers: { 'x-tenant-id': tenant.id, 'x-actor-id': tenant.ownerId,
+      'idempotency-key': crypto.randomUUID() },
+  });
+  // Bukan 401: ia boleh gagal karena alasan LAIN (device tidak ada), tapi
+  // tidak boleh ditolak penjaga sesi.
+  assert.notEqual(res.statusCode, 401, res.body);
+});
+
+test('⛔ jalur perangkat dengan Bearer TIDAK SAH ditolak 401, bukan diabaikan', async () => {
+  const res = await app.inject({
+    ...RUTE_PERANGKAT,
+    payload: { id: crypto.randomUUID(), outletId: tenant.outletId, deviceId: crypto.randomUUID(),
+      businessDate: '2026-08-21', openingFloat: 0 },
+    headers: { 'x-tenant-id': tenant.id, authorization: 'Bearer bukan-token',
+      'x-actor-id': tenant.ownerId, 'idempotency-key': crypto.randomUUID() },
+  });
+  assert.equal(res.statusCode, 401, res.body);
+  assert.equal(res.json().error.code, 'SESSION_INVALID');
+});
+
+// ⛔ "Sesi yang dibawa MENANG atas `X-Actor-Id`" diuji di
+// `tests/server/no-sale.test.js` ("AKUNTAN ditolak"), bukan di sini — dan
+// sengaja tidak diduplikasi.
+//
+// Alasannya bukan kerapian: `POST /shifts` dan `POST /orders` TIDAK punya
+// aturan peran sama sekali (`rbac-rute.ts`), jadi test di rute itu akan
+// menyatakan penolakan yang tidak pernah dilakukan siapa pun. Satu-satunya
+// jalur perangkat yang benar-benar menegakkan peran adalah
+// `/shifts/{id}/no-sale`, lewat `assertBoleh` di handler-nya — dan test di
+// sanalah yang berubah dari 403 menjadi 201 saat rute itu dibuka, yang
+// menemukan lubang ini.
+
+test('⛔ rute berkredensial PERANGKAT tidak pernah memverifikasi Bearer sebagai sesi', async () => {
+  // Bearer di `sync-token` adalah SECRET PERANGKAT. Memverifikasinya sebagai
+  // token sesi menolak perangkat yang sah dengan 401 — dan gejalanya adalah
+  // seluruh armada berhenti sinkron setelah satu perubahan middleware.
+  const res = await app.inject({
+    method: 'POST',
+    url: `/devices/${crypto.randomUUID()}/sync-token`,
+    headers: { 'x-tenant-id': tenant.id, authorization: 'Bearer secret-perangkat-acak' },
+  });
+  // 401 DEVICE_UNAUTHORIZED dari handler, bukan SESSION_INVALID dari penjaga.
+  assert.equal(res.statusCode, 401, res.body);
+  assert.notEqual(res.json().error.code, 'SESSION_INVALID');
+});

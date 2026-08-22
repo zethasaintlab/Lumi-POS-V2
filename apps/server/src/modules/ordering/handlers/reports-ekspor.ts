@@ -10,6 +10,7 @@ import { ambilPenjualan } from './reports.ts';
 import { ambilProduk } from './reports-produk.ts';
 import { ambilKasir } from './reports-kasir.ts';
 import { ambilPembayaran } from './reports-pembayaran.ts';
+import { ambilRekap } from './reports-rekap.ts';
 
 /**
  * `GET /reports/export` — keempat laporan sebagai CSV.
@@ -50,7 +51,7 @@ import { ambilPembayaran } from './reports-pembayaran.ts';
  * membuat ekspor ini tidak berguna.
  */
 
-const JENIS = ['sales', 'products', 'cashiers', 'payments'] as const;
+const JENIS = ['sales', 'products', 'cashiers', 'payments', 'recap'] as const;
 type Jenis = (typeof JENIS)[number];
 
 /** Karakter yang membuat spreadsheet memperlakukan sel sebagai rumus. */
@@ -70,6 +71,108 @@ export function barisCsv(kolom: readonly unknown[]): string {
 /** CRLF — RFC 4180, dan satu-satunya yang Excel lama baca dengan benar. */
 export function susunCsv(header: readonly string[], baris: readonly (readonly unknown[])[]): string {
   return '﻿' + [barisCsv(header), ...baris.map(barisCsv)].join('\r\n') + '\r\n';
+}
+
+/**
+ * FR-C13 — rekapitulasi, beserta tanggal dibuat dan rentangnya DI DALAM
+ * berkas (AC FR-C13 ketiga).
+ *
+ * ⛔ `dibuatPada` dibaca dari jam DATABASE, tidak pernah `new Date()` di Node.
+ * Aturan yang sama dengan `occurred_at` dan `effective_from` (`CLAUDE.md`):
+ * di produksi keduanya mesin terpisah, dan berkas pelaporan yang menyebut
+ * waktu pembuatan berbeda dari waktu yang tercatat di server adalah berkas
+ * yang tidak dapat dipertanggungjawabkan saat diperiksa.
+ */
+async function bacaRekapUntukEkspor(
+  client: import('../../../db.ts').PoolClient,
+  { from, to, outletId }: { from: string; to: string; outletId: string | null }
+) {
+  const { rows } = await client.query<{ sekarang: string }>(
+    'SELECT to_char(now() AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS"Z"\') AS sekarang'
+  );
+  return {
+    from,
+    to,
+    outletId,
+    dibuatPada: rows[0].sekarang,
+    rekap: await ambilRekap(client, { from, to, outletId }),
+  };
+}
+
+type RekapEkspor = Awaited<ReturnType<typeof bacaRekapUntukEkspor>>;
+
+/**
+ * Bentuk PANJANG (`bagian,keterangan,rincian,nilai`), bukan satu baris lebar.
+ *
+ * Rekapitulasi memuat tiga hal yang bentuknya berbeda — ringkasan periode,
+ * pajak per kelompok, dan pembayaran per metode. Satu tabel lebar memaksa
+ * kolom pajak dinamai `pajak_1`, `pajak_2`, dan seterusnya; berkas untuk dua
+ * periode berbeda lalu punya jumlah kolom berbeda, dan akuntan yang
+ * menumpuknya di satu spreadsheet mendapat kolom yang bergeser.
+ *
+ * Bentuk panjang tetap dapat di-pivot, dan kolom `nilai`-nya tetap dapat
+ * dijumlahkan.
+ */
+export function susunCsvRekap(d: RekapEkspor): string {
+  const r = d.rekap;
+  const baris: (readonly unknown[])[] = [
+    // AC FR-C13 ketiga — periode dan tanggal dibuat ADA DI DALAM berkas.
+    // Nama berkas hilang begitu seseorang menyimpannya ulang.
+    ['periode', 'dari', '', d.from],
+    ['periode', 'sampai', '', d.to],
+    ['periode', 'outlet', '', d.outletId ?? '(semua outlet)'],
+    ['periode', 'dibuat_pada', '', d.dibuatPada],
+
+    ['ringkasan', 'jumlah_transaksi', '', r.jumlahTransaksi],
+    ['ringkasan', 'omzet_kotor', '', r.omzetKotor],
+    ['ringkasan', 'nilai_dibatalkan', '', r.voidAmount],
+    ['ringkasan', 'refund', '', r.refundAmount],
+    ['ringkasan', 'diskon_order', '', r.totalDiskonOrder],
+    ['ringkasan', 'diskon_baris', '', r.totalDiskonBaris],
+    ['ringkasan', 'service_charge', '', r.totalServiceCharge],
+    ['ringkasan', 'pembulatan', '', r.totalPembulatan],
+    ['ringkasan', 'pajak_terkumpul', '', r.pajakTerkumpul],
+    ['ringkasan', 'omzet_bersih', '', r.omzetBersih],
+  ];
+
+  for (const p of r.pajak) {
+    // ⛔ Nama dan yurisdiksi yang tidak tercatat ditulis apa adanya sebagai
+    // "(tidak tercatat)", bukan dikosongkan. Sel kosong di kolom yurisdiksi
+    // terbaca sebagai "pusat" oleh siapa pun yang tidak tahu kolom itu baru
+    // ada sejak migrasi 0028.
+    baris.push([
+      'pajak',
+      p.nama ?? '(tidak tercatat)',
+      p.yurisdiksi ?? '(tidak tercatat)',
+      p.total,
+    ]);
+  }
+
+  for (const m of r.pembayaran) {
+    baris.push(['pembayaran', m.method, 'total_diterima', m.totalDiterima]);
+    // ⛔ Sel KOSONG untuk metode tanpa perkiraan, bukan nol. "0" di kolom
+    // potongan kartu EDC berarti "kartu tidak dipotong", dan itu tidak benar
+    // — yang benar adalah kami tidak tahu berapa.
+    baris.push(['pembayaran', m.method, 'perkiraan_mdr', m.perkiraanMdr ?? '']);
+    baris.push(['pembayaran', m.method, 'perkiraan_settlement', m.perkiraanSettlement]);
+    if (m.tanpaPerkiraan > 0) {
+      baris.push(['pembayaran', m.method, 'baris_tanpa_perkiraan', m.tanpaPerkiraan]);
+    }
+  }
+
+  baris.push(['settlement', 'total_diterima', '', r.totalDiterima]);
+  baris.push(['settlement', 'total_perkiraan_mdr', '', r.totalPerkiraanMdr]);
+  baris.push(['settlement', 'total_perkiraan_settlement', '', r.totalPerkiraanSettlement]);
+  // Kata "perkiraan" ikut ke berkas, bukan hanya ke layar (AC FR-C12 kedua).
+  baris.push([
+    'catatan',
+    'perkiraan',
+    '',
+    'Angka MDR dan settlement adalah PERKIRAAN, bukan nilai final. ' +
+      'Yang menentukan potongan sebenarnya adalah penyelenggara, per settlement.',
+  ]);
+
+  return susunCsv(['bagian', 'keterangan', 'rincian', 'nilai'], baris);
 }
 
 export function createExportHandlers(pool: Pool): Record<string, unknown> {
@@ -150,11 +253,30 @@ export function createExportHandlers(pool: Pool): Record<string, unknown> {
           );
         }
 
-        const { metode } = await ambilPembayaran(client, { from, to, outletId });
-        return susunCsv(
-          ['metode', 'jumlah_transaksi', 'total_diterima'],
-          metode.map((m) => [m.method, m.jumlahTransaksi, m.totalDiterima])
-        );
+        if (jenis === 'payments') {
+          const { metode } = await ambilPembayaran(client, { from, to, outletId });
+          return susunCsv(
+            [
+              'metode',
+              'jumlah_transaksi',
+              'total_diterima',
+              'perkiraan_mdr',
+              'perkiraan_settlement',
+            ],
+            metode.map((m) => [
+              m.method,
+              m.jumlahTransaksi,
+              m.totalDiterima,
+              // ⛔ Sel KOSONG untuk metode tanpa perkiraan, bukan nol. "0" di
+              // kolom potongan kartu EDC berarti "kartu tidak dipotong", dan
+              // itu tidak benar — yang benar adalah kami tidak tahu berapa.
+              m.perkiraanMdr ?? '',
+              m.perkiraanSettlement,
+            ])
+          );
+        }
+
+        return susunCsvRekap(await bacaRekapUntukEkspor(client, { from, to, outletId }));
       });
 
       // ⛔ Nama berkas memuat jenis dan rentang. Merchant mengunduh empat

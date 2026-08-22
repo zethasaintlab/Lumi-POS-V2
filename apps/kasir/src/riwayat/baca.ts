@@ -1,6 +1,7 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { statusRecordBanyak } from '../../../../packages/sync-client/src/status.ts';
 import type { StateIndikator } from '../../../../packages/sync-client/src/status.ts';
+import { sisaPerBaris } from '../../../../packages/domain/src/pilihan-refund.ts';
 
 /**
  * K-08 Riwayat Transaksi + K-09 Detail Transaksi.
@@ -111,6 +112,8 @@ export async function bacaRiwayat(
 
 export interface BarisDetail {
   id: string;
+  /** Dibutuhkan pemilihan baris refund: batasnya per VARIASI, bukan per baris. */
+  variationId: string;
   itemName: string;
   variationName: string;
   unitPrice: number;
@@ -118,6 +121,16 @@ export interface BarisDetail {
   lineTotal: number;
   taxAmount: number;
   modifier: string[];
+  /**
+   * FR-B7 — yang MASIH boleh dikembalikan dari baris ini (×1000).
+   *
+   * ⛔ Dihitung, tidak disimpan, dan turunannya per VARIASI: `stock_movement`
+   * tidak menyimpan `line_id`, jadi kebenaran per baris tidak ada di mana pun.
+   * Aturannya milik `packages/domain/src/pilihan-refund.ts` dan dibagi dengan
+   * penegakan di `batalkan` — dua salinan akan menawarkan pilihan yang lalu
+   * ditolak.
+   */
+  sisaKembaliMilli: number;
 }
 
 export interface PembayaranDetail {
@@ -175,10 +188,11 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
 
   const [lines, payments, refunds] = await Promise.all([
     db.getAll<{
-      id: string; item_name: string; variation_name: string; unit_price: number;
-      quantity: number; line_total: number; tax_amount: number; modifier_snapshot: string | null;
+      id: string; variation_id: string; item_name: string; variation_name: string;
+      unit_price: number; quantity: number; line_total: number; tax_amount: number;
+      modifier_snapshot: string | null;
     }>(
-      `SELECT id, item_name, variation_name, unit_price, quantity, line_total,
+      `SELECT id, variation_id, item_name, variation_name, unit_price, quantity, line_total,
               tax_amount, modifier_snapshot
          FROM order_line WHERE order_id = ?`,
       [orderId]
@@ -203,6 +217,30 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
 
   const sudahDirefund = refunds.reduce((s, r) => s + r.amount, 0);
 
+  // Barang yang sudah kembali ke rak dari order ini, per VARIASI. Aturan yang
+  // sama dengan server (`planRestock`): `void` DAN `refund`, karena keduanya
+  // mengembalikan stok.
+  const kembali = await db.getAll<{ variation_id: string; total: number | bigint | string }>(
+    `SELECT variation_id, SUM(delta) AS total
+       FROM stock_movement
+      WHERE order_id = ? AND type IN ('refund', 'void')
+      GROUP BY variation_id`,
+    [orderId]
+  );
+  const sisa = new Map(
+    sisaPerBaris(
+      lines.map((l) => ({
+        lineId: l.id,
+        variationId: l.variation_id,
+        quantityMilli: BigInt(l.quantity),
+        lineTotal: BigInt(l.line_total),
+      })),
+      // ⛔ Ketiga bentuk: `@powersync/web` mengembalikan INTEGER besar sebagai
+      // `bigint`, `node:sqlite` sebagai `number`.
+      kembali.map((k) => ({ variationId: k.variation_id, quantityMilli: BigInt(k.total ?? 0) }))
+    ).map((s) => [s.lineId, Number(s.sisaMilli)])
+  );
+
   return {
     order: {
       id: o.id,
@@ -219,6 +257,7 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
     },
     baris: lines.map((l) => ({
       id: l.id,
+      variationId: l.variation_id,
       itemName: l.item_name,
       variationName: l.variation_name,
       unitPrice: l.unit_price,
@@ -226,6 +265,7 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
       lineTotal: l.line_total,
       taxAmount: l.tax_amount,
       modifier: uraikanModifier(l.modifier_snapshot),
+      sisaKembaliMilli: sisa.get(l.id) ?? l.quantity,
     })),
     pembayaran: payments.map((p) => ({
       id: p.id,

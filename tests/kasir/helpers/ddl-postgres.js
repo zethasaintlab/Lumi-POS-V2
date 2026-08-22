@@ -81,13 +81,28 @@ function bacaCreateTable(sql, keluaran) {
 }
 
 function bacaAlterTable(sql, keluaran) {
-  const re = /ALTER TABLE\s+(?:IF EXISTS\s+)?"?([a-z_]+)"?\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s+([\s\S]*?);/gi;
+  // ⛔ SATU pernyataan `ALTER TABLE` boleh memuat BEBERAPA `ADD COLUMN`, dan
+  // versi pertama parser ini hanya membaca yang PERTAMA.
+  //
+  // Akibatnya bukan test merah melainkan test HAMPA: kolom kedua tidak pernah
+  // dibandingkan dengan skema lokal sama sekali. Migrasi 0030 menambahkan
+  // `outlet.update_window_end_hour` dan `device.update_deferred_version` lewat
+  // bentuk itu, dan keduanya lolos tanpa pernah diperiksa. Ketahuan hanya
+  // karena migrasi 0031 kebetulan menambahkan kolom yang ADA di skema lokal —
+  // arah kesalahan yang berlawanan, dan satu-satunya yang berteriak.
+  const rePernyataan = /ALTER TABLE\s+(?:IF EXISTS\s+)?"?([a-z_]+)"?\s+([\s\S]*?);/gi;
   let m;
-  while ((m = re.exec(sql))) {
-    const tipe = tipeSaja(m[3]);
-    if (!tipe) continue;
-    keluaran[m[1]] = keluaran[m[1]] ?? {};
-    keluaran[m[1]][m[2]] = tipe;
+  while ((m = rePernyataan.exec(sql))) {
+    const tabel = m[1];
+    // Setiap potongan `ADD COLUMN <nama> <tipe...>` di dalam pernyataan itu.
+    const reKolom = /ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s+([\s\S]*?)(?=(?:,\s*)?ADD (?:COLUMN|CONSTRAINT)\b|$)/gi;
+    let k;
+    while ((k = reKolom.exec(m[2]))) {
+      const tipe = tipeSaja(k[2]);
+      if (!tipe) continue;
+      keluaran[tabel] = keluaran[tabel] ?? {};
+      keluaran[tabel][k[1]] = tipe;
+    }
   }
 }
 

@@ -162,7 +162,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [plan, status, kuota]
+                required: [plan, status, merchantCategory, kuota]
                 properties:
                   plan:
                     type: string
@@ -170,6 +170,13 @@ paths:
                   status:
                     type: string
                     enum: [active, suspended, cancelled]
+                  merchantCategory:
+                    type: string
+                    enum: [umi, uke, ume, ube]
+                    description: >-
+                      FR-C12. Menentukan tarif MDR yang dipakai untuk
+                      MEMPERKIRAKAN potongan settlement. Bawaan `umi`
+                      ([ASUMSI] -- belum divalidasi ke merchant).
                   kuota:
                     type: object
                     description: >-
@@ -190,6 +197,264 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '404':
           description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tenants/settings:
+    patch:
+      operationId: updateTenantSettings
+      summary: FR-C12 -- kategori merchant, untuk perkiraan potongan MDR.
+      description: >-
+        AC FR-C12 ketiga: kategori merchant dapat dikonfigurasi per tenant.
+        Kategori ditetapkan penyelenggara QRIS saat merchant didaftarkan; POS
+        tidak dapat menurunkannya dari data apa pun yang dimilikinya.
+
+
+        ⛔ Perubahannya berlaku KE DEPAN saja. `payment.mdr_estimated` adalah
+        SNAPSHOT saat transaksi; memperbaiki kategori yang salah tidak
+        menghitung ulang baris yang sudah ada. Itu disengaja -- dua ekspor
+        untuk periode yang sama tidak boleh berbeda.
+
+
+        Owner-only (`billing`, `spec-f:52`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchantCategory]
+              properties:
+                merchantCategory:
+                  type: string
+                  # SENGAJA tanpa `enum`: handler adalah satu-satunya sumber
+                  # kebenaran untuk penolakan ini, dan pesannya MENYEBUT
+                  # pilihan yang sah. Pola sama dengan reports/export type.
+      responses:
+        '200':
+          description: Kategori setelah perubahan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [merchantCategory]
+                properties:
+                  merchantCategory:
+                    type: string
+                    enum: [umi, uke, ume, ube]
+        '400':
+          description: Kategori tidak dikenal (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tenants/subscription/invoices:
+    get:
+      operationId: listSubscriptionInvoices
+      summary: Riwayat tagihan langganan, terbaru dulu. Daftar di B-29.
+      description: >-
+        Owner-only (`spec-f:52`). Menyertakan paket yang berlaku sekarang,
+        supaya layar tidak perlu memanggil `/tenants/usage` hanya untuk
+        menampilkan satu kata.
+      responses:
+        '200':
+          description: Paket saat ini dan riwayat tagihan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan, status, invoices]
+                properties:
+                  plan:
+                    type: string
+                    enum: [free, standard, pro, enterprise]
+                  status:
+                    type: string
+                    enum: [active, suspended, cancelled]
+                  invoices:
+                    type: array
+                    items: { $ref: '#/components/schemas/TagihanLangganan' }
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: createSubscriptionInvoice
+      summary: >-
+        F5 -- minta tagihan untuk MENAIKKAN paket, lalu bayar lewat QRIS.
+      description: >-
+        ⛔ HANYA naik. Menurunkan paket dan membatalkan langganan tidak
+        dibangun di epik ini (keputusan user 21 Agustus 2026), dan itu
+        berakibat: kuota naik monoton sepanjang `URUTAN_PAKET`, jadi tidak
+        pernah ada keadaan di mana merchant membayar lalu kenaikannya ditolak
+        karena pemakaiannya tidak muat.
+
+
+        ⛔ Paketnya BELUM naik saat endpoint ini menjawab 201. Yang menaikkan
+        adalah konfirmasi gateway -- lewat webhook Midtrans atau lewat
+        `check-status` (`spec-c:320`: sistem tidak pernah menandai lunas tanpa
+        konfirmasi).
+
+
+        ⛔ Tagihannya bukan `payment`. Tabel `payment` punya empat kolom NOT
+        NULL yang tagihan langganan tidak punya (`order_id`, `outlet_id`,
+        `device_id`, `check_id`) -- dan itu kabar baik: kalau ia menumpang di
+        sana, biaya langganan merchant akan muncul sebagai omzet kafenya
+        sendiri di B-19.
+
+
+        Harga dihitung PER OUTLET per bulan (KEP-38). `outletCount`,
+        `unitPrice`, dan `amount` ketiganya SNAPSHOT: menaikkan harga bulan
+        depan tidak mengubah arti tagihan yang sudah dibayar.
+
+
+        Owner-only (`spec-f:52`).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: >-
+            WAJIB, dan sengaja TIDAK ditandai `required` di sini -- pola yang
+            sama dengan header `Authorization` (lihat `CLAUDE.md` § FR-F12).
+            Validator akan menjawab `400 VALIDATION_ERROR`, sementara yang
+            dimaksud adalah `MISSING_IDEMPOTENCY_KEY`: kode yang menyebutkan
+            APA yang kurang, bukan "permintaanmu cacat". Penjaganya di handler,
+            sama seperti seluruh endpoint idempoten lain di API ini.
+
+
+            Key yang SAMA diulang tidak membuat tagihan kedua. Ia diselesaikan
+            hanya bila gateway menjawab -- retry setelah gateway timeout
+            menjalankan ulang panggilan gateway dengan key yang sama alih-alih
+            menerima respons "tanpa QR" dari cache selamanya.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, plan]
+              properties:
+                id:
+                  type: string
+                  minLength: 1
+                  description: Di-generate klien (konvensi ID repo ini).
+                plan:
+                  type: string
+                  enum: [standard, pro]
+                  description: >-
+                    ⛔ `free` dan `enterprise` sengaja TIDAK ada di sini.
+                    `free` tidak berbayar (tidak ada yang dapat ditagih), dan
+                    `enterprise` adalah negosiasi -- harga angka untuknya
+                    berarti seseorang dapat membelinya sendiri dengan harga
+                    yang tidak pernah disepakati siapa pun.
+      responses:
+        '201':
+          description: >-
+            Tagihan tercipta. `qrString` kosong bila gateway tidak menjawab --
+            tagihannya tetap ada dan dapat dicek ulang.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice, qrString, expiresAt, gatewayReachable]
+                properties:
+                  invoice: { $ref: '#/components/schemas/TagihanLangganan' }
+                  qrString: { type: string, nullable: true }
+                  expiresAt: { type: string, nullable: true }
+                  gatewayReachable:
+                    type: boolean
+                    description: >-
+                      `false` berarti tagihan tersimpan tapi QR belum didapat.
+                      Klien menampilkan "Cek status", BUKAN "pembayaran
+                      gagal" -- merchant mungkin sudah membayar (FR-C14).
+        '400':
+          description: Payload tidak valid atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            Bukan kenaikan paket (PLAN_NOT_AN_UPGRADE), paket tidak dapat
+            dibeli sendiri (PLAN_NOT_SELF_SERVE / PLAN_NOT_BILLABLE), masih
+            ada tagihan terbuka (SUBSCRIPTION_INVOICE_OPEN), id sudah dipakai
+            (ID_ALREADY_EXISTS), atau key sedang diproses
+            (IDEMPOTENCY_KEY_CONFLICT).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau tenant tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tenants/subscription/invoices/{invoiceId}/check-status:
+    post:
+      operationId: checkSubscriptionInvoiceStatus
+      summary: Tanyakan status tagihan ke gateway, dan terapkan hasilnya.
+      description: >-
+        POST, bukan GET: ia mengubah keadaan. Bersama webhook Midtrans, ia
+        satu dari dua jalan sebuah tagihan menjadi `confirmed` -- dan paket
+        naik hanya di sana.
+
+
+        Tagihan yang sudah final TIDAK ditanyakan lagi ke gateway; respons
+        memuat `gatewayStatus: null` untuk membedakannya dari "ditanyakan dan
+        dijawab pending".
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Keadaan tagihan setelah status gateway diterapkan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice, plan, gatewayStatus]
+                properties:
+                  invoice: { $ref: '#/components/schemas/TagihanLangganan' }
+                  plan:
+                    type: string
+                    description: Paket tenant SETELAH pemanggilan ini.
+                    enum: [free, standard, pro, enterprise]
+                  gatewayStatus:
+                    type: string
+                    nullable: true
+                    enum: [pending, confirmed, failed, expired]
+        '403':
+          description: Aktor bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Tagihan tidak ditemukan (SUBSCRIPTION_INVOICE_NOT_FOUND), atau
+            aktor tidak ditemukan.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -595,6 +860,19 @@ paths:
                 $ref: '#/components/schemas/Error'
     get:
       operationId: listItems
+      description: >-
+        ⛔ TANPA `limit`, SELURUH baris dikembalikan — kompatibilitas klien
+        N-1, dan bukan formalitas: `limit` dengan nilai bawaan membuat klien
+        lama menerima 100 dari 5.000 produk lalu menampilkan katalog yang
+        terpotong TANPA satu pun error. Kasir yang tidak menemukan produknya
+        akan menyalahkan katalognya, bukan aplikasinya.
+
+
+        Paginasi KEYSET, bukan offset. Alasannya berbeda dari riwayat
+        transaksi (yang keyset karena perangkat offline menyisipkan baris di
+        tengah urutan): di sini alasannya biaya — `OFFSET n` menyuruh
+        PostgreSQL memindai lalu MEMBUANG `n` baris. Konsekuensi yang
+        dinyatakan: tidak dapat melompat ke halaman 17.
       parameters:
         - name: includeArchived
           in: query
@@ -602,6 +880,40 @@ paths:
         - name: categoryId
           in: query
           schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+          description: >-
+            Pencarian pada nama item, deskripsi, dan **nama/SKU/barcode
+            varian**. `ILIKE`, tanpa peka huruf besar.
+
+
+            ⛔ Varian ikut karena `saringProduk` di B-06 sudah mencarinya sejak
+            layar itu lahir: merchant mencari produk lewat kode yang tertempel
+            di rak. Server yang hanya mencari nama item membuat layar yang
+            berpindah ke pencarian sisi server diam-diam berhenti menemukan
+            barcode -- kasir memindai, tidak ada yang muncul, tanpa satu pun
+            error.
+
+
+            Bukan full-text: nama produk kafe adalah dua sampai empat kata
+            Indonesia, dan yang merchant ketik adalah POTONGAN kata -- "kop"
+            untuk "Kopi Susu". `%` dan `_` di masukan di-escape.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200 }
+          description: >-
+            Dikosongkan berarti TANPA paginasi (perilaku lama). Batas atasnya
+            wajib: `limit` yang diteruskan apa adanya membuat satu permintaan
+            menarik seluruh katalog ke memori server.
+        - name: after
+          in: query
+          schema: { type: string }
+          description: >-
+            `nextCursor` dari respons sebelumnya. Bentuknya `sortOrder:id`,
+            sengaja TIDAK di-base64: ia tidak membawa kewenangan apa pun --
+            hasilnya tetap tunduk RLS, dan kursor yang dipalsukan hanya
+            membuat pemanggil melompati barisnya sendiri.
       responses:
         '200':
           description: OK
@@ -615,6 +927,12 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Item'
+                  nextCursor:
+                    type: string
+                    nullable: true
+                    description: >-
+                      `null` berarti habis. Kursor yang tetap terisi di halaman
+                      terakhir membuat klien meminta halaman kosong selamanya.
         '400':
           description: Header X-Tenant-Id hilang
           content:
@@ -2002,6 +2320,266 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/update:
+    get:
+      operationId: getDeviceUpdate
+      summary: >-
+        F6 -- versi mana yang seharusnya dipakai perangkat ini, dan boleh
+        dipasang sekarang atau tidak (`ARCH:§12`, KEP-36). Ia MEMUTUSKAN,
+        tidak memasang: pemasangannya menuntut shell Tauri (utang F4).
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: "'Bearer <secret perangkat>'. Tidak `required` -- kredensial hilang berarti 401, bukan 400."
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versi, pasangSekarang, bolehTunda, alasan]
+                properties:
+                  versi:
+                    type: string
+                    nullable: true
+                    description: Versi yang seharusnya, atau null.
+                  pasangSekarang: { type: boolean }
+                  bolehTunda: { type: boolean }
+                  alasan:
+                    type: string
+                    enum:
+                      - tidak_ada_rilis
+                      - sudah_terbaru
+                      - belum_giliran
+                      - di_luar_jendela
+                      - wajib_segera
+                      - terjadwal
+                    description: >-
+                      Kode, bukan kalimat. Layar yang menerjemahkannya --
+                      kalimat yang lahir di server tidak dapat diterjemahkan
+                      ulang.
+                  sisaTunda: { type: integer }
+                  jamLokal:
+                    type: integer
+                    description: Jam lokal outlet dari jam DATABASE, bukan jam Node.
+                  jendela:
+                    type: object
+                    properties:
+                      mulaiJam: { type: integer }
+                      selesaiJam: { type: integer }
+        '401':
+          description: Kredensial perangkat tidak sah, dicabut, atau kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Outlet perangkat tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/update/defer:
+    post:
+      operationId: deferDeviceUpdate
+      summary: >-
+        Merchant menekan "nanti saja". Maksimal 2x per versi (KEP-36);
+        pembaruan wajib segera tidak dapat ditunda sama sekali.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Penundaan tercatat
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versi, sudahTunda, sisaTunda]
+                properties:
+                  versi: { type: string }
+                  sudahTunda: { type: integer }
+                  sisaTunda: { type: integer }
+        '401':
+          description: Kredensial perangkat tidak sah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Tidak ada rilis aktif (NO_ACTIVE_RELEASE), jatah penundaan habis,
+            atau pembaruan wajib segera (DEFERRAL_NOT_ALLOWED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/telemetry:
+    post:
+      operationId: ingestDeviceTelemetry
+      summary: >-
+        F6 -- ingest telemetri klien (`ARCH:294` § 10). Lima dari delapan
+        metrik `ARCH:296` tidak dapat dihasilkan server; ini jalan masuknya.
+        BATAS ETIS `ARCH:309` ditegakkan di skema ini: daftar event TERTUTUP,
+        nilai wajib angka, dan tidak ada satu pun properti bebas.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: >-
+            'Bearer <secret perangkat>'. SENGAJA tidak `required`: validator
+            akan menjawab 400 untuk header yang hilang, dan kredensial yang
+            hilang berarti 401.
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [windowStart, windowEnd, events]
+              additionalProperties: false
+              properties:
+                appVersion:
+                  type: string
+                  description: >-
+                    Versi aplikasi saat jendela ini DIUKUR -- bukan versi
+                    perangkat sekarang. `ARCH:302` memakai crash rate per
+                    versi sebagai gate rollout.
+                windowStart: { type: string, format: date-time }
+                windowEnd: { type: string, format: date-time }
+                events:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [event, count, total, min, max, p95]
+                    additionalProperties: false
+                    properties:
+                      event:
+                        type: string
+                        enum:
+                          - latensi_keranjang_ms
+                          - umur_antrean_jam
+                          - antrean_gagal
+                          - cetak_percobaan
+                          - offline_detik
+                          - selisih_jam_detik
+                          - crash
+                      type:
+                        type: string
+                        nullable: true
+                        description: >-
+                          Tipe error, BUKAN pesannya. SENGAJA tanpa `maxLength`:
+                          server MEMOTONG di 64 karakter alih-alih menolak, dan
+                          `maxLength` di sini akan menolak seluruh muatan --
+                          membuang metrik yang baik bersama satu label yang
+                          kepanjangan.
+                      count: { type: integer, minimum: 1 }
+                      total: { type: number }
+                      min: { type: number }
+                      max: { type: number }
+                      p95: { type: number }
+      responses:
+        '202':
+          description: >-
+            Diterima dan disimpan. 202 dan bukan 201 -- barisnya agregat,
+            bukan entitas yang punya alamat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, diterima]
+                properties:
+                  deviceId: { type: string }
+                  diterima: { type: integer }
+        '400':
+          description: Muatan cacat, atau Idempotency-Key hilang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Kredensial perangkat tidak sah, dicabut, atau kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Idempotency-Key sedang diproses permintaan lain
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: getDeviceTelemetry
+      summary: >-
+        Ringkasan telemetri satu perangkat (B-28). TIDAK lintas-tenant --
+        ambang alarm operasional menuntut pembaca ber-BYPASSRLS, lihat
+        `apps/server/src/metrik.ts`.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sejak
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, events]
+                properties:
+                  deviceId: { type: string }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event: { type: string }
+                        type: { type: string, nullable: true }
+                        count: { type: integer }
+                        total: { type: number }
+                        min: { type: number }
+                        max: { type: number }
+                        p95Terburuk:
+                          type: number
+                          description: >-
+                            MAX dari p95 tiap jendela, bukan p95 dari p95 --
+                            persentil tidak dapat dirata-ratakan.
+                        terakhirPada: { type: string, format: date-time }
+        '404':
+          description: Perangkat tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /.well-known/jwks.json:
     get:
       operationId: getJwks
@@ -2224,6 +2802,32 @@ paths:
                 #
                 # Klien versi N-1 tidak mengirimnya, dan tidak boleh patah.
                 total: {}
+                # FR-B8 -- diskon tingkat order. SENGAJA tanpa `type` di
+                # dalamnya: `bacaPermintaanDiskon` (handlers/orders.ts) adalah
+                # satu-satunya sumber kebenaran, pola sama dengan
+                # quantityMilli dan total. Klien versi N-1 tidak mengirimnya.
+                #
+                # `nilai` berskala 10.000 untuk `persen` (1500 = 15%), rupiah
+                # utuh untuk `nominal`.
+                discount:
+                  type: object
+                  nullable: true
+                  properties:
+                    tipe: { type: string, enum: [persen, nominal] }
+                    nilai: {}
+                # Daftar TERTUTUP; "lainnya" wajib catatan >= 10 karakter.
+                # Dituntut untuk SETIAP diskon, bukan hanya yang melewati
+                # ambang: yang di bawah ambang tetap masuk laporan exception
+                # FR-G5, dan baris tanpa alasan tidak dapat diagregasi.
+                discountReasonCode:
+                  type: string
+                  enum:
+                    - promo_berjalan
+                    - karyawan
+                    - pelanggan_langganan
+                    - kompensasi_keluhan
+                    - lainnya
+                discountReasonNote: { type: string, nullable: true }
                 lines:
                   type: array
                   minItems: 1
@@ -3062,12 +3666,16 @@ paths:
   /reports/payments:
     get:
       operationId: getPaymentReport
-      summary: FR-G1 -- uang masuk per metode pembayaran.
+      summary: FR-G1 -- uang masuk per metode pembayaran, dengan rekonsiliasi MDR.
       description: >-
-        ⛔ Rekonsiliasi TIDAK termasuk. `IA:§3.3` menamai layarnya "Laporan
-        Pembayaran & Rekonsiliasi", tapi Modul C-3 belum dibangun sama sekali
-        (P1). Endpoint ini murni agregasi per metode; batasnya dinyatakan,
-        bukan disamarkan dengan field kosong.
+        Sejak Modul C-3, setiap baris membawa PERKIRAAN potongan dan perkiraan
+        settlement di samping nilai transaksinya (FR-C12). Nilainya dibaca dari
+        `payment.mdr_estimated` -- SNAPSHOT saat transaksi, bukan dihitung
+        ulang saat laporan dibuat.
+
+
+        ⛔ `perkiraanMdr` null BERBEDA dari "0": null berarti metode itu tidak
+        punya perkiraan sama sekali.
 
 
         ⛔ Hanya payment `confirmed` (spec-c:223). Yang masih
@@ -3105,6 +3713,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LaporanPembayaran'
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /reports/recap:
+    get:
+      operationId: getRecapReport
+      summary: FR-C13 -- rekapitulasi penjualan untuk pelaporan pajak.
+      description: >-
+        Menggantikan integrasi API Coretax (OQ-04). Merchant atau akuntannya
+        memakai hasil ini untuk pelaporan.
+
+
+        ⛔ Angka kepalanya datang dari `rekapPenjualan`, yang memanggil
+        `posisiPenjualan` -- fungsi yang SAMA dengan `GET /reports/sales`.
+        AC FR-C13 kedua menuntut totalnya cocok dengan laporan penjualan pada
+        periode yang sama, dan memakai fungsi yang sama membuat itu benar
+        menurut konstruksi, bukan menurut kehati-hatian.
+
+
+        ⛔ Pajak dipisah per NAMA TARIF dan per YURISDIKSI, dari kolom
+        SNAPSHOT `order_line.tax_rate_name` dan `order_line.tax_jurisdiction`.
+        Meresolusinya lewat JOIN ke `tax_rate` membuat tarif yang di-rename
+        mengubah rekapitulasi periode yang sudah dilaporkan. Baris lama yang
+        belum punya snapshot dikelompokkan sebagai null -- jujur, bukan
+        ditebak.
+
+
+        ⛔ `perkiraanMdr` dan `perkiraanSettlement` adalah PERKIRAAN
+        (FR-C12), bukan nilai final. Yang menentukan potongan sebenarnya
+        adalah penyelenggara, per settlement. `null` berarti metode itu tidak
+        punya perkiraan sama sekali -- kartu EDC tidak punya, karena
+        tarifnya per-acquirer dan spec tidak memberikan satu pun angkanya.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rekapitulasi periode.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaporanRekap'
         '400':
           description: Rentang tidak valid (VALIDATION_ERROR).
           content:
@@ -3417,6 +4085,103 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /inventory/sold-out:
+    post:
+      operationId: markSoldOut
+      summary: FR-E5 -- menandai (atau membatalkan penandaan) produk habis.
+      description: >-
+        `spec-e:203`: *"Barista tahu kopi habis sebelum sistem tahu. Alur ini
+        lebih andal daripada hitungan otomatis dan wajib ada."*
+
+
+        ⛔ Penandaan sudah berjalan di perangkat sejak F3, tapi LOKAL SAJA --
+        endpoint ini yang menutup jalur naiknya. Tanpa itu, barista yang
+        menandai kopi habis di terminal 1 tidak menghentikan kasir di terminal
+        2 menerima pesanannya.
+
+
+        ⛔ Jalur PERANGKAT: dipanggil relay outbox, yang tidak mengirim
+        `Authorization` sama sekali. Ia karena itu ada di `RUTE_TERBUKA`
+        bersama `/orders` dan `/shifts`.
+
+
+        ⛔ Tabel LOG, tanpa `UPDATE`. Dua perangkat yang menandai produk yang
+        sama saat offline sama-sama menulis, dan yang menang ditentukan HLC --
+        bukan baris yang kebetulan tiba belakangan. Server hanya menyisipkan;
+        siapa yang menang dijawab saat DIBACA.
+
+
+        ⛔ Penandaan habis TIDAK PERNAH menyimpulkan stok, dan stok tidak
+        pernah menyimpulkan penandaan (`spec-e:220`). Endpoint ini tidak
+        menyentuh `stock_movement` sama sekali.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: >-
+            WAJIB, dan sengaja tidak ditandai `required` -- validator menjawab
+            `400 VALIDATION_ERROR`, sementara yang dimaksud adalah
+            `MISSING_IDEMPOTENCY_KEY`. Pola yang sama dengan endpoint idempoten
+            lain di API ini.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outletId, variationId, isSoldOut]
+              properties:
+                id:
+                  type: string
+                  description: Di-generate klien. Dikosongkan berarti server yang membuatnya.
+                outletId: { type: string, minLength: 1 }
+                variationId: { type: string, minLength: 1 }
+                isSoldOut:
+                  type: boolean
+                  description: >-
+                    ⛔ Membatalkan penandaan adalah baris tersendiri bernilai
+                    `false`, bukan penghapusan. Kalau hanya baris bernilai
+                    `true` yang pernah ditulis, produk yang sudah tersedia lagi
+                    tetap terlihat habis selamanya.
+                hlc:
+                  type: string
+                  description: >-
+                    HLC perangkat, string bilangan bulat desimal. Klien yang
+                    tidak mengirimnya memakai jam server.
+                occurredAt:
+                  type: string
+                  description: Waktu perangkat. Dikosongkan berarti jam database.
+      responses:
+        '201':
+          description: Penandaan tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, outletId, variationId, isSoldOut, hlc]
+                properties:
+                  id: { type: string }
+                  outletId: { type: string }
+                  variationId: { type: string }
+                  isSoldOut: { type: boolean }
+                  hlc: { type: string }
+        '400':
+          description: Payload tidak valid atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Aktor, outlet, atau variation tidak ditemukan (VARIATION_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Idempotency-Key sedang diproses (IDEMPOTENCY_KEY_CONFLICT).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /reports/inventory/stocks:
     get:
       operationId: getInventoryStocks
@@ -3465,6 +4230,93 @@ paths:
                 $ref: '#/components/schemas/DaftarStok'
         '404':
           description: Aktor atau outlet tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /shifts/{shiftId}/no-sale:
+    post:
+      operationId: recordNoSale
+      summary: FR-D7 -- membuka laci tanpa transaksi (no-sale).
+      description: >-
+        `spec-d:229`: membuka laci tanpa transaksi adalah pola fraud kasir
+        paling dasar. Yang ditulis endpoint ini adalah KONTROLNYA — alasan dari
+        daftar tertutup, ambang frekuensi, dan jejak audit — bukan perintah ke
+        lacinya, yang merupakan efek samping di perangkat.
+
+
+        ⛔ Yang dicatat adalah PERINTAH sistem, BUKAN bukti laci terbuka.
+        `spec-d:231`: sinyalnya satu arah. Sistem tidak dapat mengetahui apakah
+        laci benar-benar terbuka, dan tidak dapat mendeteksi laci yang dibuka
+        manual dengan kunci. Ini harus dinyatakan ke merchant.
+
+
+        ⛔ Ambang dihitung dari `audit_event`, bukan dari kolom hitungan: kolom
+        hitungan adalah angka kedua yang harus dijaga sepakat dengan jejaknya,
+        dan yang menyimpang di antaranya tidak dapat diputuskan mana yang benar.
+
+
+        Pembukaan ke-4 dan seterusnya dalam satu shift menuntut
+        `X-Approver-Id` (403 APPROVAL_REQUIRED tanpa itu). Shift yang sudah
+        ditutup menolak dengan 409.
+
+
+        TIDAK menulis `cash_movement`: no-sale tidak memindahkan uang.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, reasonCode]
+              properties:
+                id:
+                  type: string
+                  description: ULID/UUIDv7 dari klien; juga id `audit_event`-nya.
+                reasonCode:
+                  type: string
+                  # SENGAJA tanpa `enum`: handler adalah satu-satunya sumber
+                  # kebenaran, dan pesannya MENYEBUT pilihan yang sah.
+                reasonNote: { type: string, nullable: true }
+                hlc: { type: string, nullable: true }
+                occurredAt: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Pembukaan tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, shiftId, urutan, butuhPenyetuju]
+                properties:
+                  id: { type: string }
+                  shiftId: { type: string }
+                  urutan:
+                    type: integer
+                    description: Pembukaan ke berapa dalam shift ini.
+                  butuhPenyetuju: { type: boolean }
+        '400':
+          description: Alasan tidak dikenal, atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Ambang terlampaui tanpa X-Approver-Id (APPROVAL_REQUIRED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Shift, aktor, atau penyetuju tidak ditemukan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Shift sudah ditutup (SHIFT_NOT_OPEN), atau id sudah ada.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -4191,7 +5043,7 @@ components:
               reasonCode: { type: string, nullable: true }
     RingkasanDasbor:
       type: object
-      required: [from, to, outletId, penjualan, terlaris, stok]
+      required: [from, to, outletId, penjualan, terlaris, stok, perangkat]
       properties:
         from: { type: string }
         to: { type: string }
@@ -4247,6 +5099,43 @@ components:
                   itemName: { type: string }
                   variationName: { type: string }
                   saldo: { type: string }
+        perangkat:
+          type: object
+          description: >-
+            FR-H8 sisi OWNER (`spec-h:311` -- "> 24 jam: notifikasi ke owner").
+
+
+            ⛔ Ini BUKAN umur antrean. Antrean yang menua adalah penjualan yang
+            belum pernah sampai ke server, jadi server tidak dapat melihatnya
+            sama sekali. Yang dapat dilihatnya adalah perangkat yang berhenti
+            menyapa. Keduanya dinamai berbeda di UI; hanya AMBANGNYA yang
+            dibagi lewat `packages/domain`.
+          required: [total, menua, belumPernah]
+          properties:
+            total:
+              type: integer
+              description: Perangkat aktif yang punya kredensial.
+            belumPernah:
+              type: integer
+              description: >-
+                Dibuat dan sudah berkredensial, tapi belum sekali pun menyapa
+                server. Bukan hal yang sama dengan basi.
+            menua:
+              type: array
+              description: Yang melewati ambang, terlama dulu. Yang sehat tidak ikut.
+              items:
+                type: object
+                required:
+                  [deviceId, code, outletId, lastSeenAt, jamSejakTerlihat, tingkat]
+                properties:
+                  deviceId: { type: string }
+                  code: { type: string }
+                  outletId: { type: string }
+                  lastSeenAt: { type: string, nullable: true }
+                  jamSejakTerlihat: { type: integer, nullable: true }
+                  tingkat:
+                    type: string
+                    enum: [peringatan, kritis, darurat]
     DaftarStok:
       type: object
       required: [outletId, items]
@@ -4483,7 +5372,9 @@ components:
                 $ref: '#/components/schemas/PosisiPenjualan'
     LaporanPembayaran:
       type: object
-      required: [from, to, outletId, metode, totalDiterima]
+      required:
+        [from, to, outletId, metode, totalDiterima, totalPerkiraanMdr,
+         totalPerkiraanSettlement]
       properties:
         from: { type: string }
         to: { type: string }
@@ -4491,17 +5382,106 @@ components:
         totalDiterima:
           type: string
           description: Rupiah utuh sebagai STRING -- bigint, bukan number.
+        totalPerkiraanMdr:
+          type: string
+          description: >-
+            FR-C12. PERKIRAAN potongan settlement, bukan nilai final. Yang
+            menentukan potongan sebenarnya adalah penyelenggara, per
+            settlement.
+        totalPerkiraanSettlement: { type: string }
         metode:
           type: array
           items:
             type: object
-            required: [method, jumlahTransaksi, totalDiterima]
+            required:
+              [method, jumlahTransaksi, totalDiterima, perkiraanMdr,
+               perkiraanSettlement]
             properties:
               method:
                 type: string
                 enum: [cash, qris_dynamic, qris_static, card_edc, other]
               jumlahTransaksi: { type: integer }
               totalDiterima: { type: string }
+              perkiraanMdr:
+                type: string
+                nullable: true
+                description: >-
+                  null = metode ini tidak punya perkiraan potongan sama sekali
+                  (tunai tidak dipotong; kartu EDC dipotong dengan tarif
+                  per-acquirer yang spec tidak berikan angkanya). BERBEDA dari
+                  "0", yang berarti diperkirakan tidak ada potongan.
+              perkiraanSettlement: { type: string }
+              tanpaPerkiraan:
+                type: integer
+                description: >-
+                  Baris yang belum punya perkiraan tersimpan (ditulis sebelum
+                  FR-C12).
+    LaporanRekap:
+      type: object
+      required: [from, to, outletId, rekap]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        outletId: { type: string, nullable: true }
+        rekap:
+          type: object
+          required:
+            [jumlahTransaksi, omzetKotor, omzetBersih, pajakTerkumpul, pajak,
+             pembayaran, totalDiterima, totalPerkiraanMdr, totalPerkiraanSettlement]
+          properties:
+            jumlahTransaksi: { type: integer }
+            omzetKotor: { type: string }
+            voidAmount: { type: string }
+            refundAmount: { type: string }
+            omzetBersih: { type: string }
+            pajakTerkumpul: { type: string }
+            rataRataPerTransaksi: { type: string }
+            totalDiskonOrder: { type: string }
+            totalDiskonBaris: { type: string }
+            totalServiceCharge: { type: string }
+            totalPembulatan: { type: string }
+            totalDiterima: { type: string }
+            totalPerkiraanMdr:
+              type: string
+              description: PERKIRAAN, bukan nilai final (AC FR-C12 kedua).
+            totalPerkiraanSettlement: { type: string }
+            pajak:
+              type: array
+              items:
+                type: object
+                required: [nama, yurisdiksi, total]
+                properties:
+                  nama:
+                    type: string
+                    nullable: true
+                    description: Snapshot nama tarif. null = ditulis sebelum migrasi 0022.
+                  yurisdiksi:
+                    type: string
+                    nullable: true
+                    description: Snapshot yurisdiksi. null = ditulis sebelum migrasi 0028.
+                  total: { type: string }
+            pembayaran:
+              type: array
+              items:
+                type: object
+                required: [method, jumlahTransaksi, totalDiterima, perkiraanMdr, perkiraanSettlement]
+                properties:
+                  method:
+                    type: string
+                    enum: [cash, qris_dynamic, qris_static, card_edc, other]
+                  jumlahTransaksi: { type: integer }
+                  totalDiterima: { type: string }
+                  perkiraanMdr:
+                    type: string
+                    nullable: true
+                    description: >-
+                      null = metode ini tidak punya perkiraan potongan sama
+                      sekali. Berbeda dari "0", yang berarti diperkirakan tidak
+                      ada potongan.
+                  perkiraanSettlement: { type: string }
+                  tanpaPerkiraan:
+                    type: integer
+                    description: Baris yang belum punya perkiraan tersimpan (ditulis sebelum FR-C12).
     LaporanProduk:
       type: object
       required: [from, to, outletId, produk]
@@ -5122,6 +6102,66 @@ components:
             Apakah kredensial sudah pernah diterbitkan. BUKAN nilainya --
             secret hanya dapat dibaca sekali, pada respons yang menerbitkannya.
         credentialsExpireAt: { type: string, nullable: true }
+    TagihanLangganan:
+      type: object
+      required:
+        [id, plan, outletCount, unitPrice, amount, status, provider,
+         providerReference, createdAt, confirmedAt, requestedBy, qrString,
+         expiresAt]
+      properties:
+        id: { type: string }
+        plan:
+          type: string
+          enum: [standard, pro]
+          description: >-
+            Hanya tier berbayar. `free` tidak perlu dibayar dan `enterprise`
+            adalah negosiasi -- keduanya ditolak CHECK constraint tabelnya.
+        outletCount:
+          type: integer
+          description: >-
+            SNAPSHOT jumlah outlet aktif saat tagihan dibuat. Harga per outlet
+            per bulan (KEP-38), jadi angka ini yang mengalikan.
+        unitPrice:
+          type: integer
+          description: Rupiah utuh per outlet per bulan. SNAPSHOT.
+        amount:
+          type: integer
+          description: >-
+            `unitPrice * outletCount`. Konsistensinya ditegakkan CHECK
+            constraint di database, bukan hanya di aplikasi.
+        status:
+          type: string
+          enum: [pending_confirmation, confirmed, failed, expired]
+          description: >-
+            `expired` dibedakan dari `failed` supaya layar dapat berkata "QR
+            kedaluwarsa, minta yang baru" alih-alih "pembayaran gagal" -- dua
+            kalimat yang menuntut tindakan berbeda.
+        provider: { type: string, nullable: true }
+        providerReference: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        confirmedAt: { type: string, nullable: true }
+        requestedBy:
+          type: string
+          description: >-
+            Owner yang meminta kenaikan. Kolomnya tanpa FK, jadi yang menjaga
+            isinya adalah SELECT yang tunduk RLS di jalur pembuatan -- pola
+            yang sama dengan `price_history.changed_by`.
+        qrString:
+          type: string
+          nullable: true
+          description: >-
+            ⛔ DISIMPAN, bukan hanya dikembalikan sekali saat tagihan dibuat.
+            QR yang hanya hidup di respons berarti merchant yang memuat ulang
+            halaman kehilangan satu-satunya cara membayar tagihan yang masih
+            terbuka -- dan index unik parsial menolak tagihan kedua, jadi ia
+            terkunci sampai yang pertama kedaluwarsa sendiri. Menanyakan ulang
+            ke gateway tidak menolong: respons status Midtrans tidak memuat
+            `actions`.
+        expiresAt:
+          type: string
+          nullable: true
+          description: >-
+            Kedaluwarsa QR menurut GATEWAY, bukan dihitung dari jam kami.
     PemakaianKuota:
       type: object
       required: [terpakai, batas]

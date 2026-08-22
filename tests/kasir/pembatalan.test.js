@@ -31,7 +31,7 @@ const ORDER_TERTUTUP = {
   rounding_adjustment: 0, channel: 'takeaway',
 };
 
-function dbPalsu({ order = ORDER_TERTUTUP, lines = [], refunds = [] } = {}) {
+function dbPalsu({ order = ORDER_TERTUTUP, lines = [], refunds = [], kembali = [] } = {}) {
   const state = { tulis: [], transaksi: 0, diDalam: false, device_config: { receipt_sequence: 4, sequence_business_date: '2026-08-13' } };
   const db = {
     state,
@@ -39,6 +39,8 @@ function dbPalsu({ order = ORDER_TERTUTUP, lines = [], refunds = [] } = {}) {
       if (/FROM "order"/.test(sql)) return order ? [order] : [];
       if (/FROM order_line/.test(sql)) return lines;
       if (/FROM refund/.test(sql)) return refunds;
+      // FR-B7 — barang yang sudah kembali ke rak, per variasi.
+      if (/FROM stock_movement/.test(sql)) return kembali;
       if (/FROM device_config/.test(sql)) return [state.device_config];
       if (/FROM outlet/.test(sql)) return [{ timezone: 'Asia/Jakarta', business_day_ends_at: '04:00:00' }];
       return [];
@@ -241,4 +243,126 @@ test('order yang tidak ada ditolak', async () => {
   const db = dbPalsu({ order: null });
   const hasil = await batalkan({ db, ...args() });
   assert.equal(hasil.status, 'tidak_ditemukan');
+});
+
+// ===========================================================================
+// FR-B7 — refund parsial dengan pemilihan baris
+// ===========================================================================
+//
+// ⛔ Aturan batasnya per VARIASI, bukan per baris, karena `stock_movement`
+// tidak menyimpan `line_id`. Itu aturan SERVER (`planRestock` →
+// `RESTOCK_EXCEEDS_SOLD`), dan klien harus menjawab sama: kalau hanya server
+// yang memeriksanya, kasir baru tahu berjam-jam kemudian saat antrean
+// terkuras — uang sudah keluar laci dan barangnya sudah di rak.
+
+const DUA_BARIS = [
+  { id: 'l1', variation_id: 'v1', quantity: 1000, line_total: 20000, cost_at_sale: 5000 },
+  { id: 'l2', variation_id: 'v2', quantity: 2000, line_total: 10000, cost_at_sale: 3000 },
+];
+
+function movementRefund(db) {
+  return db.state.tulis.filter(
+    (t) => /INSERT INTO stock_movement/.test(t.sql) || /stock_movement/.test(t.sql)
+  );
+}
+
+test('refund parsial menulis restock HANYA untuk baris yang dipilih', async () => {
+  const { batalkan } = await import(MOD);
+  const db = dbPalsu({ lines: DUA_BARIS });
+  const hasil = await batalkan({
+    db,
+    ...args({ jumlah: 10000, lines: [{ lineId: 'l2', quantityMilli: 2000 }] }),
+  });
+  assert.equal(hasil.status, 'tersimpan');
+
+  const gerak = movementRefund(db);
+  assert.equal(gerak.length, 1, 'harus tepat satu baris stock_movement');
+  // params: id, tenant, outlet, device, variation, type, delta, …
+  assert.equal(gerak[0].params[4], 'v2');
+  assert.equal(gerak[0].params[6], 2000, 'delta POSITIF: barang kembali ke rak');
+});
+
+test('⛔ `lines: []` sah — uang kembali TANPA barang kembali', async () => {
+  const { batalkan } = await import(MOD);
+  const db = dbPalsu({ lines: DUA_BARIS });
+  const hasil = await batalkan({ db, ...args({ jumlah: 10000, lines: [] }) });
+  assert.equal(hasil.status, 'tersimpan');
+  assert.equal(movementRefund(db).length, 0, 'tidak ada barang yang kembali');
+});
+
+test('⛔ baris yang sudah dikembalikan penuh DITOLAK, bukan menambah stok', async () => {
+  const { batalkan } = await import(MOD);
+  const db = dbPalsu({
+    lines: DUA_BARIS,
+    // Seluruh v2 sudah kembali pada refund parsial sebelumnya.
+    kembali: [{ variation_id: 'v2', total: 2000 }],
+  });
+  const hasil = await batalkan({
+    db,
+    ...args({ jumlah: 5000, lines: [{ lineId: 'l2', quantityMilli: 2000 }] }),
+  });
+  assert.equal(hasil.status, 'baris_melebihi_sisa');
+  assert.equal(hasil.lineId, 'l2');
+  assert.equal(hasil.sisaMilli, 0);
+  assert.equal(hasil.dimintaMilli, 2000);
+  // ⛔ Dan TIDAK ADA yang tertulis — penolakan sebelum transaksi dibuka.
+  assert.equal(db.state.transaksi, 0, 'transaksi dibuka padahal pilihan ditolak');
+});
+
+test('sisa sebagian: kuantitas dalam batas diterima, di atasnya ditolak', async () => {
+  const { batalkan } = await import(MOD);
+  const separuh = () =>
+    dbPalsu({ lines: DUA_BARIS, kembali: [{ variation_id: 'v2', total: 1000 }] });
+
+  const ok = await batalkan({
+    db: separuh(),
+    ...args({ jumlah: 5000, lines: [{ lineId: 'l2', quantityMilli: 1000 }] }),
+  });
+  assert.equal(ok.status, 'tersimpan');
+
+  const tolak = await batalkan({
+    db: separuh(),
+    ...args({ jumlah: 5000, lines: [{ lineId: 'l2', quantityMilli: 1001 }] }),
+  });
+  assert.equal(tolak.status, 'baris_melebihi_sisa');
+  assert.equal(tolak.sisaMilli, 1000);
+});
+
+test('baris milik order lain ditolak', async () => {
+  const { batalkan } = await import(MOD);
+  const db = dbPalsu({ lines: DUA_BARIS });
+  const hasil = await batalkan({
+    db,
+    ...args({ jumlah: 5000, lines: [{ lineId: 'asing', quantityMilli: 1000 }] }),
+  });
+  assert.equal(hasil.status, 'baris_melebihi_sisa');
+  assert.equal(hasil.lineId, 'asing');
+});
+
+test('⛔ `stock_movement.type` memakai kosakata SERVER', async () => {
+  const { batalkan } = await import(MOD);
+  const db = dbPalsu({ lines: DUA_BARIS });
+  await batalkan({ db, ...args({ jumlah: 10000, lines: [{ lineId: 'l2', quantityMilli: 2000 }] }) });
+  // `refund`, bukan `refund_return`: `0010_inventory.sql` punya
+  // `CHECK (type IN ('sale','void','refund',…))`, dan dua kosakata untuk satu
+  // peristiwa adalah cacat yang menunggu tabel ini ikut direplikasi.
+  assert.equal(movementRefund(db)[0].params[5], 'refund');
+});
+
+test('void mengembalikan SELURUH baris tanpa pemilihan', async () => {
+  const { batalkan } = await import(MOD);
+  const db = dbPalsu({
+    order: { ...ORDER_TERTUTUP, status: 'paid' },
+    lines: DUA_BARIS,
+  });
+  const hasil = await batalkan({
+    db,
+    // ⛔ Alasan VOID, bukan alasan refund — daftarnya berbeda (`spec-b` §B.4).
+    ...args({ approverId: null, alasan: { kode: 'salah_input', catatan: null } }),
+  });
+  assert.equal(hasil.status, 'tersimpan');
+  assert.equal(hasil.operasi, 'void');
+  const gerak = movementRefund(db);
+  assert.equal(gerak.length, 2, 'void mengembalikan setiap baris');
+  assert.equal(gerak[0].params[5], 'void');
 });

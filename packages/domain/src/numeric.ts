@@ -48,6 +48,17 @@
 const SCALE_DIGITS = 4;
 const SCALE = 10n ** BigInt(SCALE_DIGITS);
 
+/**
+ * Skala tarif: 10.000. 10% = `1000n`.
+ *
+ * ⛔ Diekspor supaya ia punya SATU sumber. Sebelum ini ada dua salinan —
+ * `SCALE` di sini dan `RATE_SCALE` di `tax.ts` — dan angka berskala yang
+ * punya dua salinan adalah tepat bentuk cacat yang sudah pernah terjadi di
+ * repo ini pada `tax_rate.rate` di jalur turun: nilainya 10.000× meleset,
+ * tanpa satu pun error.
+ */
+export const SKALA_TARIF = SCALE;
+
 /** Presisi 6, skala 4 -> maksimum 99.9999. */
 const MAX_SCALED = 10n ** 6n - 1n;
 

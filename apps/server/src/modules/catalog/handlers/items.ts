@@ -1,6 +1,10 @@
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
+// ⛔ Konstanta yang SAMA dengan yang back-office kirim. Dua salinan yang
+// menyimpang menghasilkan saringan yang mengembalikan nol produk alih-alih
+// produk tanpa kategori — dan nol terlihat seperti "memang tidak ada".
+import { TANPA_KATEGORI } from '../../../../../../packages/domain/src/katalog-saringan.ts';
 import { getTenantId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import { toModifierList, fetchModifierListsByIds, fetchModifiersForLists } from './modifier-lists.ts';
@@ -231,6 +235,105 @@ async function fetchItemOrThrow(client: PoolClient, itemId: string): Promise<Ite
     throw new HttpError(404, 'NOT_FOUND', `Item ${itemId} tidak ditemukan.`);
   }
   return rows[0];
+}
+
+/**
+ * Varian untuk BANYAK item sekaligus, dalam jumlah query TETAP.
+ *
+ * ## ⛔ Kenapa ini ada
+ *
+ * `listItems` menjalankan satu `fetchVariations` per baris. Komentar `FIX 5` di
+ * berkas ini menyebut modifier list sebagai N+1 yang sudah diperbaiki — dan di
+ * baris berikutnya meninggalkan N+1 kedua yang belum, dengan catatan
+ * "pre-existing, out of scope". Katalog 5.000 produk (kuota tier `standard`)
+ * menghasilkan **5.001 query** dalam satu transaksi.
+ *
+ * Memperbaikinya BERSAMA paginasi, bukan sesudahnya: paginasi tanpa ini
+ * memindahkan masalahnya alih-alih menghapusnya — halaman 100 item tetap
+ * menjalankan 101 query — dan sesudah paginasi mendarat, N+1-nya menjadi
+ * **lebih sulit terlihat**. 101 query terasa wajar; 5.001 tidak.
+ */
+/**
+ * Batas halaman yang diizinkan.
+ *
+ * ⛔ Batas ATAS wajib ada. `limit` yang diteruskan apa adanya membuat satu
+ * permintaan `?limit=999999` menarik seluruh katalog ke memori server —
+ * permukaan yang tersedia bagi siapa pun yang punya sesi.
+ */
+const BATAS_MAKS_ITEM = 200;
+
+
+function assertBatas(nilai: unknown): number | null {
+  // ⛔ `undefined` berarti TANPA paginasi, bukan halaman bawaan. Lihat
+  // komentar di `listItems`: bawaan yang memotong respons membuat klien lama
+  // menampilkan katalog terpotong tanpa satu pun error.
+  if (nilai === undefined || nilai === null || nilai === '') return null;
+  const n = Number(nilai);
+  if (!Number.isInteger(n) || n < 1 || n > BATAS_MAKS_ITEM) {
+    throw new HttpError(
+      400,
+      'VALIDATION_ERROR',
+      `limit harus bilangan bulat 1..${BATAS_MAKS_ITEM}.`
+    );
+  }
+  return n;
+}
+
+export interface KursorItem {
+  sortOrder: number;
+  id: string;
+}
+
+/**
+ * Kursor keyset: `sort_order` dan `id` baris terakhir, dipisah `:`.
+ *
+ * ⛔ TIDAK di-base64 dan tidak ditandatangani, dan itu keputusan yang
+ * dinyatakan. Kursor ini tidak membawa kewenangan apa pun: ia hanya menyebut
+ * "mulai setelah baris ini", dan hasilnya tetap tunduk RLS. Kursor yang
+ * dipalsukan hanya membuat pemanggil melompati barisnya sendiri. Base64
+ * membeli kesan aman tanpa membeli keamanan, dan menyembunyikan nilai yang
+ * justru berguna dibaca saat men-debug.
+ *
+ * `id` boleh memuat `:`? ULID dan UUID tidak. Pemisahannya karena itu memakai
+ * indeks `:` PERTAMA, sehingga id yang aneh tetap utuh.
+ */
+export function susunKursor(row: { sort_order: number; id: string }): string {
+  return `${row.sort_order}:${row.id}`;
+}
+
+export function uraikanKursor(nilai: unknown): KursorItem | null {
+  if (nilai === undefined || nilai === null || nilai === '') return null;
+  if (typeof nilai !== 'string') {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'after harus string kursor.');
+  }
+  const pisah = nilai.indexOf(':');
+  if (pisah <= 0 || pisah === nilai.length - 1) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'after bukan kursor yang sah.');
+  }
+  const sortOrder = Number(nilai.slice(0, pisah));
+  if (!Number.isInteger(sortOrder)) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'after bukan kursor yang sah.');
+  }
+  return { sortOrder, id: nilai.slice(pisah + 1) };
+}
+
+async function fetchVariationsForItems(
+  client: PoolClient,
+  itemIds: string[]
+): Promise<Map<string, VariationRow[]>> {
+  const hasil = new Map<string, VariationRow[]>();
+  if (itemIds.length === 0) return hasil;
+
+  const { rows } = await client.query<VariationRow>(
+    'SELECT * FROM item_variation WHERE item_id = ANY($1) ORDER BY sort_order, id',
+    [itemIds]
+  );
+  for (const row of rows) {
+    const daftar = hasil.get(row.item_id) ?? [];
+    daftar.push(row);
+    hasil.set(row.item_id, daftar);
+  }
+  return hasil;
 }
 
 async function fetchVariations(client: PoolClient, itemId: string): Promise<VariationRow[]> {
@@ -539,37 +642,154 @@ export function createItemHandlers(pool: Pool) {
       return toItem(item, variations, []);
     },
 
+    /**
+     * `GET /items` — daftar katalog, dengan pencarian dan paginasi keyset.
+     *
+     * ## ⛔ Tanpa `limit`, SELURUH baris dikembalikan
+     *
+     * Kompatibilitas klien N-1, dan ia bukan formalitas di sini. `limit`
+     * dengan nilai bawaan berarti klien lama yang tidak mengirimnya menerima
+     * 100 dari 5.000 produk, lalu menampilkan katalog yang terpotong **tanpa
+     * satu pun error** — dan kasir yang tidak menemukan produknya akan
+     * menyalahkan katalognya, bukan aplikasinya.
+     *
+     * Paginasi adalah sesuatu yang klien MINTA, bukan yang server paksakan.
+     *
+     * ## ⛔ Keyset, bukan `OFFSET` — tapi alasannya BUKAN alasan riwayat
+     *
+     * `CLAUDE.md` menuntut keyset untuk riwayat transaksi karena perangkat
+     * offline menyisipkan baris di TENGAH urutan. Katalog tidak punya sifat
+     * itu: item baru ditulis dari back-office, satu per satu, oleh orang yang
+     * sedang menatap layarnya.
+     *
+     * Yang membuat keyset tetap dipilih adalah biaya: `OFFSET n` menyuruh
+     * PostgreSQL memindai lalu MEMBUANG `n` baris. Halaman ke-50 dari katalog
+     * 5.000 produk berarti membaca 5.000 baris untuk mengembalikan 100.
+     *
+     * Konsekuensi yang dinyatakan: **tidak dapat melompat ke halaman 17.**
+     * Untuk katalog itu bukan kehilangan — B-06 adalah daftar yang di-scroll
+     * dan dicari, bukan buku bernomor halaman.
+     *
+     * ## Pencarian: `ILIKE`, bukan full-text
+     *
+     * Nama produk kafe adalah dua sampai empat kata Indonesia, dan yang
+     * merchant ketik adalah POTONGAN kata — "kop" untuk "Kopi Susu".
+     * `to_tsvector` tidak mencocokkan awalan tanpa konfigurasi tambahan;
+     * `ILIKE '%kop%'` mencocokkannya apa adanya.
+     *
+     * ⛔ `[ASUMSI]`: sequential scan atas katalog satu tenant cukup cepat.
+     * Belum diukur. `pg_trgm` adalah jawaban bila kelak tidak cukup, dan ia
+     * tidak dipasang sekarang — extension baru adalah keputusan operasional,
+     * dan angka yang membenarkannya belum ada.
+     */
     async listItems(req: FastifyRequest) {
       const tenantId = getTenantId(req);
-      const query = req.query as { includeArchived?: boolean; categoryId?: string };
-      const items = await withTenantTransaction(pool, tenantId, async (client) => {
+      const query = req.query as {
+        includeArchived?: boolean;
+        categoryId?: string;
+        q?: string;
+        limit?: number;
+        after?: string;
+      };
+
+      const cari = typeof query.q === 'string' ? query.q.trim() : '';
+      const batas = assertBatas(query.limit);
+      const setelah = uraikanKursor(query.after);
+
+      const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         const conditions: string[] = [];
         const params: unknown[] = [];
         if (!query.includeArchived) {
           conditions.push('archived_at IS NULL');
         }
-        if (query.categoryId) {
+        if (query.categoryId === TANPA_KATEGORI) {
+          // ⛔ Produk tanpa kategori adalah saringan tersendiri, bukan
+          // ketiadaan saringan. Impor katalog membuat produk tanpa kategori,
+          // dan justru itu yang harus dibereskan merchant — kalau ia hanya
+          // terlihat lewat "semua kategori", ia tenggelam di antara ratusan
+          // yang lain.
+          //
+          // Tanpa cabang ini, B-06 yang berpindah ke pencarian sisi server
+          // akan mengirim `categoryId=__tanpa__`, tidak menemukan kategori
+          // dengan id itu, dan menampilkan NOL produk — bukan produk tanpa
+          // kategori. Kelas regresi yang sama dengan barcode: diam, dan
+          // menunjuk ke tempat yang salah.
+          conditions.push('category_id IS NULL');
+        } else if (query.categoryId) {
           params.push(query.categoryId);
           conditions.push(`category_id = $${params.length}`);
         }
+        if (cari !== '') {
+          // ⛔ Karakter `%` dan `_` di masukan pengguna di-ESCAPE. Tanpa itu,
+          // merchant yang mencari "50%" mendapat SELURUH katalog — dan
+          // "diskon_akhir" mencocokkan hal-hal yang tidak ia maksud.
+          params.push(`%${cari.replace(/([\\%_])/g, '\\$1')}%`);
+          // ⛔ SKU, barcode, dan nama VARIAN ikut dicari — bukan hanya nama
+          // item. `saringProduk` di back-office sudah mencarinya sejak B-06
+          // lahir, dan alasannya ditulis di sana: *"merchant mencari produk
+          // lewat kode yang tertempel di rak, bukan lewat nama yang ia tulis
+          // berbulan-bulan lalu."*
+          //
+          // Tanpa ini, layar yang berpindah ke pencarian sisi server akan
+          // diam-diam berhenti menemukan barcode — kasir memindai, tidak ada
+          // yang muncul, dan tidak ada satu pun error. Kelas cacat yang sama
+          // dengan "dua definisi omzet": dua tempat yang menjawab pertanyaan
+          // yang sama dengan jawaban berbeda.
+          conditions.push(
+            `(name ILIKE $${params.length} ESCAPE '\\'` +
+              ` OR description ILIKE $${params.length} ESCAPE '\\'` +
+              ` OR EXISTS (SELECT 1 FROM item_variation v WHERE v.item_id = item.id` +
+              ` AND (v.name ILIKE $${params.length} ESCAPE '\\'` +
+              ` OR v.sku ILIKE $${params.length} ESCAPE '\\'` +
+              ` OR v.barcode ILIKE $${params.length} ESCAPE '\\')))`
+          );
+        }
+        if (setelah !== null) {
+          // Keyset atas `(sort_order, id)` — pasangan yang SAMA dengan
+          // `ORDER BY` di bawah. Membandingkan hanya `sort_order` akan
+          // melewatkan item yang seri, dan `sort_order` DEFAULT 0 membuat
+          // seri menjadi keadaan normal pada katalog yang belum diurutkan.
+          params.push(setelah.sortOrder, setelah.id);
+          conditions.push(`(sort_order, id) > ($${params.length - 1}, $${params.length})`);
+        }
+
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
         // FIX 6 (whole-branch review): `, id` tie-breaker -- sort_order
         // DEFAULTs to 0, so a fresh catalog with no explicit ordering set
         // returns rows in arbitrary, run-to-run-unstable order without it.
-        const { rows } = await client.query<ItemRow>(`SELECT * FROM item ${where} ORDER BY sort_order, id`, params);
-        // FIX 5 N+1 guard: modifierLists for every row in this result set are
-        // fetched with a FIXED number of extra queries (see
-        // fetchModifierListsForItems), not one per item -- computed once
-        // outside the loop below, which still does one fetchVariations call
-        // per item (pre-existing N+1, out of scope to fix here per brief).
-        const modifierListsByItemId = await fetchModifierListsForItems(client, rows.map((row) => row.id));
-        const result = [];
-        for (const row of rows) {
-          result.push(toItem(row, await fetchVariations(client, row.id), modifierListsByItemId.get(row.id) ?? []));
+        //
+        // Satu baris LEBIH diambil daripada yang diminta: itu yang menjawab
+        // "masih ada lagi?" tanpa query COUNT kedua atas kondisi yang sama.
+        let limitSql = '';
+        if (batas !== null) {
+          params.push(batas + 1);
+          limitSql = ` LIMIT $${params.length}`;
         }
-        return result;
+        const { rows: mentah } = await client.query<ItemRow>(
+          `SELECT * FROM item ${where} ORDER BY sort_order, id${limitSql}`,
+          params
+        );
+
+        const adaLagi = batas !== null && mentah.length > batas;
+        const rows = adaLagi ? mentah.slice(0, batas) : mentah;
+
+        // ⛔ N+1 dihapus di KEDUA arah: modifier list DAN varian sama-sama
+        // diambil dalam jumlah query tetap.
+        const modifierListsByItemId = await fetchModifierListsForItems(client, rows.map((row) => row.id));
+        const variationsByItemId = await fetchVariationsForItems(client, rows.map((row) => row.id));
+
+        const items = rows.map((row) =>
+          toItem(row, variationsByItemId.get(row.id) ?? [], modifierListsByItemId.get(row.id) ?? [])
+        );
+        const terakhir = rows[rows.length - 1];
+        return {
+          items,
+          // `null` berarti habis. Kursor yang tetap terisi di halaman terakhir
+          // membuat klien meminta halaman kosong selamanya.
+          nextCursor: adaLagi && terakhir ? susunKursor(terakhir) : null,
+        };
       });
-      return { items };
+      return hasil;
     },
 
     async getItem(req: FastifyRequest) {

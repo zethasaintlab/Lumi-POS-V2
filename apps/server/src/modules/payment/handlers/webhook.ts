@@ -5,7 +5,10 @@ import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { insertOutboxEvent } from '../../sync/index.ts';
 import { mapGatewayStatus } from '../providers/index.ts';
+import { adalahRujukanLangganan, idTagihanDari } from '../providers/langganan.ts';
+import { terapkanStatusTagihan } from '../../tenancy/index.ts';
 import { assertTransition } from '../../../../../../packages/domain/src/order-state.ts';
+import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
@@ -25,6 +28,21 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
  *    payment karena itu tetap tunduk RLS: tenant yang dipalsukan tidak
  *    menemukan apa pun. Notifikasi bertanda tangan sah tapi bertenant salah
  *    dijawab 404, bukan diproses.
+ *
+ * ## ⛔ Satu URL, DUA jenis tagihan (F5)
+ *
+ * Midtrans mengirim seluruh notifikasi ke satu URL. Sebelum F5, handler ini
+ * memperlakukan `order_id` notifikasi sebagai id **payment** kami dan
+ * menjawab `404 PAYMENT_NOT_FOUND` bila tidak ditemukan — sementara komentar
+ * di bawah mencatat sifat yang membuat itu berbahaya: Midtrans **mengirim
+ * ulang notifikasi yang tidak dijawab 200**. Notifikasi tagihan langganan
+ * pertama karena itu akan dijawab 404 lalu diulang selamanya.
+ *
+ * Yang menutupnya adalah PREFIKS pada id yang dititipkan ke gateway
+ * (`providers/langganan.ts`), dan rutenya diputuskan **sebelum satu query pun
+ * jalan**. Alternatifnya — mencari di kedua tabel — menghasilkan dua
+ * pencarian yang keduanya gagal untuk notifikasi asing, dan jenis tagihan
+ * berikutnya menambah pencarian ketiga.
  *
  * ## Batas yang diketahui
  *
@@ -93,7 +111,7 @@ const GATEWAY_TO_PAYMENT_STATUS: Readonly<Record<string, string>> = {
   expired: 'failed',
 };
 
-export function createWebhookHandlers(pool: Pool, serverKey: string): Record<string, unknown> {
+export function createWebhookHandlers(pool: Pool, serverKey: string, hlc: Hlc): Record<string, unknown> {
   return {
     async midtransNotification(req: FastifyRequest, reply: FastifyReply) {
       // Kunci kosong TIDAK berarti "terima apa adanya". CI mengisi
@@ -136,9 +154,27 @@ export function createWebhookHandlers(pool: Pool, serverKey: string): Record<str
         );
       }
 
+      const gatewayStatus = mapGatewayStatus(body.transaction_status);
+
+      // ⛔ Rute diputuskan DARI STRING-nya, sebelum satu query pun jalan.
+      // Tabel `subscription_invoice` milik modul tenancy (invariant #4), jadi
+      // yang menyentuhnya adalah fungsi yang diekspor modul itu — transaksinya
+      // tetap dibuka di sini supaya batasnya satu dan sama untuk kedua jenis.
+      if (adalahRujukanLangganan(orderId)) {
+        await withTenantTransaction(pool, tenantId, async (client: PoolClient) => {
+          await terapkanStatusTagihan(client, {
+            tenantId,
+            invoiceId: idTagihanDari(orderId),
+            gatewayStatus,
+            hlc: hlc.tick(),
+          });
+        });
+        reply.code(200);
+        return { received: true };
+      }
+
       // `order_id` Midtrans adalah id PAYMENT kami (lihat komentar di
       // providers/index.ts). Pencariannya tunduk RLS lewat tenant di atas.
-      const gatewayStatus = mapGatewayStatus(body.transaction_status);
       const statusBaru = GATEWAY_TO_PAYMENT_STATUS[gatewayStatus] ?? 'pending_confirmation';
 
       await withTenantTransaction(pool, tenantId, async (client: PoolClient) => {

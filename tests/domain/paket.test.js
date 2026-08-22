@@ -50,14 +50,32 @@ test('⛔ kuota naik monoton dari free ke pro', async () => {
   const { KUOTA_PAKET } = await import(MOD);
   const urutan = ['free', 'standard', 'pro'];
 
+  // ⛔ `null` berarti TANPA BATAS, jadi ia yang terbesar — bukan yang terkecil.
+  // Versi pertama membandingkan nilai mentah, dan itu benar selama tidak ada
+  // tier menengah yang tak berbatas. Begitu KEP-38 membuat `maxOutlets` di
+  // standard/pro menjadi `null`, `null > 5` bernilai `false` dan test ini
+  // menandai kode yang justru benar.
+  //
+  // Yang diperbaiki PERBANDINGANNYA, bukan aturannya: aturan "paket lebih
+  // mahal tidak boleh punya kuota lebih kecil" tetap ditegakkan penuh, dan
+  // regresi ke arah itu tetap merah.
+  const nilai = (v) => (v === null ? Infinity : v);
+
   for (const dimensi of ['maxOutlets', 'maxDevices', 'maxUsers', 'maxProducts']) {
     for (let i = 1; i < urutan.length; i += 1) {
-      const bawah = KUOTA_PAKET[urutan[i - 1]][dimensi];
-      const atas = KUOTA_PAKET[urutan[i]][dimensi];
+      const bawah = nilai(KUOTA_PAKET[urutan[i - 1]][dimensi]);
+      const atas = nilai(KUOTA_PAKET[urutan[i]][dimensi]);
       assert.ok(
-        atas > bawah,
-        `${urutan[i]}.${dimensi} (${atas}) tidak lebih besar dari ${urutan[i - 1]} (${bawah})`
+        atas >= bawah,
+        `${urutan[i]}.${dimensi} (${atas}) lebih kecil dari ${urutan[i - 1]} (${bawah})`
       );
+      // Tak berbatas di kedua sisi sah; selain itu harus benar-benar naik.
+      if (bawah !== Infinity) {
+        assert.ok(
+          atas > bawah,
+          `${urutan[i]}.${dimensi} (${atas}) tidak lebih besar dari ${urutan[i - 1]} (${bawah})`
+        );
+      }
     }
   }
 });
