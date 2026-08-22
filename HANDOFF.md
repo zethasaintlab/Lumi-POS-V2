@@ -1124,3 +1124,39 @@ sepakat.
 | **FR-C3** | "Nonaktifkan metode online saat offline" menuntut metode online ADA lebih dulu. Ketiga metode yang kini ada semuanya berfungsi tanpa jaringan |
 | **Pembayaran campuran** | Satu penjualan = satu payment di jalur perangkat. Server sudah mengembalikan `outstanding`; layarnya belum memakainya |
 | Verifikasi browser | **Belum dijalankan** untuk pemilih metode dan kedua form |
+
+---
+
+## Pembayaran campuran di perangkat (FR-C1, 22 Agustus 2026)
+
+### ⛔ Urutan kedatangan bagian pembayaran adalah bagian dari kebenarannya
+
+Server menghitung nominal pembayaran tunai dari `total − SUM(payment
+confirmed)` lalu **membulatkannya** (`spec-c:181`). Konsekuensinya: bagian
+tunai yang mendarat sebelum bagian non-tunai menagih **seluruh total**, menutup
+ordernya, dan membuat bagian berikutnya ditolak — untuk penjualan yang
+sempurna, hanya karena urutan kedatangannya.
+
+Urutan antar-baris `outbox_local` tidak dijamin apa pun kecuali `depends_on`,
+jadi perangkat menyusun rantainya sendiri: seluruh bagian non-tunai lebih dulu,
+tunai terakhir, masing-masing bergantung pada yang sebelumnya. Ada test yang
+membalik urutannya terhadap server sungguhan dan membuktikan penolakannya —
+serta membuktikan uangnya berpisah: laci menerima seluruh total sementara
+pelanggan membayar sebagian lewat QRIS.
+
+### ⛔ Kemunculan KETIGA cacat "laci menerima uang yang tidak pernah masuk"
+
+1. F3: saldo laci dihitung dari `payment`, bukan `cash_movement`.
+2. K-06 non-tunai: `cash_movement` ditulis untuk QRIS.
+3. Pembayaran campuran: `delta` memakai `amount_due`, yang memuat bagian bank.
+
+Ketiganya menghasilkan gejala yang sama — tutup kas menuntut otorisasi manajer
+untuk selisih yang tidak pernah ada — dan tidak satu pun menghasilkan error.
+
+### Yang tidak dibangun
+
+| Batas | Kenapa |
+|---|---|
+| Order `open` parsial di perangkat | Penjualan ditulis hanya saat LUNAS. Order `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21) |
+| Lebih dari satu bagian tunai | Uang tunai tidak punya identitas yang membedakan; dua baris membuat "berapa kembaliannya" punya lebih dari satu jawaban yang sama benarnya |
+| Verifikasi browser | **Belum dijalankan** untuk daftar bagian dan sisa tagihan |

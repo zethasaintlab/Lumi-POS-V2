@@ -303,7 +303,17 @@ Sisa Modul B, belum digarap: FR-B11 (cetak ulang struk, P1, butuh printer F4). *
 - ⛔ **`card_last4` dipotong di titik MASUKNYA di layar**, bukan hanya ditolak saat simpan. Membiarkan digit kelima masuk state berarti nomor kartu sempat ada di dalam aplikasi.
 - **`LABEL_METODE` satu sumber** (`cetak/metode.ts`), dipakai cetakan pertama dan cetak ulang. Dua peta nama yang menyimpang menghasilkan struk kedua yang menyebut metode berbeda — tepat yang `spec-b:145` larang.
 
-Sisa Modul C: **FR-C3 dan QRIS dinamis di kasir**. QRIS dinamis menuntut gateway menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur penjualan perangkat menulis lokal lebih dulu lalu me-relay. Ia menuntut jalur penjualan **online-first** yang belum ada, dan FR-C3 ("nonaktifkan metode online saat offline") menuntut metode online ada lebih dulu. Pembayaran campuran juga belum: server sudah mendukung sisa tagihan, layarnya belum.
+**Pembayaran campuran (FR-C1) ditutup 22 Agustus 2026.** Keputusan yang mengikat kodenya:
+
+- ⛔ **Yang dibulatkan SISA TUNAI setelah bagian non-tunai** (`spec-c:181`), bukan totalnya. Total 93.555 dengan QRIS 50.020 menagih tunai 43.500; membulatkan total lebih dulu menagih 43.580 — 80 rupiah per transaksi. Aturannya di `packages/domain/src/pembayaran-campuran.ts`, dan ia menerima seluruh bagian sekaligus karena menghitung per bagian berarti membulatkan sisa yang belum lengkap.
+- ⛔ **Bagian TUNAI dikirim TERAKHIR, dengan rantai `depends_on` eksplisit.** Server menghitung nominal tunai dari `total − SUM(confirmed)` lalu membulatkannya: tunai yang mendarat lebih dulu menagih SELURUH total dan menutup ordernya, lalu bagian QRIS berikutnya **ditolak** — untuk penjualan yang sempurna. Urutan antar-baris outbox tidak dijamin apa pun kecuali `depends_on`.
+- ⛔ **`delta` laci adalah BAGIAN TUNAI-nya, bukan `amount_due`.** Kemunculan KETIGA cacat yang sama: `amount_due` pada pembayaran campuran memuat uang yang masuk lewat bank.
+- ⛔ **Satu baris `payment` per bagian.** Menggabungkan dua metode menjadi satu baris membuat rekonsiliasi FR-C12 tidak dapat memisahkan uang bank dari uang laci — dua saluran yang settlement-nya berbeda hari.
+- ⛔ **Kelebihan bayar non-tunai DITOLAK** (`spec-c:225`), dengan angkanya. Hanya SATU bagian tunai per transaksi.
+- ⛔ **`hitungKeranjang` adalah satu fungsi untuk layar dan jalur penulisan.** K-06 harus menampilkan TOTAL sebelum kasir membaginya, dan subtotal belum kena pajak.
+- **Penjualan tetap ditulis hanya saat LUNAS.** Order `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21).
+
+Sisa Modul C: **FR-C3 dan QRIS dinamis di kasir**. QRIS dinamis menuntut gateway menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur penjualan perangkat menulis lokal lebih dulu lalu me-relay. Ia menuntut jalur penjualan **online-first** yang belum ada, dan FR-C3 ("nonaktifkan metode online saat offline") menuntut metode online ada lebih dulu. Pembayaran campuran sudah ada di keduanya.
 
 **Keputusan produk yang mengikat kode katalog:**
 
