@@ -30,6 +30,7 @@ interface BarisOrderStruk {
   occurred_at: string;
   channel: string;
   subtotal: number;
+  order_discount: number | null;
   tax_amount: number;
   rounding_adjustment: number;
   total: number;
@@ -95,7 +96,7 @@ export async function bangunUlangStruk(
 ): Promise<ReceiptDocument | null> {
   const order = (
     await db.getAll<BarisOrderStruk>(
-      `SELECT receipt_number, occurred_at, channel, subtotal, tax_amount,
+      `SELECT receipt_number, occurred_at, channel, subtotal, order_discount, tax_amount,
               rounding_adjustment, total, amount_due, created_by, outlet_id
          FROM "order" WHERE id = ?`,
       [orderId]
@@ -118,17 +119,33 @@ export async function bangunUlangStruk(
     [orderId]
   );
 
-  const modifier = await db.getAll<{ order_line_id: string; name: string; price: number }>(
-    `SELECT m.order_line_id, m.name, m.price
+  // ⛔ `quantity` ikut dibaca (FR-A3, `allow_duplicate`). Cetak ulang wajib
+  // IDENTIK dengan cetakan pertama (`spec-b:145`); yang melewatkan kuantitas
+  // modifier mencetak "Extra Shot" seharga satu shot pada struk yang totalnya
+  // memuat dua — dan selisihnya hanya muncul pada cetakan kedua.
+  const modifier = await db.getAll<{
+    order_line_id: string;
+    name: string;
+    price: number;
+    quantity: number | null;
+  }>(
+    `SELECT m.order_line_id, m.name, m.price, m.quantity
        FROM order_line_modifier m
        JOIN order_line l ON l.id = m.order_line_id
       WHERE l.order_id = ?`,
     [orderId]
   );
-  const perBaris = new Map<string, { nama: string; harga: number }[]>();
+  const perBaris = new Map<string, { nama: string; harga: number; qtyMilli: number }[]>();
   for (const m of modifier) {
     const daftar = perBaris.get(m.order_line_id) ?? [];
-    daftar.push({ nama: m.name, harga: Number(m.price) });
+    daftar.push({
+      nama: m.name,
+      harga: Number(m.price),
+      // Baris lama ditulis sebelum FR-A3 selalu ber-qty 1000; `null` dari
+      // baris yang entah bagaimana kosong dibaca satu, bukan nol — modifier
+      // yang tercetak tanpa harga lebih baik daripada modifier yang hilang.
+      qtyMilli: m.quantity === null ? 1000 : Number(m.quantity),
+    });
     perBaris.set(m.order_line_id, daftar);
   }
 
@@ -152,7 +169,11 @@ export async function bangunUlangStruk(
       modifier: perBaris.get(b.id) ?? [],
     })),
     subtotal: Number(order.subtotal),
-    diskon: 0,
+    // ⛔ Diskon SUNGGUHAN. `subtotal` di `order` adalah subtotal KOTOR, jadi
+    // cetak ulang yang menulis nol menyodorkan dua angka yang selisihnya tidak
+    // dapat dijelaskan — dan berbeda dari cetakan pertama, yang `spec-b:145`
+    // tuntut identik.
+    diskon: Number(order.order_discount ?? 0),
     serviceCharge: 0,
     // ⛔ Nama tarif dibaca dari SNAPSHOT di `order_line`, bukan dari
     // `tax_rate`. Larangan `spec-b:145` tidak dilonggarkan — yang berubah

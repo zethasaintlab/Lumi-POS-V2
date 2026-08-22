@@ -49,6 +49,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 12 | **F6** — alat koreksi append-only | `ARCH:400` | selesai |
 | 13 | B-10 Harga — pemilih produk sisi server | utang Task 10 | selesai |
 | 19 | FR-B8 di layar kasir — K-03 diskon + K-11 | utang Task 16 | selesai |
+| 20 | FR-A3 — aturan pemilihan modifier di kasir | `spec-a:113`, P0 | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1455,3 +1456,69 @@ dikembalikan ke `0` di jalur struk → 1 merah.
 menyebut keduanya, dan `order_line.discount_amount` ada di skema, tapi jalur
 server (`POST /orders`) hanya menerima diskon tingkat order. Membangun
 setengahnya di klien berarti angka yang tidak dapat dikirim ke mana pun.
+
+---
+
+### Task 20 — FR-A3: aturan pemilihan modifier di kasir
+
+`max_selections` dan `allow_duplicate` ada di skema sejak F0, turun ke
+perangkat, dan dibaca `bacaModifier` — lalu **diabaikan**. Kasir dapat memilih
+enam topping pada list bermaksimal tiga, dan pesanannya tersimpan: barista
+tidak dapat membuatnya, dan tidak ada satu pun error di jalan.
+
+**Yang dibangun:**
+
+| Berkas | Isi |
+|---|---|
+| `packages/domain/src/modifier-pilihan.ts` | aturan murni: `bolehTambah` · `tambah/kurang/toggle` · `kurangnya` · `pesanKurang` |
+| `apps/kasir/src/komponen/DialogModifier.tsx` | K-04/K-05, dipindah keluar dari `Kasir.tsx` |
+| `keranjang.ts` · `penjualan.ts` · `dokumen.ts` · `ulang.ts` · `riwayat/baca.ts` | kuantitas modifier mengalir sampai struk dan riwayat |
+
+**Keputusan yang diambil:**
+
+- ⛔ **Aturannya di DOMAIN, bukan di komponen React.** `spec-a:117` menulis
+  tabelnya sebagai "perilaku di layar kasir" dan itu benar, tapi aturannya
+  bukan tata letak: `max_selections = 3` yang dilanggar menghasilkan
+  `order_line_modifier` yang tidak dapat dibuat barista. Yang hanya dapat
+  diuji lewat DOM biasanya tidak diuji sama sekali.
+- ⛔ **Batas menghitung UNIT, bukan baris.** `Extra Shot ×2` dihitung dua.
+  Menghitung baris membuat `max_selections = 3` meloloskan enam shot lewat
+  tiga baris ber-qty 2. `[ASUMSI]` — `spec-a` tidak menyatakan interaksi
+  `max_selections` dengan `allow_duplicate`.
+- ⛔ **`is_required` dan `min_selections` adalah SATU pertanyaan**, dan yang
+  berlaku yang lebih besar. Dua sumber untuk satu pertanyaan menghasilkan
+  dialog yang menolak karena alasan yang tidak ditampilkannya.
+- ⛔ **Kuantitas modifier masuk SIDIK JARI keranjang.** Tanpa itu "Extra Shot
+  ×1" dan "Extra Shot ×2" digabung jadi satu baris: pelanggan kedua menerima
+  kopi pelanggan pertama, dan totalnya salah tanpa error.
+- ⛔ **`satuanKeranjang` menggantikan penjumlahan kedua di `Kasir.tsx`.**
+  Salinan yang ada sebelumnya mengabaikan kuantitas modifier, jadi baris
+  keranjang menagih satu shot sementara subtotal di bawahnya menagih dua —
+  dua angka di layar yang sama.
+- ⛔ **Snapshot modifier lokal kini `[{nama, qtyMilli}]`, dan parsernya
+  menerima KEDUA bentuk.** Baris lama ada di perangkat merchant dan tidak
+  dapat ditulis ulang — `order_line` tidak pernah di-`UPDATE` (invariant #2).
+- **Kuantitas nol MENGHAPUS kuncinya.** Kunci ber-nilai nol terkirim sebagai
+  `order_line_modifier` ber-qty 0 — baris yang mengaku ada, tidak menambah apa
+  pun, dan tetap tercetak.
+- **`ModifierTerpilih` terpisah dari `ModifierPilihan` katalog.** `bawaan`
+  adalah sifat katalog, `qtyMilli` sifat pilihan; satu tipe untuk keduanya
+  membuat `bawaan` ikut tersimpan ke keranjang dan terkirim ke server.
+
+**Cacat kedua yang ikut ditemukan:** **cetak ulang juga memaku `diskon: 0`** —
+bentuk yang sama dengan yang Task 19 perbaiki di cetakan pertama, di berkas
+lain. Diperbaiki bersamaan; `spec-b:145` menuntut cetak ulang identik dengan
+cetakan pertama, dan dua tempat yang memutuskan isi struk sudah menyimpang.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 382 · `test:kasir` 377
+· `test:ordering` 178 · `test:backoffice` 370 · `test:sync-client` 102 ·
+`test:sqlite-local` · build kasir.
+
+**Sabotase:** `jumlahUnit` diubah menghitung baris → 2 merah; kuantitas
+dilepas dari sidik jari keranjang → 1 merah.
+
+**Batas yang dinyatakan:** server **tidak** menegakkan aturan ini —
+`POST /orders` menerima modifier apa adanya. Menegakkannya di sana menuntut
+server membaca `modifier_list` pada setiap penjualan, dan aturannya dapat
+berubah setelah order antre offline berjam-jam. `modifier-pilihan.ts` duduk di
+tempat yang benar bila keputusan itu berubah.

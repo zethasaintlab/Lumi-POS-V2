@@ -261,7 +261,7 @@ test('modifier ikut ke baris DAN ke harga', async () => {
   const db = dbPalsu();
   const baris = [{
     ...BARIS[0],
-    modifier: [{ id: 'm3', nama: 'Ekstra', harga: 3000, bawaan: false }],
+    modifier: [{ id: 'm3', nama: 'Ekstra', harga: 3000, qtyMilli: 1000 }],
   }];
   const hasil = await simpanPenjualan({
     db,
@@ -275,6 +275,56 @@ test('modifier ikut ke baris DAN ke harga', async () => {
   const tulisModifier = db.state.tulis.filter((t) => /order_line_modifier/.test(t.sql));
   assert.equal(tulisModifier.length, 1);
   assert.equal(tulisModifier[0].params[3], 'Ekstra');
+});
+
+test('⛔ kuantitas modifier ikut ke harga, ke baris, dan ke outbox (FR-A3)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const baris = [{
+    ...BARIS[0],
+    modifier: [{ id: 'm3', nama: 'Extra shot', harga: 3000, qtyMilli: 2000 }],
+  }];
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 40000 } }),
+  });
+
+  // (20.000 + 3.000×2) + 10% = 28.600. `computeLineTotal` mengalikan kuantitas
+  // modifier dengan kuantitas baris (`spec-c:137`), jadi yang dikirim ke sana
+  // adalah kuantitas modifier per satu unit baris.
+  assert.equal(hasil.total, 28600n);
+
+  // ⛔ Yang diperiksa NILAI yang di-bind, bukan sekadar bahwa tabelnya
+  // disentuh: fake `DbLokal` tidak menegakkan satu pun constraint.
+  const m = db.state.tulis.find((t) => /order_line_modifier/.test(t.sql));
+  assert.equal(m.params[5], 2000, 'kuantitas modifier tidak tersimpan');
+
+  // Server menghitung ulang totalnya sendiri; kuantitas yang hilang di sini
+  // membuat hitungannya berbeda dari hitungan klien, lalu ditandai
+  // `has_calculation_variance` untuk penjualan yang sebenarnya benar.
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const order = outbox.find((t) => t.params.includes('order'));
+  const muatan = JSON.parse(order.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+  assert.equal(muatan.lines[0].modifiers[0].quantityMilli, 2000);
+});
+
+test('⛔ snapshot modifier menyimpan kuantitasnya — layar riwayat membacanya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const baris = [{
+    ...BARIS[0],
+    modifier: [{ id: 'm3', nama: 'Extra shot', harga: 3000, qtyMilli: 2000 }],
+  }];
+  await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 40000 } }),
+  });
+
+  const line = db.state.tulis.find((t) => /INSERT INTO order_line$|INSERT INTO order_line\b/.test(t.sql));
+  const snapshot = JSON.parse(line.params[8]);
+  // Daftar nama telanjang membuat "Extra Shot ×2" muncul sebagai satu shot di
+  // K-09 — layar yang dipakai memutuskan refund.
+  assert.deepEqual(snapshot, [{ nama: 'Extra shot', qtyMilli: 2000 }]);
 });
 
 // --- FR-E3: stock cutting otomatis ---
@@ -331,7 +381,7 @@ test('⛔ modifier TIDAK menghasilkan movement di v1 (FR-E3)', async () => {
         baris: [{
           id: 'b1', variationId: 'v1', itemName: 'Kopi Susu', variationName: 'Regular',
           unitPrice: 20000, quantityMilli: 1000,
-          modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000 }],
+          modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }],
         }],
       },
       // Cukup untuk menutupi baris + modifier + pajak. Versi pertama test ini

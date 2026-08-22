@@ -29,8 +29,8 @@ export interface BarisStrukOrder {
   /** ×1000. */
   quantityMilli: number;
   lineTotal: number;
-  /** Nama modifier, sudah sebagai snapshot. */
-  modifier?: readonly { nama: string; harga: number }[];
+  /** Nama modifier, sudah sebagai snapshot. `qtyMilli` default 1000 (FR-A3). */
+  modifier?: readonly { nama: string; harga: number; qtyMilli?: number }[];
 }
 
 export interface DataStruk {
@@ -111,10 +111,18 @@ export function bangunDokumenStruk(data: DataStruk): ReceiptDocument {
     for (const m of b.modifier ?? []) {
       // Modifier menjorok, dan harganya hanya dicetak bila bukan nol —
       // `spec-c:405`: "baris dengan nilai 0 tidak dicetak".
+      //
+      // ⛔ Kuantitas modifier ikut, dan HARGANYA dikalikan (FR-A3,
+      // `allow_duplicate`). Mencetak "Extra Shot" dengan harga satu shot pada
+      // pesanan dua shot menghasilkan struk yang baris-barisnya tidak
+      // menjumlah ke totalnya sendiri — dan pelanggan yang menghitungnya akan
+      // menyimpulkan ia ditagih lebih.
+      const qtyM = m.qtyMilli ?? 1000;
+      const jumlahM = m.harga * (qtyM / 1000);
       baris.push({
         jenis: 'duaKolom',
-        kiri: `   + ${m.nama}`,
-        kanan: m.harga === 0 ? '' : uang(m.harga),
+        kiri: qtyM === 1000 ? `   + ${m.nama}` : `   + ${m.nama} ${qty(qtyM)}×`,
+        kanan: jumlahM === 0 ? '' : uang(jumlahM),
       });
     }
   }

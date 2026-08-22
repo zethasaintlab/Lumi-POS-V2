@@ -8,16 +8,17 @@ import {
   cariItem,
   type DaftarModifier,
   type ItemKatalog,
-  type ModifierPilihan,
   type VariationKatalog,
 } from '../katalog/baca.ts';
 import {
   hapusBaris,
   qtyDiKeranjang,
+  satuanKeranjang,
   setelDiskon,
   subtotalKeranjang,
   tambah,
   ubahQty,
+  type ModifierTerpilih,
 } from '../kasir/keranjang.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
 import {
@@ -40,6 +41,7 @@ import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogNoSale } from '../komponen/DialogNoSale.tsx';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
+import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 
 /* K-03 — layar kasir: grid produk + keranjang (IA §2.1, §2.2).
@@ -198,7 +200,11 @@ export function Kasir() {
     );
   }
 
-  const pilihVariation = (item: ItemKatalog, variation: VariationKatalog, modifier: ModifierPilihan[]) => {
+  const pilihVariation = (
+    item: ItemKatalog,
+    variation: VariationKatalog,
+    modifier: ModifierTerpilih[]
+  ) => {
     /* FR-E4. Yang diperiksa adalah kuantitas KUMULATIF variation ini di
        keranjang, bukan satu ketukan — modifier berbeda memisahkan baris,
        tapi stoknya satu. */
@@ -358,16 +364,24 @@ export function Kasir() {
                     {b.variationName !== 'Regular' ? ` · ${b.variationName}` : ''}
                   </span>
                   {b.modifier.length > 0 && (
-                    <span className="t-caption kasir-login-sub"> {b.modifier.map((m) => m.nama).join(', ')}</span>
+                    <span className="t-caption kasir-login-sub">
+                      {' '}
+                      {/* ⛔ `×2` ikut terlihat. Modifier ber-kuantitas yang
+                          ditampilkan seperti modifier biasa membuat kasir
+                          membaca "Extra Shot" pada baris yang menagih dua. */}
+                      {b.modifier
+                        .map((m) => (m.qtyMilli === 1000 ? m.nama : `${m.nama} ×${m.qtyMilli / 1000}`))
+                        .join(', ')}
+                    </span>
                   )}
                 </div>
                 <span className="t-caption num">{b.quantityMilli / 1000}×</span>
+                {/* ⛔ `satuanKeranjang`, bukan penjumlahan kedua di sini.
+                    Salinan yang ada sebelumnya mengabaikan kuantitas modifier,
+                    jadi baris menagih satu shot sementara subtotal di bawahnya
+                    menagih dua — dua angka di layar yang sama, tanpa error. */}
                 <span className="t-body-md num">
-                  {rupiah(
-                    ((BigInt(b.unitPrice) + b.modifier.reduce((s, m) => s + BigInt(m.harga), 0n)) *
-                      BigInt(b.quantityMilli)) /
-                      1000n
-                  )}
+                  {rupiah((satuanKeranjang(b) * BigInt(b.quantityMilli)) / 1000n)}
                 </span>
                 <Tombol
                   varian="ghost"
@@ -498,141 +512,13 @@ export function Kasir() {
       )}
 
       {pilihan && (
-        <PilihModifier
+        <DialogModifier
           item={pilihan.item}
           daftar={pilihan.daftar}
           onBatal={() => setPilihan(null)}
           onPilih={pilihVariation}
         />
       )}
-    </div>
-  );
-}
-
-/* K-04 (modifier) dan K-05 (variation) dalam SATU dialog.
-
-   IA memisahkannya jadi dua layar, dan itu benar sebagai inventaris. Tapi
-   keduanya menjawab pertanyaan yang sama pada momen yang sama — "produk ini,
-   yang mana persisnya?" — dan dua dialog berurutan menambah satu ketukan
-   pada setiap penjualan yang punya keduanya. Digabung, bukan dihilangkan:
-   masing-masing tetap punya bagiannya sendiri di layar. */
-function PilihModifier({
-  item,
-  daftar,
-  onBatal,
-  onPilih,
-}: {
-  item: ItemKatalog;
-  daftar: DaftarModifier[];
-  onBatal: () => void;
-  onPilih: (item: ItemKatalog, variation: VariationKatalog, modifier: ModifierPilihan[]) => void;
-}) {
-  /* ⛔ Yang TERMURAH dipilih lebih dulu, bukan yang pertama di katalog.
-     Ditemukan dengan menjalankan aplikasi: kartu grid mengiklankan
-     "dari Rp 15.000" (harga terendah), lalu dialog memilih Large Rp 25.000
-     karena `sort_order` keduanya sama dan "Large" menang secara alfabet.
-     Kasir yang menekan Tambahkan tanpa membaca akan MENAGIH LEBIH — dan
-     angka yang salah itu sudah masuk struk sebelum ada yang sadar.
-     Preseleksi termurah membuat kedua angka sepakat, dan menyalahkannya
-     hanya bisa ke arah yang tidak merugikan pelanggan. */
-  const [variation, setVariation] = useState(
-    item.variations.reduce((a, b) => (b.harga < a.harga ? b : a))
-  );
-  const [terpilih, setTerpilih] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(
-      daftar.map((d) => [d.id, d.modifier.filter((m) => m.bawaan).map((m) => m.id)])
-    )
-  );
-
-  const togglePilihan = (d: DaftarModifier, modifierId: string) => {
-    setTerpilih((t) => {
-      const kini = t[d.id] ?? [];
-      if (d.tipe === 'single') return { ...t, [d.id]: [modifierId] };
-      return {
-        ...t,
-        [d.id]: kini.includes(modifierId)
-          ? kini.filter((x) => x !== modifierId)
-          : [...kini, modifierId],
-      };
-    });
-  };
-
-  /* FR-A3/A5 (aturan pemilihan modifier) belum digarap — `CLAUDE.md`
-     menandainya "sengaja belum digarap". Yang ditegakkan di sini hanya
-     `is_required` + `min_selections`, karena tanpanya dialog dapat ditutup
-     dengan pesanan yang barista tidak bisa buat. Sisanya (max, duplikat)
-     menunggu FR-A3/A5 dan TIDAK dikarang di sini. */
-  const kurang = daftar.filter(
-    (d) => (d.wajib || d.minPilih > 0) && (terpilih[d.id]?.length ?? 0) < Math.max(d.minPilih, d.wajib ? 1 : 0)
-  );
-
-  const semuaModifier = daftar.flatMap((d) =>
-    d.modifier.filter((m) => (terpilih[d.id] ?? []).includes(m.id))
-  );
-
-  return (
-    <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label={item.nama}>
-      <div className="kasir-dialog">
-        <h2 className="t-title">{item.nama}</h2>
-
-        {item.variations.length > 1 && (
-          <fieldset className="kasir-alasan">
-            <legend className="t-body-md">Ukuran</legend>
-            {item.variations.map((v) => (
-              <label key={v.id} className="kasir-alasan-opsi t-body-md">
-                <input
-                  type="radio"
-                  name="variation"
-                  checked={variation.id === v.id}
-                  onChange={() => setVariation(v)}
-                />
-                {v.nama} · <span className="num">{rupiah(v.harga)}</span>
-              </label>
-            ))}
-          </fieldset>
-        )}
-
-        {daftar.map((d) => (
-          <fieldset key={d.id} className="kasir-alasan">
-            <legend className="t-body-md">
-              {d.nama}
-              {d.wajib ? ' · wajib' : ''}
-            </legend>
-            {d.modifier.map((m) => (
-              <label key={m.id} className="kasir-alasan-opsi t-body-md">
-                <input
-                  type={d.tipe === 'single' ? 'radio' : 'checkbox'}
-                  name={d.id}
-                  checked={(terpilih[d.id] ?? []).includes(m.id)}
-                  onChange={() => togglePilihan(d, m.id)}
-                />
-                {m.nama}
-                {m.harga !== 0 && <span className="num"> · +{rupiah(m.harga)}</span>}
-              </label>
-            ))}
-          </fieldset>
-        ))}
-
-        {kurang.length > 0 && (
-          <p className="t-body-md kasir-login-galat" role="alert">
-            Pilih dulu: {kurang.map((d) => d.nama).join(', ')}.
-          </p>
-        )}
-
-        <div className="kasir-dialog-aksi">
-          <Tombol varian="ghost" kritis onClick={onBatal}>
-            Batal
-          </Tombol>
-          <Tombol
-            varian="primary"
-            kritis
-            disabled={kurang.length > 0}
-            onClick={() => onPilih(item, variation, semuaModifier)}
-          >
-            Tambahkan
-          </Tombol>
-        </div>
-      </div>
     </div>
   );
 }

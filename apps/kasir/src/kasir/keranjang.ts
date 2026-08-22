@@ -1,5 +1,5 @@
 import type { PermintaanDiskon } from '../../../../packages/domain/src/diskon.ts';
-import type { ItemKatalog, ModifierPilihan, VariationKatalog } from '../katalog/baca.ts';
+import type { ItemKatalog, VariationKatalog } from '../katalog/baca.ts';
 
 /**
  * Keranjang K-03. Murni: tanpa React, tanpa database, tanpa waktu.
@@ -20,6 +20,28 @@ import type { ItemKatalog, ModifierPilihan, VariationKatalog } from '../katalog/
  * bawah hanya untuk menampilkan subtotal berjalan.
  */
 
+/**
+ * Modifier yang SUDAH DIPILIH, dengan kuantitasnya. FR-A3.
+ *
+ * ⛔ Tipe tersendiri, bukan `ModifierPilihan` katalog. Keduanya punya bentuk
+ * yang mirip dan itu yang membuat pemakaian ulangnya menggoda, tapi `bawaan`
+ * adalah sifat KATALOG (apa yang terpilih saat dialog dibuka) sementara
+ * `qtyMilli` adalah sifat PILIHAN (berapa yang diambil pelanggan ini). Satu
+ * tipe untuk keduanya berarti `bawaan` ikut tersimpan ke keranjang dan
+ * terkirim ke server sebagai bagian dari pesanan.
+ *
+ * `qtyMilli` berskala 1000 seperti setiap kuantitas di repo ini, meski
+ * modifier selalu bilangan bulat. Konvensi yang punya pengecualian adalah
+ * konvensi yang akan disalin salah.
+ */
+export interface ModifierTerpilih {
+  id: string;
+  nama: string;
+  harga: number;
+  /** ×1000. `allow_duplicate = false` selalu `1000`. */
+  qtyMilli: number;
+}
+
 export interface BarisKeranjang {
   id: string;
   variationId: string;
@@ -29,7 +51,7 @@ export interface BarisKeranjang {
   unitPrice: number;
   /** ×1000. `CLAUDE.md`: REAL membuat `WHERE stok = 0` gagal diam-diam. */
   quantityMilli: number;
-  modifier: ModifierPilihan[];
+  modifier: ModifierTerpilih[];
 }
 
 /**
@@ -106,9 +128,17 @@ export function lepasDiskonBilaKosong(k: Keranjang): Keranjang {
  * Variation ikut ke dalam sidik jari: Regular dan Large harganya berbeda,
  * dan menggabungkannya menghasilkan struk yang totalnya benar tapi barisnya
  * bohong — lalu refund sebagian, yang menyebut baris, menjadi mustahil.
+ *
+ * ⛔ KUANTITAS modifier ikut (FR-A3, `allow_duplicate`). "Extra Shot ×1" dan
+ * "Extra Shot ×2" adalah dua pesanan berbeda dengan harga berbeda;
+ * menggabungkannya membuat pelanggan kedua menerima kopi pelanggan pertama —
+ * dan totalnya salah tanpa satu pun error.
  */
-function sidik(variationId: string, modifier: readonly ModifierPilihan[]): string {
-  const m = modifier.map((x) => x.id).sort().join(',');
+function sidik(variationId: string, modifier: readonly ModifierTerpilih[]): string {
+  const m = modifier
+    .map((x) => `${x.id}×${x.qtyMilli}`)
+    .sort()
+    .join(',');
   return `${variationId}|${m}`;
 }
 
@@ -123,7 +153,7 @@ export function tambah(
   }: {
     item: ItemKatalog;
     variation: VariationKatalog;
-    modifier: readonly ModifierPilihan[];
+    modifier: readonly ModifierTerpilih[];
     idBaris: () => string;
     qtyMilli?: number;
   }
@@ -194,10 +224,29 @@ export function kosongkan(_keranjang: Keranjang): Keranjang {
 export function subtotalKeranjang(keranjang: Keranjang): bigint {
   let jumlah = 0n;
   for (const b of keranjang.baris) {
-    const satuan = BigInt(b.unitPrice) + b.modifier.reduce((s, m) => s + BigInt(m.harga), 0n);
-    jumlah += (satuan * BigInt(b.quantityMilli)) / 1000n;
+    jumlah += (satuanKeranjang(b) * BigInt(b.quantityMilli)) / 1000n;
   }
   return jumlah;
+}
+
+/**
+ * Harga satu unit baris — harga variation + modifier, kuantitas modifier ikut.
+ *
+ * ⛔ Satu tempat, dipakai `subtotalKeranjang` DAN layar. Sebelum FR-A3 ada dua
+ * salinan penjumlahan yang sama di berkas ini dan di `Kasir.tsx`; kuantitas
+ * modifier yang lahir kemudian hanya masuk ke salah satunya, dan angka di
+ * baris keranjang berbeda dari subtotal di bawahnya tanpa satu pun error.
+ *
+ * Ini BUKAN `computeLineTotal` — yang menghitung baris yang benar-benar
+ * tersimpan tetap fungsi domain itu, dan angka di sini hanya untuk
+ * ditampilkan.
+ */
+export function satuanKeranjang(baris: BarisKeranjang): bigint {
+  let satuan = BigInt(baris.unitPrice);
+  for (const m of baris.modifier) {
+    satuan += (BigInt(m.harga) * BigInt(m.qtyMilli)) / 1000n;
+  }
+  return satuan;
 }
 
 /**

@@ -205,7 +205,14 @@ export async function simpanPenjualan({
     computeLineTotal({
       unitPrice: BigInt(b.unitPrice),
       quantityMilli: BigInt(b.quantityMilli),
-      modifiers: b.modifier.map((m) => ({ price: BigInt(m.harga), quantityMilli: 1000n })),
+      // FR-A3 — `allow_duplicate`. `computeLineTotal` mengalikan kuantitas
+      // modifier dengan kuantitas baris (`spec-c:137`: Extra Shot 5.000 × 2
+      // kopi = 10.000), jadi yang dikirim ke sini adalah kuantitas modifier
+      // per satu unit baris — bukan yang sudah dikali.
+      modifiers: b.modifier.map((m) => ({
+        price: BigInt(m.harga),
+        quantityMilli: BigInt(m.qtyMilli),
+      })),
       discountAmount: 0n,
     })
   );
@@ -368,7 +375,12 @@ export async function simpanPenjualan({
         [
           b.id, orderId, checkId, b.variationId, b.itemName, b.variationName,
           b.unitPrice, b.quantityMilli,
-          b.modifier.length > 0 ? JSON.stringify(b.modifier.map((m) => m.nama)) : null,
+          // ⛔ Kuantitas ikut ke snapshot (FR-A3). Ia dibaca layar riwayat
+          // K-09, dan daftar nama telanjang membuat "Extra Shot ×2" muncul di
+          // sana sebagai satu shot — pada layar yang dipakai memutuskan refund.
+          b.modifier.length > 0
+            ? JSON.stringify(b.modifier.map((m) => ({ nama: m.nama, qtyMilli: m.qtyMilli })))
+            : null,
           p?.taxRateId ?? null, Number(p?.rateScaled ?? 0n), Number(p?.amount ?? 0n),
           p?.isInclusive ? 1 : 0,
           Number(lineTotals[i]),
@@ -382,8 +394,8 @@ export async function simpanPenjualan({
       for (const m of b.modifier) {
         await tx.execute(
           `INSERT INTO order_line_modifier (id, order_line_id, modifier_id, name, price, quantity)
-           VALUES (?, ?, ?, ?, ?, 1000)`,
-          [idBaru(), b.id, m.id, m.nama, m.harga]
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [idBaru(), b.id, m.id, m.nama, m.harga, m.qtyMilli]
         );
       }
 
@@ -503,7 +515,7 @@ export async function simpanPenjualan({
             modifierId: m.id,
             name: m.nama,
             price: m.harga,
-            quantityMilli: 1000,
+            quantityMilli: m.qtyMilli,
           })),
         })),
       },
@@ -582,7 +594,11 @@ export async function simpanPenjualan({
         variationName: b.variationName,
         quantityMilli: b.quantityMilli,
         lineTotal: Number(lineTotals[i]),
-        modifier: b.modifier.map((m) => ({ nama: m.nama, harga: m.harga })),
+        modifier: b.modifier.map((m) => ({
+          nama: m.nama,
+          harga: m.harga,
+          qtyMilli: m.qtyMilli,
+        })),
       })),
       subtotal: Number(totals.subtotal),
       // ⛔ Diskon SUNGGUHAN, bukan nol. `totals.subtotal` adalah subtotal KOTOR
