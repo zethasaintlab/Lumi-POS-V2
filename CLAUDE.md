@@ -561,6 +561,21 @@ Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_
 
 ---
 
+### FR-G5 — delapan laporan exception, keputusan yang mengikat kode
+
+`spec-g:151` menyebutnya *"fitur yang **dibeli owner**, bukan sekadar kontrol keamanan"*. Tujuh dari delapan belum ada sampai 23 Agustus 2026; kini tujuh selesai (X1, X2, X3, X4, X5, X7, X8) dan satu **tidak dapat dibangun**.
+
+- ⛔ **X2–X7 hidup di `reporting`, X1 tetap di `ordering`.** Yang baru membaca `cash_drawer_shift` + `audit_event` + `"order"` — tiga modul dalam satu pertanyaan, dan `reporting` satu-satunya yang boleh (invariant #4). X1 lahir sebelum modul itu ada; memindahkannya adalah refactor tersendiri, dan `reporting/index.ts` sudah menyatakan kebijakan itu sejak B-03.
+- ⛔ **Penjaga `report_exception` dipasang di SATU pembungkus**, bukan disalin per laporan. Laporan berikutnya yang lahir akan lupa menyalinnya, dan yang lupa membocorkan daftar siapa-membatalkan-apa ke kasir.
+- ⛔ **Prinsipnya VARIASI, bukan nilai absolut** (`spec-g:153`). X3 memakai persentil 90 dari periode yang diminta — ambang rupiah tetap menandai seluruh kasir di kafe besar dan tidak pernah menandai siapa pun di kafe kecil. Ambangnya ikut di respons: daftar tanpa ambangnya tidak dapat dijelaskan kepada kasir yang namanya ada di sana.
+- ⛔ **X2 membandingkan dengan `shift.closed_at`, bukan jam sekarang.** Shift yang belum ditutup tidak punya "60 menit terakhir"; menghitungnya dari sekarang menghasilkan laporan yang jawabannya berubah tanpa satu pun data berubah.
+- ⛔ **X8 membaca `clock_drift_detected`, bukan selisih `occurred_at` vs `recorded_at`.** Selisih keduanya adalah durasi offline pada hampir setiap penjualan yang produk ini ada untuk mendukung.
+- ⛔ **X7 mengembalikan total DAN total mutlak.** Kasir yang kurang Rp 50.000 lalu lebih Rp 50.000 punya total nol dan mutlak Rp 100.000 — dua angka yang menceritakan hal yang sangat berbeda.
+- ⛔ **X6 TIDAK DAPAT DIBANGUN.** Keranjang K-03 hanya hidup di memori (`kasir/simpanan.ts`) dan tidak pernah ditulis maupun dikirim, jadi "item ditambah lalu dihapus berkali-kali" tidak meninggalkan jejak di mana pun. Membangunnya menuntut persistensi keranjang (KEP-21) atau telemetri yang memuat nama produk — yang `ARCH:309` larang. Batas yang dinyatakan, bukan penundaan.
+- **Tanpa bahasa menuduh, dan itu diuji.** Tidak ada field skor maupun label; ada test yang memindai JSON keluaran ketujuhnya. `spec-g:168`: *"produk yang menuduh karyawan merchant akan merusak hubungan merchant dengan stafnya"*.
+
+---
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---

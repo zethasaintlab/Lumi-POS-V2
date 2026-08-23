@@ -1196,3 +1196,39 @@ mulai punya pemanggil. `uninstall` tidak dapat dicegah aplikasi mana pun
 | Jeda sampai berlaku | Boot + tiap 15 menit. Bukan langsung, dan tidak ada jalur push |
 | Cakupan | Tiga fitur (`pembayaran_qris_statis`, `diskon_kasir`, `buka_laci_no_sale`). Menambah fitur keempat menuntut baris di `packages/domain/src/fitur.ts` dan pembacaannya di layar yang bersangkutan |
 | Verifikasi browser | **Belum dijalankan** untuk tombol yang hilang saat fitur dimatikan |
+
+---
+
+## FR-G5 — tujuh dari delapan laporan exception (23 Agustus 2026)
+
+X1 sudah ada sejak B-21. X8 ditutup bersama FR-F8. X2, X3, X4, X5, dan X7
+ditutup di sini. **X6 tidak dapat dibangun** — lihat di bawah.
+
+### ⛔ X6: keranjang tidak meninggalkan jejak
+
+`spec-g:162`: *"item yang ditambah lalu dihapus berkali-kali pada satu order —
+manipulasi keranjang sebelum pembayaran"*.
+
+Keranjang K-03 hidup di `apps/kasir/src/kasir/simpanan.ts`, **di memori
+saja**. Ia tidak pernah ditulis ke SQLite lokal, tidak pernah masuk
+`outbox_local`, tidak pernah dikirim. Penambahan dan penghapusan sebelum
+pembayaran karena itu tidak meninggalkan jejak di tabel mana pun, audit mana
+pun, atau metrik mana pun.
+
+Dua jalan yang mungkin, keduanya keputusan yang lebih besar daripada satu
+laporan:
+
+| Jalan | Konsekuensinya |
+|---|---|
+| Persistensi keranjang (KEP-21) | Order `open` yang tidak pernah dibayar muncul di laporan dan belum punya jalan penutupan. Skema sudah menyiapkannya (`order.status = 'open'` + `owned_by_device_id`); yang belum ada adalah jalan penutupannya |
+| Telemetri peristiwa keranjang | `ARCH:309` melarang telemetri memuat nama produk, dan X6 menuntut TEPAT itu untuk berguna — "produk mana yang berulang dibatalkan" |
+
+Jangan menandai FR-G5 selesai penuh sampai salah satunya diputuskan.
+
+### Batas lain
+
+| Batas | Keadaan |
+|---|---|
+| Layar back-office | Ketujuh laporan hanya punya ENDPOINT. B-21 menampilkan X1; X2–X8 belum punya layar |
+| X7 memakai `closed_by` | Shift yang ditutup manajer atas nama kasir ternisbat ke manajer. Itu benar untuk "siapa yang menghitung", dan mungkin bukan yang owner cari |
+| Verifikasi browser | **Belum dijalankan** — belum ada layarnya |
