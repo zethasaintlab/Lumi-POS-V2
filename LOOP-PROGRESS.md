@@ -1986,3 +1986,75 @@ lebih besar daripada satu laporan:
 | Telemetri peristiwa keranjang | `ARCH:309` melarang telemetri memuat nama produk; X6 menuntut TEPAT itu untuk berguna |
 
 Dicatat sebagai batas yang dinyatakan, bukan dikerjakan setengah.
+
+---
+
+## Task 27 — B-21 menampung KEDELAPAN laporan exception (FR-G5)
+
+**Status: selesai.**
+
+Task 26 memberi enam laporan baru endpoint dan test, dan tidak satu pun punya
+jalan masuk: B-21 hanya menampilkan X1. `spec-g:151` menyebut FR-G5 *"fitur
+yang dibeli owner"* — endpoint tanpa layar adalah fitur yang tidak dibeli
+siapa pun.
+
+`IA:200` menamai B-21 **"Laporan Exception (8 laporan)"**. Delapan entri menu
+karena itu bukan pilihan yang tersedia: `IA:173` menjelaskan kenapa PENGAWASAN
+dipisah dari LAPORAN sama sekali, dan memecahnya delapan mengembalikan masalah
+yang pemisahan itu selesaikan — masing-masing tenggelam sendiri-sendiri. Yang
+dibangun satu layar dengan penyeleksi tab.
+
+**Keputusan:**
+
+- ⛔ **Daftar laporan adalah DATA (`b21-daftar.ts`), bukan cabang JSX.** Judul,
+  deskripsi, endpoint, kunci baris, catatan kaki, dan kosakata keadaan kosong
+  hidup sebagai satu larik. Penjaga bahasa menuduh karena itu membaca **data**,
+  bukan berkas: laporan kesembilan yang lahir kelak diperiksa tanpa siapa pun
+  mengingat penjaganya ada.
+- ⛔ **`pesanKeadaan` dihapus dari `b21.ts`; penggantinya `pesanLaporan` yang
+  menerima definisi laporan.** Tiga keadaan yang tampak sama — "belum dimuat",
+  "tidak ada apa-apa", "gagal memuat" — adalah tepat jenis keputusan yang tidak
+  boleh punya delapan salinan. Salinan yang lupa membedakannya membuat
+  kegagalan jaringan terbaca sebagai **pembebasan** orang yang namanya tidak
+  muncul. Kalimat "perangkat yang belum tersinkronisasi juga menghasilkan
+  daftar kosong" kini diuji untuk KETUJUH laporan yang punya endpoint.
+- ⛔ **`barisLaporan` menangani bentuk BERSARANG X3, dan itu bukan kerapian.**
+  Pembungkus `exceptionHandlers` menaruh hasil X3 di bawah kunci `laporan`, dan
+  hasil itu sendiri objek `{ambang, jumlahSeluruhRefund, refund}` — bukan
+  larik. `hasil[kunci]` apa adanya menghasilkan objek, `objek.length` adalah
+  `undefined`, dan `undefined > 0` adalah `false`: layar berkata "tidak ada
+  refund" untuk periode yang penuh refund, **tanpa satu pun error**. Satu
+  tempat yang memutuskan "nol baris", dan bentuk bersarangnya dinyatakan di
+  sana.
+- ⛔ **X6 TETAP punya tab, dengan alasannya di layar.** Menghilangkannya
+  membuat merchant yang membaca spec menyimpulkan laporannya rusak — atau
+  bahwa ia salah mencari. `pesanLaporan` mengembalikan alasan itu untuk
+  **setiap** keadaan, termasuk `siap`: berpindah ke tab X6 tidak boleh
+  menampilkan tabel refund yang baru saja dilihat.
+- ⛔ **Pindah tab memuat ulang, dan hasil lama tidak dibawa serta.** Menyimpan
+  hasil per tab menampilkan angka rentang LAMA di bawah penyaring rentang yang
+  sudah diubah — laporan yang tidak menjawab pertanyaan yang terlihat sedang
+  diajukan.
+- ⛔ **`JUDUL_LAYAR` menjadi "Laporan Exception".** Judul yang menyebut satu
+  dari delapan membuat tujuh sisanya terbaca seperti tempelan. Menu sidebar
+  sudah berbunyi "Laporan exception" sejak awal.
+- **Angka bertanda selalu disertai KATANYA.** Selisih kas `− Rp 50.000` diberi
+  kata "kurang"; menit ke penutupan yang negatif dibaca "12 menit **sesudah**
+  tutup"; selisih jam dibaca "maju"/"mundur". Tanda minus sendirian menuntut
+  pembaca menerjemahkannya, di laporan yang dipakai memutuskan apakah perlu
+  bicara dengan seseorang. Tren `datar` berbunyi "belum menunjukkan arah",
+  bukan "stabil" — `arahTren` mengembalikan `datar` juga untuk deret yang
+  terlalu pendek.
+- **Endpoint tiap laporan dicocokkan ke `openapi.yaml` oleh test.** Path yang
+  salah ketik menghasilkan 404 yang layar tampilkan sebagai "laporan tidak
+  dapat dimuat" — bentuk kegagalan yang tidak dapat dibedakan dari server mati.
+
+**Verifikasi:** `typecheck` · `lint:ds` · build back-office · `test:backoffice`
+389 · `test:domain` 439 · `test:kasir` 418 · `test:sync-client` 102 ·
+`test:dst` 14 · `test:runtime` 3 · `test:oxlint-ds-adherence` 12 ·
+`test:schema` 14 · `test:server` 311 · `test:ordering` 184 · `test:isolation`
+211 · `test:catalog` · `test:payment` · `test:identity` · `test:tenancy`.
+
+**Sabotase:** penanganan bentuk bersarang dilepas dari `barisLaporan` → 1 merah
+(X3 terbaca kosong); kalimat sinkronisasi dilepas dari `pesanLaporan` → 2 merah
+(termasuk penjaga X1 yang sudah ada sejak Task 26).

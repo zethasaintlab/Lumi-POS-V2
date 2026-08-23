@@ -309,7 +309,7 @@ PostgreSQL sungguhan — bukan hanya lewat test.
 | **Penjualan** | B-04 daftar shift · B-05 detail shift | ✅ MERGED | #41 |
 | **Inventori** | B-12 stok · B-13 penyesuaian | ✅ MERGED | #38, #39, #40 |
 | **Inventori** | B-14 opname · B-15 perlu diperiksa | ✅ MERGED | #42, #43 |
-| **Pengawasan** | B-21 laporan exception | ✅ MERGED | #32, #33 |
+| **Pengawasan** | B-21 laporan exception (8 laporan) | ✅ MERGED | #32, #33 |
 
 **Epik Inventori selesai 100%** — keempat layarnya ada, dan penjaga
 `tests/backoffice/navigasi.test.js` menolak grup Inventori yang punya layar
@@ -1229,6 +1229,29 @@ Jangan menandai FR-G5 selesai penuh sampai salah satunya diputuskan.
 
 | Batas | Keadaan |
 |---|---|
-| Layar back-office | Ketujuh laporan hanya punya ENDPOINT. B-21 menampilkan X1; X2–X8 belum punya layar |
 | X7 memakai `closed_by` | Shift yang ditutup manajer atas nama kasir ternisbat ke manajer. Itu benar untuk "siapa yang menghitung", dan mungkin bukan yang owner cari |
-| Verifikasi browser | **Belum dijalankan** — belum ada layarnya |
+| Verifikasi browser | **Belum dijalankan** — layarnya ada dan ter-build, tapi belum dibuka terhadap data sungguhan |
+
+### Layar B-21 menampung kedelapan laporan (23 Agustus 2026)
+
+`IA:200` menamainya "Laporan Exception (8 laporan)". Yang dibangun satu layar
+dengan penyeleksi tab, bukan delapan entri menu — `IA:173` menjelaskan kenapa
+PENGAWASAN dipisah dari LAPORAN sama sekali, dan memecahnya delapan
+mengembalikan masalah yang pemisahan itu selesaikan.
+
+Daftar laporan hidup sebagai DATA di
+`apps/backoffice/src/pengawasan/b21-daftar.ts` (judul, deskripsi, endpoint,
+kunci baris, catatan kaki, kosakata keadaan kosong). Penjaga bahasa menuduh
+membaca data itu, bukan berkasnya — laporan kesembilan yang lahir kelak
+diperiksa tanpa siapa pun mengingat penjaganya ada.
+
+X6 tetap punya tabnya, dan tabnya menampilkan alasan di atas untuk **setiap**
+keadaan layar. Menghilangkannya membuat merchant yang membaca spec
+menyimpulkan laporannya rusak, atau bahwa ia salah mencari.
+
+⛔ **Utang yang tersisa dari layar ini:** `pesanKeadaan` lama dihapus dari
+`b21.ts` dan diganti `pesanLaporan` yang menerima definisi laporan. Kalau
+laporan berikutnya ditambahkan, ia WAJIB punya `kosong.{judul,benda,simpul}` —
+tanpanya keadaan kosongnya berbunyi "Tidak ada  yang tercatat" dan kalimat
+sinkronisasinya kehilangan penutup. Ada test yang menuntutnya untuk setiap
+laporan ber-endpoint.

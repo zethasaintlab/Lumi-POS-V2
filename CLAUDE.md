@@ -574,6 +574,15 @@ Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_
 - ⛔ **X6 TIDAK DAPAT DIBANGUN.** Keranjang K-03 hanya hidup di memori (`kasir/simpanan.ts`) dan tidak pernah ditulis maupun dikirim, jadi "item ditambah lalu dihapus berkali-kali" tidak meninggalkan jejak di mana pun. Membangunnya menuntut persistensi keranjang (KEP-21) atau telemetri yang memuat nama produk — yang `ARCH:309` larang. Batas yang dinyatakan, bukan penundaan.
 - **Tanpa bahasa menuduh, dan itu diuji.** Tidak ada field skor maupun label; ada test yang memindai JSON keluaran ketujuhnya. `spec-g:168`: *"produk yang menuduh karyawan merchant akan merusak hubungan merchant dengan stafnya"*.
 
+**B-21 menampung kedelapan laporan, 23 Agustus 2026.** `IA:200` menamainya "Laporan Exception (8 laporan)" — satu layar, penyeleksi tab, bukan delapan entri menu (`IA:173` menjelaskan kenapa PENGAWASAN dipisah dari LAPORAN sama sekali; memecahnya delapan mengembalikan masalah yang pemisahan itu selesaikan).
+
+- ⛔ **Daftar laporan adalah DATA (`apps/backoffice/src/pengawasan/b21-daftar.ts`), bukan cabang JSX.** Penjaga bahasa menuduh karena itu membaca data, bukan berkas: laporan kesembilan yang lahir kelak diperiksa tanpa siapa pun mengingat penjaganya ada.
+- ⛔ **`pesanLaporan` adalah SATU fungsi untuk kedelapan keadaan layar.** "Belum dimuat", "tidak ada apa-apa", dan "gagal memuat" tampak sama dan berarti sangat berbeda; delapan salinan berarti tujuh kesempatan melupakan kalimat "perangkat yang belum tersinkronisasi juga menghasilkan daftar kosong" — dan yang lupa membuat kegagalan jaringan terbaca sebagai **pembebasan** orang yang namanya tidak muncul. `pesanKeadaan` di `b21.ts` dihapus, bukan disalin.
+- ⛔ **Bentuk respons X3 BERSARANG, dan `barisLaporan` menanganinya di satu tempat.** Hasil X3 ada di bawah kunci `laporan` sebagai objek `{ambang, jumlahSeluruhRefund, refund}`, bukan larik: `hasil[kunci].length` adalah `undefined`, `undefined > 0` adalah `false`, dan layar berkata "tidak ada refund" untuk periode yang penuh refund tanpa satu pun error.
+- ⛔ **X6 tetap punya tab, dengan alasannya di layar, untuk SETIAP keadaan** — termasuk `siap`: berpindah ke tab X6 tidak boleh menampilkan tabel refund yang baru saja dilihat. Menghilangkan tabnya membuat merchant yang membaca spec menyimpulkan laporannya rusak.
+- **Angka bertanda selalu disertai KATANYA**: selisih kas negatif diberi kata "kurang", menit ke penutupan yang negatif dibaca "sesudah tutup", selisih jam dibaca "maju"/"mundur". Tren `datar` berbunyi "belum menunjukkan arah", bukan "stabil" — `arahTren` mengembalikan `datar` juga untuk deret yang terlalu pendek.
+- **Endpoint tiap laporan dicocokkan ke `openapi.yaml` oleh test.** Path salah ketik menghasilkan 404 yang layar tampilkan sebagai "laporan tidak dapat dimuat" — tidak dapat dibedakan dari server mati.
+
 ---
 
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
