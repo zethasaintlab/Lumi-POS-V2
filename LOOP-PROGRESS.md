@@ -55,7 +55,8 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 23 | FR-H4 — blokir operasi destruktif | `spec-h:270`, P0 | selesai |
 | 24 | Feature flag & kill switch | `ARCH:358` | selesai |
 | 25 | FR-F8 deteksi manipulasi jam + laporan X8 | `spec-f:337`, P0 | selesai |
-| 26 | FR-G5 X2–X7 — enam laporan exception sisanya | `spec-g:149`, P1 | berikutnya |
+| 26 | FR-G5 X2, X3, X4, X5, X7 — lima laporan exception | `spec-g:149`, P1 | selesai |
+| — | FR-G5 X6 — manipulasi keranjang | `spec-g:162` | ⛔ tidak dapat dibangun: keranjang tidak meninggalkan jejak |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1882,3 +1883,106 @@ skema. Perangkat yang jamnya salah tapi tidak pernah menjual tidak tertangkap;
 perangkat yang menjual selalu tertangkap, dan itu yang laporannya cari.
 
 **Sisa FR-G5:** X2–X7 belum dibangun (X1 dan X8 selesai).
+
+---
+
+### Task 26 — FR-G5 X2, X3, X4, X5, X7: lima laporan exception
+
+`spec-g:151` menyebutnya *"fitur yang **dibeli owner**, bukan sekadar kontrol
+keamanan — harus muncul di materi penjualan"*. Hanya X1 yang ada; audit Task 25
+menemukan tujuh sisanya kosong. X8 ditutup bersama FR-F8; lima yang dapat
+dibangun ditutup di sini.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Ditempatkan di `reporting`, bukan `ordering`.** X2, X4, dan X7 membaca
+  `cash_drawer_shift` (milik `cash`) bersama `audit_event` (milik `audit`) dan
+  `"order"` (milik `ordering`) — tiga modul dalam satu pertanyaan.
+  `reporting/index.ts` sudah menyatakan kebijakannya: pelanggaran batas yang
+  terlanjur ada di `ordering` tidak dipindahkan sambil lalu, tapi yang BARU
+  tidak boleh menambahnya. X1 karena itu tetap di tempatnya.
+- ⛔ **Penjaga RBAC di SATU tempat** (`exceptionHandlers`), bukan disalin lima
+  kali. Laporan keenam yang ditambahkan besok akan lupa menyalinnya, dan yang
+  lupa adalah yang membocorkan daftar siapa-membatalkan-apa ke kasir.
+- ⛔ **X2 membandingkan `audit_event.occurred_at` dengan `shift.closed_at`**,
+  bukan dengan jam sekarang. Shift yang belum ditutup tidak punya "60 menit
+  terakhir": menghitungnya dari sekarang membuat setiap void pada shift
+  berjalan tertandai selama satu jam lalu berhenti tertandai sendiri — laporan
+  yang jawabannya berubah tanpa satu pun data berubah.
+- ⛔ **X2 membuang void biasa.** Void biasa sudah ada di X1; mengulangnya
+  membuat pola waktu tenggelam di antara seluruh void. `sesudah_tutup` selalu
+  di atas `akhir_shift` — ia keadaan yang BERBEDA, bukan sekadar lebih dekat.
+- ⛔ **X3 memakai persentil, bukan ambang rupiah tetap.** Kafe yang omzetnya
+  besar punya refund besar; ambang tetap menandai seluruh kasirnya sementara
+  kafe kecil tidak pernah menandai siapa pun. Ambangnya dihitung dari SELURUH
+  refund periode itu (bukan dari yang sudah tersaring, yang akan menggeser
+  ambangnya setiap kali laporan dibuka) dan **ikut dikembalikan** — daftar
+  tanpa ambangnya tidak dapat dijelaskan kepada kasir yang namanya ada di sana.
+- ⛔ **X5 membaca `audit_event.after.orderDiscount`, bukan
+  `order.order_discount`.** Keduanya sama hari ini, tapi audit yang mencatat
+  SIAPA yang menekannya — dan itu pertanyaan laporan ini. Sebaran alasan ikut,
+  karena sinyalnya bukan diskon besar melainkan diskon yang selalu beralasan
+  sama.
+- ⛔ **X7 mengembalikan `totalSelisih` DAN `totalMutlak`.** Kasir yang kurang
+  Rp 50.000 lalu lebih Rp 50.000 punya total nol dan mutlak Rp 100.000 — dua
+  angka yang menceritakan hal yang sangat berbeda, dan menampilkan salah
+  satunya saja menyembunyikan yang lain. Selisih tidak di-clamp; arahnya
+  adalah informasinya.
+- ⛔ **Tren `datar` juga berarti "deretnya terlalu pendek".** Dua shift tidak
+  menunjukkan kecenderungan apa pun, dan menyebutnya "naik" memberi pembaca
+  keyakinan yang tidak dimiliki datanya.
+- **`persentil` kini SATU sumber** dengan telemetri (`statistik.ts`). Dua
+  implementasi nearest-rank yang menyimpang menghasilkan p95 latensi yang
+  berbeda dari p90 refund untuk bentuk data yang sama.
+
+**Dua masalah yang muncul, dan akar penyebabnya:**
+
+1. **`fastify-openapi-glue` menolak seluruh spec** dengan pesan *"must contain
+   a valid specification of a supported OpenApi version"* — pesan yang tidak
+   menyebut baris mana pun. Seluruh 295 test server merah sekaligus. YAML-nya
+   sendiri parse bersih, jadi bukan sintaks. Akarnya: `{ type: string,
+   description: Rata-rata per shift, satu desimal. }` — **koma di dalam flow
+   mapping YAML** memecah deskripsi menjadi kunci tambahan `satu desimal.`.
+   Ditemukan dengan memanggil `Parser.preProcessSpec` langsung, yang mencetak
+   daftar error AJV-nya. Setiap deskripsi inline kini dikutip.
+2. **Penjaga invariant #7 menandai `'0.0'`** di `exception.ts` dan
+   `statistik.ts` — string format rasio, bukan tarif pajak. Penjaganya BENAR
+   untuk ketat; `CLAUDE.md` mencatat bahwa penjaga yang menandai kode benar
+   akan dimatikan orang berikutnya. Yang diubah kodenya: `satuDesimal()` dan
+   `rataRataSatuDesimal()` membentuk nolnya lewat `toFixed`, jadi tidak ada
+   satu pun literal desimal tersisa di jalur laporan.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 439 · `test:server` 311
+· `test:ordering` 184 · `test:identity` 142 · `test:payment` 132 ·
+`test:catalog` 177 · `test:isolation` 211 · `test:tenancy` 75 ·
+`test:schema` 14 · `test:kasir` 418 · `test:backoffice` 370 ·
+`test:sync-client` 102 · `test:dst` 14 · `test:sqlite-local` · `test:runtime` ·
+`test:oxlint-ds-adherence` · build kasir.
+
+**Sabotase:** `assertBoleh` dilepas dari pembungkus → 1 merah (kasir dapat
+membuka kelimanya); saringan `posisi !== 'biasa'` dilepas dari X2 → 2 merah.
+
+⛔ **Salah satu putaran sabotase menghasilkan 28 merah yang MENYESATKAN** —
+dua `test:server` berjalan bersamaan atas satu database, persis hazard yang
+tercatat di kepala berkas ini. Dijalankan ulang berurutan: 311 hijau. Angka
+merah dari suite ber-database yang tumpang tindih bukan bukti apa pun.
+
+**⛔ X6 TIDAK DAPAT DIBANGUN, dan itu temuan, bukan penundaan.**
+
+`spec-g:162` menggambarkannya sebagai *"item yang ditambah lalu dihapus
+berkali-kali pada SATU order — manipulasi keranjang sebelum pembayaran"*.
+Keranjang K-03 hanya hidup di MEMORI (`apps/kasir/src/kasir/simpanan.ts`); ia
+tidak pernah ditulis ke SQLite lokal maupun dikirim ke server. Penambahan dan
+penghapusan sebelum pembayaran karena itu **tidak meninggalkan jejak di mana
+pun** — tidak ada tabel, tidak ada audit event, tidak ada telemetri yang
+memuatnya.
+
+Membangunnya menuntut salah satu dari dua hal, dan keduanya keputusan yang
+lebih besar daripada satu laporan:
+
+| Jalan | Konsekuensinya |
+|---|---|
+| Persistensi keranjang (KEP-21) | Order `open` yang tidak pernah dibayar muncul di laporan dan belum punya jalan penutupan |
+| Telemetri peristiwa keranjang | `ARCH:309` melarang telemetri memuat nama produk; X6 menuntut TEPAT itu untuk berguna |
+
+Dicatat sebagai batas yang dinyatakan, bukan dikerjakan setengah.

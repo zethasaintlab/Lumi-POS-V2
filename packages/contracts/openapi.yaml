@@ -3893,6 +3893,384 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/exceptions/shift-end-voids:
+    get:
+      operationId: getShiftEndVoidReport
+      summary: >-
+        FR-G5 X2 -- void mendekati atau sesudah tutup shift.
+      description: >-
+        ⛔ Yang dibandingkan `audit_event.occurred_at` dengan `shift.closed_at`,
+        BUKAN dengan jam sekarang. Shift yang belum ditutup tidak punya "60
+        menit terakhir": menghitungnya dari sekarang membuat setiap void pada
+        shift berjalan tertandai selama satu jam lalu berhenti tertandai
+        sendiri -- laporan yang jawabannya berubah tanpa satu pun data
+        berubah.
+
+
+        Void `sesudah_tutup` selalu di atas: ia keadaan yang BERBEDA, bukan
+        sekadar lebih dekat ke penutupan.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, void]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  void:
+                    type: array
+                    items:
+                      type: object
+                      required: [auditId, occurredAt, posisi, aktorId, orderId, nilai]
+                      properties:
+                        auditId: { type: string }
+                        occurredAt: { type: string }
+                        posisi:
+                          type: string
+                          enum: [akhir_shift, sesudah_tutup]
+                        menitKeTutup:
+                          type: integer
+                          nullable: true
+                          description: Menit sebelum tutup; NEGATIF berarti sesudah tutup.
+                        aktorId: { type: string }
+                        aktorNama: { type: string }
+                        orderId: { type: string }
+                        receiptNumber: { type: string }
+                        nilai: { type: string, description: 'STRING -- bigint rupiah.' }
+                        shiftId: { type: string }
+                        outletId: { type: string, nullable: true }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/high-refunds:
+    get:
+      operationId: getHighRefundReport
+      summary: >-
+        FR-G5 X3 -- refund di atas persentil 90, dengan alasan dan penyetujunya.
+      description: >-
+        ⛔ Persentil, bukan ambang rupiah tetap. Kafe yang omzetnya besar punya
+        refund besar; ambang tetap menandai seluruh kasirnya sementara kafe
+        kecil tidak pernah menandai siapa pun. spec-g:153 menyebut prinsipnya:
+        yang dicari VARIASI, bukan nilai absolut.
+
+
+        Ambangnya dihitung dari periode YANG DIMINTA dan ikut dikembalikan --
+        daftar tanpa ambangnya tidak dapat dijelaskan kepada kasir yang
+        namanya ada di sana.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, laporan]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  laporan:
+                    type: object
+                    required: [ambang, jumlahSeluruhRefund, refund]
+                    properties:
+                      ambang:
+                        type: string
+                        description: 'Nilai p90 pada periode ini, STRING rupiah.'
+                      jumlahSeluruhRefund: { type: integer }
+                      refund:
+                        type: array
+                        items:
+                          type: object
+                          required: [refundId, occurredAt, nilai, reasonCode, aktorId, penyetujuId]
+                          properties:
+                            refundId: { type: string }
+                            occurredAt: { type: string }
+                            nilai: { type: string }
+                            reasonCode: { type: string }
+                            reasonNote: { type: string, nullable: true }
+                            aktorId: { type: string }
+                            aktorNama: { type: string }
+                            penyetujuId: { type: string }
+                            penyetujuNama: { type: string }
+                            orderId: { type: string }
+                            receiptNumber: { type: string }
+                            outletId: { type: string, nullable: true }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/no-sales:
+    get:
+      operationId: getNoSaleExceptionReport
+      summary: >-
+        FR-G5 X4 -- frekuensi pembukaan laci tanpa transaksi, per kasir per shift.
+      description: >-
+        Sinyal yang dicari: frekuensi jauh di atas rekan kerja. Dihitung dari
+        `audit_event`, bukan dari kolom hitungan -- kolom hitungan adalah angka
+        kedua yang harus dijaga sepakat dengan jejaknya, dan yang menyimpang di
+        antaranya tidak dapat diputuskan mana yang benar.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, perKasir]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  perKasir:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, name, jumlah, jumlahShift, perShift, rasio]
+                      properties:
+                        userId: { type: string }
+                        name: { type: string }
+                        jumlah: { type: integer }
+                        jumlahShift: { type: integer }
+                        perShift: { type: string, description: 'Rata-rata per shift, satu desimal.' }
+                        rasio: { type: string, description: 'Terhadap rata-rata seluruh kasir.' }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/discounts:
+    get:
+      operationId: getDiscountExceptionReport
+      summary: >-
+        FR-G5 X5 -- diskon manual per kasir: nilai, frekuensi, sebaran alasan.
+      description: >-
+        Sinyal yang dicari bukan diskon besar melainkan diskon yang selalu
+        beralasan sama -- karena itu `alasan` ikut, terurut dari yang tersering.
+
+
+        ⛔ Nilai potongan dibaca dari `audit_event.after.orderDiscount`, BUKAN
+        dari `order.order_discount`. Keduanya sama hari ini, tapi audit adalah
+        yang mencatat SIAPA yang menekannya, dan itu pertanyaan laporan ini.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, perKasir]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  perKasir:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, name, jumlah, nilai, rasio, alasan]
+                      properties:
+                        userId: { type: string }
+                        name: { type: string }
+                        jumlah: { type: integer }
+                        nilai: { type: string, description: 'STRING -- total rupiah potongan.' }
+                        jumlahBerpenyetuju:
+                          type: integer
+                          description: 'Berapa kali diskonnya menuntut PIN manajer.'
+                        rasio: { type: string }
+                        alasan:
+                          type: array
+                          items:
+                            type: object
+                            required: [reasonCode, jumlah]
+                            properties:
+                              reasonCode: { type: string }
+                              jumlah: { type: integer }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/cash-variance:
+    get:
+      operationId: getCashVarianceExceptionReport
+      summary: >-
+        FR-G5 X7 -- selisih kas per kasir, dengan trennya.
+      description: >-
+        Sinyal yang dicari: selisih KONSISTEN SATU ARAH. Kasir yang kurang
+        Rp 5.000 sekali adalah manusia; kasir yang kurang setiap shift adalah
+        pola.
+
+
+        ⛔ `totalSelisih` DAN `totalMutlak` keduanya dikembalikan, dan itu
+        bukan kelebihan data: kasir yang kurang Rp 50.000 lalu lebih Rp 50.000
+        punya total nol dan mutlak Rp 100.000 -- dua angka yang menceritakan
+        hal yang sangat berbeda.
+
+
+        Selisih TIDAK di-clamp ke positif; arahnya adalah informasinya.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, perKasir]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  perKasir:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, name, jumlahShift, totalSelisih, totalMutlak, tren]
+                      properties:
+                        userId: { type: string }
+                        name: { type: string }
+                        jumlahShift: { type: integer }
+                        totalSelisih: { type: string, description: 'STRING -- boleh NEGATIF.' }
+                        totalMutlak: { type: string }
+                        jumlahKurang: { type: integer }
+                        jumlahLebih: { type: integer }
+                        tren:
+                          type: string
+                          enum: [naik, turun, datar]
+                          description: >-
+                            `datar` juga berarti deretnya terlalu pendek untuk
+                            menunjukkan kecenderungan -- dua shift tidak
+                            menunjukkan apa pun.
+                        deret:
+                          type: array
+                          items: { type: string }
+                          description: Selisih per shift, terurut waktu.
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /reports/exceptions/clock:
     get:
       operationId: getClockExceptionReport

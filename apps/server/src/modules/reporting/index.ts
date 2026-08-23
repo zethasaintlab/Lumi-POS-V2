@@ -3,7 +3,7 @@ import type { Pool } from '../../db.ts';
 import { withTenantTransaction } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
 import { getActorId, getTenantId } from '../../tenant-context.ts';
-import { assertUserVisible } from '../identity/index.ts';
+import { assertBoleh, assertUserVisible } from '../identity/index.ts';
 import { assertOutletVisible } from '../tenancy/index.ts';
 import { assertRentang } from '../ordering/handlers/rentang.ts';
 import { ambilDetail } from './handlers/detail-transaksi.ts';
@@ -11,6 +11,13 @@ import { ambilStok } from './handlers/stok.ts';
 import { ambilDaftarShift, ambilDetailShift } from './handlers/shift.ts';
 import { ambilOversell, ambilSelisihKas } from './handlers/perlu-diperiksa.ts';
 import { ambilDasbor } from './handlers/dasbor.ts';
+import {
+  ambilDiskonPerKasir,
+  ambilNoSalePerKasir,
+  ambilRefundTinggi,
+  ambilSelisihKasPerKasir,
+  ambilVoidDekatTutup,
+} from './handlers/exception.ts';
 
 /**
  * Modul `reporting` — agregator baca-saja.
@@ -162,5 +169,60 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
         return ambilDasbor(client, { from, to, outletId });
       });
     },
+
+    // -----------------------------------------------------------------------
+    // FR-G5 X2–X7 — laporan exception
+    // -----------------------------------------------------------------------
+    //
+    // ⛔ Kelimanya memakai penjaga yang SAMA dengan X1: `report_exception`.
+    // AC `spec-g`: "Kasir tidak dapat mengakses laporan exception". Omzet
+    // outletnya sendiri bukan rahasia dari kasir; daftar siapa-membatalkan-apa
+    // adalah.
+    //
+    // ⛔ Penjaganya di satu tempat — `exceptionHandler` di bawah — bukan
+    // disalin lima kali. Laporan keenam yang ditambahkan besok akan lupa
+    // menyalinnya, dan yang lupa adalah yang membocorkan daftar itu ke kasir.
+    ...exceptionHandlers(pool),
+  };
+}
+
+/**
+ * Pembungkus satu-satunya untuk laporan exception.
+ *
+ * Menerima pembaca data, mengembalikan handler ber-RBAC. Yang tidak boleh
+ * terjadi adalah laporan exception yang lupa `assertBoleh` — dan itu tidak
+ * dapat terjadi bila hanya ada satu tempat yang memasangnya.
+ */
+function exceptionHandlers(pool: Pool): Record<string, unknown> {
+  const buat =
+    (baca: (
+      client: Parameters<typeof ambilVoidDekatTutup>[0],
+      filter: { from: string; to: string; outletId: string | null }
+    ) => Promise<unknown>, kunci: string) =>
+    async (req: FastifyRequest) => {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = req.query as { from?: string; to?: string; outlet_id?: string };
+      const { from, to, outletId } = assertRentang(q);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'report_exception', 'melihat laporan exception');
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+        return { from, to, outletId, [kunci]: await baca(client, { from, to, outletId }) };
+      });
+    };
+
+  return {
+    /** X2 — void mendekati/sesudah tutup shift. */
+    getShiftEndVoidReport: buat(ambilVoidDekatTutup, 'void'),
+    /** X3 — refund bernilai tinggi (persentil 90). */
+    getHighRefundReport: buat(ambilRefundTinggi, 'laporan'),
+    /** X4 — frekuensi no-sale per kasir. */
+    getNoSaleExceptionReport: buat(ambilNoSalePerKasir, 'perKasir'),
+    /** X5 — diskon manual per kasir. */
+    getDiscountExceptionReport: buat(ambilDiskonPerKasir, 'perKasir'),
+    /** X7 — selisih kas per kasir, dengan tren. */
+    getCashVarianceExceptionReport: buat(ambilSelisihKasPerKasir, 'perKasir'),
   };
 }
