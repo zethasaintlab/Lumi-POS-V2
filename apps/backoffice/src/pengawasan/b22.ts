@@ -69,6 +69,16 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   cash_drawer_opened: 'Laci dibuka tanpa transaksi',
   // Katalog
   catalog_imported: 'Katalog diimpor',
+  item_created: 'Produk dibuat',
+  item_updated: 'Produk diubah',
+  item_archived: 'Produk diarsipkan atau dipulihkan',
+  price_changed: 'Harga diubah',
+  // Stok
+  stock_adjusted: 'Stok disesuaikan',
+  stocktake_completed: 'Opname diselesaikan',
+  sold_out_toggled: 'Penandaan habis diubah',
+  // Konfigurasi
+  tax_rate_changed: 'Tarif pajak diubah',
   // Identitas
   user_created: 'Pengguna dibuat',
   user_deactivated: 'Pengguna dinonaktifkan',

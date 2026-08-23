@@ -1265,24 +1265,27 @@ laporan ber-endpoint.
 
 ### ⛔ FR-F6 BELUM tertutup, dan jaraknya sekarang terukur
 
-AC pertamanya: *"Setiap event dalam daftar menghasilkan record."* Dari **35**
-nama di tabel `spec-f:288`, **24 belum dipancarkan sama sekali**:
+AC pertamanya: *"Setiap event dalam daftar menghasilkan record."* Saat
+ditemukan, **24 dari 35** nama di tabel `spec-f:288` belum dipancarkan sama
+sekali. Katalog, harga, stok, dan pajak ditutup 23 Agustus 2026 — **16
+tersisa**:
 
-| Kelompok | Yang belum ada |
-|---|---|
-| Sesi | `login` · `logout` |
-| Shift | `shift_opened` · `shift_count_attempt` |
-| Kas | `cash_paid_in` · `cash_paid_out` · `cash_variance_approved` |
-| Katalog | `item_created` · `item_updated` · `item_archived` · `price_changed` |
-| Stok | `stock_adjusted` · `stocktake_completed` · `sold_out_toggled` |
-| Konfigurasi | `tax_rate_changed` · `threshold_changed` · `vertical_profile_changed` |
-| Identitas | `user_role_changed` |
-| Perangkat | `device_provisioned` · `device_revoked` · `peripheral_configured` |
-| Data | `data_exported` · `support_session_started` · `support_session_ended` |
+| Kelompok | Yang belum ada | Kenapa |
+|---|---|---|
+| Sesi | `login` · `logout` | Endpointnya ADA — tinggal dikerjakan |
+| Shift | `shift_opened` · `shift_count_attempt` · `cash_variance_approved` | Endpointnya ADA — tinggal dikerjakan |
+| Identitas | `user_role_changed` | `updateUser` ADA — tinggal dikerjakan |
+| Perangkat | `device_provisioned` · `device_revoked` | Endpointnya ADA — tinggal dikerjakan |
+| Data | `data_exported` | `GET /reports/export` ADA — tinggal dikerjakan |
+| Kas | `cash_paid_in` · `cash_paid_out` | **Tidak ada endpointnya.** Setoran/penarikan kas di luar penjualan belum dibangun |
+| Konfigurasi | `threshold_changed` | B-26 (Ambang Otorisasi) belum ada |
+| Konfigurasi | `vertical_profile_changed` | B-24 (Profil Vertikal) belum ada |
+| Perangkat | `peripheral_configured` | `printer_profile` belum punya endpoint mutasi |
+| Data | `support_session_started` · `support_session_ended` | Akses support belum dibangun |
 
-`shift_opened` yang paling menonjol: setiap shift dibuka, dan tidak satu pun
-tercatat. `apps/server/src/modules/cash/handlers/shifts.ts` tidak menyentuh
-`recordAuditEvent` sama sekali.
+`shift_opened` yang paling menonjol dari yang tersisa: setiap shift dibuka, dan
+tidak satu pun tercatat. `apps/server/src/modules/cash/handlers/shifts.ts` tidak
+menyentuh `recordAuditEvent` sama sekali.
 
 **Jangan menandai FR-F6 selesai sampai daftar ini kosong.** Ia tidak perlu
 diingat: `PERISTIWA_BELUM_DIPANCARKAN` di `packages/domain/src/audit-peristiwa.ts`
@@ -1319,3 +1322,22 @@ untuk salah satunya memangkasnya sendiri.
 | Saringan pelaku | Endpoint menerima `actor_user_id`, layar belum menyediakan pemilihnya (butuh daftar pengguna) |
 | Ekspor | Tidak ada. `data_exported` sendiri belum dipancarkan |
 | Verifikasi browser | **Belum dijalankan** — layarnya ter-build, belum dibuka terhadap data sungguhan |
+
+### Mutasi katalog/harga/stok/pajak menulis audit (23 Agustus 2026)
+
+Satu pembungkus, `catatPerubahanServer` di modul `audit`: tanpa perangkat,
+tanpa penyetuju, tanpa alasan, `hlc: 0n`. Dua belas endpoint memakainya.
+
+⛔ **Kalau kamu menambah endpoint mutasi katalog/konfigurasi baru, panggil
+`catatPerubahanServer` di dalam transaksinya.** Tidak ada penjaga struktural
+yang menahan yang lupa — `PERISTIWA_BELUM_DIPANCARKAN` hanya melihat daftar
+spec, dan endpoint baru yang bukan bagian dari daftar itu tidak muncul di mana
+pun. Yang ada adalah `tests/server/audit-perubahan.test.js`, yang memanggil
+endpoint sungguhan lewat `app.inject` dan membaca `audit_event` dari database;
+tambahkan satu test di sana untuk setiap endpoint baru.
+
+⛔ **Assertion `audit_event` di test lama sekarang WAJIB menyaring
+`event_type`.** Sepuluh assertion di `tests/ordering/` menghitung seluruh baris
+tabel, dan nol adalah jawaban benar karena alasan yang salah — sampai katalog
+mulai menulis audit dan setup test-nya sendiri menghasilkan baris. Bentuk yang
+sama dengan 18 test `stock_movement` yang F3 temukan.

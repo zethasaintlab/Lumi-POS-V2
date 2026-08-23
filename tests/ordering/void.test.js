@@ -294,7 +294,7 @@ test('membatalkan order milik tenant lain -> 404, tidak ada baris tersimpan', as
   assert.equal(orders.length, 1, 'tidak ada order pembatal yang lahir');
   assert.equal(orders[0].status, 'open');
   assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0);
-  assert.equal((await query('SELECT id FROM audit_event')).length, 0);
+  assert.equal((await query(`SELECT id FROM audit_event WHERE event_type = 'order.voided'`)).length, 0);
 });
 
 test('aktor milik tenant lain -> 404, tidak ada baris tersimpan', async () => {
@@ -368,7 +368,7 @@ test('void menulis audit_event dengan aktor, alasan, dan TANPA penyetuju', async
   const res = await batalkan(order.id, batalkanPayload({ reasonCode: 'lainnya', reasonNote: 'salah tekan tombol' }));
   assert.equal(res.statusCode, 201, res.body);
 
-  const events = await query('SELECT * FROM audit_event');
+  const events = await query(`SELECT * FROM audit_event WHERE event_type = 'order.voided'`);
   assert.equal(events.length, 1);
   const e = events[0];
   assert.equal(e.event_type, 'order.voided');
@@ -397,7 +397,7 @@ test('order pembatal, stock_movement, audit_event, dan outbox berbagi satu stemp
 
   const [pembatal] = await query('SELECT recorded_at FROM "order" WHERE id = $1', [body.order.id]);
   const movements = await query("SELECT recorded_at FROM stock_movement WHERE type <> 'sale'");
-  const events = await query('SELECT recorded_at FROM audit_event');
+  const events = await query(`SELECT recorded_at FROM audit_event WHERE event_type = 'order.voided'`);
 
   assert.equal(movements.length, 2);
   assert.equal(events.length, 1);
@@ -426,7 +426,23 @@ test('atomisitas: nomor struk pembatal bentrok -> nol baris di SEMUA tabel', asy
 
   assert.equal((await query('SELECT id FROM "order" WHERE id = $1', [payload.id])).length, 0);
   assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0, 'stok tidak boleh dikembalikan');
-  assert.equal((await query('SELECT id FROM audit_event')).length, 0, 'audit tidak boleh tertinggal');
+  // ⛔ Disaring per `event_type`, dan itu bukan kelonggaran.
+  //
+  // Sampai 23 Agustus 2026 assertion ini menghitung SELURUH baris
+  // `audit_event`, dan nol adalah jawaban benar karena alasan yang salah:
+  // tidak ada satu pun endpoint katalog yang menulis audit, jadi satu-satunya
+  // baris yang mungkin ada memang milik void. Begitu `item_created` dan
+  // `price_changed` mulai dipancarkan (FR-F6), setup test ini sendiri
+  // menghasilkan dua baris — dan assertion-nya merah tanpa satu pun cacat.
+  //
+  // Bentuk yang sama persis dengan pelajaran F3 yang `CLAUDE.md` catat: 18
+  // test void/refund menghitung seluruh baris `stock_movement`. Yang dijaga di
+  // sini adalah baris void-nya, dan void hanya menulis satu jenis.
+  assert.equal(
+    (await query(`SELECT id FROM audit_event WHERE event_type = 'order.voided'`)).length,
+    0,
+    'audit tidak boleh tertinggal'
+  );
   // Klaim idempotency ikut ter-rollback -- kalau tidak, retry akan dianggap
   // cache hit terhadap sesuatu yang tidak pernah tersimpan.
   const keys = await query('SELECT key FROM idempotency_key');
@@ -510,7 +526,7 @@ test('X-Approver-Id yang dikirim pada void diabaikan, tidak tersimpan', async ()
   // database akan menolaknya dan permintaan gagal. Ia harus diabaikan.
   const res = await batalkan(order.id, batalkanPayload(), { 'x-approver-id': base.user.id });
   assert.equal(res.statusCode, 201, res.body);
-  const events = await query('SELECT approver_user_id FROM audit_event');
+  const events = await query(`SELECT approver_user_id FROM audit_event WHERE event_type = 'order.voided'`);
   assert.equal(events[0].approver_user_id, null);
 });
 

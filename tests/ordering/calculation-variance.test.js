@@ -343,7 +343,7 @@ test('order tanpa selisih tidak memancarkan audit_event', async () => {
   const fx = await setupDeviceAndShift();
   const v = await buatVariation(20000);
   await buatOrder(fx, [baris(v.variationId, { unitPrice: 20000 })], { total: 20000 });
-  const events = await query(`SELECT id FROM audit_event`);
+  const events = await query(`SELECT id FROM audit_event WHERE event_type = 'calculation_variance'`);
   assert.equal(events.length, 0);
 });
 

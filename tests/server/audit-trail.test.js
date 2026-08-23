@@ -351,7 +351,20 @@ test('⛔ jarak ke FR-F6 DITURUNKAN, bukan ditulis tangan', async () => {
   // Dan ejaan yang berbeda TIDAK dihitung sebagai lubang.
   assert.equal(PERISTIWA_BELUM_DIPANCARKAN.includes('order_voided'), false);
   assert.equal(PERISTIWA_BELUM_DIPANCARKAN.includes('order_refunded'), false);
-  // Yang benar-benar belum ada tetap disebut.
-  assert.equal(PERISTIWA_BELUM_DIPANCARKAN.includes('shift_opened'), true);
-  assert.equal(PERISTIWA_BELUM_DIPANCARKAN.includes('price_changed'), true);
+  // ⛔ Assertion ini STRUKTURAL, bukan daftar nama. Versi pertamanya menyebut
+  // `price_changed`, dan ia merah tiga jam kemudian saat peristiwa itu mulai
+  // dipancarkan — test yang harus disunting setiap kali lubangnya menyusut
+  // akan disunting tanpa dibaca. Yang dijaga: selama masih ada lubang, ia
+  // dilaporkan; saat FR-F6 tertutup, daftarnya kosong dan test ini tetap
+  // hijau.
+  const { KUNCI_SPEC } = await import(DOMAIN);
+  assert.ok(PERISTIWA_BELUM_DIPANCARKAN.length <= KUNCI_SPEC.length);
+  for (const nama of KUNCI_SPEC) {
+    const dipancarkan = adalahPeristiwaAudit(PETA_EJAAN_SPEC[nama] ?? nama);
+    assert.equal(
+      PERISTIWA_BELUM_DIPANCARKAN.includes(nama),
+      !dipancarkan,
+      `${nama} salah golong`
+    );
+  }
 });

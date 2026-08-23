@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import { assertUserVisible } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
@@ -164,6 +165,28 @@ export function createSoldOutHandlers(pool: Pool, hlc: Hlc): Record<string, unkn
             hlcValue.toString(),
           ]
         );
+
+        // FR-F6 + `spec-f:296` (`sold_out_toggled`).
+        //
+        // ⛔ Ditulis di dalam transaksi yang sama, SESUDAH INSERT — dan tetap
+        // ditulis meski `ON CONFLICT DO NOTHING` tidak menyisipkan apa pun.
+        // Barisnya tidak disisipkan hanya pada RETRY dengan id yang sama, dan
+        // retry sudah dijaga kunci idempotensi di atas: jalur ini hanya
+        // tercapai untuk klaim yang belum selesai.
+        //
+        // ⛔ `isSoldOut` DAN arahnya. Penandaan habis terpisah dari stok
+        // terhitung dan keduanya tidak pernah saling menyimpulkan
+        // (`spec-e:220`); audit yang hanya mencatat "ditandai" tidak dapat
+        // membedakan menandai habis dari membatalkannya.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'sold_out_toggled',
+          entityType: 'item_variation',
+          entityId: body.variationId as string,
+          outletId: body.outletId as string,
+          after: { flagId: id, isSoldOut: body.isSoldOut, hlc: hlcValue.toString() },
+        });
 
         const responseBody = {
           id,

@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import { assertUserVisible, assertBoleh } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
@@ -310,6 +311,31 @@ export function createOpnameHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
         RETURNING snapshot_at::text`,
           [actorId, stocktakeId]
         );
+
+        // FR-F6 + `spec-f:296` (`stocktake_completed`), di transaksi yang
+        // sama dengan penutupannya.
+        //
+        // ⛔ Yang dicatat JUMLAH baris dan jumlah yang berselisih, bukan
+        // barisnya satu per satu. Opname sebuah kafe menyentuh ratusan varian,
+        // dan menyalin semuanya ke `after` membuat satu peristiwa audit
+        // berukuran lebih besar daripada seluruh trail hari itu — lalu
+        // menenggelamkan peristiwa lain yang justru dicari. Rinciannya ada di
+        // `stocktake_line` dan `stock_movement`, keduanya menunjuk
+        // `stocktakeId` yang tercatat di sini.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'stocktake_completed',
+          entityType: 'stocktake',
+          entityId: stocktakeId,
+          outletId: opname.outlet_id,
+          after: {
+            jumlahBaris: lines.length,
+            jumlahBerselisih,
+            movementDitulis: movements.length,
+            snapshotAt: hasil[0]?.snapshot_at ?? null,
+          },
+        });
 
         return {
           id: stocktakeId,

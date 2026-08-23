@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { PoolClient } from '../../db.ts';
 import {
   AMBANG_SKEW_DETIK,
@@ -116,6 +117,70 @@ export async function recordAuditEvent(client: PoolClient, event: AuditEventInpu
       event.hlc.toString(),
     ]
   );
+}
+
+export interface PerubahanServer {
+  tenantId: string;
+  actorUserId: string;
+  eventType: PeristiwaAudit;
+  entityType: string;
+  entityId: string | null;
+  /** ⛔ WAJIB untuk perubahan; `undefined` hanya sah untuk pembuatan. */
+  before?: unknown;
+  after?: unknown;
+  /** Diisi hanya bila perubahannya memang milik satu outlet. */
+  outletId?: string | null;
+}
+
+/**
+ * Mencatat perubahan konfigurasi/katalog yang terjadi DI SERVER, lewat
+ * back-office. FR-F6 AC kedua: *"`before`/`after` terisi untuk semua perubahan
+ * konfigurasi dan harga."*
+ *
+ * ## ⛔ Kenapa satu pembungkus dan bukan `recordAuditEvent` langsung
+ *
+ * Empat belas endpoint mutasi katalog, harga, stok, dan pajak menulis peristiwa
+ * yang bentuknya identik: tanpa perangkat, tanpa penyetuju, tanpa alasan, dan
+ * tanpa HLC. Menyalin lima field tetap ke empat belas tempat berarti empat
+ * belas kesempatan salah menuliskan salah satunya — dan yang paling mudah
+ * salah adalah `hlc`, yang tipenya `bigint` dan yang nilai benarnya justru
+ * nol.
+ *
+ * ## ⛔ `hlc: 0n` adalah nilai yang JUJUR, bukan placeholder
+ *
+ * HLC menyatakan urutan kausal terhadap peristiwa perangkat. Perubahan yang
+ * terjadi di back-office tidak punya perangkat, jadi ia tidak berhak
+ * mengklaim posisi dalam urutan itu. Mengarang HLC dari jam server akan
+ * menempatkannya di antara dua peristiwa kasir yang tidak pernah melihatnya.
+ *
+ * ## ⛔ Tanpa penyetuju, dan itu bukan kelalaian
+ *
+ * Tidak satu pun operasi di sini menuntut otorisasi step-up: matriks
+ * `spec-f:38-53` memberi `catalog_edit`, `price_edit`, `stock_adjust`, dan
+ * `tax_settings` sebagai hak PERAN, bukan sebagai tindakan yang perlu
+ * disetujui orang kedua. Mengisi `approverUserId` dengan aktor akan ditolak
+ * `CHECK` di database — dan seharusnya begitu.
+ */
+export async function catatPerubahanServer(
+  client: PoolClient,
+  p: PerubahanServer
+): Promise<void> {
+  await recordAuditEvent(client, {
+    id: randomUUID(),
+    tenantId: p.tenantId,
+    outletId: p.outletId ?? null,
+    deviceId: null,
+    actorUserId: p.actorUserId,
+    approverUserId: null,
+    eventType: p.eventType,
+    entityType: p.entityType,
+    entityId: p.entityId,
+    reasonCode: null,
+    reasonNote: null,
+    before: p.before,
+    after: p.after,
+    hlc: 0n,
+  });
 }
 
 /**

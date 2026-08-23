@@ -81,6 +81,18 @@ export const PERISTIWA_AUDIT = {
 
   // Katalog
   catalog_imported: 'katalog',
+  item_created: 'katalog',
+  item_updated: 'katalog',
+  item_archived: 'katalog',
+  price_changed: 'katalog',
+
+  // Stok
+  stock_adjusted: 'stok',
+  stocktake_completed: 'stok',
+  sold_out_toggled: 'stok',
+
+  // Konfigurasi
+  tax_rate_changed: 'konfigurasi',
 
   // Identitas
   user_created: 'identitas',

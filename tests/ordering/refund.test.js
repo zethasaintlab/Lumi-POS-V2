@@ -276,7 +276,7 @@ test('penyetuju yang sama dengan aktor ditolak, tidak ada baris tersimpan', asyn
   // BALIK (void/refund); menghitung seluruh baris akan menghitung penjualan
   // yang memang seharusnya ada.
   assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 0, 'stok tidak boleh dikembalikan');
-  assert.equal((await query('SELECT id FROM audit_event')).length, 0);
+  assert.equal((await query(`SELECT id FROM audit_event WHERE event_type = 'order.refunded'`)).length, 0);
 });
 
 test('penyetuju milik tenant lain ditolak', async () => {
@@ -425,7 +425,7 @@ test('audit refund memuat aktor DAN penyetuju', async () => {
   const res = await batalkan(order.id, refundPayload({ amount: 10000, reasonCode: 'lainnya', reasonNote: 'pelanggan komplain rasa' }));
   assert.equal(res.statusCode, 201, res.body);
 
-  const events = await query('SELECT * FROM audit_event');
+  const events = await query(`SELECT * FROM audit_event WHERE event_type = 'order.refunded'`);
   assert.equal(events.length, 1);
   assert.equal(events[0].event_type, 'order.refunded');
   assert.equal(events[0].entity_id, order.id);
@@ -446,7 +446,7 @@ test('refund, stock_movement, dan audit_event berbagi satu stempel transaksi', a
 
   const [r] = await query('SELECT recorded_at FROM refund');
   const movements = await query("SELECT recorded_at FROM stock_movement WHERE type <> 'sale'");
-  const events = await query('SELECT recorded_at FROM audit_event');
+  const events = await query(`SELECT recorded_at FROM audit_event WHERE event_type = 'order.refunded'`);
   assert.equal(movements.length, 2);
   const stempel = r.recorded_at.toISOString();
   for (const m of movements) assert.equal(m.recorded_at.toISOString(), stempel);
@@ -548,7 +548,7 @@ test('retry dengan Idempotency-Key sama tidak menghasilkan refund kedua', async 
 
   assert.equal((await query('SELECT id FROM refund')).length, 1);
   assert.equal((await query("SELECT id FROM stock_movement WHERE type <> 'sale'")).length, 1, 'stok tidak dikembalikan dua kali');
-  assert.equal((await query('SELECT id FROM audit_event')).length, 1);
+  assert.equal((await query(`SELECT id FROM audit_event WHERE event_type = 'order.refunded'`)).length, 1);
 });
 
 test('Idempotency-Key sama dengan body berbeda -> 422', async () => {

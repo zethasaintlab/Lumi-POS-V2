@@ -2157,3 +2157,114 @@ Daftarnya menyusut sendiri saat peristiwanya mulai ditulis.
 `test:sqlite-local` 8 · `test:runtime` 3 · `test:oxlint-ds-adherence` 12 ·
 `test:isolation` · `test:catalog` · `test:payment` · `test:identity` ·
 `test:tenancy`.
+
+---
+
+## Task 29 — FR-F6: menutup lubang audit katalog, harga, stok, dan pajak
+
+**Status: selesai. Lubang FR-F6 menyusut dari 24 menjadi 16.**
+
+Task 28 membuat jaraknya terukur; ini yang mulai menutupnya. Yang ditambahkan:
+`item_created` · `item_updated` · `item_archived` · `price_changed` ·
+`stock_adjusted` · `stocktake_completed` · `sold_out_toggled` ·
+`tax_rate_changed`. Delapan peristiwa, dua belas endpoint mutasi.
+
+**Keputusan:**
+
+- ⛔ **Satu pembungkus `catatPerubahanServer`, bukan `recordAuditEvent`
+  langsung di dua belas tempat.** Semua peristiwa ini berbentuk identik: tanpa
+  perangkat, tanpa penyetuju, tanpa alasan, tanpa HLC. Menyalin lima field
+  tetap ke dua belas tempat berarti dua belas kesempatan salah menuliskan salah
+  satunya — dan yang paling mudah salah `hlc`, yang tipenya `bigint` dan yang
+  nilai benarnya justru nol.
+- ⛔ **`hlc: 0n` adalah nilai yang JUJUR, bukan placeholder.** HLC menyatakan
+  urutan kausal terhadap peristiwa perangkat; perubahan back-office tidak punya
+  perangkat dan tidak berhak mengklaim posisi dalam urutan itu. Mengarangnya
+  dari jam server akan menempatkannya di antara dua peristiwa kasir yang tidak
+  pernah melihatnya.
+- ⛔ **`price_changed` meresolusi harga lama SEBELUM baris baru ditulis.**
+  Baris baru menang di tangga resolusi begitu ia tertulis — meresolusi
+  sesudahnya membuat `before` sama dengan `after`, dan audit yang menjawab
+  "harganya diubah dari berapa" dengan angka barunya sendiri lebih buruk
+  daripada audit yang tidak menjawab. Dan yang diresolusi **harga yang berlaku
+  pada `effective_from` baris baru**, bukan baris `price_history` sebelumnya:
+  tangga tiga tingkat berarti baris terakhir yang ditulis belum tentu yang
+  sedang berlaku. Sabotase: urutannya dibalik → 1 merah.
+- ⛔ **Arsip dan pemulihan memancarkan peristiwa yang SAMA**, dibedakan
+  `before`/`after`. `spec-f:294` hanya menyebut `item_archived`; memancarkan
+  `item_restored` yang tidak ada di daftar berarti kosakata yang tidak dapat
+  dibandingkan dengan spec-nya.
+- ⛔ **Varian dicatat pada ITEM-nya** (`entityId` = item). Menelusuri satu item
+  harus mengembalikan seluruh riwayat variannya; `spec-f:294` tidak punya
+  peristiwa tingkat varian.
+- ⛔ **`stock_adjusted` mencatat DELTA, bukan stok akhir.** Stok adalah
+  `SUM(stock_movement.delta)` dan tidak punya kolom (`CLAUDE.md`); menuliskan
+  stok akhir ke audit berarti angka kedua yang harus dijaga sepakat dengan
+  ledger-nya, dan yang menyimpang di antaranya tidak dapat diputuskan mana yang
+  benar.
+- ⛔ **`stocktake_completed` mencatat JUMLAH baris, bukan barisnya.** Opname
+  sebuah kafe menyentuh ratusan varian; menyalin semuanya membuat satu
+  peristiwa audit lebih besar daripada seluruh trail hari itu, lalu
+  menenggelamkan peristiwa yang justru dicari.
+- ⛔ **`sold_out_toggled` mencatat ARAHNYA.** Penandaan habis terpisah dari
+  stok terhitung (`spec-e:220`); audit yang hanya mencatat "ditandai" tidak
+  dapat membedakan menandai habis dari membatalkannya.
+- ⛔ **Tarif pajak disalin sebagai STRING dari kolom `numeric`.**
+  Melewatkannya lewat `Number` adalah persis yang `packages/domain/src/numeric.ts`
+  ada untuk mencegah — dan audit trail pajak yang angkanya bergeser adalah
+  bukti yang lebih buruk daripada tidak ada bukti. Invariant #7 tidak dilanggar:
+  yang ditulis salinan nilai, bukan aritmetika.
+- ⛔ **`before` diuji ISINYA, bukan keberadaannya.** Audit yang menjawab
+  "diubah dari apa" dengan nilai barunya sendiri lolos setiap test yang hanya
+  memeriksa bahwa kolomnya terisi.
+- ⛔ **Test memanggil ENDPOINT-nya, bukan `catatPerubahanServer`.** Test yang
+  memanggil fungsinya langsung membuktikan bahwa fungsinya menulis — bukan
+  bahwa handler-nya memanggilnya. Kelas yang sama dengan pelajaran 21 Agustus
+  2026 tentang transport perangkat. Ada juga test arah sebaliknya: operasi yang
+  GAGAL (409 id ganda) tidak boleh meninggalkan baris audit — trail yang memuat
+  perubahan yang tidak pernah terjadi lebih buruk daripada trail berlubang.
+- **Assertion "lubang mana yang tersisa" dibuat STRUKTURAL.** Versi pertamanya
+  menyebut `price_changed` dan merah tiga jam kemudian saat peristiwa itu mulai
+  dipancarkan; test yang harus disunting setiap kali daftarnya menyusut akan
+  disunting tanpa dibaca.
+
+**Sisa 16 lubang, dan kenapa masing-masing belum ditutup:**
+
+| Peristiwa | Alasan |
+|---|---|
+| `login` · `logout` | Endpoint ada — task berikutnya |
+| `shift_opened` · `shift_count_attempt` · `cash_variance_approved` | Endpoint ada — task berikutnya |
+| `user_role_changed` · `device_provisioned` · `device_revoked` | Endpoint ada — task berikutnya |
+| `data_exported` | Endpoint ada — task berikutnya |
+| `cash_paid_in` · `cash_paid_out` | **Tidak ada endpointnya.** Setoran/penarikan kas di luar penjualan belum dibangun |
+| `threshold_changed` | B-26 (Ambang Otorisasi) belum ada |
+| `vertical_profile_changed` | B-24 (Profil Vertikal) belum ada |
+| `peripheral_configured` | `printer_profile` belum punya endpoint mutasi |
+| `support_session_started` · `support_session_ended` | Akses support belum dibangun |
+
+**⛔ Task 29 menemukan sembilan test yang hijau karena HAMPA.** Sepuluh
+assertion di `tests/ordering/{void,refund,calculation-variance}.test.js`
+menghitung **seluruh** baris `audit_event` alih-alih baris yang operasinya
+tulis. Nol adalah jawaban benar karena alasan yang salah: tidak ada satu pun
+endpoint katalog yang menulis audit, jadi satu-satunya baris yang mungkin ada
+memang milik void. Begitu `item_created` dan `price_changed` mulai
+dipancarkan, setup test-nya sendiri menghasilkan dua baris.
+
+Bentuk yang sama persis dengan pelajaran F3 yang `CLAUDE.md` catat: *"18 test
+void/refund menghitung SELURUH baris `stock_movement`; nol adalah jawaban benar
+karena alasan yang salah."* Diperbaiki dengan menyaring `event_type`, dan
+alasannya ditulis di tempatnya.
+
+**Penjaga label B-22 menyala persis seperti yang dirancang** — kedelapan
+peristiwa baru langsung merah di `pengawasan-b22.test.js` sampai labelnya
+ditambahkan, alih-alih tampil sebagai slug mentah di layar.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:server` 338 · `test:ordering`
+184 · `test:catalog` 177 · `test:payment` 132 · `test:domain` 445 ·
+`test:backoffice` 403 · `test:identity` 142 · `test:tenancy` 75 ·
+`test:isolation` 211 · `test:schema` 14 · `test:kasir` 418 ·
+`test:sync-client` 102 · `test:dst` 14 · `test:sqlite-local` 8 ·
+`test:runtime` 3 · `test:oxlint-ds-adherence` 12.
+
+**Sabotase:** resolusi harga lama dipindah ke SESUDAH insert → 1 merah
+(`before` sama dengan `after`).
