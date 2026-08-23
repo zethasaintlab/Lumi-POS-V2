@@ -53,6 +53,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 21 | K-06 QRIS statis + EDC | FR-C2, FR-C4 | selesai |
 | 22 | Pembayaran campuran di perangkat | FR-C1, P0 | selesai |
 | 23 | FR-H4 — blokir operasi destruktif | `spec-h:270`, P0 | selesai |
+| 24 | Feature flag & kill switch | `ARCH:358` | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1710,3 +1711,92 @@ aplikasi sama sekali — tidak ada tombol yang memuat ulang data atau menghapus
 database dari dalam. Aturannya sudah ada dan diuji; yang belum ada adalah
 operasinya. `uninstall` tidak dapat dicegah aplikasi mana pun (`spec-h:280`),
 dan mitigasinya — ekspor darurat — sudah ada di K-14.
+
+---
+
+### Task 24 — Feature flag & kill switch (`ARCH:358`)
+
+*"Kill switch: per fitur per merchant, dari server tanpa rilis — **kebutuhan
+operasional, bukan kemewahan**."* Satu-satunya baris `ARCH:§12` yang belum
+punya kode sama sekali.
+
+**Rantainya:** `tools/kill-switch.mjs` → `feature_flag` (migrasi `0032`) →
+`GET /devices/{id}/features` → `fitur_lokal` → layar kasir.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Tabel menyimpan PENYIMPANGAN saja; bawaannya hidup di
+  `packages/domain/src/fitur.ts`.** Pola yang sama dengan ambang diskon dan
+  jendela update: kolom ber-`DEFAULT` membuat perubahan bawaan hanya berlaku
+  untuk baris yang dibuat sesudahnya. Konsekuensinya tabel ini akan tetap
+  hampir kosong, dan itu benar.
+- ⛔ **`tenant_id IS NULL` = penyimpangan GLOBAL, dan baris tenant MENANG
+  atasnya.** "Matikan untuk semua kecuali yang sudah kami periksa" adalah
+  bentuk pemulihan insiden yang paling sering dipakai; urutan yang terbalik
+  membuatnya mustahil.
+- ⛔ **DUA index unik parsial, bukan satu.** PostgreSQL memperlakukan NULL
+  sebagai tidak-sama-dengan-NULL, jadi `UNIQUE (key, tenant_id)` tunggal
+  mengizinkan dua baris global untuk fitur yang sama — dan "mana yang berlaku"
+  lalu tidak punya jawaban.
+- ⛔ **Kunci ASING dibaca MATI, di kedua sisi.** Baris yang tertinggal untuk
+  fitur yang sudah dihapus dari kode tidak boleh menyalakan apa pun, dan
+  salah ketik di alat operator harus terlihat sebagai fitur yang tidak
+  menyala.
+- ⛔ **Tabelnya DIKECUALIKAN dari RLS**, sejajar `app_release`: alat operator
+  memakai `DATABASE_MIGRATION_URL`, dan `FORCE ROW LEVEL SECURITY` berlaku
+  untuk owner juga — tabel ber-RLS tidak dapat ditulis lintas tenant sama
+  sekali (pelajaran backfill `refund.method`). Konsekuensinya dinyatakan, dan
+  dijaga dua penjaga: hanya SATU query di server yang menyentuh tabelnya, dan
+  query itu menyaring tenant.
+- ⛔ **Respons berisi BOOLEAN per fitur, bukan barisnya.** Mengirim barisnya
+  berarti mengirim `tenant_id` merchant lain — dan `reason` sebuah kill switch
+  biasanya menyebut dugaan fraud, yang menghapus gunanya bila dibaca pihak
+  yang sedang diselidiki.
+- ⛔ **`fitur_lokal` murni lokal, SENGAJA bukan raw table.** Menambah raw
+  table mengubah sidik jari skema lokal, dan itu menuntut
+  `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant —
+  biaya nyata untuk tiga boolean yang muat dalam satu permintaan HTTP.
+- ⛔ **Dua fallback yang arahnya BERLAWANAN, keduanya disengaja:** fitur tanpa
+  baris mengikuti bawaan kode (menyala) supaya perangkat baru tetap dapat
+  berjualan; fitur yang punya baris bertahan **tanpa kedaluwarsa** supaya kill
+  switch tetap berlaku pada perangkat yang mencabut internetnya.
+- ⛔ **Kegagalan menyegarkan MEMPERTAHANKAN keadaan lama.** Respons yang tidak
+  sampai bukan "tidak ada flag" — ia "belum tahu". Menulis apa pun atas
+  kegagalan berarti flag yang dimatikan operator menyala kembali setiap kali
+  internet merchant terputus. Bentuk respons yang tidak dikenali juga dibaca
+  gagal, bukan "tidak ada fitur".
+- ⛔ **Nilai non-boolean DIABAIKAN, tidak dikoersi.** `"false"` yang dikoersi
+  menjadi `true` adalah kill switch yang menyala terbalik tanpa satu pun
+  error.
+- ⛔ **`--alasan` wajib saat mematikan.** Kill switch dinyalakan saat insiden
+  dan dilupakan sesudahnya; baris tanpa alasan adalah fitur yang mati
+  berbulan-bulan tanpa ada yang tahu kenapa.
+- ⛔ **Tidak ada flag yang menyentuh AUDIT** (`spec-f:369`) maupun yang dapat
+  **menghentikan penjualan** — kill switch yang dapat menghentikan penjualan
+  adalah SEV-1 yang dipicu sendiri. Keduanya dijaga test atas daftar tertutup,
+  karena kunci berikutnya akan ditambahkan oleh orang yang sedang menangani
+  insiden.
+- **Tombol yang fiturnya mati HILANG, bukan dinonaktifkan.** Tombol mati yang
+  tetap terlihat mengundang kasir menekannya berulang lalu menelepon support.
+  Yang menegakkannya tetap jalur penulisan — layar tidak pernah jadi
+  satu-satunya penjaga.
+
+**Tiga fitur pertama, dan alasan masing-masing dipilih:**
+`pembayaran_qris_statis` (satu-satunya metode digital yang tidak diverifikasi
+sistem mana pun), `diskon_kasir` (permukaan fraud FR-B8), `buka_laci_no_sale`
+(`spec-d:229` menyebutnya pola fraud paling dasar).
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 416 · `test:kasir` 418
+· `test:identity` 142 · `test:isolation` 211 · `test:schema` 14 ·
+`test:server` 295 · `test:catalog` 177 · `test:ordering` 178 ·
+`test:payment` 132 · `test:tenancy` 75 · `test:backoffice` 370 ·
+`test:sync-client` 102 · `test:sqlite-local` · `test:runtime` ·
+`test:oxlint-ds-adherence` · build kasir. Alat operator dijalankan sungguhan
+terhadap database (`--daftar`, `--status`, `--kering`, penolakan tanpa alasan).
+
+**Sabotase:** klausa `WHERE tenant_id IS NULL OR tenant_id = $1` dilepas → 6
+merah, termasuk "penyimpangan merchant LAIN tidak pernah ikut".
+
+**Batas yang dinyatakan:** kill switch tidak dapat mendahului perangkat yang
+**belum pernah** terhubung sama sekali — perangkat itu memakai bawaan kode,
+yaitu menyala. Tercatat di runbook §13.5.

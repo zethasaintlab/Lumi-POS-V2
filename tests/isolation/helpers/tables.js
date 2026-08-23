@@ -118,7 +118,19 @@ const TABLES = [
 // owns it: rilis adalah milik KAMI. Consequence stated on purpose — every
 // merchant can read those rows, and every column in them is a version number
 // or a rollout stage. None names another merchant.
+// `feature_flag` (migrasi 0032) ikut karena alasan yang sama, dengan satu
+// perbedaan yang harus dinyatakan: ia PUNYA kolom `tenant_id`. Ia tetap
+// dikecualikan karena flag adalah keputusan OPERATOR — merchant tidak dapat
+// menyalakan fitur yang kami matikan untuknya, dan alat yang menulisnya
+// memakai kredensial migrasi. `FORCE ROW LEVEL SECURITY` berlaku untuk owner
+// juga, jadi tabel ber-RLS tidak dapat ditulis lintas tenant oleh alat
+// operator sama sekali (pelajaran backfill `refund.method`, migrasi 0021).
+//
+// Konsekuensinya dinyatakan: setiap pemanggil dapat membaca seluruh barisnya
+// — nama fitur, sebuah tenant id, dan sebuah boolean. Yang menjaga agar tidak
+// ada query kedua yang membacanya tanpa menyaring tenant adalah
+// `tests/kasir/fitur-penjaga.test.js`.
 // Asserted absent-on-purpose, never fed into the CRUD loop.
-const EXEMPT = ['tenant', 'printer_profile', 'app_release'];
+const EXEMPT = ['tenant', 'printer_profile', 'app_release', 'feature_flag'];
 
 module.exports = { TABLES, EXEMPT };

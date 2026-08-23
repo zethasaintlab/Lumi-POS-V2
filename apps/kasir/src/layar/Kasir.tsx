@@ -41,6 +41,7 @@ import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogNoSale } from '../komponen/DialogNoSale.tsx';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
+import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 
@@ -97,6 +98,10 @@ export function Kasir() {
      baris outlet terbaca. */
   const [ambangDiskon, setAmbangDiskon] = useState<AmbangDiskon>(AMBANG_DISKON_BAWAAN);
   const [dialogDiskon, setDialogDiskon] = useState(false);
+  /* `ARCH:358` — kill switch per fitur per merchant. Dibaca dari perangkat,
+     jadi ia tetap berlaku offline; fitur yang belum pernah disegarkan
+     mengikuti bawaan kode dan tetap menyala. */
+  const [fitur, setFitur] = useState<PetaFitur>(() => ({}));
 
   useEffect(() => {
     let hidup = true;
@@ -111,6 +116,8 @@ export function Kasir() {
       const daftar = await bacaKatalog(db, { outletId: k?.outletId ?? null, pada: new Date() });
       if (!hidup) return;
       setKatalog(daftar);
+      setFitur(await bacaFitur(db));
+      if (!hidup) return;
 
       if (k) {
         const ambang = await bacaAmbangDiskon(db, k.outletId);
@@ -443,13 +450,21 @@ export function Kasir() {
         {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
             uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
             setiap penjualan. */}
-        <Tombol
-          varian="ghost"
-          disabled={keranjang.baris.length === 0 || sesi === null}
-          onClick={() => setDialogDiskon(true)}
-        >
-          {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
-        </Tombol>
+        {/* ⛔ Tombolnya HILANG saat fitur dimatikan, bukan dinonaktifkan.
+            Tombol mati yang tetap terlihat mengundang kasir menekannya
+            berulang lalu menelepon merchant support; fitur yang dimatikan
+            operator memang tidak ada untuk merchant itu. Yang menegakkannya
+            tetap `statusDiskon` di jalur penulisan — layar tidak pernah jadi
+            satu-satunya penjaga. */}
+        {fiturAktif(fitur, 'diskon_kasir') && (
+          <Tombol
+            varian="ghost"
+            disabled={keranjang.baris.length === 0 || sesi === null}
+            onClick={() => setDialogDiskon(true)}
+          >
+            {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
+          </Tombol>
+        )}
 
         {/* K-16 — Buka laci (no-sale). `IA:102` menempatkannya di menu ⋮,
             tapi menu itu diturunkan dari `TABEL_RUTE` dan K-16 BUKAN rute
@@ -461,13 +476,11 @@ export function Kasir() {
             design system #2), dan aksi utama K-03 adalah Bayar. Membuka laci
             adalah pola fraud paling dasar (`spec-d:229`); ia tidak boleh
             terlihat seperti langkah biasa. */}
-        <Tombol
-          varian="ghost"
-          disabled={sesi === null}
-          onClick={() => setBukaLaci(true)}
-        >
-          Buka laci
-        </Tombol>
+        {fiturAktif(fitur, 'buka_laci_no_sale') && (
+          <Tombol varian="ghost" disabled={sesi === null} onClick={() => setBukaLaci(true)}>
+            Buka laci
+          </Tombol>
+        )}
 
         {pesanLaci && (
           <p className="t-caption" role="status">

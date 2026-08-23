@@ -81,6 +81,10 @@ export const TABEL_LOKAL_SAJA = [
   // mengisi disk yang `outbox_local` butuhkan — telemetri dapat hilang,
   // penjualan tidak.
   'telemetry_local',
+  // F6 — feature flag. Murni lokal dan SENGAJA bukan raw table: menambah raw
+  // table mengubah sidik jari skema, dan itu menuntut unduh ulang katalog di
+  // setiap perangkat merchant untuk tiga boolean.
+  'fitur_lokal',
   'device_config',
   'skema_lokal',
   // Keduanya SENGAJA tidak didaftarkan: sesi kasir tidak punya padanan di

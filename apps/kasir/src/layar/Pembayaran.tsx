@@ -17,6 +17,7 @@ import {
   type BagianBayar,
 } from '../../../../packages/domain/src/pembayaran-campuran.ts';
 import { Bidang } from '../Bidang.tsx';
+import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
@@ -62,6 +63,8 @@ const PECAHAN = [2000, 5000, 10000, 20000, 50000, 100000];
 /* Nama metode di LAYAR — bukan di struk. Struk memakai `labelMetode`
    (`cetak/metode.ts`), yang namanya sengaja lebih pendek karena berbagi baris
    32 kolom dengan nominalnya. */
+const METODE_TERLIHAT = ['cash', 'qris_static', 'card_edc'] as const;
+
 const NAMA_METODE: Record<MetodeBayar, string> = {
   cash: 'Tunai',
   qris_static: 'QRIS statis',
@@ -93,6 +96,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      yang SAMA yang `simpanPenjualan` pakai. Menghitungnya sendiri di layar
      berarti kasir membagi angka yang berbeda dari angka yang tersimpan. */
   const [total, setTotal] = useState<bigint | null>(null);
+  /* `ARCH:358` — QRIS statis adalah satu-satunya metode digital yang berfungsi
+     offline dan satu-satunya yang tidak diverifikasi sistem mana pun. Ia
+     permukaan fraud yang paling mungkin perlu dimatikan untuk satu merchant
+     tanpa menunggu rilis. */
+  const [fitur, setFitur] = useState<PetaFitur>(() => ({}));
   const [menyimpan, setMenyimpan] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [selesai, setSelesai] = useState<Extract<HasilPenjualan, { status: 'tersimpan' }> | null>(null);
@@ -115,6 +123,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       const h = await muatHlc(db, () => Date.now());
       if (!hidup) return;
       setHlc(h);
+      setFitur(await bacaFitur(db));
+      if (!hidup) return;
       if (k && s && keranjangSekarang().baris.length > 0) {
         const hitung = await hitungKeranjang({
           db,
@@ -316,7 +326,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           online-only, dan menampilkannya lalu menonaktifkannya saat offline
           (FR-C3) menuntut metode itu ADA lebih dulu. */}
       <div className="kasir-pecahan">
-        {(['cash', 'qris_static', 'card_edc'] as const).map((m) => (
+        {METODE_TERLIHAT.filter(
+          (m) => m !== 'qris_static' || fiturAktif(fitur, 'pembayaran_qris_statis')
+        ).map((m) => (
           <Tombol
             key={m}
             varian={metode === m ? 'primary' : 'secondary'}

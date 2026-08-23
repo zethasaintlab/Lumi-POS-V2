@@ -2320,6 +2320,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/features:
+    get:
+      operationId: getDeviceFeatures
+      summary: >-
+        `ARCH:358` -- fitur mana yang menyala untuk perangkat ini. Feature flag
+        dan kill switch, per fitur per merchant, tanpa rilis.
+      description: >-
+        Dijawab sebagai BOOLEAN per fitur, bukan sebagai baris `feature_flag`.
+        Perangkat tidak perlu tahu apakah keadaannya datang dari penyimpangan
+        global, penyimpangan merchantnya, atau bawaan kode -- dan mengirimkan
+        barisnya berarti mengirimkan `tenant_id` merchant lain ke perangkat.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: "'Bearer <secret perangkat>'. Tidak `required` -- kredensial hilang berarti 401, bukan 400."
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [fitur]
+                properties:
+                  fitur:
+                    type: object
+                    additionalProperties: { type: boolean }
+                    description: >-
+                      Kunci dari `packages/domain/src/fitur.ts`. Fitur yang
+                      dihapus dari daftar berhenti muncul di sini; perangkat
+                      yang belum diperbarui membacanya lewat bawaan kodenya
+                      sendiri.
+        '401':
+          description: Kredensial perangkat tidak sah, dicabut, atau kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /devices/{deviceId}/update:
     get:
       operationId: getDeviceUpdate

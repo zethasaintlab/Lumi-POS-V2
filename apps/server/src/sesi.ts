@@ -160,6 +160,13 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
       'kasir, dan perangkat yang belum ada yang login tetap harus dapat menundanya',
   },
   {
+    metode: 'GET',
+    pola: '/devices/:deviceId/features',
+    alasan:
+      'idem: diautentikasi SECRET PERANGKAT di Bearer. Kill switch harus sampai ke ' +
+      'perangkat yang tidak ada orangnya — justru itu keadaan yang membuatnya dibutuhkan',
+  },
+  {
     metode: 'POST',
     pola: '/devices/:deviceId/telemetry',
     alasan:

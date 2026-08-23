@@ -190,6 +190,25 @@ CREATE TABLE telemetry_local (
 -- Pemangkasan buffer membuang yang TERLAMA; index ini yang membuatnya murah.
 CREATE INDEX ix_telemetry_waktu ON telemetry_local(pada_waktu);
 
+-- ---------- FEATURE FLAG (murni lokal, disegarkan dari server) ----------
+-- `ARCH:358` — kill switch per fitur per merchant, tanpa rilis.
+--
+-- ⛔ TIDAK didaftarkan sebagai raw table, dan itu keputusan, bukan kelalaian.
+-- Menambah raw table mengubah SIDIK JARI skema lokal, dan itu menuntut
+-- `disconnectAndClear()` + unduh ulang katalog di SETIAP perangkat merchant.
+-- Biaya nyata itu untuk tiga boolean yang dapat diambil satu permintaan HTTP.
+--
+-- ⛔ Barisnya BERTAHAN saat perangkat offline. Kill switch yang hilang begitu
+-- internet mati adalah kill switch yang tidak berlaku justru pada perangkat
+-- yang paling sulit dijangkau. Fitur yang tidak punya baris sama sekali
+-- mengikuti bawaan `packages/domain/src/fitur.ts` — perangkat yang belum
+-- pernah menyegarkan tetap dapat berjualan penuh.
+CREATE TABLE fitur_lokal (
+  kunci TEXT PRIMARY KEY NOT NULL,
+  aktif INTEGER NOT NULL,
+  disegarkan_pada TEXT NOT NULL
+);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.

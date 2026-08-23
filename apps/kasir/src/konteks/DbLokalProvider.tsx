@@ -13,6 +13,7 @@ import {
 import { jalankanSinkronisasi, type SinkronisasiHidup } from '../sync/jalankan.ts';
 import { bacaModeTelemetri } from '../../../../packages/domain/src/telemetri.ts';
 import { pasangTelemetri, type TelemetriHidup } from '../telemetri/pasang.ts';
+import { segarkanFitur } from '../fitur/segarkan.ts';
 
 /* Penyedia database lokal.
 
@@ -67,6 +68,7 @@ function nyalakanSinkronisasi(lokal: LokalTerpasang): Promise<SinkronisasiHidup 
   sinkronisasi ??= bacaKonfigPerangkat(lokal.db).then((konfig) => {
     if (!siapKirim(konfig)) return null;
     nyalakanTelemetri(lokal, konfig!);
+    nyalakanFitur(lokal, konfig!);
     return jalankanSinkronisasi({
       db: lokal.db,
       ps: lokal.ps,
@@ -98,6 +100,37 @@ function nyalakanTelemetri(lokal: LokalTerpasang, konfig: KonfigPerangkat): void
     tokenSecret: konfig.tokenSecret as string,
     appVersion: import.meta.env.VITE_APP_VERSION ?? '0.0.0',
   });
+}
+
+/* Feature flag disegarkan bersama sinkronisasi, dengan syarat yang sama.
+   `ARCH:358` — kill switch per fitur per merchant, tanpa rilis.
+
+   ⛔ Sekali saat boot, lalu setiap `JEDA_SEGARKAN_FITUR`. Ia sengaja JAUH
+   lebih jarang daripada relay: flag berubah beberapa kali setahun, dan
+   memukul endpoint tiap 15 detik untuk tiga boolean adalah beban yang tidak
+   membeli apa pun.
+
+   ⛔ Kegagalan DIABAIKAN sepenuhnya — `segarkanFitur` tidak pernah melempar,
+   dan keadaan lama dipertahankan. Perangkat yang tidak dapat menyegarkan
+   tetap memakai flag terakhir yang diketahuinya, dan itu justru yang
+   membuat kill switch berlaku offline. */
+const JEDA_SEGARKAN_FITUR = 15 * 60 * 1000;
+
+let fitur: ReturnType<typeof setInterval> | null = null;
+function nyalakanFitur(lokal: LokalTerpasang, konfig: KonfigPerangkat): void {
+  if (fitur !== null) return;
+  const sekali = () =>
+    void segarkanFitur({
+      db: lokal.db,
+      baseUrl: konfig.baseUrl,
+      tenantId: konfig.tenantId,
+      deviceId: konfig.deviceId,
+      tokenSecret: konfig.tokenSecret as string,
+      fetchFn: fetch.bind(globalThis),
+      waktu: () => new Date(),
+    });
+  sekali();
+  fitur = setInterval(sekali, JEDA_SEGARKAN_FITUR);
 }
 
 /** Sinkronisasi yang sedang hidup, atau `null` bila perangkat belum terhubung. */
