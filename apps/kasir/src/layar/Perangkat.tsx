@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { Card, EmptyState } from 'ds';
 import {
   bacaKonfigPerangkat,
-  simpanKonfigPerangkat,
   siapKirim,
   type KonfigPerangkat,
 } from '../../../../packages/sync-client/src/perangkat.ts';
 import { Bidang } from '../Bidang.tsx';
 import { Tombol } from '../Tombol.tsx';
+import { simpanIdentitasPerangkat } from '../perangkat/simpan-identitas.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { bacaProfilPrinter, dokumenUjiCetak } from '../cetak/profil.ts';
 import {
@@ -53,6 +53,10 @@ export function Perangkat() {
   const [nilai, setNilai] = useState<KonfigPerangkat>(KOSONG);
   const [tersimpan, setTersimpan] = useState<KonfigPerangkat | null>(null);
   const [pesan, setPesan] = useState<string | null>(null);
+  /* Pesan blokir FR-H4 BUKAN pesan sukses berwarna sama. Aturan design system
+     #5: status tidak pernah warna saja — dan di sini teksnya juga berbeda,
+     jadi yang dijaga adalah keduanya tidak terlihat serupa. */
+  const [pesanBlokir, setPesanBlokir] = useState(false);
   const [memuat, setMemuat] = useState(true);
   /* Profil dibaca dari DATABASE, bukan dari konstanta. `ERD:445`: menambah
      model printer = menambah baris. Baseline ikut di belakangnya supaya
@@ -89,9 +93,23 @@ export function Perangkat() {
   const ubah = (kunci: keyof KonfigPerangkat) => (v: string) =>
     setNilai((n) => ({ ...n, [kunci]: v }));
 
+  /* FR-H4 — ganti identitas perangkat diblokir saat antrean tidak kosong.
+
+     ⛔ Aturannya di `perangkat/simpan-identitas.ts`, bukan di sini. AC ketiga
+     menuntut blokirnya "ditegakkan di lapisan domain, bukan hanya
+     menyembunyikan tombol", dan versi pertama saya menaruhnya di komponen ini
+     — lalu penjaga strukturalnya terbukti lolos saat pemanggilnya dihapus dan
+     import-nya tertinggal. Yang hanya dapat diuji lewat DOM tidak benar-benar
+     diuji. */
   async function simpan() {
-    await simpanKonfigPerangkat(db, nilai);
+    const hasil = await simpanIdentitasPerangkat(db, nilai);
+    if (!hasil.berhasil) {
+      setPesanBlokir(true);
+      setPesan(hasil.pesan);
+      return;
+    }
     setTersimpan(nilai);
+    setPesanBlokir(false);
     // Sinkronisasi dinyalakan saat aplikasi dimuat, bukan di tengah jalan:
     // menyambungkan PowerSync dua kali dalam satu proses belum pernah kami
     // uji, dan menebaknya di layar pengaturan bukan tempat yang benar.
@@ -176,7 +194,14 @@ export function Perangkat() {
           Simpan
         </Tombol>
       </div>
-      {pesan && <p className="t-caption">{pesan}</p>}
+      {pesan && (
+        <p
+          className={pesanBlokir ? 't-body-md kasir-login-galat' : 't-caption'}
+          role={pesanBlokir ? 'alert' : 'status'}
+        >
+          {pesan}
+        </p>
+      )}
 
       <span className="t-title">Uji cetak</span>
 

@@ -52,6 +52,7 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 20 | FR-A3 — aturan pemilihan modifier di kasir | `spec-a:113`, P0 | selesai |
 | 21 | K-06 QRIS statis + EDC | FR-C2, FR-C4 | selesai |
 | 22 | Pembayaran campuran di perangkat | FR-C1, P0 | selesai |
+| 23 | FR-H4 — blokir operasi destruktif | `spec-h:270`, P0 | selesai |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1648,3 +1649,64 @@ jalur perangkat hanya pernah menulis **satu** payment.
 
 **Sabotase:** laci diberi `amount_due` → 1 merah; tunai tidak diurutkan
 terakhir → 1 merah di suite klien dan 1 merah di suite relay.
+
+---
+
+### Task 23 — FR-H4: blokir operasi destruktif (P0)
+
+`spec-h:270` — *"Lumi POS menegakkannya **secara teknis**, bukan lewat
+dokumentasi."* Dari empat operasi, hanya **logout** yang benar-benar diblokir.
+Layar Perangkat menerima perubahan `tenantId`/`outletId`/`deviceId` tanpa
+memeriksa antrean sama sekali: penjualan yang antre akan dikirim atas nama
+outlet yang salah, atau ditolak permanen begitu tenant-nya berubah.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Yang TIDAK diblokir adalah bagian terpenting aturannya.** Alamat server
+  dan kredensial perangkat tidak pernah diblokir: keduanya adalah jalan
+  MEMPERBAIKI antrean yang macet. Server yang pindah alamat atau kredensial
+  yang kedaluwarsa menghasilkan antrean yang tidak dapat terkuras, dan
+  memblokir perbaikannya karena antreannya tidak kosong adalah kunci yang
+  tidak punya kunci pembuka. `deviceCode` juga lolos — ia hanya prefiks nomor
+  struk, dan memasukkannya membuat merchant yang memperbaiki salah ketik
+  "K1" → "K2" terkunci sampai antreannya kosong.
+- ⛔ **Daftar operasi gagal-TERTUTUP.** Operasi tak dikenal ditolak, bukan
+  diizinkan; daftar tertutup yang gagal-terbuka membuat operasi destruktif
+  berikutnya lolos tanpa ada yang menyadarinya.
+- ⛔ **`resync` dan `hapus_data` masuk daftar SEKARANG**, meski belum punya
+  tombol di mana pun. Aturan yang ditulis bersamaan dengan tombolnya adalah
+  aturan yang ditulis oleh orang yang sedang terburu-buru membuat tombolnya
+  jalan. Ada penjaga yang menandai bila keduanya mulai punya pemanggil.
+- **`bolehLogout` kini pembungkus tipis** atas `periksaOperasiDestruktif`.
+  Pesannya sebelumnya ditulis sendiri di `login.ts`, dan operasi kedua yang
+  lahir akan menyalinnya — dua salinan menghasilkan dua kalimat berbeda untuk
+  keadaan yang sama, dan yang satu akan lupa menyebut jumlahnya.
+
+**Masalah yang saya buat sendiri, dan bagaimana ketahuannya:**
+
+Versi pertama menaruh blokirnya **di dalam `Perangkat.tsx`**, dijaga penjaga
+struktural yang memindai kode dan menuntut berkas penulis `device_config`
+menyebut `periksaOperasiDestruktif`. Sabotase membuktikan penjaga itu
+**lolos**: saya hapus pemanggilnya, import-nya tertinggal, dan testnya tetap
+hijau. Pemeriksaan yang dapat dipalsukan oleh satu baris import bukan
+pemeriksaan.
+
+Perbaikannya bukan menajamkan regex melainkan memindahkan aturannya:
+`apps/kasir/src/perangkat/simpan-identitas.ts`, bentuk yang sama dengan
+`keluar()` di `konteks/useSesi.ts` — satu fungsi yang membaca antrean tepat
+sebelum menulis, dan **dapat dijalankan test**. Penjaganya lalu diubah dari
+"setiap penulis memeriksa" menjadi "hanya ADA SATU penulis", yang tidak dapat
+dipalsukan import.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 405 · `test:kasir` 405
+· `test:sync-client` 102 · `test:backoffice` 370 ·
+`test:oxlint-ds-adherence` · build kasir.
+
+**Sabotase:** `identitasBerubah` dimatikan → 2 merah; `gagal` tidak ikut
+dihitung → 1 merah; pesan blokir disalin ke layar → 1 merah.
+
+**Batas yang dinyatakan:** `resync` dan `hapus_data` belum punya jalur di
+aplikasi sama sekali — tidak ada tombol yang memuat ulang data atau menghapus
+database dari dalam. Aturannya sudah ada dan diuji; yang belum ada adalah
+operasinya. `uninstall` tidak dapat dicegah aplikasi mana pun (`spec-h:280`),
+dan mitigasinya — ekspor darurat — sudah ada di K-14.
