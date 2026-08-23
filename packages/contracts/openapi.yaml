@@ -3893,6 +3893,95 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/exceptions/clock:
+    get:
+      operationId: getClockExceptionReport
+      summary: >-
+        FR-G5 X8 -- anomali waktu: perangkat yang jamnya menyimpang dari jam
+        server (FR-F8).
+      description: >-
+        ⛔ Membaca `audit_event` bertipe `clock_drift_detected`, BUKAN selisih
+        `occurred_at` vs `recorded_at`. spec-g:164 menggambarkan X8 sebagai
+        selisih besar keduanya "DI LUAR DURASI OFFLINE YANG WAJAR", dan
+        kalimat terakhir itu yang menentukan: selisih keduanya adalah durasi
+        offline pada hampir setiap penjualan yang produk ini ada untuk
+        mendukung. Melaporkannya apa adanya menghasilkan daftar yang seluruh
+        isinya penjualan sehat, dan daftar semacam itu berhenti dibaca pada
+        minggu pertama.
+
+
+        Yang tidak dapat dijelaskan durasi offline adalah dua jam yang
+        sama-sama mengaku "sekarang" tapi berbeda -- dicatat saat perangkat
+        me-relay penjualan, dibatasi satu per perangkat per jam supaya satu
+        tablet yang salah setel tidak mengubur seluruh audit trail.
+
+
+        ⛔ Diurutkan berdasarkan BESAR selisih, bukan waktu (spec-g:166:
+        "baris teratas adalah yang paling layak diselidiki").
+
+
+        ⛔ Tanpa bahasa menuduh. Jam yang meleset jauh lebih sering berarti
+        baterai RTC tablet habis daripada berarti seseorang memanipulasinya.
+
+
+        RBAC-nya sama dengan X1: `report_exception`, dan kasir tidak dapat
+        membukanya.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Daftar anomali, terurut dari selisih terbesar.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, ambangDetik, anomali]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  ambangDetik:
+                    type: integer
+                    description: >-
+                      spec-f:354 -- selisih di atas ini yang dicatat. Ikut di
+                      respons supaya layar tidak menyalinnya.
+                  anomali:
+                    type: array
+                    items:
+                      type: object
+                      required: [auditId, occurredAt, deviceId, aktorId, skewDetik]
+                      properties:
+                        auditId: { type: string }
+                        occurredAt: { type: string }
+                        deviceId: { type: string }
+                        deviceCode: { type: string, nullable: true }
+                        outletId: { type: string, nullable: true }
+                        aktorId: { type: string }
+                        aktorNama: { type: string }
+                        skewDetik:
+                          type: integer
+                          description: Positif = jam perangkat MAJU terhadap server.
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /reports/exceptions/voids:
     get:
       operationId: getVoidExceptionReport

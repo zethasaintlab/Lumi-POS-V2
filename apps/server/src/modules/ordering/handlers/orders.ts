@@ -18,7 +18,7 @@ import { recordStockMovements, detectOversell } from '../../inventory/index.ts';
 import { getVariationSnapshot, resolvePrice, wasPriceEverEffective } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
 import { assertShiftOpen } from '../../cash/index.ts';
-import { recordAuditEvent } from '../../audit/index.ts';
+import { catatDriftJam, recordAuditEvent } from '../../audit/index.ts';
 import { fetchEffectiveTaxRates } from '../../payment/index.ts';
 import { formatScaledRate } from '../../../../../../packages/domain/src/numeric.ts';
 import {
@@ -1049,6 +1049,25 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
         const written = await insertOrderTree(
           client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown, variance, orderDiscount
         );
+
+        // ⛔ FR-F8 — jam perangkat dibandingkan dengan jam server SAAT
+        // TERSINKRON. Ia dipanggil SESUDAH ordernya ditulis, dan itu bukan
+        // urutan sembarang: deteksi jam tidak boleh berada di antara
+        // pemeriksaan dan penulisan penjualan, tempat kegagalannya dapat
+        // menahan uang yang sudah diterima merchant.
+        //
+        // ⛔ Yang dibandingkan `X-Device-Time` (jam perangkat SEKARANG), bukan
+        // `occurredAt`. Order yang antre offline berjam-jam memang lebih tua
+        // daripada `recorded_at`, dan `spec-f:346` menyebut itu WAJAR.
+        await catatDriftJam(client, {
+          tenantId,
+          outletId: body.outletId,
+          deviceId: body.deviceId,
+          actorUserId: actorId,
+          headerJam: req.headers['x-device-time'],
+          hlc: hlcValue,
+          idBaru: randomUUID,
+        });
 
         // ⛔ FR-B8 AC kedua: `audit_event` menyimpan DUA identitas terpisah.
         //

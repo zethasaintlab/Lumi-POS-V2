@@ -1,4 +1,11 @@
 import type { PoolClient } from '../../db.ts';
+import {
+  AMBANG_SKEW_DETIK,
+  hitungSkew,
+  layakDicatat,
+  uraikanJamPerangkat,
+  type Skew,
+} from '../../../../../packages/domain/src/jam-perangkat.ts';
 import { HttpError } from '../../http-error.ts';
 
 /**
@@ -98,4 +105,91 @@ export async function recordAuditEvent(client: PoolClient, event: AuditEventInpu
       event.hlc.toString(),
     ]
   );
+}
+
+/**
+ * FR-F8 — mencatat jam perangkat yang menyimpang. `spec-f:354`.
+ *
+ * *"Saat perangkat tersinkron, sistem membandingkan jam perangkat dengan jam
+ * server. Selisih > 5 menit menghasilkan `audit_event` type
+ * `clock_drift_detected`."*
+ *
+ * ## ⛔ Ia TIDAK PERNAH menolak apa pun
+ *
+ * Jam yang meleset bukan alasan menolak penjualan — uangnya sudah diterima
+ * merchant, dan menolaknya berarti kehilangan penjualan karena baterai jam
+ * sebuah tablet habis. Aturan yang sama dengan selisih hitungan
+ * (`spec-h:95`): ditandai, tidak ditolak.
+ *
+ * ## ⛔ Ia juga tidak pernah MELEMPAR
+ *
+ * Pemanggilnya jalur penjualan. Deteksi fraud yang menjatuhkan penulisan
+ * penjualan adalah pertukaran yang tidak pernah benar — dan kegagalan
+ * menulisnya sudah cukup terlihat lewat ketiadaan barisnya.
+ *
+ * `null` bila header tidak ada, jamnya wajar, atau baru saja dicatat.
+ */
+export async function catatDriftJam(
+  client: PoolClient,
+  opsi: {
+    tenantId: string;
+    outletId: string | null;
+    deviceId: string;
+    actorUserId: string;
+    /** Isi header `X-Device-Time`, apa adanya. */
+    headerJam: unknown;
+    hlc: bigint;
+    idBaru: () => string;
+  }
+): Promise<Skew | null> {
+  const perangkatMs = uraikanJamPerangkat(opsi.headerJam);
+  if (perangkatMs === null) return null;
+
+  try {
+    // ⛔ Jam SERVER dibaca dari DATABASE, bukan `Date.now()` di Node. Dua
+    // mesin yang jamnya berselisih beberapa detik akan menandai armada yang
+    // sehat; aturan yang sama dengan resolusi harga (`CLAUDE.md`).
+    const { rows: jam } = await client.query<{ ms: string }>(
+      `SELECT (EXTRACT(epoch FROM now()) * 1000)::bigint AS ms`
+    );
+    const serverMs = Number(jam[0].ms);
+    const skew = hitungSkew(perangkatMs, serverMs);
+    if (!skew.menyimpang) return null;
+
+    // ⛔ Dibatasi satu per perangkat per jam, dan batasnya diturunkan dari
+    // `audit_event` yang sudah ada — bukan dari kolom hitungan di `device`.
+    // Pola yang sama dengan ambang no-sale: kolom hitungan adalah angka kedua
+    // yang harus dijaga sepakat dengan jejaknya.
+    const { rows: terakhir } = await client.query<{ ms: string }>(
+      `SELECT (EXTRACT(epoch FROM max(occurred_at)) * 1000)::bigint AS ms
+         FROM audit_event
+        WHERE event_type = 'clock_drift_detected' AND device_id = $1`,
+      [opsi.deviceId]
+    );
+    const terakhirMs = terakhir[0]?.ms == null ? null : Number(terakhir[0].ms);
+    if (!layakDicatat(terakhirMs, serverMs)) return skew;
+
+    await recordAuditEvent(client, {
+      id: opsi.idBaru(),
+      tenantId: opsi.tenantId,
+      outletId: opsi.outletId,
+      deviceId: opsi.deviceId,
+      actorUserId: opsi.actorUserId,
+      approverUserId: null,
+      eventType: 'clock_drift_detected',
+      entityType: 'device',
+      entityId: opsi.deviceId,
+      reasonCode: null,
+      reasonNote: null,
+      // ⛔ Angkanya masuk `after`, bukan ke pesan teks. Laporan X8 membacanya
+      // untuk mengurutkan; kalimat harus diurai ulang oleh siapa pun yang
+      // ingin membandingkan dua perangkat.
+      after: { skewDetik: skew.detik, ambangDetik: AMBANG_SKEW_DETIK },
+      hlc: opsi.hlc,
+    });
+    return skew;
+  } catch {
+    // Lihat catatan kepala: jalur penjualan tidak boleh jatuh karena deteksi.
+    return null;
+  }
 }

@@ -247,7 +247,7 @@ Sengaja belum digarap: FR-A8 (import katalog, P1). **FR-A5 ditutup bersama B-09*
 - ⛔ **`order_line.modifier_snapshot` lokal kini `[{nama, qtyMilli}]`, dan parsernya menerima KEDUA bentuk.** Baris lama ada di perangkat merchant dan tidak dapat ditulis ulang — `order_line` tidak pernah di-`UPDATE` (invariant #2). ⛔ Bentuk ini masih **berbeda** dari snapshot server (`[{id, modifierId, name, price, quantityMilli}]`); tidak berbahaya hari ini karena `order_line` tidak ada di sync rules jalur turun, dan menjadi berbahaya pada hari ia masuk.
 - **Server TIDAK menegakkan aturan ini.** `POST /orders` menerima modifier apa adanya; menegakkannya di sana menuntut server membaca `modifier_list` pada setiap penjualan, dan aturannya dapat berubah setelah order antre offline berjam-jam. Batas yang dinyatakan.
 
-Sisa Modul B, belum digarap: FR-B11 (cetak ulang struk, P1, butuh printer F4). **FR-B8/B9 ditutup 22 Agustus 2026** — server + domain lebih dulu, lalu layar kasir; keputusannya di § diskon di bawah.
+Sisa Modul B: tidak ada yang belum digarap. **FR-B11 ditutup** bersama antrean `print_job` (tombol cetak ulang di K-09). **FR-B8/B9 ditutup 22 Agustus 2026** — server + domain lebih dulu, lalu layar kasir; keputusannya di § diskon di bawah.
 
 **Keputusan yang mengikat kode diskon (FR-B8/B9):**
 

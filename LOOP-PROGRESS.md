@@ -54,6 +54,8 @@ lalu yang menutup utang yang sudah punya kode setengah jalan, lalu P1.
 | 22 | Pembayaran campuran di perangkat | FR-C1, P0 | selesai |
 | 23 | FR-H4 — blokir operasi destruktif | `spec-h:270`, P0 | selesai |
 | 24 | Feature flag & kill switch | `ARCH:358` | selesai |
+| 25 | FR-F8 deteksi manipulasi jam + laporan X8 | `spec-f:337`, P0 | selesai |
+| 26 | FR-G5 X2–X7 — enam laporan exception sisanya | `spec-g:149`, P1 | berikutnya |
 
 Yang **tidak** masuk backlog dan alasannya:
 
@@ -1800,3 +1802,83 @@ merah, termasuk "penyimpangan merchant LAIN tidak pernah ikut".
 **Batas yang dinyatakan:** kill switch tidak dapat mendahului perangkat yang
 **belum pernah** terhubung sama sekali — perangkat itu memakai bawaan kode,
 yaitu menyala. Tercatat di runbook §13.5.
+
+---
+
+### Task 25 — FR-F8: deteksi manipulasi jam + laporan X8
+
+**Audit status yang mendahului task ini.** Saya menghitung 74 FR dari
+`product/specs/*.md` lalu meng-grep repo untuk masing-masing. Hasilnya
+menemukan tiga hal:
+
+- `CLAUDE.md` **basi** untuk FR-A8 (impor katalog — sudah ada domain, endpoint,
+  DAN layar B-11) dan FR-B11 (cetak ulang — sudah ada di K-09). Keduanya
+  ditandai "belum digarap"; keduanya sudah selesai. Diperbaiki.
+- **FR-F8 [P0] benar-benar kosong**: nol kemunculan `clock_drift_detected` di
+  seluruh repo. Yang ada hanya `onSkew` telemetri, yang mengukur selisih di
+  KLIEN dan tidak menghasilkan audit event apa pun.
+- **Tujuh dari delapan laporan exception FR-G5 belum ada** — hanya X1 yang
+  dibangun. X8 adalah pasangan pembaca FR-F8, jadi keduanya dikerjakan
+  bersama.
+
+**Keputusan yang diambil:**
+
+- ⛔ **Yang dibandingkan JAM SEKARANG, bukan `occurred_at`.** `spec-f:346`
+  menyatakannya langsung: transaksi ber-`occurred_at` 1,5 jam lebih tua adalah
+  durasi offline yang WAJAR, dan seluruh produk ini dibangun supaya durasi itu
+  ada. Deteksi yang membandingkan `occurred_at` dengan `recorded_at` menandai
+  setiap penjualan offline — yaitu justru penjualan yang paling penting. Yang
+  tidak dapat dijelaskan apa pun adalah dua jam yang sama-sama mengaku
+  "sekarang" tapi berbeda.
+- ⛔ **Header `X-Device-Time` dikirim `buatPengirimHttp`, dan jamnya
+  DI-INJECT.** Deteksi manipulasi jam yang jamnya tidak dapat dipalsukan test
+  tidak dapat diuji sama sekali.
+- ⛔ **Header yang HILANG bukan anomali**, dan header yang CACAT juga bukan —
+  dua keputusan yang berbeda. Klien versi N-1 tidak mengirimnya (`ARCH`:
+  versi lama hidup minimal 12 bulan), dan menandai seluruh armada lama membuat
+  laporannya tidak dapat dibaca siapa pun. Bentuk yang tidak dapat diurai
+  tidak memberi tahu apa pun tentang jamnya; menandainya berarti melaporkan
+  tebakan.
+- ⛔ **Jam server dibaca dari DATABASE.** Dua mesin yang jamnya berselisih
+  beberapa detik akan menandai armada yang sehat — aturan yang sama dengan
+  resolusi harga.
+- ⛔ **Penjualan TIDAK PERNAH ditolak karena jam.** Uangnya sudah diterima
+  merchant; menolaknya berarti kehilangan penjualan karena baterai RTC sebuah
+  tablet habis. Aturan yang sama dengan selisih hitungan (`spec-h:95`).
+  `catatDriftJam` juga tidak pernah melempar — pemanggilnya jalur penjualan.
+- ⛔ **Dibatasi satu per perangkat per jam, diturunkan dari `audit_event`.**
+  Perangkat yang meleset 10 menit mengirim puluhan permintaan sehari; satu
+  event per permintaan mengubur seluruh audit trail di bawah satu tablet yang
+  salah setel — audit yang tidak dapat dibaca adalah audit yang tidak ada.
+  Batasnya dari jejaknya sendiri, bukan kolom hitungan (pola ambang no-sale).
+- ⛔ **Arahnya DUA.** Jam yang maju sama berbahayanya dengan yang mundur:
+  yang satu mendarat di shift berikutnya, yang lain di shift sebelumnya.
+  Tandanya dipertahankan di `after.skewDetik`.
+- ⛔ **X8 membaca `clock_drift_detected`, bukan selisih `occurred_at` vs
+  `recorded_at`** — alasan yang sama dengan poin pertama. `spec-g:164` menulis
+  "di luar durasi offline yang wajar", dan kalimat terakhir itu yang
+  menentukan.
+- ⛔ **X8 diurutkan berdasarkan BESAR selisih, bukan waktu** (`spec-g:166`).
+  Urutan kronologis membuat yang paling layak diselidiki tenggelam di antara
+  yang meleset dua menit.
+- **Angkanya masuk `after`, bukan ke pesan teks.** Kalimat harus diurai ulang
+  oleh siapa pun yang ingin membandingkan dua perangkat.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 426 ·
+`test:ordering` 184 · `test:kasir` 418 · `test:server` 295 ·
+`test:identity` 142 · `test:payment` 132 · `test:catalog` 177 ·
+`test:isolation` 211 · `test:backoffice` 370 · `test:sync-client` 102 ·
+`test:dst` 14 · `test:sqlite-local` · `test:runtime` ·
+`test:oxlint-ds-adherence` · build kasir.
+
+**Sabotase:** `X-Device-Time` tidak dikirim → 4 merah; pembatasan satu per jam
+dilepas → 1 merah.
+
+**Batas yang dinyatakan:** deteksi hanya berjalan di jalur `POST /orders` —
+jalur relay yang selalu membawa perangkat DAN aktor. `audit_event.actor_user_id`
+adalah `NOT NULL` dengan FK ke `"user"`, jadi jalur berkredensial perangkat
+(telemetri, token, fitur) tidak dapat menulis peristiwa ini tanpa mengubah
+skema. Perangkat yang jamnya salah tapi tidak pernah menjual tidak tertangkap;
+perangkat yang menjual selalu tertangkap, dan itu yang laporannya cari.
+
+**Sisa FR-G5:** X2–X7 belum dibangun (X1 dan X8 selesai).

@@ -5,7 +5,8 @@ import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import { assertUserVisible, assertBoleh } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { assertRentang } from './rentang.ts';
-import { ambilPeristiwaException, ringkasPerAktor } from './exceptions-data.ts';
+import { AMBANG_SKEW_DETIK } from '../../../../../../packages/domain/src/jam-perangkat.ts';
+import { ambilAnomaliWaktu, ambilPeristiwaException, ringkasPerAktor } from './exceptions-data.ts';
 
 /**
  * `GET /reports/exceptions/voids` — FR-G5 X1: void & refund per pelaku.
@@ -54,6 +55,29 @@ export function createExceptionReportHandlers(pool: Pool): Record<string, unknow
 
         const peristiwa = await ambilPeristiwaException(client, { from, to, outletId });
         return { from, to, outletId, perAktor: ringkasPerAktor(peristiwa), peristiwa };
+      });
+    },
+
+    /**
+     * `GET /reports/exceptions/clock` — FR-G5 X8: anomali waktu.
+     *
+     * Pasangan pembaca dari FR-F8: yang mencatat adalah jalur penjualan, yang
+     * membaca adalah ini. Penjaga RBAC-nya sama dengan X1 — daftar perangkat
+     * yang jamnya salah adalah informasi pengawasan, bukan angka omzet.
+     */
+    async getClockExceptionReport(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = req.query as { from?: string; to?: string; outlet_id?: string };
+      const { from, to, outletId } = assertRentang(q);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'report_exception', 'melihat laporan exception');
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+
+        const anomali = await ambilAnomaliWaktu(client, { from, to, outletId });
+        return { from, to, outletId, ambangDetik: AMBANG_SKEW_DETIK, anomali };
       });
     },
   };
