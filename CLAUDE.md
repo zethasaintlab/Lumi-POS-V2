@@ -585,6 +585,22 @@ Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_
 
 ---
 
+### B-22 Audit & Aktivitas, dan kosakata `audit_event` (23 Agustus 2026)
+
+⛔ **`audit_event.event_type` kini daftar TERTUTUP** (`packages/domain/src/audit-peristiwa.ts`), dan `recordAuditEvent` menerima `PeristiwaAudit`, bukan `string`. Sampai sekarang delapan belas nama tersebar di dua belas berkas tanpa satu pun terdaftar di mana pun. Ejaan yang menyimpang **tidak menghasilkan error** — ia menghasilkan baris audit yang tidak pernah cocok dengan saringan mana pun, dan laporan yang melewatkannya terlihat persis seperti laporan yang tidak menemukan apa pun. Bentuk cacat yang sama persis dengan `stock_movement.type`.
+
+⛔ **Audit trail BERLUBANG terhadap `spec-f:288`, dan lubangnya adalah DATA.** Dari 35 nama di tabel spec, 24 belum dipancarkan sama sekali — termasuk `shift_opened` (setiap shift dibuka, tidak satu pun tercatat), `price_changed`, `stock_adjusted`, `tax_rate_changed`, `device_revoked`, `data_exported`. `PERISTIWA_BELUM_DIPANCARKAN` diturunkan dari selisih kedua daftar, ikut di respons `GET /audit-events`, dan **disebutkan di layar**: trail berlubang yang terlihat lengkap lebih berbahaya daripada trail yang tidak ada. Daftarnya menyusut sendiri saat peristiwanya mulai ditulis. FR-F6 **belum tertutup**.
+
+- ⛔ **Ejaan KODE yang dibekukan, bukan ejaan spec.** `spec-f:292` menulis `order_voided`, kode menulis `order.voided`; keduanya sudah ada di database merchant dan `audit_event` tidak pernah di-`UPDATE` (invariant #2). Menyeragamkan berarti dua ejaan untuk satu peristiwa selamanya. `PETA_EJAAN_SPEC` menyatakan padanannya.
+- ⛔ **Paginasi keyset dengan perbandingan BARIS `(occurred_at, id)`.** Lima baris audit pada detik yang sama persis adalah keadaan normal — satu penjualan menulis beberapa dalam satu transaksi; kursor yang hanya membandingkan waktu melewati empat di antaranya. Testnya membuktikan bahwa **menyusuri seluruh halaman mengembalikan setiap baris tepat satu kali**, bukan sekadar bahwa halaman kedua ada.
+- ⛔ **Jenis peristiwa asing ditolak 400, bukan dijawab nol baris.** Nol baris terlihat persis seperti "tidak ada yang melakukannya".
+- ⛔ **`before`/`after` tidak dikembalikan** — muatan bebas yang pada `item_updated` akan memuat `cost` (FR-F5). Himpunan peran `report_exception` kebetulan sama persis dengan `view_margin` hari ini; kebetulan bukan penjaga.
+- ⛔ **Saringan yang aktif ikut di respons DAN disebutkan di atas tabel.** Daftar audit yang tidak menyebut apa yang disaring terbaca seperti daftar lengkap.
+- ⛔ **RBAC `report_exception`, `[ASUMSI]` yang dinyatakan.** Matriks `spec-f:38-53` tidak punya baris untuk audit trail; himpunan peran operasi itu sama dengan minimum `IA:201`, dan isi trail adalah superset dari X1 yang matriks sudah berikan kepada keempatnya. Operasi baru `audit_view` sengaja tidak dibuat — matriks yang mengandung baris karangan berhenti dapat dibaca berdampingan dengan spec-nya.
+- ⛔ **`RentangTanggal` punya prop `sumbu`.** Ia menyatakan "tanggal bisnis" di setiap layar yang memakainya; benar sepuluh kali dan salah sekali — B-22 menyaring `occurred_at`, karena sebagian besar peristiwa audit tidak menempel pada order mana pun.
+
+---
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---

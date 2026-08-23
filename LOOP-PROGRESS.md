@@ -2058,3 +2058,102 @@ dibangun satu layar dengan penyeleksi tab.
 **Sabotase:** penanganan bentuk bersarang dilepas dari `barisLaporan` → 1 merah
 (X3 terbaca kosong); kalimat sinkronisasi dilepas dari `pesanLaporan` → 2 merah
 (termasuk penjaga X1 yang sudah ada sejak Task 26).
+
+---
+
+## Task 28 — B-22 Audit & Aktivitas, dan kosakata audit yang tidak pernah ada
+
+**Status: selesai.**
+
+`IA:201` mendaftarkan B-22 sejak awal dan `navigasi.ts` sudah punya entrinya;
+yang tidak ada adalah endpoint, layar, dan — yang ternyata paling menentukan —
+**daftar tertutup untuk `audit_event.event_type`**.
+
+### ⛔ Temuan: `recordAuditEvent` menerima `eventType: string`
+
+Delapan belas nama peristiwa tersebar di dua belas berkas, tidak satu pun
+terdaftar di mana pun, dan tidak ada apa pun yang menahan yang kesembilan belas
+dieja berbeda. Ejaan yang menyimpang **tidak menghasilkan error**: ia
+menghasilkan baris audit yang tidak pernah cocok dengan saringan mana pun, dan
+laporan yang melewatkannya terlihat persis seperti laporan yang tidak menemukan
+apa pun. Bentuk cacat yang sama persis dengan `stock_movement.type` yang
+`CLAUDE.md` sudah catat.
+
+Ditutup dengan `packages/domain/src/audit-peristiwa.ts` + `eventType:
+PeristiwaAudit`. Sabotase: satu nama diubah menjadi `shift_ditutup` → typecheck
+merah, dengan seluruh daftar yang sah tercetak di pesannya.
+
+### ⛔ Temuan kedua: audit trail BERLUBANG terhadap `spec-f:288`
+
+FR-F6 AC pertama menuntut *"setiap event dalam daftar menghasilkan record"*.
+Dari 35 nama di tabel spec, **24 belum dipancarkan sama sekali** — termasuk
+`shift_opened` (setiap shift dibuka, tidak satu pun tercatat), `price_changed`,
+`stock_adjusted`, `tax_rate_changed`, `device_revoked`, dan `data_exported`.
+
+Yang dibangun bukan penambalannya (itu Task berikutnya) melainkan **cara
+melihatnya**: `PERISTIWA_BELUM_DIPANCARKAN` diturunkan dari selisih daftar spec
+dan daftar kode — bukan ditulis tangan — ikut di respons endpoint, dan
+**disebutkan di layar**. Trail berlubang yang terlihat lengkap adalah bentuk
+paling berbahaya dari trail yang tidak lengkap: manajer yang tidak menemukan
+perubahan harga di sini akan menyimpulkan tidak ada yang mengubah harga.
+Daftarnya menyusut sendiri saat peristiwanya mulai ditulis.
+
+### Keputusan lain
+
+- ⛔ **Ejaan KODE yang dibekukan, bukan ejaan spec.** `spec-f:292` menulis
+  `order_voided`; kode menulis `order.voided`. Keduanya sudah ada di database
+  merchant dan `audit_event` tidak pernah di-`UPDATE` (invariant #2) — baris
+  lama tidak dapat ditulis ulang. Menyeragamkan berarti dua ejaan untuk satu
+  peristiwa, selamanya. `PETA_EJAAN_SPEC` menyatakan padanannya supaya daftar
+  spec tetap dapat dibandingkan.
+- ⛔ **Paginasi KEYSET, dengan perbandingan BARIS `(occurred_at, id)`.** Lima
+  peristiwa pada detik yang sama persis adalah keadaan normal — satu penjualan
+  menulis beberapa baris audit dalam satu transaksi. Kursor yang hanya
+  membandingkan waktu melewati empat di antaranya. Testnya tidak memeriksa
+  "halaman kedua ada" melainkan bahwa **menyusuri seluruh halaman mengembalikan
+  setiap baris tepat satu kali**. Sabotase: keyset diganti perbandingan waktu
+  saja → 2 merah.
+- ⛔ **Server mengambil SATU baris lebih banyak daripada yang diminta.** Itu
+  yang membedakan "halaman penuh kebetulan" dari "masih ada lagi"; kursor yang
+  selalu ada membuat layar menampilkan tombol yang membuka halaman kosong.
+- ⛔ **Jenis peristiwa ASING ditolak 400, bukan dijawab nol baris.** Nol baris
+  terlihat persis seperti "tidak ada yang melakukannya", dan salah ketik pada
+  saringan audit adalah cara paling mudah menyimpulkan hal yang salah tentang
+  seseorang. `order_voided` (ejaan spec) karena itu ditolak dengan daftar ejaan
+  yang benar di pesannya.
+- ⛔ **`before`/`after` TIDAK dikembalikan.** Keduanya muatan bebas yang pada
+  `item_updated` akan memuat `cost`; FR-F5 melarang HPP sampai ke mata yang
+  tidak berhak. Bahwa himpunan peran `report_exception` kebetulan sama persis
+  dengan `view_margin` hari ini bukan penjaga.
+- ⛔ **Setiap saringan yang dipakai ikut dikembalikan DAN disebutkan di atas
+  tabel.** Daftar audit yang tidak menyebut apa yang disaring terbaca seperti
+  daftar lengkap, dan kesimpulan yang ditarik darinya menyangkut orang.
+- ⛔ **RBAC `report_exception`, `[ASUMSI]` yang dinyatakan.** Matriks
+  `spec-f:38-53` tidak punya baris untuk audit trail, dan `navigasi.ts`
+  mencatat itu apa adanya. Himpunan peran `report_exception` sama persis dengan
+  minimum `IA:201`, dan isi trail adalah **superset** dari X1 yang matriks
+  sudah berikan kepada keempat peran itu — menolak trail sambil memberikan X1
+  tidak melindungi apa pun. Operasi baru `audit_view` sengaja tidak dibuat:
+  matriks yang mengandung baris karangan berhenti dapat dibaca berdampingan
+  dengan spec-nya.
+- ⛔ **`RentangTanggal` mendapat prop `sumbu`.** Ia menyatakan "tanggal bisnis"
+  pada setiap layar yang memakainya; benar sepuluh kali dan **salah sekali** —
+  B-22 menyaring `occurred_at`, karena sebagian besar peristiwa audit tidak
+  menempel pada order mana pun. Yang sekali itu ada di layar yang dibaca saat
+  sengketa.
+- ⛔ **Kursor adalah state tersendiri, bukan dibaca ulang dari hasil halaman
+  pertama.** Hasil pertama tidak berubah saat halaman lanjutan datang;
+  menurunkan kursor darinya berarti tombol "Muat lebih banyak" meminta halaman
+  kedua selamanya — dan kegagalannya menggandakan baris, bukan melempar error.
+- **Penjaga navigasi diubah dari daftar id menjadi MEKANISME.** Test lama
+  berbunyi "akuntan melihat B-21 tapi TIDAK B-22" dan benar untuk keadaan saat
+  itu. Sekarang yang dijaga: setiap item di luar grup Akuntan yang terlihat
+  olehnya harus punya operasi yang matriks benar-benar berikan — daftar id akan
+  berubah lagi, mekanismenya tidak boleh.
+
+**Verifikasi:** `typecheck` · `lint:ds` · build back-office · `test:domain` 445
+· `test:server` 327 · `test:backoffice` 403 · `test:ordering` 184 ·
+`test:kasir` 418 · `test:schema` 14 · `test:sync-client` 102 · `test:dst` 14 ·
+`test:sqlite-local` 8 · `test:runtime` 3 · `test:oxlint-ds-adherence` 12 ·
+`test:isolation` · `test:catalog` · `test:payment` · `test:identity` ·
+`test:tenancy`.

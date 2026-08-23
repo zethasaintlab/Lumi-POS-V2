@@ -118,7 +118,19 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
         aksesMinimum: 'outlet_manager',
         operasi: 'report_exception',
       },
-      { id: 'B-22', label: 'Audit & Aktivitas', icon: 'book', aksesMinimum: 'outlet_manager' },
+      {
+        id: 'B-22',
+        label: 'Audit & Aktivitas',
+        icon: 'book',
+        aksesMinimum: 'outlet_manager',
+        // ⛔ `report_exception`, dan itu `[ASUMSI]` yang dinyatakan — lihat
+        // `reporting/index.ts`. Matriks `spec-f:38-53` tidak punya baris untuk
+        // audit trail; himpunan peran operasi ini sama persis dengan minimum
+        // `IA:201`, dan isi audit trail adalah SUPERSET dari X1 yang matriks
+        // sudah berikan kepada keempat peran itu. Menolak trail sambil
+        // memberikan X1 tidak melindungi apa pun.
+        operasi: 'report_exception',
+      },
     ],
   },
   {
@@ -163,6 +175,7 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-19',
   'B-20',
   'B-21',
+  'B-22',
   'B-23',
   'B-25',
   'B-27',
@@ -232,9 +245,15 @@ export function hanyaAkuntan(peran: readonly string[]): boolean {
  * dibuang — judul grup tanpa satu pun menu di bawahnya terbaca seperti menu
  * yang gagal dimuat.
  *
- * Penambahannya per ITEM, bukan per grup. Membuka grup Pengawasan borongan
- * akan menyeret B-22 (Audit & Aktivitas) ikut — layar yang tidak punya operasi
- * di matriks dan yang tidak seorang pun putuskan untuk Akuntan.
+ * Penambahannya per ITEM, bukan per grup — dan itu tetap benar meski kini
+ * kedua item Pengawasan menuntut operasi yang sama. Grup berikutnya yang lahir
+ * di luar `GRUP_AKUNTAN` akan punya item tanpa operasi, dan membukanya
+ * borongan berarti memberi Akuntan layar yang tidak seorang pun putuskan
+ * untuknya.
+ *
+ * ⛔ B-22 mendapat `report_exception` sejak 23 Agustus 2026, dan itu `[ASUMSI]`
+ * yang dinyatakan: matriks `spec-f` tidak punya baris untuk audit trail. Lihat
+ * catatan di entri navigasinya dan di `reporting/index.ts`.
  */
 export function navigasiUntuk(peran: readonly string[]): GrupNavigasi[] {
   const semua = NAVIGASI.map((g) => ({ ...g, items: [...g.items] }));

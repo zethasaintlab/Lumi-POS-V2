@@ -4360,6 +4360,166 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /audit-events:
+    get:
+      operationId: getAuditEvents
+      summary: >-
+        B-22 Audit & Aktivitas -- satu halaman audit trail, terbaru lebih
+        dulu. FR-F6, FR-F7.
+      description: >-
+        ⛔ Paginasi KEYSET, bukan offset. Perangkat yang antreannya terkuras
+        menyisipkan baris ber-`occurred_at` historis DI TENGAH urutan; offset
+        akan melewatkan atau menggandakan baris tepat saat antrean bergerak,
+        dan baris audit yang terlewat tidak meninggalkan lubang yang terlihat.
+        Kursornya pasangan `(occurred_at, id)` -- sama dengan primary key
+        tabel -- dan klien memperlakukannya sebagai nilai buram.
+
+
+        ⛔ Rentang memakai `occurred_at`, bukan `business_date` sebuah order.
+        Sebagian besar peristiwa di sini tidak menempel pada order mana pun,
+        dan yang menempel pun tidak boleh hilang dari trail karena ordernya
+        bertanggal bisnis lain.
+
+
+        ⛔ `before`/`after` TIDAK dikembalikan. Keduanya muatan bebas yang pada
+        `item_updated` akan memuat `cost`, dan FR-F5 melarang HPP sampai ke
+        mata yang tidak berhak. Detail perubahan punya layarnya sendiri (B-03
+        untuk transaksi, B-13 untuk stok) dengan batasnya masing-masing.
+
+
+        ⛔ Jenis peristiwa yang tidak dikenal DITOLAK, bukan dijawab nol baris.
+        Nol baris terlihat persis seperti "tidak ada yang melakukannya", dan
+        salah ketik pada saringan audit adalah cara paling mudah menyimpulkan
+        hal yang salah tentang seseorang.
+
+
+        ⛔ Setiap saringan yang dipakai ikut dikembalikan. Daftar audit yang
+        tidak menyebut apa yang sedang disaring terbaca seperti daftar lengkap.
+
+
+        RBAC `report_exception`. Matriks spec-f:38-53 tidak punya baris untuk
+        audit trail; himpunan peran `report_exception` (owner, manajer area,
+        manajer outlet, akuntan) sama persis dengan minimum IA:201, dan isi
+        trail adalah superset dari X1 yang matriks sudah berikan kepada
+        keempatnya. [ASUMSI] yang dinyatakan, bukan operasi karangan baru.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: event_type
+          in: query
+          required: false
+          description: Satu nilai dari daftar tertutup; yang asing ditolak 400.
+          schema: { type: string }
+        - name: actor_user_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: entity_id
+          in: query
+          required: false
+          description: Menelusuri satu objek -- mis. seluruh peristiwa satu order.
+          schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          description: Nilai buram dari `kursorBerikut` halaman sebelumnya.
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          description: Dijepit ke 200; bukan ditolak.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Satu halaman audit trail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, batas, peristiwa, belumDipancarkan]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  eventType: { type: string, nullable: true }
+                  actorUserId: { type: string, nullable: true }
+                  entityId: { type: string, nullable: true }
+                  batas: { type: integer }
+                  kursorBerikut:
+                    type: string
+                    nullable: true
+                    description: >-
+                      `null` berarti halaman terakhir. Server mengambil satu
+                      baris lebih banyak daripada yang diminta justru supaya
+                      halaman penuh yang kebetulan pas tidak menghasilkan
+                      tombol yang membuka halaman kosong.
+                  belumDipancarkan:
+                    type: array
+                    description: >-
+                      Peristiwa yang spec-f:288 sebut dan kode belum pancarkan,
+                      diturunkan di domain. FR-F6 AC pertama menuntut setiap
+                      event dalam daftar menghasilkan record; ini jarak yang
+                      tersisa ke sana. Layar menyebutkannya -- trail berlubang
+                      yang terlihat lengkap adalah bentuk paling berbahaya dari
+                      trail yang tidak lengkap.
+                    items: { type: string }
+                  peristiwa:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        [id, occurredAt, recordedAt, eventType, aktorId, aktorNama]
+                      properties:
+                        id: { type: string }
+                        occurredAt: { type: string }
+                        recordedAt: { type: string }
+                        eventType: { type: string }
+                        kelompok:
+                          type: string
+                          nullable: true
+                          description: >-
+                            Kelompok pada tabel spec-f:288. `null` untuk nama
+                            yang tidak lagi dipancarkan siapa pun -- baris lama
+                            tidak dapat ditulis ulang (invariant #2).
+                        entityType: { type: string, nullable: true }
+                        entityId: { type: string, nullable: true }
+                        aktorId: { type: string }
+                        aktorNama: { type: string }
+                        penyetujuId:
+                          type: string
+                          nullable: true
+                          description: >-
+                            FR-F7 -- identitas kedua. `null` bermakna: operasi
+                            ini memang tidak menuntut persetujuan.
+                        penyetujuNama: { type: string, nullable: true }
+                        outletId: { type: string, nullable: true }
+                        outletNama: { type: string, nullable: true }
+                        deviceId: { type: string, nullable: true }
+                        deviceKode: { type: string, nullable: true }
+                        reasonCode: { type: string, nullable: true }
+                        reasonNote: { type: string, nullable: true }
+        '400':
+          description: >-
+            Rentang, kursor, batas, atau jenis peristiwa tidak valid
+            (VALIDATION_ERROR / INVALID_CURSOR / UNKNOWN_EVENT_TYPE).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat audit trail (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /reports/exceptions/voids:
     get:
       operationId: getVoidExceptionReport

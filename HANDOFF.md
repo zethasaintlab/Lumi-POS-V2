@@ -1255,3 +1255,67 @@ laporan berikutnya ditambahkan, ia WAJIB punya `kosong.{judul,benda,simpul}` —
 tanpanya keadaan kosongnya berbunyi "Tidak ada  yang tercatat" dan kalimat
 sinkronisasinya kehilangan penutup. Ada test yang menuntutnya untuk setiap
 laporan ber-endpoint.
+
+---
+
+## B-22 Audit & Aktivitas, dan lubang FR-F6 (23 Agustus 2026)
+
+`GET /audit-events` + layar B-22. Rantainya: `audit_event` → `reporting/handlers/audit.ts`
+→ `apps/backoffice/src/pengawasan/{b22.ts,Audit.tsx}`.
+
+### ⛔ FR-F6 BELUM tertutup, dan jaraknya sekarang terukur
+
+AC pertamanya: *"Setiap event dalam daftar menghasilkan record."* Dari **35**
+nama di tabel `spec-f:288`, **24 belum dipancarkan sama sekali**:
+
+| Kelompok | Yang belum ada |
+|---|---|
+| Sesi | `login` · `logout` |
+| Shift | `shift_opened` · `shift_count_attempt` |
+| Kas | `cash_paid_in` · `cash_paid_out` · `cash_variance_approved` |
+| Katalog | `item_created` · `item_updated` · `item_archived` · `price_changed` |
+| Stok | `stock_adjusted` · `stocktake_completed` · `sold_out_toggled` |
+| Konfigurasi | `tax_rate_changed` · `threshold_changed` · `vertical_profile_changed` |
+| Identitas | `user_role_changed` |
+| Perangkat | `device_provisioned` · `device_revoked` · `peripheral_configured` |
+| Data | `data_exported` · `support_session_started` · `support_session_ended` |
+
+`shift_opened` yang paling menonjol: setiap shift dibuka, dan tidak satu pun
+tercatat. `apps/server/src/modules/cash/handlers/shifts.ts` tidak menyentuh
+`recordAuditEvent` sama sekali.
+
+**Jangan menandai FR-F6 selesai sampai daftar ini kosong.** Ia tidak perlu
+diingat: `PERISTIWA_BELUM_DIPANCARKAN` di `packages/domain/src/audit-peristiwa.ts`
+**diturunkan** dari selisih daftar spec dan daftar kode, ikut di respons
+endpoint, dan disebutkan di layar B-22. Menambah pemanggilan `recordAuditEvent`
+untuk salah satunya memangkasnya sendiri.
+
+### Apa yang mengikat kode
+
+- ⛔ **`recordAuditEvent` menerima `PeristiwaAudit`, bukan `string`.** Nama baru
+  wajib didaftarkan di domain lebih dulu; typecheck yang menahannya. Sabotase
+  membuktikannya: `'shift_closed'` diubah jadi `'shift_ditutup'` → typecheck
+  merah dengan seluruh daftar sah tercetak.
+- ⛔ **Ejaan kode dibekukan, ejaan spec dipetakan.** `order.voided` vs
+  `order_voided`. Baris lama ada di database merchant dan tidak dapat ditulis
+  ulang (invariant #2).
+- ⛔ **Keyset `(occurred_at, id)`, perbandingan baris utuh.** Beberapa baris
+  audit pada timestamp identik adalah keadaan normal.
+- ⛔ **Kelompok `tenant` adalah `[ASUMSI]`** — tabel `spec-f:288` tidak
+  punya kelompok untuk pendaftaran merchant, pembuatan outlet, dan perubahan
+  paket. Kelompoknya ditambahkan alih-alih peristiwanya diselundupkan ke
+  kelompok yang salah.
+- ⛔ **RBAC `report_exception` untuk B-22 adalah `[ASUMSI]`** yang mengubah
+  keputusan sebelumnya (`navigasi.ts` mencatat bahwa B-22 sengaja tidak punya
+  operasi). Alasannya di `reporting/index.ts`. Kalau merchant pertama
+  memutuskan lain, yang berubah satu baris di `navigasi.ts` dan satu
+  `assertBoleh`.
+
+### Batas yang dinyatakan
+
+| Batas | Keadaan |
+|---|---|
+| `before`/`after` | Tidak dikembalikan sama sekali (FR-F5). Detail perubahan punya layarnya sendiri — B-03 untuk transaksi, B-13 untuk stok |
+| Saringan pelaku | Endpoint menerima `actor_user_id`, layar belum menyediakan pemilihnya (butuh daftar pengguna) |
+| Ekspor | Tidak ada. `data_exported` sendiri belum dipancarkan |
+| Verifikasi browser | **Belum dijalankan** — layarnya ter-build, belum dibuka terhadap data sungguhan |

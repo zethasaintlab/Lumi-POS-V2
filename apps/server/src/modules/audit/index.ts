@@ -6,6 +6,7 @@ import {
   uraikanJamPerangkat,
   type Skew,
 } from '../../../../../packages/domain/src/jam-perangkat.ts';
+import type { PeristiwaAudit } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 import { HttpError } from '../../http-error.ts';
 
 /**
@@ -34,7 +35,17 @@ export interface AuditEventInput {
   actorUserId: string;
   /** `null` untuk operasi yang tidak butuh persetujuan (mis. void). */
   approverUserId: string | null;
-  eventType: string;
+  /**
+   * ⛔ Daftar TERTUTUP (`packages/domain/src/audit-peristiwa.ts`), bukan
+   * `string`.
+   *
+   * Sampai 23 Agustus 2026 ia `string`, dan delapan belas nama tersebar di dua
+   * belas berkas tanpa satu pun terdaftar. Ejaan yang menyimpang tidak
+   * menghasilkan error — ia menghasilkan baris audit yang tidak pernah cocok
+   * dengan saringan mana pun, dan laporan yang melewatkannya terlihat persis
+   * seperti laporan yang tidak menemukan apa pun.
+   */
+  eventType: PeristiwaAudit;
   entityType: string | null;
   entityId: string | null;
   reasonCode: string | null;

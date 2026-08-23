@@ -267,13 +267,31 @@ test('⛔ akuntan melihat grup Laporan DAN Pengawasan', async () => {
   assert.deepEqual(grup, ['Laporan', 'Pengawasan']);
 });
 
-test('⛔ akuntan melihat B-21 tapi TIDAK B-22', async () => {
-  // Pengawasan tidak dibuka sebagai grup utuh. B-22 (Audit & Aktivitas) tidak
-  // punya operasi di matriks, dan grup yang dibuka borongan akan menyeretnya
-  // ikut — memberi akuntan menu yang tidak seorang pun pernah putuskan.
-  const { navigasiUntuk } = await import(NAV);
-  const pengawasan = navigasiUntuk(['accountant']).find((g) => g.group === 'Pengawasan');
-  assert.deepEqual(pengawasan.items.map((i) => i.id), ['B-21']);
+test('⛔ akuntan melihat Pengawasan per ITEM, bukan grupnya dibuka borongan', async () => {
+  // Sampai 23 Agustus 2026 penjaga ini berbunyi "akuntan melihat B-21 tapi
+  // TIDAK B-22", dan itu benar untuk keadaan saat itu: B-22 belum punya operasi
+  // di matriks sama sekali. Sekarang ia punya (`report_exception`, `[ASUMSI]`
+  // yang dinyatakan di `reporting/index.ts` — isi audit trail adalah superset
+  // dari X1 yang matriks sudah berikan kepada keempat peran yang sama).
+  //
+  // Yang dijaga karena itu bukan lagi daftar id — daftar id akan berubah lagi —
+  // melainkan MEKANISMENYA: setiap item di luar grup Akuntan yang terlihat
+  // olehnya harus punya operasi yang matriks benar-benar berikan. Grup yang
+  // dibuka borongan akan meloloskan item tanpa operasi, dan itu memberi akuntan
+  // menu yang tidak seorang pun pernah putuskan.
+  const { navigasiUntuk, GRUP_AKUNTAN } = await import(NAV);
+  const { bolehkah } = await import('../../packages/domain/src/rbac.ts');
+
+  const luar = navigasiUntuk(['accountant']).filter((g) => !GRUP_AKUNTAN.has(g.group));
+  assert.ok(luar.length > 0, 'tidak ada grup di luar GRUP_AKUNTAN untuk diuji');
+  for (const grup of luar) {
+    for (const item of grup.items) {
+      assert.ok(
+        item.operasi !== undefined && bolehkah(['accountant'], item.operasi),
+        `${item.id} terlihat akuntan tanpa operasi yang matriks berikan`
+      );
+    }
+  }
 });
 
 test('⛔ akuntan tidak melihat Katalog, Pengguna, atau Pengaturan', async () => {

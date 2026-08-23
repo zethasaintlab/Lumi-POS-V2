@@ -18,6 +18,8 @@ import {
   ambilSelisihKasPerKasir,
   ambilVoidDekatTutup,
 } from './handlers/exception.ts';
+import { ambilAudit, bacaBatas, bacaJenis } from './handlers/audit.ts';
+import { PERISTIWA_BELUM_DIPANCARKAN } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 
 /**
  * Modul `reporting` — agregator baca-saja.
@@ -183,6 +185,83 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
     // disalin lima kali. Laporan keenam yang ditambahkan besok akan lupa
     // menyalinnya, dan yang lupa adalah yang membocorkan daftar itu ke kasir.
     ...exceptionHandlers(pool),
+
+    /**
+     * `GET /audit-events` — B-22 Audit & Aktivitas. FR-F6, FR-F7.
+     *
+     * ## ⛔ RBAC: `report_exception`, dan itu `[ASUMSI]` yang dinyatakan
+     *
+     * Matriks `spec-f:38-53` **tidak punya baris untuk audit trail**, dan
+     * `navigasi.ts` mencatat itu apa adanya: B-22 adalah "layar yang tidak
+     * punya operasi di matriks dan yang tidak seorang pun putuskan untuk
+     * Akuntan".
+     *
+     * Yang dipakai `report_exception`, dan alasannya bukan kenyamanan:
+     * himpunan perannya — owner, manajer area, manajer outlet, akuntan —
+     * sama persis dengan minimum `IA:201` (Manajer Outlet), dan isi audit
+     * trail adalah SUPERSET dari X1 yang matriks sudah berikan kepada keempat
+     * peran itu. Menolak trail sambil memberikan X1 tidak melindungi apa pun;
+     * ia hanya membuat pertanyaan yang sama dijawab dua kali dengan hasil
+     * berbeda.
+     *
+     * Operasi baru `audit_view` sengaja TIDAK dibuat: menambah baris ke
+     * matriks berarti mengarang kebijakan yang spec tidak nyatakan, dan
+     * matriks yang mengandung baris karangan berhenti dapat dibaca
+     * berdampingan dengan spec-nya.
+     */
+    async getAuditEvents(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = req.query as {
+        from?: string;
+        to?: string;
+        outlet_id?: string;
+        event_type?: string;
+        actor_user_id?: string;
+        entity_id?: string;
+        cursor?: string;
+        limit?: string;
+      };
+      const { from, to, outletId } = assertRentang(q);
+      const eventType = bacaJenis(q.event_type);
+      const batas = bacaBatas(q.limit);
+      const kosong = (v: string | undefined) => (v === undefined || v === '' ? null : v);
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'report_exception', 'melihat audit trail');
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+
+        const halaman = await ambilAudit(client, {
+          from,
+          to,
+          outletId,
+          eventType,
+          actorUserId: kosong(q.actor_user_id),
+          entityId: kosong(q.entity_id),
+          kursor: kosong(q.cursor),
+          batas,
+        });
+
+        // ⛔ Saringan yang dipakai ikut dikembalikan. Daftar audit yang tidak
+        // menyebut apa yang sedang disaring terbaca seperti daftar lengkap —
+        // dan kesimpulan yang ditarik darinya menyangkut orang.
+        return {
+          from,
+          to,
+          outletId,
+          eventType,
+          actorUserId: kosong(q.actor_user_id),
+          entityId: kosong(q.entity_id),
+          batas,
+          // Jarak yang tersisa ke FR-F6 AC pertama, diturunkan di domain.
+          // Layar menyebutkannya: trail berlubang yang terlihat lengkap adalah
+          // bentuk paling berbahaya dari trail yang tidak lengkap.
+          belumDipancarkan: PERISTIWA_BELUM_DIPANCARKAN,
+          ...halaman,
+        };
+      });
+    },
   };
 }
 
