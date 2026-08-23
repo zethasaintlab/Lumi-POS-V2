@@ -1160,3 +1160,39 @@ untuk selisih yang tidak pernah ada — dan tidak satu pun menghasilkan error.
 | Order `open` parsial di perangkat | Penjualan ditulis hanya saat LUNAS. Order `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21) |
 | Lebih dari satu bagian tunai | Uang tunai tidak punya identitas yang membedakan; dua baris membuat "berapa kembaliannya" punya lebih dari satu jawaban yang sama benarnya |
 | Verifikasi browser | **Belum dijalankan** untuk daftar bagian dan sisa tagihan |
+
+---
+
+## FR-H4 dan kill switch (23 Agustus 2026)
+
+### FR-H4 — blokir operasi destruktif
+
+Dari empat operasi `spec-h:274`, hanya **logout** yang benar-benar diblokir.
+Layar Perangkat menerima perubahan `tenantId`/`outletId`/`deviceId` tanpa
+memeriksa antrean sama sekali.
+
+⛔ **Yang TIDAK diblokir adalah bagian terpenting aturannya.** Alamat server
+dan kredensial perangkat tidak pernah diblokir — keduanya adalah jalan
+**memperbaiki** antrean yang macet, dan memblokirnya mengunci merchant di
+dalam keadaan itu selamanya. `deviceCode` juga lolos.
+
+**Pelajaran metodologis:** versi pertama menaruh blokirnya di dalam komponen
+React, dijaga penjaga yang memindai kode. Sabotase membuktikan penjaga itu
+**lolos** ketika pemanggilnya dihapus dan import-nya tertinggal. Pemeriksaan
+yang dapat dipalsukan oleh satu baris import bukan pemeriksaan — aturannya
+dipindah ke `perangkat/simpan-identitas.ts` supaya dapat dijalankan test, dan
+penjaganya diubah jadi "hanya ADA SATU penulis `device_config`".
+
+**Belum ada jalurnya:** `resync` dan `hapus_data` tidak punya tombol di mana
+pun. Aturannya sudah ada dan diuji; ada penjaga yang menandai bila keduanya
+mulai punya pemanggil. `uninstall` tidak dapat dicegah aplikasi mana pun
+(`spec-h:280`); mitigasinya — ekspor darurat — sudah ada di K-14.
+
+### Kill switch — batas yang dinyatakan
+
+| Batas | Keadaan |
+|---|---|
+| Perangkat yang **belum pernah** terhubung | Memakai bawaan kode, yaitu MENYALA. Kill switch tidak dapat mendahului perangkat yang tidak pernah menyegarkan. Runbook §13.5 |
+| Jeda sampai berlaku | Boot + tiap 15 menit. Bukan langsung, dan tidak ada jalur push |
+| Cakupan | Tiga fitur (`pembayaran_qris_statis`, `diskon_kasir`, `buka_laci_no_sale`). Menambah fitur keempat menuntut baris di `packages/domain/src/fitur.ts` dan pembacaannya di layar yang bersangkutan |
+| Verifikasi browser | **Belum dijalankan** untuk tombol yang hilang saat fitur dimatikan |

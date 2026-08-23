@@ -545,6 +545,22 @@ Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_
 
 ---
 
+### F6 — feature flag & kill switch, keputusan yang mengikat kode
+
+`ARCH:358`: *"Kill switch: per fitur per merchant, dari server tanpa rilis — kebutuhan operasional, bukan kemewahan."* Rantainya: `tools/kill-switch.mjs` → `feature_flag` (migrasi `0032`) → `GET /devices/{id}/features` → `fitur_lokal` → layar kasir.
+
+- ⛔ **Tabel menyimpan PENYIMPANGAN saja.** Bawaan tiap fitur hidup di `packages/domain/src/fitur.ts`, bukan sebagai `DEFAULT` kolom — pola yang sama dengan ambang diskon dan jendela update. Tabelnya akan tetap hampir kosong, dan itu benar.
+- ⛔ **`tenant_id IS NULL` = penyimpangan GLOBAL, dan baris tenant MENANG atasnya.** "Matikan untuk semua kecuali yang sudah kami periksa" adalah bentuk pemulihan insiden yang paling sering dipakai.
+- ⛔ **DUA index unik parsial, bukan satu.** NULL tidak sama dengan NULL di index unik PostgreSQL, jadi `UNIQUE (key, tenant_id)` tunggal mengizinkan dua baris global untuk fitur yang sama.
+- ⛔ **Kunci ASING dibaca MATI**, di server dan di klien. Baris yang tertinggal untuk fitur yang sudah dihapus dari kode tidak boleh menyalakan apa pun.
+- ⛔ **Tabelnya dikecualikan RLS**, sejajar `app_release`: alat operator memakai `DATABASE_MIGRATION_URL`, dan `FORCE ROW LEVEL SECURITY` berlaku untuk owner juga. Konsekuensinya dijaga dua penjaga — hanya SATU query di server yang menyentuhnya, dan query itu menyaring tenant.
+- ⛔ **Respons berisi BOOLEAN per fitur, bukan barisnya.** Mengirim barisnya berarti mengirim `tenant_id` merchant lain; `reason` sebuah kill switch biasanya menyebut dugaan fraud.
+- ⛔ **`fitur_lokal` murni lokal, SENGAJA bukan raw table.** Raw table mengubah sidik jari skema lokal dan menuntut `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant — untuk tiga boolean.
+- ⛔ **Dua fallback yang arahnya BERLAWANAN.** Fitur tanpa baris mengikuti bawaan kode (menyala) supaya perangkat baru tetap dapat berjualan; fitur yang punya baris bertahan **tanpa kedaluwarsa** supaya kill switch tetap berlaku pada perangkat yang mencabut internetnya. Kegagalan menyegarkan mempertahankan keadaan lama — respons yang tidak sampai bukan "tidak ada flag".
+- ⛔ **Tidak ada flag yang menyentuh AUDIT** (`spec-f:369`) maupun yang dapat **menghentikan penjualan**. Keduanya dijaga test atas daftar tertutup, karena kunci berikutnya akan ditambahkan oleh orang yang sedang menangani insiden.
+
+---
+
 Urutan fase F0→F6 ada di `product/ARCH-lumi-pos-v1.md` § 14. Estimasi v1: ±18–24 minggu penuh waktu.
 
 ---
