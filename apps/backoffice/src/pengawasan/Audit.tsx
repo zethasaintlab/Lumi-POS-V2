@@ -12,6 +12,7 @@ import {
   labelKelompok,
   labelPeristiwa,
   objekTampil,
+  pelakuTampil,
   penyetujuTampil,
   pesanBelumDipancarkan,
   pesanKeadaanAudit,
@@ -69,6 +70,9 @@ export function AuditLayar() {
   const [outletId, setOutletId] = useState('');
   const [jenis, setJenis] = useState('');
   const [objek, setObjek] = useState('');
+  /* F.5 — menyaring ke tindakan yang dilakukan selama sesi akses support.
+     ⛔ Hanya satu arah; lihat catatan di `kueri`. */
+  const [hanyaSupport, setHanyaSupport] = useState(false);
   const [keadaan, setKeadaan] = useState<KeadaanAudit>({ jenis: 'awal' });
   const [lanjutan, setLanjutan] = useState<HasilAudit['peristiwa']>([]);
   /**
@@ -105,10 +109,14 @@ export function AuditLayar() {
       if (outletId.length > 0) q.set('outlet_id', outletId);
       if (jenis.length > 0) q.set('event_type', jenis);
       if (objek.trim().length > 0) q.set('entity_id', objek.trim());
+      // ⛔ Hanya menyala; tidak ada nilai yang MENYEMBUNYIKAN tindakan support.
+      // Saringan yang membuat audit dapat menyembunyikan sebagian dirinya akan
+      // dipakai oleh pihak yang tindakannya sedang diperiksa.
+      if (hanyaSupport) q.set('support_only', 'true');
       if (kursor !== null) q.set('cursor', kursor);
       return q.toString();
     },
-    [rentang, outletId, jenis, objek]
+    [rentang, outletId, jenis, objek, hanyaSupport]
   );
 
   const pesanGalat = (err: unknown) =>
@@ -169,6 +177,7 @@ export function AuditLayar() {
           jenis: hasil.eventType,
           aktor: hasil.actorUserId,
           objek: hasil.entityId,
+          support: hasil.hanyaSupport,
         });
   const lubang = hasil === null ? null : pesanBelumDipancarkan(hasil.belumDipancarkan);
 
@@ -229,6 +238,18 @@ export function AuditLayar() {
               Id objek menelusuri satu benda dari ujung ke ujung — seluruh peristiwa satu
               transaksi, satu shift, atau satu pengguna. Salin id-nya dari layar detail.
             </span>
+            {/* ⛔ F.5 — SATU ARAH. Tidak ada pilihan yang menyembunyikan
+                tindakan support: saringan yang membuat audit dapat
+                menyembunyikan sebagian dirinya akan dipakai oleh pihak yang
+                tindakannya sedang diperiksa. */}
+            <label className="t-caption">
+              <input
+                type="checkbox"
+                checked={hanyaSupport}
+                onChange={(e) => setHanyaSupport(e.target.checked)}
+              />{' '}
+              Hanya tindakan yang dilakukan lewat akses support
+            </label>
           </div>
         </div>
       </Card>
@@ -299,7 +320,11 @@ export function AuditLayar() {
                       <span className="t-caption">{labelKelompok(p.kelompok)}</span>
                     </span>
                   ),
-                  pelaku: p.aktorNama,
+                  // ⛔ F.5 — atas nama siapa baris ini terjadi. `aktorNama`
+                  // pada baris support adalah OWNER YANG MENYETUJUI akses itu;
+                  // menampilkannya sendirian terbaca sebagai "owner
+                  // melakukannya", dan layar ini dibaca saat sengketa.
+                  pelaku: pelakuTampil(p.aktorNama, p.supportAdmin),
                   // ⛔ Teks, bukan sel kosong. Lihat `penyetujuTampil`.
                   penyetuju:
                     p.penyetujuNama === null ? (

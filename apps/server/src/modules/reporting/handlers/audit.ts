@@ -57,6 +57,9 @@ export interface BarisAudit {
   deviceKode: string | null;
   reasonCode: string | null;
   reasonNote: string | null;
+  /** F.5 — `null` berarti dilakukan langsung oleh orang merchant. */
+  supportSessionId: string | null;
+  supportAdmin: string | null;
 }
 
 export interface HalamanAudit {
@@ -74,6 +77,14 @@ export interface SaringanAudit {
   entityId: string | null;
   kursor: string | null;
   batas: number;
+  /**
+   * F.5 — hanya tindakan yang dilakukan selama sesi support.
+   *
+   * ⛔ Tidak ada kebalikannya. "Sembunyikan tindakan support" adalah saringan
+   * yang membuat audit dapat menyembunyikan sebagian dirinya, dan yang paling
+   * ingin memakainya adalah pihak yang tindakannya sedang diperiksa.
+   */
+  hanyaSupport: boolean;
 }
 
 export const BATAS_BAWAAN = 50;
@@ -135,6 +146,8 @@ export function bacaJenis(mentah: string | undefined): string | null {
 }
 
 interface Baris {
+  support_session_id: string | null;
+  support_admin: string | null;
   id: string;
   occurred_at: Date | string;
   recorded_at: Date | string;
@@ -193,18 +206,31 @@ export async function ambilAudit(
             a.device_id,
             d.code         AS device_kode,
             a.reason_code,
-            a.reason_note
+            a.reason_note,
+            -- ⛔ F.5 — PENANDA sesi support ikut di SETIAP baris, bukan hanya
+            -- saat disaring. Baris yang dilakukan support terlihat sama persis
+            -- dengan baris yang owner lakukan sendiri kalau penandanya tidak
+            -- dibawa, dan layar audit yang dibaca saat sengketa akan
+            -- menisbatkannya kepada orangnya.
+            a.support_session_id,
+            ss.admin_label AS support_admin
        FROM audit_event a
        LEFT JOIN "user" ua ON ua.id = a.actor_user_id
        LEFT JOIN "user" up ON up.id = a.approver_user_id
        LEFT JOIN outlet o  ON o.id = a.outlet_id
        LEFT JOIN device d  ON d.id = a.device_id
+       LEFT JOIN support_session ss ON ss.id = a.support_session_id
       WHERE a.occurred_at >= $1::date
         AND a.occurred_at < ($2::date + 1)
         AND ($3::text IS NULL OR a.outlet_id = $3)
         AND ($4::text IS NULL OR a.event_type = $4)
         AND ($5::text IS NULL OR a.actor_user_id = $5)
         AND ($6::text IS NULL OR a.entity_id = $6)
+        -- ⛔ Saringan "hanya tindakan support". $10 = true menyaring baris
+        -- BERTANDA; NULL tidak menyaring apa pun. Tidak ada nilai yang berarti
+        -- "sembunyikan tindakan support" — audit yang dapat menyembunyikan
+        -- sebagian dirinya bukan audit.
+        AND ($10::boolean IS NOT TRUE OR a.support_session_id IS NOT NULL)
         -- ⛔ Keyset, bukan OFFSET. Perbandingan baris utuh supaya beberapa
         -- peristiwa pada timestamp yang SAMA tidak saling melewati: id
         -- memutuskan urutannya, dan pasangannya sama dengan primary key.
@@ -224,6 +250,7 @@ export async function ambilAudit(
       // "halaman penuh kebetulan" dari "masih ada lagi". Kursor yang selalu
       // ada membuat layar menampilkan tombol yang menghasilkan halaman kosong.
       s.batas + 1,
+      s.hanyaSupport ? true : null,
     ]
   );
 
@@ -250,6 +277,8 @@ export async function ambilAudit(
       deviceKode: r.device_kode,
       reasonCode: r.reason_code,
       reasonNote: r.reason_note,
+      supportSessionId: r.support_session_id,
+      supportAdmin: r.support_admin,
     })),
     kursorBerikut:
       adaLagi && terakhir !== undefined

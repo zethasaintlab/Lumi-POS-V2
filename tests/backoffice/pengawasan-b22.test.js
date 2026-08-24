@@ -213,3 +213,54 @@ test('⛔ setiap label peristiwa menyatakan APA YANG TERJADI, bukan kesimpulanny
     assert.ok(label.length > 0, `${kunci} berlabel kosong`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// F.5 — atribusi tindakan lewat akses support
+// ---------------------------------------------------------------------------
+
+test('⛔ pelakuTampil MEMBEDAKAN tindakan support dari tindakan langsung', async () => {
+  // `aktorNama` pada baris support adalah OWNER YANG MENYETUJUI akses itu —
+  // nama yang benar secara faktual, dan yang akan dibaca sebagai "owner
+  // melakukannya sendiri" oleh siapa pun yang tidak melihat penandanya. Layar
+  // ini dibaca saat sengketa.
+  const { pelakuTampil } = await import(B22);
+
+  const langsung = pelakuTampil('Budi', null);
+  const support = pelakuTampil('Budi', 'Rina (support Lumi)');
+  assert.notEqual(langsung, support, 'keduanya harus terbaca berbeda');
+  assert.match(support, /Rina/);
+  assert.match(support, /Budi/, 'owner yang menyetujui tetap disebut');
+});
+
+test('⛔ baris NON-support berbunyi tegas, bukan kosong', async () => {
+  // Sel kosong terbaca seperti data yang hilang, dan pembacanya tidak dapat
+  // membedakan "dilakukan langsung" dari "penandanya tidak terbaca".
+  const { pelakuTampil } = await import(B22);
+  for (const kosong of [null, undefined, '']) {
+    const hasil = pelakuTampil('Budi', kosong);
+    assert.notEqual(hasil.trim(), '', JSON.stringify(kosong));
+    assert.notEqual(hasil.trim(), 'Budi', 'harus menyatakan bahwa ini tindakan langsung');
+  }
+});
+
+test('⛔ ringkasSaringan MENYEBUT saringan support — daftar yang tidak menyebutnya terbaca lengkap', async () => {
+  const { ringkasSaringan } = await import(B22);
+  const tanpa = ringkasSaringan({ outlet: null, jenis: null, aktor: null, objek: null });
+  assert.equal(tanpa, null, 'tanpa saringan apa pun tetap null');
+
+  const dengan = ringkasSaringan({
+    outlet: null,
+    jenis: null,
+    aktor: null,
+    objek: null,
+    support: true,
+  });
+  assert.notEqual(dengan, null, 'saringan support harus disebut');
+  assert.match(dengan, /support/i);
+
+  // `false` bukan saringan — ia keadaan bawaan.
+  assert.equal(
+    ringkasSaringan({ outlet: null, jenis: null, aktor: null, objek: null, support: false }),
+    null
+  );
+});

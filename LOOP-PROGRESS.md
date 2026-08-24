@@ -2988,3 +2988,62 @@ Seluruh suite hijau. `test:domain` 484 · `test:kasir` 450 · `test:backoffice`
   `spec-f:401`; email/push adalah permukaan yang belum ada.
 - **Sesi tidak dapat diperpanjang.** Yang habis waktunya digantikan sesi baru,
   dan itu berarti persetujuan baru — disengaja.
+
+---
+
+## Task 37 — penanda sesi support TERBACA di B-22 (24 Agustus 2026) ✅
+
+Task 36 menulis `audit_event.support_session_id` dan tidak ada satu pun layar
+yang membacanya. **Data yang tidak dibaca siapa pun bukan kontrol** — bentuk
+yang sama dengan lima kolom `vertical_profile` yang Task 33 catat sebagai
+"setelan yang tersimpan benar dan tidak mengubah apa pun".
+
+`GET /audit-events` kini membawa `supportSessionId` + `supportAdmin` di setiap
+baris, menerima `support_only=true`, dan B-22 menampilkannya di kolom Pelaku.
+
+### Keputusan yang mengikat kodenya
+
+- ⛔ **Penanda ikut di SETIAP baris, bukan hanya saat disaring.** `aktorId`
+  pada baris support adalah **owner yang menyetujui** akses itu — nama yang
+  benar secara faktual, dan yang akan dibaca sebagai "owner melakukannya
+  sendiri" oleh siapa pun yang tidak melihat penandanya. Layar audit dibaca
+  saat sengketa; kesalahan atribusi di sana menyangkut orang. Diuji dengan
+  kontrol negatif: dua baris `item_created` berpelaku SAMA, satu bertanda satu
+  tidak.
+- ⛔ **`pelakuTampil` adalah kolom TERSENDIRI, bukan catatan kaki pada nama.**
+  Baris non-support berbunyi "Budi — langsung", bukan kosong: sel kosong
+  terbaca seperti data yang hilang, dan pembacanya tidak dapat membedakan
+  "dilakukan langsung" dari "penandanya tidak terbaca".
+- ⛔ **TIDAK ADA saringan yang MENYEMBUNYIKAN tindakan support.** Hanya
+  `support_only=true` yang ada, dan enum kontraknya berisi tepat satu nilai.
+  Audit yang dapat menyembunyikan sebagian dirinya bukan audit, dan yang paling
+  ingin memakai saringan itu adalah pihak yang tindakannya sedang diperiksa.
+  Dijaga test yang membaca BENTUK enum-nya.
+- ⛔ **Saringan yang aktif ikut di respons dan disebutkan di atas tabel.**
+  Aturan yang sudah ada di B-22; `hanyaSupport` mengikutinya.
+
+### Test hampa yang ditemukan lewat sabotase, di test yang baru ditulis
+
+Versi pertama membungkus assertion-nya dalam `if (res.statusCode === 200)`.
+Karena enum kontrak menolak ketiga nilai yang diuji, **assertion-nya tidak
+pernah berjalan sama sekali** — dan sabotase `q.support_only !== undefined`
+lolos tanpa satu test merah.
+
+Bentuk yang sama persis dengan 18 test `stock_movement` yang F3 temukan: test
+yang memeriksa keadaan yang tidak dapat terjadi. Diganti menjadi assertion
+tegas (400 untuk setiap nilai selain `true`) plus penjaga atas bentuk enum-nya;
+sabotase yang sama kini merah.
+
+⛔ **Response schema OpenAPI MEMBUANG properti yang tidak terdaftar.** Kolom
+baru yang ditambahkan ke query tanpa didaftarkan di `responses` mendarat
+`undefined` di klien, tanpa satu pun error di server. Ditemukan karena test
+memeriksa NILAINYA, bukan bahwa kunci-nya ada.
+
+### Verifikasi
+
+Seluruh suite hijau. `test:domain` 484 · `test:kasir` 450 · `test:backoffice`
+422 · `test:server` 414 · `test:isolation` 211 · `test:ordering` 192 ·
+`test:catalog` 177 · `test:identity` 156 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 · `test:dst` 14 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3 ·
+`test:oxlint-ds-adherence` 12. `lint:ds` bersih; build ok.

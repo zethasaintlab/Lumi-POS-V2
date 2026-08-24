@@ -221,6 +221,7 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
         entity_id?: string;
         cursor?: string;
         limit?: string;
+        support_only?: string;
       };
       const { from, to, outletId } = assertRentang(q);
       const eventType = bacaJenis(q.event_type);
@@ -241,6 +242,10 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
           entityId: kosong(q.entity_id),
           kursor: kosong(q.cursor),
           batas,
+          // ⛔ Hanya `'true'` yang menyalakannya. Nilai lain apa pun berarti
+          // tidak menyaring — string kosong dari form yang belum diisi tidak
+          // boleh diam-diam menyembunyikan seluruh audit non-support.
+          hanyaSupport: q.support_only === 'true',
         });
 
         // ⛔ Saringan yang dipakai ikut dikembalikan. Daftar audit yang tidak
@@ -253,6 +258,7 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
           eventType,
           actorUserId: kosong(q.actor_user_id),
           entityId: kosong(q.entity_id),
+          hanyaSupport: q.support_only === 'true',
           batas,
           // Jarak yang tersisa ke FR-F6 AC pertama, diturunkan di domain.
           // Layar menyebutkannya: trail berlubang yang terlihat lengkap adalah

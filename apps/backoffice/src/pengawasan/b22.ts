@@ -183,6 +183,8 @@ export interface SaringanAktif {
   jenis: string | null;
   aktor: string | null;
   objek: string | null;
+  /** F.5 — hanya tindakan yang dilakukan selama sesi akses support. */
+  support?: boolean;
 }
 
 export function ringkasSaringan(s: SaringanAktif): string | null {
@@ -191,6 +193,7 @@ export function ringkasSaringan(s: SaringanAktif): string | null {
   if (s.jenis !== null && s.jenis !== '') bagian.push(`jenis "${labelPeristiwa(s.jenis)}"`);
   if (s.aktor !== null && s.aktor !== '') bagian.push(`pelaku ${s.aktor}`);
   if (s.objek !== null && s.objek !== '') bagian.push(`objek ${s.objek}`);
+  if (s.support === true) bagian.push('hanya tindakan lewat akses support');
   if (bagian.length === 0) return null;
   return `Daftar ini disaring: ${bagian.join(' · ')}. Peristiwa di luar saringan tidak ditampilkan.`;
 }
@@ -226,6 +229,29 @@ export function penyetujuTampil(nama: string | null | undefined): string {
   return nama;
 }
 
+/**
+ * F.5 — atas nama siapa baris ini terjadi.
+ *
+ * ⛔ Kolom TERSENDIRI, bukan catatan kaki pada nama pelaku. `actor_user_id`
+ * pada baris support adalah OWNER YANG MENYETUJUI akses itu — nama yang benar
+ * secara faktual, dan yang akan dibaca sebagai "owner melakukannya sendiri"
+ * oleh siapa pun yang tidak melihat penandanya. Layar audit dibaca saat
+ * sengketa; kesalahan atribusi di sana menyangkut orang.
+ *
+ * ⛔ Baris NON-support berbunyi tegas, bukan kosong. Sel kosong terbaca
+ * seperti data yang hilang, dan pembacanya tidak dapat membedakan "dilakukan
+ * langsung" dari "penandanya tidak terbaca".
+ */
+export function pelakuTampil(
+  aktorNama: string,
+  supportAdmin: string | null | undefined
+): string {
+  if (supportAdmin === null || supportAdmin === undefined || supportAdmin === '') {
+    return `${aktorNama} — langsung`;
+  }
+  return `${supportAdmin} (support Lumi), atas akses yang ${aktorNama} setujui`;
+}
+
 /** Objek yang disentuh, dipendekkan — id penuh tetap dapat disalin dari judulnya. */
 export function objekTampil(entityType: string | null, entityId: string | null): string {
   if (entityId === null || entityId === '') return '—';
@@ -257,6 +283,9 @@ export interface PeristiwaAuditBaris {
   deviceKode: string | null;
   reasonCode: string | null;
   reasonNote: string | null;
+  /** F.5 — `null` berarti dilakukan langsung oleh orang merchant. */
+  supportSessionId: string | null;
+  supportAdmin: string | null;
 }
 
 export interface HasilAudit {
@@ -266,6 +295,7 @@ export interface HasilAudit {
   eventType: string | null;
   actorUserId: string | null;
   entityId: string | null;
+  hanyaSupport: boolean;
   batas: number;
   kursorBerikut: string | null;
   belumDipancarkan: string[];

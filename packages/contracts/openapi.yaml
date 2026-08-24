@@ -4934,6 +4934,27 @@ paths:
           required: false
           description: Menelusuri satu objek -- mis. seluruh peristiwa satu order.
           schema: { type: string }
+        - name: support_only
+          in: query
+          required: false
+          description: >-
+            F.5 -- hanya tindakan yang dilakukan selama sesi akses support.
+            Hanya nilai `true` yang menyalakannya; apa pun selain itu tidak
+            menyaring, sehingga form yang belum diisi tidak diam-diam
+            menyembunyikan seluruh audit non-support.
+
+
+            ⛔ TIDAK ADA kebalikannya. "Sembunyikan tindakan support" adalah
+            saringan yang membuat audit dapat menyembunyikan sebagian dirinya,
+            dan yang paling ingin memakainya adalah pihak yang tindakannya
+            sedang diperiksa.
+
+
+            Penandanya (`supportSessionId` dan `supportAdmin`) ikut di SETIAP
+            baris apa pun saringannya: baris yang dilakukan support terlihat
+            sama persis dengan baris yang orang merchant lakukan sendiri kalau
+            penandanya tidak dibawa.
+          schema: { type: string, enum: ["true"] }
         - name: cursor
           in: query
           required: false
@@ -4959,6 +4980,12 @@ paths:
                   eventType: { type: string, nullable: true }
                   actorUserId: { type: string, nullable: true }
                   entityId: { type: string, nullable: true }
+                  hanyaSupport:
+                    type: boolean
+                    description: >-
+                      Saringan yang sedang aktif. Ia ikut dikembalikan karena
+                      daftar audit yang tidak menyebut apa yang disaring
+                      terbaca seperti daftar lengkap.
                   batas: { type: integer }
                   kursorBerikut:
                     type: string
@@ -5013,6 +5040,27 @@ paths:
                         deviceKode: { type: string, nullable: true }
                         reasonCode: { type: string, nullable: true }
                         reasonNote: { type: string, nullable: true }
+                        supportSessionId:
+                          type: string
+                          nullable: true
+                          description: >-
+                            F.5 -- PENANDA sesi akses support. `null` berarti
+                            tindakan ini dilakukan langsung oleh orang
+                            merchant.
+
+
+                            ⛔ Ia ikut di SETIAP baris, bukan hanya saat
+                            disaring: `aktorId` pada baris support adalah OWNER
+                            YANG MENYETUJUI akses itu -- nama yang benar secara
+                            faktual, dan yang akan dibaca sebagai "owner
+                            melakukannya sendiri" oleh siapa pun yang tidak
+                            melihat penanda ini.
+                        supportAdmin:
+                          type: string
+                          nullable: true
+                          description: >-
+                            Nama petugas support sebagaimana merchant
+                            menuliskannya saat menyetujui.
         '400':
           description: >-
             Rentang, kursor, batas, atau jenis peristiwa tidak valid

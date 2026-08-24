@@ -505,3 +505,134 @@ test('⛔ token support tenant lain tidak menemukan apa pun di tenant ini', asyn
   // saat dicari di tenant lain. Pola yang sama dengan sesi pengguna.
   assert.equal(res.statusCode, 401, res.body);
 });
+
+// ---------------------------------------------------------------------------
+// Penanda TERBACA di B-22 — data yang tidak dibaca siapa pun bukan kontrol
+// ---------------------------------------------------------------------------
+
+test('⛔ GET /audit-events membawa penanda di SETIAP baris, bukan hanya saat disaring', async () => {
+  // Baris yang dilakukan support terlihat SAMA PERSIS dengan baris yang orang
+  // merchant lakukan sendiri kalau penandanya tidak dibawa — dan `actorUserId`
+  // pada baris support adalah owner yang menyetujui. Layar audit dibaca saat
+  // sengketa; kesalahan atribusi di sana menyangkut orang.
+  const b = (await beri({ writeEnabled: true, adminLabel: 'Rina (support Lumi)' })).json();
+  const lewatSupport = crypto.randomUUID();
+  await app.inject({
+    method: 'POST',
+    url: '/items',
+    headers: { ...hdrSupport(b.token), 'idempotency-key': crypto.randomUUID() },
+    payload: {
+      id: lewatSupport,
+      name: 'Dibuat support',
+      variations: [{ id: crypto.randomUUID(), name: 'Regular', price: 20000 }],
+    },
+  });
+  const langsung = crypto.randomUUID();
+  await app.inject({
+    method: 'POST',
+    url: '/items',
+    headers: { ...hdr(), 'idempotency-key': crypto.randomUUID() },
+    payload: {
+      id: langsung,
+      name: 'Dibuat owner',
+      variations: [{ id: crypto.randomUUID(), name: 'Regular', price: 20000 }],
+    },
+  });
+
+  const hari = new Date().toISOString().slice(0, 10);
+  const res = await app.inject({
+    method: 'GET',
+    url: `/audit-events?from=${hari}&to=${hari}&event_type=item_created`,
+    headers: hdr(),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const peristiwa = res.json().peristiwa;
+
+  const support = peristiwa.find((p) => p.entityId === lewatSupport);
+  assert.ok(support, 'baris support tidak ditemukan');
+  assert.equal(support.supportSessionId, b.id);
+  assert.equal(support.supportAdmin, 'Rina (support Lumi)', 'nama petugas harus terbaca');
+
+  const sendiri = peristiwa.find((p) => p.entityId === langsung);
+  assert.ok(sendiri, 'baris langsung tidak ditemukan');
+  // ⛔ Kontrol negatif: penanda yang selalu terisi tidak membedakan apa pun.
+  assert.equal(sendiri.supportSessionId, null);
+  assert.equal(sendiri.supportAdmin, null);
+  // Keduanya berpelaku SAMA — itu justru kenapa penandanya harus ada.
+  assert.equal(support.aktorId, sendiri.aktorId);
+});
+
+test('⛔ support_only=true menyaring; nilai lain TIDAK menyaring apa pun', async () => {
+  const b = (await beri({ writeEnabled: true })).json();
+  await app.inject({
+    method: 'POST',
+    url: '/items',
+    headers: { ...hdrSupport(b.token), 'idempotency-key': crypto.randomUUID() },
+    payload: {
+      id: crypto.randomUUID(),
+      name: 'Lewat support',
+      variations: [{ id: crypto.randomUUID(), name: 'Regular', price: 20000 }],
+    },
+  });
+  await app.inject({
+    method: 'POST',
+    url: '/items',
+    headers: { ...hdr(), 'idempotency-key': crypto.randomUUID() },
+    payload: {
+      id: crypto.randomUUID(),
+      name: 'Langsung',
+      variations: [{ id: crypto.randomUUID(), name: 'Regular', price: 20000 }],
+    },
+  });
+
+  const hari = new Date().toISOString().slice(0, 10);
+  const ambil = async (tambahan) =>
+    (
+      await app.inject({
+        method: 'GET',
+        url: `/audit-events?from=${hari}&to=${hari}&event_type=item_created${tambahan}`,
+        headers: hdr(),
+      })
+    ).json();
+
+  const semua = await ambil('');
+  assert.equal(semua.peristiwa.length, 2);
+  assert.equal(semua.hanyaSupport, false, 'saringan yang aktif ikut di respons');
+
+  const disaring = await ambil('&support_only=true');
+  assert.equal(disaring.peristiwa.length, 1);
+  assert.equal(disaring.hanyaSupport, true);
+  assert.ok(disaring.peristiwa.every((p) => p.supportSessionId !== null));
+
+  // ⛔ Nilai selain `true` DITOLAK 400 oleh enum kontrak, tidak diterima lalu
+  // ditafsirkan.
+  //
+  // Versi pertama test ini membungkus assertion-nya dalam
+  // `if (res.statusCode === 200)` — dan karena enum menolak KETIGA nilainya,
+  // assertion-nya tidak pernah berjalan sama sekali. Ia hijau untuk kode yang
+  // menyaring pada nilai apa pun; dibuktikan lewat sabotase
+  // (`q.support_only !== undefined`), yang lolos tanpa satu test merah.
+  //
+  // Bentuk hampa yang sama dengan 18 test `stock_movement` yang F3 temukan.
+  for (const nilai of ['', 'false', '1', 'TRUE']) {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/audit-events?from=${hari}&to=${hari}&event_type=item_created&support_only=${nilai}`,
+      headers: hdr(),
+    });
+    assert.equal(res.statusCode, 400, `support_only=${nilai} seharusnya ditolak: ${res.body}`);
+  }
+
+  // ⛔ TIDAK ADA nilai yang MENYEMBUNYIKAN tindakan support. Diuji sebagai
+  // bentuk: enum kontraknya berisi tepat satu nilai, dan yang menyaring hanya
+  // ke arah "tampilkan yang bertanda".
+  const kontrak = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '../../packages/contracts/openapi.yaml'),
+    'utf8'
+  );
+  assert.match(
+    kontrak,
+    /name: support_only[\s\S]{0,1600}?schema: \{ type: string, enum: \["true"\] \}/,
+    'enum support_only berubah — periksa bahwa tidak ada nilai yang menyembunyikan audit'
+  );
+});
