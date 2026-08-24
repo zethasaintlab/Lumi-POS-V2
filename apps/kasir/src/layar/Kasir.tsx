@@ -40,6 +40,7 @@ import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogNoSale } from '../komponen/DialogNoSale.tsx';
+import { DialogKasManual } from '../komponen/DialogKasManual.tsx';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
@@ -93,6 +94,10 @@ export function Kasir() {
   /* K-16 — dialog, bukan rute (`IA:66`). */
   const [bukaLaci, setBukaLaci] = useState(false);
   const [pesanLaci, setPesanLaci] = useState<string | null>(null);
+  /* FR-D5 — kas masuk/keluar. Dialog dengan alasan yang sama dengan K-16: ia
+     tidak punya keadaan yang berguna untuk dipulihkan lewat URL. */
+  const [dialogKas, setDialogKas] = useState(false);
+  const [pesanKas, setPesanKas] = useState<string | null>(null);
   /* FR-B8 — diskon tingkat order. Ambangnya per outlet, dibaca dari perangkat
      supaya aturannya tetap berlaku offline; bawaan domain dipakai sampai
      baris outlet terbaca. */
@@ -166,7 +171,7 @@ export function Kasir() {
        diabaikan, dan scan di sana menambahkan produk ke keranjang di
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
-    aktif: pilihan === null && !membayar && !dialogDiskon && !bukaLaci,
+    aktif: pilihan === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas,
   });
 
   if (!siap) return <EmptyState title="Menyiapkan kasir" body="Membaca katalog dari perangkat." />;
@@ -487,7 +492,45 @@ export function Kasir() {
             {pesanLaci}
           </p>
         )}
+
+        {/* FR-D5 — kas masuk/keluar. `ghost` dengan alasan yang sama dengan
+            "Buka laci": satu aksi utama per layar, dan aksi utama K-03 adalah
+            Bayar. Ia TIDAK di balik kill switch — kill switch tidak boleh
+            menyentuh audit maupun menghentikan penjualan (`spec-f:369`), dan
+            mematikan pencatatan kas berarti uang yang tetap keluar tanpa
+            jejak, lalu muncul sebagai selisih yang menuduh kasirnya. */}
+        <Tombol varian="ghost" disabled={sesi === null} onClick={() => setDialogKas(true)}>
+          Kas masuk / keluar
+        </Tombol>
+
+        {pesanKas && (
+          <p className="t-caption" role="status">
+            {pesanKas}
+          </p>
+        )}
       </aside>
+
+      {dialogKas && konfig && sesi && (
+        <DialogKasManual
+          shiftId={shift.id}
+          konfig={konfig}
+          sesi={sesi}
+          onBatal={() => setDialogKas(false)}
+          onSelesai={(h, arah) => {
+            setDialogKas(false);
+            /* ⛔ Kalimatnya menyebut ARAHNYA dan angkanya. `delta` bertanda,
+               dan konfirmasi yang hanya menyebut angkanya membuat kasir yang
+               salah memilih arah tidak punya cara mengetahuinya sampai tutup
+               kas. */
+            const nilai = (h.delta < 0n ? -h.delta : h.delta).toLocaleString('id-ID');
+            setPesanKas(
+              arah === 'masuk'
+                ? `Kas masuk Rp ${nilai} tercatat. Saldo laci bertambah.`
+                : `Kas keluar Rp ${nilai} tercatat. Saldo laci berkurang.`
+            );
+          }}
+        />
+      )}
 
       {bukaLaci && konfig && sesi && (
         <DialogNoSale

@@ -18,6 +18,9 @@ const RUTE: Record<string, (entityId: string) => string> = {
   // FR-D7. `entity_id`-nya adalah id SHIFT — rutenya bersarang di bawahnya,
   // dan ambang frekuensinya dihitung per shift.
   no_sale: (id) => `/shifts/${encodeURIComponent(id)}/no-sale`,
+  // FR-D5. `entity_id`-nya SHIFT, alasan yang sama dengan no-sale: rutenya
+  // bersarang di bawahnya, dan saldo laci dihitung per shift.
+  cash_movement: (id) => `/shifts/${encodeURIComponent(id)}/cash-movements`,
 };
 
 /**

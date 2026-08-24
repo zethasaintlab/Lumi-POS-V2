@@ -5270,6 +5270,121 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /shifts/{shiftId}/cash-movements:
+    post:
+      operationId: recordCashMovement
+      summary: FR-D5 -- kas masuk / kas keluar di luar penjualan.
+      description: >-
+        ⛔ Ketiadaannya adalah cacat yang menghasilkan SELISIH PALSU. Saldo laci
+        adalah `saldo_awal + SUM(cash_movement.delta)` (spec-d:14); owner yang
+        mengambil Rp 500.000 dari laci untuk membayar pemasok tanpa cara
+        mencatatnya membuat tutup kas melaporkan kekurangan Rp 500.000,
+        menuntut otorisasi manajer untuk selisih yang sepenuhnya dapat
+        dijelaskan, dan laporan exception FR-G5 menandai kasirnya.
+
+
+        ⛔ TANPA PIN manajer, ditiru dari keputusan void 1 Agustus 2026 --
+        alasan daftar tertutup + audit sebagai kontrolnya. Orang yang mengambil
+        uang dari laci sering satu-satunya orang yang ada, dan ia pemiliknya;
+        penyetuju yang wajib berbeda dari aktor (CHECK di audit_event) membuat
+        fiturnya mustahil dipakai justru oleh yang paling membutuhkannya, dan
+        yang tidak dapat mencatat tetap mengambil uangnya. [ASUMSI] -- spec-d
+        hanya menyatakan alasannya wajib, bukan siapa yang boleh.
+
+
+        ⛔ `jumlah` selalu POSITIF dan `arah` yang menentukan tandanya. Klien
+        yang mengirim -50000 untuk kas MASUK akan mengurangi laci yang
+        seharusnya bertambah, dan tidak ada apa pun di layar yang berbeda.
+
+
+        ⛔ `counterpart_type` diturunkan dari ALASANNYA, bukan dari arahnya
+        (FR-D6). "Ambil pemilik" dan "bayar pemasok" keduanya paid_out dengan
+        jumlah yang sama, tapi yang pertama `owner_draw` dan yang kedua
+        `expense` -- pembukuan yang menyamakannya melaporkan biaya operasional
+        yang tidak pernah terjadi.
+
+
+        ⛔ Shift yang sudah TERTUTUP menolak movement baru: saldo dan
+        selisihnya sudah dihitung dan disetujui, dan menambahkan baris
+        sesudahnya mengubah angka yang seseorang sudah tanda tangani.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: >-
+            WAJIB, dan sengaja TIDAK ditandai `required` -- pola yang sama
+            dengan setiap endpoint idempoten lain di kontrak ini. Validator
+            menjawab `400 VALIDATION_ERROR`, sementara yang dimaksud adalah
+            `MISSING_IDEMPOTENCY_KEY`; "muatan Anda cacat" mengirim klien
+            memeriksa body yang sebenarnya benar. Menandainya `required` juga
+            membuat penjaga di handler tidak dapat dibedakan dari luar --
+            bentuk guard-yang-tidak-teruji yang `CLAUDE.md` catat pada
+            penyetuju refund.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, arah, jumlah, reasonCode]
+              properties:
+                id:
+                  type: string
+                  description: ULID/UUIDv7 dari klien; juga id `cash_movement`-nya.
+                arah: { type: string, enum: [masuk, keluar] }
+                jumlah:
+                  type: string
+                  description: >-
+                    Rupiah utuh POSITIF sebagai string. String, bukan number:
+                    rupiah melampaui 2^53 pada nilai yang masih mungkin di
+                    gudang uang.
+                reasonCode:
+                  type: string
+                  description: Daftar tertutup, berbeda per arah.
+                reasonNote:
+                  type: string
+                  nullable: true
+                  description: WAJIB bila `reasonCode` = `lainnya`.
+                hlc: { type: string }
+                occurredAt: { type: string }
+      responses:
+        '201':
+          description: Movement tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, shiftId, arah, delta, counterpartType]
+                properties:
+                  id: { type: string }
+                  shiftId: { type: string }
+                  arah: { type: string }
+                  delta:
+                    type: string
+                    description: BERTANDA. Negatif untuk kas keluar.
+                  counterpartType: { type: string }
+        '400':
+          description: >-
+            Alasan tidak dikenal (REASON_INVALID), catatan wajib untuk
+            `lainnya` (REASON_NOTE_REQUIRED), atau muatan cacat
+            (VALIDATION_ERROR / MISSING_IDEMPOTENCY_KEY).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Shift tidak ditemukan (SHIFT_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Shift sudah tertutup (SHIFT_NOT_OPEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /shifts/{shiftId}/no-sale:
     post:
       operationId: recordNoSale

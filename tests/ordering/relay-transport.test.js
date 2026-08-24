@@ -244,6 +244,34 @@ test('no-sale di BAWAH ambang mendarat tanpa penyetuju', async () => {
   sampai(hasil, 'no_sale');
 });
 
+test('kas masuk/keluar (cash_movement) mendarat lewat relay', async () => {
+  // FR-D5. Rincian arah, tanda `delta`, counterpart, idempotensi, dan
+  // klasifikasi kegagalannya diuji di `kas-manual-offline-relay.test.js`;
+  // yang ditegakkan DI SINI adalah bahwa jenisnya benar-benar pernah melewati
+  // transport asli — itulah yang dibaca penjaga `RUTE_DIDUKUNG` di bawah.
+  const fx = await perangkatDanShift();
+  await relaikan({
+    entity_type: 'shift',
+    entity_id: fx.shiftId,
+    payload: {
+      id: fx.shiftId, outletId: base.outlet.id, deviceId: fx.deviceId,
+      businessDate: TANGGAL, openingFloat: 100000,
+    },
+  });
+  const hasil = await relaikan({
+    entity_type: 'cash_movement',
+    entity_id: fx.shiftId,
+    payload: {
+      id: crypto.randomUUID(),
+      arah: 'keluar',
+      jumlah: '50000',
+      reasonCode: 'bayar_pemasok',
+      reasonNote: null,
+    },
+  });
+  sampai(hasil, 'cash_movement');
+});
+
 test('⛔ no-sale di ATAS ambang mendarat KARENA penyetuju ikut di baris outbox', async () => {
   const fx = await perangkatDanShift();
   await relaikan({

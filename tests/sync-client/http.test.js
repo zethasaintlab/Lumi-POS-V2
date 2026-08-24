@@ -155,5 +155,26 @@ test('body yang bukan JSON tidak menjatuhkan relay', async () => {
 test('menolak entity_type yang tidak punya endpoint', async () => {
   const { buatPengirimHttp } = await import(HTTP);
   const kirim = buatPengirimHttp({ ...KONFIG, fetchFn: async () => jawabanJson(201, {}) });
-  await assert.rejects(kirim(baris({ entity_type: 'cash_movement' })), /endpoint/i);
+  // ⛔ `cash_movement` dulu dipakai di sini sebagai contoh jenis tanpa
+  // endpoint, dan sejak FR-D5 ia punya satu. Yang dipakai sekarang jenis yang
+  // memang ditulis server-side di dalam transaksi order.
+  await assert.rejects(kirim(baris({ entity_type: 'stock_movement' })), /endpoint/i);
+});
+
+test('⛔ cash_movement PUNYA endpoint — kas masuk/keluar dicatat offline', async () => {
+  // FR-D5. Ia bukan lagi jenis "ditulis server-side": `paid_in`/`paid_out`
+  // tidak punya order, dan owner yang mengambil uang dari laci untuk membayar
+  // pemasok tidak menunggu jaringan.
+  const { buatPengirimHttp } = await import(HTTP);
+  let url = null;
+  const kirim = buatPengirimHttp({
+    ...KONFIG,
+    fetchFn: async (u) => {
+      url = String(u);
+      return jawabanJson(201, {});
+    },
+  });
+  const hasil = await kirim(baris({ entity_type: 'cash_movement', entity_id: 'shift-1' }));
+  assert.equal(hasil.status, 201);
+  assert.match(url, /\/shifts\/shift-1\/cash-movements$/);
 });

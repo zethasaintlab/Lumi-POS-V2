@@ -232,6 +232,19 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/cash-movements',
+    alasan:
+      'FR-D5. Alasan yang SAMA dengan no-sale, dan lebih kuat: kasir yang menerima ' +
+      'kembalian dari bank atau owner yang mengambil uang untuk membayar pemasok tidak ' +
+      'dapat menunggu manajer, dan di kafe kecil ia SATU-SATUNYA orang yang ada. Setiap ' +
+      'entri di PETA_PERAN diuji MENOLAK kasir; menaruh rute ini di sana akan menuntut ' +
+      'test yang menyatakan kebalikan dari perilaku yang benar. Yang menjaganya: ' +
+      '`assertBoleh(shift_open_close)` di handler (menutup akuntan, `spec-f:82`) plus ' +
+      'alasan daftar tertutup + audit untuk SETIAP baris — kontrol yang sama yang ' +
+      'keputusan 1 Agustus 2026 tetapkan untuk void',
+  },
+  {
+    metode: 'POST',
     pola: '/auth/logout',
     alasan:
       'Setiap pemegang sesi berhak MENGAKHIRI sesinya sendiri. Peran tidak relevan — ' +

@@ -98,6 +98,8 @@ export const PERISTIWA_AUDIT = {
 
   // Kas
   cash_drawer_opened: 'kas',
+  cash_paid_in: 'kas',
+  cash_paid_out: 'kas',
   cash_variance_approved: 'kas',
 
   // Katalog

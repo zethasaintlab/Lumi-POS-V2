@@ -2634,3 +2634,110 @@ kosong "belum dibangun".
 **Sisa 6 lubang FR-F6, dan tidak satu pun punya fiturnya:**
 `shift_count_attempt` · `cash_paid_in` · `cash_paid_out` ·
 `peripheral_configured` · `support_session_started` · `support_session_ended`.
+
+---
+
+## Task 34 — FR-D5 kas masuk & kas keluar (24 Agustus 2026) ✅
+
+`spec-d:189` mendaftarkan `paid_in`/`paid_out` di enum `cash_movement` sejak
+awal, dan `spec-d:202` menetapkan aturannya. Sampai hari ini **tidak ada satu
+pun jalan untuk membuatnya** — di server maupun di perangkat.
+
+**Ketiadaannya adalah cacat, bukan fitur yang tertunda.** Saldo laci adalah
+`saldo_awal + SUM(cash_movement.delta)` (`spec-d:14`). Owner yang mengambil
+Rp 500.000 dari laci untuk membayar pemasok tidak punya cara mencatatnya, jadi
+tutup kas **ditolak** sampai kasir mengarang alasan untuk selisih yang bukan
+salahnya — dan Rp 500.000 melewati ambang Rp 20.000, jadi otorisasi manajer
+dituntut juga, lalu laporan exception FR-G5 menandai kasirnya. Kedua sisinya
+diuji langsung: shift yang identik dengan pencatatan menutup dengan selisih
+**nol**, dan tanpa pencatatan dijawab `400 VARIANCE_REASON_REQUIRED`.
+
+Ini bentuk **KEEMPAT** dari cacat yang `CLAUDE.md` catat tiga kali — laci yang
+angkanya berbeda dari uang yang benar-benar ada di dalamnya. Tiga yang pertama
+adalah uang yang tidak pernah masuk; ini uang yang keluar dengan sah dan tidak
+pernah tercatat.
+
+Rantainya: `packages/domain/src/kas-manual.ts` → `POST /shifts/{id}/cash-movements`
+(server) **dan** `apps/kasir/src/kas/manual.ts` + `DialogKasManual` (perangkat,
+offline) → `outbox_local` → relay.
+
+### Keputusan yang mengikat kodenya
+
+- ⛔ **`jumlah` selalu POSITIF; `arah` yang menurunkan tandanya**, di domain,
+  satu tempat, dipakai server dan klien. Klien yang mengirim `-50000` untuk kas
+  MASUK akan mengurangi laci yang seharusnya bertambah — angkanya benar,
+  tandanya tidak, dan tutup kas menemukannya berjam-jam kemudian sebagai
+  selisih dua kali lipat.
+- ⛔ **`counterpart_type` diturunkan dari ALASAN, bukan dari arah** (FR-D6).
+  "Ambil pemilik" dan "bayar pemasok" keduanya `paid_out` dengan jumlah yang
+  sama; yang pertama `owner_draw` dan yang kedua `expense`. Pembukuan yang
+  menyamakannya melaporkan biaya operasional yang tidak pernah terjadi.
+  `lainnya` dan `koreksi_pencatatan` → `unidentified`, dan itu **jujur**:
+  menebaknya `expense` membuat setiap koreksi kecil masuk laporan biaya.
+- ⛔ **TANPA PIN manajer**, ditiru dari keputusan void 1 Agustus 2026. Orang
+  yang mengambil uang dari laci sering satu-satunya orang yang ada, dan ia
+  pemiliknya; penyetuju yang wajib berbeda dari aktor (`CHECK` di
+  `audit_event`) membuat fiturnya mustahil dipakai justru oleh yang paling
+  membutuhkannya — dan yang tidak dapat mencatat tetap mengambil uangnya.
+  `[ASUMSI]` — `spec-d` hanya menyatakan alasannya wajib, bukan siapa yang
+  boleh. Yang menjaganya `assertBoleh(shift_open_close)` (menutup akuntan,
+  `spec-f:82`) + alasan daftar tertutup + audit.
+- ⛔ **Nol ditolak.** Movement bernilai nol tidak memindahkan uang dan membuat
+  buku kas memuat baris yang tidak menjelaskan apa pun — aturan yang sama
+  dengan no-sale, yang justru TIDAK menulis `cash_movement` karena alasan itu.
+- ⛔ **Shift TERTUTUP menolak movement baru (409).** Saldo dan selisihnya sudah
+  dihitung dan disetujui; menambahkan baris sesudahnya mengubah angka yang
+  seseorang sudah tanda tangani.
+- ⛔ **Catatan wajib untuk `lainnya`** — `lainnya` adalah yang paling sering
+  dipilih orang yang sedang terburu-buru, dan alasan bebas tanpa penjelasan
+  adalah baris yang tidak dapat dibaca siapa pun enam bulan kemudian.
+- **`setor_ke_bank` ada di daftar keluar** meski enum punya `bank_deposit`
+  tersendiri: `spec-d:339` menunda fitur setoran, dan yang tidak boleh terjadi
+  sementara itu adalah merchant yang menyetor ke bank tidak punya cara
+  mencatatnya sama sekali. `counterpart_type` tetap `bank` supaya barisnya
+  dapat ditemukan lagi bila `bank_deposit` kelak dibangun.
+
+### Cacat yang ditemukan test transport, bukan review
+
+Rute masuk `DIKECUALIKAN` (peta RBAC) tapi **tidak** ditandai `sesiOpsional`.
+Akibatnya setiap kas masuk/keluar yang dicatat offline dijawab **401** dan
+berhenti permanen di antrean — bentuk yang PERSIS sama dengan cacat refund
+offline 21 Agustus, dan akibatnya lebih buruk: server tetap menghitung uang
+yang sudah tidak ada di laci, lalu tutup kas berikutnya menuduh kasirnya atas
+selisih yang justru sudah dicatat.
+
+Yang menemukannya adalah aturan yang lahir dari cacat itu: **test yang memakai
+`buatPengirimHttp` dan `klasifikasi` yang ASLI**, dengan hanya `fetch` yang
+dipalsukan. Ke-16 test endpoint langsung hijau selama itu.
+
+Penjaga `⛔ SETIAP jenis di RUTE_DIDUKUNG diuji lewat transport asli` juga
+menyala — ia hanya melihat berkasnya sendiri, jadi `cash_movement` ditambahkan
+di sana juga; rincian arah/tanda/idempotensi tetap di berkas terpisah.
+
+### Kontrak dikoreksi, bukan test
+
+`Idempotency-Key` sempat ditandai `required: true` — menyimpang dari setiap
+endpoint idempoten lain di kontrak ini. Validator menjawab
+`400 VALIDATION_ERROR` sementara yang dimaksud `MISSING_IDEMPOTENCY_KEY`
+("muatan Anda cacat" mengirim klien memeriksa body yang sebenarnya benar), dan
+ia membuat penjaga di handler tidak dapat dibedakan dari luar — bentuk
+guard-yang-tidak-teruji yang `CLAUDE.md` catat pada penyetuju refund.
+
+### Sabotase
+
+Tiga, semuanya merah: tanda `delta` dibalik (domain + kasir), `counterpart`
+diturunkan dari arah (domain + kasir), penolakan shift tertutup dimatikan
+(server). `sesiOpsional` terbukti tanpa disengaja — ia merah sebelum ditambahkan.
+
+### Verifikasi
+
+Seluruh suite hijau. `test:server` 392 · `test:ordering` 192 · `test:catalog`
+177 · `test:identity` 156 · `test:payment` 132 · `test:tenancy` 75 ·
+`test:domain` 468 · `test:kasir` 435 · `test:backoffice` 419 ·
+`test:sync-client` 103 · `test:isolation` 211 · `test:schema` 14 ·
+`test:sqlite-local` 8 · `test:dst` 14 · `test:dst-server` 10 · `test:runtime` 3
+· `test:oxlint-ds-adherence` 12. `lint:ds` bersih; kedua app build.
+
+**Sisa 4 lubang FR-F6, dan tidak satu pun punya fiturnya:**
+`shift_count_attempt` · `peripheral_configured` · `support_session_started` ·
+`support_session_ended`.

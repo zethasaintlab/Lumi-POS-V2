@@ -51,10 +51,16 @@ test('enqueue menulis satu baris outbox_local dengan seluruh field', async () =>
   }
 });
 
-// §2.3 rencana: server hanya mengekspos endpoint untuk empat jenis. Jenis
-// lain (`stock_movement`, `audit_event`, `cash_movement`) ditulis server-side
-// DI DALAM transaksi order/cancel -- ia ikut naik bersama order-nya dan tidak
-// punya endpoint sendiri.
+// §2.3 rencana: server hanya mengekspos endpoint untuk sebagian jenis. Jenis
+// lain (`stock_movement`, `audit_event`) ditulis server-side DI DALAM
+// transaksi order/cancel -- ia ikut naik bersama order-nya dan tidak punya
+// endpoint sendiri.
+//
+// ⛔ `cash_movement` KELUAR dari daftar ini pada 24 Agustus 2026, dan
+// perbedaannya penting: `cash_movement` bertipe `sale`/`refund` memang lahir
+// di dalam transaksi order dan tidak punya endpoint sendiri, tapi `paid_in`
+// dan `paid_out` (FR-D5) TIDAK punya order — mereka peristiwa tersendiri yang
+// dicatat kasir, offline, dan menuntut jalur naiknya sendiri.
 //
 // Ditolak KERAS, bukan dilewati diam-diam: item yang tidak dapat dikirim dan
 // tidak pernah mengeluh adalah penjualan yang hilang tanpa jejak.
@@ -62,7 +68,7 @@ test('enqueue MENOLAK entity_type yang tidak punya endpoint', async () => {
   const { enqueue } = await import(ENQUEUE);
   const db = buatDb();
   try {
-    for (const jenis of ['stock_movement', 'audit_event', 'cash_movement', 'apa_saja']) {
+    for (const jenis of ['stock_movement', 'audit_event', 'apa_saja']) {
       await assert.rejects(
         db.transaction((tx) => enqueue(tx, { ...ITEM, entityType: jenis })),
         /entity_type/i,

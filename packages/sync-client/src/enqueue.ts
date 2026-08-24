@@ -14,7 +14,17 @@ import type { DbLokal } from './ports.ts';
  * (kas masuk/keluar, no-sale) memang belum punya endpoint -- itu pekerjaan
  * Modul D, dan sampai ia ada, item seperti itu TIDAK BOLEH masuk antrean.
  */
-export const ENTITY_TYPES = ['shift', 'order', 'order_cancel', 'payment', 'sold_out', 'no_sale'] as const;
+export const ENTITY_TYPES = [
+  'shift',
+  'order',
+  'order_cancel',
+  'payment',
+  'sold_out',
+  'no_sale',
+  // FR-D5. Kas masuk/keluar dicatat di perangkat, offline — owner yang
+  // mengambil uang dari laci untuk membayar pemasok tidak menunggu jaringan.
+  'cash_movement',
+] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
 export interface ItemOutbox {

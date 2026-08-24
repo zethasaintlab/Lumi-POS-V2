@@ -207,6 +207,20 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/cash-movements',
+    alasan:
+      'jalur perangkat: relay outbox. FR-D5 — uang keluar dari laci DI KONTER, saat shift ' +
+      'berjalan, dan sering justru saat internet mati (itu saat orang membayar pemasok ' +
+      'tunai). Tanpa baris ini, SETIAP kas masuk/keluar yang dicatat offline dijawab 401 ' +
+      'dan berhenti permanen di antrean — bentuk cacat yang PERSIS sama dengan refund ' +
+      'offline, dan akibatnya lebih buruk: server tetap menghitung uang yang sudah tidak ' +
+      'ada di laci, lalu tutup kas berikutnya menuduh kasirnya atas selisih yang justru ' +
+      'sudah dicatat. Yang menjaganya tetap `assertBoleh(shift_open_close)` di handler ' +
+      '(menutup akuntan, `spec-f:82`) plus alasan daftar tertutup dan audit',
+    sesiOpsional: true,
+  },
+  {
+    metode: 'POST',
     pola: '/payments/:paymentId/check-status',
     alasan:
       'jalur perangkat: kasir menunggu konfirmasi QRIS (FR-C14). Memblokirnya menahan kasir ' +

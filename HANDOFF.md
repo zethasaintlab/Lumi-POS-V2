@@ -1437,3 +1437,36 @@ membangunnya hanya mengubah label.
 ⛔ **Bawaan tenant tidak dapat dikosongkan.** Kalau kelak dibutuhkan (mis.
 tenant yang seluruh outletnya punya profil sendiri), yang harus diputuskan
 lebih dulu adalah apa yang berlaku untuk outlet BARU — bukan cara mencabutnya.
+
+### FR-D5 kas masuk & kas keluar (24 Agustus 2026)
+
+`POST /shifts/{shiftId}/cash-movements` di server, `DialogKasManual` di kasir
+(offline lewat `outbox_local`). Aturannya di `packages/domain/src/kas-manual.ts`
+dan **dipakai keduanya**.
+
+⛔ **Rute jalur perangkat butuh DUA hal, bukan satu.** Ia harus ada di
+`DIKECUALIKAN` (peta RBAC rute) **dan** ditandai `sesiOpsional` di
+`apps/server/src/sesi.ts`. Yang pertama saja membuat relay dijawab **401**;
+barisnya berhenti permanen di antrean sementara uangnya sudah keluar dari laci.
+Ini ditemukan test transport, bukan review — 16 test endpoint langsung hijau
+selama itu. **Rute perangkat berikutnya: periksa keduanya.**
+
+⛔ **Penjaga `⛔ SETIAP jenis di RUTE_DIDUKUNG diuji lewat transport asli` hanya
+melihat berkasnya sendiri** (`tests/ordering/relay-transport.test.js`, lewat
+`DIUJI` yang diisi `relaikan`). Test transport di berkas lain **tidak**
+dihitungnya. Jenis outbox baru karena itu butuh satu relay di berkas itu juga,
+sesingkat apa pun; rinciannya boleh hidup di berkas terpisah.
+
+**Batas yang dinyatakan:**
+
+- **Tidak ada layar back-office untuk kas manual.** `IA:§3.3` tidak menamai
+  satu pun, dan uangnya berpindah di konter. Barisnya terlihat di B-05 (detail
+  shift) dan B-22 (audit) — dua tempat yang memang dibaca saat sengketa.
+- **Tidak ada cara MEMBATALKAN baris kas manual.** `cash_movement` tidak pernah
+  di-`UPDATE` (invariant #2), jadi koreksinya adalah baris berlawanan arah
+  beralasan `koreksi_pencatatan`. Itu berfungsi hari ini, tetapi tidak ada apa
+  pun yang menghubungkan baris koreksi ke baris yang dikoreksinya — kalau itu
+  dibutuhkan, ia kolom baru, bukan penafsiran atas data yang ada.
+- **`bank_deposit` tetap tidak dibangun** (`spec-d:339` masih terbuka).
+  Sementara itu setoran dicatat `paid_out` beralasan `setor_ke_bank` dengan
+  `counterpart_type = 'bank'`, supaya barisnya dapat ditemukan lagi kelak.

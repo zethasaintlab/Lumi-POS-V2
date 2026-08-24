@@ -71,6 +71,12 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   // Kas
   cash_drawer_opened: 'Laci dibuka tanpa transaksi',
   cash_variance_approved: 'Selisih kas disetujui',
+  // ⛔ Arahnya ada di LABEL-nya, bukan hanya di tanda `delta`. Kolom Peristiwa
+  // adalah yang dibaca saat sengketa, dan "Kas dicatat" untuk kedua arah
+  // membuat pembacanya harus membuka detail baris demi tahu uangnya masuk atau
+  // keluar.
+  cash_paid_in: 'Kas masuk dicatat',
+  cash_paid_out: 'Kas keluar dicatat',
   // Katalog
   catalog_imported: 'Katalog diimpor',
   item_created: 'Produk dibuat',
