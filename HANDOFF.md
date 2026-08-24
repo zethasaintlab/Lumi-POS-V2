@@ -1414,3 +1414,26 @@ dipanggil dari jalur lain. Memperbaikinya menuntut tabel label operasi
 `vertical_profile` punya tabel dan sudah turun ke perangkat, tapi NOL endpoint
 mutasi — itu juga yang menahan `vertical_profile_changed` di daftar lubang
 FR-F6.
+
+### B-24 Profil Vertikal (24 Agustus 2026) — back-office LENGKAP
+
+Empat endpoint: `GET`/`POST /vertical-profiles`,
+`PATCH /vertical-profiles/{id}`, `PUT /outlets/{id}/vertical-profile`. RBAC
+`outlet_manage` (owner saja). Seluruh 26 layar di `IA:§3.3` kini punya isi.
+
+⛔ **Kalau kamu membuka kolom `vertical_profile` yang lain di layar, periksa
+dulu apakah ada kode yang membacanya.** Lima dari enam kolom perilaku hari ini
+data mati — `default_channel`, `requires_barcode_flow`, `default_tax_type`,
+`modules_enabled`, dan `name` untuk retail. Setelan yang tersimpan dengan benar
+dan tidak mengubah apa pun adalah bentuk kegagalan yang tidak menghasilkan
+error di mana pun.
+
+⛔ **`retail` menuntut lebih dari melepas penolakannya.** `IA:293` menyebut apa
+yang harus berbeda: input barcode primer di K-03, konversi satuan di B-07,
+retur barang, preset pajak PPN. Endpoint menolaknya dengan
+`VERTICAL_NOT_AVAILABLE` dan pesan yang menyebut daftar itu; melepasnya tanpa
+membangunnya hanya mengubah label.
+
+⛔ **Bawaan tenant tidak dapat dikosongkan.** Kalau kelak dibutuhkan (mis.
+tenant yang seluruh outletnya punya profil sendiri), yang harus diputuskan
+lebih dulu adalah apa yang berlaku untuk outlet BARU — bukan cara mencabutnya.

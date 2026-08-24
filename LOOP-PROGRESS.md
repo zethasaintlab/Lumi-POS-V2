@@ -2539,3 +2539,98 @@ punya desimal — `50000.5` dikoersi menjadi `"50000.5"` dan ditolak bentuknya.
 **Sisa 7 lubang FR-F6:** `shift_count_attempt` · `cash_paid_in` ·
 `cash_paid_out` · `vertical_profile_changed` · `peripheral_configured` ·
 `support_session_started` · `support_session_ended`.
+
+---
+
+## Task 33 — B-24 Profil Vertikal, dan `vertical_profile_changed` (lubang 7 → 6)
+
+**Status: selesai. Seluruh 26 layar back-office kini ada.**
+
+`vertical_profile` punya tabel sejak F0 dan sudah turun ke perangkat, tapi NOL
+endpoint mutasi — OQ-09 ("profil per outlet, mewarisi default tenant")
+diputuskan 1 Agustus 2026 dan sampai sekarang hanya dapat dijalankan lewat SQL.
+
+### ⛔ Yang TIDAK dibuka di layar, dan kenapa
+
+`vertical_profile` punya enam kolom perilaku. **Lima di antaranya tidak dibaca
+satu baris kode pun** di luar pendaftaran tenant: `default_channel`,
+`requires_barcode_flow`, `default_tax_type`, `modules_enabled`, dan `name`
+untuk `retail`.
+
+Membukanya adalah persis cacat yang Task 32 ada untuk menghindari: setelan yang
+tersimpan dengan benar, ditampilkan kembali dengan benar, dan **tidak mengubah
+apa pun**. Yang dibuka hanya `allow_negative_stock` — satu-satunya yang
+benar-benar menentukan sesuatu (FR-E4), dan ia menentukannya **di perangkat,
+offline**.
+
+### ⛔ `retail` DITOLAK, dengan pesan yang menjelaskan
+
+`retail` ada di CHECK constraint sejak F0 dan `IA:291` menulisnya sebagai kolom
+v1.3; `PRD` § 4 menaruh UI vertikal retail di v1.1+. Tabel `IA:293` menyebut apa
+yang seharusnya berbeda — input barcode primer di K-03, konversi satuan di
+B-07, retur barang, preset pajak PPN. Tidak satu pun ada.
+
+Merchant yang dapat menekan "retail" mendapat aplikasi kasir yang dibangun
+untuk F&B dengan label yang mengatakan sebaliknya. Ditolak
+`VERTICAL_NOT_AVAILABLE` dengan kalimat yang menyebut apa yang belum ada —
+bukan `VALIDATION_ERROR` generik, yang akan membuat merchant mengira ia salah
+mengetik. Dan **dinyatakan di layar**, bukan sekadar tidak ada: pilihan yang
+hilang tanpa penjelasan terbaca sebagai layar yang rusak.
+
+### Keputusan
+
+- ⛔ **Bawaan tenant tidak dapat DIKOSONGKAN, hanya DIPINDAHKAN.**
+  `resolusiProfil` punya bawaan keras (`allowNegativeStock: true`) untuk
+  perangkat yang katalognya belum turun. Membiarkan merchant mencabut bawaan
+  tenantnya berarti setiap outlet ber-override NULL diam-diam jatuh ke aturan
+  yang **tidak seorang pun pilih**, di jalur yang paling tidak terlihat.
+  Ditolak `DEFAULT_PROFILE_REQUIRED`. Sabotase → 2 merah.
+- ⛔ **Menetapkan bawaan BARU mencabut yang lama di transaksi yang sama.**
+  `ux_vertical_profile_tenant_default` adalah index unik PARSIAL: dua baris
+  default menghasilkan 23505 — benar, tapi jawabannya 500 dan pesannya menyebut
+  nama index. Sabotase → 1 merah.
+- ⛔ **Resolusi dihitung di SERVER lewat `resolusiProfil` yang sama yang
+  perangkat pakai.** Layar yang menghitungnya sendiri adalah tempat kedua yang
+  memutuskan "profil mana yang berlaku di cabang ini", dan yang menyimpang
+  menampilkan aturan yang berbeda dari yang kasirnya alami.
+- ⛔ **TIGA keadaan outlet, bukan dua.** Memilih sendiri · mengikuti bawaan
+  tenant · memakai **bawaan keras sistem** karena tenantnya belum punya bawaan.
+  Ketiganya menghasilkan satu baris yang menampilkan aturan yang sama; hanya
+  yang ketiga adalah aturan yang tidak dipilih siapa pun, dan hanya yang ketiga
+  menuntut tindakan. `asalProfil` membedakannya, dan layar menamai ketiganya.
+- ⛔ **Audit mencatat `null` sebagai null**, bukan diresolusi menjadi id bawaan.
+  "Outlet ini mengikuti pusat" dan "outlet ini memilih profil yang kebetulan
+  sama dengan pusat" berperilaku sama hari ini dan berbeda pada hari bawaannya
+  dipindahkan.
+- ⛔ **Profil klien-suplai divalidasi lewat SELECT yang tunduk RLS.** Temuan F1
+  lagi: FK PostgreSQL hanya membuktikan barisnya ada di SUATU tenant, dan
+  profil merchant lain akan menentukan perilaku stok negatif outlet ini.
+- ⛔ **`false ?? null` adalah `false`.** `COALESCE` dengan `||` di tempat itu
+  akan membuang pilihan "larang jual saat habis" sepenuhnya — ada test untuk
+  itu.
+- ⛔ **Kolom mati diisi nilai yang SAMA dengan yang `registerTenant` tulis**,
+  bukan dibiarkan ke `DEFAULT` kolom. Profil yang dibuat lewat layar tidak
+  boleh berperilaku berbeda dari profil yang lahir bersama tenant — perbedaan
+  yang tidak terlihat sampai seseorang membandingkan dua baris.
+- **RBAC `outlet_manage` dipakai ulang** (owner saja), bukan operasi baru:
+  himpunan perannya sama persis dan cakupannya sama — keduanya menentukan
+  bentuk jaringan outlet merchant. Operasi baru yang himpunannya identik hanya
+  menambah baris ke matriks yang spec tidak nyatakan.
+- **Kalimat layar menyebut AKIBATNYA, bukan nama kolom.** Owner kafe tidak tahu
+  apa yang "izinkan stok negatif" ubah di tablet kasirnya besok pagi — dan
+  kedua arahnya disebutkan, karena `spec-e:146` memilih arahnya dengan alasan
+  yang dinyatakan.
+
+### Penjaga navigasi diubah dari DAFTAR menjadi MEKANISME
+
+Test `⛔ B-24 dan B-26 TIDAK ditandai siap` adalah daftar tulisan tangan, dan
+keduanya sudah keluar dalam dua task berturut-turut. Daftar yang dikosongkan
+sepotong-sepotong berhenti menjaga apa pun. Sekarang yang dijaga: layar dan
+endpointnya harus **sepakat di kedua arah** — siap tanpa endpoint berarti
+sidebar menjanjikan layar yang tidak dapat memuat apa pun; belum siap padahal
+endpointnya ada berarti layar yang berfungsi disembunyikan di balik keadaan
+kosong "belum dibangun".
+
+**Sisa 6 lubang FR-F6, dan tidak satu pun punya fiturnya:**
+`shift_count_attempt` · `cash_paid_in` · `cash_paid_out` ·
+`peripheral_configured` · `support_session_started` · `support_session_ended`.

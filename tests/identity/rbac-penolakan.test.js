@@ -161,6 +161,12 @@ function kasus() {
       { id: crypto.randomUUID(), price: 12000 },
     ],
 
+    // Profil vertikal (B-24): owner saja. Ia menentukan perilaku SELURUH
+    // outlet yang mewarisinya.
+    ['POST', '/vertical-profiles', { id: crypto.randomUUID() }],
+    ['PATCH', `/vertical-profiles/${base.vertical_profile.id}`, { allowNegativeStock: false }],
+    ['PUT', `/outlets/${base.outlet.id}/vertical-profile`, { verticalProfileId: null }],
+
     // ⛔ Ambang otorisasi (B-26): owner + manajer area saja.
     //
     // Kasir yang dapat menaikkan ambangnya sendiri dapat menghapus kebutuhan

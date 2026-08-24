@@ -627,6 +627,14 @@ Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_
 - ⛔ **`PUT`, bukan `PATCH`**; respons membawa `tersimpan` DAN `berlaku`; audit mencatat `tersimpan`. Layar yang menebak `tersimpan` dari `berlaku` menuliskan bawaan sebagai pilihan pada penyimpanan berikutnya, dan sejak itu outlet berhenti mengikuti perubahan bawaan tanpa siapa pun memutuskannya.
 - ⛔ **AJV meng-koersi `number` → `string`** sebelum handler melihatnya, bentuk yang sama dengan temuan telemetri (`null` → `0`). Kontrak bertipe string tidak dapat menolak `number` di handler; yang menjaganya adalah klien. Yang masih dapat dijaga: rupiah tanpa desimal.
 
+**B-24 Profil Vertikal, 24 Agustus 2026 (`vertical_profile_changed`, lubang 7 → 6). Seluruh 26 layar back-office kini ada.** OQ-09 diputuskan 1 Agustus dan sampai sekarang hanya dapat dijalankan lewat SQL.
+
+- ⛔ **Lima dari enam kolom perilaku TIDAK dibuka di layar** — `default_channel`, `requires_barcode_flow`, `default_tax_type`, `modules_enabled`, dan `name` untuk retail tidak dibaca satu baris kode pun di luar pendaftaran tenant. Membukanya adalah setelan yang tersimpan benar dan tidak mengubah apa pun. Yang dibuka hanya `allow_negative_stock` (FR-E4), dan ia menentukan sesuatu **di perangkat, offline**.
+- ⛔ **`retail` DITOLAK `VERTICAL_NOT_AVAILABLE`, dan dinyatakan di layar.** UI-nya ada di daftar "jangan bangun" (v1.1+); merchant yang dapat menekannya mendapat aplikasi kasir F&B dengan label yang mengatakan sebaliknya. Pilihan yang hilang tanpa penjelasan terbaca sebagai layar yang rusak.
+- ⛔ **Bawaan tenant tidak dapat DIKOSONGKAN, hanya DIPINDAHKAN.** `resolusiProfil` punya bawaan keras; mencabutnya membuat setiap outlet ber-override NULL jatuh ke aturan yang tidak seorang pun pilih. Menetapkan bawaan baru MENCABUT yang lama di transaksi yang sama — `ux_vertical_profile_tenant_default` adalah index unik parsial, dan tanpanya jawabannya 500 dengan nama index di pesannya.
+- ⛔ **TIGA keadaan outlet, bukan dua**: memilih sendiri · mengikuti bawaan tenant · memakai bawaan keras sistem. Ketiganya menampilkan aturan yang sama; hanya yang ketiga tidak dipilih siapa pun, dan hanya yang ketiga menuntut tindakan. Audit mencatat `null` sebagai null, bukan diresolusi.
+- ⛔ **Resolusi dihitung di SERVER lewat `resolusiProfil` yang perangkat pakai.** Layar yang menghitungnya sendiri menampilkan aturan yang berbeda dari yang kasirnya alami.
+
 - ⛔ **`RentangTanggal` punya prop `sumbu`.** Ia menyatakan "tanggal bisnis" di setiap layar yang memakainya; benar sepuluh kali dan salah sekali — B-22 menyaring `occurred_at`, karena sebagian besar peristiwa audit tidak menempel pada order mana pun.
 
 ---

@@ -84,6 +84,7 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   // Konfigurasi
   tax_rate_changed: 'Tarif pajak diubah',
   threshold_changed: 'Ambang otorisasi diubah',
+  vertical_profile_changed: 'Profil vertikal diubah',
   // Identitas
   user_created: 'Pengguna dibuat',
   user_role_changed: 'Peran pengguna diubah',

@@ -137,7 +137,18 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
     group: 'Pengaturan',
     items: [
       { id: 'B-23', label: 'Outlet', icon: 'map-pin', aksesMinimum: 'area_manager' },
-      { id: 'B-24', label: 'Profil vertikal', icon: 'settings', aksesMinimum: 'owner' },
+      {
+        id: 'B-24',
+        label: 'Profil vertikal',
+        icon: 'settings',
+        aksesMinimum: 'owner',
+        // ⛔ `outlet_manage` (owner saja), dipakai ulang alih-alih operasi
+        // baru: profil vertikal menentukan perilaku SELURUH outlet yang
+        // mewarisinya, dan himpunan perannya sama persis dengan membuat
+        // outlet. Operasi baru yang himpunannya identik hanya menambah baris
+        // ke matriks yang spec tidak nyatakan.
+        operasi: 'outlet_manage',
+      },
       { id: 'B-25', label: 'Pajak', icon: 'file', aksesMinimum: 'owner' },
       {
         id: 'B-26',
@@ -187,6 +198,7 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-21',
   'B-22',
   'B-23',
+  'B-24',
   'B-25',
   'B-26',
   'B-27',

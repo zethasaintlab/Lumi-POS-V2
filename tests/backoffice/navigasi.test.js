@@ -218,31 +218,38 @@ test('B-25 sudah ditandai siap', async () => {
   assert.ok(LAYAR_SIAP.has('B-25'), 'B-25 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
 
-test('⛔ B-24 TIDAK ditandai siap — endpointnya belum ada', async () => {
-  // Penyelidikan kontrak: `vertical_profile` punya tabel tapi NOL endpoint.
+test('⛔ SETIAP layar di sidebar sudah siap, atau endpointnya memang belum ada', async () => {
+  // Penjaga ini dulu menyebut B-24 dan B-26 sebagai daftar tulisan tangan.
+  // Keduanya sudah keluar (24 Agustus 2026), dan daftar yang dikosongkan
+  // sepotong-sepotong berhenti menjaga apa pun — jadi yang dijaga sekarang
+  // MEKANISMENYA.
   //
-  // Menandainya siap berarti sidebar menjanjikan layar yang tidak dapat memuat
-  // apa pun. Keadaan kosong bawaan sudah jujur — dan test ini menahan
-  // seseorang menandainya siap sebelum endpointnya benar-benar ada.
+  // Dua arah, dan keduanya berbahaya:
   //
-  // ⛔ B-26 dulu ada di daftar ini dan sudah KELUAR (24 Agustus 2026): ambang
-  // otorisasi kini punya kolom (`0031`, `0033`) dan endpoint
-  // (`getOutletThresholds` / `setOutletThresholds`). Test ini merah saat
-  // layarnya ditandai siap, dan merahnya itu yang benar — ia menuntut seseorang
-  // memeriksa bahwa endpointnya memang sudah ada sebelum daftarnya disunting.
+  // - Layar SIAP tanpa endpoint = sidebar menjanjikan layar yang tidak dapat
+  //   memuat apa pun.
+  // - Layar BELUM siap padahal endpointnya ada = layar yang sudah berfungsi
+  //   disembunyikan di balik keadaan kosong "belum dibangun".
+  //
+  // Yang dipetakan hanya layar yang punya endpoint KHUSUS; sisanya memakai
+  // endpoint bersama dan tidak dapat diperiksa begini.
+  const OPERASI_LAYAR = {
+    'B-24': ['listVerticalProfiles', 'updateVerticalProfile'],
+    'B-26': ['getOutletThresholds', 'setOutletThresholds'],
+  };
   const { LAYAR_SIAP } = await import(NAV);
-  assert.ok(!LAYAR_SIAP.has('B-24'), 'B-24 ditandai siap padahal endpointnya belum ada');
-});
-
-test('B-26 sudah ditandai siap, dan endpointnya ADA di kontrak', async () => {
-  // Dua sisi diperiksa bersamaan: kalau salah satunya saja benar, sidebar
-  // menjanjikan layar yang tidak dapat memuat apa pun — atau menyembunyikan
-  // layar yang sudah berfungsi.
-  const { LAYAR_SIAP } = await import(NAV);
-  assert.ok(LAYAR_SIAP.has('B-26'));
   const yaml = readFileSync(join(AKAR, 'packages', 'contracts', 'openapi.yaml'), 'utf8');
-  assert.match(yaml, /operationId: getOutletThresholds/);
-  assert.match(yaml, /operationId: setOutletThresholds/);
+
+  for (const [layar, operasi] of Object.entries(OPERASI_LAYAR)) {
+    const adaSemua = operasi.every((o) => yaml.includes(`operationId: ${o}`));
+    assert.equal(
+      LAYAR_SIAP.has(layar),
+      adaSemua,
+      adaSemua
+        ? `${layar} punya endpoint tapi masih menampilkan keadaan kosong "belum dibangun"`
+        : `${layar} ditandai siap padahal endpointnya belum ada`
+    );
+  }
 });
 
 test('B-16 sudah ditandai siap', async () => {

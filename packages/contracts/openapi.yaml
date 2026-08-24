@@ -1353,6 +1353,212 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /vertical-profiles:
+    get:
+      operationId: listVerticalProfiles
+      summary: B-24 -- profil vertikal tenant, dan yang berlaku di tiap outlet.
+      description: >-
+        ⛔ Resolusi `COALESCE(profil_outlet, profil_default_tenant)` dihitung DI
+        SERVER lewat `resolusiProfil` yang SAMA yang perangkat pakai. Layar yang
+        menghitungnya sendiri adalah tempat kedua yang memutuskan "profil mana
+        yang berlaku di cabang ini", dan yang menyimpang menampilkan aturan yang
+        berbeda dari yang kasirnya alami.
+
+
+        `berlaku.dariBawaan` menandai outlet yang jatuh ke bawaan KERAS domain
+        (tenant tanpa profil bawaan sama sekali) -- aturan yang tidak dipilih
+        siapa pun.
+      responses:
+        '200':
+          description: Profil dan resolusi per outlet.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles, outlets]
+                properties:
+                  profiles:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProfilVertikal' }
+                  outlets:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, verticalProfileId, berlaku]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        verticalProfileId:
+                          type: string
+                          nullable: true
+                          description: '`null` berarti mengikuti bawaan tenant.'
+                        berlaku:
+                          type: object
+                          required: [id, name, allowNegativeStock, dariBawaan]
+                          properties:
+                            id: { type: string }
+                            name: { type: string }
+                            allowNegativeStock: { type: boolean }
+                            isTenantDefault: { type: boolean }
+                            dariBawaan: { type: boolean }
+    post:
+      operationId: createVerticalProfile
+      summary: B-24 -- membuat profil vertikal baru.
+      description: >-
+        ⛔ Hanya `fnb`. `retail` ada di CHECK constraint sejak F0 dan ditulis
+        IA:291 sebagai kolom v1.3; daftar "jangan bangun" menaruh UI vertikal
+        retail di v1.1+. Merchant yang dapat menekan "retail" mendapat aplikasi
+        kasir yang dibangun untuk F&B dengan label yang mengatakan sebaliknya --
+        layar yang menjanjikan produk yang tidak ada. Ditolak
+        `VERTICAL_NOT_AVAILABLE` dengan pesan yang menjelaskan, bukan
+        VALIDATION_ERROR generik.
+
+
+        ⛔ Hanya `allowNegativeStock` yang dapat disetel. Lima kolom perilaku
+        lain (`default_channel`, `requires_barcode_flow`, `default_tax_type`,
+        `modules_enabled`, dan `name` untuk retail) TIDAK dibaca satu baris kode
+        pun di luar pendaftaran tenant -- membukanya di layar adalah setelan
+        yang tersimpan dengan benar dan tidak mengubah apa pun.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+                name:
+                  type: string
+                  description: 'Hanya `fnb`. Lihat deskripsi.'
+                allowNegativeStock: { type: boolean }
+      responses:
+        '201':
+          description: Profil dibuat.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilVertikal' }
+        '400':
+          description: Vertikal belum tersedia (VERTICAL_NOT_AVAILABLE).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Id sudah dipakai (ID_ALREADY_EXISTS).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /vertical-profiles/{profileId}:
+    patch:
+      operationId: updateVerticalProfile
+      summary: B-24 -- menyetel stok negatif atau memindahkan bawaan tenant.
+      description: >-
+        ⛔ Bawaan tenant tidak dapat DIKOSONGKAN, hanya DIPINDAHKAN.
+        `resolusiProfil` punya bawaan keras (`allowNegativeStock: true`) untuk
+        perangkat yang katalognya belum turun; membiarkan merchant menghapus
+        bawaan tenantnya berarti setiap outlet ber-override NULL diam-diam jatuh
+        ke aturan yang tidak seorang pun pilih, di jalur yang paling tidak
+        terlihat. Ditolak DEFAULT_PROFILE_REQUIRED.
+
+
+        ⛔ Menetapkan bawaan baru MENCABUT yang lama di transaksi yang sama.
+        `ux_vertical_profile_tenant_default` adalah index unik parsial:
+        menetapkan bawaan kedua tanpa mencabut yang pertama ditolak database
+        dengan 23505 -- benar, tapi jawabannya 500 dan pesannya menyebut nama
+        index.
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowNegativeStock: { type: boolean }
+                isTenantDefault: { type: boolean }
+      responses:
+        '200':
+          description: Profil setelah disimpan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilVertikal' }
+        '403':
+          description: Bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Profil tidak ditemukan (VERTICAL_PROFILE_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Bawaan tenant tidak dapat dicabut (DEFAULT_PROFILE_REQUIRED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /outlets/{outletId}/vertical-profile:
+    put:
+      operationId: setOutletVerticalProfile
+      summary: B-24 -- override profil untuk satu outlet.
+      description: >-
+        `verticalProfileId: null` berarti outlet ini mengikuti bawaan tenant.
+
+
+        ⛔ BUKAN bagian dari "ubah outlet": endpoint ini tidak menyentuh nama,
+        alamat, zona waktu, maupun `archived_at`. B-23 sengaja tidak punya
+        ubah/arsip outlet, dan batas itu masih berlaku.
+
+
+        ⛔ Profilnya divalidasi lewat SELECT yang tunduk RLS sebelum ditulis.
+        FK PostgreSQL tidak tunduk RLS (temuan F1) -- ia hanya membuktikan
+        barisnya ada di SUATU tenant, dan profil merchant lain akan menentukan
+        perilaku stok negatif outlet ini.
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verticalProfileId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Override setelah disimpan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [outletId, verticalProfileId]
+                properties:
+                  outletId: { type: string }
+                  verticalProfileId: { type: string, nullable: true }
+        '403':
+          description: Bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Outlet atau profil tidak ditemukan (OUTLET_NOT_FOUND /
+            VERTICAL_PROFILE_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /outlets/{outletId}/thresholds:
     get:
       operationId: getOutletThresholds
@@ -7031,6 +7237,22 @@ components:
             diskonNominal: { type: string }
             selisihKas: { type: string }
             noSale: { type: integer }
+    ProfilVertikal:
+      type: object
+      required: [id, name, allowNegativeStock, isTenantDefault]
+      properties:
+        id: { type: string }
+        name:
+          type: string
+          description: 'Hanya `fnb` di v1. `retail` menunggu UI-nya (v1.1+).'
+        allowNegativeStock:
+          type: boolean
+          description: >-
+            FR-E4. Satu-satunya kolom perilaku yang benar-benar dibaca kode
+            hari ini -- dan ia dibaca di PERANGKAT, offline.
+        isTenantDefault:
+          type: boolean
+          description: Diwarisi outlet ber-`vertical_profile_id` NULL.
     Error:
       type: object
       required: [error]

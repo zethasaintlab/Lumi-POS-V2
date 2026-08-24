@@ -123,6 +123,9 @@ test('⛔ TIDAK ADA operasi ubah/arsip outlet di kontrak', async () => {
       'listOutletPrices',
       'getOutletThresholds',
       'setOutletThresholds',
+      // B-24: override profil vertikal per outlet. Tidak menyentuh nama,
+      // alamat, zona waktu, maupun `archived_at`.
+      'setOutletVerticalProfile',
     ].sort(),
     `operasi outlet berubah: ${operasiOutlet.join(', ')} — kalau ubah/arsip sudah ada, bangun tombolnya`
   );

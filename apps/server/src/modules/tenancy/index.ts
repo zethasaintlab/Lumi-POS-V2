@@ -9,6 +9,7 @@ import {
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createRegisterHandlers } from './handlers/register.ts';
 import { createOutletHandlers } from './handlers/outlets.ts';
+import { createVerticalProfileHandlers } from './handlers/profil-vertikal.ts';
 import { createUsageHandlers, createSettingsHandlers } from './handlers/usage.ts';
 import { createSubscriptionHandlers } from './handlers/langganan.ts';
 import type { SubscriptionProvider } from '../payment/providers/langganan.ts';
@@ -262,6 +263,7 @@ export function createTenancyHandlers(
   return {
     ...createRegisterHandlers(pool, hlc),
     ...createOutletHandlers(pool, hlc),
+    ...createVerticalProfileHandlers(pool),
     ...createUsageHandlers(pool),
     ...createSettingsHandlers(pool),
     ...createSubscriptionHandlers(pool, hlc, subscriptionProvider),

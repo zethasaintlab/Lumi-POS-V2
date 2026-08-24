@@ -109,6 +109,21 @@ export const PETA_PERAN: readonly AturanRute[] = [
   // kelak dipanggil dari jalur lain.
   { metode: 'PUT', pola: '/outlets/:outletId/thresholds', operasi: 'threshold_settings' },
 
+  // --- profil vertikal (B-24) -----------------------------------------------
+  //
+  // Owner saja (`IA:203`), operasi yang sama dengan membuat outlet: profil
+  // vertikal menentukan perilaku SELURUH outlet yang mewarisinya, dan
+  // `spec-f:30` menaruh "membuat/menghapus outlet" di kolom yang TIDAK BOLEH
+  // milik Manajer Area.
+  //
+  // ⛔ `outlet_manage` dipakai ulang, BUKAN operasi baru: himpunan perannya
+  // sama persis ({owner}) dan cakupannya sama — keduanya menentukan bentuk
+  // jaringan outlet merchant. Operasi baru yang himpunannya identik hanya
+  // menambah baris ke matriks yang spec tidak nyatakan.
+  { metode: 'POST', pola: '/vertical-profiles', operasi: 'outlet_manage' },
+  { metode: 'PATCH', pola: '/vertical-profiles/:profileId', operasi: 'outlet_manage' },
+  { metode: 'PUT', pola: '/outlets/:outletId/vertical-profile', operasi: 'outlet_manage' },
+
   // --- perangkat -----------------------------------------------------------
   { metode: 'POST', pola: '/devices', operasi: 'device_revoke' },
   { metode: 'POST', pola: '/devices/:deviceId/credentials', operasi: 'device_revoke' },

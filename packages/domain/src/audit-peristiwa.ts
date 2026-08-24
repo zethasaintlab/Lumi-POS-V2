@@ -115,6 +115,7 @@ export const PERISTIWA_AUDIT = {
   // Konfigurasi
   tax_rate_changed: 'konfigurasi',
   threshold_changed: 'konfigurasi',
+  vertical_profile_changed: 'konfigurasi',
 
   // Identitas
   user_created: 'identitas',
