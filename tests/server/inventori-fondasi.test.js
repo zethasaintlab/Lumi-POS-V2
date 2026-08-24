@@ -459,3 +459,106 @@ test('⛔ saldoTampil klien-server sepakat dengan B-03', async () => {
     assert.equal(saldoTampil(BigInt(n)), kuantitasTampil(n), `berbeda untuk ${n}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// FR-C3 — `POST /orders/{id}/abandon`: kasir membatalkan SATU draf
+// ---------------------------------------------------------------------------
+
+async function kueri(sql, params) {
+  await db.query('BEGIN');
+  await db.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  try {
+    const { rows } = await db.query(sql, params);
+    await db.query('COMMIT');
+    return rows;
+  } catch (e) {
+    await db.query('ROLLBACK');
+    throw e;
+  }
+}
+
+const tinggalkan = (orderId, payload = {}, ubah = {}) =>
+  app.inject({
+    method: 'POST',
+    url: `/orders/${orderId}/abandon`,
+    headers: hdr({ 'idempotency-key': crypto.randomUUID(), ...ubah }),
+    payload,
+  });
+
+test('⛔ draf yang dibatalkan MEMBEBASKAN stok SEKETIKA, tanpa menunggu 24 jam', async () => {
+  // Inti endpoint ini. Jalur QRIS dinamis menulis order ke server SEBELUM
+  // pelanggan membayar, dan movement `sale` ditulis saat order DIBUAT. Tanpa
+  // pembatalan seketika, stok terkunci sampai pembersihan massal — dan produk
+  // berikutnya terlihat habis di depan pelanggan berikutnya.
+  const id = await order({ qtyMilli: 3000, umurJam: 0 });
+  assert.equal(await saldo(), '-3000', 'penjualan mengurangi stok saat order DIBUAT');
+
+  const res = await tinggalkan(id, { reasonCode: 'qris_dibatalkan' });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.json().status, 'abandoned');
+  assert.equal(res.json().totalStokDikembalikan, '3000');
+
+  assert.equal(await saldo(), '0', 'stok harus kembali utuh SEKETIKA');
+});
+
+test('⛔ ordernya TIDAK dihapus, dan nomor struknya tetap melekat', async () => {
+  // Nomor yang terpakai untuk order yang dibatalkan jauh lebih baik daripada
+  // LUBANG di urutan struk: 41 dan 43 ada sementara 42 tidak pernah ada di
+  // mana pun tidak dapat dijelaskan siapa pun saat diperiksa.
+  const id = await order();
+  await tinggalkan(id);
+
+  const [row] = await kueri(`SELECT status, receipt_number FROM "order" WHERE id = $1`, [id]);
+  assert.ok(row, 'order tidak boleh dihapus');
+  assert.equal(row.status, 'abandoned');
+  assert.match(row.receipt_number, /^K1-/, 'nomor struknya tetap ada');
+});
+
+test('order.abandoned dipancarkan dengan alasan dan stok yang dikembalikan', async () => {
+  const id = await order({ qtyMilli: 2000 });
+  await tinggalkan(id, { reasonCode: 'qris_kedaluwarsa' });
+
+  // ⛔ Disaring per `event_type`, bukan menghitung SELURUH baris tabel.
+  const [row] = await kueri(
+    `SELECT reason_code, reason_note, before, after FROM audit_event
+      WHERE event_type = 'order.abandoned' AND entity_id = $1`,
+    [id]
+  );
+  assert.ok(row, 'order.abandoned tidak dipancarkan');
+  assert.equal(row.reason_code, 'order_abandoned');
+  assert.equal(row.reason_note, 'qris_kedaluwarsa');
+  assert.equal(row.before.status, 'open');
+  assert.equal(row.after.status, 'abandoned');
+  assert.equal(row.after.stokDikembalikan, '2000');
+});
+
+test('⛔ order yang SUDAH dibayar ditolak 409, bukan dibatalkan', async () => {
+  // Membatalkan transaksi lunas adalah void/refund — dengan restock, alasan
+  // daftar tertutup, dan baris pembatalnya sendiri. Jalan kedua ke sana tidak
+  // punya satu pun dari itu.
+  const id = await order({ status: 'closed' });
+  const sebelum = await saldo();
+
+  const res = await tinggalkan(id);
+  assert.equal(res.statusCode, 409, res.body);
+  assert.equal(res.json().error.code, 'ORDER_NOT_ABANDONABLE');
+  assert.equal(await saldo(), sebelum, 'stok tidak boleh bergerak');
+});
+
+test('order yang tidak ada dijawab 404', async () => {
+  const res = await tinggalkan(crypto.randomUUID());
+  assert.equal(res.statusCode, 404, res.body);
+});
+
+test('⛔ pembatalan KEDUA atas draf yang sama tidak mengembalikan stok dua kali', async () => {
+  // Kasir yang menekan ulang karena jaringan menggantung, atau relay yang
+  // mencoba lagi. Stok yang naik dua kali dari yang pernah dikurangi baru
+  // ketahuan saat opname.
+  const id = await order({ qtyMilli: 5000 });
+  assert.equal((await tinggalkan(id)).statusCode, 200);
+  const sesudahPertama = await saldo();
+
+  const kedua = await tinggalkan(id);
+  assert.equal(kedua.statusCode, 409, kedua.body);
+  assert.equal(await saldo(), sesudahPertama);
+});

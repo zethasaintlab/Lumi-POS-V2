@@ -130,3 +130,65 @@ export function dikonfirmasiManual(metode: string): boolean {
 export function metodeDibulatkan(metode: string): boolean {
   return metode === 'cash';
 }
+
+/**
+ * FR-C3 — metode yang MENUNTUT server dapat dijangkau.
+ *
+ * ## ⛔ Daftar POSITIF, bukan negatif
+ *
+ * Yang didaftarkan adalah metode yang butuh online, dan sisanya berfungsi
+ * offline. Kebalikannya — mendaftarkan yang offline-capable — membuat metode
+ * yang ditambahkan kelak diam-diam dianggap butuh internet, dan gejalanya
+ * adalah metode yang hilang dari layar setiap kali Wi-Fi mati tanpa satu pun
+ * error. Bentuk yang salah gagal ke arah yang salah.
+ *
+ * ## ⛔ Hanya QRIS DINAMIS, dan alasannya bukan "digital"
+ *
+ * QRIS **statis** juga digital dan tetap berfungsi offline: QR-nya dicetak
+ * merchant, dan yang mengonfirmasi adalah orang (`spec-c` OQ-15). Yang membuat
+ * QRIS dinamis berbeda adalah `spec-c:320` — sistem tidak pernah menandai
+ * lunas tanpa konfirmasi GATEWAY, dan gateway hanya dapat dihubungi server
+ * kami.
+ *
+ * EDC juga tidak masuk: terminalnya punya jalur komunikasinya sendiri, dan
+ * POS hanya mencatat hasilnya (FR-C4).
+ */
+export const METODE_BUTUH_ONLINE: readonly string[] = ['qris_dynamic'];
+
+export function butuhOnline(metode: string): boolean {
+  return METODE_BUTUH_ONLINE.includes(metode);
+}
+
+/**
+ * Apakah metode ini dapat dipakai pada keadaan jangkauan tertentu.
+ *
+ * ⛔ `memeriksa` diperlakukan sebagai TIDAK TERJANGKAU. Kasir yang menekan
+ * QRIS dinamis selama jendela pemeriksaan akan menerima kegagalan gateway,
+ * dan `spec-c:272` melarang jalur mana pun yang membiarkan itu terjadi.
+ * Jendelanya berdurasi satu probe; salah ke arah aman di sana tidak
+ * menghilangkan satu pun penjualan — metode lain tetap aktif.
+ */
+export function metodeTersedia(metode: string, jangkauan: string): boolean {
+  if (!butuhOnline(metode)) return true;
+  return jangkauan === 'terjangkau';
+}
+
+/**
+ * Alasan sebuah metode nonaktif, atau `null` bila ia aktif.
+ *
+ * ⛔ `spec-c:272` menuntut metode online-only **TIDAK disembunyikan**: kasir
+ * harus tahu metode itu ada dan mengapa tidak bisa dipakai. Daftar yang
+ * memendek diam-diam terbaca seperti aplikasi yang rusak atau seperti merchant
+ * yang tidak menerima QRIS sama sekali — dan kasir tidak punya cara
+ * membedakannya.
+ *
+ * ⛔ Kalimatnya juga memenuhi aturan design system #5: status tidak pernah
+ * warna saja. Tombol yang mati tanpa teks adalah tombol yang kasir simpulkan
+ * rusak.
+ */
+export function alasanNonaktif(metode: string, jangkauan: string): string | null {
+  if (metodeTersedia(metode, jangkauan)) return null;
+  return jangkauan === 'memeriksa'
+    ? 'Memeriksa koneksi…'
+    : 'Perlu internet';
+}

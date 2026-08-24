@@ -1,4 +1,15 @@
 import { useEffect, useState } from 'react';
+import { pantauJangkauan, type KeadaanJangkauan } from '../lokal/keterjangkauan.ts';
+import { alasanNonaktif } from '../../../../packages/domain/src/pembayaran-manual.ts';
+import { PanelQris } from '../komponen/PanelQris.tsx';
+import { buatPemanggilApi } from '../lokal/api.ts';
+import {
+  cadangkanNomor,
+  bersihkanDraf,
+  mintaQr,
+  pulihkanDraf,
+} from '../kasir/qris-dinamis.ts';
+import type { DrafTerkirim } from '../kasir/penjualan.ts';
 import { EmptyState } from 'ds';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
@@ -63,10 +74,16 @@ const PECAHAN = [2000, 5000, 10000, 20000, 50000, 100000];
 /* Nama metode di LAYAR — bukan di struk. Struk memakai `labelMetode`
    (`cetak/metode.ts`), yang namanya sengaja lebih pendek karena berbagi baris
    32 kolom dengan nominalnya. */
-const METODE_TERLIHAT = ['cash', 'qris_static', 'card_edc'] as const;
+/* ⛔ `qris_dynamic` ADA di daftar ini meski ia satu-satunya yang tidak dapat
+   dipakai offline. `spec-c:272`: metode online-only "TIDAK disembunyikan —
+   kasir harus tahu metode itu ada dan mengapa tidak bisa dipakai". Daftar yang
+   memendek diam-diam terbaca seperti merchant yang tidak menerima QRIS sama
+   sekali, dan kasir tidak punya cara membedakannya. */
+const METODE_TERLIHAT = ['cash', 'qris_dynamic', 'qris_static', 'card_edc'] as const;
 
-const NAMA_METODE: Record<MetodeBayar, string> = {
+const NAMA_METODE: Record<string, string> = {
   cash: 'Tunai',
+  qris_dynamic: 'QRIS',
   qris_static: 'QRIS statis',
   card_edc: 'Kartu (EDC)',
 };
@@ -101,9 +118,67 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      permukaan fraud yang paling mungkin perlu dimatikan untuk satu merchant
      tanpa menunggu rilis. */
   const [fitur, setFitur] = useState<PetaFitur>(() => ({}));
+  /* FR-C3 — keadaan jangkauan SERVER, bukan `navigator.onLine`. Browser
+     melaporkan antarmuka, bukan keterjangkauan: kafe yang Wi-Fi-nya menyala
+     dengan uplink mati melaporkan `true`, dan metode online-only yang tampil
+     aktif di sana gagal tepat di depan pelanggan. */
+  const [jangkauan, setJangkauan] = useState<KeadaanJangkauan>('memeriksa');
+  /* FR-C14 — panel tunggu QRIS dinamis, bila sedang berjalan. */
+  const [panelQris, setPanelQris] = useState<{
+    qrString: string;
+    paymentId: string;
+    orderId: string;
+    draf: DrafTerkirim;
+    nominal: bigint;
+  } | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [selesai, setSelesai] = useState<Extract<HasilPenjualan, { status: 'tersimpan' }> | null>(null);
+
+  /* ⛔ Pemantau hidup selama layar ini terbuka dan DIHENTIKAN saat ditutup.
+     `spec-c:277` menuntut metode aktif kembali tanpa perlu menutup layar —
+     itu yang membuat probe berkala ada, bukan sekadar pembacaan sekali. */
+  useEffect(() => {
+    if (!konfig) return;
+    const pantau = pantauJangkauan({
+      baseUrl: konfig.baseUrl,
+      pasangPendengar: (nama, fn) => {
+        window.addEventListener(nama, fn);
+        return () => window.removeEventListener(nama, fn);
+      },
+    });
+    setJangkauan(pantau.keadaan());
+    const lepas = pantau.langgan(setJangkauan);
+    return () => {
+      lepas();
+      pantau.hentikan();
+    };
+  }, [konfig]);
+
+  /* FR-C14 (`spec-c:328`) — draf yang tertinggal DIPULIHKAN saat layar dibuka.
+     "Aplikasi mati di tengah polling → setelah restart, payment masih
+     `pending_confirmation` dan polling dilanjutkan."
+
+     ⛔ Tanpa ini, tab yang ter-refresh membuat kasir kehilangan seluruh jejak
+     transaksi yang pelanggannya mungkin SUDAH bayar — dan satu-satunya yang
+     tahu adalah server. */
+  useEffect(() => {
+    if (!shift || panelQris !== null || total === null) return;
+    let hidup = true;
+    void pulihkanDraf(db, shift.id).then((d) => {
+      if (!hidup || d === null || d.qrString === null) return;
+      setPanelQris({
+        qrString: d.qrString,
+        paymentId: d.paymentId,
+        orderId: d.orderId,
+        draf: d.draf,
+        nominal: total,
+      });
+    });
+    return () => {
+      hidup = false;
+    };
+  }, [db, shift, total, panelQris]);
 
   const keranjang = keranjangSekarang();
   const subtotal = subtotalKeranjang(keranjang);
@@ -150,6 +225,42 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      Angka kembalian memakai `--text-display` (aturan design system: angka
      terbesar di layar), karena itu satu-satunya angka yang kasir dan
      pelanggan baca bersamaan. */
+  /* FR-C14 — panel tunggu menggantikan seluruh layar. Kasir tidak boleh dapat
+     mengubah keranjang atau metode sementara pelanggan sedang memindai QR
+     untuk nominal yang sudah dikirim ke gateway. */
+  if (panelQris && konfig && sesi) {
+    return (
+      <PanelQris
+        kirim={buatPemanggilApi(konfig, sesi.userId)}
+        qrString={panelQris.qrString}
+        paymentId={panelQris.paymentId}
+        orderId={panelQris.orderId}
+        nominal={panelQris.nominal}
+        onSelesai={(h) => {
+          if (h.status === 'lunas') {
+            selesaikanQris(panelQris.draf);
+            return;
+          }
+          if (h.status === 'batal') {
+            void bersihkanDraf(db);
+            setPanelQris(null);
+            setGalat('Transaksi dibatalkan. Stok sudah dikembalikan.');
+            return;
+          }
+          /* ⛔ "Ditunda" TIDAK membersihkan draf lokal. Ia satu-satunya jejak
+             perangkat bahwa QR pernah diminta, dan pelanggan mungkin sedang
+             memindainya. Menghapusnya berarti kasir kehilangan tombol
+             "Cek status" untuk uang yang mungkin sudah masuk. */
+          setPanelQris(null);
+          setGalat(
+            'Pembayaran QRIS masih menunggu konfirmasi. Ia tetap tercatat di server dan ' +
+              'dapat dicek lagi.'
+          );
+        }}
+      />
+    );
+  }
+
   if (selesai) {
     return (
       <div className="kasir-shift">
@@ -223,6 +334,10 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     // metode tunggal, dan yang paling sering ditekan.
     const nominal = nominalKetik !== null && nominalKetik > 0n ? nominalKetik : (sisa ?? undefined);
     if (metode === 'qris_static') return { metode, referensi, nominal };
+    // ⛔ QRIS dinamis tidak pernah lewat sini: ia dimulai `mulaiQris` dan
+    // ditulis `selesaikanQris` dengan `paymentId` dari server. Cabang ini ada
+    // supaya tipenya lengkap, bukan supaya ia dapat dipakai.
+    if (metode === 'qris_dynamic') return null;
     return { metode, approvalCode, cardLast4: cardLast4 || null, nominal };
   };
 
@@ -257,6 +372,109 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   /* Lunas tanpa tunai: seluruh tagihan sudah tertutup bagian non-tunai. */
   const lunasTanpaTunai = sisa !== null && sisa === 0n && bagian.length > 0;
   const masukanLengkap = lunasTanpaTunai || formLengkap;
+
+  /* FR-C3 — jalur ONLINE-FIRST untuk QRIS dinamis.
+
+     ⛔ Terbalik dari setiap jalur lain di produk ini, dan bukan karena pilihan
+     rancangan: `spec-c:320` melarang sistem menandai lunas tanpa konfirmasi
+     GATEWAY, dan gateway hanya dapat dihubungi server kami. Perangkat tidak
+     punya cara mengetahui pelanggan sudah membayar. */
+  const mulaiQris = () => {
+    if (!konfig || !shift || !sesi || total === null) return;
+    setMenyimpan(true);
+    setGalat(null);
+    const kirim = buatPemanggilApi(konfig, sesi.userId);
+    void (async () => {
+      try {
+        const { sequence, receiptNumber } = await cadangkanNomor(
+          db,
+          shift.businessDate,
+          konfig.deviceCode
+        );
+        const d: DrafTerkirim = {
+          orderId: crypto.randomUUID(),
+          checkId: crypto.randomUUID(),
+          receiptNumber,
+          sequence,
+          businessDate: shift.businessDate,
+          paymentIds: [crypto.randomUUID()],
+          occurredAt: new Date().toISOString(),
+          /* ⛔ HLC di-tick SEKARANG dan dibekukan di draf. Penjualan ini
+             TERJADI saat kasir menekan Bayar, bukan saat pelanggan selesai
+             memindai — dan dua stempel berbeda untuk satu penjualan membuat
+             urutan kausalnya berbeda antara server dan perangkat. */
+          hlc: hlc!.tick(),
+        };
+        const hasil = await mintaQr({
+          db,
+          kirim,
+          konfig,
+          shiftId: shift.id,
+          keranjang,
+          draf: d,
+          channel: 'takeaway',
+          total,
+          idBaru: () => crypto.randomUUID(),
+          sekarang: d.occurredAt,
+        });
+        if (hasil.status !== 'qr') {
+          setGalat(
+            `${hasil.pesan} Penjualan BELUM tersimpan; nomor struk ${receiptNumber} sudah ` +
+              'dicadangkan dan tercatat sebagai dibatalkan.'
+          );
+          if (hasil.paymentId === null) await bersihkanDraf(db);
+          return;
+        }
+        setPanelQris({
+          qrString: hasil.qrString,
+          paymentId: hasil.paymentId,
+          orderId: d.orderId,
+          draf: d,
+          nominal: total,
+        });
+      } catch (e) {
+        setGalat(`QRIS tidak dapat dimulai: ${(e as Error).message}`);
+      } finally {
+        setMenyimpan(false);
+      }
+    })();
+  };
+
+  /* Dipanggil saat gateway mengonfirmasi. Penjualan ditulis LOKAL di sini —
+     satu transaksi, invariant #1 utuh — dengan identitas draf yang server
+     sudah pegang, dan TANPA mengisi outbox. */
+  const selesaikanQris = (draf: DrafTerkirim) => {
+    setMenyimpan(true);
+    void simpanPenjualan({
+      db,
+      konfig: konfig!,
+      sesi: sesi!,
+      shift: shift!,
+      keranjang,
+      // ⛔ `qris_dynamic`, BUKAN `qris_static`. Keduanya "QRIS" di mata kasir
+      // dan sangat berbeda di mata laporan: `qris_static` menandai
+      // `confirmed_manually`, dan FR-G5 memakainya sebagai sinyal exception.
+      // Menulis pembayaran yang GATEWAY konfirmasi sebagai dikonfirmasi-manual
+      // menuduh kasir atas kontrol yang justru berjalan.
+      pembayaran: [{ metode: 'qris_dynamic', paymentId: draf.paymentIds[0] }],
+      waktu: () => new Date(),
+      idBaru: () => crypto.randomUUID(),
+      hlc: () => hlc!.tick(),
+      draf,
+    })
+      .then(async (hasil) => {
+        await bersihkanDraf(db);
+        pemberitahu.beritahu();
+        if (hasil.status === 'tersimpan') {
+          setPanelQris(null);
+          setSelesai(hasil);
+          return;
+        }
+        setGalat('Pembayaran lunas di server, tetapi penjualan gagal ditulis di perangkat.');
+      })
+      .catch((e: Error) => setGalat(`Penjualan TIDAK tersimpan: ${e.message}`))
+      .finally(() => setMenyimpan(false));
+  };
 
   const bayar = () => {
     setMenyimpan(true);
@@ -328,20 +546,29 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       <div className="kasir-pecahan">
         {METODE_TERLIHAT.filter(
           (m) => m !== 'qris_static' || fiturAktif(fitur, 'pembayaran_qris_statis')
-        ).map((m) => (
-          <Tombol
-            key={m}
-            varian={metode === m ? 'primary' : 'secondary'}
-            kritis
-            disabled={menyimpan}
-            onClick={() => {
-              setMetode(m);
-              setGalat(null);
-            }}
-          >
-            {NAMA_METODE[m]}
-          </Tombol>
-        ))}
+        ).map((m) => {
+          const alasan = alasanNonaktif(m, jangkauan);
+          return (
+            <div key={m} className="stack" style={{ gap: 'var(--space-1)' }}>
+              <Tombol
+                varian={metode === m ? 'primary' : 'secondary'}
+                kritis
+                disabled={menyimpan || alasan !== null}
+                onClick={() => {
+                  setMetode(m);
+                  setGalat(null);
+                }}
+              >
+                {NAMA_METODE[m]}
+              </Tombol>
+              {/* ⛔ Status TIDAK PERNAH warna saja (aturan design system #5),
+                  dan `spec-c:271` menuntut teksnya secara eksplisit. Tombol
+                  yang mati tanpa penjelasan adalah tombol yang kasir simpulkan
+                  rusak — lalu ia berhenti mempercayai layar ini. */}
+              {alasan !== null && <span className="t-caption">{alasan}</span>}
+            </div>
+          );
+        })}
       </div>
       <p className="t-body-md kasir-login-sub">
         Subtotal <span className="num">{rupiah(subtotal)}</span> · pajak dan pembulatan dihitung saat
@@ -502,7 +729,12 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         </p>
       )}
 
-      <Tombol varian="primary" kritis disabled={menyimpan || !masukanLengkap} onClick={bayar}>
+      <Tombol
+        varian="primary"
+        kritis
+        disabled={menyimpan || (metode === 'qris_dynamic' ? bagian.length > 0 : !masukanLengkap)}
+        onClick={metode === 'qris_dynamic' ? mulaiQris : bayar}
+      >
         {menyimpan ? 'Menyimpan…' : 'Simpan Penjualan'}
       </Tombol>
     </div>

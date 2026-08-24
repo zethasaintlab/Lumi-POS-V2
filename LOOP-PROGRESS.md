@@ -3047,3 +3047,130 @@ Seluruh suite hijau. `test:domain` 484 · `test:kasir` 450 · `test:backoffice`
 `test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 · `test:dst` 14 ·
 `test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3 ·
 `test:oxlint-ds-adherence` 12. `lint:ds` bersih; build ok.
+
+---
+
+## Task 38 — FR-C3 + QRIS dinamis di kasir, jalur ONLINE-FIRST (24 Agustus 2026) ✅
+
+Dua FR yang saling mengunci: FR-C3 menuntut metode online-only tampil nonaktif
+dengan alasan, dan itu hanya benar bila metodenya ADA lebih dulu. Keduanya
+karena itu satu task.
+
+### ⛔ Kenapa jalur ini terbalik dari setiap jalur lain di produk ini
+
+Setiap penjualan lain menulis LOKAL lebih dulu lalu me-relay — itu yang membuat
+kasir tetap dapat berjualan tanpa internet, dan itu seluruh nilai jual produk
+ini. QRIS dinamis tidak dapat mengikutinya, dan bukan karena pilihan rancangan:
+`spec-c:320` melarang sistem menandai lunas tanpa konfirmasi GATEWAY, dan
+gateway hanya dapat dihubungi server kami. Perangkat tidak punya cara
+mengetahui pelanggan sudah membayar.
+
+```
+cadangkan nomor struk (lokal)
+  → POST /orders                  (draf, status `open` di server)
+  → POST /orders/{id}/payments    (qris_dynamic → QR)
+  → tampilkan QR, polling 2 dtk / maks 5 mnt
+  → confirmed → simpanPenjualan({ draf })   ← satu transaksi lokal
+```
+
+### Keputusan yang mengikat kodenya
+
+- ⛔ **`navigator.onLine === true` BUKAN bukti**, dan ini bukan kehati-hatian
+  berlebihan. Browser melaporkan keadaan ANTARMUKA, bukan keterjangkauan: kafe
+  yang Wi-Fi-nya menyala dengan uplink mati, captive portal yang belum
+  di-login, dan DNS yang tidak menjawab semuanya melaporkan `true`. Ketiganya
+  keadaan nyata di outlet, dan ketiganya membuat QRIS dinamis tampil aktif lalu
+  gagal — persis yang `spec-c:272` larang. Arahnya asimetris: `false` **pasti**
+  tidak terjangkau; `true` **belum tahu**, dan yang menjawabnya hanya
+  permintaan yang benar-benar sampai ke `/health` SERVER KAMI.
+- ⛔ **`memeriksa` diperlakukan sebagai TIDAK terjangkau.** Jendelanya satu
+  probe; salah ke arah aman di sana tidak menghilangkan satu pun penjualan
+  karena metode lain tetap aktif.
+- ⛔ **Nomor struk dicadangkan SEBELUM QR diminta**, dan draf yang batal TIDAK
+  menghapus ordernya. Server menuntut `receiptNumber` saat order dibuat dan
+  counternya lokal; konsekuensinya pelanggan yang batal membakar satu nomor.
+  Yang TIDAK boleh terjadi adalah LUBANG di urutan struk — 41 dan 43 ada
+  sementara 42 tidak pernah ada di mana pun tidak dapat dijelaskan siapa pun
+  saat diperiksa. Nomor yang melekat pada order `abandoned` jauh lebih baik.
+- ⛔ **Payment lokal ditulis `qris_dynamic`, BUKAN `qris_static`.** Keduanya
+  "QRIS" di mata kasir dan sangat berbeda di mata laporan: `qris_static`
+  menandai `confirmed_manually`, dan FR-G5 memakainya sebagai sinyal exception.
+  Menulis pembayaran yang GATEWAY konfirmasi sebagai dikonfirmasi-manual
+  **menuduh kasir atas kontrol yang justru berjalan.** Saya hampir menulisnya
+  begitu; yang menahannya adalah tipe `MetodeBayar` yang menolak.
+- ⛔ **`draf` adalah SATU objek, bukan beberapa bendera.** Ia mengubah dua hal
+  yang tidak pernah benar sendirian: identitas tidak di-generate ulang, dan
+  outbox tidak diisi. Bendera yang dapat dinyalakan sebagian adalah bendera
+  yang suatu hari dinyalakan sebagian — dan separuhnya menghasilkan order kedua
+  untuk uang yang sama.
+- ⛔ **Outbox dilewati karena PEMBAYARANNYA, bukan ordernya.** Order yang
+  di-relay ulang dipantulkan idempotency key; pembayaran QRIS dinamis yang
+  di-relay ulang meminta gateway menerbitkan **QR KEDUA untuk uang yang sudah
+  diterima**.
+- ⛔ **Draf BERTAHAN di perangkat** (`draf_qris_lokal`), dan disimpan SEBELUM
+  gateway dipanggil — alasan yang sama persis dengan kenapa server meng-commit
+  payment `pending_confirmation` lebih dulu. `spec-c:328` menuntutnya: aplikasi
+  yang mati di tengah polling harus dapat melanjutkan.
+- ⛔ **Timeout polling BUKAN gagal**, dan kalimat di layar mengatakannya. Kasir
+  yang membaca "gagal" akan menagih ulang pelanggan yang mungkin sudah
+  membayar. Statusnya tetap `pending`; `spec-c:307` menaruhnya di "Perlu
+  diperiksa".
+- ⛔ **"Batalkan" hanya ditawarkan saat kita TAHU uang tidak berpindah**
+  (ditolak penerbit / QR kedaluwarsa). Selama masih `pending` yang tersedia
+  adalah menutup layar — membatalkan draf yang pelanggannya sedang memindai
+  berarti melepas stok untuk penjualan yang detik berikutnya lunas.
+- ⛔ **Status gateway TAK DIKENAL dan kegagalan JARINGAN keduanya `pending`**,
+  tidak pernah `confirmed` maupun `gagal`. Aturan yang sama dengan adapter
+  gateway di server.
+- **QR ditampilkan sebagai TEKS, bukan gambar.** Merender QR menuntut pustaka
+  baru dan `CLAUDE.md` mengunci dependensi. Batas yang dinyatakan.
+
+### `POST /orders/{id}/abandon` — endpoint baru
+
+Pembersihan massal (`cleanup-abandoned`) baru menyentuh order `open` setelah
+**24 jam** dan menuntut peran `stock_adjust`. Kasir yang membatalkan di depan
+pelanggan tidak dapat menunggu keduanya, dan stok yang terkunci sehari membuat
+produk berikutnya terlihat habis.
+
+- ⛔ **`tinggalkanOrder` diekstrak menjadi SATU fungsi** yang dipakai
+  pembersihan massal dan endpoint baru. Dua salinan aturan "apa artinya
+  meninggalkan sebuah order" akan menyimpang, dan yang menyimpang meninggalkan
+  stok terkunci atau audit yang tidak ditulis.
+- ⛔ **`sale`, bukan `stock_adjust`.** Membatalkan satu draf yang kasir itu
+  sendiri baru buat adalah bagian dari menjual; membebaskan stok SELURUH outlet
+  dalam satu permintaan bukan.
+- ⛔ **Order yang SUDAH dibayar ditolak 409.** Membatalkan transaksi lunas
+  adalah void/refund — dengan restock, alasan daftar tertutup, dan baris
+  pembatalnya sendiri. Jalan kedua ke sana tidak punya satu pun dari itu.
+- ⛔ **`sesiOpsional`**, aturan yang sudah dua kali dilanggar sebelumnya
+  (refund offline, kas manual). Tanpa itu pembatalan dijawab 401 dan stok tetap
+  terkunci.
+
+### Sabotase yang TIDAK menyala, dan apa yang dilakukan
+
+Setelah semua test hijau, sabotase `const orderId = idBaru()` — perilaku paling
+berbahaya di seluruh fitur ini — **lolos tanpa satu test merah**. Tidak ada
+test yang menjalankan `simpanPenjualan` dengan `draf`.
+
+Ditambahkan tujuh test untuk jalur draf, termasuk kontrol negatif bahwa jalur
+NORMAL tetap mengisi outbox dan menaikkan counter. Ketiga sabotase kini merah:
+identitas di-generate ulang · counter dinaikkan lagi · outbox tetap diisi.
+
+### Verifikasi
+
+Seluruh suite hijau. `test:domain` 492 · `test:kasir` 489 · `test:backoffice`
+422 · `test:server` 420 · `test:isolation` 211 · `test:ordering` 192 ·
+`test:catalog` 177 · `test:identity` 156 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 · `test:dst` 14 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3 ·
+`test:oxlint-ds-adherence` 12. `lint:ds` bersih; kasir build.
+
+### Utang yang dinyatakan
+
+- **Bentuk SQL `draf_qris_lokal` belum dijalankan di BROWSER.**
+  `ON CONFLICT(id) DO UPDATE` diterima `node:sqlite`; bentuk tanpa aksi pernah
+  DITOLAK `wa-sqlite` (8 Agustus 2026). Jalankan `apps/kasir/harness.html`
+  sebelum mempercayainya di perangkat merchant.
+- **QRIS dinamis belum dapat digabung** dengan metode lain (pembayaran
+  campuran). `MetodeCampuran` sudah memuatnya sehingga aritmetikanya benar bila
+  kelak digabung; yang belum ada adalah jalurnya.

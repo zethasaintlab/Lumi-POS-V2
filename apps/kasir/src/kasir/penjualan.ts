@@ -56,17 +56,47 @@ import type { Keranjang } from './keranjang.ts';
  */
 
 /**
- * ⛔ QRIS DINAMIS tidak ada di daftar ini, dan itu batas yang dinyatakan.
+ * ⛔ QRIS DINAMIS ada di sini, dan ia SATU-SATUNYA yang tidak berfungsi
+ * offline.
  *
  * Ia menuntut gateway menjawab sebelum pembayaran dapat dinyatakan lunas
- * (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur
- * penjualan di perangkat ini menulis lokal lebih dulu dan me-relay kemudian.
- * Membangunnya menuntut jalur penjualan online-first yang belum ada.
+ * (`spec-c:320`), jadi ordernya harus sudah ada di server — jalur ONLINE-FIRST
+ * di `qris-dinamis.ts`, terbalik dari setiap jalur lain di produk ini. Yang
+ * ditulis di sini hanya CERMINnya, setelah gateway mengonfirmasi.
  *
- * Ketiga yang ADA di sini semuanya berfungsi tanpa jaringan, dan itu sengaja:
- * merchant yang internetnya mati tetap dapat menerima ketiganya.
+ * ⛔ Ia TIDAK boleh ditulis sebagai `qris_static`. Keduanya "QRIS" di mata
+ * kasir dan sangat berbeda di mata setiap laporan: `qris_static` menandai
+ * `confirmed_manually` — tidak ada sistem yang memverifikasinya — dan FR-G5
+ * memakainya sebagai sinyal exception. Menulis pembayaran yang GATEWAY
+ * konfirmasi sebagai dikonfirmasi-manual menuduh kasir atas kontrol yang
+ * justru berjalan.
+ *
+ * Tiga sisanya berfungsi tanpa jaringan, dan itu sengaja: merchant yang
+ * internetnya mati tetap dapat menerima ketiganya.
  */
-export type MetodeBayar = 'cash' | 'qris_static' | 'card_edc';
+export type MetodeBayar = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc';
+
+/**
+ * FR-C3 — identitas yang SUDAH dicadangkan dan sudah dikirim ke server
+ * sebagai draf (jalur online-first, QRIS dinamis).
+ *
+ * ⛔ Nomor struk ikut di sini, dan itu inti persoalannya. Ia dicadangkan
+ * SEBELUM QR diminta, karena server menuntutnya saat order dibuat. Kalau
+ * pelanggan tidak jadi membayar, nomor itu tetap melekat pada order yang
+ * ditandai `abandoned` di server — dan itu jauh lebih baik daripada LUBANG di
+ * urutan struk, yang tidak dapat dijelaskan siapa pun saat diperiksa.
+ */
+export interface DrafTerkirim {
+  orderId: string;
+  checkId: string;
+  receiptNumber: string;
+  sequence: number;
+  businessDate: string;
+  /** Satu id per bagian pembayaran, sudah dipakai saat draf dikirim. */
+  paymentIds: readonly string[];
+  occurredAt: string;
+  hlc: bigint;
+}
 
 export interface PembayaranTunai {
   metode: 'cash';
@@ -97,7 +127,28 @@ export interface PembayaranEdc {
   nominal?: bigint;
 }
 
-export type Pembayaran = PembayaranTunai | PembayaranQrisStatis | PembayaranEdc;
+/**
+ * FR-C2 — QRIS dinamis yang SUDAH dikonfirmasi gateway.
+ *
+ * ⛔ Tanpa `referensi` wajib dan tanpa `tendered`. Yang mengonfirmasinya adalah
+ * SISTEM, bukan orang: kontrol anti-fraud `periksaReferensi` ada untuk QRIS
+ * statis justru karena di sana tidak ada sistem yang memverifikasi apa pun.
+ * Menuntutnya di sini hanya membuat kasir mengetik ulang id yang server sudah
+ * pegang.
+ */
+export interface PembayaranQrisDinamis {
+  metode: 'qris_dynamic';
+  /** Id payment di server — yang gateway konfirmasi. */
+  paymentId: string;
+  /** Lihat `PembayaranQrisStatis.nominal`. */
+  nominal?: bigint;
+}
+
+export type Pembayaran =
+  | PembayaranTunai
+  | PembayaranQrisDinamis
+  | PembayaranQrisStatis
+  | PembayaranEdc;
 
 export type HasilPenjualan =
   | {
@@ -226,6 +277,13 @@ function muatanPembayaran(
       amount: Number(nominal),
       reference: p.referensi.trim(),
     };
+  }
+  if (p.metode === 'qris_dynamic') {
+    // ⛔ Muatan ini TIDAK PERNAH dikirim: penjualan QRIS dinamis mendarat di
+    // server lewat jalur online-first, dan outbox-nya dilewati (`draf`).
+    // Ia ada supaya bentuknya tetap lengkap bila kelak ada jalur lain — dan
+    // supaya `muatanPembayaran` tidak punya cabang yang melempar.
+    return { id: paymentId, method: 'qris_dynamic', amount: Number(nominal) };
   }
   return {
     id: paymentId,
@@ -422,6 +480,110 @@ export async function hitungKeranjang({
   };
 }
 
+
+/**
+ * Muatan `POST /orders` — SATU tempat, dipakai jalur outbox dan jalur
+ * online-first (FR-C3).
+ *
+ * ⛔ Diekstrak justru karena ada DUA pemanggilnya sekarang. Sebelum jalur
+ * online-first lahir, muatan ini hidup inline di dalam `enqueue` dan itu
+ * benar; begitu ada pemanggil kedua, salinan kedua akan menyimpang — dan
+ * bentuk penyimpangannya adalah penjualan QRIS dinamis yang mendarat di server
+ * dengan field yang berbeda dari penjualan tunai, tanpa satu pun error.
+ *
+ * Murni: tanpa I/O. `idBaru` di-inject karena modifier butuh id baru per
+ * baris, dan itu satu-satunya sumber ketidakmurnian yang tersisa.
+ */
+export function muatanOrder({
+  orderId,
+  konfig,
+  shiftId,
+  receiptNumber,
+  businessDate,
+  sequence,
+  channel,
+  checkId,
+  hlc,
+  occurredAt,
+  total,
+  keranjang,
+  idBaru,
+}: {
+  orderId: string;
+  konfig: KonfigPerangkat;
+  shiftId: string;
+  receiptNumber: string;
+  businessDate: string;
+  sequence: number;
+  channel: 'dine_in' | 'takeaway';
+  checkId: string;
+  hlc: bigint;
+  occurredAt: string;
+  total: bigint;
+  keranjang: Keranjang;
+  idBaru: () => string;
+}): Record<string, unknown> {
+  const hlcValue = hlc;
+  const totals = { total };
+  return {
+    id: orderId,
+    outletId: konfig.outletId,
+    deviceId: konfig.deviceId,
+    shiftId,
+    receiptNumber,
+    businessDate,
+    sequence,
+    channel,
+    checkId,
+    hlc: hlcValue.toString(),
+    occurredAt,
+    // FR-H6: total dan harga yang DIPAKAI KLIEN. Server tetap menghitung
+    // sendiri; ini yang membuatnya dapat membedakan klien yang belum
+    // tersinkron dari selisih yang tidak dapat dijelaskan.
+    // ⛔ NUMBER, bukan string — tidak seperti `hlc`. `assertClientTotalValid`
+    // menuntut `Number.isInteger`, dan rupiah utuh muat di double dengan
+    // aman; `hlc` string justru karena ia 57-bit dan TIDAK muat.
+    // Mengirimnya sebagai string ditolak 400 lalu jadi `gagal-permanen` —
+    // penjualan yang sempurna berhenti di antrean. Ditemukan dengan
+    // menembak server sungguhan; test pertama saya justru mengunci
+    // bug-nya dengan mengharapkan string.
+    total: Number(totals.total),
+    // FR-B8 — dikirim sebagai PERMINTAAN, bukan nominal hasilnya.
+    //
+    // ⛔ Server menghitung ulang dari subtotal-nya SENDIRI, dan itu yang
+    // membuat jalur pemeriksaan selisih (FR-H6) dapat memutuskan apakah
+    // diskon persen dari perangkat yang harganya basi masih konsisten
+    // dengan harga-harganya sendiri. Mengirim nominal membuat server
+    // tidak dapat membedakan diskon yang wajar dari yang dikarang.
+    ...(keranjang.diskon !== null
+      ? {
+          discount: {
+            tipe: keranjang.diskon.minta.tipe,
+            nilai: Number(keranjang.diskon.minta.nilai),
+          },
+          discountReasonCode: keranjang.diskon.alasanKode,
+          ...(keranjang.diskon.alasanCatatan
+            ? { discountReasonNote: keranjang.diskon.alasanCatatan }
+            : {}),
+        }
+      : {}),
+    lines: keranjang.baris.map((b) => ({
+      id: b.id,
+      variationId: b.variationId,
+      quantityMilli: b.quantityMilli,
+      discountAmount: 0,
+      unitPrice: b.unitPrice,
+      modifiers: b.modifier.map((m) => ({
+        id: idBaru(),
+        modifierId: m.id,
+        name: m.nama,
+        price: m.harga,
+        quantityMilli: m.qtyMilli,
+      })),
+    })),
+  };
+}
+
 export async function simpanPenjualan({
   db,
   konfig,
@@ -435,6 +597,7 @@ export async function simpanPenjualan({
   channel = 'takeaway',
   peripheral,
   printerProfile,
+  draf,
 }: {
   db: DbLokal;
   konfig: KonfigPerangkat;
@@ -459,6 +622,24 @@ export async function simpanPenjualan({
    */
   peripheral?: PeripheralPort | null;
   printerProfile?: PrinterProfile | null;
+  /**
+   * FR-C3 — penjualan yang SUDAH diterima server lebih dulu (jalur
+   * online-first, QRIS dinamis).
+   *
+   * ⛔ Kehadirannya mengubah DUA hal, dan keduanya wajib berubah bersamaan:
+   *
+   * 1. **Identitas dan nomor struk TIDAK di-generate ulang.** Ia sudah
+   *    dicadangkan saat draf dikirim, dan server sudah memegangnya. Membuat
+   *    yang baru di sini menghasilkan order KEDUA untuk uang yang sama.
+   * 2. **Outbox TIDAK diisi.** Server sudah punya ordernya; me-relay ulang
+   *    pembayaran QRIS dinamis berarti meminta gateway menerbitkan QR KEDUA
+   *    untuk uang yang sudah diterima.
+   *
+   * Satu objek, bukan beberapa bendera terpisah: keduanya tidak pernah benar
+   * sendirian, dan bendera yang dapat dinyalakan sebagian adalah bendera yang
+   * suatu hari dinyalakan sebagian.
+   */
+  draf?: DrafTerkirim;
 }): Promise<HasilPenjualan> {
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
 
@@ -545,23 +726,35 @@ export async function simpanPenjualan({
 
   // ---- persistensi: satu transaksi ---------------------------------------
 
-  const orderId = idBaru();
-  const checkId = idBaru();
+  // ⛔ Identitas draf DIPAKAI ULANG, tidak pernah di-generate ulang. Server
+  // sudah memegang order ini; id baru di sini menghasilkan order KEDUA untuk
+  // uang yang sama, dan yang pertama tertinggal `open` selamanya.
+  const orderId = draf?.orderId ?? idBaru();
+  const checkId = draf?.checkId ?? idBaru();
   // Satu id per bagian. `payment` PK-nya `(id, occurred_at)` dan tabelnya
   // dipartisi; yang melindungi retry adalah Idempotency-Key, dan kunci itu
   // diturunkan dari id ini — dua bagian yang berbagi id berarti bagian kedua
   // dijawab dari cache bagian pertama, lalu hilang.
-  const paymentIds = bagian.map(() => idBaru());
+  const paymentIds = draf?.paymentIds ?? bagian.map(() => idBaru());
   const idOutboxOrder = idBaru();
   const idMovement = idBaru();
-  const occurredAt = sekarang.toISOString();
-  const hlcValue = hlc();
+  // ⛔ Waktu dan HLC juga dari draf. Penjualan ini TERJADI saat kasir menekan
+  // Bayar dan QR muncul, bukan saat pelanggan selesai memindai — dan dua
+  // stempel berbeda untuk satu penjualan membuat urutan kausalnya (I9/I10)
+  // berbeda antara server dan perangkat.
+  const occurredAt = draf?.occurredAt ?? sekarang.toISOString();
+  const hlcValue = draf?.hlc ?? hlc();
 
   const perLine = new Map(pajak.perLine.map((p) => [p.lineId, p]));
 
   const hasil = await db.transaction(async (tx) => {
-    const sequence = await urutanBerikutnya(tx, businessDate);
-    const receiptNumber = nomorStruk(konfig.deviceCode, businessDate, sequence);
+    // ⛔ Counter TIDAK dinaikkan lagi untuk penjualan yang drafnya sudah
+    // dikirim: nomornya sudah dicadangkan, dan menaikkannya di sini melompati
+    // satu nomor pada SETIAP penjualan QRIS dinamis — lubang di urutan struk
+    // yang tidak dapat dijelaskan siapa pun saat diperiksa.
+    const sequence = draf?.sequence ?? (await urutanBerikutnya(tx, businessDate));
+    const receiptNumber =
+      draf?.receiptNumber ?? nomorStruk(konfig.deviceCode, businessDate, sequence);
 
     await tx.execute(
       `INSERT INTO "order"
@@ -729,68 +922,24 @@ export async function simpanPenjualan({
       );
     }
 
+    // ⛔ Outbox DILEWATI untuk penjualan yang sudah diterima server.
+    //
+    // Order-nya sudah ada di sana (idempotency key akan memantulkannya), tapi
+    // PEMBAYARANNYA tidak: me-relay ulang pembayaran QRIS dinamis berarti
+    // meminta gateway menerbitkan QR KEDUA untuk uang yang sudah diterima.
+    // Keduanya dilewati bersama — item order tanpa item payment adalah antrean
+    // yang separuh, dan `depends_on` menunjuk item yang tidak pernah ada.
+    if (draf === undefined) {
     await enqueue(tx, {
       id: idOutboxOrder,
       entityType: 'order',
       entityId: orderId,
       operation: 'create',
-      payload: {
-        id: orderId,
-        outletId: konfig.outletId,
-        deviceId: konfig.deviceId,
-        shiftId: shift.id,
-        receiptNumber,
-        businessDate,
-        sequence,
-        channel,
-        checkId,
-        hlc: hlcValue.toString(),
-        occurredAt,
-        // FR-H6: total dan harga yang DIPAKAI KLIEN. Server tetap menghitung
-        // sendiri; ini yang membuatnya dapat membedakan klien yang belum
-        // tersinkron dari selisih yang tidak dapat dijelaskan.
-        // ⛔ NUMBER, bukan string — tidak seperti `hlc`. `assertClientTotalValid`
-        // menuntut `Number.isInteger`, dan rupiah utuh muat di double dengan
-        // aman; `hlc` string justru karena ia 57-bit dan TIDAK muat.
-        // Mengirimnya sebagai string ditolak 400 lalu jadi `gagal-permanen` —
-        // penjualan yang sempurna berhenti di antrean. Ditemukan dengan
-        // menembak server sungguhan; test pertama saya justru mengunci
-        // bug-nya dengan mengharapkan string.
-        total: Number(totals.total),
-        // FR-B8 — dikirim sebagai PERMINTAAN, bukan nominal hasilnya.
-        //
-        // ⛔ Server menghitung ulang dari subtotal-nya SENDIRI, dan itu yang
-        // membuat jalur pemeriksaan selisih (FR-H6) dapat memutuskan apakah
-        // diskon persen dari perangkat yang harganya basi masih konsisten
-        // dengan harga-harganya sendiri. Mengirim nominal membuat server
-        // tidak dapat membedakan diskon yang wajar dari yang dikarang.
-        ...(keranjang.diskon !== null
-          ? {
-              discount: {
-                tipe: keranjang.diskon.minta.tipe,
-                nilai: Number(keranjang.diskon.minta.nilai),
-              },
-              discountReasonCode: keranjang.diskon.alasanKode,
-              ...(keranjang.diskon.alasanCatatan
-                ? { discountReasonNote: keranjang.diskon.alasanCatatan }
-                : {}),
-            }
-          : {}),
-        lines: keranjang.baris.map((b) => ({
-          id: b.id,
-          variationId: b.variationId,
-          quantityMilli: b.quantityMilli,
-          discountAmount: 0,
-          unitPrice: b.unitPrice,
-          modifiers: b.modifier.map((m) => ({
-            id: idBaru(),
-            modifierId: m.id,
-            name: m.nama,
-            price: m.harga,
-            quantityMilli: m.qtyMilli,
-          })),
-        })),
-      },
+      payload: muatanOrder({
+        orderId, konfig, shiftId: shift.id, receiptNumber, businessDate,
+        sequence, channel, checkId, hlc: hlcValue, occurredAt,
+        total: totals.total, keranjang, idBaru,
+      }),
       idempotencyKey: orderId,
       createdAt: occurredAt,
       actorId: sesi.userId,
@@ -840,6 +989,7 @@ export async function simpanPenjualan({
       actorId: sesi.userId,
     });
       sebelumnya = idOutboxBayar;
+    }
     }
 
     // ⛔ Keadaan HLC disimpan DI DALAM transaksi ini, bukan sesudahnya.

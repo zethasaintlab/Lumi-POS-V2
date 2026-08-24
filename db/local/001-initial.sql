@@ -253,6 +253,47 @@ CREATE TABLE fitur_lokal (
 -- `isi` adalah JSON `Keranjang` apa adanya (baris + modifier + diskon).
 -- Bentuknya milik klien sepenuhnya dan tidak pernah dikirim ke mana pun, jadi
 -- ia tidak menuntut kolom per-field maupun kesepakatan dengan skema server.
+-- FR-C3/FR-C14 — draf penjualan QRIS DINAMIS yang menunggu konfirmasi gateway.
+--
+-- ⛔ Kenapa ia harus BERTAHAN, dan kenapa ini bukan kemewahan
+--
+-- `spec-c:328` menuntutnya sebagai acceptance criteria: *"Aplikasi mati di
+-- tengah polling → setelah restart, payment masih `pending_confirmation` dan
+-- polling dilanjutkan."*
+--
+-- Jalur QRIS dinamis menulis order ke SERVER lebih dulu lalu menunggu. Di
+-- antara keduanya ada jendela — kadang lima menit penuh — tempat uang sudah
+-- (atau sedang) berpindah dan perangkat belum menulis apa pun secara lokal.
+-- Tab yang ter-refresh di jendela itu membuat kasir kehilangan seluruh jejak
+-- transaksi yang pelanggannya mungkin SUDAH bayar, dan satu-satunya yang tahu
+-- adalah server.
+--
+-- ⛔ SATU baris, `id = 'kini'`, pola yang sama dengan `keranjang_lokal`. Satu
+-- perangkat menunggu paling banyak satu QR: kasir tidak dapat melayani
+-- pelanggan berikutnya sebelum yang ini selesai, dan dua draf berjalan berarti
+-- dua QR di layar yang sama.
+--
+-- ⛔ Murni lokal, SENGAJA bukan raw table — alasan yang sama dengan
+-- `keranjang_lokal` dan `fitur_lokal`: sidik jari skema yang berubah menuntut
+-- `disconnectAndClear()` di setiap perangkat merchant.
+--
+-- `muatan` adalah JSON muatan order yang SUDAH dikirim ke server, apa adanya.
+-- Menyimpannya berarti pemulihan tidak perlu menyusun ulang apa pun — dan
+-- muatan yang disusun ulang setelah restart dapat berbeda dari yang server
+-- terima, karena harga katalog mungkin sudah berubah di antaranya.
+CREATE TABLE draf_qris_lokal (
+  id            TEXT PRIMARY KEY NOT NULL,
+  order_id      TEXT NOT NULL,
+  payment_id    TEXT NOT NULL,
+  shift_id      TEXT NOT NULL,
+  -- Draf `DrafTerkirim` + muatan order, keduanya JSON.
+  draf          TEXT NOT NULL,
+  muatan        TEXT NOT NULL,
+  -- QR yang sedang ditampilkan. Kosong berarti gateway belum menjawab.
+  qr_string     TEXT,
+  dibuat_pada   TEXT NOT NULL
+);
+
 CREATE TABLE keranjang_lokal (
   id TEXT PRIMARY KEY NOT NULL,
   shift_id TEXT NOT NULL,

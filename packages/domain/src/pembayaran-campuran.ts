@@ -25,7 +25,17 @@ import { computeCashRounding, type RoundingMode } from './money.ts';
  * mengetahuinya hanya pelanggan.
  */
 
-export type MetodeCampuran = 'cash' | 'qris_static' | 'card_edc';
+/**
+ * ⛔ `qris_dynamic` IKUT, dan konsekuensinya satu: pembulatan tunai tetap
+ * dihitung dari sisa setelah SELURUH bagian non-tunai, apa pun salurannya.
+ *
+ * Ia tidak dapat digabung dengan metode lain hari ini — jalur online-first
+ * mengirim satu bagian penuh ke gateway — tetapi membiarkannya di luar tipe
+ * ini berarti aritmetika campuran punya lubang berbentuk metode: hari ada yang
+ * menggabungnya, `sisaTagihan` tidak menghitungnya dan kasir menagih tunai
+ * sebesar SELURUH total untuk transaksi yang separuhnya sudah dibayar.
+ */
+export type MetodeCampuran = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc';
 
 export interface BagianBayar {
   metode: MetodeCampuran;

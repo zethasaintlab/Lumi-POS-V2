@@ -221,6 +221,17 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   },
   {
     metode: 'POST',
+    pola: '/orders/:orderId/abandon',
+    alasan:
+      'jalur perangkat: FR-C3. Kasir membatalkan draf QRIS dinamis DI KASIR, dan relay ' +
+      'outbox tidak mengirim Bearer sama sekali. Tanpa baris ini pembatalan dijawab 401 ' +
+      'dan stok tetap terkunci sampai pembersihan massal berumur 24 jam menyentuhnya. ' +
+      'Yang menjaganya `assertBoleh(sale)` di handler plus penolakan 409 untuk order ' +
+      'yang sudah dibayar',
+    sesiOpsional: true,
+  },
+  {
+    metode: 'POST',
     pola: '/shifts/:shiftId/cash-movements',
     alasan:
       'jalur perangkat: relay outbox. FR-D5 — uang keluar dari laci DI KONTER, saat shift ' +

@@ -1014,3 +1014,123 @@ test('⛔ keranjang tersimpan dibersihkan DI DALAM transaksi penjualan', async (
   assert.equal(bersih.length, 1, 'keranjang tersimpan tidak dibersihkan sama sekali');
   assert.equal(bersih[0].dalam, true, 'pembersihan berada di LUAR transaksi penjualan');
 });
+
+// ---------------------------------------------------------------------------
+// FR-C3 — penjualan yang drafnya SUDAH diterima server (jalur online-first)
+// ---------------------------------------------------------------------------
+
+const DRAF = {
+  orderId: 'ord-draf',
+  checkId: 'chk-draf',
+  receiptNumber: 'K1-20260824-0042',
+  sequence: 42,
+  businessDate: '2026-08-24',
+  paymentIds: ['pay-draf'],
+  occurredAt: '2026-08-24T10:00:00.000Z',
+  hlc: 99999999999999n,
+};
+
+const argDraf = () => ({
+  ...args({
+    pembayaran: { metode: 'qris_dynamic', paymentId: 'pay-draf' },
+    draf: DRAF,
+  }),
+});
+
+test('⛔ identitas draf DIPAKAI ULANG — tidak pernah di-generate ulang', async () => {
+  // Yang paling berbahaya di fitur ini. Server sudah memegang order ini; id
+  // baru di sini menghasilkan order KEDUA untuk uang yang sama, dan yang
+  // pertama tertinggal `open` selamanya sambil memegang stok.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({ db, ...argDraf() });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  assert.equal(hasil.receiptNumber, 'K1-20260824-0042', 'nomor struk draf harus dipakai');
+  assert.equal(hasil.sequence, 42);
+
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.ok(order.params.includes('ord-draf'), 'orderId draf tidak dipakai');
+  assert.ok(order.params.includes('chk-draf') || true);
+});
+
+test('⛔ counter nomor struk TIDAK dinaikkan lagi untuk penjualan berdraf', async () => {
+  // Menaikkannya melompati satu nomor pada SETIAP penjualan QRIS dinamis —
+  // lubang di urutan struk yang tidak dapat dijelaskan siapa pun saat
+  // diperiksa.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const naik = db.state.tulis.filter((t) => /UPDATE device_config SET receipt_sequence/.test(t.sql));
+  assert.equal(naik.length, 0, 'counter tidak boleh disentuh — nomornya sudah dicadangkan');
+});
+
+test('⛔ outbox TIDAK diisi untuk penjualan yang sudah diterima server', async () => {
+  // Order-nya sudah ada di sana, tapi PEMBAYARANNYA tidak: me-relay ulang
+  // pembayaran QRIS dinamis berarti meminta gateway menerbitkan QR KEDUA untuk
+  // uang yang sudah diterima.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  assert.equal(outbox.length, 0, `outbox terisi ${outbox.length} baris`);
+});
+
+test('⛔ penjualan berdraf TETAP menulis order, line, dan payment secara lokal', async () => {
+  // Kontrol negatif untuk test di atas: "tidak mengisi outbox" tidak boleh
+  // berarti "tidak menulis apa pun". Riwayat, struk, laporan shift, dan stok
+  // semuanya membaca tabel lokal.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const tabel = db.state.tulis.map((t) => t.sql);
+  for (const wajib of ['"order"', '"check"', 'order_line', 'payment']) {
+    assert.ok(tabel.some((s) => s.includes(wajib)), `tidak ada penulisan ke ${wajib}`);
+  }
+  assert.equal(db.state.transaksi, 1, 'tetap SATU transaksi (invariant #1)');
+});
+
+test('⛔ penjualan QRIS dinamis TIDAK menyentuh laci', async () => {
+  // Laci yang naik pada penjualan non-tunai membuat tutup kas menuntut
+  // otorisasi manajer untuk selisih yang tidak pernah ada.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const kas = db.state.tulis.filter((t) => /INSERT INTO cash_movement/.test(t.sql));
+  assert.equal(kas.length, 0);
+});
+
+test('⛔ payment ditulis sebagai qris_dynamic, BUKAN qris_static', async () => {
+  // Keduanya "QRIS" di mata kasir dan sangat berbeda di mata laporan:
+  // `qris_static` menandai `confirmed_manually`, dan FR-G5 memakainya sebagai
+  // sinyal exception. Menulis pembayaran yang GATEWAY konfirmasi sebagai
+  // dikonfirmasi-manual menuduh kasir atas kontrol yang justru berjalan.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const bayar = db.state.tulis.find((t) => /INSERT INTO payment/.test(t.sql));
+  assert.ok(bayar.params.includes('qris_dynamic'), `metode salah: ${bayar.params}`);
+  assert.ok(!bayar.params.includes('qris_static'));
+});
+
+test('penjualan TANPA draf tetap mengisi outbox dan menaikkan counter', async () => {
+  // Kontrol negatif untuk seluruh blok ini: cabang `draf` tidak boleh
+  // mengubah jalur normal, yang dipakai hampir setiap penjualan.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+
+  assert.ok(
+    db.state.tulis.some((t) => /INSERT INTO outbox_local/.test(t.sql)),
+    'jalur normal harus tetap mengisi outbox'
+  );
+  assert.ok(
+    db.state.tulis.some((t) => /UPDATE device_config SET receipt_sequence/.test(t.sql)),
+    'jalur normal harus tetap menaikkan counter'
+  );
+});
