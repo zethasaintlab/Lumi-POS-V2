@@ -3248,3 +3248,74 @@ Seluruh suite hijau. `test:kasir` 494 · `test:domain` 492 · `test:server` 427 
 `test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 · `test:dst` 14 ·
 `test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3 ·
 `test:oxlint-ds-adherence` 12. `lint:ds` bersih; kedua app build.
+
+---
+
+## Task 40 — FR-A7 AC keempat: perangkat berharga basi (24 Agustus 2026) ✅
+
+`spec-a:230`: *"Dashboard menampilkan device mana yang belum menerima perubahan
+harga terakhir."* AC ini menunggu sync (F2) + laporan (Modul G); keduanya sudah
+ada sejak lama, dan ACnya tidak pernah ditutup.
+
+**Masalah yang dijawabnya:** `spec-a:220` menyatakan bahwa perangkat offline
+yang memakai harga lama adalah **BENAR** — itulah harga yang tercetak dan
+dibayar pelanggan. Yang TIDAK benar adalah merchant yang menaikkan harga lalu
+tidak tahu bahwa satu kasirnya masih menjual dengan harga lama, berhari-hari,
+tanpa satu pun error di mana pun.
+
+### ⛔ "Terakhir terlihat" adalah PROKSI, dan arahnya SATU ARAH
+
+Checkpoint PowerSync hidup di tabel `ps_*` MILIK PERANGKAT; server kami tidak
+dapat membacanya. Yang server tahu hanya kapan perangkat terakhir meminta token
+sinkronisasi.
+
+- `last_seen_at < effective_from` → perangkat **PASTI** belum menerimanya.
+- `last_seen_at >= effective_from` → **belum tentu** sudah.
+
+Layar menyatakan asimetri itu, dan kalimatnya tampil **juga saat daftarnya
+kosong**. Daftar kosong yang tidak disertai kalimat itu terbaca sebagai
+jaminan — dan merchant akan membacanya begitu, kecuali layar mengatakan
+sebaliknya.
+
+### Keputusan yang mengikat kodenya
+
+- ⛔ **`jumlahDiperiksa` ikut di respons DAN di kalimat kosongnya.** "Tidak ada
+  yang tertinggal" dari NOL perangkat berarti hal yang sangat berbeda dari yang
+  sama dari sepuluh perangkat.
+- ⛔ **Harga MASA DEPAN tidak dihitung tertinggal.** Harga terjadwal belum
+  berlaku untuk siapa pun; menghitungnya membuat setiap penjadwalan menandai
+  SELURUH armada.
+- ⛔ **Perangkat yang BELUM PERNAH terlihat ikut** — ia justru yang paling
+  penting.
+- ⛔ **Harga milik outlet LAIN tidak menandai perangkat outlet ini.**
+- ⛔ **Panel mengambil datanya SENDIRI.** RBAC `price_edit` sementara dasbor
+  dibaca peran lebih luas; menggabungkannya berarti seluruh dasbor 403 untuk
+  manajer outlet. **403 dibedakan dari gagal**, dan "gagal" menyangkal
+  kesimpulan "semua mutakhir" secara eksplisit.
+- **Modul `reporting`** karena ia menjahit `device` (identity) dan
+  `price_history` (catalog) — invariant #4.
+
+### Test yang ekspektasinya salah, dan apa yang diajarkannya
+
+Lima dari sebelas test gagal pada jalan pertama. Semuanya karena **harga AWAL
+item adalah baris `price_history` juga** — `POST /items` menulisnya — sehingga
+perangkat yang lama tidak terlihat tertinggal olehnya juga. Itu perilaku yang
+BENAR; yang salah adalah ekspektasi saya. Setup ditua-kan alih-alih kodenya
+dilonggarkan.
+
+### Sabotase
+
+Tiga, semuanya merah: batas masa depan dihapus · saringan outlet dihapus ·
+`COALESCE` untuk perangkat yang belum pernah terlihat dihapus.
+
+### Verifikasi
+
+Seluruh suite hijau. `test:kasir` 494 · `test:domain` 492 · `test:server` 438 ·
+`test:backoffice` 430 · `test:isolation` 211 · `test:ordering` 193 ·
+`test:catalog` 177 · `test:identity` 156 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 · `test:dst` 14 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3 ·
+`test:oxlint-ds-adherence` 12. `lint:ds` bersih; build ok.
+
+**FR-A7 AC ketiga masih terbuka** — `cost_at_sale` untuk laporan margin
+menunggu keputusan FR-F5, yang user tahan.

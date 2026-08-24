@@ -4913,6 +4913,56 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /reports/stale-price-devices:
+    get:
+      operationId: getStalePriceDevices
+      summary: FR-A7 -- perangkat yang belum menerima perubahan harga terakhir.
+      description: >-
+        `spec-a:220` menyatakan bahwa perangkat offline yang memakai harga lama
+        adalah BENAR: itulah harga yang tercetak dan dibayar pelanggan. Yang
+        TIDAK benar adalah merchant yang menaikkan harga lalu tidak tahu bahwa
+        satu kasirnya masih menjual dengan harga lama -- berhari-hari, tanpa
+        satu pun error di mana pun.
+
+
+        ⛔ "Terakhir terlihat" adalah PROKSI, bukan bukti, dan arahnya SATU
+        ARAH. Checkpoint PowerSync hidup di tabel `ps_*` MILIK PERANGKAT dan
+        server kami tidak dapat membacanya; yang server tahu hanya kapan
+        perangkat terakhir meminta token sinkronisasi.
+
+
+        - `last_seen_at < effective_from` → perangkat PASTI belum menerimanya.
+
+        - `last_seen_at >= effective_from` → BELUM TENTU sudah; replikasinya
+          mungkin masih berjalan.
+
+
+        Layar wajib menyatakan asimetri itu. Merchant yang membaca daftar
+        kosong sebagai "semua perangkat sudah memakai harga baru" menyimpulkan
+        lebih dari yang datanya dukung -- karena itu `jumlahDiperiksa` ikut di
+        respons: daftar kosong dari NOL perangkat berarti hal yang sangat
+        berbeda dari daftar kosong dari sepuluh perangkat.
+
+
+        ⛔ Harga ber-`effective_from` di MASA DEPAN tidak dihitung tertinggal.
+        Harga terjadwal memang belum berlaku untuk siapa pun, dan perangkat
+        yang belum menerimanya belum kehilangan apa pun.
+
+
+        ⛔ RBAC `price_edit`, bukan operasi baru: yang bertanya "perangkat mana
+        yang belum menerima harga baru" adalah orang yang baru mengubah harga
+        itu.
+      parameters:
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Perangkat yang tertinggal, paling lama tidak terlihat lebih dulu.
+        "403": { description: "Tidak berhak mengubah harga" }
+        "404": { description: "Outlet tidak ditemukan" }
+
   /audit-events:
     get:
       operationId: getAuditEvents

@@ -6,6 +6,15 @@ import { Tombol } from '../Tombol.tsx';
 import { rupiah } from '../katalog/produk.ts';
 import type { Outlet } from '../laporan/RentangTanggal.tsx';
 import {
+  CATATAN_BATAS,
+  JUDUL_PANEL,
+  pesanPanel,
+  terlihatTampil,
+  tertinggalTampil,
+  type HargaBasi,
+  type KeadaanPanel,
+} from './harga-basi.ts';
+import {
   LABEL_RENTANG,
   kalimatPerangkat,
   lencanaStok,
@@ -40,6 +49,80 @@ import {
 
 type Baris = Record<string, unknown>;
 const ANGKA = { whiteSpace: 'nowrap' } as const;
+
+/**
+ * FR-A7 AC keempat — perangkat yang belum menerima perubahan harga terakhir.
+ *
+ * ⛔ Ia mengambil datanya SENDIRI, bukan ikut respons dasbor. RBAC-nya
+ * `price_edit` (owner + manajer area) sementara dasbor dibaca peran yang lebih
+ * luas; menggabungkannya berarti seluruh dasbor dijawab 403 untuk manajer
+ * outlet, atau `price_edit` dilonggarkan demi satu panel.
+ *
+ * ⛔ 403 DIBEDAKAN dari gagal. "Anda tidak berhak melihat ini" dan "kami tidak
+ * dapat memeriksanya" berarti hal yang sangat berbeda, dan yang kedua tidak
+ * boleh terbaca seperti "semuanya baik-baik saja".
+ */
+function PanelHargaBasi({ outletId }: { outletId: string }) {
+  const { api } = useSesi();
+  const [keadaan, setKeadaan] = useState<KeadaanPanel>('memuat');
+  const [hasil, setHasil] = useState<HargaBasi | null>(null);
+
+  useEffect(() => {
+    let hidup = true;
+    setKeadaan('memuat');
+    const q = outletId === '' ? '' : `?outlet_id=${encodeURIComponent(outletId)}`;
+    void api
+      .minta<HargaBasi>(`/reports/stale-price-devices${q}`)
+      .then((h) => {
+        if (!hidup) return;
+        setHasil(h);
+        setKeadaan(h.perangkat.length === 0 ? 'kosong' : 'siap');
+      })
+      .catch((e: unknown) => {
+        if (!hidup) return;
+        setKeadaan(e instanceof GalatHttp && e.status === 403 ? 'tidak-berhak' : 'gagal');
+      });
+    return () => {
+      hidup = false;
+    };
+  }, [api, outletId]);
+
+  const pesan = pesanPanel(keadaan, hasil?.jumlahDiperiksa ?? 0);
+  const sekarang = new Date();
+
+  return (
+    <Card>
+      <div className="card-pad">
+        <div className="stack" style={{ gap: 'var(--space-3)' }}>
+          <span className="t-body-md">{JUDUL_PANEL}</span>
+
+          {pesan !== null ? (
+            <span className="t-caption">{pesan}</span>
+          ) : (
+            <Table
+              columns={[
+                { key: 'perangkat', header: 'Perangkat' },
+                { key: 'outlet', header: 'Outlet' },
+                { key: 'terlihat', header: 'Terakhir terhubung' },
+                { key: 'tertinggal', header: 'Tertinggal', align: 'right' },
+              ]}
+              rows={(hasil?.perangkat ?? []).map((p) => ({
+                perangkat: p.kode,
+                outlet: p.outletNama ?? '—',
+                terlihat: terlihatTampil(p.lastSeenAt, sekarang),
+                tertinggal: tertinggalTampil(p.perubahanTertinggal),
+              }))}
+            />
+          )}
+
+          {/* ⛔ Kalimat batas SELALU tampil, juga saat daftarnya kosong.
+              "Belum menerima" dapat dibuktikan; "sudah menerima" tidak. */}
+          <span className="t-caption">{CATATAN_BATAS}</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 export function DasborLayar({ onBuka }: { onBuka?: (layar: string) => void } = {}) {
   const { api } = useSesi();
@@ -295,6 +378,14 @@ export function DasborLayar({ onBuka }: { onBuka?: (layar: string) => void } = {
               </div>
             </div>
           </Card>
+
+          {/* --- FR-A7 — perangkat berharga basi ---
+
+              ⛔ Panelnya SELALU dirender, juga saat daftarnya kosong dan juga
+              saat pemakainya tidak berhak. Panel yang hilang tidak dapat
+              dibedakan dari panel yang berkata "semua mutakhir", dan yang
+              kedua adalah kesimpulan yang datanya tidak dukung. */}
+          <PanelHargaBasi outletId={outletId} />
 
           {/* --- produk terlaris --- */}
           <Card>

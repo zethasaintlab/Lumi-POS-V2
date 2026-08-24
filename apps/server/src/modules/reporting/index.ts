@@ -19,6 +19,7 @@ import {
   ambilVoidDekatTutup,
 } from './handlers/exception.ts';
 import { ambilAudit, bacaBatas, bacaJenis } from './handlers/audit.ts';
+import { ambilHargaBasi } from './handlers/harga-perangkat.ts';
 import { PERISTIWA_BELUM_DIPANCARKAN } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 
 /**
@@ -209,6 +210,32 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
      * matriks yang mengandung baris karangan berhenti dapat dibaca
      * berdampingan dengan spec-nya.
      */
+
+    /**
+     * `GET /reports/stale-price-devices` — FR-A7 AC keempat.
+     *
+     * ⛔ RBAC `price_edit`, bukan `report_exception`. Yang bertanya "perangkat
+     * mana yang belum menerima harga baru" adalah orang yang BARU MENGUBAH
+     * harga itu, dan himpunan perannya sudah ditetapkan `spec-f:38-53`.
+     * Operasi baru yang himpunannya identik hanya menambah baris ke matriks
+     * yang spec tidak nyatakan.
+     */
+    async getStalePriceDevices(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = (req.query ?? {}) as { outlet_id?: string };
+      const outletId = q.outlet_id === undefined || q.outlet_id === '' ? null : q.outlet_id;
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'price_edit', 'melihat perangkat berharga basi');
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+
+        const hasil = await ambilHargaBasi(client, { outletId });
+        return { outletId, ...hasil };
+      });
+    },
+
     async getAuditEvents(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);

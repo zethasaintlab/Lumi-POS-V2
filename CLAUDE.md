@@ -253,7 +253,18 @@ Status F1 sekarang:
 - **Sub-project 1 — endpoint REST inti: selesai.** 28 operasi REST atas `category`, `item`/`item_variation`, `modifier_list`/`modifier`, `item_modifier_list` (`docs/superpowers/plans/PLAN-katalog-rest-inti.md`). Menutup FR-A1/A2/A4/A6/A9 di sisi backend.
 - **Sub-project 2 — FR-A7 harga per outlet dan riwayatnya: selesai sebagian** (`docs/superpowers/plans/PLAN-katalog-harga-riwayat.md`). 4 operasi REST atas `price_history`, resolver tangga tiga tingkat diekspor lewat `catalog/index.ts` untuk dipakai Modul B, migrasi `0016` (index resolusi).
 
-**FR-A7 belum tertutup penuh, dan itu disengaja.** Dua dari empat acceptance criteria-nya tidak bisa diuji sekarang: `cost_at_sale` butuh `order_line` (Modul B), dan "device mana yang belum menerima perubahan harga" butuh sync (F2) + laporan (Modul G). Jangan tandai FR-A7 selesai sampai keduanya ada.
+**FR-A7 AC keempat ditutup 24 Agustus 2026** — `GET /reports/stale-price-devices` + panel di B-01.
+
+⛔ **"Terakhir terlihat" adalah PROKSI, bukan bukti, dan arahnya SATU ARAH.** Checkpoint PowerSync hidup di tabel `ps_*` MILIK PERANGKAT; server kami tidak dapat membacanya. Yang server tahu hanya `device.last_seen_at` (diperbarui saat perangkat meminta token sync). Jadi `last_seen_at < effective_from` berarti perangkat **PASTI** belum menerimanya, sementara sebaliknya **belum tentu** sudah. Layar menyatakan asimetri itu, dan kalimatnya tampil **juga saat daftarnya kosong** — daftar kosong yang tidak disertai kalimat itu terbaca sebagai jaminan.
+
+- ⛔ **`jumlahDiperiksa` ikut di respons.** "Tidak ada yang tertinggal" dari NOL perangkat berarti hal yang sangat berbeda dari yang sama dari sepuluh perangkat, dan keduanya terlihat sama.
+- ⛔ **Harga ber-`effective_from` di MASA DEPAN tidak dihitung tertinggal.** Harga terjadwal belum berlaku untuk siapa pun; menghitungnya membuat setiap penjadwalan menandai SELURUH armada sebagai basi.
+- ⛔ **Perangkat yang BELUM PERNAH terlihat ikut**, lewat `COALESCE(last_seen_at, '-infinity')` — ia justru yang paling penting: perangkat yang baru didaftarkan dan tidak pernah menyala tidak akan pernah memakai harga apa pun yang benar.
+- ⛔ **Harga milik outlet LAIN tidak menandai perangkat outlet ini** (tangga tiga tingkat). Laporan yang menandai armada untuk perubahan yang tidak berlaku baginya berhenti dipercaya.
+- ⛔ **Panel mengambil datanya SENDIRI, bukan ikut respons dasbor.** RBAC-nya `price_edit` sementara dasbor dibaca peran yang lebih luas; menggabungkannya berarti seluruh dasbor dijawab 403 untuk manajer outlet. **403 dibedakan dari gagal** di layar.
+- **Harga AWAL item adalah baris `price_history` juga**, jadi perangkat yang lama tidak terlihat tertinggal olehnya. Benar, dan ditemukan lewat test yang ekspektasinya salah.
+
+**FR-A7 AC ketiga masih terbuka** — `cost_at_sale` untuk laporan margin menunggu keputusan FR-F5 (`cost`), yang user tahan.
 
 **FR-A5 ditutup bersama B-09** · **FR-A3 ditutup 22 Agustus 2026** · **FR-A8 (import katalog) sudah ada** — `catalog/handlers/import.ts` + layar impor back-office.
 
