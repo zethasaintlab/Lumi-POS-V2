@@ -5,6 +5,10 @@ import {
   rencanaDiskon,
   type AmbangDiskon,
 } from '../../../../packages/domain/src/diskon.ts';
+import {
+  ambangBerlaku,
+  type AmbangBerlaku,
+} from '../../../../packages/domain/src/ambang.ts';
 import type { DiskonKeranjang } from './keranjang.ts';
 
 /**
@@ -23,8 +27,10 @@ import type { DiskonKeranjang } from './keranjang.ts';
  */
 
 interface BarisAmbang {
-  discount_threshold_percent: number | null;
-  discount_threshold_amount: number | null;
+  cash_variance_threshold: number | bigint | string | null;
+  no_sale_threshold: number | bigint | string | null;
+  discount_threshold_percent: number | bigint | string | null;
+  discount_threshold_amount: number | bigint | string | null;
 }
 
 /**
@@ -37,13 +43,48 @@ interface BarisAmbang {
  * dipasang — yaitu yang paling tidak terawasi.
  */
 export async function bacaAmbangDiskon(db: DbLokal, outletId: string): Promise<AmbangDiskon> {
+  const a = await bacaAmbangOutlet(db, outletId);
+  return ambangDari(a.diskonPersenSkala, a.diskonNominal);
+}
+
+/**
+ * Ketiga ambang otorisasi outlet ini, dari salinan lokal. B-26.
+ *
+ * ⛔ Alasan yang sama dengan `bacaAmbangDiskon`, dan berlaku untuk ketiganya:
+ * tutup kas (K-12) dan buka laci no-sale (K-16) berjalan TANPA JARINGAN.
+ * Perangkat yang memakai bawaan domain sementara server memakai angka yang
+ * merchant setel menghasilkan kasir yang sama, shift yang sama, jawaban
+ * berbeda — persis penyimpangan yang `packages/domain/src/buku-kas.ts` catat
+ * saat konstantanya dipindahkan ke domain.
+ *
+ * ⛔ Outlet yang TIDAK ADA di perangkat mengembalikan bawaan, bukan "tanpa
+ * ambang". Perangkat yang katalognya belum turun penuh adalah keadaan normal
+ * (`spec-h`), dan ketiadaan baris yang diartikan "tidak ada batas" membuat
+ * kontrolnya mati justru pada perangkat yang paling baru dipasang — yaitu yang
+ * paling tidak terawasi.
+ */
+export async function bacaAmbangOutlet(db: DbLokal, outletId: string): Promise<AmbangBerlaku> {
   const baris = (
     await db.getAll<BarisAmbang>(
-      `SELECT discount_threshold_percent, discount_threshold_amount FROM outlet WHERE id = ?`,
+      `SELECT discount_threshold_percent, discount_threshold_amount,
+              cash_variance_threshold, no_sale_threshold
+         FROM outlet WHERE id = ?`,
       [outletId]
     )
   )[0];
-  return ambangDari(keBigint(baris?.discount_threshold_percent), keBigint(baris?.discount_threshold_amount));
+  return ambangBerlaku({
+    diskonPersenSkala: keBigint(baris?.discount_threshold_percent),
+    diskonNominal: keBigint(baris?.discount_threshold_amount),
+    selisihKas: keBigint(baris?.cash_variance_threshold),
+    // ⛔ `noSale` adalah `number` di domain, dan `keBigint` mengembalikan
+    // `bigint` — dikonversi di sini, bukan dibiarkan lewat. `bigint` yang
+    // masuk ke perbandingan `number` melempar `TypeError` pada penjumlahan,
+    // bukan menghasilkan jawaban yang salah; tapi ia melemparnya di jalur
+    // penjualan.
+    noSale: baris?.no_sale_threshold === null || baris?.no_sale_threshold === undefined
+      ? null
+      : Number(baris.no_sale_threshold),
+  });
 }
 
 /**

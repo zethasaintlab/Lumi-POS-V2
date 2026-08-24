@@ -159,3 +159,73 @@ test('⛔ setiap kode alasan diskon punya label, dan tidak ada label yatim', asy
     assert.ok(!LABEL_ALASAN_DISKON[kode].includes('_'), `label ${kode} masih kode mentah`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ B-26 — ketiga ambang, dan yang membuat setelan itu berarti
+// ---------------------------------------------------------------------------
+
+test('⛔ ketiga ambang dibaca dari outlet, masing-masing jatuh ke bawaan sendiri', async () => {
+  const { bacaAmbangOutlet } = await import(MOD);
+  const { AMBANG_BAWAAN } = await import('../../packages/domain/src/ambang.ts');
+
+  const ambang = await bacaAmbangOutlet(
+    dbPalsu({
+      discount_threshold_percent: null,
+      discount_threshold_amount: null,
+      cash_variance_threshold: 50_000,
+      no_sale_threshold: null,
+    }),
+    'o1'
+  );
+  assert.equal(ambang.selisihKas, 50_000n);
+  assert.equal(ambang.noSale, AMBANG_BAWAAN.noSale);
+  assert.equal(ambang.diskonPersenSkala, AMBANG_BAWAAN.diskonPersenSkala);
+});
+
+test('⛔ NOL dari perangkat tetap NOL, bukan jatuh ke bawaan', async () => {
+  // Merchant yang menyetel nol memilih "setiap kejadian menuntut otorisasi".
+  // `0 || bawaan` membuangnya, dan perangkat kemudian menerima diam-diam apa
+  // yang server tolak.
+  const { bacaAmbangOutlet } = await import(MOD);
+  const ambang = await bacaAmbangOutlet(
+    dbPalsu({
+      discount_threshold_percent: null,
+      discount_threshold_amount: null,
+      cash_variance_threshold: 0,
+      no_sale_threshold: 0,
+    }),
+    'o1'
+  );
+  assert.equal(ambang.selisihKas, 0n);
+  assert.equal(ambang.noSale, 0);
+});
+
+test('⛔ `bigint` dari @powersync/web diterima, sama seperti `number`', async () => {
+  // Driver aplikasi mengembalikan kolom INTEGER besar sebagai `bigint`
+  // sementara driver test mengembalikan `number` (`CLAUDE.md`). Guard yang
+  // hanya memeriksa satu bentuk hijau di seluruh test dan salah di aplikasi.
+  const { bacaAmbangOutlet } = await import(MOD);
+  const ambang = await bacaAmbangOutlet(
+    dbPalsu({
+      discount_threshold_percent: 1000n,
+      discount_threshold_amount: '25000',
+      cash_variance_threshold: 50_000n,
+      no_sale_threshold: 6n,
+    }),
+    'o1'
+  );
+  assert.equal(ambang.diskonPersenSkala, 1000n);
+  assert.equal(ambang.diskonNominal, 25_000n);
+  assert.equal(ambang.selisihKas, 50_000n);
+  // ⛔ `noSale` WAJIB `number`: ia masuk perbandingan dengan `number` di
+  // `butuhPenyetujuNoSale`, dan `bigint` di sana melempar TypeError — di jalur
+  // buka laci, bukan di test.
+  assert.equal(ambang.noSale, 6);
+  assert.equal(typeof ambang.noSale, 'number');
+});
+
+test('⛔ outlet yang TIDAK ADA mendapat ketiga bawaan, bukan "tanpa batas"', async () => {
+  const { bacaAmbangOutlet } = await import(MOD);
+  const { AMBANG_BAWAAN } = await import('../../packages/domain/src/ambang.ts');
+  assert.deepEqual(await bacaAmbangOutlet(dbPalsu(null), 'o1'), AMBANG_BAWAAN);
+});

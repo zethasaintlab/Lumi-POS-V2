@@ -80,6 +80,16 @@ export interface RencanaNoSale {
   butuhPenyetuju: boolean;
   /** Pembukaan ke berapa dalam shift ini — untuk ditampilkan ke kasir. */
   urutan: number;
+  /**
+   * Ambang yang BERLAKU, untuk disebutkan ke kasir.
+   *
+   * ⛔ Ikut di sini alih-alih dibaca ulang komponen dari konstanta bawaan.
+   * Sejak B-26 merchant dapat menyetelnya per outlet, dan kalimat yang
+   * menyebut "3×" pada outlet berambang 6 memberi tahu kasir aturan yang tidak
+   * berlaku baginya — kasir yang aturannya salah disebutkan berhenti
+   * mempercayai kalimat berikutnya.
+   */
+  ambang: number;
 }
 
 /**
@@ -89,5 +99,5 @@ export interface RencanaNoSale {
  * kenapa.
  */
 export function rencanaNoSale(sudah: number, ambang: number = AMBANG_NO_SALE): RencanaNoSale {
-  return { butuhPenyetuju: butuhPenyetujuNoSale(sudah, ambang), urutan: sudah + 1 };
+  return { butuhPenyetuju: butuhPenyetujuNoSale(sudah, ambang), urutan: sudah + 1, ambang };
 }

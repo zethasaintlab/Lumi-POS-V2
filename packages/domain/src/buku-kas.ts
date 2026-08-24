@@ -201,7 +201,21 @@ export function saldoLaci(saldoAwal: number, deltas: readonly number[]): number 
  */
 export const AMBANG_SELISIH = 20000;
 
-/** Inklusif, dan berlaku untuk kelebihan maupun kekurangan (`spec-d` FR-D4). */
-export function butuhOtorisasiSelisih(selisih: number): boolean {
-  return Math.abs(selisih) >= AMBANG_SELISIH;
+/**
+ * Inklusif, dan berlaku untuk kelebihan maupun kekurangan (`spec-d` FR-D4).
+ *
+ * ⛔ `ambang` dapat disetel per outlet sejak B-26 (migrasi `0033`), dan
+ * bawaannya tetap di sini. Parameter, bukan pembacaan konfigurasi di dalam
+ * fungsi: domain tetap murni, dan pemanggil yang lupa membacanya mendapat
+ * bawaan alih-alih diam-diam kehilangan ambangnya.
+ *
+ * ⛔ Nol adalah ambang yang SAH — setiap selisih menuntut otorisasi.
+ * `ambang || AMBANG_SELISIH` akan membuangnya; parameter berdefault
+ * melakukannya dengan benar karena hanya `undefined` yang memicu default.
+ */
+export function butuhOtorisasiSelisih(
+  selisih: number,
+  ambang: number = AMBANG_SELISIH
+): boolean {
+  return Math.abs(selisih) >= ambang;
 }

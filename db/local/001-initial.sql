@@ -116,6 +116,17 @@ CREATE TABLE outlet (
   -- diam-diam memakai angka lama selamanya.
   discount_threshold_percent INTEGER,   -- x10000
   discount_threshold_amount INTEGER,
+  -- B-26 — dua ambang sisanya, alasan yang SAMA: keduanya diputuskan di
+  -- perangkat, dan keduanya offline.
+  --
+  -- ⛔ Tutup kas (K-12) dan buka laci no-sale (K-16) berjalan tanpa jaringan.
+  -- Perangkat yang tidak tahu ambang outletnya memakai bawaan domain, dan
+  -- server memakai angka yang merchant setel — kasir yang sama, shift yang
+  -- sama, jawaban berbeda. Itu persis bentuk penyimpangan yang
+  -- `packages/domain/src/buku-kas.ts` catat saat konstantanya dipindahkan ke
+  -- domain.
+  cash_variance_threshold INTEGER,
+  no_sale_threshold INTEGER,
   archived_at TEXT
 );
 

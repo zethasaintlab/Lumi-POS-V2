@@ -10,6 +10,8 @@ import {
   saldoLaci,
 } from '../../../../../../packages/domain/src/buku-kas.ts';
 import { assertUserVisible, assertApproverVisible, bolehkahAktor } from '../../identity/index.ts';
+import { bacaAmbangOutlet } from '../../tenancy/index.ts';
+import { ambangBerlaku } from '../../../../../../packages/domain/src/ambang.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
 
 /**
@@ -156,8 +158,19 @@ export function createTutupHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
         }
 
         const selisih = counted - expected;
+        // ⛔ Ambang dibaca dari OUTLET, bukan dari konstanta.
+        //
+        // B-26 membuat angkanya dapat disetel merchant (`0033`), dan setelan
+        // yang tidak dibaca di sini adalah layar pengaturan yang tidak
+        // mengubah apa pun — bentuk kegagalan yang paling sulit dilihat,
+        // karena layarnya menyimpan dengan benar dan menampilkannya kembali
+        // dengan benar.
+        //
+        // `null` di kolomnya berarti bawaan; `ambangBerlaku` yang memutuskan,
+        // dan ia memakai `??` supaya nol tetap berarti nol.
+        const ambang = ambangBerlaku(await bacaAmbangOutlet(client, shift.outlet_id));
         const perluOtorisasi = kecil
-          ? butuhOtorisasiSelisih(Number(selisih))
+          ? butuhOtorisasiSelisih(Number(selisih), Number(ambang.selisihKas))
           : true; // Selisih sebesar itu selalu menuntut manusia.
 
         const alasan =

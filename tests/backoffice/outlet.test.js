@@ -105,12 +105,34 @@ test('⛔ TIDAK ADA operasi ubah/arsip outlet di kontrak', async () => {
   //
   // Kolom `outlet.archived_at` SUDAH ada di migrasi 0002 dan ikut di respons
   // daftar, jadi ketiadaan endpointnya mudah dikira kelalaian layar.
+  //
+  // ⛔ Daftarnya bertambah dua pada 24 Agustus 2026 (`getOutletThresholds` /
+  // `setOutletThresholds`, B-26), dan test ini merah karenanya — persis
+  // perilaku yang dimaksud. Yang ditambahkan BUKAN ubah/arsip outlet: ia
+  // menyetel ambang otorisasi, punya layarnya sendiri, dan tidak menyentuh
+  // nama, alamat, zona waktu, maupun `archived_at`. Daftarnya disunting
+  // setelah itu diperiksa, bukan sebelumnya.
   const yaml = readFileSync('packages/contracts/openapi.yaml', 'utf8');
   const operasiOutlet = [...yaml.matchAll(/operationId: (\w*[Oo]utlet\w*)/g)].map((m) => m[1]);
 
   assert.deepEqual(
     operasiOutlet.sort(),
-    ['createOutlet', 'listOutlet' + 's', 'listOutletPrices'].sort(),
+    [
+      'createOutlet',
+      'listOutlet' + 's',
+      'listOutletPrices',
+      'getOutletThresholds',
+      'setOutletThresholds',
+    ].sort(),
     `operasi outlet berubah: ${operasiOutlet.join(', ')} — kalau ubah/arsip sudah ada, bangun tombolnya`
   );
+
+  // ⛔ Dan yang benar-benar dijaga: tidak ada operasi yang MENGUBAH identitas
+  // outlet. Daftar putih di atas dapat disunting tanpa berpikir; pola ini
+  // tidak — ia menamai apa yang sedang dijaga alih-alih apa yang kebetulan
+  // ada hari ini.
+  const mengubahOutlet = operasiOutlet.filter((o) =>
+    /^(update|patch|archive|restore|rename|delete)Outlet/.test(o)
+  );
+  assert.deepEqual(mengubahOutlet, [], `ubah/arsip outlet sudah ada — bangun tombolnya di B-23`);
 });

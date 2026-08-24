@@ -49,6 +49,7 @@ export type Operasi =
   | 'view_margin'
   | 'report_exception'
   | 'tax_settings'
+  | 'threshold_settings'
   | 'billing'
   | 'outlet_manage'
   | 'device_revoke';
@@ -72,6 +73,25 @@ const MATRIKS: Readonly<Record<Operasi, ReadonlySet<Peran>>> = {
   view_margin: new Set(['owner', 'area_manager', 'outlet_manager', 'accountant']),
   report_exception: new Set(['owner', 'area_manager', 'outlet_manager', 'accountant']),
   tax_settings: new Set(['owner']),
+  // ⛔ `[ASUMSI]` yang DITURUNKAN, bukan dikarang — pola yang sama dengan
+  // `outlet_manage` di bawah.
+  //
+  // Tabel `spec-f:38-53` tidak punya baris untuk ambang otorisasi. Yang ada
+  // `IA:205`, yang memberi B-26 (Ambang Otorisasi) akses minimum **Manajer
+  // Area** — dan himpunan {owner, area_manager} adalah pembacaan langsung
+  // darinya.
+  //
+  // ⛔ Manajer Outlet SENGAJA di luar, dan itu bukan penyempitan sembarangan:
+  // ambang inilah yang memutuskan kapan persetujuan MANAJER OUTLET dituntut.
+  // Yang dapat menaikkannya dapat menghapus kebutuhan atas persetujuannya
+  // sendiri, dan pemisahan tugas `spec-f:91` runtuh tanpa satu pun aturan
+  // terlihat dilanggar — bentuk yang sama persis dengan sel bersyarat
+  // `bolehKelolaPengguna`.
+  //
+  // Operasi TERSENDIRI, bukan `tax_settings` yang dipakai ulang: penolakannya
+  // harus berbunyi "tidak berhak mengubah ambang otorisasi" alih-alih
+  // menyalahkan pengaturan pajak.
+  threshold_settings: new Set(['owner', 'area_manager']),
   billing: new Set(['owner']),
   // `spec-f:29` memberi Owner "membuat outlet"; `spec-f:30` menaruhnya di
   // kolom YANG TIDAK BOLEH milik Manajer Area, berdampingan dengan billing.
@@ -92,6 +112,7 @@ const MATRIKS: Readonly<Record<Operasi, ReadonlySet<Peran>>> = {
  */
 export const OPERASI_MUTASI: readonly Operasi[] = [
   'sale',
+  'threshold_settings',
   'void_refund',
   'shift_open_close',
   'catalog_edit',

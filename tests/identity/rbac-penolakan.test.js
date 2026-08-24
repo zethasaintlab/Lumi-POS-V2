@@ -161,6 +161,12 @@ function kasus() {
       { id: crypto.randomUUID(), price: 12000 },
     ],
 
+    // ⛔ Ambang otorisasi (B-26): owner + manajer area saja.
+    //
+    // Kasir yang dapat menaikkan ambangnya sendiri dapat menghapus kebutuhan
+    // atas setiap PIN yang produk ini ada untuk menuntut.
+    ['PUT', `/outlets/${base.outlet.id}/thresholds`, { selisihKas: '999' }],
+
     // Pajak: owner saja.
     [
       'POST',

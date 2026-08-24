@@ -43,12 +43,20 @@ streams:
       # otorisasi step-up bekerja OFFLINE, dan klien yang tidak tahu ambangnya
       # akan menerapkan diskon 90% tanpa satu pun PIN.
       #
+      # `cash_variance_threshold` dan `no_sale_threshold` TURUN sejak
+      # 24 Agustus 2026 (B-26), alasan yang SAMA: tutup kas (K-12) dan buka
+      # laci no-sale (K-16) berjalan tanpa jaringan. Perangkat yang tidak tahu
+      # ambang outletnya memakai bawaan domain sementara server memakai angka
+      # yang merchant setel — kasir yang sama, shift yang sama, jawaban
+      # berbeda.
+      #
       # ⛔ `update_window_*` (F6) TIDAK turun — keputusan update menuntut
       # jaringan menurut sifatnya. Lihat `KOLOM_SENGAJA_TIDAK_TURUN`.
       - SELECT id, tenant_id, name, timezone, business_day_ends_at,
                rounding_increment, rounding_mode, service_charge_rate,
                vertical_profile_id, discount_threshold_percent,
-               discount_threshold_amount, archived_at
+               discount_threshold_amount, cash_variance_threshold,
+               no_sale_threshold, archived_at
           FROM outlet
          WHERE tenant_id = auth.parameter('tenant_id')
            AND id = auth.parameter('outlet_id')

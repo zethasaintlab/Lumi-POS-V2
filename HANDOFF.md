@@ -1380,3 +1380,37 @@ B-26 Ambang Otorisasi (`threshold_changed`), B-24 Profil Vertikal
 (`vertical_profile_changed`), endpoint `printer_profile`
 (`peripheral_configured`), akses support (`support_session_*`), dan jalur tulis
 yang bertahan melewati rollback (`shift_count_attempt`).
+
+### B-26 Ambang Otorisasi (24 Agustus 2026)
+
+Migrasi `0033` menambah `outlet.cash_variance_threshold` dan
+`outlet.no_sale_threshold` — nullable, tanpa `DEFAULT`, pola yang sama dengan
+`0031`. Endpoint `GET`/`PUT /outlets/{id}/thresholds`, RBAC
+`threshold_settings` = {owner, area_manager}.
+
+⛔ **Kalau kamu menambah ambang keempat, ia harus dibaca di EMPAT tempat.**
+Server (`closeShift`, `recordNoSale`) DAN klien (`tutupKas`,
+`rencanaNoSaleLokal`) — dan kolomnya harus turun lewat sync rules + skema
+lokal, atau perangkat offline memakai bawaan sementara server memakai angka
+merchant. Setelan yang hanya dibaca di server adalah layar pengaturan yang
+diam-diam tidak berlaku pada jalur yang paling sering dipakai.
+
+⛔ **Menambah kolom ber-tenant baru mengubah SIDIK JARI skema lokal.** Kedua
+kolom ini masuk raw table, jadi perangkat merchant akan menjalankan
+`disconnectAndClear()` + unduh ulang katalog pada boot berikutnya. Itu biaya
+yang sudah dibayar `0031`; jangan menambahkannya lagi tanpa alasan yang sekuat
+"kontrol ini harus bekerja offline".
+
+⛔ **Utang kecil yang dinyatakan: pesan penolakan RBAC selalu generik.**
+Penjaga rute (`PETA_PERAN` di `sesi.ts`) berjalan di `preHandler` dan SELALU
+menang atas `assertBoleh` di handler. Pesannya "tidak berhak melakukan operasi
+ini" tanpa menyebut operasinya; frasa yang lebih menjelaskan ("mengubah ambang
+otorisasi") tidak pernah terlihat lewat HTTP. Keduanya tetap ada dengan
+sengaja — peta menjaga rute, `assertBoleh` menjaga fungsinya kalau kelak
+dipanggil dari jalur lain. Memperbaikinya menuntut tabel label operasi
+(sejajar `LABEL_PERAN`), dan itu tugas tersendiri.
+
+⛔ **B-24 Profil Vertikal adalah satu-satunya layar back-office yang tersisa.**
+`vertical_profile` punya tabel dan sudah turun ke perangkat, tapi NOL endpoint
+mutasi — itu juga yang menahan `vertical_profile_changed` di daftar lubang
+FR-F6.

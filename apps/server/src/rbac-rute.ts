@@ -92,6 +92,23 @@ export const PETA_PERAN: readonly AturanRute[] = [
   { metode: 'POST', pola: '/tax-rates', operasi: 'tax_settings' },
   { metode: 'POST', pola: '/tax-rates/:taxRateId/end', operasi: 'tax_settings' },
 
+  // --- ambang otorisasi (B-26) ----------------------------------------------
+  //
+  // ⛔ Owner dan Manajer Area saja, diturunkan dari `IA:205`. Manajer Outlet
+  // SENGAJA di luar: ambang inilah yang memutuskan kapan persetujuan Manajer
+  // Outlet dituntut, dan yang dapat menaikkannya dapat menghapus kebutuhan
+  // atas persetujuannya sendiri — pemisahan tugas `spec-f:91` runtuh tanpa
+  // satu pun aturan terlihat dilanggar.
+  //
+  // ⛔ MEMBACA (`GET`) sengaja tidak di sini. Kasir yang ditolak PIN-nya
+  // berhak tahu ambang mana yang menolaknya, dan angkanya sudah turun ke
+  // perangkat lewat jalur diskon. Yang dijaga adalah MENULISNYA.
+  //
+  // Handler-nya juga memanggil `assertBoleh` — dua lapisan, dan itu disengaja
+  // di sini: peta ini menjaga rute, `assertBoleh` menjaga fungsinya kalau
+  // kelak dipanggil dari jalur lain.
+  { metode: 'PUT', pola: '/outlets/:outletId/thresholds', operasi: 'threshold_settings' },
+
   // --- perangkat -----------------------------------------------------------
   { metode: 'POST', pola: '/devices', operasi: 'device_revoke' },
   { metode: 'POST', pola: '/devices/:deviceId/credentials', operasi: 'device_revoke' },

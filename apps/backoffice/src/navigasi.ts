@@ -139,7 +139,17 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
       { id: 'B-23', label: 'Outlet', icon: 'map-pin', aksesMinimum: 'area_manager' },
       { id: 'B-24', label: 'Profil vertikal', icon: 'settings', aksesMinimum: 'owner' },
       { id: 'B-25', label: 'Pajak', icon: 'file', aksesMinimum: 'owner' },
-      { id: 'B-26', label: 'Ambang otorisasi', icon: 'lock', aksesMinimum: 'area_manager' },
+      {
+        id: 'B-26',
+        label: 'Ambang otorisasi',
+        icon: 'lock',
+        aksesMinimum: 'area_manager',
+        // ⛔ `threshold_settings` = {owner, area_manager}, diturunkan dari
+        // `IA:205`. Manajer Outlet sengaja di luar: ambang inilah yang
+        // memutuskan kapan persetujuan MANAJER OUTLET dituntut, dan yang dapat
+        // menaikkannya dapat menghapus kebutuhan atas persetujuannya sendiri.
+        operasi: 'threshold_settings',
+      },
       { id: 'B-27', label: 'Pengguna & Peran', icon: 'user', aksesMinimum: 'outlet_manager' },
       { id: 'B-28', label: 'Perangkat', icon: 'register', aksesMinimum: 'outlet_manager' },
       { id: 'B-29', label: 'Langganan & Batas', icon: 'star', aksesMinimum: 'owner' },
@@ -178,6 +188,7 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-22',
   'B-23',
   'B-25',
+  'B-26',
   'B-27',
   'B-28',
   'B-29',

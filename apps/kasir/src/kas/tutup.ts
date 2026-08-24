@@ -2,6 +2,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import { butuhOtorisasiSelisih, saldoLaci } from '../../../../packages/domain/src/buku-kas.ts';
+import { bacaAmbangOutlet } from '../kasir/diskon.ts';
 import { bangunUlangSnapshot } from '../inventori/stok.ts';
 import {
   posisiPenjualan,
@@ -316,7 +317,13 @@ export async function tutupKas({
   const seharusnya = await saldoSeharusnya(db, shift);
   const selisih = hitungan - seharusnya;
 
-  if (butuhOtorisasiSelisih(selisih)) {
+  // ⛔ Ambang dari OUTLET, bukan konstanta domain. B-26 membuatnya dapat
+  // disetel merchant, dan ia TURUN ke perangkat justru karena tutup kas
+  // berjalan tanpa jaringan: perangkat yang memakai bawaan sementara server
+  // memakai angka yang merchant setel menghasilkan kasir yang sama, shift yang
+  // sama, jawaban berbeda.
+  const ambang = await bacaAmbangOutlet(db, shift.outlet_id);
+  if (butuhOtorisasiSelisih(selisih, Number(ambang.selisihKas))) {
     if (!approverId) return { status: 'butuh_otorisasi', selisih };
     if (!alasan) return { status: 'butuh_alasan', selisih };
     // ⛔ `spec-f:91`: "Kasir yang menghitung laci TIDAK BOLEH menjadi orang

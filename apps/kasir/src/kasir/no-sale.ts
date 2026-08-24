@@ -3,11 +3,13 @@ import type { KonfigPerangkat } from '../../../../packages/sync-client/src/peran
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import {
   ALASAN_NO_SALE,
+  AMBANG_NO_SALE,
   EVENT_NO_SALE,
   adalahAlasanNoSale,
   rencanaNoSale,
   type RencanaNoSale,
 } from '../../../../packages/domain/src/no-sale.ts';
+import { bacaAmbangOutlet } from './diskon.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import type { Sesi } from '../identitas/login.ts';
 
@@ -52,8 +54,28 @@ export async function hitungNoSaleLokal(db: DbLokal, shiftId: string): Promise<n
   return Number(baris[0]?.n ?? 0);
 }
 
+/**
+ * Rencana no-sale untuk shift ini, dengan ambang OUTLET-nya.
+ *
+ * ⛔ Ambangnya dibaca dari `outlet`, bukan dari konstanta domain. B-26
+ * membuatnya dapat disetel merchant, dan ia turun ke perangkat justru karena
+ * buka laci berjalan tanpa jaringan — perangkat yang memakai bawaan sementara
+ * server memakai angka yang merchant setel meminta PIN pada pembukaan yang
+ * merchant janjikan bebas.
+ *
+ * Shift yang tidak ditemukan memakai bawaan: itu keadaan yang sudah ditolak
+ * `bukaLaci` sesudahnya, dan menebak "tanpa ambang" di sini membuat kontrolnya
+ * mati pada jalur yang paling tidak terduga.
+ */
 export async function rencanaNoSaleLokal(db: DbLokal, shiftId: string): Promise<RencanaNoSale> {
-  return rencanaNoSale(await hitungNoSaleLokal(db, shiftId));
+  const baris = await db.getAll<{ outlet_id: string }>(
+    `SELECT outlet_id FROM cash_drawer_shift WHERE id = ?`,
+    [shiftId]
+  );
+  const outletId = baris[0]?.outlet_id ?? null;
+  const ambang =
+    outletId === null ? AMBANG_NO_SALE : (await bacaAmbangOutlet(db, outletId)).noSale;
+  return rencanaNoSale(await hitungNoSaleLokal(db, shiftId), ambang);
 }
 
 export async function bukaLaci({

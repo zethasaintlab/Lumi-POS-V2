@@ -29,6 +29,7 @@ import { PembayaranLayar } from './laporan/Pembayaran.tsx';
 import { EksporLayar } from './laporan/Ekspor.tsx';
 import { ExceptionLayar } from './pengawasan/Exception.tsx';
 import { AuditLayar } from './pengawasan/Audit.tsx';
+import { AmbangLayar } from './pengaturan/Ambang.tsx';
 import { RiwayatLayar } from './penjualan/Riwayat.tsx';
 import { StokLayar } from './inventori/Stok.tsx';
 import { ShiftLayar } from './penjualan/Shift.tsx';
@@ -213,6 +214,7 @@ function Terlindungi() {
         {layar === 'B-22' ? <AuditLayar /> : null}
         {layar === 'B-23' ? <OutletLayar /> : null}
         {layar === 'B-25' ? <PajakLayar /> : null}
+        {layar === 'B-26' ? <AmbangLayar /> : null}
         {layar === 'B-27' ? <PenggunaLayar /> : null}
         {layar === 'B-28' ? <PerangkatLayar /> : null}
 

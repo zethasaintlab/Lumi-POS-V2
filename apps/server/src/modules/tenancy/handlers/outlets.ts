@@ -1,13 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool } from '../../../db.ts';
+import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertUserVisible, assertBoleh } from '../../identity/index.ts';
-import { recordAuditEvent } from '../../audit/index.ts';
+import { catatPerubahanServer, recordAuditEvent } from '../../audit/index.ts';
 import { assertKuota, hitungOutlet } from '../kuota.ts';
+import { bacaAmbangOutlet } from '../index.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import { ZONA_WAKTU } from '../../../../../../packages/domain/src/zona-waktu.ts';
+import {
+  ambangBerlaku,
+  periksaAmbang,
+  type AmbangTersimpan,
+} from '../../../../../../packages/domain/src/ambang.ts';
+import { formatScaledRate } from '../../../../../../packages/domain/src/numeric.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
@@ -173,6 +180,176 @@ export function createOutletHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
 
       reply.code(201);
       return hasil;
+    },
+
+    /**
+     * `GET /outlets/{outletId}/thresholds` — B-26 Ambang Otorisasi.
+     *
+     * ⛔ Mengembalikan `tersimpan` DAN `berlaku`, dan itu bukan kelebihan
+     * data. Keduanya menjawab pertanyaan yang berbeda:
+     *
+     * - `tersimpan.selisihKas = null` berarti outlet ini belum menyetel apa
+     *   pun, dan layar harus menampilkan isian KOSONG dengan bawaannya sebagai
+     *   petunjuk — bukan angka bawaan yang terlihat seperti pilihan merchant.
+     * - `berlaku.selisihKas = "20000"` berarti itulah yang benar-benar
+     *   menentukan hari ini.
+     *
+     * Mengirim hanya salah satunya memaksa layar menebak yang lain. Yang
+     * menebak `tersimpan` dari `berlaku` akan menuliskan bawaan sebagai
+     * pilihan pada penyimpanan berikutnya — dan sejak saat itu outlet berhenti
+     * mengikuti perubahan bawaan, tanpa siapa pun memutuskannya.
+     */
+    async getOutletThresholds(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const { outletId } = req.params as { outletId: string };
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        // ⛔ MEMBACA tidak menuntut `threshold_settings`. Kasir yang ditolak
+        // PIN-nya berhak tahu ambang mana yang menolaknya, dan angka itu sudah
+        // turun ke perangkat lewat jalur diskon (`CLAUDE.md`). Yang dijaga
+        // adalah MENULISNYA.
+        return { outletId, ...(await bacaAmbang(client, outletId)) };
+      });
+    },
+
+    /**
+     * `PUT /outlets/{outletId}/thresholds` — menyetel ketiga ambang.
+     *
+     * ⛔ `PUT`, bukan `PATCH`, dan bidang yang tidak dikirim menjadi `null`
+     * (kembali ke bawaan). Layarnya menampilkan keempat isian sekaligus; PATCH
+     * yang menyimpan sebagian membuat "kosongkan isian ini" tidak dapat
+     * dinyatakan sama sekali — dan mengosongkan adalah satu-satunya cara
+     * kembali ke bawaan.
+     */
+    async setOutletThresholds(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const { outletId } = req.params as { outletId: string };
+      const body = (req.body ?? {}) as Record<string, unknown>;
+
+      const minta: AmbangTersimpan = {
+        diskonPersenSkala: bacaBigintOpsional(body.diskonPersenSkala, 'diskonPersenSkala'),
+        diskonNominal: bacaBigintOpsional(body.diskonNominal, 'diskonNominal'),
+        selisihKas: bacaBigintOpsional(body.selisihKas, 'selisihKas'),
+        noSale: bacaIntOpsional(body.noSale, 'noSale'),
+      };
+
+      // ⛔ Aturannya di domain, dan KLIEN memakai fungsi yang sama. Dua salinan
+      // menghasilkan layar yang menerima angka yang server tolak — dan
+      // penolakan yang datang setelah tombol simpan ditekan terbaca sebagai
+      // kerusakan, bukan sebagai aturan.
+      const periksa = periksaAmbang(minta);
+      if (!periksa.ok) {
+        throw new HttpError(400, 'VALIDATION_ERROR', periksa.pesan);
+      }
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'threshold_settings', 'mengubah ambang otorisasi');
+
+        const sebelum = await bacaAmbang(client, outletId);
+
+        const { rowCount } = await client.query(
+          `UPDATE outlet
+              SET discount_threshold_percent = $2::numeric,
+                  discount_threshold_amount = $3::bigint,
+                  cash_variance_threshold = $4::bigint,
+                  no_sale_threshold = $5::int
+            WHERE id = $1 AND archived_at IS NULL`,
+          [
+            outletId,
+            // ⛔ Persen dikirim ke `numeric` sebagai STRING lewat
+            // `formatScaledRate`. Membaginya di JavaScript menghidupkan lagi
+            // float di jalur yang `numeric.ts` ada untuk menjaganya.
+            minta.diskonPersenSkala === null ? null : formatScaledRate(minta.diskonPersenSkala),
+            minta.diskonNominal === null ? null : minta.diskonNominal.toString(),
+            minta.selisihKas === null ? null : minta.selisihKas.toString(),
+            minta.noSale,
+          ]
+        );
+        if (rowCount === 0) {
+          throw new HttpError(404, 'OUTLET_NOT_FOUND', `Outlet ${outletId} tidak ditemukan.`);
+        }
+
+        const sesudah = await bacaAmbang(client, outletId);
+
+        // FR-F6 + `spec-f:297` (`threshold_changed`).
+        //
+        // ⛔ Yang dicatat `tersimpan`, bukan `berlaku`. Outlet yang
+        // mengosongkan ambangnya kembali ke bawaan, dan audit yang mencatat
+        // angka bawaan sebagai nilai baru tidak dapat dibedakan dari merchant
+        // yang mengetik angka itu — dua keadaan yang berperilaku sama HARI INI
+        // dan berbeda pada hari bawaannya berubah.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'threshold_changed',
+          entityType: 'outlet',
+          entityId: outletId,
+          outletId,
+          before: sebelum.tersimpan,
+          after: sesudah.tersimpan,
+        });
+
+        return { outletId, ...sesudah };
+      });
+    },
+  };
+}
+
+/** `bigint` opsional dari muatan JSON — STRING, tidak pernah `number`. */
+function bacaBigintOpsional(nilai: unknown, bidang: string): bigint | null {
+  if (nilai === undefined || nilai === null || nilai === '') return null;
+  // ⛔ String, dan itu bukan kerewelan: rupiah utuh melampaui 2^53 pada nilai
+  // yang masih mungkin, dan `number` yang lewat di sini adalah pembulatan
+  // diam-diam di jalur yang memutuskan kapan PIN manajer dituntut.
+  if (typeof nilai !== 'string' || !/^-?\d+$/.test(nilai)) {
+    throw new HttpError(400, 'VALIDATION_ERROR', `${bidang} harus string bilangan bulat.`);
+  }
+  return BigInt(nilai);
+}
+
+function bacaIntOpsional(nilai: unknown, bidang: string): number | null {
+  if (nilai === undefined || nilai === null || nilai === '') return null;
+  const n = typeof nilai === 'number' ? nilai : Number(nilai);
+  if (!Number.isInteger(n)) {
+    throw new HttpError(400, 'VALIDATION_ERROR', `${bidang} harus bilangan bulat.`);
+  }
+  return n;
+}
+
+/**
+ * Ambang tersimpan + yang berlaku, dari satu SELECT.
+ *
+ * ⛔ Query-nya tunduk RLS, jadi outlet tenant lain menghasilkan nol baris dan
+ * 404 — bentuk yang sama dengan `getOutletSettings`. FK tidak dilibatkan sama
+ * sekali di sini, dan itu benar: temuan F1 menunjukkan FK hanya membuktikan
+ * barisnya ada di SUATU tenant.
+ */
+async function bacaAmbang(
+  client: PoolClient,
+  outletId: string
+): Promise<{ tersimpan: Record<string, string | number | null>; berlaku: Record<string, string | number> }> {
+  const tersimpan = await bacaAmbangOutlet(client, outletId);
+  const berlaku = ambangBerlaku(tersimpan);
+  return {
+    // ⛔ Uang dan tarif keluar sebagai STRING dari ujung ke ujung. `bigint`
+    // tidak dapat di-`JSON.stringify`, dan `Number()` di titik ini adalah
+    // pembulatan yang tidak akan terlihat sampai laporan tidak cocok.
+    tersimpan: {
+      diskonPersenSkala:
+        tersimpan.diskonPersenSkala === null ? null : tersimpan.diskonPersenSkala.toString(),
+      diskonNominal: tersimpan.diskonNominal === null ? null : tersimpan.diskonNominal.toString(),
+      selisihKas: tersimpan.selisihKas === null ? null : tersimpan.selisihKas.toString(),
+      noSale: tersimpan.noSale,
+    },
+    berlaku: {
+      diskonPersenSkala: berlaku.diskonPersenSkala.toString(),
+      diskonNominal: berlaku.diskonNominal.toString(),
+      selisihKas: berlaku.selisihKas.toString(),
+      noSale: berlaku.noSale,
     },
   };
 }

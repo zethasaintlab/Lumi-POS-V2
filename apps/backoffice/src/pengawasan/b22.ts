@@ -83,6 +83,7 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   sold_out_toggled: 'Penandaan habis diubah',
   // Konfigurasi
   tax_rate_changed: 'Tarif pajak diubah',
+  threshold_changed: 'Ambang otorisasi diubah',
   // Identitas
   user_created: 'Pengguna dibuat',
   user_role_changed: 'Peran pengguna diubah',

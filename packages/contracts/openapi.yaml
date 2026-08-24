@@ -1353,6 +1353,120 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /outlets/{outletId}/thresholds:
+    get:
+      operationId: getOutletThresholds
+      summary: B-26 Ambang Otorisasi -- yang disetel dan yang berlaku.
+      description: >-
+        ⛔ Mengembalikan `tersimpan` DAN `berlaku`, dan itu bukan kelebihan
+        data. `tersimpan.selisihKas = null` berarti outlet ini belum menyetel
+        apa pun, dan layar harus menampilkan isian KOSONG dengan bawaannya
+        sebagai petunjuk -- bukan angka bawaan yang terlihat seperti pilihan
+        merchant. `berlaku` adalah yang benar-benar menentukan hari ini.
+
+
+        Layar yang menebak `tersimpan` dari `berlaku` akan menuliskan bawaan
+        sebagai pilihan pada penyimpanan berikutnya, dan sejak saat itu outlet
+        berhenti mengikuti perubahan bawaan tanpa siapa pun memutuskannya.
+
+
+        ⛔ MEMBACA tidak menuntut `threshold_settings`. Kasir yang ditolak
+        PIN-nya berhak tahu ambang mana yang menolaknya. Yang dijaga adalah
+        menulisnya.
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Ambang outlet ini.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AmbangOutlet' }
+        '404':
+          description: Outlet tidak ditemukan (OUTLET_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      operationId: setOutletThresholds
+      summary: B-26 -- menyetel ketiga ambang otorisasi outlet.
+      description: >-
+        ⛔ PUT, bukan PATCH: bidang yang tidak dikirim menjadi `null`, yaitu
+        kembali ke bawaan. Layarnya menampilkan keempat isian sekaligus, dan
+        PATCH yang menyimpan sebagian membuat "kosongkan isian ini" tidak dapat
+        dinyatakan sama sekali -- padahal mengosongkan adalah satu-satunya cara
+        kembali ke bawaan.
+
+
+        ⛔ `null` BERBEDA dari nol. `selisihKas: "0"` berarti SETIAP selisih
+        menuntut otorisasi manajer -- pilihan yang sah untuk merchant yang
+        lacinya kecil, dan yang tidak dapat dinyatakan kalau nol diperlakukan
+        sebagai "tidak diatur".
+
+
+        ⛔ TIDAK ADA nilai yang berarti "tidak pernah menuntut otorisasi".
+        Ambang yang dapat dimatikan adalah kontrol yang hilang pada hari
+        seseorang membutuhkannya, dan yang mematikannya adalah orang yang
+        paling ingin ia mati. Merchant yang menginginkan praktis tanpa PIN
+        menyetel angkanya tinggi -- terlihat sebagai angka, tercatat di
+        `audit_event` sebagai `threshold_changed` dengan nilai lama dan
+        barunya.
+
+
+        RBAC `threshold_settings` = {owner, area_manager}, diturunkan dari
+        IA:205. ⛔ Manajer Outlet sengaja di luar: ambang inilah yang
+        memutuskan kapan persetujuan MANAJER OUTLET dituntut, dan yang dapat
+        menaikkannya dapat menghapus kebutuhan atas persetujuannya sendiri.
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                diskonPersenSkala:
+                  type: string
+                  nullable: true
+                  description: >-
+                    Persen berskala 10.000 sebagai STRING (20% = "2000").
+                    String, bukan number: jalur yang memutuskan kapan PIN
+                    manajer dituntut tidak menyentuh float.
+                diskonNominal: { type: string, nullable: true }
+                selisihKas: { type: string, nullable: true }
+                noSale:
+                  type: integer
+                  nullable: true
+                  description: >-
+                    Berapa pembukaan laci yang BEBAS PIN dalam satu shift.
+                    Pembukaan berikutnya menuntut PIN (spec-d:239).
+      responses:
+        '200':
+          description: Ambang setelah disimpan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AmbangOutlet' }
+        '400':
+          description: Nilai di luar batas wajar (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak mengubah ambang otorisasi (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Outlet tidak ditemukan (OUTLET_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /outlets/{outletId}/prices:
     get:
       operationId: listOutletPrices
@@ -6893,6 +7007,30 @@ components:
           type: integer
           nullable: true
           description: '`null` = tanpa batas.'
+    AmbangOutlet:
+      type: object
+      required: [outletId, tersimpan, berlaku]
+      properties:
+        outletId: { type: string }
+        tersimpan:
+          type: object
+          description: >-
+            Apa yang outlet ini SETEL. `null` berarti belum disetel dan
+            bawaannya yang berlaku.
+          properties:
+            diskonPersenSkala: { type: string, nullable: true }
+            diskonNominal: { type: string, nullable: true }
+            selisihKas: { type: string, nullable: true }
+            noSale: { type: integer, nullable: true }
+        berlaku:
+          type: object
+          description: Apa yang benar-benar menentukan hari ini. Tidak ada null.
+          required: [diskonPersenSkala, diskonNominal, selisihKas, noSale]
+          properties:
+            diskonPersenSkala: { type: string }
+            diskonNominal: { type: string }
+            selisihKas: { type: string }
+            noSale: { type: integer }
     Error:
       type: object
       required: [error]

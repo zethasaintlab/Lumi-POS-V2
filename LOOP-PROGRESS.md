@@ -2425,3 +2425,117 @@ Ditemukan justru karena test itu MERAH.
 **Sisa 8 lubang FR-F6:** `shift_count_attempt` · `cash_paid_in` ·
 `cash_paid_out` · `threshold_changed` · `vertical_profile_changed` ·
 `peripheral_configured` · `support_session_started` · `support_session_ended`.
+
+---
+
+## Task 32 — B-26 Ambang Otorisasi, dan `threshold_changed` (lubang 8 → 7)
+
+**Status: selesai.** Back-office tinggal satu layar: B-24 Profil Vertikal.
+
+Keputusan 1 Agustus 2026 menyebut ketiga ambang dalam satu kalimat — *"diskon
+>20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale wajib alasan, PIN di atas
+3×/shift"* — dan mencatat bahwa **angkanya `[ASUMSI]`, belum divalidasi ke
+merchant**. Ambang diskon sudah dapat disetel sejak migrasi `0031`; dua sisanya
+hanya konstanta. B-26 (`IA:205`) menutup jaraknya.
+
+### ⛔ Bagian yang paling penting bukan endpointnya, melainkan PENERAPANNYA
+
+Layar pengaturan yang menyimpan dengan benar, menampilkan kembali dengan benar,
+dan **tidak mengubah apa pun** adalah bentuk kegagalan yang paling sulit
+dilihat: tidak ada error di mana pun, dan satu-satunya gejalanya adalah PIN yang
+tetap diminta pada angka yang merchant kira sudah ia naikkan.
+
+Karena itu setelan ini dibaca di **empat** tempat, bukan satu:
+
+| Tempat | Kenapa |
+|---|---|
+| `closeShift` server | Tutup kas lewat back-office |
+| `recordNoSale` server | Buka laci lewat server |
+| `tutupKas` klien | K-12 berjalan **tanpa jaringan** |
+| `rencanaNoSaleLokal` klien | K-16 berjalan **tanpa jaringan** |
+
+Kedua kolom karena itu **turun ke perangkat** (sync rules + skema lokal),
+alasan yang sama dengan ambang diskon: perangkat yang memakai bawaan sementara
+server memakai angka merchant menghasilkan *kasir yang sama, shift yang sama,
+jawaban berbeda* — persis penyimpangan yang `buku-kas.ts` catat saat
+konstantanya dipindahkan ke domain.
+
+Sabotase: kedua panggilan dikembalikan ke bawaan → 3 merah.
+
+### Keputusan
+
+- ⛔ **`null` BERBEDA dari nol, dan perbedaannya sampai ke perilaku.** `null` =
+  pakai bawaan; `0` = **setiap** kejadian menuntut otorisasi, pilihan yang sah
+  untuk merchant yang lacinya kecil. `0n || bawaan` membuangnya tanpa satu pun
+  error — `ambangBerlaku` memakai `??`, dan ada test di domain, server, dan
+  klien untuk itu.
+- ⛔ **TIDAK ADA nilai yang berarti "tidak pernah menuntut otorisasi".** Ambang
+  yang dapat dimatikan adalah kontrol yang hilang pada hari seseorang
+  membutuhkannya — dan yang mematikannya adalah orang yang paling ingin ia
+  mati. Merchant yang menginginkan praktis tanpa PIN menyetel angkanya tinggi:
+  terlihat sebagai angka, tercatat sebagai `threshold_changed` dengan nilai
+  lama dan barunya. Sebuah toggle `false` tidak menceritakan apa pun tentang
+  seberapa jauh. Penjaganya BENTUK datanya — tidak ada bidang boolean.
+- ⛔ **Batas atas yang WAJAR, bukan batas yang mungkin.** Salah ketik satu nol
+  berlebih menaikkan ambang selisih kas dari Rp 20.000 ke Rp 200.000, dan tidak
+  ada apa pun di layar yang akan memberitahunya — selisih yang seharusnya
+  dipertanyakan hanya berhenti muncul.
+- ⛔ **RBAC `threshold_settings` = {owner, area_manager}**, diturunkan dari
+  `IA:205`. **Manajer Outlet sengaja di luar**: ambang inilah yang memutuskan
+  kapan persetujuan Manajer Outlet dituntut, dan yang dapat menaikkannya dapat
+  menghapus kebutuhan atas persetujuannya sendiri. Operasi tersendiri, bukan
+  `tax_settings` yang dipakai ulang — pola yang sama dengan `outlet_manage`,
+  supaya penolakannya berbunyi jujur. **MEMBACA tidak dijaga**: kasir yang
+  ditolak PIN-nya berhak tahu ambang mana yang menolaknya.
+- ⛔ **`PUT`, bukan `PATCH`.** Mengosongkan adalah satu-satunya cara kembali ke
+  bawaan, dan PATCH yang menyimpan sebagian membuat perintah itu tidak dapat
+  dinyatakan sama sekali.
+- ⛔ **Respons membawa `tersimpan` DAN `berlaku`.** Layar yang menebak
+  `tersimpan` dari `berlaku` akan menuliskan bawaan sebagai pilihan pada
+  penyimpanan berikutnya, dan sejak saat itu outlet berhenti mengikuti
+  perubahan bawaan tanpa siapa pun memutuskannya. Isian kosong TETAP kosong;
+  bawaannya muncul sebagai petunjuk.
+- ⛔ **Audit mencatat `tersimpan`, bukan `berlaku`.** Outlet yang mengosongkan
+  ambangnya kembali ke bawaan, dan audit yang mencatat angka bawaan sebagai
+  nilai baru tidak dapat dibedakan dari merchant yang mengetik angka itu — dua
+  keadaan yang berperilaku sama hari ini dan berbeda pada hari bawaannya
+  berubah.
+- ⛔ **Dialog no-sale menyebut ambang yang BERLAKU.** `RencanaNoSale` membawa
+  `ambang`; komponen yang membacanya dari konstanta akan menyebut "3×" pada
+  outlet berambang 6, memberi tahu kasir aturan yang tidak berlaku baginya.
+  Audit no-sale mencatat ambang berlaku juga — laporan exception yang
+  menampilkan "ke-4 dari 3" menuduh orang atas aturan yang tidak pernah berlaku
+  baginya.
+
+### ⛔ Temuan: AJV meng-koersi `number` menjadi `string`
+
+Kontrak menulis `type: string` untuk uang, dan alasannya benar. Tapi AJV
+mengubah `50000` menjadi `"50000"` **sebelum handler melihatnya** — bentuk yang
+sama persis dengan temuan telemetri (`null` → `0`). Menolaknya di handler
+mustahil, dan mengejarnya pun tidak berguna: angka yang melampaui 2⁵³ sudah
+kehilangan presisinya di `JSON.stringify` klien. Yang menjaga sisi itu adalah
+`b26.ts`, yang selalu mengirim string. Yang masih dapat dijaga: rupiah tidak
+punya desimal — `50000.5` dikoersi menjadi `"50000.5"` dan ditolak bentuknya.
+
+### Lima penjaga yang menyala persis seperti yang dirancang
+
+1. `tipe-divergen.test.js` — kedua kolom PostgreSQL baru tidak ada di skema
+   lokal dan tidak terdaftar sebagai keputusan. Itu yang memaksa keputusan
+   "turun atau tidak" diambil sadar, bukan terlewat.
+2. `navigasi.test.js` — B-26 masih terdaftar sebagai "endpointnya belum ada".
+3. `outlet.test.js` — daftar operasi outlet di kontrak berubah. Penjaganya
+   dipertajam: daftar putihnya tetap, ditambah pola yang menamai apa yang
+   sebenarnya dijaga (tidak ada `update`/`archive`/`rename`Outlet), supaya
+   penjaganya tidak lagi merah untuk endpoint yang tidak menyentuh identitas
+   outlet.
+4. `rbac-cakupan.test.js` — rute mutasi baru tanpa aturan peran di
+   `PETA_PERAN`. `assertBoleh` di handler sudah ada dan tetap **tidak cukup**:
+   peta itu yang membuat "rute mana menuntut apa" dapat dibaca sekali,
+   berdampingan dengan matriks spec.
+5. `rbac-penolakan.test.js` — rute yang punya aturan tapi tidak punya kasus
+   penolakan. Penjaga cakupan menjamin ia PUNYA aturan; yang ini menjamin
+   aturannya BEKERJA.
+
+**Sisa 7 lubang FR-F6:** `shift_count_attempt` · `cash_paid_in` ·
+`cash_paid_out` · `vertical_profile_changed` · `peripheral_configured` ·
+`support_session_started` · `support_session_ended`.
