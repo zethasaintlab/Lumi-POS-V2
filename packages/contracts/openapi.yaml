@@ -4913,6 +4913,59 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /reports/daily-summary:
+    get:
+      operationId: getDailySummary
+      summary: FR-G6 -- ringkasan satu hari untuk HP (M-01).
+      description: >-
+        `spec-g:212`: *"Persona P3 membuka aplikasi pukul 23:00 di HP 390x844
+        untuk satu pertanyaan: hari ini bagaimana, dan apakah ada yang aneh."*
+
+
+        ⛔ Angkanya dari `ambilPenjualan` dan `ambilPembayaran` -- fungsi yang
+        SAMA yang /reports/sales dan /reports/payments pakai. Owner yang
+        melihat omzet berbeda tergantung layar mana yang ia buka akan
+        mempercayai yang ia lihat pukul 23:00, dan itu yang paling jarang
+        diperiksa ulang.
+
+
+        ⛔ Delta dibandingkan rata-rata HARI YANG SAMA empat minggu terakhir
+        (spec-g:243), bukan hari sebelumnya. Omzet kafe pada Sabtu dan Selasa
+        berbeda jauh dan itu normal; delta terhadap hari sebelumnya membuat
+        SETIAP SENIN terlihat seperti bencana dan setiap Jumat seperti rekor --
+        dua sinyal palsu setiap minggu, selamanya.
+
+
+        ⛔ `tren.deltaPersen` bernilai `null` bila belum ada cukup hari
+        pembanding, dan itu BUKAN nol. Merchant yang baru dua minggu berjualan
+        tidak punya empat Senin sebelumnya; "0%" untuknya adalah pernyataan
+        yang salah -- ia mengaku omzet hari ini persis sama dengan
+        kebiasaannya, dan kebiasaan itu belum ada. `basisMinggu` menyatakan
+        seberapa kasar pembandingnya.
+
+
+        ⛔ `rataRataPerTransaksi` bernilai `null` untuk NOL transaksi, bukan
+        "Rp 0 per transaksi" -- yang kedua mengaku ada transaksi bernilai nol.
+
+
+        Uang selalu STRING: `bigint` tidak dapat melewati JSON, dan `Number`
+        membuang presisi di atas 2^53.
+      parameters:
+        - name: date
+          in: query
+          required: true
+          description: Tanggal BISNIS, bentuk YYYY-MM-DD.
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { description: "Ringkasan satu hari" }
+        "400": { description: "Tanggal tidak valid" }
+        "403": { description: "Tidak berhak" }
+        "404": { description: "Outlet tidak ditemukan" }
+
   /reports/stale-price-devices:
     get:
       operationId: getStalePriceDevices

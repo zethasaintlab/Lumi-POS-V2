@@ -20,6 +20,7 @@ import {
 } from './handlers/exception.ts';
 import { ambilAudit, bacaBatas, bacaJenis } from './handlers/audit.ts';
 import { ambilHargaBasi } from './handlers/harga-perangkat.ts';
+import { ambilRingkasanHarian } from './handlers/ringkasan-hp.ts';
 import { PERISTIWA_BELUM_DIPANCARKAN } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 
 /**
@@ -220,6 +221,38 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
      * Operasi baru yang himpunannya identik hanya menambah baris ke matriks
      * yang spec tidak nyatakan.
      */
+
+    /**
+     * `GET /reports/daily-summary` — FR-G6, layar pertama M-01.
+     *
+     * ⛔ Angkanya dari `ambilPenjualan` dan `ambilPembayaran` — fungsi yang
+     * SAMA yang `GET /reports/sales` dan `/reports/payments` pakai. Owner yang
+     * melihat omzet berbeda tergantung layar mana yang ia buka akan
+     * mempercayai yang ia lihat pukul 23:00, dan itu yang paling jarang
+     * diperiksa ulang.
+     *
+     * ⛔ RBAC `report_exception`, himpunan yang sama dengan laporan pengawasan
+     * lain: ringkasan ini memuat omzet bersih seluruh outlet.
+     */
+    async getDailySummary(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = (req.query ?? {}) as { date?: string; outlet_id?: string };
+      const outletId = q.outlet_id === undefined || q.outlet_id === '' ? null : q.outlet_id;
+
+      const tanggal = q.date;
+      if (typeof tanggal !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'date wajib diisi, bentuk YYYY-MM-DD.');
+      }
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'report_exception', 'melihat ringkasan harian');
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+        return ambilRingkasanHarian(client, { tanggal, outletId });
+      });
+    },
+
     async getStalePriceDevices(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);

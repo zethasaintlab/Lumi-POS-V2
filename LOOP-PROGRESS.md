@@ -3348,3 +3348,94 @@ apa pun (kontrol negatif — "owner tercatat" tidak boleh berarti "owner tercata
 berbeda").
 
 **Sabotase:** `recordAuditEvent` mengecualikan owner → 18 dari 19 test merah.
+
+---
+
+## Task 42 — FR-G6: ringkasan harian untuk HP (24 Agustus 2026) ✅
+
+`spec-g:212`: *"Persona P3 membuka aplikasi pukul 23:00 di HP 390×844 untuk
+satu pertanyaan: hari ini bagaimana, dan apakah ada yang aneh."* Sampai hari
+ini tidak ada satu pun endpoint yang menjawabnya dalam satu permintaan — yang
+ada `GET /reports/sales` (rentang) dan `GET /reports/payments`, dan layar HP
+yang menjahitnya sendiri menjadi tempat kedua yang memutuskan omzet.
+
+Ditemukan lewat survei 77 FR yang sama dengan Task 41: FR-G6 tidak dirujuk satu
+berkas pun.
+
+### Keputusan yang mengikat kode
+
+- ⛔ **Pembandingnya HARI YANG SAMA empat minggu ke belakang, bukan hari
+  sebelumnya.** Omzet kafe pada Sabtu dan Selasa berbeda jauh, dan itu normal.
+  Delta terhadap hari sebelumnya membuat **setiap Senin terlihat seperti
+  bencana** dan setiap Jumat terlihat seperti rekor — dua sinyal palsu setiap
+  minggu, selamanya, dan owner berhenti mempercayai panahnya dalam dua minggu.
+  Testnya menyemai 23 Agustus dengan Rp 9.000.000: implementasi yang
+  membandingkan ke "kemarin" meleset jauh, terlihat, dan merah.
+- ⛔ **`deltaPersen: null` BERBEDA dari `0`.** Merchant yang baru dua minggu
+  berjualan tidak punya empat Senin sebelumnya; "0%" untuknya adalah pernyataan
+  yang **salah** — ia mengaku omzet hari ini persis sama dengan kebiasaannya,
+  dan kebiasaan itu belum ada. Bentuk cacat yang sama dengan `null` vs `0` pada
+  MDR dan pada ringkasan stok lintas outlet.
+- ⛔ **Hari pembanding yang TIDAK ADA tidak dihitung nol.** Outlet yang tutup
+  pada satu Senin tidak punya baris untuk hari itu; memperlakukannya sebagai
+  omzet nol menyeret rata-rata ke bawah, lalu Senin berikutnya terlihat naik
+  puluhan persen karena outletnya kebetulan buka. `basisMinggu` ikut di respons
+  supaya layar dapat menyatakan seberapa kasar pembandingnya.
+- ⛔ **Minimum DUA hari pembanding, bukan empat.** `[ASUMSI]` — `spec-g` menyebut
+  "rata-rata 4 minggu terakhir" tanpa menyatakan apa yang terjadi bila belum ada
+  empat. Menuntut empat berarti merchant baru tidak melihat panah apa pun selama
+  sebulan penuh, persis periode ia paling ingin tahu apakah dagangannya tumbuh.
+- ⛔ **Pembandingnya diambil PER HARI, bukan sebagai satu rentang.** Satu query
+  `from..to` mengembalikan rata-rata 28 hari — angka yang membuat setiap Senin
+  terlihat seperti bencana dan setiap Sabtu seperti rekor, cacat yang sama
+  bentuknya dengan yang aturan hari-sama ada untuk mencegahnya. Empat pembacaan
+  kecil, bukan satu yang salah.
+- ⛔ **Angkanya dari `ambilPenjualan`/`ambilPembayaran` yang SAMA** dengan
+  `/reports/sales` dan `/reports/payments`. Testnya `assert.equal` terhadap
+  respons `/reports/sales`, bukan terhadap angka tulisan tangan — aturan yang
+  sama yang membuat B-01 memakai `posisi-penjualan.ts`. Yang owner lihat pukul
+  23:00 adalah yang paling jarang diperiksa ulang.
+- ⛔ **`rataRataPerTransaksi: null` untuk NOL transaksi.** "Rp 0 per transaksi"
+  mengaku ada transaksi yang nilainya nol.
+- **`arah: 'datar'` HANYA untuk selisih nol.** Ambang "kekecilan" adalah angka
+  yang harus dipilih seseorang dan tidak ada di dokumen mana pun — jadi ia tidak
+  dikarang di kode. Panah untuk 0,3% tetap jujur; layar dapat memilih tidak
+  menonjolkannya.
+- **`perMetode` memakai `totalDiterima`, bukan omzet** — uang yang benar-benar
+  masuk per saluran. Keduanya berbeda saat ada pembayaran campuran, dan owner
+  yang menjumlahkan baris metode berharap mendapat uang yang ia terima.
+- **Modul `reporting`** karena ia menjahit penjualan dan pembayaran dalam satu
+  pertanyaan (invariant #4). `ambilPembayaran` diekspor dari `ordering/index.ts`
+  untuk itu.
+
+### Masalah + solusinya
+
+Delapan test baru gagal serentak pada jalan pertama — termasuk yang hanya
+memeriksa 400. Keserentakan itu sinyalnya: `ReferenceError: hdr is not
+defined`, bukan delapan bug logika. Helper header di berkas itu selama ini
+tertanam di dalam `laporan()`; diekstrak menjadi `hdr()` dan dipakai keduanya.
+Satu ekspektasi lain juga salah — `/reports/sales` membungkus angkanya di bawah
+kunci `penjualan`.
+
+### Sabotase
+
+Tiga, semuanya merah:
+
+| Sabotase | Yang merah |
+|---|---|
+| pembanding `i * 7` → `i` (hari sebelumnya) | 4 test, termasuk dua di server |
+| `deltaPersen: null` → `0` saat data kurang | 2 test |
+| hari nol-transaksi ikut dihitung | 2 test |
+
+### Verifikasi
+
+Seluruh suite hijau, dijalankan berurutan: `test:kasir` 494 · `test:domain` 506
+· `test:server` 448 · `test:backoffice` 430 · `test:isolation` 211 ·
+`test:ordering` 193 · `test:catalog` 177 · `test:identity` 156 · `test:payment`
+132 · `test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 ·
+`test:dst` 14 · `test:oxlint-ds-adherence` 12 · `test:dst-server` 10 ·
+`test:sqlite-local` 8 · `test:runtime` 3. `typecheck` dan `lint:ds` bersih.
+
+**Batas yang dinyatakan:** yang dibangun adalah **datanya**, bukan layarnya.
+M-01 hidup di aplikasi HP owner yang belum ada sama sekali (`apps/` hanya punya
+`backoffice`, `kasir`, `server`) — itu task berikutnya.

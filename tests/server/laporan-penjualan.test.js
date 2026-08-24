@@ -132,16 +132,18 @@ async function buatRefund(orderId, amount) {
   await appSetup.query('COMMIT');
 }
 
+const hdr = (ubah = {}) => ({
+  'x-tenant-id': tenant.id,
+  authorization: base.authHeader,
+  'x-actor-id': base.user.id,
+  ...ubah,
+});
+
 function laporan(query, headers = {}) {
   return app.inject({
     method: 'GET',
     url: `/reports/sales?${query}`,
-    headers: {
-      'x-tenant-id': tenant.id,
-      authorization: base.authHeader,
-      'x-actor-id': base.user.id,
-      ...headers,
-    },
+    headers: hdr(headers),
   });
 }
 
@@ -354,4 +356,109 @@ test('⛔ tanpa sesi ditolak 401', async () => {
     headers: { 'x-tenant-id': tenant.id },
   });
   assert.equal(res.statusCode, 401, res.body);
+});
+
+// ---------------------------------------------------------------------------
+// FR-G6 — ringkasan harian untuk HP (M-01)
+// ---------------------------------------------------------------------------
+
+const ringkasan = (tanggal, q = '', ubah = {}) =>
+  app.inject({
+    method: 'GET',
+    url: `/reports/daily-summary?date=${tanggal}${q}`,
+    headers: hdr(ubah),
+  });
+
+test('⛔ FR-G6 — omzetnya SAMA PERSIS dengan /reports/sales hari itu', async () => {
+  // Owner yang melihat omzet berbeda tergantung layar mana yang ia buka akan
+  // mempercayai yang ia lihat pukul 23:00, dan itu yang paling jarang
+  // diperiksa ulang. Dibandingkan terhadap respons endpoint lain, bukan
+  // terhadap angka tulisan tangan.
+  await buatOrder({ businessDate: '2026-08-24', total: 120000 });
+  await buatOrder({ businessDate: '2026-08-24', total: 80000 });
+
+  const hp = await ringkasan('2026-08-24');
+  assert.equal(hp.statusCode, 200, hp.body);
+
+  const penuh = await app.inject({
+    method: 'GET',
+    url: '/reports/sales?from=2026-08-24&to=2026-08-24',
+    headers: hdr(),
+  });
+  assert.equal(penuh.statusCode, 200, penuh.body);
+
+  assert.equal(hp.json().omzetBersih, penuh.json().penjualan.omzetBersih);
+  assert.equal(hp.json().jumlahTransaksi, penuh.json().penjualan.jumlahTransaksi);
+});
+
+test('⛔ delta dibandingkan HARI YANG SAMA empat minggu terakhir', async () => {
+  // 24 Agustus 2026 adalah Senin. Pembandingnya 17, 10, 3 Agustus dan 27 Juli
+  // — bukan 23 Agustus.
+  //
+  // ⛔ Hari SEBELUMNYA sengaja diberi omzet yang sangat berbeda: kalau
+  // implementasinya membandingkan ke sana, deltanya akan jauh meleset.
+  await buatOrder({ businessDate: '2026-08-23', total: 9_000_000 });
+  for (const tgl of ['2026-08-17', '2026-08-10', '2026-08-03', '2026-07-27']) {
+    await buatOrder({ businessDate: tgl, total: 1_000_000 });
+  }
+  await buatOrder({ businessDate: '2026-08-24', total: 1_100_000 });
+
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.tren.rataRata, '1000000', 'rata-rata harus dari hari SENIN');
+  assert.equal(b.tren.deltaPersen, 10);
+  assert.equal(b.tren.arah, 'naik');
+  assert.equal(b.tren.basisMinggu, 4);
+});
+
+test('⛔ delta null bila belum ada cukup hari pembanding — BUKAN 0%', async () => {
+  // "0%" mengaku omzet hari ini persis sama dengan kebiasaannya, dan kebiasaan
+  // itu belum ada.
+  await buatOrder({ businessDate: '2026-08-24', total: 1_000_000 });
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.tren.deltaPersen, null);
+  assert.equal(b.tren.rataRata, null);
+  assert.equal(b.tren.basisMinggu, 0);
+});
+
+test('⛔ hari pembanding TANPA transaksi tidak menyeret rata-rata', async () => {
+  // Outlet yang tutup pada satu Senin tidak punya kebiasaan untuk hari itu.
+  // Memperlakukannya sebagai omzet nol membuat Senin berikutnya terlihat naik
+  // puluhan persen karena outletnya kebetulan buka.
+  for (const tgl of ['2026-08-17', '2026-08-10']) {
+    await buatOrder({ businessDate: tgl, total: 1_000_000 });
+  }
+  // 3 Agustus dan 27 Juli: tutup, tanpa satu pun order.
+  await buatOrder({ businessDate: '2026-08-24', total: 1_000_000 });
+
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.tren.rataRata, '1000000');
+  assert.equal(b.tren.deltaPersen, 0);
+  assert.equal(b.tren.basisMinggu, 2, 'hanya hari yang punya data yang dipakai');
+});
+
+test('⛔ rataRataPerTransaksi null untuk hari TANPA transaksi', async () => {
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.jumlahTransaksi, 0);
+  assert.equal(b.rataRataPerTransaksi, null, 'bukan "Rp 0 per transaksi"');
+});
+
+test('uang selalu STRING, tidak pernah number', async () => {
+  await buatOrder({ businessDate: '2026-08-24', total: 120000 });
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(typeof b.omzetBersih, 'string');
+  assert.equal(typeof b.rataRataPerTransaksi, 'string');
+  for (const m of b.perMetode) assert.equal(typeof m.total, 'string', m.metode);
+});
+
+test('tanggal cacat ditolak 400', async () => {
+  for (const t of ['', '24-08-2026', '2026-8-24', 'kemarin']) {
+    const res = await ringkasan(t);
+    assert.equal(res.statusCode, 400, `${t}: ${res.body}`);
+  }
+});
+
+test('outlet milik tenant lain dijawab 404', async () => {
+  const lain = await seedTenantBase(appSetup, { suffix: 'RingkasLain' });
+  const res = await ringkasan('2026-08-24', `&outlet_id=${lain.outlet.id}`);
+  assert.equal(res.statusCode, 404, res.body);
 });
