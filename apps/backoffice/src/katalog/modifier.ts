@@ -1,4 +1,4 @@
-import { bacaRupiah } from './produk.ts';
+import { bacaRupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /**
  * B-09 — Modifier List dan opsinya. Murni.

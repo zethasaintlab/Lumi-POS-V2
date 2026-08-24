@@ -75,7 +75,7 @@ test('⛔ label metode SEPAKAT dengan B-03', async () => {
   // Dua layar yang menamai metode yang sama dengan kata berbeda membuat
   // merchant mengira keduanya hal yang berbeda.
   const { LABEL_METODE } = await import(B04);
-  const { LABEL_METODE: b03 } = await import('../../apps/backoffice/src/penjualan/b03.ts');
+  const { LABEL_METODE: b03 } = await import('../../packages/domain/src/metode-tampilan.ts');
   assert.deepEqual(LABEL_METODE, b03);
 });
 

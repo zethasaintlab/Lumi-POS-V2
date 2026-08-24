@@ -462,3 +462,124 @@ test('outlet milik tenant lain dijawab 404', async () => {
   const res = await ringkasan('2026-08-24', `&outlet_id=${lain.outlet.id}`);
   assert.equal(res.statusCode, 404, res.body);
 });
+
+// ---------------------------------------------------------------------------
+// FR-G6 — "hari ini" diputuskan SERVER, bukan jam HP
+// ---------------------------------------------------------------------------
+
+/** Outlet kedua, supaya zona/jam tutup dapat dibuat berbeda. */
+async function buatOutlet({ timezone = 'Asia/Jakarta', batas = '04:00', nama = 'Cabang 2' }) {
+  const id = crypto.randomUUID();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(
+    `INSERT INTO outlet (id, tenant_id, name, timezone, business_day_ends_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [id, tenant.id, nama, timezone, batas]
+  );
+  await appSetup.query('COMMIT');
+  return id;
+}
+
+test('⛔ date DIKOSONGKAN berarti hari ini, dan servernya yang menghitung', async () => {
+  // Jam HP dapat salah — FR-F8 ada di produk ini justru karena jam perangkat
+  // berbohong. Yang menghitung tanggal bisnis karena itu server, dari jam
+  // database dan zona outletnya.
+  // ⛔ `date` benar-benar TIDAK DIKIRIM — bukan dikirim kosong. Perbedaannya
+  // diuji terpisah di test berikutnya.
+  const res = await app.inject({
+    method: 'GET',
+    url: `/reports/daily-summary?outlet_id=${base.outlet.id}`,
+    headers: hdr(),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+
+  const { tanggalBisnis } = await import('../../packages/domain/src/tanggal-bisnis.ts');
+  const { rows } = await appSetup.query('SELECT now() AS sekarang');
+  const diharapkan = tanggalBisnis(rows[0].sekarang, 'Asia/Jakarta', '04:00');
+
+  // ⛔ Dibandingkan terhadap fungsi domain yang SAMA yang kasir pakai, bukan
+  // terhadap `new Date()` di test — dua tempat yang menghitung tanggal bisnis
+  // adalah persis yang berkas ini ada untuk mencegah.
+  assert.equal(res.json().tanggal, diharapkan);
+});
+
+test('⛔ date KOSONG tetap ditolak — beda dari date yang tidak dikirim', async () => {
+  // String kosong berarti klien bermaksud menyebut tanggal dan gagal.
+  // Memperlakukannya sebagai "hari ini" menyembunyikan bug klien di balik
+  // jawaban yang terlihat masuk akal.
+  const res = await app.inject({
+    method: 'GET',
+    url: `/reports/daily-summary?date=&outlet_id=${base.outlet.id}`,
+    headers: hdr(),
+  });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error.code, 'VALIDATION_ERROR');
+});
+
+test('⛔ tanpa outlet_id, "hari ini" hanya dijawab bila outlet SEPAKAT', async () => {
+  // Satu outlet: tidak ada yang dapat berselisih.
+  const satu = await app.inject({
+    method: 'GET',
+    url: '/reports/daily-summary',
+    headers: hdr(),
+  });
+  assert.equal(satu.statusCode, 200, satu.body);
+
+  // Outlet kedua di zona yang sama, jam tutup sama: masih satu jawaban.
+  await buatOutlet({});
+  const dua = await app.inject({
+    method: 'GET',
+    url: '/reports/daily-summary',
+    headers: hdr(),
+  });
+  assert.equal(dua.statusCode, 200, dua.body);
+  assert.equal(dua.json().tanggal, satu.json().tanggal);
+});
+
+test('⛔ zona waktu berbeda → 400 BUSINESS_DATE_AMBIGUOUS, bukan angka gabungan', async () => {
+  // Pukul 23:00 di Jayapura masih pukul 21:00 di Jakarta; angka gabungan
+  // memuat dua hari bisnis berbeda dan tidak dapat dicocokkan dengan tutup kas
+  // cabang mana pun.
+  await buatOutlet({ timezone: 'Asia/Jayapura', nama: 'Cabang Timur' });
+  const res = await app.inject({
+    method: 'GET',
+    url: '/reports/daily-summary',
+    headers: hdr(),
+  });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error.code, 'BUSINESS_DATE_AMBIGUOUS');
+  // Pesannya harus menyebut jalan keluarnya — memilih outlet.
+  assert.match(res.json().error.message, /pilih satu outlet/i);
+});
+
+test('⛔ JAM TUTUP berbeda juga membuatnya ambigu, bukan hanya zona', async () => {
+  // Cabang yang tutup 02:00 dan cabang yang tutup 06:00 berada di tanggal
+  // bisnis berbeda selama empat jam setiap malam — tepat jam yang owner
+  // membuka aplikasi ini.
+  await buatOutlet({ batas: '06:00', nama: 'Cabang Malam' });
+  const res = await app.inject({
+    method: 'GET',
+    url: '/reports/daily-summary',
+    headers: hdr(),
+  });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(res.json().error.code, 'BUSINESS_DATE_AMBIGUOUS');
+});
+
+test('outlet yang DIARSIPKAN tidak membuat "hari ini" ambigu', async () => {
+  // Cabang yang sudah ditutup tidak punya hari bisnis yang berjalan; ia tetap
+  // ada karena riwayat penjualan menunjuknya.
+  const id = await buatOutlet({ timezone: 'Asia/Jayapura', nama: 'Cabang Tutup' });
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(`UPDATE outlet SET archived_at = now() WHERE id = $1`, [id]);
+  await appSetup.query('COMMIT');
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/reports/daily-summary',
+    headers: hdr(),
+  });
+  assert.equal(res.statusCode, 200, res.body);
+});

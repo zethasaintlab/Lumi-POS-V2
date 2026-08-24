@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
-import { useSesi } from '../sesi.tsx';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
 import {

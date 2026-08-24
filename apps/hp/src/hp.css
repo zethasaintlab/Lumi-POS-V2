@@ -1,0 +1,27 @@
+/* Pelabuhan tinggi untuk shell HP.
+ *
+ * Alasannya sama dengan `apps/backoffice/src/backoffice.css`: `ds-bundle`
+ * tidak pernah memberi tinggi kepada `html`, `body`, maupun host aplikasi,
+ * jadi `height: 100%` di dalam shell tidak punya jangkar.
+ *
+ * ⛔ `100dvh`, BUKAN `100vh`. Di browser HP, `100vh` mengukur viewport tanpa
+ * bilah alamat — jadi bilah nav bawah terdorong ke bawah lipatan tepat saat
+ * bilah alamat terlihat, dan `IA:230` menuntut ringkasan muat dalam SATU layar
+ * tanpa scroll. `dvh` mengikuti viewport yang benar-benar terlihat.
+ *
+ * Ini plumbing tata letak, bukan nilai desain: tanpa warna, tanpa ukuran dari
+ * skala spasi, tanpa tipografi. Aturan design system #6 tidak dilanggar.
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100dvh;
+}

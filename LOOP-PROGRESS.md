@@ -3439,3 +3439,120 @@ Seluruh suite hijau, dijalankan berurutan: `test:kasir` 494 · `test:domain` 506
 **Batas yang dinyatakan:** yang dibangun adalah **datanya**, bukan layarnya.
 M-01 hidup di aplikasi HP owner yang belum ada sama sekali (`apps/` hanya punya
 `backoffice`, `kasir`, `server`) — itu task berikutnya.
+
+---
+
+## Task 43 — apps/hp: aplikasi Owner mobile, M-00 dan M-01 (24 Agustus 2026) ✅
+
+`IA:§4` mendaftarkan empat layar Owner mobile untuk v1 (M-00…M-03) dan
+`apps/` hanya berisi `backoffice`, `kasir`, `server`. Permukaan ketiga tidak
+ada sama sekali — dan FR-G6 yang baru ditutup Task 42 adalah datanya, tanpa
+satu pun layar yang membacanya.
+
+Task ini menutup **M-00 dan M-01**. M-02 dan M-03 menyusul; alasannya di bawah.
+
+### Tiga pemindahan, dan kenapa memindahkan bukan menyalin
+
+Aplikasi ketiga membuat tiga modul menjadi milik bersama. Semuanya **dipindah**,
+tidak satu pun disalin:
+
+| Dari | Ke | Kenapa |
+|---|---|---|
+| `apps/backoffice/src/{http,sesi-simpanan}.ts` + `sesi.tsx` | `packages/klien-api/src/` | `IA:245`: kredensial M-00 SAMA dengan back-office. Dua klien sesi yang menyimpang menghasilkan aplikasi yang berhenti dari sesi yang masih hidup — atau lebih buruk, tetap menampilkan layar dengan sesi yang sudah mati |
+| `rupiah`/`bacaRupiah` dari `katalog/produk.ts` | `packages/domain/src/uang-tampilan.ts` | Format uang adalah aturan produk (`CLAUDE.md`), bukan selera. Yang ditulis ulang per layar menyimpang di tepiannya — nilai besar, negatif, dan hilang: tepat tiga keadaan yang paling perlu dibaca benar |
+| `LABEL_METODE`/`LABEL_STATUS_BAYAR` dari `penjualan/b03.ts` | `packages/domain/src/metode-tampilan.ts` | Ringkasan HP merinci pembayaran per metode. Dua peta yang menyimpang membuat HP menyebut saluran berbeda dari back-office untuk hari yang sama |
+
+⛔ **`apps/kasir/src/cetak/metode.ts` SENGAJA tetap terpisah** — nama di struk
+dipendekkan karena struk 58 mm hanya 32 kolom, dan "QRIS (dinamis)" tidak muat
+di sana. Batasnya dinyatakan di kedua berkas.
+
+⛔ **Utang yang dinyatakan:** `apps/kasir` masih punya **delapan** salinan
+pemformat uang sendiri (`Rp ${n.toLocaleString('id-ID')}`, satu per layar). Ia
+menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk negatif.
+Menyatukannya menyentuh setiap layar uang di aplikasi kasir dan karena itu
+task tersendiri, bukan efek samping task ini.
+
+### Keputusan yang mengikat kode
+
+- ⛔ **"Hari ini" diputuskan SERVER, bukan jam HP.** `date` di
+  `GET /reports/daily-summary` menjadi OPSIONAL; dikosongkan berarti hari ini,
+  dan server menghitung tanggal bisnisnya dari `now()` database, zona outlet,
+  dan jam tutupnya lewat `tanggalBisnis` yang kasir pakai. FR-F8 ada di produk
+  ini justru karena jam perangkat berbohong cukup sering untuk perlu
+  dideteksi; HP yang jamnya maju satu hari akan meminta ringkasan hari yang
+  belum terjadi lalu menerima **nol transaksi tanpa satu pun error**, dan owner
+  menyimpulkan outletnya tidak berjualan.
+- ⛔ **Tanpa `outlet_id`, "hari ini" hanya dijawab bila SELURUH outlet aktif
+  sepakat** zona waktu DAN jam tutupnya. Indonesia punya tiga zona waktu;
+  pukul 23:00 di Jayapura masih pukul 21:00 di Jakarta, dan angka gabungan
+  memuat dua tanggal bisnis berbeda. Dijawab `400 BUSINESS_DATE_AMBIGUOUS`
+  dengan instruksi memilih outlet — bentuk yang sama dengan keputusan
+  "ringkasan stok `null` tanpa `outlet_id`". Outlet yang DIARSIPKAN tidak ikut
+  membuatnya ambigu.
+- ⛔ **`date` KOSONG tetap ditolak**, berbeda dari `date` yang tidak dikirim.
+  String kosong berarti klien bermaksud menyebut tanggal dan gagal;
+  memperlakukannya sebagai "hari ini" menyembunyikan bug klien di balik jawaban
+  yang terlihat masuk akal.
+- ⛔ **Setiap angka bertanda membawa KATANYA** (aturan DS #5). Panah hijau ke
+  atas pada omzet yang turun dibaca sekilas sebagai kabar baik, dan layar ini
+  memang dibaca sekilas. Besaran ditampilkan **tanpa tandanya** — "−12,3% lebih
+  rendah" adalah negasi ganda yang dibaca cepat berarti naik.
+- ⛔ **`deltaPersen: null` dirender "belum dapat dibandingkan", DENGAN
+  alasannya.** Tanpa sebab ia terbaca seperti kerusakan; dengan sebab ia
+  terbaca seperti fakta tentang usia merchant itu sendiri. Pembandingnya
+  DISEBUT ("hari yang sama"), bukan disingkat jadi "biasanya" — owner yang
+  mengasumsikan kemarin akan menyimpulkan Senin yang normal sebagai bencana.
+- ⛔ **`pesanLayar` SATU fungsi untuk keempat keadaan bukan-siap**, pola yang
+  sama dengan `pesanLaporan` (B-21) dan `pesanPanel` (panel harga basi). Yang
+  paling berbahaya: kegagalan jaringan yang terbaca seperti "outlet Anda tidak
+  berjualan hari ini". "Gagal" karena itu MENYANGKAL kesimpulan itu secara
+  eksplisit, dan "Coba lagi" hanya ditawarkan pada keadaan yang mencoba lagi
+  dapat memperbaikinya.
+- ⛔ **`CATATAN_ANTREAN` selalu tampil, juga saat angkanya lengkap.** Penjualan
+  offline baru mendarat saat perangkatnya terhubung, jadi angka di layar adalah
+  apa yang SUDAH SAMPAI, bukan apa yang terjual. Owner yang tidak diberi tahu
+  akan menelepon kasirnya tentang omzet yang ada di antrean sebuah tablet.
+- ⛔ **Tanggal diurai sebagai TEKS, bukan lewat `new Date()`.**
+  `new Date('2026-08-24')` adalah tengah malam UTC, dan `getDate()` atasnya
+  mengembalikan 23 untuk setiap zona di sebelah barat Greenwich.
+- ⛔ **Bilah nav bawah TIDAK dibangun sekarang.** `IA:§4.2` menggambar
+  `[Laporan] [Otorisasi]` dan keduanya belum ada di v1 — Otorisasi adalah M-04
+  (`IA:251`, ditunda), Laporan adalah M-03. Tab yang menuju layar yang tidak
+  ada terbaca sebagai aplikasi rusak, bukan sebagai fitur yang ditunda; ia
+  lahir bersama M-03.
+- **Tanpa pendaftaran dan tanpa field "ID Tenant" di M-00.** Yang mendaftarkan
+  usaha melakukannya di laptop. Batas yang dinyatakan: email yang terdaftar di
+  dua tenant tidak dapat masuk lewat HP.
+- **Bukan PWA.** `IA:445` masih membukanya sebagai pertanyaan dan tidak ada
+  dokumen yang memutuskannya; manifest dan service worker kelak tidak mengubah
+  satu pun layar.
+
+### Masalah + solusinya
+
+- **Ekstraksi `rupiah` ikut menyeret `bacaDesimal`** (ia tetangga blok yang
+  sama, dan bukan uang). Dikembalikan ke `produk.ts`; `produk.ts` sendiri
+  memakai `bacaRupiah`, jadi ia mengimpornya dari lokasi baru.
+- **`HttpError` diimpor dari `errors.ts` yang tidak ada** — berkasnya
+  `http-error.ts`. Seluruh berkas test merah serentak, dan keserentakan itu
+  sinyalnya: satu kegagalan modul, bukan dua puluh bug.
+- **Satu test memakai helper yang mengirim `date=` kosong** padahal ia
+  bermaksud MENGHILANGKAN `date`. Perbedaan keduanya justru yang diuji test
+  berikutnya, jadi yang diperbaiki testnya.
+- **Assertion "tanpa tanda minus" menandai kalimat yang benar** — `rata-rata`
+  mengandung tanda hubung. Dipersempit ke tanda yang tepat di depan angka.
+
+### Sabotase
+
+Dua, keduanya merah: penjaga ambiguitas zona dilepas (2 test) · outlet
+terarsip ikut dihitung (1 test).
+
+### Verifikasi
+
+Seluruh suite hijau, berurutan: `test:domain` 506 · `test:kasir` 494 ·
+`test:server` 454 · `test:backoffice` 430 · `test:isolation` 211 ·
+`test:ordering` 193 · `test:catalog` 177 · `test:identity` 156 ·
+`test:payment` 132 · `test:sync-client` 103 · `test:tenancy` 75 · **`test:hp`
+20** · `test:schema` 14 · `test:dst` 14 · `test:oxlint-ds-adherence` 12 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3.
+`typecheck` (kini termasuk `apps/hp`) dan `lint:ds` bersih; `vite build`
+aplikasi HP berhasil.

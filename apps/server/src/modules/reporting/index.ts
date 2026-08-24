@@ -21,6 +21,7 @@ import {
 import { ambilAudit, bacaBatas, bacaJenis } from './handlers/audit.ts';
 import { ambilHargaBasi } from './handlers/harga-perangkat.ts';
 import { ambilRingkasanHarian } from './handlers/ringkasan-hp.ts';
+import { tanggalBisnisHariIni } from './handlers/tanggal-hari-ini.ts';
 import { PERISTIWA_BELUM_DIPANCARKAN } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 
 /**
@@ -240,16 +241,37 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
       const q = (req.query ?? {}) as { date?: string; outlet_id?: string };
       const outletId = q.outlet_id === undefined || q.outlet_id === '' ? null : q.outlet_id;
 
+      // ⛔ `date` OPSIONAL, dan yang menghitung "hari ini" adalah SERVER.
+      //
+      // Jam HP dapat salah — FR-F8 ada di produk ini justru karena jam
+      // perangkat berbohong cukup sering untuk perlu dideteksi. HP yang
+      // jamnya maju satu hari akan meminta ringkasan hari yang belum terjadi
+      // dan menerima nol transaksi tanpa satu pun error.
+      //
+      // Yang dikirim KOSONG tetap ditolak: string kosong berarti klien
+      // bermaksud menyebut tanggal dan gagal, bukan bermaksud "hari ini".
       const tanggal = q.date;
-      if (typeof tanggal !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) {
-        throw new HttpError(400, 'VALIDATION_ERROR', 'date wajib diisi, bentuk YYYY-MM-DD.');
+      const mintaHariIni = tanggal === undefined;
+      if (!mintaHariIni && (typeof tanggal !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal))) {
+        throw new HttpError(
+          400,
+          'VALIDATION_ERROR',
+          'date harus berbentuk YYYY-MM-DD, atau dikosongkan untuk hari ini.'
+        );
       }
 
       return withTenantTransaction(pool, tenantId, async (client) => {
         await assertUserVisible(client, actorId);
         await assertBoleh(client, actorId, 'report_exception', 'melihat ringkasan harian');
         if (outletId !== null) await assertOutletVisible(client, outletId);
-        return ambilRingkasanHarian(client, { tanggal, outletId });
+        // ⛔ Diresolusi DI DALAM transaksi yang sama dengan pembacaannya.
+        // `now()` di transaksi lain dapat jatuh di sisi lain batas hari
+        // bisnis, dan ringkasan yang tanggalnya tidak sama dengan angkanya
+        // adalah laporan yang tidak dapat dicocokkan dengan apa pun.
+        const dipakai = mintaHariIni
+          ? await tanggalBisnisHariIni(client, outletId)
+          : (tanggal as string);
+        return ambilRingkasanHarian(client, { tanggal: dipakai, outletId });
       });
     },
 

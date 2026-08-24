@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, EmptyState, Icon } from 'ds';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { RentangTanggal, hariIni, type Outlet } from './RentangTanggal.tsx';
 import { rentangSiap, type Rentang } from './b16.ts';

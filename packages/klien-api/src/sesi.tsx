@@ -7,14 +7,14 @@ import {
   penyimpananBrowser,
   type Penyimpanan,
   type Sesi,
-} from './sesi-simpanan.ts';
+} from '../../../packages/klien-api/src/sesi-simpanan.ts';
 import {
   buatKlien,
   masuk as mintaLogin,
   daftar as mintaDaftar,
   type HasilDaftar,
   type KlienApi,
-} from './http.ts';
+} from '../../../packages/klien-api/src/http.ts';
 
 /**
  * Glue React untuk sesi back-office. SENGAJA tipis — seluruh aturan

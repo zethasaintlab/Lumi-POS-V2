@@ -3,8 +3,8 @@ import type { FormEvent } from 'react';
 import { Card } from 'ds';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { ingatTenant } from '../tenant-terakhir.ts';
 import { buatMuatanPendaftaran, type FormPendaftaran } from './pendaftaran.ts';
 import {

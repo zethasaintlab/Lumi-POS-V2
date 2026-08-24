@@ -5,7 +5,7 @@ import {
   type AmbangTersimpan,
 } from '../../../../packages/domain/src/ambang.ts';
 import { SKALA_TARIF } from '../../../../packages/domain/src/numeric.ts';
-import { bacaRupiah, rupiah } from '../katalog/produk.ts';
+import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /**
  * B-26 — aturan tampilan Ambang Otorisasi (`IA:205`).

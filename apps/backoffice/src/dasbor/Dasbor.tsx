@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, StatCard, Table } from 'ds';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
-import { rupiah } from '../katalog/produk.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import type { Outlet } from '../laporan/RentangTanggal.tsx';
 import {
   CATATAN_BATAS,

@@ -6,6 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const B03 = '../../apps/backoffice/src/penjualan/b03.ts';
+const METODE = '../../packages/domain/src/metode-tampilan.ts';
 
 const DASAR = {
   id: 'o1',
@@ -129,7 +130,7 @@ test('⛔ kuantitas klien SEPAKAT dengan server', async () => {
 // ---------------------------------------------------------------------------
 
 test('metode dan status pembayaran terbaca merchant', async () => {
-  const { labelMetode, labelStatusBayar } = await import(B03);
+  const { labelMetode, labelStatusBayar } = await import(METODE);
   assert.equal(labelMetode('cash'), 'Tunai');
   assert.equal(labelMetode('qris_dynamic'), 'QRIS (dinamis)');
   assert.equal(labelStatusBayar('confirmed'), 'Terkonfirmasi');
@@ -138,14 +139,14 @@ test('metode dan status pembayaran terbaca merchant', async () => {
 test('⛔ pending TIDAK disebut gagal maupun lunas', async () => {
   // Ia keadaan ketiga yang nyata: QRIS yang QR-nya sudah diminta tapi gateway
   // belum menjawab, sementara pelanggan mungkin sudah membayar (FR-C14).
-  const { labelStatusBayar } = await import(B03);
+  const { labelStatusBayar } = await import(METODE);
   const teks = labelStatusBayar('pending_confirmation');
   assert.doesNotMatch(teks, /gagal|lunas|selesai/i);
   assert.match(teks, /menunggu/i);
 });
 
 test('kode tak dikenal tampil apa adanya, bukan kosong', async () => {
-  const { labelMetode, labelStatusBayar } = await import(B03);
+  const { labelMetode, labelStatusBayar } = await import(METODE);
   assert.equal(labelMetode('metode_baru'), 'metode_baru');
   assert.equal(labelStatusBayar('status_baru'), 'status_baru');
 });

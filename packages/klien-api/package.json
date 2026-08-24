@@ -1,0 +1,10 @@
+{
+  "name": "klien-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/http.ts",
+  "peerDependencies": {
+    "react": "^19.1.0"
+  }
+}

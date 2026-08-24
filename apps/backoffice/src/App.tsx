@@ -14,7 +14,7 @@ import {
   hanyaAkuntan,
   navigasiUntuk,
 } from './navigasi.ts';
-import { PenyediaSesi, useSesi } from './sesi.tsx';
+import { PenyediaSesi, useSesi } from '../../../packages/klien-api/src/sesi.tsx';
 import { Masuk } from './Masuk.tsx';
 import { Daftar } from './daftar/Daftar.tsx';
 import { Tombol } from './Tombol.tsx';

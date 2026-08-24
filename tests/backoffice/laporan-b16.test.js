@@ -22,13 +22,13 @@ test('⛔ rupiah() tidak melewatkan STRING lewat Number', async () => {
   // hilang, tanpa error. Angka sebesar ini bukan hipotetis untuk omzet
   // TAHUNAN merchant 20 outlet, dan endpoint mengirim string justru supaya ia
   // sampai utuh.
-  const { rupiah } = await import(PRODUK);
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(rupiah('9007199254740993'), 'Rp 9.007.199.254.740.993');
   assert.equal(rupiah('12345678901234567890'), 'Rp 12.345.678.901.234.567.890');
 });
 
 test('rupiah() tetap benar untuk bigint, number, dan nilai kecil', async () => {
-  const { rupiah } = await import(PRODUK);
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(rupiah(25000n), 'Rp 25.000');
   assert.equal(rupiah(25000), 'Rp 25.000');
   assert.equal(rupiah('0'), 'Rp 0');
@@ -38,7 +38,7 @@ test('⛔ omzet NEGATIF ditampilkan dengan tanda minus tipografis', async () => 
   // `CLAUDE.md`: `− Rp 8.000` (U+2212), bukan hyphen. Dan `spec-g:283` menuntut
   // omzet bersih negatif "ditampilkan apa adanya" — refund yang melebihi
   // penjualan adalah hari yang justru paling perlu dilihat.
-  const { rupiah } = await import(PRODUK);
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(rupiah('-20000'), '− Rp 20.000');
   assert.equal(rupiah(-20000n), '− Rp 20.000');
 });
@@ -47,7 +47,7 @@ test('⛔ string yang BUKAN angka tidak menghasilkan NaN diam-diam', async () =>
   // `BigInt('abc')` MELEMPAR, tidak seperti `Number('abc')` yang menghasilkan
   // NaN. Layar yang jatuh karena satu field tak terduga lebih buruk daripada
   // layar yang menampilkan tanda tanya.
-  const { rupiah } = await import(PRODUK);
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(rupiah('abc'), 'Rp —');
   assert.equal(rupiah(''), 'Rp —');
 });

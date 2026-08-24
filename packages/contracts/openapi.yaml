@@ -4953,8 +4953,17 @@ paths:
       parameters:
         - name: date
           in: query
-          required: true
-          description: Tanggal BISNIS, bentuk YYYY-MM-DD.
+          required: false
+          description: >-
+            Tanggal BISNIS, bentuk YYYY-MM-DD. DIKOSONGKAN berarti hari ini,
+            dan yang menghitungnya SERVER -- dari jam database, zona outlet,
+            dan jam tutupnya. Jam HP dapat salah (FR-F8 ada justru karena jam
+            perangkat berbohong cukup sering untuk perlu dideteksi), dan HP
+            yang jamnya maju satu hari akan meminta ringkasan hari yang belum
+            terjadi lalu menerima nol transaksi tanpa satu pun error.
+            Tanpa `outlet_id`, "hari ini" hanya dapat dijawab bila SELURUH
+            outlet aktif sepakat zona waktu dan jam tutupnya -- kalau tidak,
+            400 BUSINESS_DATE_AMBIGUOUS.
           schema: { type: string }
         - name: outlet_id
           in: query
@@ -4962,7 +4971,11 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: "Ringkasan satu hari" }
-        "400": { description: "Tanggal tidak valid" }
+        "400":
+          description: >-
+            Tanggal tidak valid (VALIDATION_ERROR), atau "hari ini" tidak dapat
+            diputuskan karena outlet memakai zona atau jam tutup berbeda
+            (BUSINESS_DATE_AMBIGUOUS).
         "403": { description: "Tidak berhak" }
         "404": { description: "Outlet tidak ditemukan" }
 
