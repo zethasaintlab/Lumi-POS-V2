@@ -24,6 +24,10 @@ export const ENTITY_TYPES = [
   // FR-D5. Kas masuk/keluar dicatat di perangkat, offline — owner yang
   // mengambil uang dari laci untuk membayar pemasok tidak menunggu jaringan.
   'cash_movement',
+  // FR-D2. Percobaan hitungan kas dicatat di perangkat saat tutup kas, dan
+  // tutup kas berjalan tanpa jaringan. Jejaknya harus sampai meski shift-nya
+  // sudah ditutup berjam-jam sebelumnya.
+  'count_attempt',
 ] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 

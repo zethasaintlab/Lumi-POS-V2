@@ -60,6 +60,11 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   pin_failed: 'PIN salah',
   pin_lockout: 'Akun terkunci sementara',
   // Shift
+  // ⛔ "Percobaan", bukan "Hitungan kas". Yang dicatat baris ini adalah
+  // ANGKA YANG DICOBA — termasuk yang ditolak lalu diganti — dan label yang
+  // berbunyi seperti hasil akhir membuat pembacanya menyimpulkan shift ditutup
+  // beberapa kali.
+  shift_count_attempt: 'Percobaan hitungan kas',
   shift_opened: 'Shift dibuka',
   shift_closed: 'Shift ditutup',
   // Transaksi

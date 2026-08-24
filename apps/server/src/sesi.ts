@@ -232,6 +232,16 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/count-attempts',
+    alasan:
+      'jalur perangkat: relay outbox. FR-D2 — percobaan hitungan terjadi DI KASIR saat ' +
+      'tutup kas, dan tutup kas berjalan tanpa jaringan. Jejak yang dijawab 401 lalu ' +
+      'berhenti di antrean adalah jejak yang tidak ada, dan yang paling perlu dijejaki ' +
+      'justru percobaan yang gagal. Yang menjaganya `assertBoleh(shift_open_close)`',
+    sesiOpsional: true,
+  },
+  {
+    metode: 'POST',
     pola: '/shifts/:shiftId/cash-movements',
     alasan:
       'jalur perangkat: relay outbox. FR-D5 — uang keluar dari laci DI KONTER, saat shift ' +

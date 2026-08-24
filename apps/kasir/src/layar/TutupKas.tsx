@@ -336,7 +336,24 @@ export function TutupKas() {
         disabled={sibuk || hitungan === 0}
         onClick={() => {
           setSibuk(true);
-          void catatHitungan({ db, shiftId: shift.id, hitungan, waktu: () => new Date() })
+          /* ⛔ `konfig`, `sesi`, `idBaru`, dan `hlc` ikut supaya percobaan
+             meninggalkan JEJAK AUDIT, bukan hanya riwayat lokal. Tanpanya
+             `catatHitungan` tetap bekerja — riwayatnya benar — tapi percobaan
+             yang DITOLAK tidak tercatat di mana pun, dan itu justru percobaan
+             yang `spec-d:127` ingin buktikan tidak dapat diulang diam-diam. */
+          void muatHlc(db, () => Date.now())
+            .then((jam) =>
+              catatHitungan({
+                db,
+                shiftId: shift.id,
+                hitungan,
+                waktu: () => new Date(),
+                konfig,
+                sesi,
+                idBaru: () => crypto.randomUUID(),
+                hlc: () => jam.tick(),
+              })
+            )
             .then((h) => setReview(h))
             .catch((e: Error) => setGalat(e.message))
             .finally(() => setSibuk(false));

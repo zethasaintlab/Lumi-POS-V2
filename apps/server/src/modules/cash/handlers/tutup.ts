@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { Pool } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
@@ -9,7 +9,7 @@ import {
   butuhOtorisasiSelisih,
   saldoLaci,
 } from '../../../../../../packages/domain/src/buku-kas.ts';
-import { assertUserVisible, assertApproverVisible, bolehkahAktor } from '../../identity/index.ts';
+import { assertUserVisible, assertApproverVisible, bolehkahAktor, assertBoleh } from '../../identity/index.ts';
 import { bacaAmbangOutlet } from '../../tenancy/index.ts';
 import { ambangBerlaku } from '../../../../../../packages/domain/src/ambang.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
@@ -84,6 +84,103 @@ function assertJumlah(nilai: unknown, nama: string): bigint {
 
 export function createTutupHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
+    /**
+     * `POST /shifts/{shiftId}/count-attempts` — FR-D2/FR-D3.
+     *
+     * ## ⛔ Kenapa ia endpoint TERSENDIRI, bukan bagian dari tutup kas
+     *
+     * `spec-d:127`: *"Kasir tidak dapat mengubah hitungan fisik setelah
+     * melihat selisih. Untuk mengoreksi, kasir memasukkan hitungan ulang yang
+     * tercatat sebagai PERCOBAAN KEDUA di audit trail."*
+     *
+     * Percobaan yang DITOLAK — selisih melewati ambang tanpa penyetuju —
+     * dilempar `closeShift` SEBELUM satu pun `UPDATE`, dan seluruh
+     * transaksinya di-rollback. Percobaan itu karena itu tidak meninggalkan
+     * apa pun. Dan justru percobaan yang gagal itulah yang `spec-d` ingin
+     * buktikan tidak dapat diulang diam-diam: kasir yang mencoba
+     * Rp 2.450.000, melihat selisihnya, lalu mengetik Rp 2.485.000 supaya
+     * cocok, meninggalkan jejak NOL di jalur tutup kas.
+     *
+     * Jalur tulisnya karena itu terpisah dan berdiri sendiri: satu transaksi
+     * yang hanya menulis audit, tidak menyentuh `cash_drawer_shift` sama
+     * sekali, dan tidak dapat di-rollback oleh apa pun yang terjadi pada
+     * penutupan berikutnya.
+     *
+     * ## ⛔ Ia TIDAK mengubah shift, dan itu yang membuatnya aman
+     *
+     * Endpoint yang menulis percobaan DAN memperbarui shift akan menjadi jalan
+     * kedua menuju penutupan — tanpa pemeriksaan ambang, tanpa penyetuju,
+     * tanpa buku kas. Yang ditulis di sini hanya JEJAK.
+     */
+    async recordCountAttempt(req: FastifyRequest, reply: FastifyReply) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const { shiftId } = req.params as { shiftId: string };
+      const body = (req.body ?? {}) as {
+        id?: unknown;
+        countedAmount?: unknown;
+        attemptNumber?: unknown;
+        occurredAt?: unknown;
+      };
+
+      if (typeof body.id !== 'string' || body.id.trim() === '') {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'id wajib diisi klien (ULID/UUIDv7).');
+      }
+      // ⛔ Uang sebagai STRING, konvensi yang sama dengan kas manual.
+      if (typeof body.countedAmount !== 'string' || !/^\d+$/.test(body.countedAmount)) {
+        throw new HttpError(
+          400,
+          'VALIDATION_ERROR',
+          'countedAmount harus string bilangan bulat tanpa tanda.'
+        );
+      }
+      const urutan = Number(body.attemptNumber);
+      if (!Number.isInteger(urutan) || urutan < 1) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'attemptNumber harus bilangan bulat >= 1.');
+      }
+
+      await withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'shift_open_close', 'mencatat percobaan hitungan kas');
+
+        // FK klien-suplai ke tabel ber-`tenant_id` (temuan F1).
+        const { rows } = await client.query<{ outlet_id: string; device_id: string | null }>(
+          'SELECT outlet_id, device_id FROM cash_drawer_shift WHERE id = $1',
+          [shiftId]
+        );
+        if (rows.length === 0) {
+          throw new HttpError(404, 'SHIFT_NOT_FOUND', `Shift ${shiftId} tidak ditemukan.`);
+        }
+
+        // ⛔ Shift yang SUDAH TERTUTUP tetap menerima percobaan, dan itu
+        // disengaja. Percobaan yang dikirim terlambat — perangkat yang
+        // antreannya baru terkuras — adalah jejak dari SEBELUM penutupan, dan
+        // menolaknya berarti menghapus jejak justru pada perangkat yang paling
+        // lama offline. Yang ditulis hanya audit; saldo shift tidak tersentuh.
+        await recordAuditEvent(client, {
+          id: body.id as string,
+          tenantId,
+          outletId: rows[0].outlet_id,
+          deviceId: rows[0].device_id,
+          actorUserId: actorId,
+          approverUserId: null,
+          eventType: 'shift_count_attempt',
+          entityType: 'cash_drawer_shift',
+          entityId: shiftId,
+          reasonCode: null,
+          reasonNote: null,
+          // ⛔ Uang sebagai STRING di jsonb, dan `after` saja: percobaan tidak
+          // mengubah apa pun, jadi tidak ada `before` yang jujur.
+          after: { countedAmount: body.countedAmount, attemptNumber: urutan },
+          hlc: hlc.tick(),
+          occurredAt: typeof body.occurredAt === 'string' ? body.occurredAt : null,
+        });
+      });
+
+      reply.code(201);
+      return { shiftId, attemptNumber: urutan };
+    },
+
     async closeShift(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);

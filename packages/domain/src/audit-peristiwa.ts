@@ -72,17 +72,15 @@ export const PERISTIWA_AUDIT = {
 
   // Shift
   //
-  // ⛔ Tidak ada `shift_count_attempt`, dan itu batas yang DINYATAKAN. Server
-  // hanya mencatat percobaan hitungan yang BERHASIL menutup shift — percobaan
-  // yang ditolak (selisih melewati ambang tanpa penyetuju) dilempar sebelum
-  // `UPDATE`, jadi transaksinya di-rollback dan tidak meninggalkan apa pun.
-  // Percobaan yang gagal justru yang `spec-d` ingin buktikan tidak dapat
-  // diulang diam-diam, dan mencatatnya menuntut jalur tulis yang bertahan
-  // melewati rollback — perubahan rancangan, bukan satu baris.
+  // ⛔ `shift_count_attempt` dipancarkan lewat JALUR TULISNYA SENDIRI
+  // (`POST /shifts/{id}/count-attempts`), bukan dari dalam transaksi penutupan.
   //
-  // Percobaan yang berhasil sudah dijelaskan sepenuhnya oleh `shift_closed`
-  // (hitungan, selisih, alasan, penyetuju); memancarkan peristiwa kedua yang
-  // isinya sama hanya menambah baris yang tidak menjelaskan apa pun.
+  // Percobaan yang DITOLAK — selisih melewati ambang tanpa penyetuju —
+  // dilempar `closeShift` sebelum satu pun `UPDATE`, dan seluruh transaksinya
+  // di-rollback. Mencatatnya dari sana berarti tidak mencatatnya sama sekali,
+  // dan justru percobaan yang gagal itulah yang `spec-d:127` ingin buktikan
+  // tidak dapat diulang diam-diam.
+  shift_count_attempt: 'shift',
   shift_opened: 'shift',
   shift_closed: 'shift',
 

@@ -5506,6 +5506,64 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /shifts/{shiftId}/count-attempts:
+    post:
+      operationId: recordCountAttempt
+      summary: FR-D2/FR-D3 -- satu percobaan hitungan kas, jalur tulis tersendiri.
+      description: >-
+        `spec-d:127`: *"Kasir tidak dapat mengubah hitungan fisik setelah
+        melihat selisih. Untuk mengoreksi, kasir memasukkan hitungan ulang yang
+        tercatat sebagai PERCOBAAN KEDUA di audit trail."*
+
+
+        ⛔ Endpoint TERSENDIRI, dan itu inti persoalannya. Percobaan yang
+        DITOLAK -- selisih melewati ambang tanpa penyetuju -- dilempar
+        `closeShift` SEBELUM satu pun UPDATE, dan seluruh transaksinya
+        di-rollback. Mencatatnya dari sana berarti tidak mencatatnya sama
+        sekali. Dan justru percobaan yang gagal itulah yang spec ingin
+        buktikan tidak dapat diulang diam-diam: kasir yang mencoba
+        Rp 2.450.000, melihat selisihnya, lalu mengetik Rp 2.485.000 supaya
+        cocok, meninggalkan jejak NOL di jalur tutup kas.
+
+
+        ⛔ Ia TIDAK menyentuh `cash_drawer_shift` sama sekali, dan itu yang
+        membuatnya aman. Endpoint yang menulis percobaan DAN memperbarui shift
+        akan menjadi jalan kedua menuju penutupan -- tanpa pemeriksaan ambang,
+        tanpa penyetuju, tanpa buku kas. Yang ditulis di sini hanya JEJAK.
+
+
+        ⛔ Shift yang sudah TERTUTUP tetap menerima percobaan. Yang dikirim
+        terlambat -- perangkat yang antreannya baru terkuras -- adalah jejak
+        dari SEBELUM penutupan, dan menolaknya menghapus jejak justru pada
+        perangkat yang paling lama offline.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, countedAmount, attemptNumber]
+              properties:
+                id: { type: string }
+                countedAmount:
+                  type: string
+                  description: Rupiah utuh sebagai STRING, konvensi jalur kas.
+                attemptNumber: { type: integer, minimum: 1 }
+                occurredAt: { type: string }
+      responses:
+        "201": { description: "Percobaan tercatat di audit" }
+        "400": { description: "Muatan tidak valid" }
+        "403": { description: "Tidak berhak" }
+        "404": { description: "Shift tidak ditemukan" }
+
   /shifts/{shiftId}/cash-movements:
     post:
       operationId: recordCashMovement

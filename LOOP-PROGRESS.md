@@ -3174,3 +3174,77 @@ Seluruh suite hijau. `test:domain` 492 · `test:kasir` 489 · `test:backoffice`
 - **QRIS dinamis belum dapat digabung** dengan metode lain (pembayaran
   campuran). `MetodeCampuran` sudah memuatnya sehingga aritmetikanya benar bila
   kelak digabung; yang belum ada adalah jalurnya.
+
+---
+
+## Task 39 — `shift_count_attempt`: jalur tulis kebal rollback (24 Agustus 2026) ✅
+
+`spec-d:127`: *"Kasir tidak dapat mengubah hitungan fisik setelah melihat
+selisih. Untuk mengoreksi, kasir memasukkan hitungan ulang yang tercatat
+sebagai PERCOBAAN KEDUA di audit trail."*
+
+**Lubang FR-F6 2 → 1.** Yang tersisa hanya `peripheral_configured` — utang F4
+yang menunggu shell Tauri.
+
+### ⛔ Kenapa ia tidak dapat ditulis dari dalam transaksi penutupan
+
+Percobaan yang **DITOLAK** — selisih melewati ambang tanpa penyetuju — dilempar
+`closeShift` SEBELUM satu pun `UPDATE`, dan seluruh transaksinya di-rollback.
+Jejak yang ditulis di dalamnya ikut hilang.
+
+Dan justru percobaan yang gagal itulah yang spec ingin buktikan tidak dapat
+diulang diam-diam: kasir yang mencoba Rp 2.450.000, melihat selisihnya, lalu
+mengetik Rp 2.485.000 supaya cocok, meninggalkan jejak **NOL** di jalur tutup
+kas.
+
+### Keputusan yang mengikat kodenya
+
+- ⛔ **Endpoint TERSENDIRI (`POST /shifts/{id}/count-attempts`), dan ia TIDAK
+  menyentuh `cash_drawer_shift` sama sekali.** Endpoint yang menulis percobaan
+  DAN memperbarui shift akan menjadi jalan kedua menuju penutupan — tanpa
+  pemeriksaan ambang, tanpa penyetuju, tanpa buku kas. Yang ditulis hanya
+  JEJAK. Diuji dengan membandingkan seluruh baris shift sebelum dan sesudah.
+- ⛔ **Di klien, satu transaksi yang BERDIRI SENDIRI** — riwayat lokal
+  (`count_attempts`) dan jejak auditnya ditulis BERSAMA, tetapi tidak pernah
+  bersarang di dalam transaksi `tutupKas`. Riwayat yang ada tanpa auditnya,
+  atau sebaliknya, adalah dua angka yang harus dijaga sepakat dan tidak ada apa
+  pun yang menjaganya.
+- ⛔ **Shift yang SUDAH TERTUTUP tetap menerima percobaan.** Yang dikirim
+  terlambat — perangkat yang antreannya baru terkuras — adalah jejak dari
+  SEBELUM penutupan, dan menolaknya menghapus jejak justru pada perangkat yang
+  paling lama offline.
+- ⛔ **Tipe peristiwa DI-BIND sebagai parameter bertipe `PeristiwaAudit`**,
+  bukan ditulis inline di string SQL. Nama yang dipaku di dalam string tidak
+  diperiksa TypeScript terhadap kosakata tertutup, dan ejaan yang menyimpang
+  tidak menghasilkan error — ia menghasilkan baris audit yang tidak pernah
+  cocok dengan saringan mana pun. Ditemukan karena test tidak dapat
+  memverifikasinya dari `params`.
+- ⛔ **`konfig`/`sesi`/`idBaru`/`hlc` OPSIONAL di `catatHitungan`.** Tanpanya
+  riwayat lokal TETAP tercatat — hanya jejak auditnya yang hilang. Membuatnya
+  wajib berarti setiap pemanggil yang belum diperbarui berhenti mencatat
+  percobaan sama sekali, dan itu kegagalan yang lebih besar daripada jejak yang
+  belum lengkap. Ada kontrol negatif untuknya.
+- ⛔ **`sesiOpsional` + `DIKECUALIKAN`**, keduanya. Aturan yang sudah tiga kali
+  dilanggar sebelumnya (refund offline, kas manual, abandon).
+
+### Batas AJV yang dinyatakan, bukan didiamkan
+
+`countedAmount: 2450000` (NUMBER) **tidak ditolak** — koersi AJV mengubahnya
+menjadi `"2450000"` sebelum handler melihatnya. Kelas yang sama dengan temuan
+ambang otorisasi (`number` → `string`) dan telemetri (`null` → `0`). Yang MASIH
+dijaga adalah nilainya: pecahan dan tanda negatif menghasilkan string yang
+gagal regex. Test-nya menyatakan batas itu alih-alih berpura-pura menolaknya.
+
+### Sabotase
+
+Dua, keduanya merah: jejak audit dihapus dari `catatHitungan` · endpoint juga
+memperbarui `cash_drawer_shift`.
+
+### Verifikasi
+
+Seluruh suite hijau. `test:kasir` 494 · `test:domain` 492 · `test:server` 427 ·
+`test:backoffice` 422 · `test:isolation` 211 · `test:ordering` 193 ·
+`test:catalog` 177 · `test:identity` 156 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 · `test:dst` 14 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3 ·
+`test:oxlint-ds-adherence` 12. `lint:ds` bersih; kedua app build.

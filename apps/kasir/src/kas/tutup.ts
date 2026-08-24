@@ -1,4 +1,10 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
+import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
+import type { Sesi } from '../identitas/login.ts';
+import type { PeristiwaAudit } from '../../../../packages/domain/src/audit-peristiwa.ts';
+
+/** Diperiksa TypeScript terhadap kosakata tertutup `PERISTIWA_AUDIT`. */
+const PERISTIWA: PeristiwaAudit = 'shift_count_attempt';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import { butuhOtorisasiSelisih, saldoLaci } from '../../../../packages/domain/src/buku-kas.ts';
@@ -255,23 +261,100 @@ export async function catatHitungan({
   shiftId,
   hitungan,
   waktu,
+  konfig,
+  sesi,
+  idBaru,
+  hlc,
 }: {
   db: DbLokal;
   shiftId: string;
   hitungan: number;
   waktu: () => Date;
+  /**
+   * Ketiganya OPSIONAL, dan itu keputusan.
+   *
+   * ⛔ Tanpa ketiganya percobaan tetap tercatat di `count_attempts` — riwayat
+   * lokal yang layar butuhkan tetap benar. Yang hilang hanya jejak AUDIT-nya.
+   * Membuatnya wajib berarti setiap pemanggil yang belum diperbarui berhenti
+   * mencatat percobaan sama sekali, dan itu kegagalan yang lebih besar
+   * daripada jejak yang belum lengkap.
+   */
+  konfig?: KonfigPerangkat;
+  sesi?: Sesi;
+  idBaru?: () => string;
+  hlc?: () => bigint;
 }): Promise<{ percobaan: number; selisih: number; saldoSeharusnya: number }> {
   const shift = await ambilShift(db, shiftId);
   if (!shift) throw new Error(`Shift ${shiftId} tidak ditemukan.`);
 
   const seharusnya = await saldoSeharusnya(db, shift);
   const riwayat: Percobaan[] = shift.count_attempts ? (JSON.parse(shift.count_attempts) as Percobaan[]) : [];
-  riwayat.push({ hitungan, pada: waktu().toISOString() });
+  const pada = waktu().toISOString();
+  riwayat.push({ hitungan, pada });
 
-  await db.execute(`UPDATE cash_drawer_shift SET count_attempts = ? WHERE id = ?`, [
-    JSON.stringify(riwayat),
-    shiftId,
-  ]);
+  /* ⛔ SATU transaksi, dan ia BERDIRI SENDIRI — tidak pernah bersarang di
+     dalam transaksi penutupan shift.
+
+     Percobaan yang DITOLAK (selisih melewati ambang tanpa penyetuju) membuat
+     `tutupKas` melempar, dan transaksinya di-rollback. Jejak yang ditulis di
+     dalamnya ikut hilang — dan justru percobaan yang gagal itulah yang
+     `spec-d:127` ingin buktikan tidak dapat diulang diam-diam: kasir yang
+     mencoba Rp 2.450.000, melihat selisihnya, lalu mengetik Rp 2.485.000
+     supaya cocok, meninggalkan jejak NOL.
+
+     Riwayat lokal dan jejak auditnya tetap ditulis BERSAMA: riwayat yang ada
+     tanpa auditnya, atau sebaliknya, adalah dua angka yang harus dijaga
+     sepakat dan tidak ada apa pun yang menjaganya. */
+  await db.transaction(async (tx) => {
+    await tx.execute(`UPDATE cash_drawer_shift SET count_attempts = ? WHERE id = ?`, [
+      JSON.stringify(riwayat),
+      shiftId,
+    ]);
+
+    if (!konfig || !sesi || !idBaru || !hlc) return;
+    const idAudit = idBaru();
+    const hlcValue = hlc();
+    await tx.execute(
+      `INSERT INTO audit_event
+         (id, tenant_id, outlet_id, device_id, actor_user_id, approver_user_id,
+          event_type, entity_type, entity_id, reason_code, reason_note, occurred_at, hlc)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, 'cash_drawer_shift', ?, NULL, NULL, ?, ?)`,
+      [
+        idAudit,
+        konfig.tenantId,
+        shift.outlet_id,
+        shift.device_id,
+        sesi.userId,
+        // ⛔ DI-BIND, bukan ditulis inline di SQL. Nama yang dipaku di dalam
+        // string tidak diperiksa TypeScript terhadap kosakata tertutup
+        // `PERISTIWA_AUDIT`, dan ejaan yang menyimpang tidak menghasilkan
+        // error — ia menghasilkan baris audit yang tidak pernah cocok dengan
+        // saringan mana pun. Bentuk cacat yang sama dengan
+        // `stock_movement.type`.
+        PERISTIWA,
+        shiftId,
+        pada,
+        Number(hlcValue),
+      ]
+    );
+    await simpanHlc(tx, hlcValue);
+    await enqueue(tx, {
+      id: idBaru(),
+      entityType: 'count_attempt',
+      entityId: shiftId,
+      operation: 'create',
+      payload: {
+        id: idAudit,
+        // ⛔ Rupiah sebagai STRING, konvensi jalur kas.
+        countedAmount: String(hitungan),
+        attemptNumber: riwayat.length,
+        occurredAt: pada,
+      },
+      idempotencyKey: idAudit,
+      createdAt: pada,
+      actorId: sesi.userId,
+    });
+  });
 
   return { percobaan: riwayat.length, selisih: hitungan - seharusnya, saldoSeharusnya: seharusnya };
 }

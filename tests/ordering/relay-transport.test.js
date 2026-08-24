@@ -272,6 +272,33 @@ test('kas masuk/keluar (cash_movement) mendarat lewat relay', async () => {
   sampai(hasil, 'cash_movement');
 });
 
+test('percobaan hitungan kas (count_attempt) mendarat lewat relay', async () => {
+  // FR-D2. Rincian jalur tulisnya diuji di `tests/server/shift-tutup.test.js`
+  // dan `tests/kasir/tutup-kas.test.js`; yang ditegakkan DI SINI adalah bahwa
+  // jenisnya benar-benar pernah melewati transport asli — itulah yang dibaca
+  // penjaga `RUTE_DIDUKUNG` di bawah.
+  const fx = await perangkatDanShift();
+  await relaikan({
+    entity_type: 'shift',
+    entity_id: fx.shiftId,
+    payload: {
+      id: fx.shiftId, outletId: base.outlet.id, deviceId: fx.deviceId,
+      businessDate: TANGGAL, openingFloat: 100000,
+    },
+  });
+  const hasil = await relaikan({
+    entity_type: 'count_attempt',
+    entity_id: fx.shiftId,
+    payload: {
+      id: crypto.randomUUID(),
+      countedAmount: '2450000',
+      attemptNumber: 1,
+      occurredAt: new Date().toISOString(),
+    },
+  });
+  sampai(hasil, 'count_attempt');
+});
+
 test('⛔ no-sale di ATAS ambang mendarat KARENA penyetuju ikut di baris outbox', async () => {
   const fx = await perangkatDanShift();
   await relaikan({

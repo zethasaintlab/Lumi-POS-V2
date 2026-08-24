@@ -21,6 +21,7 @@ const RUTE: Record<string, (entityId: string) => string> = {
   // FR-D5. `entity_id`-nya SHIFT, alasan yang sama dengan no-sale: rutenya
   // bersarang di bawahnya, dan saldo laci dihitung per shift.
   cash_movement: (id) => `/shifts/${encodeURIComponent(id)}/cash-movements`,
+  count_attempt: (id) => `/shifts/${encodeURIComponent(id)}/count-attempts`,
 };
 
 /**

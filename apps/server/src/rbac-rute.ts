@@ -244,6 +244,16 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/count-attempts',
+    alasan:
+      'FR-D2. Alasan yang SAMA dengan no-sale dan kas manual: kasir justru ORANG YANG ' +
+      'MENGHITUNG LACI, dan setiap entri di PETA_PERAN diuji MENOLAK kasir. Yang ditulis ' +
+      'endpoint ini hanya JEJAK — ia tidak menyentuh `cash_drawer_shift` sama sekali, ' +
+      'jadi ia bukan jalan kedua menuju penutupan. Yang menjaganya ' +
+      '`assertBoleh(shift_open_close)` di handler (menutup akuntan, `spec-f:82`)',
+  },
+  {
+    metode: 'POST',
     pola: '/shifts/:shiftId/cash-movements',
     alasan:
       'FR-D5. Alasan yang SAMA dengan no-sale, dan lebih kuat: kasir yang menerima ' +

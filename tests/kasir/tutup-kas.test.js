@@ -330,3 +330,120 @@ test('laporan shift dapat dibaca dari data lokal (FR-D8)', async () => {
   assert.equal(l.percobaan.length, 1);
   assert.equal(l.disetujuiOleh, 'u-budi');
 });
+
+// ---------------------------------------------------------------------------
+// FR-D2 — jejak audit percobaan hitungan, jalur tulis TERSENDIRI
+// ---------------------------------------------------------------------------
+
+const KONFIG_A = {
+  deviceId: 'd1', deviceCode: 'K1', tenantId: 't1', outletId: 'o1',
+  baseUrl: 'http://server', tokenSecret: 'r',
+};
+const SESI_A = {
+  userId: 'u-sari', nama: 'Sari', peran: ['cashier'], masukPada: '', wajibGantiPin: false,
+};
+const argAudit = () => ({
+  konfig: KONFIG_A,
+  sesi: SESI_A,
+  idBaru: (() => {
+    let n = 0;
+    return () => `au-${++n}`;
+  })(),
+  hlc: () => 77n,
+});
+
+test('⛔ percobaan hitungan meninggalkan JEJAK AUDIT, bukan hanya riwayat lokal', async () => {
+  const { catatHitungan } = await import(MOD);
+  const db = dbPalsu();
+  await catatHitungan({
+    db,
+    shiftId: 's1',
+    hitungan: 2450000,
+    waktu: () => new Date('2026-08-24T10:00:00Z'),
+    ...argAudit(),
+  });
+
+  const audit = db.state.tulis.filter((t) => /INSERT INTO audit_event/.test(t.sql));
+  assert.equal(audit.length, 1, 'shift_count_attempt tidak ditulis');
+  assert.ok(audit[0].sql.includes('shift_count_attempt') || audit[0].params.includes('shift_count_attempt'));
+  // ⛔ Nilai yang di-BIND diperiksa, bukan sekadar bahwa tabelnya disentuh.
+  // Fake `DbLokal` tidak menegakkan `NOT NULL` — `tenant_id` NULL lolos di
+  // sini dan gagal keras di `wa-sqlite` (sudah terjadi, 14 Agustus 2026).
+  assert.ok(audit[0].params.includes('t1'), 'tenant_id');
+  assert.ok(audit[0].params.includes('u-sari'), 'actor_user_id');
+  assert.ok(audit[0].params.includes('s1'), 'entity_id = shiftId');
+});
+
+test('⛔ jejak DI-ENQUEUE supaya sampai ke server, dengan rupiah sebagai STRING', async () => {
+  const { catatHitungan } = await import(MOD);
+  const db = dbPalsu();
+  await catatHitungan({
+    db,
+    shiftId: 's1',
+    hitungan: 2450000,
+    waktu: () => new Date('2026-08-24T10:00:00Z'),
+    ...argAudit(),
+  });
+
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  assert.equal(outbox.length, 1);
+  assert.ok(outbox[0].params.includes('count_attempt'), 'entity_type');
+  assert.ok(outbox[0].params.includes('s1'), 'entity_id = shiftId — rutenya bersarang di bawahnya');
+  const muatan = JSON.parse(outbox[0].params.find((p) => typeof p === 'string' && p.startsWith('{')));
+  assert.equal(muatan.countedAmount, '2450000');
+  assert.equal(typeof muatan.countedAmount, 'string', 'rupiah jalur kas selalu string');
+  assert.equal(muatan.attemptNumber, 1);
+});
+
+test('⛔ percobaan KEDUA tercatat terpisah, tidak menimpa yang pertama', async () => {
+  // `spec-d:127`: kasir yang mencoba Rp 2.450.000, melihat selisihnya, lalu
+  // mengetik Rp 2.485.000 supaya cocok, harus meninggalkan DUA jejak.
+  const { catatHitungan } = await import(MOD);
+  const db = dbPalsu();
+  const arg = argAudit();
+  const satu = await catatHitungan({
+    db, shiftId: 's1', hitungan: 2450000, waktu: () => new Date(), ...arg,
+  });
+  assert.equal(satu.percobaan, 1);
+
+  const audit = () => db.state.tulis.filter((t) => /INSERT INTO audit_event/.test(t.sql));
+  assert.equal(audit().length, 1);
+  assert.equal(
+    db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql)).length,
+    1
+  );
+});
+
+test('⛔ jejak ditulis dalam transaksinya SENDIRI, terpisah dari penutupan', async () => {
+  // Inti FR-D2. Percobaan yang DITOLAK membuat `tutupKas` melempar dan
+  // transaksinya di-rollback; jejak yang ditulis di dalamnya ikut hilang — dan
+  // justru percobaan yang gagal itulah yang harus terbukti tidak dapat diulang
+  // diam-diam.
+  const { catatHitungan } = await import(MOD);
+  const db = dbPalsu();
+  await catatHitungan({
+    db, shiftId: 's1', hitungan: 2450000, waktu: () => new Date(), ...argAudit(),
+  });
+  assert.equal(db.state.transaksi, 1, 'satu transaksi, berdiri sendiri');
+  assert.ok(
+    db.state.tulis.every((t) => t.dalam),
+    'riwayat dan jejaknya harus ditulis BERSAMA di dalam transaksi itu'
+  );
+});
+
+test('tanpa konfig/sesi, riwayat lokal TETAP tercatat — hanya jejaknya yang hilang', async () => {
+  // Membuatnya wajib berarti setiap pemanggil yang belum diperbarui berhenti
+  // mencatat percobaan sama sekali, dan itu kegagalan yang lebih besar
+  // daripada jejak yang belum lengkap.
+  const { catatHitungan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await catatHitungan({
+    db, shiftId: 's1', hitungan: 2450000, waktu: () => new Date(),
+  });
+  assert.equal(hasil.percobaan, 1);
+  assert.ok(
+    db.state.tulis.some((t) => /UPDATE cash_drawer_shift SET count_attempts/.test(t.sql)),
+    'riwayat lokal harus tetap ditulis'
+  );
+  assert.equal(db.state.tulis.filter((t) => /INSERT INTO audit_event/.test(t.sql)).length, 0);
+});
