@@ -9,6 +9,7 @@ import {
 } from '../../../../../packages/domain/src/jam-perangkat.ts';
 import type { PeristiwaAudit } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 import { HttpError } from '../../http-error.ts';
+import { sesiSupportSekarang } from '../../konteks-permintaan.ts';
 
 /**
  * Permukaan publik modul `audit` — irisan minimal Modul F.
@@ -55,6 +56,17 @@ export interface AuditEventInput {
   after?: unknown;
   hlc: bigint;
   occurredAt?: string | null;
+  /**
+   * F.5 — PENANDA sesi support (`spec-f:412`: *"Setiap tindakan selama sesi
+   * support tercatat dengan penanda"*).
+   *
+   * ⛔ Kolom, bukan jenis peristiwa tersendiri. Tindakan yang dilakukan selama
+   * sesi support adalah tindakan yang SAMA — `item_updated` tetap
+   * `item_updated` — dan memberinya nama lain berarti setiap laporan yang
+   * menyaring per jenis diam-diam melewatkan yang dilakukan support. Yang
+   * berubah bukan APA yang terjadi, melainkan atas nama siapa.
+   */
+  supportSessionId?: string | null;
 }
 
 /**
@@ -93,11 +105,11 @@ export async function recordAuditEvent(client: PoolClient, event: AuditEventInpu
     `INSERT INTO audit_event (
        id, tenant_id, outlet_id, device_id, actor_user_id, approver_user_id,
        event_type, entity_type, entity_id, before, after, reason_code, reason_note,
-       occurred_at, hlc
+       occurred_at, hlc, support_session_id
      ) VALUES (
        $1, $2, $3, $4, $5, $6,
        $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13,
-       COALESCE($14::timestamptz, now()), $15
+       COALESCE($14::timestamptz, now()), $15, $16
      )`,
     [
       event.id,
@@ -115,6 +127,9 @@ export async function recordAuditEvent(client: PoolClient, event: AuditEventInpu
       event.reasonNote,
       event.occurredAt ?? null,
       event.hlc.toString(),
+      // ⛔ Konteks permintaan menang bila field-nya tidak diisi eksplisit.
+      // Itu yang membuat penanda mustahil terlupa oleh handler berikutnya.
+      event.supportSessionId ?? sesiSupportSekarang(),
     ]
   );
 }

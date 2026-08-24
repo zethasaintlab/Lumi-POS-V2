@@ -132,6 +132,11 @@ export const PERISTIWA_AUDIT = {
 
   // Data
   data_exported: 'data',
+  // F.5 — akses support. Keduanya mencatat PEMBERIAN dan PENCABUTAN akses,
+  // bukan tindakan yang dilakukan selama sesinya: tindakan itu memakai jenis
+  // peristiwanya sendiri dan ditandai `audit_event.support_session_id`.
+  support_session_started: 'data',
+  support_session_ended: 'data',
 
   // Tenant & langganan — kelompok yang TIDAK ada di tabel `spec-f:288`.
   //

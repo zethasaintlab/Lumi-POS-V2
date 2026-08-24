@@ -2843,3 +2843,148 @@ dinyatakan, tidak berubah.
 **Catatan dokumen:** `CLAUDE.md` menulis FR-A8 (import katalog) "sengaja belum
 digarap". Itu **stale** — `catalog/handlers/import.ts`, `tests/catalog/import.test.js`,
 dan layar impor back-office semuanya ada. Barisnya dikoreksi.
+
+---
+
+## Task 36 — F.5 akses support (24 Agustus 2026) ✅
+
+`spec-f:393`: *"Untuk mendukung ratusan merchant, akses support diperlukan —
+tetapi harus menjadi fitur SISTEM, bukan akses database langsung."*
+
+**Alternatif yang tidak dibangun adalah alternatif yang akan dipakai.** Staf
+yang tidak punya jalan resmi akan diberi kredensial database, dan sejak saat
+itu tidak ada satu pun baris yang mencatat siapa membaca apa milik merchant
+mana.
+
+Rantainya: `packages/domain/src/sesi-support.ts` → `support_session` (migrasi
+`0034`) → `POST/GET /support-sessions` + `POST /support-sessions/{id}/end` →
+penjaga token di `sesi.ts` → banner B-30 di seluruh layar back-office.
+
+**Lubang FR-F6 4 → 2.** Yang tersisa: `shift_count_attempt` (menuntut jalur
+tulis yang bertahan melewati rollback — perubahan rancangan) dan
+`peripheral_configured` (utang F4, menunggu shell Tauri).
+
+### Keempat AC, dan bagaimana masing-masing dibuat benar
+
+**1. "Akses support tanpa persetujuan merchant tidak mungkin."** Bukan sesuatu
+yang dijaga pemeriksaan — ia sifat BENTUKNYA. Token akses hanya ada sebagai
+keluaran permintaan yang owner sendiri kirim, dan tidak dapat dibaca kembali
+sesudahnya (yang tersimpan SHA-256-nya). Tidak ada endpoint mana pun yang
+menerbitkan token support tanpa owner menekan tombolnya.
+
+**2. "Sesi berakhir otomatis saat `expires_at`."** ⛔ Dihitung SAAT DIBACA,
+bukan lewat pekerjaan terjadwal. Job pembersih yang tidak berjalan — deploy
+gagal, worker mati — akan membiarkan akses hidup melewati batas yang merchant
+setujui, tanpa siapa pun melihatnya. Yang dihitung saat dibaca tidak dapat
+gagal berjalan.
+
+**3. "Banner terlihat di semua layar."** Dirender di `App.tsx` di atas
+`children` `AppShell` — ada di setiap layar tanpa satu pun dari mereka perlu
+mengingatnya. Banner yang harus dipasang per layar akan hilang di layar
+berikutnya. ⛔ Dan `GET /support-sessions` **tidak dijaga peran**: banner yang
+hanya terlihat owner tidak memenuhi kalimat "seluruh layar", dan
+menyembunyikannya dari staf berarti orang yang sedang bekerja di layar itu
+tidak tahu siapa lagi yang sedang melihatnya.
+
+**4. "Setiap tindakan selama sesi support tercatat dengan penanda."** Yang
+paling mudah lulus secara HAMPA: test yang memeriksa `support_session_started`
+membuktikan pemberian aksesnya tercatat, bukan bahwa TINDAKANNYA tercatat.
+Yang diuji adalah baris audit dari perubahan katalog yang dilakukan LEWAT token
+support — plus kontrol negatif bahwa tindakan yang sama tanpa sesi support
+TIDAK ditandai (penanda yang selalu terisi tidak membedakan apa pun).
+
+### Keputusan yang mengikat kodenya
+
+- ⛔ **Penanda dipasang SEKALI lewat `AsyncLocalStorage`, bukan diteruskan ke
+  ~20 pemanggil `recordAuditEvent`.** Penanda yang harus diingat 20 kali akan
+  terlupa yang ke-21, dan yang terlupa menisbatkan tindakan support kepada
+  OWNER MERCHANT secara pribadi — tuduhan yang diam. Bentuk kegagalan yang sama
+  persis dengan yang membuat penjaga peran pindah ke satu hook. `node:async_hooks`
+  stdlib, nol dependensi baru.
+- ⛔ **`enterWith` dipanggil SINKRON di hook `onRequest` paling awal**, dalam
+  hook tersendiri. Dipanggil dari dalam hook async (yang menunggu verifikasi
+  token lebih dulu), storenya hanya mencakup kelanjutan hook itu dan hilang
+  sebelum handler. Terukur, bukan dugaan: penandanya mendarat `null`.
+- ⛔ **`support_session_id` adalah KOLOM, bukan jenis peristiwa tersendiri.**
+  Tindakan selama sesi support adalah tindakan yang SAMA — `item_updated` tetap
+  `item_updated` — dan memberinya nama lain berarti setiap laporan yang
+  menyaring per jenis diam-diam melewatkan yang dilakukan support.
+- ⛔ **`actor_user_id` tetap OWNER YANG MENYETUJUI.** Kolomnya `NOT NULL`
+  ber-FK ke `"user"`, dan staf kami tidak punya baris di sana (`"user"`
+  ber-`tenant_id` dan tunduk RLS). Owner itu memang orang yang bertanggung
+  jawab atas akses ini; penandanya yang mencegah pembaca menyimpulkan ia
+  melakukannya sendiri.
+- ⛔ **`admin_label`, bukan `admin_user_id` yang `spec-f:405` tulis.** Kolom itu
+  mengandaikan tabel pengguna STAF yang tidak ada — batas yang sama sudah
+  dinyatakan untuk `tools/naikkan-tahap.mjs`. Ia teks bebas dan itu disengaja:
+  ia bukan otentikasi, ia catatan tentang persetujuan siapa yang diberikan.
+  Yang mengotentikasi adalah `token_hash`.
+- ⛔ **Sesi support TETAP tunduk RBAC.** Ia meminjam peran owner yang
+  menyetujui dan lewat penjaga peran seperti sesi lain; melewatinya akan
+  membuat akses support satu-satunya jalan di sistem ini yang tidak tunduk RBAC
+  sama sekali. Diuji: owner yang diturunkan menjadi kasir SESUDAH sesi dibuat
+  membuat token yang sama ditolak `FORBIDDEN`.
+- ⛔ **Mutasi diputuskan dari METODE HTTP, bukan dari peta operasi RBAC.** Peta
+  itu tidak mencakup setiap rute, dan rute yang tidak ada di sana akan lolos
+  gerbang tulis diam-diam. Metode mencakup semuanya, termasuk endpoint yang
+  lahir bulan depan.
+- ⛔ **Kedaluwarsa dijawab `403 SUPPORT_SESSION_EXPIRED`, bukan 401.** Petugas
+  support yang menerima 401 untuk sesi yang baru saja kedaluwarsa akan
+  menyimpulkan tokennya salah dan meminta merchant mengulang seluruh prosesnya.
+- ⛔ **Read-only BAWAAN; menulis menuntut pilihan terpisah** (`spec-f:403`), dan
+  konsekuensinya dinyatakan di layar SEBELUM owner memilihnya.
+- ⛔ **Sesi aktif yang sudah ada menolak yang baru (409).** Dua token hidup
+  untuk satu merchant berarti mengakhiri "sesi support" di layar tidak
+  benar-benar memutus akses, dan owner tidak punya cara mengetahui ada yang
+  kedua.
+- ⛔ **Owner yang DINONAKTIFKAN mencabut sesi yang ia beri.** Persetujuan itu
+  miliknya.
+- ⛔ **Batas durasi ditegakkan CHECK constraint juga**, bukan hanya aplikasi.
+  Bawaan 2 jam, maksimum 24 jam (`spec-f:400`); yang tidak disebut memakai
+  BAWAAN, bukan maksimum — owner yang menyetujui tanpa memikirkan durasinya
+  tidak boleh diberi jendela 24 jam.
+- ⛔ **`support_grant` = {owner} SAJA.** Yang diberikan bukan akses ke satu
+  outlet melainkan ke SELURUH data merchant; Manajer Outlet maupun Area Manager
+  tidak dapat menyetujui pemberian yang cakupannya melampaui cakupan mereka.
+- ⛔ **Token TIDAK masuk audit.** Jejaknya bertahan lima tahun; kredensial di
+  dalamnya akan bertahan lima tahun juga.
+
+### B-30 ditambahkan ke IA §3.3
+
+Peta layar berhenti di B-29 sementara `spec-f:391` menuntut fiturnya ada.
+Fitur yang dituntut spec dan tidak punya tempat di peta layar akan dibangun
+sebagai tombol yang diselipkan ke layar lain, dan yang diselipkan tidak dapat
+ditemukan merchant yang mencarinya. Penjaga navigasi yang menuntut setiap kode
+sidebar ada di IA memaksa keputusan itu eksplisit alih-alih diam.
+
+### Lima penjaga yang menyala, semuanya sebagai sinyal
+
+`navigasi` (B-30 belum di IA) · `pengawasan-b22` (label peristiwa belum ada) ·
+`rbac-penolakan` ("jumlah kasus MENUTUPI seluruh PETA_PERAN") · `tipe-divergen`
+(`audit_event.support_session_id` kolom server baru tanpa keputusan tertulis) ·
+`oxlint-ds-adherence` (`t-body-lg` bukan salah satu dari empat ukuran teks).
+
+### Sabotase
+
+Tiga, semuanya merah: sesi support melewati penjaga peran · gerbang read-only
+dimatikan · penanda audit tidak dipasang.
+
+### Verifikasi
+
+Seluruh suite hijau. `test:domain` 484 · `test:kasir` 450 · `test:backoffice`
+419 · `test:server` 412 · `test:isolation` 211 · `test:ordering` 192 ·
+`test:catalog` 177 · `test:identity` 156 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:schema` 14 · `test:dst` 14 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3 ·
+`test:oxlint-ds-adherence` 12. `lint:ds` bersih; kedua app build.
+
+### Batas yang dinyatakan
+
+- **Petugas support tidak punya akun.** Token diserahkan owner kepadanya di
+  luar sistem. Permukaan otentikasi staf tidak ada di produk ini — batas yang
+  sama dengan `tools/naikkan-tahap.mjs`, dan membangunnya adalah keputusan
+  tersendiri.
+- **Tidak ada notifikasi ke merchant** saat sesi dimulai. Banner memenuhi
+  `spec-f:401`; email/push adalah permukaan yang belum ada.
+- **Sesi tidak dapat diperpanjang.** Yang habis waktunya digantikan sesi baru,
+  dan itu berarti persetujuan baru — disengaja.

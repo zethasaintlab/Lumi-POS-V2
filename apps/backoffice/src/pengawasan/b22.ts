@@ -102,6 +102,11 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   clock_drift_detected: 'Selisih jam perangkat',
   // Data
   data_exported: 'Data diekspor',
+  // ⛔ Keduanya mencatat PEMBERIAN dan PENCABUTAN akses, bukan tindakan yang
+  // dilakukan selama sesinya: tindakan itu memakai jenis peristiwanya sendiri
+  // dan ditandai kolom `support_session_id`.
+  support_session_started: 'Akses support diberikan',
+  support_session_ended: 'Akses support diakhiri',
   // Tenant & langganan
   tenant_registered: 'Merchant didaftarkan',
   outlet_created: 'Outlet dibuat',

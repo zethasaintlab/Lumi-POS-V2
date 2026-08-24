@@ -277,6 +277,19 @@ export const KOLOM_SENGAJA_TIDAK_TURUN = [
   'payment.hlc',
   'refund.tenant_id',
   'cash_movement.tenant_id',
+  // ⛔ F.5 — PENANDA sesi support (`audit_event.support_session_id`, migrasi
+  // `0034`) berhenti di server, dan itu keputusan.
+  //
+  // Sesi support adalah akses BACK-OFFICE: petugas support memakai token
+  // lewat REST, tidak pernah lewat aplikasi kasir. Baris audit yang perangkat
+  // TULIS tidak akan pernah punya penanda, jadi kolomnya akan turun kosong
+  // selamanya.
+  //
+  // Alasan menahannya sama dengan `tax_rate.tax_jurisdiction`: menambah kolom
+  // raw table mengubah SIDIK JARI skema lokal, dan itu menuntut
+  // `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant.
+  // Biaya nyata untuk kolom yang tidak satu pun layar kasir baca.
+  'audit_event.support_session_id',
   'item_variation.tenant_id',
   // ⛔ FR-F5 — HPP tidak pernah menyentuh perangkat kasir. Lihat catatan
   // panjang di `db/local/001-initial.sql`.

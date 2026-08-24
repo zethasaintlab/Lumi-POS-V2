@@ -1511,3 +1511,41 @@ mempercayainya di perangkat merchant.
   tetap muncul saat dipulihkan.** Ia akan ditolak (atau diperingatkan) di jalur
   penjualan seperti biasa; yang belum ada adalah penandaan di layar saat
   pemulihan.
+
+### F.5 akses support (24 Agustus 2026) — B-30
+
+Migrasi `0034` (`support_session` + `audit_event.support_session_id`), domain
+`sesi-support.ts`, tiga endpoint, penjaga token di `sesi.ts`, layar B-30 dan
+banner global.
+
+⛔ **`apps/server/src/konteks-permintaan.ts` memakai `AsyncLocalStorage`, dan
+urutan pemasangannya KRITIS.** `mulaiKonteks()` dipanggil sinkron di hook
+`onRequest` PERTAMA — sebelum satu `await` pun di rantai permintaan. Kalau ia
+dipindahkan ke dalam hook async (mis. digabungkan dengan penjaga sesi), store
+hanya mencakup kelanjutan hook itu dan hilang sebelum handler: penanda audit
+mendarat `null` tanpa satu pun error, dan tindakan support tercatat atas nama
+owner merchant secara pribadi.
+
+⛔ **Jangan menambahkan `supportSessionId` sebagai parameter ke pemanggil
+`recordAuditEvent`.** Itu justru bentuk yang dihindari — penanda yang harus
+diingat 20 kali akan terlupa yang ke-21. Konteks menang bila field-nya tidak
+diisi eksplisit; field eksplisit hanya dipakai untuk `null` yang DISENGAJA
+(pemberian dan pengakhiran akses adalah tindakan owner, bukan tindakan
+support).
+
+**Yang belum ada, dan menuntut keputusan lebih dulu:**
+
+- **Otentikasi petugas support.** Token diserahkan owner kepada petugas di luar
+  sistem (WhatsApp, telepon). Membangun akun staf berarti permukaan otentikasi
+  kedua yang tidak ber-`tenant_id` — keputusan arsitektur, bukan penambahan
+  endpoint. Batas yang sama sudah berlaku untuk `tools/naikkan-tahap.mjs`.
+- **Notifikasi ke merchant** saat sesi dimulai atau berakhir. Banner memenuhi
+  `spec-f:401`; email/push adalah permukaan yang belum ada di produk ini.
+- **Perpanjangan sesi.** Sengaja tidak ada: yang habis waktunya digantikan sesi
+  baru, dan itu berarti persetujuan baru. Menambahkannya berarti memutuskan
+  apakah perpanjangan menuntut persetujuan ulang — dan jawaban yang mudah
+  (tidak) menghapus batas waktunya.
+- **Daftar tindakan per sesi di layar.** `audit_event.support_session_id` sudah
+  terisi dan berindeks; yang belum ada adalah saringan di B-22 untuk
+  menampilkan "apa saja yang dilakukan selama sesi ini". Satu query, bukan
+  rancangan baru.

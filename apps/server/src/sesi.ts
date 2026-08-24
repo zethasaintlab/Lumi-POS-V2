@@ -5,6 +5,8 @@ import { withTenantTransaction } from './db.ts';
 import { HttpError } from './http-error.ts';
 import { operasiUntuk } from './rbac-rute.ts';
 import { bolehkah } from '../../../packages/domain/src/rbac.ts';
+import { bolehLewatSupport } from '../../../packages/domain/src/sesi-support.ts';
+import { mulaiKonteks, setelSesiSupport } from './konteks-permintaan.ts';
 
 /**
  * Verifikasi sesi back-office (FR-F2b) — hook `onRequest` fail-closed.
@@ -65,6 +67,18 @@ export interface SesiTerverifikasi {
   userId: string;
   /** Peran pengguna ini. Kosong berarti tidak berhak apa pun (fail-closed). */
   peran: string[];
+  /**
+   * F.5 — diisi HANYA bila permintaan ini datang lewat token akses support.
+   *
+   * ⛔ `userId` pada sesi support adalah OWNER YANG MENYETUJUI, bukan petugas
+   * support: `audit_event.actor_user_id` `NOT NULL` ber-FK ke `"user"`, dan
+   * staf kami tidak punya baris di sana (`"user"` ber-`tenant_id` dan tunduk
+   * RLS). Owner itu memang orang yang bertanggung jawab atas akses ini.
+   *
+   * Field inilah PENANDA yang `spec-f:412` tuntut — yang mencegah pembaca
+   * audit menyimpulkan bahwa owner sendiri yang melakukannya.
+   */
+  supportSessionId?: string;
 }
 
 declare module 'fastify' {
@@ -245,6 +259,79 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * F.5 — menyelesaikan token akses support menjadi sesi.
+ *
+ * ⛔ `now()` DATABASE, bukan jam Node, dan ia dibaca di transaksi yang sama
+ * dengan barisnya. Sesi support berbatas waktu; dua mesin yang jamnya
+ * berselisih beberapa detik memutuskan berbeda tepat di batas — dan batas itu
+ * adalah momen akses ke data merchant seharusnya berhenti.
+ *
+ * ⛔ Kedaluwarsa TIDAK disaring di SQL. Ia dihitung `bolehLewatSupport` di
+ * domain, supaya sesi yang kedaluwarsa dapat dibedakan dari token yang tidak
+ * pernah ada: yang pertama menjawab `SUPPORT_SESSION_EXPIRED` ("mintalah
+ * persetujuan baru"), yang kedua menjawab 401 seperti token asing mana pun.
+ * Petugas support yang menerima 401 untuk sesi yang baru saja kedaluwarsa
+ * akan menyimpulkan tokennya salah dan meminta merchant mengulang seluruh
+ * prosesnya.
+ */
+async function resolusiSupport(
+  pool: Pool,
+  tenantPetunjuk: string,
+  hash: string
+): Promise<{
+  id: string;
+  tenantId: string;
+  grantedBy: string;
+  peran: string[];
+  sesi: { expiresAt: Date; endedAt: Date | null; isWriteEnabled: boolean };
+  sekarang: Date;
+} | null> {
+  return withTenantTransaction(pool, tenantPetunjuk, async (client) => {
+    const { rows } = await client.query<{
+      id: string;
+      tenant_id: string;
+      granted_by: string;
+      token_hash: string;
+      expires_at: Date;
+      ended_at: Date | null;
+      is_write_enabled: boolean;
+      sekarang: Date;
+      peran: string[] | null;
+    }>(
+      `SELECT s.id, s.tenant_id, s.granted_by, s.token_hash,
+              s.expires_at, s.ended_at, s.is_write_enabled,
+              now() AS sekarang,
+              array_agg(ur.role) FILTER (WHERE ur.role IS NOT NULL) AS peran
+         FROM support_session s
+         JOIN "user" u ON u.id = s.granted_by
+         LEFT JOIN user_role ur ON ur.user_id = s.granted_by
+        WHERE s.token_hash = $1
+          -- ⛔ Owner yang DINONAKTIFKAN mencabut sesi support yang ia beri.
+          -- Persetujuan itu miliknya; orang yang sudah tidak ada di merchant
+          -- tidak dapat terus mengizinkan akses atas namanya.
+          AND u.is_active = true
+        GROUP BY s.id, s.tenant_id, s.granted_by, s.token_hash,
+                 s.expires_at, s.ended_at, s.is_write_enabled`,
+      [hash]
+    );
+    const baris = rows[0];
+    if (!baris || !samaAman(baris.token_hash, hash)) return null;
+    return {
+      id: baris.id,
+      tenantId: baris.tenant_id,
+      grantedBy: baris.granted_by,
+      peran: baris.peran ?? [],
+      sesi: {
+        expiresAt: baris.expires_at,
+        endedAt: baris.ended_at,
+        isWriteEnabled: baris.is_write_enabled,
+      },
+      sekarang: baris.sekarang,
+    };
+  });
+}
+
 function samaAman(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'utf8');
   const bufB = Buffer.from(b, 'utf8');
@@ -290,6 +377,16 @@ function tolak(): never {
  * biaya parsing body sama sekali.
  */
 export function pasangPenjagaSesi(app: FastifyInstance, pool: Pool): void {
+  // ⛔ Hook TERSENDIRI, dan ia SINKRON. `enterWith` harus berjalan sebelum satu
+  // `await` pun di rantai permintaan ini; dipanggil dari dalam hook async di
+  // bawah (yang menunggu query verifikasi token lebih dulu), storenya hanya
+  // mencakup kelanjutan hook itu dan hilang sebelum handler. Terukur, bukan
+  // dugaan: penandanya mendarat `null`.
+  app.addHook('onRequest', (_req, _reply, selesai) => {
+    mulaiKonteks();
+    selesai();
+  });
+
   app.addHook('onRequest', async (req) => {
     // ⛔ HEAD dinormalkan ke GET, sama seperti `ruteTerbuka`. Tanpa itu
     // `HEAD /health` tidak cocok entri mana pun lalu dituntut sesi — probe
@@ -357,14 +454,47 @@ export function pasangPenjagaSesi(app: FastifyInstance, pool: Pool): void {
       return rows[0] ?? null;
     });
 
-    if (!baris || !samaAman(baris.token_hash, hash)) tolak();
+    if (!baris) {
+      // ⛔ Token support dicoba SESUDAH sesi pengguna, bukan sebelumnya.
+      // Permintaan back-office biasa — yang jumlahnya ribuan kali lebih
+      // banyak — karena itu tidak pernah membayar query kedua.
+      const support = await resolusiSupport(pool, tenantPetunjuk, hash);
+      if (support === null) tolak();
 
-    req.sesi = {
-      sesiId: baris.id,
-      tenantId: baris.tenant_id,
-      userId: baris.user_id,
-      peran: baris.peran ?? [],
-    };
+      // ⛔ Mutasi diputuskan dari METODE HTTP, bukan dari peta operasi RBAC.
+      // Peta itu tidak mencakup setiap rute, dan rute yang tidak ada di sana
+      // akan lolos gerbang tulis diam-diam. Metode mencakup semuanya,
+      // termasuk endpoint yang lahir bulan depan — fail-closed by default.
+      const mutasi = metode !== 'GET';
+      const izin = bolehLewatSupport(support.sesi, support.sekarang, mutasi);
+      if (!izin.boleh) throw new HttpError(403, izin.kode, izin.pesan);
+
+      // ⛔ TIDAK `return` di sini. Penjaga peran di bawah harus tetap
+      // berjalan: sesi support meminjam peran owner yang menyetujui, dan
+      // melewatinya berarti akses support adalah satu-satunya jalan di sistem
+      // ini yang tidak tunduk RBAC sama sekali.
+      req.sesi = {
+        sesiId: support.id,
+        tenantId: support.tenantId,
+        userId: support.grantedBy,
+        peran: support.peran,
+        supportSessionId: support.id,
+      };
+      // ⛔ Penanda dipasang SEKALI di sini, bukan diteruskan ke setiap
+      // pemanggil `recordAuditEvent`. Lihat `konteks-permintaan.ts`: penanda
+      // yang harus diingat 20 kali akan terlupa yang ke-21, dan yang terlupa
+      // menisbatkan tindakan support kepada owner merchant secara pribadi.
+      setelSesiSupport(support.id);
+    } else {
+      if (!samaAman(baris.token_hash, hash)) tolak();
+
+      req.sesi = {
+        sesiId: baris.id,
+        tenantId: baris.tenant_id,
+        userId: baris.user_id,
+        peran: baris.peran ?? [],
+      };
+    }
 
     // ## ⛔ Penjaga peran, di sini dan bukan di 30 handler
     //

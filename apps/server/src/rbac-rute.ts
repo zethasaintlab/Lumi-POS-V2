@@ -109,6 +109,18 @@ export const PETA_PERAN: readonly AturanRute[] = [
   // kelak dipanggil dari jalur lain.
   { metode: 'PUT', pola: '/outlets/:outletId/thresholds', operasi: 'threshold_settings' },
 
+  // --- akses support (F.5) --------------------------------------------------
+  //
+  // ⛔ MEMBERI dan MENGAKHIRI dijaga; MEMBACA daftarnya tidak.
+  //
+  // Setiap orang di merchant berhak tahu bahwa pihak kami sedang punya akses
+  // ke datanya, dan kapan itu berakhir. `spec-f:401` menuntut banner "terlihat
+  // di SELURUH layar" — banner yang hanya muncul untuk owner tidak memenuhi
+  // kalimat itu, dan menyembunyikannya dari staf lain berarti orang yang
+  // sedang bekerja di layar itu tidak tahu siapa lagi yang sedang melihatnya.
+  { metode: 'POST', pola: '/support-sessions', operasi: 'support_grant' },
+  { metode: 'POST', pola: '/support-sessions/:sessionId/end', operasi: 'support_grant' },
+
   // --- profil vertikal (B-24) -----------------------------------------------
   //
   // Owner saja (`IA:203`), operasi yang sama dengan membuat outlet: profil

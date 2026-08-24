@@ -164,6 +164,22 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
       { id: 'B-27', label: 'Pengguna & Peran', icon: 'user', aksesMinimum: 'outlet_manager' },
       { id: 'B-28', label: 'Perangkat', icon: 'register', aksesMinimum: 'outlet_manager' },
       { id: 'B-29', label: 'Langganan & Batas', icon: 'star', aksesMinimum: 'owner' },
+      {
+        // F.5 — akses support. TIDAK di `IA:§3.3`, dan itu dinyatakan: peta
+        // layar berhenti di B-29, sementara `spec-f:391` menuntut fiturnya
+        // ada. Ia diberi nomor berikutnya alih-alih diselipkan ke layar lain.
+        //
+        // ⛔ `aksesMinimum: 'cashier'` — MEMBACA riwayat terbuka untuk semua
+        // peran. `spec-f:401` menuntut akses support "sangat terlihat", dan
+        // menyembunyikan menunya dari staf berarti orang yang sedang bekerja
+        // di layar itu tidak punya cara memeriksa siapa lagi yang melihatnya.
+        // Yang dijaga adalah MEMBERI-nya (`support_grant`, owner saja), dan
+        // itu ditegakkan server plus disembunyikan formulirnya di layar.
+        id: 'B-30',
+        label: 'Akses Support',
+        icon: 'shield',
+        aksesMinimum: 'cashier',
+      },
     ],
   },
 ];
@@ -204,6 +220,7 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-27',
   'B-28',
   'B-29',
+  'B-30',
 ]);
 
 export function cariItem(id: string): ItemNavigasi | undefined {

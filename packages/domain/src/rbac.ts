@@ -50,6 +50,7 @@ export type Operasi =
   | 'report_exception'
   | 'tax_settings'
   | 'threshold_settings'
+  | 'support_grant'
   | 'billing'
   | 'outlet_manage'
   | 'device_revoke';
@@ -92,6 +93,14 @@ const MATRIKS: Readonly<Record<Operasi, ReadonlySet<Peran>>> = {
   // harus berbunyi "tidak berhak mengubah ambang otorisasi" alih-alih
   // menyalahkan pengaturan pajak.
   threshold_settings: new Set(['owner', 'area_manager']),
+  // ⛔ F.5 — OWNER SAJA, dan tidak ada peran kedua di sini.
+  //
+  // `spec-f:400` menulis "Owner menyetujui dari dashboard" sebagai ATURAN,
+  // bukan sebagai contoh. Yang diberikan bukan akses ke satu outlet melainkan
+  // ke seluruh data merchant — katalog, penjualan, kas, pengguna, audit — dan
+  // Manajer Outlet maupun Area Manager tidak dapat menyetujui pemberian yang
+  // cakupannya melampaui cakupan mereka sendiri.
+  support_grant: new Set(['owner']),
   billing: new Set(['owner']),
   // `spec-f:29` memberi Owner "membuat outlet"; `spec-f:30` menaruhnya di
   // kolom YANG TIDAK BOLEH milik Manajer Area, berdampingan dengan billing.
@@ -113,6 +122,7 @@ const MATRIKS: Readonly<Record<Operasi, ReadonlySet<Peran>>> = {
 export const OPERASI_MUTASI: readonly Operasi[] = [
   'sale',
   'threshold_settings',
+  'support_grant',
   'void_refund',
   'shift_open_close',
   'catalog_edit',

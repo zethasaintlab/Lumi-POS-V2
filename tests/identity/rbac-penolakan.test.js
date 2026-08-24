@@ -173,6 +173,22 @@ function kasus() {
     // atas setiap PIN yang produk ini ada untuk menuntut.
     ['PUT', `/outlets/${base.outlet.id}/thresholds`, { selisihKas: '999' }],
 
+    // ⛔ Akses support (F.5): OWNER SAJA.
+    //
+    // Yang diberikan bukan akses ke satu outlet melainkan ke SELURUH data
+    // merchant. Kasir yang dapat memberikannya dapat mengundang siapa pun ke
+    // dalam katalog, penjualan, kas, pengguna, dan audit tenant ini — dan
+    // orang yang memegang perangkat kasir berada di ruang publik.
+    [
+      'POST',
+      '/support-sessions',
+      { adminLabel: 'Siapa saja', reasonCode: 'investigasi_laporan_bug' },
+    ],
+    // Mengakhiri dijaga peran yang SAMA, dan itu disengaja: kasir yang dapat
+    // mengakhiri sesi dapat memutus investigasi yang sedang memeriksa
+    // tindakannya sendiri.
+    ['POST', `/support-sessions/${crypto.randomUUID()}/end`, {}],
+
     // Pajak: owner saja.
     [
       'POST',

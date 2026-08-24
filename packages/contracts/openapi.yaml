@@ -1559,6 +1559,146 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /support-sessions:
+    post:
+      operationId: grantSupportSession
+      summary: F.5 -- owner memberi akses support, berbatas waktu.
+      description: >-
+        `spec-f:393`: *"Untuk mendukung ratusan merchant, akses support
+        diperlukan -- tetapi harus menjadi fitur SISTEM, bukan akses database
+        langsung."* Alternatif yang tidak dibangun adalah alternatif yang akan
+        dipakai: staf yang tidak punya jalan resmi akan diberi kredensial
+        database, dan sejak saat itu tidak ada satu pun baris yang mencatat
+        siapa membaca apa milik merchant mana.
+
+
+        ⛔ AC pertama (`spec-f:409`, "akses support tanpa persetujuan merchant
+        tidak mungkin") benar karena BENTUKNYA, bukan karena sebuah
+        pemeriksaan: token akses hanya ada sebagai keluaran endpoint ini, dan
+        tidak ada endpoint mana pun yang menerbitkannya tanpa owner
+        menekannya.
+
+
+        ⛔ Token dikembalikan SEKALI dan tidak pernah dapat dibaca lagi -- yang
+        tersimpan hanya SHA-256-nya, sejajar `user_session.token_hash` dan
+        `device.token_hash`. Owner yang kehilangannya mengakhiri sesi ini dan
+        memberi persetujuan baru.
+
+
+        ⛔ Read-only adalah BAWAAN (`spec-f:403`). `writeEnabled` harus dikirim
+        `true` dengan sengaja; owner yang sedang panik tidak boleh memberikan
+        akses tulis tanpa memilihnya.
+
+
+        ⛔ Durasi bawaan 2 jam, maksimum 24 jam (`spec-f:400`), dan batasnya
+        ditegakkan CHECK constraint juga -- aturan yang hanya hidup di aplikasi
+        adalah aturan yang hilang pada jalan masuk berikutnya. Yang tidak
+        disebut memakai BAWAAN, bukan maksimum.
+
+
+        ⛔ Sesi aktif yang sudah ada menolak yang baru (409). Dua token hidup
+        untuk satu merchant berarti mengakhiri "sesi support" di layar tidak
+        benar-benar memutus akses, dan owner tidak punya cara mengetahui ada
+        yang kedua.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: "Tidak dipakai endpoint ini; setiap pemberian akses adalah peristiwa tersendiri."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adminLabel, reasonCode]
+              properties:
+                adminLabel:
+                  type: string
+                  description: >-
+                    Siapa dari pihak kami yang meminta, sebagaimana merchant
+                    menuliskannya. Teks bebas dan itu DISENGAJA -- ia bukan
+                    otentikasi melainkan catatan tentang persetujuan siapa yang
+                    diberikan. `spec-f:405` menulis `admin_user_id`, dan kolom
+                    itu mengandaikan tabel pengguna STAF yang tidak ada di
+                    sistem ini: setiap peran di spec-f adalah peran merchant,
+                    dan tabel `user` ber-tenant_id serta tunduk RLS.
+                reasonCode:
+                  type: string
+                  enum:
+                    - investigasi_laporan_bug
+                    - pemulihan_data
+                    - bantuan_konfigurasi
+                    - audit_atas_permintaan_merchant
+                    - lainnya
+                reasonNote:
+                  type: string
+                  nullable: true
+                  description: "Wajib bila reasonCode = lainnya."
+                durationMinutes:
+                  type: integer
+                  minimum: 5
+                  maximum: 1440
+                  description: "Bawaan 120 (2 jam). Maksimum 1440 (24 jam)."
+                writeEnabled:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: "Akses diberikan. `token` muncul di sini dan tidak pernah lagi."
+        "400": { description: "Muatan tidak valid atau alasan di luar daftar" }
+        "403": { description: "Bukan owner" }
+        "409": { description: "Sudah ada sesi support yang aktif" }
+    get:
+      operationId: listSupportSessions
+      summary: F.5 -- daftar sesi support, termasuk riwayatnya.
+      description: >-
+        ⛔ TIDAK dijaga peran. Setiap orang di merchant berhak tahu bahwa pihak
+        kami sedang punya akses ke datanya dan kapan itu berakhir; `spec-f:401`
+        menuntut banner "terlihat di SELURUH layar", dan banner yang hanya
+        muncul untuk owner tidak memenuhi kalimat itu.
+
+
+        ⛔ Riwayat ikut, bukan hanya yang aktif. "Berapa kali support masuk ke
+        data kami, kapan, dan untuk apa" adalah pertanyaan yang merchant berhak
+        jawab tanpa meminta siapa pun, dan daftar yang hanya menampilkan sesi
+        aktif menjawabnya dengan "tidak pernah".
+
+
+        `state` diturunkan di SERVER lewat fungsi domain yang sama dengan yang
+        menjaga aksesnya -- layar yang menghitungnya dari `expiresAt` sendiri
+        akan menampilkan "aktif" untuk sesi yang setiap permintaannya sudah
+        ditolak, karena jam browser merchant bukan jam database.
+      responses:
+        "200": { description: "Daftar sesi, terbaru dulu" }
+
+  /support-sessions/{sessionId}/end:
+    post:
+      operationId: endSupportSession
+      summary: F.5 -- merchant mengakhiri akses support lebih awal.
+      description: >-
+        ⛔ "Diakhiri" DIBEDAKAN dari "kedaluwarsa", dan perbedaannya dicatat di
+        audit. Keduanya berarti akses sudah tidak berlaku, tetapi yang pertama
+        berarti merchant merasa perlu memutus akses lebih awal -- dan riwayat
+        yang menyamakannya menghapus satu-satunya sinyal itu.
+
+
+        ⛔ Kedaluwarsa OTOMATIS tidak memakai endpoint ini dan tidak memakai
+        pekerjaan terjadwal: ia dihitung saat dibaca. Job pembersih yang tidak
+        berjalan -- deploy yang gagal, worker yang mati -- akan membiarkan
+        akses hidup melewati batas yang merchant setujui, tanpa siapa pun
+        melihatnya.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: "Sesi diakhiri" }
+        "403": { description: "Bukan owner" }
+        "404": { description: "Sesi tidak ditemukan" }
+        "409": { description: "Sesi sudah berakhir" }
+
   /outlets/{outletId}/thresholds:
     get:
       operationId: getOutletThresholds
