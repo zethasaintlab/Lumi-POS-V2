@@ -209,6 +209,16 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 - ⛔ **Rute jalur perangkat wajib `sesiOpsional`, bukan sekadar `DIKECUALIKAN`.** Ia sempat hanya yang kedua, dan akibatnya setiap kas masuk/keluar yang dicatat offline dijawab **401** lalu berhenti permanen di antrean — bentuk PERSIS sama dengan cacat refund offline 21 Agustus. Yang menemukannya adalah aturan yang lahir dari cacat itu: test yang memakai `buatPengirimHttp` dan `klasifikasi` yang ASLI. Ke-16 test endpoint langsung hijau selama itu.
 - **`setor_ke_bank` ada di daftar keluar** meski enum punya `bank_deposit` tersendiri: `spec-d:339` menunda fitur setoran, dan yang tidak boleh terjadi sementara itu adalah merchant yang menyetor ke bank tidak punya cara mencatatnya sama sekali. `counterpart_type` tetap `bank` supaya barisnya dapat ditemukan lagi bila `bank_deposit` kelak dibangun.
 
+**Percobaan hitungan kas (FR-D2, `shift_count_attempt`) ditutup 24 Agustus 2026** lewat jalur tulis yang **berdiri sendiri**.
+
+⛔ **Ia tidak dapat ditulis dari dalam transaksi penutupan.** Percobaan yang DITOLAK — selisih melewati ambang tanpa penyetuju — dilempar `closeShift` SEBELUM satu pun `UPDATE`, dan seluruh transaksinya di-rollback. Dan justru percobaan yang gagal itulah yang `spec-d:127` ingin buktikan tidak dapat diulang diam-diam: kasir yang mencoba Rp 2.450.000, melihat selisihnya, lalu mengetik Rp 2.485.000 supaya cocok, meninggalkan jejak **NOL**.
+
+- ⛔ **`POST /shifts/{id}/count-attempts` TIDAK menyentuh `cash_drawer_shift` sama sekali.** Endpoint yang menulis percobaan DAN memperbarui shift menjadi jalan kedua menuju penutupan — tanpa pemeriksaan ambang, tanpa penyetuju, tanpa buku kas. Yang ditulis hanya JEJAK; diuji dengan membandingkan seluruh baris shift sebelum dan sesudah.
+- ⛔ **Di klien, satu transaksi yang BERDIRI SENDIRI** — riwayat lokal dan jejak auditnya ditulis BERSAMA, tapi tidak pernah bersarang di dalam transaksi `tutupKas`.
+- ⛔ **Shift yang SUDAH TERTUTUP tetap menerima percobaan.** Yang dikirim terlambat adalah jejak dari SEBELUM penutupan; menolaknya menghapus jejak justru pada perangkat yang paling lama offline.
+- ⛔ **Tipe peristiwa DI-BIND sebagai parameter bertipe `PeristiwaAudit`**, bukan inline di string SQL — nama yang dipaku di dalam string tidak diperiksa TypeScript terhadap kosakata tertutup.
+- **Batas AJV yang dinyatakan:** `countedAmount` bertipe `number` TIDAK ditolak — koersi AJV mengubahnya menjadi string sebelum handler melihatnya. Kemunculan KETIGA kelas ini (ambang otorisasi, telemetri). Yang masih dijaga adalah nilainya: pecahan dan negatif gagal regex.
+
 **Keputusan yang mengikat K-16 (FR-D7) dan K-17:**
 
 - ⛔ **Yang dicatat no-sale adalah PERINTAH sistem, bukan bukti laci terbuka.** `spec-d:231`: sinyalnya **satu arah** — sistem tidak tahu apakah laci benar-benar terbuka, dan **tidak dapat mendeteksi laci yang dibuka manual dengan kunci**. AC FR-D7 kelima menuntut ini dinyatakan ke merchant; ia ada di layar, runbook §8.5, dan kontrak endpoint.
@@ -324,7 +334,23 @@ Sisa Modul B: tidak ada yang belum digarap. **FR-B11 ditutup** bersama antrean `
 - ⛔ **`hitungKeranjang` adalah satu fungsi untuk layar dan jalur penulisan.** K-06 harus menampilkan TOTAL sebelum kasir membaginya, dan subtotal belum kena pajak.
 - **Penjualan tetap ditulis hanya saat LUNAS.** Order `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21).
 
-Sisa Modul C: **FR-C3 dan QRIS dinamis di kasir**. QRIS dinamis menuntut gateway menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur penjualan perangkat menulis lokal lebih dulu lalu me-relay. Ia menuntut jalur penjualan **online-first** yang belum ada, dan FR-C3 ("nonaktifkan metode online saat offline") menuntut metode online ada lebih dulu. Pembayaran campuran sudah ada di keduanya.
+**Modul C selesai. FR-C3 + QRIS dinamis di kasir ditutup 24 Agustus 2026** lewat jalur penjualan **ONLINE-FIRST** — satu-satunya jalur di repo ini yang menulis ke server lebih dulu.
+
+```
+cadangkan nomor struk (lokal) → POST /orders (draf, `open`)
+  → POST /orders/{id}/payments (qris_dynamic → QR) → polling 2 dtk / maks 5 mnt
+  → confirmed → simpanPenjualan({ draf })   ← satu transaksi lokal
+```
+
+- ⛔ **`navigator.onLine === true` BUKAN bukti.** Browser melaporkan keadaan ANTARMUKA, bukan keterjangkauan: kafe yang Wi-Fi-nya menyala dengan uplink mati, captive portal yang belum di-login, dan DNS yang tidak menjawab semuanya melaporkan `true`. Ketiganya keadaan nyata di outlet, dan ketiganya membuat QRIS dinamis tampil AKTIF lalu gagal — persis yang `spec-c:272` larang. Arahnya asimetris: `false` **pasti** tidak terjangkau; `true` **belum tahu**, dan yang menjawabnya hanya permintaan yang benar-benar sampai ke `/health` **server kami** (`apps/kasir/src/lokal/keterjangkauan.ts`). `memeriksa` diperlakukan sebagai tidak terjangkau.
+- ⛔ **Nomor struk dicadangkan SEBELUM QR diminta**, dan draf yang batal TIDAK menghapus ordernya. Server menuntut `receiptNumber` saat order dibuat dan counternya lokal; pelanggan yang batal membakar satu nomor. Yang tidak boleh terjadi adalah **LUBANG di urutan struk** — 41 dan 43 ada sementara 42 tidak pernah ada di mana pun tidak dapat dijelaskan siapa pun saat diperiksa. Nomor yang melekat pada order `abandoned` jauh lebih baik.
+- ⛔ **Payment lokal ditulis `qris_dynamic`, BUKAN `qris_static`.** Keduanya "QRIS" di mata kasir dan sangat berbeda di mata laporan: `qris_static` menandai `confirmed_manually`, dan FR-G5 memakainya sebagai sinyal exception. Menulis pembayaran yang GATEWAY konfirmasi sebagai dikonfirmasi-manual **menuduh kasir atas kontrol yang justru berjalan.**
+- ⛔ **`draf` adalah SATU objek, bukan beberapa bendera.** Ia mengubah dua hal yang tidak pernah benar sendirian: identitas tidak di-generate ulang, dan outbox tidak diisi. Outbox dilewati karena PEMBAYARANNYA — relay ulang QRIS dinamis meminta gateway menerbitkan **QR KEDUA untuk uang yang sudah diterima**.
+- ⛔ **Draf BERTAHAN di perangkat** (`draf_qris_lokal`, murni lokal) dan disimpan **sebelum** gateway dipanggil — alasan yang sama persis dengan commit `pending_confirmation` di server. `spec-c:328` menuntutnya; K-06 memulihkannya saat dibuka.
+- ⛔ **Timeout polling BUKAN gagal**, dan kalimat di layar mengatakannya. Kasir yang membaca "gagal" akan menagih ulang pelanggan yang mungkin sudah membayar. **"Batalkan" hanya ditawarkan saat kita TAHU uang tidak berpindah** (ditolak penerbit / QR kedaluwarsa); selama `pending` yang tersedia adalah menutup layar.
+- ⛔ **`POST /orders/{id}/abandon`** — pembersihan massal baru menyentuh order `open` setelah **24 jam** dan menuntut `stock_adjust`. Kasir yang membatalkan di depan pelanggan tidak dapat menunggu keduanya, dan stok yang terkunci sehari membuat produk berikutnya terlihat habis. `tinggalkanOrder` adalah SATU fungsi yang dipakai keduanya; order yang sudah dibayar ditolak **409** (void/refund punya kontrolnya sendiri).
+- **QR ditampilkan sebagai TEKS, bukan gambar.** Merender QR menuntut pustaka baru dan stack dikunci. Batas yang dinyatakan.
+- **Bentuk SQL `draf_qris_lokal` belum dijalankan di BROWSER** — utang yang dicatat; `ON CONFLICT(id)` pernah ditolak `wa-sqlite`.
 
 **Keputusan produk yang mengikat kode katalog:**
 
@@ -610,7 +636,7 @@ Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_
 
 **Ditutup 23 Agustus 2026, lubang 24 → 9**, lewat satu pembungkus `catatPerubahanServer` di modul `audit`: katalog/harga/stok/pajak (`item_created` · `item_updated` · `item_archived` · `price_changed` · `stock_adjusted` · `stocktake_completed` · `sold_out_toggled` · `tax_rate_changed`), lalu sesi/shift/perangkat/ekspor (`login` · `logout` · `shift_opened` · `cash_variance_approved` · `device_provisioned` · `device_revoked` · `data_exported`). **Lubang 9 → 4 pada 24 Agustus** bersama FR-D5 (`cash_paid_in` · `cash_paid_out`) dan peran/ambang/vertikal.
 
-**Lubang 4 → 2 pada 24 Agustus** bersama F.5 akses support (`support_session_started` · `support_session_ended`). **Dua yang tersisa belum punya fiturnya, bukan auditnya:** `shift_count_attempt` (percobaan hitungan yang DITOLAK di-rollback sebelum menulis apa pun — mencatatnya menuntut jalur tulis yang bertahan melewati rollback, perubahan rancangan) · `peripheral_configured` (utang F4, menunggu shell Tauri).
+**Lubang 4 → 2 pada 24 Agustus** bersama F.5 akses support (`support_session_started` · `support_session_ended`), lalu **2 → 1** bersama FR-D2 (`shift_count_attempt`). **Yang tersisa hanya `peripheral_configured`** — utang F4, menunggu shell Tauri.
 
 ### F.5 akses support, ditutup 24 Agustus 2026 (B-30)
 
@@ -702,6 +728,7 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 | # | Pertanyaan | Memblokir |
 |---|---|---|
 | OQ-14 | Prototipe Tauri Android — printer Bluetooth + scanner HID | Rencana mobile |
+| FR-F5 | Apakah `cost` (HPP) turun ke perangkat? | **DITAHAN user 24 Agustus 2026** — dibahas setelah FR-C3 dan `shift_count_attempt` tuntas (keduanya sudah) |
 
 **Sudah diputuskan 1 Agustus 2026 — jangan tanyakan ulang, jangan perlakukan sebagai asumsi:**
 
@@ -711,7 +738,7 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 | OQ-08 | **Batas kredensial offline: 30 hari** (keputusan 7 Agustus 2026, memakai kompromi `research/12` § OQ-08). Perangkat yang melewati batas tetap dapat **menyelesaikan transaksi berjalan dan menutup shift**, tapi **tidak dapat membuka shift baru** sampai terhubung. Angkanya belum divalidasi ke merchant. `research/12` dan `research/13` belum disamakan — itu penyuntingan dokumen riset, bukan kewenangan agent |
 | OQ-15 | QRIS statis **dan** dinamis sama-sama didukung. Dinamis lewat API Midtrans + webhook (online-only); statis lewat QR cetak merchant + konfirmasi manual (**berfungsi offline**, wajib disertai kontrol anti-fraud di `spec-c`) |
 | — | Ambang otorisasi: diskon >20% atau >Rp50.000 · selisih kas >Rp20.000 · no-sale wajib alasan, PIN di atas 3×/shift · refund PIN manajer (tidak dapat diubah) · **void TANPA PIN manajer** — cukup alasan daftar tertutup + audit + restock otomatis. Baris void adalah **override eksplisit** terhadap `research/08` §3; konsekuensinya laporan exception FR-G5 naik jadi wajib. Angkanya `[ASUMSI]`, belum divalidasi ke merchant |
-| — | MFA wajib Owner v1 atau v1.1? | F5 |
+| — | ~~MFA wajib Owner v1 atau v1.1?~~ → **v1.1** (keputusan user 24 Agustus 2026). Alasannya dinyatakan: fokus v1 tidak dipecah dari alur utama operasional kasir dan sistem kas | — |
 | OQ-04/05 | Kewajiban fiskal & pajak dine-in vs takeaway | **Merchant berbayar pertama**, bukan kode |
 
 Daftar lengkap: `research/12-OPEN-QUESTIONS.md`.

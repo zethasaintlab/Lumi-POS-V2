@@ -1549,3 +1549,41 @@ support).
   terisi dan berindeks; yang belum ada adalah saringan di B-22 untuk
   menampilkan "apa saja yang dilakukan selama sesi ini". Satu query, bukan
   rancangan baru.
+
+### FR-C3 + QRIS dinamis (24 Agustus 2026) — jalur ONLINE-FIRST
+
+⛔ **Kalau kamu menyentuh `simpanPenjualan`, parameter `draf` mengubah TIGA
+perilaku sekaligus** dan ketiganya wajib tetap bersama: identitas tidak
+di-generate ulang, counter nomor struk tidak dinaikkan, dan outbox tidak diisi.
+Ada tujuh test untuk jalur ini plus kontrol negatif bahwa jalur NORMAL tetap
+mengisi outbox dan menaikkan counter.
+
+⛔ **`draf_qris_lokal` belum diuji di BROWSER.** `INSERT ... ON CONFLICT(id) DO
+UPDATE` diterima `node:sqlite`; bentuk `ON CONFLICT(id)` tanpa aksi pernah
+DITOLAK `wa-sqlite` (8 Agustus 2026). Jalankan `apps/kasir/harness.html`
+sebelum mempercayainya di perangkat merchant. Berlaku sama untuk
+`keranjang_lokal` (KEP-21).
+
+**Yang belum ada, dan menuntut keputusan lebih dulu:**
+
+- **QR dirender sebagai TEKS.** Pustaka QR adalah dependensi baru, dan stack
+  dikunci. Kalau merchant menuntut gambar, itu keputusan dependensi — bukan
+  perubahan layar.
+- **QRIS dinamis belum dapat DIGABUNG** dengan metode lain. `MetodeCampuran`
+  sudah memuatnya sehingga aritmetikanya benar bila kelak digabung; yang belum
+  ada adalah jalurnya (gateway dipanggil untuk satu nominal penuh).
+- **Webhook belum memotong polling.** `spec-c` menyebut keduanya; yang
+  dibangun polling, dan webhook Midtrans sudah ada di server sejak Modul C-2.
+  Menyambungkannya ke perangkat menuntut kanal push ke kasir — permukaan yang
+  belum ada.
+
+### FR-D2 percobaan hitungan (24 Agustus 2026)
+
+⛔ **`catatHitungan` TIDAK boleh dipanggil dari dalam transaksi `tutupKas`.**
+Seluruh gunanya adalah bertahan melewati rollback penutupan. Ada test yang
+menegakkan ia membuka transaksinya sendiri.
+
+⛔ **Jangan menambahkan `UPDATE cash_drawer_shift` ke
+`POST /shifts/{id}/count-attempts`.** Itu membuatnya jalan kedua menuju
+penutupan, tanpa ambang, penyetuju, maupun buku kas. Ada test yang
+membandingkan seluruh baris shift sebelum dan sesudah.
