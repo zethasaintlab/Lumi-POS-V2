@@ -3319,3 +3319,32 @@ Seluruh suite hijau. `test:kasir` 494 · `test:domain` 492 · `test:server` 438 
 
 **FR-A7 AC ketiga masih terbuka** — `cost_at_sale` untuk laporan margin
 menunggu keputusan FR-F5, yang user tahan.
+
+---
+
+## Task 41 — penjaga FR-F10: Owner tidak dikecualikan dari audit (24 Agustus 2026) ✅
+
+Survei sistematis atas 77 FR di PRD menemukan lima yang tidak dirujuk satu
+berkas pun. Empat ternyata sudah ditegakkan tanpa menyebut nomornya
+(FR-A2 variasi wajib · FR-A4 kategori maksimal dua tingkat · FR-F9 daftar
+tertutup feature flag menolak kunci yang menyebut audit · FR-G6 lihat Task
+berikutnya). **FR-F10 tidak punya penjaga sama sekali.**
+
+⛔ **Ia properti, bukan fitur** — dan properti yang tidak diuji adalah properti
+yang rusak diam-diam. Tidak ada apa pun di `recordAuditEvent` yang memeriksa
+peran, dan itulah yang membuat FR ini benar hari ini. Yang tidak ada adalah
+sesuatu yang menahan pemeriksaan seperti itu ditambahkan besok.
+
+`spec-f` menaruhnya sebagai FR tersendiri justru karena ia godaan yang wajar:
+owner adalah pemilik datanya, dan "kenapa tindakan saya sendiri harus dicatat"
+adalah pertanyaan yang akan diajukan seseorang. Jawabannya: audit trail dibaca
+saat SENGKETA, dan sengketa yang paling mahal adalah antara owner dan rekan
+pemiliknya atau investornya. Trail yang mengecualikan owner tidak dapat
+menjawab satu pun dari keduanya — dan yang mengecualikan dirinya adalah orang
+yang paling ingin dikecualikan.
+
+Ditambahkan dua test: owner tercatat, dan **bentuk barisnya sama** untuk peran
+apa pun (kontrol negatif — "owner tercatat" tidak boleh berarti "owner tercatat
+berbeda").
+
+**Sabotase:** `recordAuditEvent` mengecualikan owner → 18 dari 19 test merah.

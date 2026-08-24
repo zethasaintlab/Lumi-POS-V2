@@ -511,3 +511,73 @@ test('⛔ aktor datang dari SESI, bukan dari header yang klien tulis', async () 
   assert.equal(rows[0].actor_user_id, base.user.id);
   assert.notEqual(rows[0].actor_user_id, orangLain);
 });
+
+// ---------------------------------------------------------------------------
+// FR-F9 / FR-F10 — audit trail tidak dapat dimatikan, dan Owner tidak
+// dikecualikan darinya
+// ---------------------------------------------------------------------------
+
+test('⛔ FR-F10 — OWNER tidak dikecualikan dari audit trail', async () => {
+  // `spec-f` menaruhnya sebagai FR tersendiri justru karena ia adalah godaan
+  // yang wajar: owner adalah pemilik datanya, dan "kenapa tindakan saya
+  // sendiri harus dicatat" adalah pertanyaan yang akan diajukan seseorang.
+  //
+  // Jawabannya: audit trail dibaca saat SENGKETA, dan sengketa yang paling
+  // mahal adalah antara owner dan rekan pemiliknya, atau antara owner dan
+  // investornya. Trail yang mengecualikan owner tidak dapat menjawab satu pun
+  // dari keduanya — dan yang mengecualikan dirinya adalah orang yang paling
+  // ingin dikecualikan.
+  //
+  // Tidak ada apa pun di `recordAuditEvent` yang memeriksa peran, dan itulah
+  // yang membuat FR ini benar. Test ini menjaga agar pemeriksaan seperti itu
+  // tidak pernah ditambahkan.
+  await jadikanPeranTunggal('owner');
+  const { itemId } = await buatItem();
+
+  const rows = await auditRows('item_created');
+  const milikOwner = rows.filter((r) => r.entity_id === itemId);
+  assert.equal(milikOwner.length, 1, 'tindakan owner TIDAK tercatat di audit trail');
+  assert.equal(milikOwner[0].actor_user_id, base.user.id);
+});
+
+test('⛔ FR-F10 — peran APA PUN menghasilkan baris audit yang sama bentuknya', async () => {
+  // Kontrol negatif untuk test di atas: "owner tercatat" tidak boleh berarti
+  // "owner tercatat berbeda". Baris audit yang bentuknya bergantung pada peran
+  // pelakunya membuat laporan yang menyaring per jenis melewatkan sebagian.
+  const bentuk = [];
+  for (const peran of ['owner', 'area_manager']) {
+    await jadikanPeranTunggal(peran);
+    const { itemId } = await buatItem();
+    const rows = await auditRows('item_created');
+    const row = rows.find((r) => r.entity_id === itemId);
+    assert.ok(row, `${peran}: tidak tercatat`);
+    bentuk.push(Object.keys(row).sort().join(','));
+  }
+  assert.equal(new Set(bentuk).size, 1, 'bentuk baris audit berbeda antar peran');
+});
+
+/**
+ * Mengganti peran PEMILIK SESI menjadi satu peran saja.
+ *
+ * ⛔ Lewat `user_role`, bukan lewat `X-Actor-Id`: header itu diabaikan
+ * sepenuhnya di rute terlindungi ("sesi menang").
+ */
+async function jadikanPeranTunggal(peran) {
+  const tenantWide = peran === 'owner' || peran === 'accountant';
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query('DELETE FROM user_role WHERE user_id = $1', [base.user.id]);
+  await appSetup.query(
+    `INSERT INTO user_role (id, tenant_id, user_id, role, scope_type, scope_id)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [
+      crypto.randomUUID(),
+      tenant.id,
+      base.user.id,
+      peran,
+      tenantWide ? 'tenant' : 'outlet',
+      tenantWide ? tenant.id : base.outlet.id,
+    ]
+  );
+  await appSetup.query('COMMIT');
+}
