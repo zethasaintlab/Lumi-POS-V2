@@ -117,6 +117,7 @@ export const PERISTIWA_AUDIT = {
 
   // Identitas
   user_created: 'identitas',
+  user_role_changed: 'identitas',
   user_deactivated: 'identitas',
   pin_changed: 'identitas',
 

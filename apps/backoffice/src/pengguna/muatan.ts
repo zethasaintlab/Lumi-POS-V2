@@ -72,16 +72,32 @@ export type HasilMuatanPengguna =
   | { ok: true; muatan: MuatanPengguna }
   | { ok: false; bidang: keyof FormPengguna; pesan: string };
 
-export function buatMuatanPengguna(
-  form: FormPengguna,
-  konteks: KonteksPengguna
-): HasilMuatanPengguna {
-  const nama = String(form.nama ?? '').trim();
-  if (nama.length === 0) {
-    return { ok: false, bidang: 'nama', pesan: 'Nama wajib diisi.' };
-  }
+export interface MuatanPeran {
+  roles: BarisPeran[];
+  outletIds: string[];
+}
 
-  if (!PERAN_DIKENAL.has(form.peran as Peran)) {
+export type HasilMuatanPeran =
+  | { ok: true; muatan: MuatanPeran }
+  | { ok: false; bidang: keyof FormPengguna; pesan: string };
+
+/**
+ * Peran + outlet, aturannya sekali.
+ *
+ * ⛔ Diangkat keluar dari `buatMuatanPengguna` saat B-27 mendapat jalur UBAH
+ * peran (24 Agustus 2026). Dua salinan aturan cakupan akan menyimpang tepat
+ * pada kasus yang paling jarang dicoba — dan yang menyimpang menghasilkan form
+ * tambah yang menolak apa yang form ubah terima, di layar yang sama.
+ *
+ * Aturannya sendiri tetap milik `packages/domain/src/rbac.ts`; yang di sini
+ * adalah pemetaan peran → baris `user_role`, dan pesan untuk manusia.
+ */
+export function buatMuatanPeran(
+  peran: string,
+  outletDipilih: readonly string[],
+  tenantId: string
+): HasilMuatanPeran {
+  if (!PERAN_DIKENAL.has(peran as Peran)) {
     // Peran karangan lolos sampai CHECK constraint di migrasi 0003, dan
     // jawabannya 500 — server menyalahkan dirinya sendiri atas isian layar.
     return { ok: false, bidang: 'peran', pesan: 'Pilih salah satu peran.' };
@@ -90,7 +106,7 @@ export function buatMuatanPengguna(
   // Duplikat dibuang di sini, bukan diserahkan ke server. `POST /users`
   // memang mem-`Set`-kannya sendiri, tapi jumlah outlet yang dihitung penjaga
   // "satu outlet" di bawah harus jumlah yang sama.
-  const outletIds = [...new Set(form.outletIds ?? [])].filter((o) => o.length > 0);
+  const outletIds = [...new Set(outletDipilih)].filter((o) => o.length > 0);
 
   if (outletIds.length === 0) {
     // ⛔ Jalur turun mereplikasi pengguna PER OUTLET. Tanpa keanggotaan,
@@ -103,7 +119,7 @@ export function buatMuatanPengguna(
     };
   }
 
-  if (peranMelebihiCakupan([form.peran], outletIds.length)) {
+  if (peranMelebihiCakupan([peran], outletIds.length)) {
     return {
       ok: false,
       bidang: 'outletIds',
@@ -111,13 +127,29 @@ export function buatMuatanPengguna(
     };
   }
 
-  const roles: BarisPeran[] = CAKUPAN_TENANT.has(form.peran)
-    ? [{ role: form.peran, scopeType: 'tenant', scopeId: konteks.tenantId }]
+  const roles: BarisPeran[] = CAKUPAN_TENANT.has(peran)
+    ? [{ role: peran, scopeType: 'tenant', scopeId: tenantId }]
     : outletIds.map((outletId) => ({
-        role: form.peran,
+        role: peran,
         scopeType: 'outlet' as const,
         scopeId: outletId,
       }));
+
+  return { ok: true, muatan: { roles, outletIds } };
+}
+
+export function buatMuatanPengguna(
+  form: FormPengguna,
+  konteks: KonteksPengguna
+): HasilMuatanPengguna {
+  const nama = String(form.nama ?? '').trim();
+  if (nama.length === 0) {
+    return { ok: false, bidang: 'nama', pesan: 'Nama wajib diisi.' };
+  }
+
+  const peran = buatMuatanPeran(form.peran, form.outletIds ?? [], konteks.tenantId);
+  if (!peran.ok) return peran;
+  const { roles, outletIds } = peran.muatan;
 
   const email = String(form.email ?? '').trim();
   const lahir = String(form.tanggalLahir ?? '').trim();

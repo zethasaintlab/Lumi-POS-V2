@@ -2349,3 +2349,79 @@ lubangnya masih ada.
 `test:runtime` 3 · `test:oxlint-ds-adherence` 12 · `test:catalog` 177 ·
 `test:payment` 132 · `test:identity` 142 · `test:tenancy` 75 ·
 `test:isolation` 211 · `test:schema` 14.
+
+---
+
+## Task 31 — FR-F1: peran dapat DIUBAH, dan `user_role_changed` (lubang 9 → 8)
+
+**Status: selesai.**
+
+### ⛔ Temuan: peran hanya dapat diberikan saat pengguna DIBUAT
+
+`createUser` menerima `roles`; `updateUser` tidak. Merchant yang menaikkan
+kasirnya menjadi manajer outlet karena itu tidak punya jalan apa pun — kecuali
+membuat pengguna **kedua** dengan nama orang yang sama. Sesudah itu setiap
+laporan per kasir memecah orang itu menjadi dua baris, dan riwayat lamanya
+menggantung pada akun yang dinonaktifkan.
+
+Ditemukan saat Task 30 mencari endpoint untuk `user_role_changed` dan tidak
+menemukannya. Ia gap **produk**, bukan gap audit — dan itu sebabnya ia layak
+task tersendiri alih-alih satu baris `catatPerubahanServer`.
+
+### ⛔ Dua penjaga yang HANYA ada di jalur ubah
+
+Keduanya tidak terlihat sebagai kelalaian sampai ditulis:
+
+1. **Peran LAMA target ikut diperiksa.** `createUser` hanya perlu memeriksa
+   peran BARU — pengguna yang belum ada belum berperan apa pun. Di sini,
+   mengabaikannya membiarkan Manajer Outlet (yang matriks izinkan mengelola
+   *kasir saja*) **menurunkan seorang Owner menjadi kasir**, lalu mengelolanya
+   dengan bebas. Pemisahan tugas `spec-f:91` runtuh tanpa satu pun aturan
+   terlihat dilanggar. Sabotase: peran lama dilepas dari `assertBolehKelola` →
+   1 merah.
+2. **Owner terakhir tidak dapat DICABUT PERANNYA.** `spec-f:425` menulis
+   aturannya untuk penonaktifan, dan `updateUser` sudah menegakkannya di sana.
+   Mencabut peran `owner` meninggalkan tenant dalam keadaan yang **persis
+   sama** — tidak ada seorang pun yang dapat mengurus billing — tanpa satu pun
+   pengguna dinonaktifkan. Penjaga yang menutup satu dari dua jalan ke keadaan
+   yang sama bukan penjaga. Sabotase → 3 merah.
+
+### Keputusan lain
+
+- ⛔ **Cakupan diperiksa terhadap gabungan yang AKAN berlaku**, bukan terhadap
+  apa yang dikirim. Mengubah peran SAJA menjadi Kasir, sementara pengguna sudah
+  terdaftar di dua outlet, menghasilkan tepat keadaan yang `spec-f:32` larang —
+  dan tidak ada apa pun di permintaan itu yang terlihat salah.
+- ⛔ **Peran diganti SELURUHNYA, bukan digabung.** Peran adalah himpunan; PATCH
+  yang menambahkan tanpa dapat menghapus membuat penurunan peran mustahil —
+  dan penurunan peran adalah separuh alasan endpoint ini ada.
+- ⛔ **`user_role` DIHAPUS lalu ditulis ulang**, pengecualian yang dinyatakan
+  terhadap invariant #2. Invariant itu menjaga data finansial dan katalog —
+  baris yang riwayat transaksi menunjuknya. `user_role` tidak ditunjuk siapa
+  pun; yang menjaga riwayat perannya adalah `audit_event`, dan itulah kenapa
+  `user_role_changed` wajib. Ia satu-satunya riwayat peran yang ada: "siapa
+  berperan apa pada bulan Maret" hanya dapat dijawab dari sana, dan itu tepat
+  pertanyaan yang muncul saat seseorang mempersoalkan sebuah persetujuan.
+- ⛔ **Aturan cakupan klien diangkat ke `buatMuatanPeran`, dipakai form tambah
+  DAN form ubah.** Dua salinan menyimpang tepat pada kasus yang paling jarang
+  dicoba — dan yang menyimpang menghasilkan form tambah yang menolak apa yang
+  form ubah terima, di layar yang sama. Testnya menjalankan **keduanya** atas
+  masukan yang sama dan membandingkan hasilnya, bukan membaca kodenya.
+- ⛔ **Panel ubah peran dibuka dengan keadaan SEKARANG, bukan kosong.** Panel
+  kosong membuat "simpan" tanpa mengubah apa pun menghapus seluruh peran dan
+  outlet orang itu.
+- **Layar menyatakan bahwa perubahan berlaku pada sesi BERIKUTNYA.** Peran
+  dibaca saat sesi dibuat; manajer yang menurunkan kasirnya lalu mengira haknya
+  langsung hilang akan menyimpulkan sistemnya bocor.
+
+### ⛔ Fixture test yang hijau karena alasan yang salah
+
+Versi pertama `tests/identity/pengguna-peran.test.js` hanya *menambahkan*
+`area_manager` ke aktor tanpa menghapus peran fixture-nya (kasir **dan owner**,
+`seed.js:122`). Akibatnya setiap tenant di berkas itu punya owner tersembunyi,
+dan test "owner terakhir" tidak pernah benar-benar sampai ke owner terakhir.
+Ditemukan justru karena test itu MERAH.
+
+**Sisa 8 lubang FR-F6:** `shift_count_attempt` · `cash_paid_in` ·
+`cash_paid_out` · `threshold_changed` · `vertical_profile_changed` ·
+`peripheral_configured` · `support_session_started` · `support_session_ended`.

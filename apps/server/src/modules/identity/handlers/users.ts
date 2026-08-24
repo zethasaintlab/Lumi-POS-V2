@@ -5,7 +5,7 @@ import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
-import { recordAuditEvent } from '../../audit/index.ts';
+import { catatPerubahanServer, recordAuditEvent } from '../../audit/index.ts';
 import { assertOutletVisible, assertKuota } from '../../tenancy/index.ts';
 import { hitungPengguna, assertUserVisible } from '../index.ts';
 import {
@@ -122,6 +122,154 @@ async function assertBolehKelola(
       );
     }
   }
+}
+
+/**
+ * Mengganti peran dan/atau outlet seorang pengguna, dengan seluruh penjaganya.
+ * FR-F1, `spec-f:27-53`.
+ *
+ * ## ⛔ Peran LAMA target ikut diperiksa, dan itu penjaga yang hanya ada di
+ * jalur ini
+ *
+ * `createUser` hanya perlu memeriksa peran BARU: pengguna yang belum ada belum
+ * berperan apa pun. Di sini target sudah punya peran, dan mengabaikannya
+ * membuka jalan yang matriks `spec-f:50` justru tutup — Manajer Outlet, yang
+ * boleh mengelola "kasir saja", dapat menurunkan seorang **Owner** menjadi
+ * kasir. Sesudah itu ia mengelolanya dengan bebas, dan pemisahan tugas
+ * `spec-f:91` runtuh tanpa satu pun aturan terlihat dilanggar.
+ *
+ * ## ⛔ Owner terakhir tidak dapat dicabut peran ownernya
+ *
+ * `spec-f:425` menulis aturannya untuk penghapusan diri sendiri, dan
+ * `updateUser` sudah menegakkannya untuk `isActive: false`. Mencabut peran
+ * `owner` meninggalkan tenant dalam keadaan yang PERSIS sama — tidak ada
+ * seorang pun yang dapat mengurus billing — tanpa satu pun pengguna
+ * dinonaktifkan. Penjaga yang hanya menutup satu dari dua jalan ke keadaan
+ * yang sama bukan penjaga.
+ *
+ * ## ⛔ Diganti seluruhnya, bukan digabung
+ *
+ * Peran adalah himpunan; PATCH yang menambahkan tanpa dapat menghapus membuat
+ * penurunan peran mustahil — dan penurunan peran adalah separuh alasan
+ * endpoint ini ada.
+ */
+async function terapkanPeran(
+  client: PoolClient,
+  opts: {
+    tenantId: string;
+    actorId: string;
+    userId: string;
+    roles?: PeranInput[];
+    outletIds?: string[];
+  }
+): Promise<void> {
+  const { tenantId, actorId, userId } = opts;
+
+  const { rows: peranLama } = await client.query<{
+    role: string;
+    scope_type: string;
+    scope_id: string;
+  }>('SELECT role, scope_type, scope_id FROM user_role WHERE user_id = $1 ORDER BY role', [userId]);
+  const { rows: outletLama } = await client.query<{ outlet_id: string }>(
+    'SELECT outlet_id FROM user_outlet WHERE user_id = $1 ORDER BY outlet_id',
+    [userId]
+  );
+
+  const peranBaru = opts.roles ?? peranLama.map((r) => ({
+    role: r.role,
+    scopeType: r.scope_type,
+    scopeId: r.scope_id,
+  }));
+  const outletBaru = [...new Set(opts.outletIds ?? outletLama.map((o) => o.outlet_id))];
+
+  // ⛔ Cakupan diperiksa terhadap gabungan yang AKAN berlaku, bukan terhadap
+  // yang dikirim. Mengubah peran saja menjadi Kasir sementara pengguna sudah
+  // terdaftar di dua outlet menghasilkan tepat keadaan yang `spec-f:32`
+  // larang — dan tidak ada apa pun di permintaan itu yang terlihat salah.
+  const terlaluLuas = peranMelebihiCakupan(
+    peranBaru.map((r) => r.role),
+    outletBaru.length
+  );
+  if (terlaluLuas) {
+    throw new HttpError(
+      400,
+      'ROLE_SCOPE_TOO_WIDE',
+      `Peran ${LABEL_PERAN[terlaluLuas as Peran] ?? terlaluLuas} bercakupan satu outlet. ` +
+        'Pilih satu outlet, atau pakai peran Manajer Area untuk beberapa outlet.'
+    );
+  }
+
+  // Lihat catatan kepala: KEDUA himpunan, bukan hanya yang baru.
+  await assertBolehKelola(client, actorId, [
+    ...peranLama.map((r) => r.role),
+    ...peranBaru.map((r) => r.role),
+  ]);
+
+  for (const outletId of outletBaru) await assertOutletVisible(client, outletId);
+
+  const owner = (daftar: readonly { role: string }[]) => daftar.some((r) => r.role === 'owner');
+  if (owner(peranLama) && !owner(peranBaru)) {
+    const { rows } = await client.query<{ n: string }>(
+      `SELECT count(*) AS n FROM user_role ur
+         JOIN "user" u ON u.id = ur.user_id
+        WHERE ur.role = 'owner' AND u.is_active = true AND u.id <> $1`,
+      [userId]
+    );
+    if (Number(rows[0].n) === 0) {
+      throw new HttpError(
+        409,
+        'LAST_OWNER',
+        'Peran owner terakhir tidak dapat dicabut. Tetapkan owner lain terlebih dahulu.'
+      );
+    }
+  }
+
+  if (opts.roles !== undefined) {
+    // ⛔ `user_role` DIHAPUS lalu ditulis ulang, dan itu pengecualian yang
+    // dinyatakan terhadap "katalog tidak pernah di-DELETE" (invariant #2).
+    // Invariant itu menjaga data FINANSIAL dan katalog — baris yang riwayat
+    // transaksi menunjuknya. `user_role` tidak ditunjuk siapa pun; yang
+    // menjaga riwayat perannya adalah `audit_event`, dan itulah kenapa
+    // peristiwa di bawah wajib.
+    await client.query('DELETE FROM user_role WHERE user_id = $1', [userId]);
+    for (const peran of peranBaru) {
+      await client.query(
+        `INSERT INTO user_role (id, tenant_id, user_id, role, scope_type, scope_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [randomUUID(), tenantId, userId, peran.role, peran.scopeType, peran.scopeId]
+      );
+    }
+  }
+
+  if (opts.outletIds !== undefined) {
+    await client.query('DELETE FROM user_outlet WHERE user_id = $1', [userId]);
+    for (const outletId of outletBaru) {
+      await client.query(
+        `INSERT INTO user_outlet (id, tenant_id, user_id, outlet_id) VALUES ($1, $2, $3, $4)`,
+        [randomUUID(), tenantId, userId, outletId]
+      );
+    }
+  }
+
+  // FR-F6 + `spec-f:297` (`user_role_changed`).
+  //
+  // ⛔ Ia satu-satunya riwayat peran yang ada. `user_role` ditulis ulang, jadi
+  // "siapa berperan apa pada bulan Maret" hanya dapat dijawab dari sini — dan
+  // itu tepat pertanyaan yang muncul saat seseorang mempersoalkan sebuah
+  // persetujuan.
+  await catatPerubahanServer(client, {
+    tenantId,
+    actorUserId: actorId,
+    eventType: 'user_role_changed',
+    entityType: 'user',
+    entityId: userId,
+    outletId: outletBaru[0] ?? null,
+    before: {
+      roles: peranLama.map((r) => ({ role: r.role, scopeType: r.scope_type, scopeId: r.scope_id })),
+      outletIds: outletLama.map((o) => o.outlet_id),
+    },
+    after: { roles: peranBaru, outletIds: outletBaru },
+  });
 }
 
 /**
@@ -342,10 +490,36 @@ export function createUserHandlers(pool: Pool, hasher: PinHasher, hlc: Hlc): Rec
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);
       const { userId } = req.params as { userId: string };
-      const body = req.body as { name?: string; email?: string | null; isActive?: boolean };
+      const body = req.body as {
+        name?: string;
+        email?: string | null;
+        isActive?: boolean;
+        roles?: PeranInput[];
+        outletIds?: string[];
+      };
+
+      // ⛔ Peran DAPAT diubah sejak 24 Agustus 2026, dan sebelumnya tidak.
+      //
+      // `createUser` menerima `roles`; `updateUser` tidak. Merchant yang
+      // menaikkan kasirnya menjadi manajer outlet karena itu tidak punya jalan
+      // apa pun — kecuali membuat pengguna KEDUA dengan nama orang yang sama,
+      // yang membuat setiap laporan per kasir memecah orang itu menjadi dua
+      // baris dan riwayat lamanya menggantung pada akun yang dinonaktifkan.
+      const ubahPeran = body.roles !== undefined;
+      const ubahOutlet = body.outletIds !== undefined;
 
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         const sebelum = await ambilUser(client, userId);
+
+        if (ubahPeran || ubahOutlet) {
+          await terapkanPeran(client, {
+            tenantId,
+            actorId,
+            userId,
+            roles: body.roles,
+            outletIds: body.outletIds,
+          });
+        }
 
         if (body.isActive === false) {
           // `spec-f:425`: "Owner menghapus dirinya sendiri -> Ditolak, minimal

@@ -2041,12 +2041,56 @@ paths:
                 name: { type: string, minLength: 1 }
                 email: { type: string, nullable: true }
                 isActive: { type: boolean }
+                roles:
+                  type: array
+                  description: >-
+                    FR-F1. Diganti SELURUHNYA bila dikirim; tidak dikirim
+                    berarti tidak diubah. Sampai 24 Agustus 2026 peran hanya
+                    dapat diberikan saat pengguna DIBUAT -- merchant tidak
+                    dapat menaikkan kasir menjadi manajer outlet sama sekali.
+
+
+                    ⛔ Penjaga yang sama dengan createUser berlaku, DITAMBAH
+                    satu yang hanya ada di sini: peran LAMA target ikut
+                    diperiksa. Tanpa itu, Manajer Outlet -- yang matriks
+                    izinkan mengelola "kasir saja" -- dapat menurunkan seorang
+                    Owner menjadi kasir, dan pemisahan tugas spec-f:91 runtuh
+                    tanpa satu pun aturan terlihat dilanggar.
+                  items:
+                    type: object
+                    required: [role, scopeType, scopeId]
+                    properties:
+                      role:
+                        type: string
+                        enum: [owner, area_manager, outlet_manager, cashier, accountant]
+                      scopeType: { type: string, enum: [tenant, outlet] }
+                      scopeId: { type: string }
+                outletIds:
+                  type: array
+                  description: >-
+                    Diganti seluruhnya bila dikirim. Cakupan peran diperiksa
+                    terhadap daftar ini -- peran bercakupan satu outlet dengan
+                    dua outlet ditolak ROLE_SCOPE_TOO_WIDE.
+                  items: { type: string }
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
+        '400':
+          description: >-
+            Cakupan peran terlalu luas (ROLE_SCOPE_TOO_WIDE, spec-f:31).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >-
+            Tidak berhak mengelola peran ini (FORBIDDEN, spec-f:50) -- berlaku
+            untuk peran LAMA maupun BARU.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404':
           description: Pengguna tidak ditemukan
           content:
@@ -2054,7 +2098,8 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: >-
-            Owner terakhir tidak dapat dinonaktifkan (LAST_OWNER, spec-f:425).
+            Owner terakhir tidak dapat dinonaktifkan MAUPUN dicabut peran
+            ownernya (LAST_OWNER, spec-f:425).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

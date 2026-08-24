@@ -1355,3 +1355,28 @@ lingkupnya (jenis, rentang, outlet), tidak pernah isinya.
 gagal sering memakai email yang tidak menunjuk siapa pun. `spec-f:290` sendiri
 tidak memuatnya. Kalau kelak dibutuhkan, ia menuntut kolom aktor yang boleh
 NULL — perubahan skema.
+
+### Peran dapat diubah, dan `user_role_changed` (24 Agustus 2026)
+
+`PATCH /users/{id}` kini menerima `roles` dan `outletIds`. Sebelumnya peran
+hanya dapat diberikan saat pengguna DIBUAT — gap produk, bukan gap audit.
+
+⛔ **Dua penjaga yang hanya ada di jalur ubah**, dan keduanya diuji lewat
+sabotase:
+
+1. Peran **lama** target ikut diperiksa. Tanpa itu, Manajer Outlet dapat
+   menurunkan seorang Owner menjadi kasir lalu mengelolanya dengan bebas.
+2. Owner terakhir tidak dapat dicabut perannya — bukan hanya tidak dapat
+   dinonaktifkan.
+
+⛔ **`user_role` dihapus lalu ditulis ulang.** Kalau kelak dibutuhkan "peran
+seseorang pada tanggal T", jawabannya HANYA ada di `audit_event` bertipe
+`user_role_changed`. Jangan menambahkan kolom riwayat kedua di `user_role`;
+dua sumber untuk satu pertanyaan akan menyimpang.
+
+⛔ **Sisa 8 lubang FR-F6 tidak satu pun punya endpoint.** Menutupnya berarti
+membangun fiturnya lebih dulu: setoran/penarikan kas (`cash_paid_in`/`out`),
+B-26 Ambang Otorisasi (`threshold_changed`), B-24 Profil Vertikal
+(`vertical_profile_changed`), endpoint `printer_profile`
+(`peripheral_configured`), akses support (`support_session_*`), dan jalur tulis
+yang bertahan melewati rollback (`shift_count_attempt`).

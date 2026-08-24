@@ -85,6 +85,7 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   tax_rate_changed: 'Tarif pajak diubah',
   // Identitas
   user_created: 'Pengguna dibuat',
+  user_role_changed: 'Peran pengguna diubah',
   user_deactivated: 'Pengguna dinonaktifkan',
   pin_changed: 'PIN diubah',
   // Perangkat
