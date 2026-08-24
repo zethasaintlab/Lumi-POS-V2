@@ -270,6 +270,38 @@ export function createTutupHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
           hlc: hlc.tick(),
         });
 
+        // FR-F6 + `spec-f:293` (`cash_variance_approved`) — peristiwa
+        // TERSENDIRI, bukan field di `shift_closed`.
+        //
+        // ⛔ Daftar `spec-f:293` menamainya sendiri, dan alasannya operasional:
+        // laporan "siapa menyetujui selisih kas siapa" harus dapat dijawab
+        // dengan menyaring satu jenis peristiwa. Menyembunyikannya sebagai
+        // `approver_user_id` yang kadang terisi pada `shift_closed` berarti
+        // setiap pembacanya harus tahu bahwa kolom itu bermakna berbeda
+        // tergantung jenis barisnya.
+        //
+        // ⛔ Dua identitas WAJIB di sini (FR-F7), dan penyetuju yang sama
+        // dengan aktor sudah ditolak di atas — ditegakkan lagi oleh CHECK di
+        // database.
+        if (perluOtorisasi) {
+          await recordAuditEvent(client, {
+            id: randomUUID(),
+            tenantId,
+            outletId: shift.outlet_id,
+            deviceId: shift.device_id,
+            actorUserId: actorId,
+            approverUserId: approverId as string,
+            eventType: 'cash_variance_approved',
+            entityType: 'cash_drawer_shift',
+            entityId: shiftId,
+            after: { difference: selisih.toString() },
+            reasonCode: alasan === '' ? null : alasan,
+            reasonNote:
+              typeof body.varianceNote === 'string' ? body.varianceNote : null,
+            hlc: hlc.tick(),
+          });
+        }
+
         return {
           id: shiftId,
           status: 'closed',

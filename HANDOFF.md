@@ -1267,25 +1267,19 @@ laporan ber-endpoint.
 
 AC pertamanya: *"Setiap event dalam daftar menghasilkan record."* Saat
 ditemukan, **24 dari 35** nama di tabel `spec-f:288` belum dipancarkan sama
-sekali. Katalog, harga, stok, dan pajak ditutup 23 Agustus 2026 — **16
-tersisa**:
+sekali. Ditutup 23 Agustus 2026 dalam dua putaran — katalog/harga/stok/pajak,
+lalu sesi/shift/perangkat/ekspor. **9 tersisa, dan tidak satu pun punya
+endpoint hari ini:**
 
 | Kelompok | Yang belum ada | Kenapa |
 |---|---|---|
-| Sesi | `login` · `logout` | Endpointnya ADA — tinggal dikerjakan |
-| Shift | `shift_opened` · `shift_count_attempt` · `cash_variance_approved` | Endpointnya ADA — tinggal dikerjakan |
-| Identitas | `user_role_changed` | `updateUser` ADA — tinggal dikerjakan |
-| Perangkat | `device_provisioned` · `device_revoked` | Endpointnya ADA — tinggal dikerjakan |
-| Data | `data_exported` | `GET /reports/export` ADA — tinggal dikerjakan |
-| Kas | `cash_paid_in` · `cash_paid_out` | **Tidak ada endpointnya.** Setoran/penarikan kas di luar penjualan belum dibangun |
+| Shift | `shift_count_attempt` | Server hanya mencatat percobaan hitungan yang **berhasil** menutup shift. Yang ditolak dilempar SEBELUM `UPDATE` dan ikut ter-rollback — dan percobaan yang gagal itulah yang `spec-d` ingin buktikan tidak dapat diulang diam-diam. Menuntut jalur tulis yang bertahan melewati rollback: perubahan rancangan |
+| Identitas | `user_role_changed` | **Tidak ada endpointnya.** `updateUser` hanya menerima `name`/`email`/`isActive`; peran hanya dapat diberikan saat `createUser`. Merchant tidak dapat menaikkan kasir menjadi manajer outlet sama sekali — gap PRODUK, bukan gap audit |
+| Kas | `cash_paid_in` · `cash_paid_out` | Setoran/penarikan kas di luar penjualan belum dibangun |
 | Konfigurasi | `threshold_changed` | B-26 (Ambang Otorisasi) belum ada |
 | Konfigurasi | `vertical_profile_changed` | B-24 (Profil Vertikal) belum ada |
 | Perangkat | `peripheral_configured` | `printer_profile` belum punya endpoint mutasi |
 | Data | `support_session_started` · `support_session_ended` | Akses support belum dibangun |
-
-`shift_opened` yang paling menonjol dari yang tersisa: setiap shift dibuka, dan
-tidak satu pun tercatat. `apps/server/src/modules/cash/handlers/shifts.ts` tidak
-menyentuh `recordAuditEvent` sama sekali.
 
 **Jangan menandai FR-F6 selesai sampai daftar ini kosong.** Ia tidak perlu
 diingat: `PERISTIWA_BELUM_DIPANCARKAN` di `packages/domain/src/audit-peristiwa.ts`
@@ -1341,3 +1335,23 @@ tambahkan satu test di sana untuk setiap endpoint baru.
 tabel, dan nol adalah jawaban benar karena alasan yang salah — sampai katalog
 mulai menulis audit dan setup test-nya sendiri menghasilkan baris. Bentuk yang
 sama dengan 18 test `stock_movement` yang F3 temukan.
+
+### Sesi, shift, perangkat, dan ekspor menulis audit (23 Agustus 2026)
+
+`login` · `logout` · `shift_opened` · `cash_variance_approved` ·
+`device_provisioned` · `device_revoked` · `data_exported`.
+
+⛔ **`shift_opened` sama sekali tidak ada sebelum ini** — pasangannya
+(`shift_closed`) sudah punya sejak F3, sementara `cash/handlers/shifts.ts` tidak
+menyentuh `recordAuditEvent`.
+
+⛔ **`data_exported` ditulis pada endpoint GET.** Satu-satunya PEMBACAAN di
+seluruh sistem yang meninggalkan jejak, dan itu disengaja: ekspor tidak
+mengubah apa pun, yang berubah adalah di mana datanya berada. Yang dicatat
+lingkupnya (jenis, rentang, outlet), tidak pernah isinya.
+
+⛔ **Batas yang dinyatakan: tidak ada `login_failed`.**
+`audit_event.actor_user_id` adalah `NOT NULL` ber-FK ke `"user"`, dan login
+gagal sering memakai email yang tidak menunjuk siapa pun. `spec-f:290` sendiri
+tidak memuatnya. Kalau kelak dibutuhkan, ia menuntut kolom aktor yang boleh
+NULL — perubahan skema.

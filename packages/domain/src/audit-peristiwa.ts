@@ -59,11 +59,31 @@ export type KelompokPeristiwa =
  * ditolak TypeScript — itu yang membuat daftar ini tetap benar.
  */
 export const PERISTIWA_AUDIT = {
-  // Sesi — `login`/`logout` belum dipancarkan, lihat daftar di bawah.
+  // Sesi
+  //
+  // ⛔ Tidak ada `login_failed`, dan itu batas yang dinyatakan bukan
+  // kelalaian: `audit_event.actor_user_id` adalah `NOT NULL` ber-FK ke
+  // `"user"`, sementara login yang gagal sering memakai email yang tidak
+  // menunjuk pengguna mana pun. Daftar `spec-f:290` sendiri tidak memuatnya.
+  login: 'sesi',
+  logout: 'sesi',
   pin_failed: 'sesi',
   pin_lockout: 'sesi',
 
   // Shift
+  //
+  // ⛔ Tidak ada `shift_count_attempt`, dan itu batas yang DINYATAKAN. Server
+  // hanya mencatat percobaan hitungan yang BERHASIL menutup shift — percobaan
+  // yang ditolak (selisih melewati ambang tanpa penyetuju) dilempar sebelum
+  // `UPDATE`, jadi transaksinya di-rollback dan tidak meninggalkan apa pun.
+  // Percobaan yang gagal justru yang `spec-d` ingin buktikan tidak dapat
+  // diulang diam-diam, dan mencatatnya menuntut jalur tulis yang bertahan
+  // melewati rollback — perubahan rancangan, bukan satu baris.
+  //
+  // Percobaan yang berhasil sudah dijelaskan sepenuhnya oleh `shift_closed`
+  // (hitungan, selisih, alasan, penyetuju); memancarkan peristiwa kedua yang
+  // isinya sama hanya menambah baris yang tidak menjelaskan apa pun.
+  shift_opened: 'shift',
   shift_closed: 'shift',
 
   // Transaksi
@@ -78,6 +98,7 @@ export const PERISTIWA_AUDIT = {
 
   // Kas
   cash_drawer_opened: 'kas',
+  cash_variance_approved: 'kas',
 
   // Katalog
   catalog_imported: 'katalog',
@@ -100,7 +121,12 @@ export const PERISTIWA_AUDIT = {
   pin_changed: 'identitas',
 
   // Perangkat
+  device_provisioned: 'perangkat',
+  device_revoked: 'perangkat',
   clock_drift_detected: 'perangkat',
+
+  // Data
+  data_exported: 'data',
 
   // Tenant & langganan — kelompok yang TIDAK ada di tabel `spec-f:288`.
   //

@@ -55,9 +55,12 @@ export const JUDUL_LAYAR = 'Audit & Aktivitas';
  */
 export const LABEL_PERISTIWA: Record<string, string> = {
   // Sesi
+  login: 'Masuk ke back-office',
+  logout: 'Keluar dari back-office',
   pin_failed: 'PIN salah',
   pin_lockout: 'Akun terkunci sementara',
   // Shift
+  shift_opened: 'Shift dibuka',
   shift_closed: 'Shift ditutup',
   // Transaksi
   'order.voided': 'Transaksi dibatalkan',
@@ -67,6 +70,7 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   calculation_variance: 'Selisih hitungan perangkat',
   // Kas
   cash_drawer_opened: 'Laci dibuka tanpa transaksi',
+  cash_variance_approved: 'Selisih kas disetujui',
   // Katalog
   catalog_imported: 'Katalog diimpor',
   item_created: 'Produk dibuat',
@@ -84,7 +88,11 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   user_deactivated: 'Pengguna dinonaktifkan',
   pin_changed: 'PIN diubah',
   // Perangkat
+  device_provisioned: 'Perangkat didaftarkan',
+  device_revoked: 'Perangkat dicabut',
   clock_drift_detected: 'Selisih jam perangkat',
+  // Data
+  data_exported: 'Data diekspor',
   // Tenant & langganan
   tenant_registered: 'Merchant didaftarkan',
   outlet_created: 'Outlet dibuat',

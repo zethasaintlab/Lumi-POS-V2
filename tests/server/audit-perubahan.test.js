@@ -298,6 +298,183 @@ test('tax_rate_changed dicatat saat dibuat dan saat diakhiri', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Sesi, shift, perangkat, ekspor
+// ---------------------------------------------------------------------------
+
+/** Pengguna ber-email + password, satu-satunya bentuk yang dapat login. */
+async function buatPenggunaLogin(email, password) {
+  const id = crypto.randomUUID();
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query(`INSERT INTO "user" (id,tenant_id,name,email) VALUES ($1,$2,'Uji Login',$3)`, [
+    id,
+    tenant.id,
+    email,
+  ]);
+  await appSetup.query(
+    `INSERT INTO user_role (id,tenant_id,user_id,role,scope_type,scope_id)
+     VALUES ($1,$2,$3,'owner','tenant',$2)`,
+    [crypto.randomUUID(), tenant.id, id]
+  );
+  await appSetup.query('COMMIT');
+
+  const res = await app.inject({
+    method: 'PUT',
+    url: `/users/${id}/password`,
+    payload: { password },
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader, 'x-actor-id': id },
+  });
+  assert.equal(res.statusCode, 204, res.body);
+  return id;
+}
+
+test('login menulis jejak dengan PERAN yang berlaku saat itu', async () => {
+  // ⛔ `after` memuat peran, bukan email atau alamat IP. Peran pada saat itu
+  // yang menjelaskan "kenapa orang ini dapat melakukan itu" berbulan-bulan
+  // kemudian, saat perannya sudah berbeda.
+  const userId = await buatPenggunaLogin('audit-login@contoh.id', 'kataSandiPanjang123');
+  const res = await app.inject({
+    method: 'POST',
+    url: '/auth/login',
+    payload: { email: 'audit-login@contoh.id', password: 'kataSandiPanjang123' },
+    headers: { 'x-tenant-id': tenant.id },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+
+  const rows = await auditRows('login');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].actor_user_id, userId);
+  assert.equal(rows[0].entity_type, 'user_session');
+  assert.ok(Array.isArray(rows[0].after.roles));
+  // ⛔ Tidak ada email di jejak. Audit trail bertahan lima tahun
+  // (`spec-f:372`); setiap field yang masuk ke sana masuk untuk lima tahun.
+  assert.equal(JSON.stringify(rows[0].after).includes('@'), false);
+});
+
+test('⛔ login yang GAGAL tidak menulis apa pun', async () => {
+  // `audit_event.actor_user_id` adalah NOT NULL ber-FK; login yang gagal
+  // sering memakai email yang tidak menunjuk pengguna mana pun. Batas yang
+  // dinyatakan, bukan kelalaian — `spec-f:290` sendiri tidak memuat
+  // `login_failed`.
+  await buatPenggunaLogin('audit-gagal@contoh.id', 'kataSandiPanjang123');
+  const res = await app.inject({
+    method: 'POST',
+    url: '/auth/login',
+    payload: { email: 'audit-gagal@contoh.id', password: 'salahSekaliSekali' },
+    headers: { 'x-tenant-id': tenant.id },
+  });
+  assert.equal(res.statusCode, 401);
+  assert.equal((await auditRows('login')).length, 0);
+});
+
+test('logout menulis jejak SESUDAH sesinya dihapus', async () => {
+  const userId = await buatPenggunaLogin('audit-logout@contoh.id', 'kataSandiPanjang123');
+  const masuk = await app.inject({
+    method: 'POST',
+    url: '/auth/login',
+    payload: { email: 'audit-logout@contoh.id', password: 'kataSandiPanjang123' },
+    headers: { 'x-tenant-id': tenant.id },
+  });
+  assert.equal(masuk.statusCode, 200, masuk.body);
+  const { token } = JSON.parse(masuk.body);
+  const keluar = await app.inject({
+    method: 'POST',
+    url: '/auth/logout',
+    headers: { 'x-tenant-id': tenant.id, authorization: `Bearer ${token}` },
+  });
+  assert.equal(keluar.statusCode, 204, keluar.body);
+
+  // Barisnya hilang, jejaknya tidak — "sampai kapan orang ini masih masuk"
+  // adalah pertanyaan sengketa.
+  const rows = await auditRows('logout');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].actor_user_id, userId);
+});
+
+test('openShift menulis shift_opened dengan modal awal sebagai STRING', async () => {
+  // Sampai 23 Agustus 2026 setiap shift dibuka tanpa satu pun jejak.
+  const deviceId = crypto.randomUUID();
+  assert.equal(
+    (
+      await req('POST', '/devices', {
+        id: deviceId,
+        outletId: base.outlet.id,
+        code: 'K9',
+        name: 'Kasir 9',
+        platform: 'tauri',
+      })
+    ).statusCode,
+    201
+  );
+
+  const res = await req('POST', '/shifts', {
+    id: crypto.randomUUID(),
+    outletId: base.outlet.id,
+    deviceId,
+    businessDate: '2026-08-23',
+    openingFloat: 500000,
+  });
+  assert.equal(res.statusCode, 201, res.body);
+
+  const rows = await auditRows('shift_opened');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].outlet_id, base.outlet.id);
+  // ⛔ Uang sebagai STRING. Modal awal yang melewati Number di jalur audit
+  // adalah cacat yang sama dengan yang PR #32 perbaiki di payload pembatalan.
+  assert.equal(rows[0].after.openingFloat, '500000');
+  assert.equal(typeof rows[0].after.openingFloat, 'string');
+});
+
+test('perangkat: didaftarkan dan dicabut, keduanya berjejak', async () => {
+  const deviceId = crypto.randomUUID();
+  assert.equal(
+    (
+      await req('POST', '/devices', {
+        id: deviceId,
+        outletId: base.outlet.id,
+        code: 'K8',
+        name: 'Kasir 8',
+        platform: 'tauri',
+      })
+    ).statusCode,
+    201
+  );
+  assert.equal((await req('POST', `/devices/${deviceId}/revoke`)).statusCode, 200);
+
+  const dibuat = await auditRows('device_provisioned');
+  assert.equal(dibuat.length, 1);
+  assert.equal(dibuat[0].after.code, 'K8');
+  // ⛔ Tidak ada bahan kredensial di jejak yang bertahan lima tahun.
+  assert.equal(JSON.stringify(dibuat[0].after).includes('token'), false);
+
+  const dicabut = await auditRows('device_revoked');
+  assert.equal(dicabut.length, 1);
+  // ⛔ `before.revokedAt` membedakan pencabutan pertama dari klik kedua.
+  assert.equal(dicabut[0].before.revokedAt, null);
+  assert.notEqual(dicabut[0].after.revokedAt, null);
+});
+
+test('⛔ ekspor CSV berjejak, dan jejaknya TIDAK memuat datanya', async () => {
+  // Ekspor tidak mengubah apa pun; yang berubah adalah di mana datanya
+  // berada. Menyalin CSV-nya ke `after` menggandakan setiap angka penjualan ke
+  // dalam tabel yang bertahan lima tahun.
+  const res = await app.inject({
+    method: 'GET',
+    url: '/reports/export?type=sales&from=2026-08-01&to=2026-08-31',
+    headers: { 'x-tenant-id': tenant.id, authorization: base.authHeader },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+
+  const rows = await auditRows('data_exported');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].after.jenis, 'sales');
+  assert.equal(rows[0].after.from, '2026-08-01');
+  assert.equal(rows[0].entity_id, 'sales');
+  assert.equal('csv' in rows[0].after, false);
+  assert.equal('omzetKotor' in rows[0].after, false);
+});
+
+// ---------------------------------------------------------------------------
 // ⛔ Aktor
 // ---------------------------------------------------------------------------
 

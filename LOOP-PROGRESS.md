@@ -2268,3 +2268,84 @@ ditambahkan, alih-alih tampil sebagai slug mentah di layar.
 
 **Sabotase:** resolusi harga lama dipindah ke SESUDAH insert → 1 merah
 (`before` sama dengan `after`).
+
+---
+
+## Task 30 — FR-F6: sesi, shift, perangkat, dan ekspor (lubang 16 → 9)
+
+**Status: selesai.** Yang ditambahkan: `login` · `logout` · `shift_opened` ·
+`cash_variance_approved` · `device_provisioned` · `device_revoked` ·
+`data_exported`.
+
+**Keputusan:**
+
+- ⛔ **Tidak ada `login_failed`, dan itu batas yang DINYATAKAN.**
+  `audit_event.actor_user_id` adalah `NOT NULL` ber-FK ke `"user"`, sementara
+  login yang gagal sering memakai email yang tidak menunjuk pengguna mana pun —
+  tidak ada aktor untuk dicatat. Daftar `spec-f:290` sendiri hanya memuat
+  `login`, `logout`, `pin_failed`, dan `pin_lockout`. Ada test yang
+  membuktikannya: login yang gagal tidak menulis apa pun.
+- ⛔ **`after` login memuat PERAN, bukan email atau alamat IP.** Peran pada
+  saat itu yang menjelaskan "kenapa orang ini dapat melakukan itu"
+  berbulan-bulan kemudian, saat perannya sudah berbeda. Audit trail bertahan
+  lima tahun (`spec-f:372`); setiap field yang masuk ke sana masuk untuk lima
+  tahun, dan ada test yang menolak `@` di muatannya.
+- ⛔ **`logout` ditulis SESUDAH `DELETE user_session`.** Barisnya hilang,
+  jejaknya tidak — pemisahan yang benar: tidak ada yang membutuhkan riwayat
+  sesi back-office, tapi "sampai kapan orang ini masih masuk" adalah
+  pertanyaan sengketa.
+- ⛔ **`shift_opened` sama sekali tidak ada sebelum ini.**
+  `cash/handlers/shifts.ts` tidak menyentuh `recordAuditEvent`, sementara
+  pasangannya (`shift_closed`) sudah punya sejak F3. Setiap shift dibuka tanpa
+  satu pun jejak.
+- ⛔ **`cash_variance_approved` adalah peristiwa TERSENDIRI**, bukan
+  `approver_user_id` yang kadang terisi pada `shift_closed`. `spec-f:293`
+  menamainya sendiri, dan alasannya operasional: laporan "siapa menyetujui
+  selisih kas siapa" harus dapat dijawab dengan menyaring satu jenis peristiwa,
+  tanpa pembacanya perlu tahu bahwa satu kolom bermakna berbeda tergantung
+  jenis barisnya. Ada test bahwa selisih di bawah ambang TIDAK menulisnya.
+- ⛔ **`device_revoked` membawa `before.revokedAt`.**
+  `UPDATE ... SET revoked_at = now()` tanpa syarat membuat pencabutan kedua
+  menimpa stempel yang pertama; tanpa `before`, audit tidak dapat membedakan
+  perangkat yang baru dicabut dari perangkat yang sudah lama dicabut lalu
+  diklik lagi. "Kapan perangkat ini berhenti dipercaya" adalah pertanyaan
+  sengketa.
+- ⛔ **Tidak ada bahan kredensial di jejak.** `device_provisioned` mencatat
+  kode, nama, dan platform — tidak pernah `token_hash`. Ada test yang
+  memindainya.
+- ⛔ **`data_exported` ditulis pada endpoint GET, dan itu disengaja.** Ekspor
+  tidak mengubah apa pun di sistem; yang berubah adalah **di mana datanya
+  berada** — sesudah itu ia ada di laptop seseorang, di luar seluruh kontrol
+  akses yang produk ini punya. Justru karena itu `spec-f:300`
+  mendaftarkannya, dan justru karena itu ia satu-satunya PEMBACAAN yang
+  meninggalkan jejak.
+- ⛔ **Yang dicatat LINGKUP ekspor, bukan isinya.** Menyalin CSV-nya ke `after`
+  menaruh omzet, nama kasir, dan seluruh angka penjualan ke tabel yang bertahan
+  lima tahun — menggandakan setiap data yang diekspor, di tempat yang tidak
+  seorang pun kira memuatnya. Ada test yang menolaknya.
+
+**⛔ Dua peristiwa yang TIDAK dibangun, dengan alasannya:**
+
+| Peristiwa | Kenapa |
+|---|---|
+| `shift_count_attempt` | Server hanya mencatat percobaan hitungan yang **berhasil** menutup shift. Percobaan yang ditolak (selisih melewati ambang tanpa penyetuju) dilempar SEBELUM `UPDATE`, jadi transaksinya di-rollback dan tidak meninggalkan apa pun — dan percobaan yang gagal justru yang `spec-d` ingin buktikan tidak dapat diulang diam-diam. Mencatatnya menuntut jalur tulis yang bertahan melewati rollback: perubahan rancangan, bukan satu baris. Percobaan yang berhasil sudah dijelaskan sepenuhnya oleh `shift_closed` |
+| `user_role_changed` | **Tidak ada endpointnya.** `updateUser` hanya menerima `name`/`email`/`isActive`; peran hanya dapat diberikan saat `createUser`. Merchant tidak dapat menaikkan kasir menjadi manajer outlet sama sekali — itu gap PRODUK, bukan gap audit |
+
+**Sisa 9 lubang:** `shift_count_attempt` · `cash_paid_in` · `cash_paid_out` ·
+`threshold_changed` · `vertical_profile_changed` · `user_role_changed` ·
+`peripheral_configured` · `support_session_started` ·
+`support_session_ended`. Tidak satu pun punya endpoint hari ini.
+
+**Assertion "lubang mana yang tersisa" dijadikan STRUKTURAL di dua tempat.**
+Versi pertamanya menyebut `shift_opened` sebagai lubang paling menonjol, dan ia
+merah beberapa jam kemudian saat peristiwa itu mulai dipancarkan. Test yang
+harus disunting setiap kali daftarnya menyusut akan disunting tanpa dibaca —
+dan saat FR-F6 akhirnya tertutup, yang tersisa adalah test yang menuntut
+lubangnya masih ada.
+
+**Verifikasi:** `typecheck` · `lint:ds` · `test:domain` 445 · `test:backoffice`
+403 · `test:server` 346 · `test:ordering` 184 · `test:kasir` 418 ·
+`test:sync-client` 102 · `test:dst` 14 · `test:sqlite-local` 8 ·
+`test:runtime` 3 · `test:oxlint-ds-adherence` 12 · `test:catalog` 177 ·
+`test:payment` 132 · `test:identity` 142 · `test:tenancy` 75 ·
+`test:isolation` 211 · `test:schema` 14.

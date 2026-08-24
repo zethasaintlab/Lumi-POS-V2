@@ -88,9 +88,18 @@ test('⛔ jarak ke FR-F6 DITURUNKAN, dan tidak memuat yang sudah dipancarkan', a
 
   // Ejaan yang berbeda BUKAN lubang.
   assert.equal(PERISTIWA_BELUM_DIPANCARKAN.includes('order_voided'), false);
-  // Yang benar-benar belum ada tetap disebut — dan `shift_opened` adalah yang
-  // paling menonjol: setiap shift dibuka, dan tidak satu pun tercatat.
-  assert.equal(PERISTIWA_BELUM_DIPANCARKAN.includes('shift_opened'), true);
+
+  // ⛔ Arah sebaliknya juga, dan assertion-nya STRUKTURAL — bukan daftar nama.
+  //
+  // Versi pertamanya menyebut `shift_opened` sebagai lubang yang "paling
+  // menonjol", dan ia merah beberapa jam kemudian saat peristiwa itu mulai
+  // dipancarkan. Test yang harus disunting setiap kali daftarnya menyusut akan
+  // disunting tanpa dibaca — dan saat FR-F6 akhirnya tertutup, yang tersisa
+  // adalah test yang menuntut lubangnya masih ada.
+  for (const nama of KUNCI_SPEC) {
+    const dipancarkan = adalahPeristiwaAudit(PETA_EJAAN_SPEC[nama] ?? nama);
+    assert.equal(PERISTIWA_BELUM_DIPANCARKAN.includes(nama), !dipancarkan, `${nama} salah golong`);
+  }
 });
 
 test('daftar spec dan daftar kode tidak saling menghapus', async () => {

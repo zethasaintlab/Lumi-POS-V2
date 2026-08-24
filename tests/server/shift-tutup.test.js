@@ -72,6 +72,19 @@ async function shift({ pemilik = null, saldoAwal = 100000, tanggal = '2026-08-10
   return id;
 }
 
+/** Baris audit bertipe tertentu pada satu shift. */
+async function auditRows(eventType, shiftId) {
+  await db.query('BEGIN');
+  await db.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const r = await db.query(
+    `SELECT actor_user_id, approver_user_id, reason_code, after
+       FROM audit_event WHERE event_type = $1 AND entity_id = $2`,
+    [eventType, shiftId]
+  );
+  await db.query('COMMIT');
+  return r.rows;
+}
+
 /** Satu baris `cash_movement` pada shift. */
 async function gerak(shiftId, { tipe = 'sale', delta = 50000, counterpart = 'sales_revenue' } = {}) {
   await db.query('BEGIN');
@@ -167,6 +180,39 @@ test('selisih besar dengan alasan dan penyetuju berhasil', async () => {
   assert.equal(b.difference, '-50000');
   assert.equal(b.butuhOtorisasi, true);
   assert.equal(b.approvedBy, base.user2.id);
+});
+
+test('⛔ selisih yang disetujui menulis cash_variance_approved TERSENDIRI', async () => {
+  // FR-F6 + `spec-f:293`. Peristiwa tersendiri, bukan `approver_user_id` yang
+  // kadang terisi pada `shift_closed`: laporan "siapa menyetujui selisih kas
+  // siapa" harus dapat dijawab dengan menyaring satu jenis peristiwa, tanpa
+  // pembacanya perlu tahu bahwa satu kolom bermakna berbeda tergantung jenis
+  // barisnya.
+  const id = await shift({ saldoAwal: 100000 });
+  const res = await tutup(
+    id,
+    { countedAmount: '50000', varianceReasonCode: 'kesalahan_hitung' },
+    { 'x-approver-id': base.user2.id }
+  );
+  assert.equal(res.statusCode, 200, res.body);
+
+  const rows = await auditRows('cash_variance_approved', id);
+  assert.equal(rows.length, 1);
+  // ⛔ DUA identitas, dan keduanya berbeda (FR-F7). CHECK di database
+  // menegakkannya juga.
+  assert.equal(rows[0].actor_user_id, base.user.id);
+  assert.equal(rows[0].approver_user_id, base.user2.id);
+  assert.notEqual(rows[0].actor_user_id, rows[0].approver_user_id);
+  assert.equal(rows[0].reason_code, 'kesalahan_hitung');
+  assert.equal(rows[0].after.difference, '-50000');
+});
+
+test('⛔ selisih DI BAWAH ambang tidak menulis cash_variance_approved', async () => {
+  // Peristiwa yang menyala untuk penutupan yang tidak menuntut siapa pun
+  // membuat laporan persetujuan penuh baris yang tidak ada persetujuannya.
+  const id = await shift({ saldoAwal: 100000 });
+  assert.equal((await tutup(id, { countedAmount: '100000' })).statusCode, 200);
+  assert.equal((await auditRows('cash_variance_approved', id)).length, 0);
 });
 
 test('⛔ penyetuju TIDAK boleh orang yang sama dengan yang menghitung', async () => {
