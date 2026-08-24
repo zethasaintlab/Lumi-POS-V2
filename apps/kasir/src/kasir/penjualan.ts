@@ -23,6 +23,7 @@ import { statusDiskon } from './diskon.ts';
 import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
+import { bersihkanKeranjangDi } from './keranjang-simpan.ts';
 import { bangunDokumenStruk } from '../cetak/dokumen.ts';
 import { labelMetode } from '../cetak/metode.ts';
 import { type HasilCetak, type PeripheralPort } from '../cetak/port.ts';
@@ -850,6 +851,17 @@ export async function simpanPenjualan({
     // satu pun error, dan yang membuat "mana yang lebih dulu" tidak dapat
     // dijawab justru di tempat yang paling membutuhkannya.
     await simpanHlc(tx, hlcValue);
+
+    // ⛔ KEP-21 — keranjang tersimpan dibersihkan DI DALAM transaksi ini.
+    //
+    // Membersihkannya sesudah commit meninggalkan jendela tempat perangkat
+    // dapat mati di antaranya, dan boot berikutnya memulihkan keranjang untuk
+    // penjualan yang SUDAH tersimpan dan SUDAH dibayar. Kasir yang tidak
+    // menyadarinya menagih pelanggan berikutnya dua kali — tanpa satu pun
+    // error di mana pun.
+    //
+    // Bentuk yang sama persis dengan alasan `simpanHlc` ada di sini.
+    await bersihkanKeranjangDi(tx);
 
     return { receiptNumber, sequence };
   });

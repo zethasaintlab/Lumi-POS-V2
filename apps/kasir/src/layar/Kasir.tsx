@@ -31,6 +31,7 @@ import { bacaProfilVertikal } from '../inventori/profil.ts';
 import { bacaHabis } from '../inventori/sold-out.ts';
 import { keputusanStok } from '../../../../packages/domain/src/profil-vertikal.ts';
 import { keranjangSekarang, langgananKeranjang, setelKeranjang } from '../kasir/simpanan.ts';
+import { pulihkanKeranjang, simpanKeranjang } from '../kasir/keranjang-simpan.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { Tombol } from '../Tombol.tsx';
@@ -76,11 +77,15 @@ export function Kasir() {
   const setKeranjang = (f: (k: typeof keranjang) => typeof keranjang) => setelKeranjang(f(keranjang));
   const [pilihan, setPilihan] = useState<{ item: ItemKatalog; daftar: DaftarModifier[] } | null>(null);
   /* ⛔ K-06/K-07 adalah MODE, bukan rute. `IA:§7` tidak memberi keduanya URL,
-     dan itu bukan kelalaian dokumen: keranjang hanya hidup di memori
-     (`kasir/simpanan.ts`), jadi `/bayar` akan menjadi alamat yang TIDAK
-     PERNAH dapat dipulihkan — memuat ulang di sana menampilkan layar
-     pembayaran untuk keranjang yang sudah hilang. Ditemukan oleh test yang
-     mengikat TABEL_RUTE ke IA §7, setelah saya sempat menambahkan rutenya. */
+     dan itu TETAP benar meski keranjang kini bertahan (KEP-21).
+
+     Alasannya berubah, kesimpulannya tidak. Dulu: keranjang hilang saat muat
+     ulang, jadi `/bayar` adalah alamat yang tidak pernah dapat dipulihkan.
+     Sekarang: keranjangnya pulih, tetapi memulihkan kasir LANGSUNG ke layar
+     pembayaran menempatkannya di depan angka yang harus ditagih tanpa ia
+     sempat memeriksa pesanan yang baru saja dipulihkan — dan pemulihan itu
+     justru yang menuntut diperiksa. K-03 adalah tempat pemeriksaan itu
+     terjadi. Dijaga test yang mengikat TABEL_RUTE ke IA §7. */
   const [membayar, setMembayar] = useState(false);
   /* FR-E4 — stok dan aturannya. Keduanya dibaca sekali saat layar dibuka;
      penjualan berikutnya menulis movement sendiri, jadi angkanya diperbarui
@@ -98,6 +103,14 @@ export function Kasir() {
      tidak punya keadaan yang berguna untuk dipulihkan lewat URL. */
   const [dialogKas, setDialogKas] = useState(false);
   const [pesanKas, setPesanKas] = useState<string | null>(null);
+  /* KEP-21 — keranjang yang bertahan melewati muat ulang.
+
+     ⛔ Penulisan baru dimulai SETELAH pemulihan selesai. Efek yang menulis
+     sejak render pertama akan menyimpan keranjang KOSONG lebih dulu — dan
+     karena keranjang kosong menghapus barisnya, ia menghapus persis apa yang
+     sedang dipulihkan. Urutannya yang menentukan, bukan keberadaan kodenya. */
+  const bolehSimpan = useRef(false);
+  const [dipulihkan, setDipulihkan] = useState(false);
   /* FR-B8 — diskon tingkat order. Ambangnya per outlet, dibaca dari perangkat
      supaya aturannya tetap berlaku offline; bawaan domain dipakai sampai
      baris outlet terbaca. */
@@ -114,7 +127,9 @@ export function Kasir() {
       const k = await bacaKonfigPerangkat(db);
       if (!hidup) return;
       setKonfig(k);
-      if (k) setShift(await shiftAktif(db, k.deviceId));
+      const s = k ? await shiftAktif(db, k.deviceId) : null;
+      if (!hidup) return;
+      setShift(s);
       // Harga diresolusi pada SEKARANG di layar. Saat order ditulis, ia
       // diresolusi ulang pada `occurred_at` (FR-H6) — keduanya sama selama
       // kasir tidak menahan keranjang melewati jadwal perubahan harga.
@@ -136,6 +151,19 @@ export function Kasir() {
         setStok(peta);
         setHabis(await bacaHabis(db, { tenantId: k.tenantId, outletId: k.outletId }));
       }
+      /* KEP-21 — keranjang dipulihkan SEBELUM layar dinyatakan siap, dan
+         sebelum penulisan diizinkan. Kasir yang sudah dapat menekan tombol
+         sementara pemulihan masih berjalan akan melihat pesanannya muncul
+         BELAKANGAN, di atas apa yang baru saja ia ketuk. */
+      if (s) {
+        const pulih = await pulihkanKeranjang(db, s.id);
+        if (!hidup) return;
+        if (pulih.status === 'dipulihkan') {
+          setelKeranjang(pulih.keranjang);
+          setDipulihkan(true);
+        }
+      }
+      bolehSimpan.current = true;
       if (hidup) setSiap(true);
     })();
     return () => {
@@ -155,6 +183,21 @@ export function Kasir() {
      React. Penanganannya (`dipindai`) baru terdefinisi di bawah, jadi ia
      dipanggil lewat ref: memindahkan `dipindai` ke atas berarti memindahkan
      `pilihVariation` dan seluruh keputusan stok bersamanya. */
+  /* KEP-21 — setiap perubahan keranjang ditulis ke perangkat.
+
+     ⛔ Kegagalannya DITELAN, dan itu disengaja. Keranjang tersimpan adalah
+     kenyamanan; disk penuh atau tabel yang belum bermigrasi tidak boleh
+     menghentikan penjualan yang sedang berjalan. Aturan yang sama dengan
+     `rekam()` di jalur telemetri (`ARCH:307`).
+
+     ⛔ TIDAK di-debounce. Ketukan yang hilang karena perangkat mati 200 ms
+     setelahnya adalah persis kasus yang fitur ini ada untuk menutupnya, dan
+     satu UPSERT satu baris jauh di bawah ambang yang terlihat kasir. */
+  useEffect(() => {
+    if (!bolehSimpan.current || !shift) return;
+    void simpanKeranjang(db, shift.id, keranjang, () => new Date()).catch(() => {});
+  }, [db, shift, keranjang]);
+
   const pindai = useRef<(kode: string) => void>(() => {});
   /* Penanda awal pengukuran latensi keranjang. `null` = tidak ada ketukan
      yang sedang diukur; lihat `pilihVariation`. */
@@ -357,6 +400,29 @@ export function Kasir() {
               onClick={() => setPesanStok(null)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') setPesanStok(null);
+              }}
+            >
+              Tutup
+            </span>
+          </p>
+        )}
+
+        {/* ⛔ KEP-21 — pemulihan DISEBUTKAN, tidak pernah diam-diam.
+
+            Keranjang yang muncul sendiri tanpa penjelasan terbaca seperti
+            pesanan pelanggan yang sedang berdiri di depan kasir, dan kasir
+            yang tidak tahu asalnya akan menjualnya kepada orang yang salah.
+            Ia dapat ditutup: peringatan yang menetap sepanjang shift berhenti
+            dibaca. */}
+        {dipulihkan && keranjang.baris.length > 0 && (
+          <p className="t-caption" role="status">
+            Pesanan ini dipulihkan dari sebelum aplikasi dimuat ulang. Periksa sebelum menagih.{' '}
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={() => setDipulihkan(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') setDipulihkan(false);
               }}
             >
               Tutup

@@ -994,3 +994,23 @@ test('struk mencetak SETIAP bagian pembayaran', async () => {
   assert.match(teks, /Tunai/);
   assert.match(teks, /Kembali/);
 });
+
+// ---------------------------------------------------------------------------
+// KEP-21 — keranjang tersimpan
+// ---------------------------------------------------------------------------
+
+test('⛔ keranjang tersimpan dibersihkan DI DALAM transaksi penjualan', async () => {
+  // Bentuk yang sama persis dengan alasan `simpanHlc` ada di dalam transaksi:
+  // pembersihan sesudah commit meninggalkan jendela tempat perangkat dapat
+  // mati di antaranya, dan boot berikutnya memulihkan keranjang untuk
+  // penjualan yang SUDAH tersimpan dan SUDAH dibayar. Kasir yang tidak
+  // menyadarinya menagih pelanggan berikutnya dua kali — tanpa satu pun error
+  // di mana pun.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+
+  const bersih = db.state.tulis.filter((t) => /DELETE FROM keranjang_lokal/.test(t.sql));
+  assert.equal(bersih.length, 1, 'keranjang tersimpan tidak dibersihkan sama sekali');
+  assert.equal(bersih[0].dalam, true, 'pembersihan berada di LUAR transaksi penjualan');
+});

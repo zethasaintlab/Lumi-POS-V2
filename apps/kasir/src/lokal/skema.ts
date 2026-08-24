@@ -85,6 +85,13 @@ export const TABEL_LOKAL_SAJA = [
   // table mengubah sidik jari skema, dan itu menuntut unduh ulang katalog di
   // setiap perangkat merchant untuk tiga boolean.
   'fitur_lokal',
+  // KEP-21 — keranjang yang bertahan melewati muat ulang. Murni lokal dan
+  // SENGAJA bukan raw table (alasan yang sama dengan `fitur_lokal`), dan
+  // sengaja bukan `order` berstatus `open`: menulis baris `order` berarti
+  // mengirimkannya ke server, dan order `open` yang tidak pernah dibayar
+  // muncul di laporan tanpa punya jalan penutupan. Berbagi order antar device
+  // saat offline adalah non-goal v1 yang dinyatakan.
+  'keranjang_lokal',
   'device_config',
   'skema_lokal',
   // Keduanya SENGAJA tidak didaftarkan: sesi kasir tidak punya padanan di

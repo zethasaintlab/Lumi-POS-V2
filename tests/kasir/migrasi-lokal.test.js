@@ -315,6 +315,32 @@ test('⛔ T5b tabel lokal BARU dibuat, meski sidik jari raw table tidak berubah'
   );
 });
 
+test('⛔ T5b SETIAP tabel lokal-saja dibuat saat hilang — mekanisme, bukan daftar', async () => {
+  // Test di atas menyebut `telemetry_local` dengan nama, dan itu benar untuk
+  // apa yang ia buktikan (indeksnya ikut). Yang TIDAK dijaganya adalah tabel
+  // lokal BERIKUTNYA: `jalankanDdl` hanya berjalan saat sidik jari raw table
+  // berubah, dan sidik jari itu tidak menghitung tabel lokal — jadi tabel
+  // lokal baru yang terlewat di sini adalah `no such table` PERMANEN di
+  // setiap perangkat yang sudah terpasang.
+  //
+  // Daftar tulisan tangan berhenti menjaga apa pun begitu ia dikosongkan
+  // sepotong-sepotong; yang dijaga di sini mekanismenya.
+  const { rencanaBuatLokalHilang } = await import(MIGRASI);
+  const { kolomPerTabel, TABEL_LOKAL_SAJA } = await import(SKEMA);
+  const kolom = kolomPerTabel(sql());
+
+  for (const tabel of TABEL_LOKAL_SAJA) {
+    const aktual = { ...kolom };
+    delete aktual[tabel];
+    const buat = rencanaBuatLokalHilang(sql(), aktual);
+    assert.ok(
+      buat.some((b) => new RegExp(`CREATE TABLE IF NOT EXISTS "?${tabel}"?`, 'i').test(b)),
+      `${tabel} tidak dibuat saat hilang — ia akan "no such table" permanen ` +
+        'di setiap perangkat yang sudah terpasang'
+    );
+  }
+});
+
 test('⛔ T5b tabel lokal yang SUDAH ADA tidak dibuat ulang', async () => {
   const { rencanaBuatLokalHilang } = await import(MIGRASI);
   const { kolomPerTabel } = await import(SKEMA);

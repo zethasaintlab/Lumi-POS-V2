@@ -1470,3 +1470,44 @@ sesingkat apa pun; rinciannya boleh hidup di berkas terpisah.
 - **`bank_deposit` tetap tidak dibangun** (`spec-d:339` masih terbuka).
   Sementara itu setoran dicatat `paid_out` beralasan `setor_ke_bank` dengan
   `counterpart_type = 'bank'`, supaya barisnya dapat ditemukan lagi kelak.
+
+### KEP-21 keranjang yang bertahan (24 Agustus 2026)
+
+Tabel murni lokal `keranjang_lokal` (satu baris, `id = 'kini'`),
+`apps/kasir/src/kasir/keranjang-simpan.ts`, efek tulis + pemulihan di K-03.
+
+⛔ **Kalau kamu menyentuh jalur penjualan, `bersihkanKeranjangDi(tx)` harus
+tetap DI DALAM `db.transaction`.** Memindahkannya ke luar membuat perangkat
+yang mati di antara commit dan pembersihan memulihkan keranjang untuk
+penjualan yang sudah dibayar — kasir menagih pelanggan berikutnya dua kali,
+tanpa satu pun error. Ada test yang menegakkannya.
+
+⛔ **Tabel lokal baru wajib masuk `TABEL_LOKAL_SAJA`.** `jalankanDdl` hanya
+berjalan saat sidik jari raw table berubah, dan sidik jari itu tidak
+menghitung tabel lokal — tabel lokal yang terlewat adalah `no such table`
+permanen di setiap perangkat yang sudah terpasang. Penjaga
+`⛔ T5b SETIAP tabel lokal-saja dibuat saat hilang` kini menyusuri seluruh
+daftar, bukan menyebut satu nama.
+
+⛔ **Bentuk SQL-nya belum dijalankan di BROWSER.** `INSERT ... ON CONFLICT(id)
+DO UPDATE` diterima `node:sqlite`; `ON CONFLICT(id)` tanpa aksi pernah DITOLAK
+`wa-sqlite` (8 Agustus 2026). Bentuk ini berbeda dan seharusnya aman, tetapi
+aturannya tetap berlaku — jalankan `apps/kasir/harness.html` sebelum
+mempercayainya di perangkat merchant.
+
+**Batas yang dinyatakan:**
+
+- **Satu keranjang per perangkat**, bukan per pelanggan. Beberapa pesanan
+  berjalan bersamaan (table management) adalah v1.1.
+- **Harga TIDAK dibekukan di keranjang tersimpan.** Baris menyimpan
+  `unitPrice` hasil resolusi saat item ditambahkan; penjualan meresolusi ulang
+  pada `occurred_at` (FR-H6). Keranjang yang dipulihkan setelah jadwal
+  perubahan harga lewat karena itu menampilkan harga lama dan menagih harga
+  baru — selisihnya ditangani jalur `has_calculation_variance` yang sudah ada,
+  tetapi layarnya tidak menyebutkannya. Kalau ini pernah mengganggu merchant,
+  yang dibutuhkan adalah pembacaan ulang katalog saat pemulihan, bukan
+  pembekuan harga.
+- **Produk yang diarsipkan atau ditandai habis setelah keranjang disimpan
+  tetap muncul saat dipulihkan.** Ia akan ditolak (atau diperingatkan) di jalur
+  penjualan seperti biasa; yang belum ada adalah penandaan di layar saat
+  pemulihan.

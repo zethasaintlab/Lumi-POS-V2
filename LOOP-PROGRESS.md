@@ -2741,3 +2741,105 @@ Seluruh suite hijau. `test:server` 392 · `test:ordering` 192 · `test:catalog`
 **Sisa 4 lubang FR-F6, dan tidak satu pun punya fiturnya:**
 `shift_count_attempt` · `peripheral_configured` · `support_session_started` ·
 `support_session_ended`.
+
+---
+
+## Task 35 — KEP-21 keranjang yang bertahan (24 Agustus 2026) ✅
+
+Sampai sekarang keranjang K-03 hanya hidup di memori modul
+(`kasir/simpanan.ts`). Tab yang ter-refresh, tablet yang mati baterai, atau
+browser yang membuang tab di belakang membuat kasir memasukkan ulang seluruh
+pesanan **di depan pelanggan yang sedang menunggu**. Bukan kehilangan uang —
+tetapi kegagalan yang paling terlihat pelanggan.
+
+### ⛔ Jalan yang TIDAK diambil, dan kenapa
+
+`ERD` menyiapkan `order.status = 'open'` + `owned_by_device_id` untuk ini
+(KEP-21). Jalan itu **tidak** dipakai: menulis baris `order` berarti
+mengirimkannya ke server, dan order `open` yang tidak pernah dibayar muncul di
+laporan sambil menuntut jalan penutupan yang belum ada. Ia juga tidak
+dibutuhkan v1 — **berbagi order antar device saat offline adalah non-goal yang
+DINYATAKAN** (`PRD` § 4, ditunda v1.1). Masalah yang sebenarnya ada adalah
+"keranjang perangkat INI hilang saat dimuat ulang", dan untuk itu tabel lokal
+sudah cukup.
+
+Yang dibangun: tabel murni lokal `keranjang_lokal` (satu baris, kunci
+konstan), `apps/kasir/src/kasir/keranjang-simpan.ts`, efek tulis + pemulihan
+di K-03.
+
+### Keputusan yang mengikat kodenya
+
+- ⛔ **Pembersihan ada DI DALAM transaksi penjualan.** Membersihkannya sesudah
+  commit meninggalkan jendela tempat perangkat dapat mati di antaranya, dan
+  boot berikutnya memulihkan keranjang untuk penjualan yang **sudah tersimpan
+  dan sudah dibayar** — kasir yang tidak menyadarinya menagih pelanggan
+  berikutnya dua kali, tanpa satu pun error. Bentuk yang sama persis dengan
+  alasan `simpanHlc` ada di dalam transaksi.
+- ⛔ **`JSON.stringify` MELEMPAR pada `bigint`,** dan keranjang berdiskon punya
+  dua (`minta.nilai`, `nominalDisetujui`). Tanpa replacer, keranjang berdiskon
+  adalah **satu-satunya** yang tidak dapat disimpan — persis yang paling mahal
+  dimasukkan ulang, karena ia menuntut PIN manajer lagi. Ditulis sebagai
+  string, dibaca kembali menjadi `bigint`; `number` **ditolak** saat memulihkan
+  (float tidak pernah masuk jalur uang).
+- ⛔ **Keranjang milik shift LAIN tidak pernah dipulihkan, dan barisnya
+  dibuang.** Kasir berikutnya yang menemukan pesanan pelanggan kemarin di
+  layarnya akan menjualnya kepada orang yang salah.
+- ⛔ **Penulisan baru dimulai SETELAH pemulihan selesai.** Efek yang menulis
+  sejak render pertama menyimpan keranjang kosong lebih dulu — dan karena
+  keranjang kosong menghapus barisnya, ia menghapus persis apa yang sedang
+  dipulihkan. Urutannya yang menentukan, bukan keberadaan kodenya.
+- ⛔ **Pemulihan DISEBUTKAN di layar.** Keranjang yang muncul sendiri tanpa
+  penjelasan terbaca seperti pesanan pelanggan yang sedang berdiri di depan
+  kasir. Dapat ditutup: peringatan yang menetap sepanjang shift berhenti
+  dibaca.
+- ⛔ **Isi yang rusak DIBUANG, tidak melempar.** Keranjang adalah kenyamanan;
+  satu baris rusak tidak boleh membuat aplikasi kasir gagal boot. Diurai dengan
+  pemeriksaan bentuk, bukan `JSON.parse` lalu dipercaya — barisnya ditulis
+  versi aplikasi yang mungkin berbeda dari yang membacanya.
+- ⛔ **Penyetuju tanpa nominalnya membuang diskonnya**, bukan memulihkannya
+  setengah. Yang manajer setujui adalah ANGKANYA.
+- **Kegagalan tulis DITELAN** (`ARCH:307`, aturan yang sama dengan `rekam()`):
+  disk penuh tidak boleh menghentikan penjualan yang sedang berjalan.
+- **K-06/K-07 TETAP tanpa URL.** Alasannya berubah, kesimpulannya tidak:
+  memulihkan kasir langsung ke layar pembayaran menempatkannya di depan angka
+  yang harus ditagih tanpa sempat memeriksa pesanan yang baru dipulihkan — dan
+  pemulihan itu justru yang menuntut diperiksa.
+- **`simpanan.ts` tetap memori-saja.** Ia dipanggil dari render React dan harus
+  sinkron; menyembunyikan I/O di balik setter sinkron menghasilkan kegagalan
+  tulis yang tidak dapat ditangani siapa pun.
+
+### Penjaga migrasi diubah dari DAFTAR menjadi MEKANISME
+
+`⛔ T5b tabel lokal yang hilang dibuat` menyebut `telemetry_local` dengan nama.
+Itu benar untuk apa yang ia buktikan (indeksnya ikut), tapi ia tidak menjaga
+tabel lokal BERIKUTNYA — dan `jalankanDdl` hanya berjalan saat sidik jari raw
+table berubah, sementara sidik jari itu tidak menghitung tabel lokal. Tabel
+lokal baru yang terlewat adalah `no such table` **permanen** di setiap
+perangkat yang sudah terpasang. Test baru menyusuri seluruh `TABEL_LOKAL_SAJA`.
+Pola yang sama dengan penjaga navigasi di Task 33.
+
+### Sabotase
+
+Empat, semuanya merah: pembersihan dipindah ke luar transaksi · penjaga shift
+dimatikan · replacer bigint dihapus · `keranjang_lokal` dilepas dari
+`TABEL_LOKAL_SAJA`.
+
+### Verifikasi
+
+`test:kasir` 450 · `test:domain` 468 · `test:backoffice` 419 ·
+`test:sync-client` 103 · `test:sqlite-local` 8 · `test:dst` 14 ·
+`test:runtime` 3 · `test:oxlint-ds-adherence` 12. `lint:ds` bersih; kasir build.
+Suite server tidak tersentuh perubahan ini (tidak ada berkas server yang
+diubah).
+
+### Yang TIDAK ikut ditutup
+
+**X6 tetap tidak dapat dibangun.** Ia menuntut jejak "item ditambah lalu
+dihapus berkali-kali", dan keranjang yang bertahan hanya menyimpan
+KEADAANNYA — bukan riwayat perubahannya. Menyimpan riwayatnya menuntut
+telemetri yang memuat nama produk, yang `ARCH:309` larang. Batas yang
+dinyatakan, tidak berubah.
+
+**Catatan dokumen:** `CLAUDE.md` menulis FR-A8 (import katalog) "sengaja belum
+digarap". Itu **stale** — `catalog/handlers/import.ts`, `tests/catalog/import.test.js`,
+dan layar impor back-office semuanya ada. Barisnya dikoreksi.

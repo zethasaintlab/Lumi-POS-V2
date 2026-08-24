@@ -220,6 +220,46 @@ CREATE TABLE fitur_lokal (
   disegarkan_pada TEXT NOT NULL
 );
 
+-- KEP-21 — keranjang K-03 yang BERTAHAN melewati muat ulang.
+--
+-- Sampai sekarang keranjang hanya hidup di memori modul
+-- (`apps/kasir/src/kasir/simpanan.ts`): tab yang ter-refresh, tablet yang mati
+-- baterai, atau browser yang membuang tab di belakang membuat kasir memasukkan
+-- ulang seluruh pesanan di depan pelanggan yang sedang menunggu.
+--
+-- ⛔ Ini BUKAN `order` berstatus `open`, dan itu keputusan.
+--
+-- `ERD` menyiapkan `order.status = 'open'` + `owned_by_device_id` untuk
+-- keranjang yang bertahan, tapi menulis baris `order` berarti mengirimkannya
+-- ke server — dan order `open` yang tidak pernah dibayar lalu muncul di
+-- laporan, menuntut jalan penutupan yang belum ada. Ia juga tidak dibutuhkan
+-- v1: berbagi order antar device saat offline adalah non-goal yang DINYATAKAN
+-- (`PRD` § 4, ditunda ke v1.1). Yang dipecahkan di sini hanya "keranjang
+-- perangkat INI hilang saat dimuat ulang", dan untuk itu tabel lokal cukup.
+--
+-- ⛔ SENGAJA bukan raw table, alasan yang sama dengan `fitur_lokal`: sidik
+-- jari skema yang berubah menuntut unduh ulang katalog di setiap perangkat.
+--
+-- ⛔ SATU baris, dan `id` selalu 'kini'. Perangkat ini punya satu keranjang
+-- yang sedang berjalan; primary key konstan membuat "simpan keranjang"
+-- menjadi satu UPSERT yang tidak dapat meninggalkan baris yatim, dan membuat
+-- mustahil ada dua keranjang yang keduanya mengaku sedang berjalan.
+--
+-- ⛔ `shift_id` disimpan supaya keranjang milik shift yang SUDAH DITUTUP tidak
+-- pernah bangkit. Kasir berikutnya yang membuka shift baru dan menemukan
+-- pesanan pelanggan kemarin di layarnya akan menjualnya kepada orang yang
+-- salah.
+--
+-- `isi` adalah JSON `Keranjang` apa adanya (baris + modifier + diskon).
+-- Bentuknya milik klien sepenuhnya dan tidak pernah dikirim ke mana pun, jadi
+-- ia tidak menuntut kolom per-field maupun kesepakatan dengan skema server.
+CREATE TABLE keranjang_lokal (
+  id TEXT PRIMARY KEY NOT NULL,
+  shift_id TEXT NOT NULL,
+  isi TEXT NOT NULL,
+  diperbarui_pada TEXT NOT NULL
+);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.
