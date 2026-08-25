@@ -29,6 +29,13 @@ export interface MetodeRingkas {
   jumlah: number;
 }
 
+export interface PenjualanOutletRingkas {
+  outletId: string;
+  outletNama: string | null;
+  omzetBersih: string;
+  jumlahTransaksi: number;
+}
+
 export interface RingkasanHarian {
   tanggal: string;
   outletId: string | null;
@@ -36,6 +43,8 @@ export interface RingkasanHarian {
   jumlahTransaksi: number;
   rataRataPerTransaksi: string | null;
   perMetode: MetodeRingkas[];
+  /** `null` saat satu outlet diminta — rinciannya akan mengulang totalnya. */
+  perOutlet: PenjualanOutletRingkas[] | null;
   tren: {
     deltaPersen: number | null;
     arah: 'naik' | 'turun' | 'datar';
@@ -207,3 +216,32 @@ export const PESAN_METODE_KOSONG = 'Belum ada pembayaran yang tercatat hari ini.
  */
 export const CATATAN_ANTREAN =
   'Angka ini dari penjualan yang sudah sampai ke server. Perangkat yang sedang offline belum terhitung di sini.';
+
+export interface BarisOutlet {
+  kunci: string;
+  nama: string;
+  nominal: string;
+  jumlah: string;
+}
+
+/**
+ * Rincian per outlet, siap dirender — AC FR-G6 keempat.
+ *
+ * ⛔ `null` (satu outlet diminta) dan larik KOSONG diperlakukan sama: tidak ada
+ * yang dirender. Keduanya berarti "tidak ada rincian yang menambah apa pun" —
+ * yang pertama karena rinciannya akan mengulang totalnya, yang kedua karena
+ * belum ada satu pun transaksi di seluruh cabang, dan angka nol itu sudah
+ * tertera di atasnya.
+ *
+ * ⛔ Outlet tanpa nama TIDAK ditampilkan sebagai kosong. Baris omzet tanpa
+ * label adalah angka yang tidak dapat ditindaklanjuti siapa pun.
+ */
+export function barisOutlet(perOutlet: readonly PenjualanOutletRingkas[] | null): BarisOutlet[] {
+  if (perOutlet === null) return [];
+  return perOutlet.map((o) => ({
+    kunci: o.outletId,
+    nama: o.outletNama ?? 'Outlet tidak dikenal',
+    nominal: rupiah(o.omzetBersih),
+    jumlah: o.jumlahTransaksi === 1 ? '1 transaksi' : `${o.jumlahTransaksi} transaksi`,
+  }));
+}

@@ -11,6 +11,7 @@ import {
 } from '../perlu/m02.ts';
 import {
   barisMetode,
+  barisOutlet,
   pesanLayar,
   rataRataTampil,
   tanggalTampil,
@@ -71,6 +72,9 @@ export function Ringkasan({
   const pesan = pesanLayar(keadaan);
   const tren = data === null ? null : trenTampil(data.tren);
   const metode = data === null ? [] : barisMetode(data.perMetode);
+  // AC FR-G6 keempat. Kosong saat satu outlet diminta — rinciannya akan
+  // mengulang angka yang sudah tertera di atasnya.
+  const outletBaris = data === null ? [] : barisOutlet(data.perOutlet);
   // ⛔ `null` (belum/ gagal dimuat) dan `0` (tidak ada temuan) sama-sama
   // menghasilkan bagian yang tidak tampil, dan itu benar untuk keduanya:
   // `spec-g:245` melarang bagiannya muncul tanpa temuan, dan bagian yang
@@ -175,6 +179,30 @@ export function Ringkasan({
                 )}
               </div>
             </Card>
+
+            {/* AC FR-G6 keempat — "ringkasan agregat dengan rincian per
+                outlet dapat dibuka". Ia tidak dirender saat satu outlet sudah
+                dipilih; angkanya akan sama persis dengan yang di atas. */}
+            {outletBaris.length > 0 && (
+              <Card>
+                <div className="card-pad stack" style={{ gap: 'var(--space-2)' }}>
+                  <div className="t-caption">Per outlet</div>
+                  {outletBaris.map((o) => (
+                    <div
+                      key={o.kunci}
+                      className="row"
+                      style={{ justifyContent: 'space-between', gap: 'var(--space-3)' }}
+                    >
+                      <span className="t-body-md">{o.nama}</span>
+                      <span className="stack" style={{ alignItems: 'flex-end', gap: 0 }}>
+                        <span className="t-body-md num">{o.nominal}</span>
+                        <span className="t-caption">{o.jumlah}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
 
             {/* ⛔ Muncul HANYA bila ada temuan — `spec-g:245`, acceptance
                 criteria harfiah. Maksimal tiga (`IA:373`), dan jumlah PENUHNYA

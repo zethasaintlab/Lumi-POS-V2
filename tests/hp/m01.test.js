@@ -191,3 +191,37 @@ test('⛔ catatan batas menyatakan bahwa perangkat offline BELUM terhitung', asy
   assert.match(CATATAN_ANTREAN, /offline/i);
   assert.match(CATATAN_ANTREAN, /belum terhitung/i);
 });
+
+// ------------------------------------------------------------- per outlet --
+
+test('⛔ rincian per outlet TIDAK dirender saat satu outlet diminta', async () => {
+  // Server mengirim `null` di sana; rinciannya akan mengulang angka yang sudah
+  // tertera di atasnya, dan pengulangan itu membuat pembacanya mencari
+  // perbedaan yang tidak ada.
+  const { barisOutlet } = await import(M01);
+  assert.deepEqual(barisOutlet(null), []);
+  assert.deepEqual(barisOutlet([]), []);
+});
+
+test('rincian per outlet membawa nama, nominal, dan katanya', async () => {
+  const { barisOutlet } = await import(M01);
+  const baris = barisOutlet([
+    { outletId: 'o1', outletNama: 'Cabang Dago', omzetBersih: '1847000', jumlahTransaksi: 1 },
+    { outletId: 'o2', outletNama: 'Cabang Riau', omzetBersih: '900000', jumlahTransaksi: 12 },
+  ]);
+  assert.equal(baris[0].nama, 'Cabang Dago');
+  assert.equal(baris[0].nominal, 'Rp 1.847.000');
+  assert.equal(baris[0].jumlah, '1 transaksi');
+  assert.equal(baris[1].jumlah, '12 transaksi');
+});
+
+test('⛔ outlet tanpa nama tidak menjadi baris omzet tanpa label', async () => {
+  // Angka omzet yang tidak dapat ditindaklanjuti siapa pun lebih buruk
+  // daripada baris yang menyebut dirinya tidak dikenal.
+  const { barisOutlet } = await import(M01);
+  const baris = barisOutlet([
+    { outletId: 'o1', outletNama: null, omzetBersih: '1000', jumlahTransaksi: 1 },
+  ]);
+  assert.ok(baris[0].nama.trim().length > 0);
+  assert.match(baris[0].nama, /tidak dikenal/i);
+});

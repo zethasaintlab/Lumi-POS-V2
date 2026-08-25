@@ -3655,3 +3655,75 @@ dan `lint:ds` bersih; `vite build` aplikasi HP berhasil.
 **AC FR-G6 keempat masih terbuka** — "multi-outlet: ringkasan agregat dengan
 rincian per outlet dapat dibuka". Agregatnya ada; rincian per outlet di dalam
 satu respons belum.
+
+---
+
+## Task 45 — FR-G6 AC keempat: rincian per outlet (25 Agustus 2026) ✅
+
+*"Multi-outlet: ringkasan agregat dengan rincian per outlet dapat dibuka"* —
+satu-satunya acceptance criteria FR-G6 yang masih terbuka setelah Task 42–44.
+
+### Keputusan yang mengikat kode
+
+- ⛔ **Yang menghitung tetap `posisiPenjualan`, per kelompok** — bukan
+  `GROUP BY … SUM` di SQL. Definisi omzet hidup di satu tempat, dan ada penjaga
+  yang menolak `SUM(...)` atas tabel `"order"` di berkas mana pun selain itu.
+  Rincian per outlet yang menjumlahkan sendiri akan menyimpang dari totalnya
+  tepat pada order yang dibatalkan, dan owner yang menjumlahkan barisnya lalu
+  mendapat angka lain dari yang tertera di atas tidak punya cara memutuskan
+  mana yang benar. Testnya menjumlahkan barisnya dan membandingkannya dengan
+  `omzetBersih`.
+- ⛔ **DUA query, bukan satu per outlet.** Merchant dapat punya dua puluh
+  outlet; memanggil `ambilPenjualan` sekali per outlet berarti empat puluh
+  query untuk satu layar. Barisnya diambil sekali dengan `outlet_id` ikut, lalu
+  dikelompokkan di JS.
+- ⛔ **Refund menempel pada outlet ORDER-nya.** `refund` tidak punya
+  `outlet_id`; ia diambil lewat JOIN. Refund yang jatuh ke outlet yang salah
+  membuat satu cabang terlihat merugi dan satu terlihat untung, keduanya
+  sebesar nilai yang sama.
+- ⛔ **Pengelompokan ini bergantung pada order PEMBATAL berbagi outlet dengan
+  aslinya.** `posisiPenjualan` menyimpulkan sebuah order dibatalkan dari adanya
+  pembatal **di dalam himpunan yang diberikan**; memecah himpunan per outlet
+  hanya benar selama keduanya sekelompok. Itu benar hari ini karena `cancel.ts`
+  menyalin `outlet_id` dari baris asli lewat `INSERT … SELECT`, bukan
+  menerimanya dari klien. Ketergantungannya ditulis sebagai komentar dan
+  diuji — kalau kelak pembatalan lintas-outlet menjadi mungkin, rincian ini
+  akan diam-diam menghitung order batal sebagai omzet di satu cabang dan
+  mengurangkannya di cabang lain.
+- ⛔ **`perOutlet: null` saat `outlet_id` DISEBUT**, bukan larik berisi satu
+  baris. Rincian dari satu outlet mengulang angka yang sudah tertera di
+  atasnya, dan pengulangan itu membuat pembacanya mencari perbedaan yang tidak
+  ada.
+- ⛔ **Outlet TANPA transaksi tidak muncul sebagai baris nol.** Dua puluh baris
+  "Rp 0" mengubur dua yang berisi, dan layar 390px hanya memuat beberapa baris.
+- **Diurutkan omzet TERBESAR lebih dulu**, bukan abjad — yang owner cari pukul
+  23:00 adalah cabang yang paling banyak bergerak.
+- **Dua kolom saja** (omzet bersih, jumlah transaksi). Rincian lengkap per
+  outlet adalah laporan back-office.
+
+### Masalah + solusinya
+
+Satu test gagal: ekspektasi saya, bukan kodenya. Order PEMBATAL harus
+berstatus `voided`; helper test memakai bawaan `closed`, jadi pembatalnya
+sendiri terhitung sebagai omzet. Dibaca dari test void yang sudah ada, bukan
+ditebak.
+
+### Sabotase
+
+Refund dikelompokkan ke outlet pertama alih-alih outlet ordernya → merah.
+
+### Verifikasi
+
+Seluruh suite hijau, berurutan: `test:domain` 506 · `test:kasir` 494 ·
+`test:server` 476 · `test:backoffice` 430 · `test:isolation` 211 ·
+`test:ordering` 193 · `test:catalog` 177 · `test:identity` 156 ·
+`test:payment` 132 · `test:sync-client` 103 · `test:tenancy` 75 · **`test:hp`
+49** · `test:schema` 14 · `test:dst` 14 · `test:oxlint-ds-adherence` 12 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3. `typecheck`
+dan `lint:ds` bersih; `vite build` aplikasi HP berhasil.
+
+**FR-G6 tertutup penuh** — keempat acceptance criteria yang dapat dibuktikan
+tanpa perangkat. Yang kelima (*"render < 2 detik pada koneksi seluler"*)
+menuntut pengukuran di jaringan sungguhan, sejajar dengan gate F4 bagian
+pertama: tidak dapat ditutup dari sini, dan menandainya selesai adalah
+kebohongan yang akan ditemukan merchant.

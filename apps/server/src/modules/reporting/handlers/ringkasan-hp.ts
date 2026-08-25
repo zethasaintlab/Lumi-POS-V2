@@ -1,5 +1,9 @@
 import type { PoolClient } from '../../../db.ts';
-import { ambilPenjualan, ambilPembayaran } from '../../ordering/index.ts';
+import {
+  ambilPenjualan,
+  ambilPembayaran,
+  ambilPenjualanPerOutlet,
+} from '../../ordering/index.ts';
 import {
   rataRataPerTransaksi,
   tanggalPembanding,
@@ -43,6 +47,13 @@ export interface MetodeRingkas {
   jumlah: number;
 }
 
+export interface PenjualanOutletRingkas {
+  outletId: string;
+  outletNama: string | null;
+  omzetBersih: string;
+  jumlahTransaksi: number;
+}
+
 export interface RingkasanHarian {
   tanggal: string;
   outletId: string | null;
@@ -52,6 +63,14 @@ export interface RingkasanHarian {
   /** `null` = belum ada transaksi sama sekali. Bukan "Rp 0 per transaksi". */
   rataRataPerTransaksi: string | null;
   perMetode: MetodeRingkas[];
+  /**
+   * AC FR-G6 keempat — rincian per outlet.
+   *
+   * ⛔ `null` saat `outlet_id` DISEBUT, bukan larik berisi satu baris. Rincian
+   * dari satu outlet mengulang angka yang sudah tertera di atasnya, dan
+   * pengulangan itu membuat pembacanya mencari perbedaan yang tidak ada.
+   */
+  perOutlet: PenjualanOutletRingkas[] | null;
   tren: {
     deltaPersen: number | null;
     arah: Tren['arah'];
@@ -84,6 +103,20 @@ export async function ambilRingkasanHarian(
   const bayar = await ambilPembayaran(client, { from: tanggal, to: tanggal, outletId });
   const rata = rataRataPerTransaksi(omzetHariIni, hariIni.jumlahTransaksi);
 
+  // ⛔ Hanya saat SELURUH outlet diminta. Lihat catatan pada `perOutlet`.
+  // ⛔ Hanya dua kolom yang ikut — omzet bersih dan jumlah transaksi. Rincian
+  // lengkap per outlet adalah laporan back-office; layar 390px yang memuat
+  // tujuh kolom × dua puluh baris adalah tabel yang tidak dapat dibaca.
+  const perOutlet =
+    outletId === null
+      ? (await ambilPenjualanPerOutlet(client, { from: tanggal, to: tanggal })).map((o) => ({
+          outletId: o.outletId,
+          outletNama: o.outletNama,
+          omzetBersih: o.omzetBersih,
+          jumlahTransaksi: o.jumlahTransaksi,
+        }))
+      : null;
+
   return {
     tanggal,
     outletId,
@@ -98,6 +131,7 @@ export async function ambilRingkasanHarian(
       total: m.totalDiterima,
       jumlah: m.jumlahTransaksi,
     })),
+    perOutlet,
     tren: {
       deltaPersen: tren.deltaPersen,
       arah: tren.arah,

@@ -4948,6 +4948,15 @@ paths:
         "Rp 0 per transaksi" -- yang kedua mengaku ada transaksi bernilai nol.
 
 
+        ⛔ `perOutlet` (AC FR-G6 keempat) bernilai `null` saat `outlet_id`
+        DISEBUT, bukan larik berisi satu baris -- rincian dari satu outlet
+        mengulang angka yang sudah tertera di atasnya, dan pengulangan itu
+        membuat pembacanya mencari perbedaan yang tidak ada. Outlet tanpa
+        transaksi tidak muncul sebagai baris nol. Barisnya dihitung
+        `posisiPenjualan` yang sama dengan totalnya, jadi menjumlahkannya
+        selalu menghasilkan `omzetBersih`.
+
+
         Uang selalu STRING: `bigint` tidak dapat melewati JSON, dan `Number`
         membuang presisi di atas 2^53.
       parameters:

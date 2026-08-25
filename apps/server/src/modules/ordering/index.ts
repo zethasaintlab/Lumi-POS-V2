@@ -25,7 +25,7 @@ import { createCleanupHandlers } from './handlers/cleanup.ts';
  * penjaga `satu-sumber-omzet` ada justru untuk mencegah itu. Yang diekspor
  * karena itu FUNGSINYA, lewat permukaan publik modul (invariant #4).
  */
-export { ambilPenjualan } from './handlers/reports.ts';
+export { ambilPenjualan, ambilPenjualanPerOutlet } from './handlers/reports.ts';
 export { ambilProduk, tampilkanKuantitas } from './handlers/reports-produk.ts';
 // FR-G6 — ringkasan HP membutuhkan rincian per metode, dan `reporting` tidak
 // boleh menyentuh tabel `payment` langsung (invariant #4).

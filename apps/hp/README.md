@@ -64,9 +64,11 @@ Aplikasi ketiga, lahir 24 Agustus 2026. `IA:§4`.
   dari back-office", dan yang dipilih adalah omzet per rentang — angka yang
   sama dengan B-16. Rincian per produk, per kasir, dan ekspor tetap di laptop;
   menyalin sembilan layar ke 390px menghasilkan navigasi yang `IA:229` tolak.
-- **AC FR-G6 keempat belum tertutup** — "multi-outlet: ringkasan agregat dengan
-  rincian per outlet dapat dibuka". Agregatnya ada; rincian per outlet di dalam
-  satu respons belum.
+- **Rincian per outlet hanya dua kolom** — omzet bersih dan jumlah transaksi.
+  Rincian lengkap per outlet adalah laporan back-office; layar 390px yang
+  memuat tujuh kolom × dua puluh baris adalah tabel yang tidak dapat dibaca.
+  Outlet tanpa transaksi tidak muncul sebagai baris nol: dua puluh baris "Rp 0"
+  mengubur dua yang berisi.
 
 ## Menjalankan
 

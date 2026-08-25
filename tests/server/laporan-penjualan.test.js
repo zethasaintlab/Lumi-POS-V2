@@ -583,3 +583,105 @@ test('outlet yang DIARSIPKAN tidak membuat "hari ini" ambigu', async () => {
   });
   assert.equal(res.statusCode, 200, res.body);
 });
+
+// ---------------------------------------------------------------------------
+// FR-G6 AC keempat — rincian per outlet
+// ---------------------------------------------------------------------------
+
+test('⛔ perOutlet null saat outlet_id DISEBUT, bukan larik satu baris', async () => {
+  // Rincian dari satu outlet mengulang angka yang sudah tertera di atasnya,
+  // dan pengulangan itu membuat pembacanya mencari perbedaan yang tidak ada.
+  await buatOrder({ businessDate: '2026-08-24', total: 100000 });
+  const b = (await ringkasan('2026-08-24', `&outlet_id=${base.outlet.id}`)).json();
+  assert.equal(b.perOutlet, null);
+});
+
+test('⛔ rincian per outlet MENJUMLAH menjadi totalnya', async () => {
+  // Owner yang menjumlahkan barisnya lalu mendapat angka lain dari yang
+  // tertera di atas tidak punya cara memutuskan mana yang benar. Keduanya
+  // dihitung `posisiPenjualan` yang sama, jadi ini benar menurut konstruksi —
+  // dan test ini yang menahannya tetap begitu.
+  const kedua = await buatOutlet({ nama: 'Cabang Rincian' });
+  await buatOrder({ businessDate: '2026-08-24', total: 120000 });
+  await buatOrder({ businessDate: '2026-08-24', total: 80000, outletId: kedua });
+
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.perOutlet.length, 2, JSON.stringify(b.perOutlet));
+
+  const jumlah = b.perOutlet.reduce((a, o) => a + BigInt(o.omzetBersih), 0n);
+  assert.equal(jumlah.toString(), b.omzetBersih);
+  assert.equal(
+    b.perOutlet.reduce((a, o) => a + o.jumlahTransaksi, 0),
+    b.jumlahTransaksi
+  );
+});
+
+test('⛔ order yang DIBATALKAN keluar dari rincian outletnya juga', async () => {
+  // Pengelompokan per outlet hanya benar selama pembatal berada di outlet yang
+  // sama; kalau tidak, order batal terhitung sebagai omzet di satu cabang dan
+  // dikurangkan di cabang lain.
+  const asli = await buatOrder({ businessDate: '2026-08-24', total: 90000 });
+  await buatOrder({
+    businessDate: '2026-08-24',
+    status: 'voided',
+    total: 90000,
+    voidedByOrderId: asli,
+  });
+
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.omzetBersih, '0');
+  assert.equal(b.perOutlet.length, 1);
+  assert.equal(b.perOutlet[0].omzetBersih, '0', 'void tidak terlihat di rincian outletnya');
+});
+
+test('⛔ refund menempel pada outlet ORDER-nya', async () => {
+  // `refund` tidak punya `outlet_id`. Refund yang jatuh ke outlet yang salah
+  // membuat satu cabang terlihat merugi dan satu terlihat untung, keduanya
+  // sebesar nilai yang sama.
+  const kedua = await buatOutlet({ nama: 'Cabang Refund' });
+  await buatOrder({ businessDate: '2026-08-24', total: 100000 });
+  const diRefund = await buatOrder({ businessDate: '2026-08-24', total: 100000, outletId: kedua });
+  await buatRefund(diRefund, 40000);
+
+  const b = (await ringkasan('2026-08-24')).json();
+  const perId = Object.fromEntries(b.perOutlet.map((o) => [o.outletId, o]));
+  assert.equal(perId[base.outlet.id].omzetBersih, '100000');
+  assert.equal(perId[kedua].omzetBersih, '60000');
+});
+
+test('outlet TANPA transaksi tidak muncul sebagai baris nol', async () => {
+  // Dua puluh baris "Rp 0" mengubur dua yang berisi, dan layar 390px hanya
+  // memuat beberapa baris.
+  await buatOutlet({ nama: 'Cabang Sepi' });
+  await buatOrder({ businessDate: '2026-08-24', total: 100000 });
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.perOutlet.length, 1);
+  assert.equal(b.perOutlet[0].outletId, base.outlet.id);
+});
+
+test('rincian diurutkan omzet TERBESAR lebih dulu', async () => {
+  // Yang owner cari di layar 390px adalah cabang yang paling banyak bergerak,
+  // bukan yang namanya paling awal secara abjad.
+  const kecil = await buatOutlet({ nama: 'A Cabang Kecil' });
+  await buatOrder({ businessDate: '2026-08-24', total: 10000, outletId: kecil });
+  await buatOrder({ businessDate: '2026-08-24', total: 500000 });
+
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.perOutlet[0].outletId, base.outlet.id);
+  assert.equal(b.perOutlet[0].omzetBersih, '500000');
+});
+
+test('⛔ rincian outlet tenant lain tidak pernah ikut', async () => {
+  await seedTenantBase(appSetup, { suffix: 'RincianLain' });
+  await buatOrder({ businessDate: '2026-08-24', total: 100000 });
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(b.perOutlet.length, 1);
+  assert.equal(b.perOutlet[0].outletId, base.outlet.id);
+});
+
+test('nama outlet ikut, supaya rinciannya dapat dibaca', async () => {
+  await buatOrder({ businessDate: '2026-08-24', total: 100000 });
+  const b = (await ringkasan('2026-08-24')).json();
+  assert.equal(typeof b.perOutlet[0].outletNama, 'string');
+  assert.ok(b.perOutlet[0].outletNama.length > 0);
+});
