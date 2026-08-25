@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Card } from 'ds';
 import { Tombol } from '../Tombol.tsx';
-import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
-import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import {
+  MAKS_TEMUAN_M01,
+  judulJenis,
+  outletTampil,
+  ringkasTemuan,
+  rinciTemuan,
+  type PerluPerhatian,
+} from '../perlu/m02.ts';
 import {
   barisMetode,
   pesanLayar,
@@ -27,6 +32,12 @@ import {
  * hari yang belum terjadi lalu menerima nol transaksi tanpa satu pun error.
  *
  * Tanggal yang dirender karena itu `data.tanggal`, bukan tanggal yang diminta.
+ *
+ * ⛔ Pengambilan datanya ada di INDUK (`Beranda.tsx`), bukan di sini. M-02
+ * menampilkan daftar yang sama yang bagian "perlu diperiksa" di layar ini
+ * meringkas; dua permintaan untuk satu jawaban dapat berbeda, dan owner yang
+ * membuka daftar dari "3 hal perlu diperiksa" lalu melihat empat baris tidak
+ * punya cara memahami selisihnya.
  */
 
 interface Outlet {
@@ -35,58 +46,37 @@ interface Outlet {
   archivedAt: string | null;
 }
 
-export function Ringkasan() {
-  const { api } = useSesi();
-  const [outlets, setOutlets] = useState<Outlet[] | null>(null);
-  const [outletId, setOutletId] = useState<string>('');
-  const [data, setData] = useState<RingkasanHarian | null>(null);
-  const [keadaan, setKeadaan] = useState<KeadaanLayar>('memuat');
+interface Props {
+  data: RingkasanHarian | null;
+  keadaan: KeadaanLayar;
+  outlets: Outlet[] | null;
+  outletId: string;
+  onOutlet: (id: string) => void;
+  onCobaLagi: () => void;
+  /** `null` bila daftarnya belum berhasil dimuat — BEDA dari nol temuan. */
+  perlu: PerluPerhatian | null;
+  onBukaPerlu: () => void;
+}
 
-  // Daftar outlet dimuat sekali. Kegagalannya TIDAK menghentikan ringkasan:
-  // tanpa outlet, permintaan lintas-outlet tetap sah selama seluruh outlet
-  // sepakat zona waktunya.
-  useEffect(() => {
-    let batal = false;
-    api
-      .minta<Outlet[]>('/outlets')
-      .then((hasil) => {
-        if (!batal) setOutlets(hasil.filter((o) => o.archivedAt === null));
-      })
-      .catch(() => {
-        if (!batal) setOutlets([]);
-      });
-    return () => {
-      batal = true;
-    };
-  }, [api]);
-
-  const muat = useCallback(async () => {
-    setKeadaan('memuat');
-    try {
-      // ⛔ TANPA `date`. Lihat catatan kepala.
-      const q = outletId === '' ? '' : `?outlet_id=${encodeURIComponent(outletId)}`;
-      const hasil = await api.minta<RingkasanHarian>(`/reports/daily-summary${q}`);
-      setData(hasil);
-      setKeadaan('siap');
-    } catch (err) {
-      setData(null);
-      // ⛔ Ketiga sebab dibedakan. "Tidak berhak" dan "hari ini ambigu" punya
-      // tindakan yang sangat berbeda dari "coba lagi", dan menyatukannya
-      // membuat owner menekan tombol yang tidak akan pernah menolongnya.
-      if (err instanceof GalatHttp && err.status === 403) setKeadaan('tidak-berhak');
-      else if (err instanceof GalatHttp && err.kode === 'BUSINESS_DATE_AMBIGUOUS')
-        setKeadaan('ambigu');
-      else setKeadaan('gagal');
-    }
-  }, [api, outletId]);
-
-  useEffect(() => {
-    void muat();
-  }, [muat]);
-
+export function Ringkasan({
+  data,
+  keadaan,
+  outlets,
+  outletId,
+  onOutlet,
+  onCobaLagi,
+  perlu,
+  onBukaPerlu,
+}: Props) {
   const pesan = pesanLayar(keadaan);
   const tren = data === null ? null : trenTampil(data.tren);
   const metode = data === null ? [] : barisMetode(data.perMetode);
+  // ⛔ `null` (belum/ gagal dimuat) dan `0` (tidak ada temuan) sama-sama
+  // menghasilkan bagian yang tidak tampil, dan itu benar untuk keduanya:
+  // `spec-g:245` melarang bagiannya muncul tanpa temuan, dan bagian yang
+  // muncul dengan "gagal memuat" di layar satu-pertanyaan ini menambah
+  // pertanyaan alih-alih menjawabnya. Kegagalannya terlihat di M-02.
+  const ringkas = perlu === null ? null : ringkasTemuan(perlu.jumlah);
 
   return (
     <div
@@ -94,7 +84,6 @@ export function Ringkasan() {
       style={{
         gap: 'var(--space-4)',
         padding: 'var(--space-4)',
-        minHeight: '100dvh',
         background: 'var(--surface-sunk)',
       }}
     >
@@ -109,7 +98,7 @@ export function Ringkasan() {
             style={{ maxWidth: '18ch' }}
             value={outletId}
             aria-label="Outlet"
-            onChange={(e) => setOutletId(e.target.value)}
+            onChange={(e) => onOutlet(e.target.value)}
           >
             <option value="">Semua outlet</option>
             {outlets.map((o) => (
@@ -129,7 +118,7 @@ export function Ringkasan() {
                 memperbaikinya. Menawarkannya pada "tidak berhak" membuat owner
                 menekannya berulang tanpa apa pun berubah. */}
             {keadaan === 'gagal' && (
-              <Tombol varian="secondary" onClick={() => void muat()}>
+              <Tombol varian="secondary" onClick={onCobaLagi}>
                 Coba lagi
               </Tombol>
             )}
@@ -186,6 +175,29 @@ export function Ringkasan() {
                 )}
               </div>
             </Card>
+
+            {/* ⛔ Muncul HANYA bila ada temuan — `spec-g:245`, acceptance
+                criteria harfiah. Maksimal tiga (`IA:373`), dan jumlah PENUHNYA
+                tetap disebut di judulnya: tiga dari sembilan yang tidak
+                menyebut sembilan mengecilkan apa yang menunggu. */}
+            {ringkas !== null && perlu !== null && (
+              <Card>
+                <div className="card-pad stack" style={{ gap: 'var(--space-2)' }}>
+                  <div className="t-body-md">⚠ {ringkas}</div>
+                  {perlu.temuan.slice(0, MAKS_TEMUAN_M01).map((t) => (
+                    <div key={`${t.jenis}-${t.id}`} className="stack" style={{ gap: 0 }}>
+                      <span className="t-caption">
+                        {judulJenis(t.jenis)} · {outletTampil(t)}
+                      </span>
+                      <span className="t-body-md">{rinciTemuan(t)}</span>
+                    </div>
+                  ))}
+                  <Tombol varian="secondary" onClick={onBukaPerlu}>
+                    {perlu.jumlah > MAKS_TEMUAN_M01 ? `Lihat semua (${perlu.jumlah})` : 'Lihat detail'}
+                  </Tombol>
+                </div>
+              </Card>
+            )}
 
             {/* ⛔ Kalimat batas SELALU tampil, juga saat angkanya lengkap.
                 Tanpa itu angka di layar dibaca sebagai "apa yang terjual"

@@ -4979,6 +4979,69 @@ paths:
         "403": { description: "Tidak berhak" }
         "404": { description: "Outlet tidak ditemukan" }
 
+  /reports/needs-attention:
+    get:
+      operationId: getNeedsAttention
+      summary: M-01/M-02 -- hal yang perlu diperiksa, untuk Owner mobile.
+      description: >-
+        `IA:§8` mendaftarkan oversell terdeteksi dan pembayaran
+        `pending_confirmation` lebih dari 24 jam sebagai isi bagian "perlu
+        diperiksa" di Owner mobile; `spec-g:231` menggambar selisih kas di
+        wireframe M-01 yang sama.
+
+
+        ⛔ Ia TERTUNGGAK, bukan "terjadi hari ini", dan karena itu tidak
+        disaring per tanggal. Oversell yang belum ditindaklanjuti tiga hari
+        lalu masih perlu ditindaklanjuti malam ini, dan pembayaran yang
+        menggantung 48 jam lebih mendesak daripada yang 25 jam. Daftar yang
+        hanya memuat temuan hari ini mengosongkan dirinya setiap tengah malam.
+
+
+        ⛔ `jumlah` adalah TOTAL, bukan panjang `temuan`. M-01 hanya
+        menampilkan tiga (IA:373); tiga dari sembilan yang tidak menyebut
+        sembilan mengecilkan apa yang menunggu.
+
+
+        ⛔ Yang dikirim DATA, bukan kalimat. Tanpa skor, tanpa label, tanpa
+        kata yang menyalahkan siapa pun (spec-g:168) -- kalimatnya disusun di
+        klien, tempat yang sama yang menyusun kalimat lain di layar itu.
+
+
+        Uang dan kuantitas selalu STRING.
+      parameters:
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Daftar tertunggak, terbaru lebih dulu.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [outletId, jumlah, temuan]
+                properties:
+                  outletId: { type: string, nullable: true }
+                  jumlah: { type: integer }
+                  temuan:
+                    type: array
+                    items:
+                      type: object
+                      required: [jenis, id, outletId, outletNama, nilai, terjadiPada, keterangan]
+                      properties:
+                        jenis:
+                          type: string
+                          enum: [oversell, selisih_kas, pembayaran_menggantung]
+                        id: { type: string }
+                        outletId: { type: string }
+                        outletNama: { type: string, nullable: true }
+                        nilai: { type: string }
+                        terjadiPada: { type: string }
+                        keterangan: { type: string, nullable: true }
+        "403": { description: "Tidak berhak" }
+        "404": { description: "Outlet tidak ditemukan" }
+
   /reports/stale-price-devices:
     get:
       operationId: getStalePriceDevices

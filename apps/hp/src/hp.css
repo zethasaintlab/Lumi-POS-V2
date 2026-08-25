@@ -25,3 +25,22 @@ body {
 #root {
   min-height: 100dvh;
 }
+
+/* Bilah nav bawah.
+ *
+ * Ia hidup di CSS, bukan sebagai `style` inline, karena satu-satunya nilai
+ * yang dibutuhkannya — lebar garis 1px — adalah nilai yang `lint:ds` tolak di
+ * kode komponen (aturan design system #6). Garis pemisah 1px bukan nilai
+ * desain yang dapat di-token-kan: `components.css` sendiri menuliskannya
+ * harfiah di setiap `.card` dan `.field`. Yang tetap dari token adalah
+ * WARNANYA.
+ *
+ * `position: sticky` supaya bilahnya tetap terjangkau ibu jari saat isi
+ * layarnya lebih tinggi dari viewport — M-02 dengan sembilan temuan.
+ */
+.nav-bawah {
+  position: sticky;
+  bottom: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}

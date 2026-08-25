@@ -10,8 +10,8 @@ Aplikasi ketiga, lahir 24 Agustus 2026. `IA:§4`.
 |---|---|---|
 | Login | M-00 | ada |
 | Ringkasan Hari Ini | M-01 | ada |
-| Perlu Diperiksa | M-02 | belum |
-| Laporan (ringkas) | M-03 | belum |
+| Perlu Diperiksa | M-02 | ada |
+| Laporan (ringkas) | M-03 | ada |
 | Otorisasi Jarak Jauh | M-04 | **v1.1**, `IA:251` — tidak dibangun |
 
 ## Yang mengikat kode
@@ -29,9 +29,28 @@ Aplikasi ketiga, lahir 24 Agustus 2026. `IA:§4`.
 - ⛔ **Aturan tampilan hidup di `ringkasan/m01.ts`**, komponennya hanya JSX —
   pola yang sama dengan `b21-daftar.ts` dan `harga-basi.ts` di back-office.
   Yang hanya dapat diuji lewat DOM biasanya tidak diuji sama sekali.
-- ⛔ **Bilah nav bawah belum ada**, dan itu disengaja: `IA:§4.2` menggambar
-  `[Laporan] [Otorisasi]`, keduanya belum ada di v1. Tab yang menuju layar yang
-  tidak ada terbaca sebagai aplikasi rusak, bukan sebagai fitur yang ditunda.
+- ⛔ **Bilah nav punya DUA item, dan keduanya BUKAN yang wireframe gambar.**
+  `IA:§4.2` menulis `[Laporan] [Otorisasi]`; Otorisasi adalah M-04 dan tidak
+  ada di v1 (`IA:251`), jadi tab yang menujunya akan mati. Yang dipakai
+  `[Ringkasan] [Laporan]` — jumlahnya tetap dua, dan `IA:253` menyebut
+  penambahan ketiga sebagai pergeseran IA.
+- ⛔ **M-02 BUKAN tab.** `IA:247` menyebutnya drill-down dari peringatan di
+  M-01, dan `spec-g:245` melarang bagian "perlu diperiksa" muncul tanpa
+  temuan. Tab untuknya akan tampil juga saat tidak ada apa pun yang perlu
+  diperiksa.
+- ⛔ **Pengambilan data ada di `Beranda.tsx`, bukan di tiap layar.** M-01
+  meringkas daftar yang M-02 tampilkan penuh, dan M-03 menghitung rentangnya
+  dari tanggal yang M-01 terima. Tiga permintaan terpisah dapat menjawab
+  berbeda, dan owner yang membuka daftar dari "3 hal perlu diperiksa" lalu
+  melihat empat baris tidak punya cara memahami selisihnya.
+- ⛔ **Daftar "perlu diperiksa" TERTUNGGAK, bukan harian.** Oversell yang belum
+  ditindaklanjuti tiga hari lalu masih perlu ditindaklanjuti malam ini. Daftar
+  yang disaring per tanggal mengosongkan dirinya setiap tengah malam, dan owner
+  yang membukanya pukul 23:00 lalu 00:30 melihat dua jawaban berbeda.
+- ⛔ **Rute disimpan di state, bukan di URL.** Berbeda dari `apps/kasir` dan
+  `apps/backoffice`. Tidak satu pun dari ketiga layar berguna di-bookmark: M-02
+  adalah drill-down dari peringatan yang mungkin sudah tidak ada besok, dan
+  M-03 bergantung pada tanggal yang M-01 ambil.
 
 ## Batas yang dinyatakan
 
@@ -41,6 +60,13 @@ Aplikasi ketiga, lahir 24 Agustus 2026. `IA:§4`.
   service worker kelak tidak mengubah satu pun layar.
 - **Email yang terdaftar di DUA tenant tidak dapat masuk lewat HP.** Field "ID
   Tenant" sengaja tidak ada di layar 390px; orang itu masuk lewat back-office.
+- **M-03 adalah SATU laporan, bukan sembilan.** `IA:248` menyebutnya "subset
+  dari back-office", dan yang dipilih adalah omzet per rentang — angka yang
+  sama dengan B-16. Rincian per produk, per kasir, dan ekspor tetap di laptop;
+  menyalin sembilan layar ke 390px menghasilkan navigasi yang `IA:229` tolak.
+- **AC FR-G6 keempat belum tertutup** — "multi-outlet: ringkasan agregat dengan
+  rincian per outlet dapat dibuka". Agregatnya ada; rincian per outlet di dalam
+  satu respons belum.
 
 ## Menjalankan
 

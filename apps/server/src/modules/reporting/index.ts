@@ -22,6 +22,7 @@ import { ambilAudit, bacaBatas, bacaJenis } from './handlers/audit.ts';
 import { ambilHargaBasi } from './handlers/harga-perangkat.ts';
 import { ambilRingkasanHarian } from './handlers/ringkasan-hp.ts';
 import { tanggalBisnisHariIni } from './handlers/tanggal-hari-ini.ts';
+import { ambilPerluPerhatian } from './handlers/perlu-perhatian.ts';
 import { PERISTIWA_BELUM_DIPANCARKAN } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 
 /**
@@ -272,6 +273,23 @@ export function createReportingHandlers(pool: Pool): Record<string, unknown> {
           ? await tanggalBisnisHariIni(client, outletId)
           : (tanggal as string);
         return ambilRingkasanHarian(client, { tanggal: dipakai, outletId });
+      });
+    },
+
+    async getNeedsAttention(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const q = (req.query ?? {}) as { outlet_id?: string };
+      const outletId = q.outlet_id === undefined || q.outlet_id === '' ? null : q.outlet_id;
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        // ⛔ RBAC yang SAMA dengan laporan exception. Daftar ini menyebut
+        // outlet mana yang selisih kasnya belum beres, dan itu informasi
+        // pengawasan — bukan angka penjualan yang setiap peran boleh baca.
+        await assertBoleh(client, actorId, 'report_exception', 'melihat hal yang perlu diperiksa');
+        if (outletId !== null) await assertOutletVisible(client, outletId);
+        return ambilPerluPerhatian(client, { outletId });
       });
     },
 

@@ -3556,3 +3556,102 @@ Seluruh suite hijau, berurutan: `test:domain` 506 · `test:kasir` 494 ·
 `test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3.
 `typecheck` (kini termasuk `apps/hp`) dan `lint:ds` bersih; `vite build`
 aplikasi HP berhasil.
+
+---
+
+## Task 44 — M-02 Perlu Diperiksa, M-03 Laporan ringkas, bilah nav (25 Agustus 2026) ✅
+
+Melengkapi `apps/hp`: keempat layar Owner mobile v1 kini ada.
+
+### Keputusan yang mengikat kode
+
+- ⛔ **"Perlu diperiksa" adalah TERTUNGGAK, bukan "terjadi hari ini",** dan
+  karena itu `GET /reports/needs-attention` tidak disaring per tanggal.
+  Oversell yang belum ditindaklanjuti tiga hari lalu masih perlu
+  ditindaklanjuti malam ini, dan pembayaran yang menggantung 48 jam lebih
+  mendesak daripada yang 25 jam — bukan kurang. Daftar yang disaring per
+  tanggal **mengosongkan dirinya setiap tengah malam**, dan owner yang
+  membukanya pukul 23:00 lalu 00:30 melihat dua jawaban berbeda untuk
+  pertanyaan yang sama. Konsekuensinya dinyatakan di layar
+  (`CATATAN_TERTUNGGAK`).
+- ⛔ **Isinya diturunkan dari DUA dokumen, bukan dikarang.** `IA:§8`
+  mendaftarkan oversell dan pembayaran `pending_confirmation` > 24 jam di kolom
+  Owner mobile; `spec-g:231` menggambar selisih kas di wireframe M-01 yang
+  sama.
+- ⛔ **Diurutkan ulang LINTAS JENIS.** Tiga daftar yang disambung apa adanya
+  membuat M-01 — yang hanya menampilkan tiga teratas (`IA:373`) — selalu
+  menampilkan oversell dan **tidak pernah** menampilkan selisih kas, berapa pun
+  umurnya.
+- ⛔ **`jumlah` adalah TOTAL, bukan panjang `temuan`.** Tiga dari sembilan yang
+  tidak menyebut sembilan mengecilkan apa yang menunggu.
+- ⛔ **Yang dikirim server DATA, kalimatnya disusun klien.** Kalimat yang
+  disusun server menjadi kalimat KEDUA yang harus dijaga sepakat dengan yang di
+  back-office, dan yang menyimpang membuat owner melihat dua deskripsi untuk
+  satu kejadian tanpa cara memutuskan mana yang benar.
+- ⛔ **Selisih kas NOL tidak muncul; shift yang belum ditutup juga tidak.**
+  Nol berarti beres, dan `difference` dibekukan saat penutupan — membacanya
+  sebelum itu berarti melaporkan angka yang belum ditandatangani siapa pun.
+  Selisih **kurang maupun lebih** sama-sama muncul: uang yang tidak dapat
+  dijelaskan adalah uang yang tidak dapat dijelaskan.
+- ⛔ **Pembayaran menggantung TIDAK disebut gagal.** Pelanggan mungkin sudah
+  membayar (FR-C14); menyebutnya gagal membuat merchant menagih ulang orang
+  yang sudah membayar. Kalimatnya menyatakan itu.
+- ⛔ **Selisih kas dibaca dengan KATANYA** — "kurang"/"lebih". `− Rp 50.000` di
+  layar 390px dibaca sekilas sebagai `Rp 50.000`, dan arahnya adalah separuh
+  artinya.
+- ⛔ **Tanpa satu pun kata yang menyalahkan orang**, dan diuji di kedua sisi:
+  test server memindai JSON keluarannya, test klien memindai setiap kalimat
+  yang `m02.ts` hasilkan. Oversell khususnya **bukan kesalahan** — non-goal
+  permanen, konsekuensi CAP.
+- ⛔ **Bagian "perlu diperiksa" di M-01 tidak muncul tanpa temuan**
+  (`spec-g:245`, AC harfiah), dan `null` (gagal dimuat) diperlakukan sama
+  dengan nol di layar itu — kegagalannya terlihat di M-02, tempat orang datang
+  untuk memeriksanya. Bagian yang muncul dengan "gagal memuat" di layar
+  satu-pertanyaan menambah pertanyaan alih-alih menjawabnya.
+- ⛔ **Bilah nav DUA item, dan keduanya bukan yang wireframe gambar.**
+  `IA:§4.2` menulis `[Laporan] [Otorisasi]`; Otorisasi adalah M-04 dan tidak
+  ada di v1. Yang dipakai `[Ringkasan] [Laporan]`. **M-02 bukan tab** — tab
+  untuknya akan tampil juga saat tidak ada apa pun yang perlu diperiksa, persis
+  yang `spec-g:245` larang. `navAktif('M-02')` menyalakan M-01: bilah tanpa item
+  aktif membuat orang menyimpulkan ia keluar dari aplikasi.
+- ⛔ **Pengambilan data di `Beranda.tsx`, bukan di tiap layar.** M-01 meringkas
+  daftar yang M-02 tampilkan penuh; dua permintaan untuk satu jawaban dapat
+  berbeda.
+- ⛔ **Rentang M-03 dihitung dari tanggal yang SERVER berikan**, bukan
+  `new Date()`. `dasar === null` punya pesannya sendiri, dibedakan dari "gagal"
+  — menghitung rentang dari jam HP adalah persis yang aturan M-01 larang.
+- ⛔ **"7 hari" memuat TUJUH tanggal.** Rentang yang memuat delapan menghasilkan
+  rata-rata harian yang selalu sedikit terlalu rendah, dan salahnya tidak pernah
+  cukup besar untuk terlihat.
+- **Rute di state, bukan di URL.** Tidak satu pun dari ketiga layar berguna
+  di-bookmark: M-02 adalah drill-down dari peringatan yang mungkin sudah tidak
+  ada besok, dan M-03 bergantung pada tanggal yang M-01 ambil.
+- **Garis pemisah nav hidup di `hp.css`**, bukan sebagai `style` inline —
+  `lint:ds` menolak `1px` di kode komponen, dan `components.css` sendiri
+  menuliskannya harfiah di setiap `.card`. Yang tetap dari token: warnanya.
+
+### Masalah + solusinya
+
+- **PostgreSQL mati lagi di tengah sesi** — 15 test merah serentak dengan
+  ECONNREFUSED. `pg_ctlcluster 16 main start`.
+- **`"check"` tidak punya kolom `seq`/`created_by`/`occurred_at`** — helper
+  test menebak bentuknya. Dibaca dari migrasi `0007`, bukan dari ingatan.
+
+### Sabotase
+
+Tiga di server, semuanya merah: urutan lintas jenis dilepas (1) · shift
+berselisih nol ikut (3) · ambang umur pembayaran dibalik (1).
+
+### Verifikasi
+
+Seluruh suite hijau, berurutan: `test:domain` 506 · `test:kasir` 494 ·
+`test:server` 468 · `test:backoffice` 430 · `test:isolation` 211 ·
+`test:ordering` 193 · `test:catalog` 177 · `test:identity` 156 ·
+`test:payment` 132 · `test:sync-client` 103 · `test:tenancy` 75 · **`test:hp`
+46** · `test:schema` 14 · `test:dst` 14 · `test:oxlint-ds-adherence` 12 ·
+`test:dst-server` 10 · `test:sqlite-local` 8 · `test:runtime` 3. `typecheck`
+dan `lint:ds` bersih; `vite build` aplikasi HP berhasil.
+
+**AC FR-G6 keempat masih terbuka** — "multi-outlet: ringkasan agregat dengan
+rincian per outlet dapat dibuka". Agregatnya ada; rincian per outlet di dalam
+satu respons belum.
