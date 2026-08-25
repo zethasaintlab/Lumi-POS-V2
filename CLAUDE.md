@@ -127,7 +127,100 @@ Coding agent cenderung "membantu" dengan membangun hal yang tidak diminta. Dafta
 
 ## Status & fase saat ini
 
-**Fase: G1 (back-office) berjalan, 16 Agustus 2026.** F0–F3 tertutup; F4 tertutup sejauh yang dapat dibuktikan tanpa printer. Rincian per item ada di `HANDOFF.md`.
+**Fase: G2 (Owner mobile) selesai, 25 Agustus 2026.** G1 (back-office) ditutup 16 Agustus 2026. F0–F3 tertutup; F4 tertutup sejauh yang dapat dibuktikan tanpa printer. Rincian per item ada di `HANDOFF.md`.
+
+### G2 — Owner mobile (`apps/hp`), 25 Agustus 2026
+
+**Aplikasi KETIGA berdiri**, dan keempat layar v1 `IA:§4` ada: M-00 login ·
+M-01 Ringkasan Hari Ini · M-02 Perlu Diperiksa · M-03 Laporan ringkas. M-04
+(otorisasi jarak jauh) tetap v1.1 — `IA:251`.
+
+> `IA:229` — *"Persona P3 membuka aplikasi **pukul 23:00 untuk satu
+> pertanyaan**. IA-nya harus menjawab pertanyaan itu di layar pertama, bukan
+> menyediakan navigasi lengkap."*
+
+⛔ **Tiga modul PINDAH menjadi milik bersama, tidak satu pun disalin.** Aplikasi
+ketiga adalah titik di mana salinan mulai menyimpang:
+
+| Ke | Isi | Kenapa |
+|---|---|---|
+| `packages/klien-api` | `http.ts` · `sesi-simpanan.ts` · `sesi.tsx` | `IA:245`: kredensial M-00 SAMA dengan back-office. Dua klien sesi yang menyimpang menghasilkan aplikasi yang berhenti dari sesi yang masih hidup — atau tetap menampilkan layar dengan sesi yang sudah mati |
+| `packages/domain/src/uang-tampilan.ts` | `rupiah` · `bacaRupiah` | Format uang adalah aturan produk, dan yang ditulis ulang per layar menyimpang tepat di nilai besar, negatif, dan hilang |
+| `packages/domain/src/metode-tampilan.ts` | `LABEL_METODE` · `LABEL_STATUS_BAYAR` | HP merinci pembayaran per metode; dua peta yang menyimpang menyebut saluran berbeda dari back-office untuk hari yang sama |
+
+⛔ **`apps/kasir/src/cetak/metode.ts` SENGAJA tetap terpisah** — nama di struk
+dipendekkan karena struk 58 mm hanya 32 kolom, dan "QRIS (dinamis)" tidak muat.
+Batasnya dinyatakan di kedua berkas.
+
+⛔ **Utang yang dinyatakan:** `apps/kasir` masih punya **delapan** salinan
+pemformat uang sendiri (`Rp ${n.toLocaleString('id-ID')}`, satu per layar). Ia
+menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk negatif.
+
+**Keputusan yang mengikat kode Owner mobile:**
+
+- ⛔ **"Hari ini" diputuskan SERVER, bukan jam HP.** `date` di
+  `GET /reports/daily-summary` OPSIONAL; dikosongkan berarti hari ini, dihitung
+  dari `now()` database + zona outlet + jam tutupnya lewat `tanggalBisnis` yang
+  kasir pakai. FR-F8 ada di produk ini justru karena jam perangkat berbohong
+  cukup sering untuk perlu dideteksi, dan HP yang jamnya maju satu hari meminta
+  ringkasan hari yang belum terjadi lalu menerima **nol transaksi tanpa satu pun
+  error** — owner menyimpulkan outletnya tidak berjualan. `date` KOSONG tetap
+  ditolak: string kosong berarti klien bermaksud menyebut tanggal dan gagal.
+- ⛔ **Tanpa `outlet_id`, "hari ini" hanya dijawab bila SELURUH outlet aktif
+  sepakat** zona waktu DAN jam tutup. Pukul 23:00 di Jayapura masih pukul 21:00
+  di Jakarta; angka gabungan memuat dua tanggal bisnis berbeda. `400
+  BUSINESS_DATE_AMBIGUOUS` dengan instruksi memilih outlet — bentuk yang sama
+  dengan "ringkasan stok `null` tanpa `outlet_id`". Outlet DIARSIPKAN tidak ikut
+  membuatnya ambigu.
+- ⛔ **Pembanding tren HARI YANG SAMA empat minggu ke belakang** (FR-G6,
+  `spec-g:243`), bukan hari sebelumnya. Delta terhadap kemarin membuat setiap
+  Senin terlihat seperti bencana dan setiap Jumat seperti rekor — dua sinyal
+  palsu setiap minggu, selamanya. `deltaPersen: null` BERBEDA dari 0; hari
+  pembanding yang tidak punya transaksi tidak dihitung nol; minimum dua hari
+  (`[ASUMSI]`), dan `basisMinggu` menyatakan seberapa kasar pembandingnya.
+- ⛔ **Daftar "perlu diperiksa" TERTUNGGAK, bukan harian**
+  (`GET /reports/needs-attention`). Oversell yang belum ditindaklanjuti tiga
+  hari lalu masih perlu ditindaklanjuti malam ini. Daftar yang disaring per
+  tanggal **mengosongkan dirinya setiap tengah malam**. Diurutkan ulang LINTAS
+  JENIS — tiga daftar yang disambung apa adanya membuat M-01, yang hanya
+  menampilkan tiga teratas, tidak pernah menampilkan selisih kas.
+  `jumlah` adalah TOTAL, bukan panjang `temuan`.
+- ⛔ **Server mengirim DATA; kalimatnya disusun klien.** Kalimat yang disusun
+  server menjadi kalimat KEDUA yang harus dijaga sepakat dengan back-office.
+  Tanpa satu pun kata yang menyalahkan orang (`spec-g:168`), diuji di kedua
+  sisi — oversell khususnya **bukan kesalahan**, ia konsekuensi CAP.
+- ⛔ **Rincian per outlet dihitung `posisiPenjualan` per kelompok**, bukan
+  `GROUP BY … SUM`. Ia bergantung pada order PEMBATAL berbagi outlet dengan
+  aslinya — benar hari ini karena `cancel.ts` menyalin `outlet_id` lewat
+  `INSERT … SELECT`. Refund menempel pada outlet ORDER-nya (JOIN), dan yang
+  jatuh ke outlet salah membuat satu cabang terlihat merugi dan satu untung.
+  `perOutlet: null` saat satu outlet diminta; outlet tanpa transaksi tidak
+  muncul sebagai baris nol.
+- ⛔ **Setiap angka bertanda membawa KATANYA**, dan besaran ditampilkan **tanpa
+  tandanya** — "−12,3% lebih rendah" adalah negasi ganda yang dibaca cepat
+  berarti naik. Panah tidak pernah sendirian (aturan DS #5).
+- ⛔ **Bilah nav DUA item, dan keduanya bukan yang wireframe gambar.**
+  `IA:§4.2` menulis `[Laporan] [Otorisasi]`; Otorisasi adalah M-04 dan tidak ada
+  di v1, jadi tab yang menujunya akan mati. Yang dipakai `[Ringkasan]
+  [Laporan]`. **M-02 bukan tab** — `spec-g:245` melarang bagian "perlu
+  diperiksa" muncul tanpa temuan, dan tab untuknya akan tampil juga saat tidak
+  ada apa pun.
+- ⛔ **Pengambilan data di `Beranda.tsx`, bukan di tiap layar.** M-01 meringkas
+  daftar yang M-02 tampilkan penuh; dua permintaan untuk satu jawaban dapat
+  berbeda.
+- ⛔ **`CATATAN_ANTREAN` selalu tampil**, juga saat angkanya lengkap: angka di
+  layar adalah apa yang SUDAH SAMPAI ke server, bukan apa yang terjual.
+- **Rute di state, bukan di URL** — tidak satu pun dari ketiga layar berguna
+  di-bookmark. **Online-only** (`IA:265`): tanpa PowerSync, tanpa SQLite lokal.
+- **Bukan PWA** — `IA:445` masih membukanya sebagai pertanyaan. **M-03 adalah
+  SATU laporan, bukan sembilan.** **Email di DUA tenant tidak dapat masuk lewat
+  HP** (tanpa field "ID Tenant" di layar 390px).
+
+⛔ **AC FR-G6 KELIMA tetap terbuka** — *"render < 2 detik pada koneksi
+seluler"*. Ia menuntut pengukuran di jaringan sungguhan, sejajar dengan gate F4
+bagian pertama; jangan menandainya selesai.
+
+---
 
 ⛔ **Gate F4 punya DUA bagian, dan hanya satu yang tertutup.** `ARCH:398`: *"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."* Bagian kedua terbukti lewat test. Bagian pertama menuntut perangkat fisik dan **TETAP TERBUKA** — jangan menandai F4 selesai sampai lima model benar-benar dicoba.
 
@@ -264,6 +357,8 @@ Status F1 sekarang:
 - ⛔ **Panel mengambil datanya SENDIRI, bukan ikut respons dasbor.** RBAC-nya `price_edit` sementara dasbor dibaca peran yang lebih luas; menggabungkannya berarti seluruh dasbor dijawab 403 untuk manajer outlet. **403 dibedakan dari gagal** di layar.
 - **Harga AWAL item adalah baris `price_history` juga**, jadi perangkat yang lama tidak terlihat tertinggal olehnya. Benar, dan ditemukan lewat test yang ekspektasinya salah.
 
+**FR-G6 ditutup 25 Agustus 2026** — `GET /reports/daily-summary` + `GET /reports/needs-attention` + `apps/hp`. Rinciannya di § G2.
+
 **FR-A7 AC ketiga masih terbuka** — `cost_at_sale` untuk laporan margin menunggu keputusan FR-F5 (`cost`), yang user tahan.
 
 **FR-A5 ditutup bersama B-09** · **FR-A3 ditutup 22 Agustus 2026** · **FR-A8 (import katalog) sudah ada** — `catalog/handlers/import.ts` + layar impor back-office.
@@ -372,6 +467,8 @@ cadangkan nomor struk (lokal) → POST /orders (draf, `open`)
 **Modul B (Kasir & Order) sub-project 1 — fondasi order: selesai** (`docs/superpowers/plans/PLAN-ordering-fondasi.md`). `POST /orders` menulis order + check + line + modifier + outbox + idempotency_key dalam **satu transaksi** (invariant #1). Menutup FR-B2, B3, B4, B5, B6, B10, B12 dan sebagian B1.
 
 `packages/domain` akhirnya berisi kode: state machine order, aritmetika uang, generator HLC — semuanya **fungsi murni tanpa I/O**, dibagi server dan klien supaya keduanya tidak pernah menghitung total yang berbeda.
+
+**Tiga aplikasi kini ada**: `apps/kasir` (offline-first, PowerSync), `apps/backoffice` (online-only), `apps/hp` (Owner mobile, online-only). Sesi dan pintu HTTP keduanya yang terakhir dibagi lewat `packages/klien-api`.
 
 **Delapan modul kini punya kode**: `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
 
