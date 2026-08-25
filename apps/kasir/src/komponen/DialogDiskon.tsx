@@ -14,6 +14,7 @@ import type { DiskonKeranjang } from '../kasir/keranjang.ts';
 import { DialogOtorisasi } from './DialogOtorisasi.tsx';
 import { Bidang } from '../Bidang.tsx';
 import { Tombol } from '../Tombol.tsx';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-03 — diskon tingkat order (FR-B8, `spec-b:267`).
 
@@ -42,10 +43,6 @@ interface Props {
   onBatal: () => void;
   /** `null` = diskon dilepas. */
   onSimpan: (diskon: DiskonKeranjang | null) => void;
-}
-
-function rupiah(n: bigint): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
 }
 
 function teksAwal(awal: DiskonKeranjang | null): string {

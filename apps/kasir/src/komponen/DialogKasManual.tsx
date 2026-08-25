@@ -11,6 +11,7 @@ import {
 } from '../../../../packages/domain/src/kas-manual.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import type { Sesi } from '../identitas/login.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* FR-D5 — kas masuk & kas keluar. Dialog, bukan layar: pola yang sama dengan
    K-16 (`IA:66`), dan alasan yang sama — ia tidak punya keadaan sendiri untuk
@@ -42,10 +43,6 @@ const LABEL_ALASAN: Record<string, string> = {
   koreksi_pencatatan: 'Koreksi pencatatan',
   lainnya: 'Lainnya',
 };
-
-function rupiah(n: bigint): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 interface Props {
   shiftId: string;

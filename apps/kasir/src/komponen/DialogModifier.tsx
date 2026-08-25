@@ -14,6 +14,7 @@ import {
 import type { DaftarModifier, ItemKatalog, VariationKatalog } from '../katalog/baca.ts';
 import type { ModifierTerpilih } from '../kasir/keranjang.ts';
 import { Tombol } from '../Tombol.tsx';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-04 (modifier) dan K-05 (variation) dalam SATU dialog.
 
@@ -26,10 +27,6 @@ import { Tombol } from '../Tombol.tsx';
    ⛔ Aturan pemilihannya (FR-A3) hidup di
    `packages/domain/src/modifier-pilihan.ts`, bukan di sini. Yang di berkas ini
    hanya bentuk layarnya. */
-
-function rupiah(n: number | bigint): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 function aturanDari(d: DaftarModifier): AturanModifier {
   return {

@@ -8,6 +8,7 @@ import {
   type PengirimApi,
   type StatusBayar,
 } from '../kasir/qris-dinamis.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* FR-C14 — layar tunggu QRIS dinamis.
 
@@ -37,10 +38,6 @@ interface Props {
   /** Di-inject supaya polling dapat diuji tanpa menunggu waktu nyata. */
   jeda?: number;
   batas?: number;
-}
-
-function rupiah(n: bigint): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
 }
 
 export function PanelQris({

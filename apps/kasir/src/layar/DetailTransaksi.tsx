@@ -14,6 +14,7 @@ import { Tombol } from '../Tombol.tsx';
 import { rencanaPembatalan } from '../kasir/pembatalan.ts';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-09 — Detail Transaksi (IA §2.2).
 
@@ -21,10 +22,6 @@ import { BASIS } from '../rute/tabel.ts';
    tidak pernah di-UPDATE (invariant #2), jadi void dan refund adalah baris
    LAIN. Layar yang hanya menampilkan order-nya sendiri akan memperlihatkan
    transaksi yang terlihat utuh padahal uangnya sudah dikembalikan. */
-
-function rupiah(n: number): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 const ALASAN: Record<string, string> = {
   barang_rusak: 'Barang rusak',

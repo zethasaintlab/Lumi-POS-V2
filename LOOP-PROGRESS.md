@@ -3727,3 +3727,58 @@ tanpa perangkat. Yang kelima (*"render < 2 detik pada koneksi seluler"*)
 menuntut pengukuran di jaringan sungguhan, sejajar dengan gate F4 bagian
 pertama: tidak dapat ditutup dari sini, dan menandainya selesai adalah
 kebohongan yang akan ditemukan merchant.
+
+---
+
+## Task 46 — satu pemformat uang untuk ketiga aplikasi (25 Agustus 2026) ✅
+
+Utang yang dinyatakan Task 43, dibayar. `apps/kasir` punya **sebelas** salinan
+`Rp ${n.toLocaleString('id-ID')}` — satu per layar, semuanya identik.
+
+⛔ **Semuanya salah dengan cara yang sama:** nilai negatif dicetak
+`Rp -20.000` — hyphen ASCII, dan tandanya di dalam angka — sementara
+`CLAUDE.md` menetapkan `− Rp 8.000` (U+2212, di depan `Rp`).
+
+⛔ **Dan 494 test kasir hijau selama itu.** Bukan kebetulan: yang salah hanya
+terlihat pada nilai negatif, dan satu-satunya tempat nilai negatif muncul di
+layar kasir — selisih tutup kas — sudah menangani tandanya sendiri
+(`n < 0 ? \`− ${rupiah(-n)}\` : rupiah(n)`). Cacatnya tersembunyi di balik
+tambalan yang dipasang di satu tempat karena pemformatnya salah di semua
+tempat. Bentuk yang sama dengan "test yang hijau karena hampa" (§ F3).
+
+### Yang berubah
+
+- Kesebelas salinan dihapus; semuanya memakai `rupiah` dari
+  `packages/domain/src/uang-tampilan.ts`.
+- **Dua cabang tanda yang kini redundan dihapus**, dan itu inti perbaikannya:
+  `Baris` di K-12 dan pesan kas masuk/keluar di K-03 masing-masing menangani
+  tandanya sendiri karena pemformatnya tidak dapat dipercaya. Setelah pemformat
+  benar, keduanya menghasilkan hal yang sama persis — dan dua tempat yang
+  memutuskan format nilai negatif adalah tepat yang pemindahan ini selesaikan.
+- Pesan kas masuk/keluar tetap memakai nilai MUTLAK: arahnya sudah dibawa
+  katanya ("masuk"/"keluar"), dan `− Rp 50.000` di kalimat "Kas keluar"
+  membacakan arah yang sama dua kali.
+- ⛔ **`cetak/dokumen.ts` DIKECUALIKAN**, dan itu bukan kelalaian: struk 58 mm
+  hanya 32 kolom dan renderer memotong serta meratakan kolomnya sendiri
+  terhadap lebar itu. Alasan yang sama dengan `cetak/metode.ts` yang tidak ikut
+  pindah — yang dicetak di kertas punya batas yang tidak dimiliki layar mana
+  pun. Pengecualiannya dinyatakan di penjaganya.
+
+### Penjaga yang lahir
+
+`tests/kasir/uang-satu-sumber.test.js` memindai ketiga aplikasi dan menolak
+`` `Rp ${…}` `` di berkas mana pun. Ia punya **kontrol negatif**: nilai positif
+harus tetap identik dengan yang lama — kalau seluruh layar kasir berubah
+tampilannya, itu regresi, bukan perbaikan.
+
+### Sabotase
+
+Dua, keduanya merah: satu salinan lokal dikembalikan (penjaga menyala) ·
+format negatif dikembalikan ke `Rp -8.000` (test format menyala).
+
+### Verifikasi
+
+`test:kasir` 499 (+5) · `test:domain` 506 · `test:backoffice` 430 ·
+`test:hp` 49 · `test:sync-client` 103 · `test:dst` 14 ·
+`test:oxlint-ds-adherence` 12 · `test:sqlite-local` 8 · `test:runtime` 3.
+`typecheck` dan `lint:ds` bersih; `vite build` aplikasi kasir berhasil.

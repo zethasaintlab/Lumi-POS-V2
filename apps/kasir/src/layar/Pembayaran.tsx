@@ -35,6 +35,7 @@ import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, subtotalKeranjang } from '../kasir/keranjang.ts';
 import { nilaiDiskon } from '../../../../packages/domain/src/diskon.ts';
 import { Tombol } from '../Tombol.tsx';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-06 Pembayaran + K-07 Konfirmasi & Kembalian (IA §2.2).
 
@@ -59,10 +60,6 @@ function keBagianDomain(p: Pembayaran): BagianBayar {
     nominal: p.metode === 'cash' ? undefined : p.nominal,
     tendered: p.metode === 'cash' ? BigInt(p.tendered) : undefined,
   };
-}
-
-function rupiah(n: number | bigint): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
 }
 
 /* Pecahan uang kertas Indonesia yang benar-benar dipakai.

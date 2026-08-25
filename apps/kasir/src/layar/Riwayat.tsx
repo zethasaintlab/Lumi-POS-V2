@@ -5,6 +5,7 @@ import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { Bidang } from '../Bidang.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-08 — Riwayat Transaksi (IA §2.2).
 
@@ -13,10 +14,6 @@ import { BASIS } from '../rute/tabel.ts';
    membutuhkannya — pelanggan yang kembali dengan struk saat internet mati. */
 
 const BATAS = 100;
-
-function rupiah(n: number): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 function jam(iso: string): string {
   // Format Indonesia `14:32` (`CLAUDE.md`). Zona perangkat sudah zona outlet

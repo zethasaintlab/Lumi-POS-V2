@@ -19,6 +19,7 @@ import { useSesi } from '../konteks/useSesi.ts';
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-12 Tutup Kas + K-13 Laporan Shift (IA §2.2).
 
@@ -34,10 +35,6 @@ import { BASIS } from '../rute/tabel.ts';
    copy-nya: "Hitung dulu, baru sistem menampilkan angkanya." */
 
 const PECAHAN = [1000, 5000, 10000, 50000, 100000];
-
-function rupiah(n: number): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 const METODE: Record<string, string> = { cash: 'Tunai', qris_dynamic: 'QRIS', card: 'Kartu' };
 
@@ -380,9 +377,14 @@ function Baris({
   return (
     <div className="kasir-subtotal">
       <span className="t-body-md">{label}</span>
-      <span className={tebal ? 't-title num' : 't-body-md num'}>
-        {n < 0 ? `− ${rupiah(-n)}` : rupiah(n)}
-      </span>
+      {/* ⛔ Tandanya diserahkan ke `rupiah`, bukan ditangani lagi di sini.
+          Sebelum pemformat dibagi, baris ini punya cabangnya sendiri
+          (`− ${rupiah(-n)}`) karena `toLocaleString` menghasilkan
+          `Rp -20.000` — hyphen ASCII, bukan `−`, dan tandanya di tempat yang
+          salah. Cabang itu kini menghasilkan hal yang sama persis dengan
+          `rupiah(n)`, dan dua tempat yang memutuskan format nilai negatif
+          adalah tepat yang pemindahan ke `packages/domain` selesaikan. */}
+      <span className={tebal ? 't-title num' : 't-body-md num'}>{rupiah(n)}</span>
     </div>
   );
 }

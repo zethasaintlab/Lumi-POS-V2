@@ -9,6 +9,7 @@ import { useSesi } from '../konteks/useSesi.ts';
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-02 — Buka Shift (IA §2.2).
 
@@ -18,10 +19,6 @@ import { BASIS } from '../rute/tabel.ts';
    `spec-d:3` menyebutnya pembeda utama produk. Tidak ada satu pun `fetch` di
    sini — yang ditulis masuk ke SQLite lokal dan `outbox_local`, dan relay
    yang mengirimkannya kapan pun koneksi kembali. */
-
-function rupiah(n: number): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 /* Pecahan yang benar-benar dipakai laci kafe Indonesia.
 

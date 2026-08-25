@@ -46,6 +46,7 @@ import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-03 — layar kasir: grid produk + keranjang (IA §2.1, §2.2).
 
@@ -55,10 +56,6 @@ import { useSesi } from '../konteks/useSesi.ts';
    K-03, dan alasannya di database: `order.shift_id` adalah NOT NULL, jadi
    penjualan tanpa shift tidak dapat disimpan sama sekali. Menampilkan grid
    yang tombol Bayar-nya pasti gagal adalah cara terburuk menyampaikan itu. */
-
-function rupiah(n: number | bigint): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 export function Kasir() {
   const { db } = useDbLokal();
@@ -588,11 +585,15 @@ export function Kasir() {
                dan konfirmasi yang hanya menyebut angkanya membuat kasir yang
                salah memilih arah tidak punya cara mengetahuinya sampai tutup
                kas. */
-            const nilai = (h.delta < 0n ? -h.delta : h.delta).toLocaleString('id-ID');
+            // ⛔ Nilai MUTLAK, dan arahnya dibawa KATANYA. Tandanya sudah
+            // ada di kalimat ("masuk"/"keluar"); menampilkannya lagi sebagai
+            // `− Rp 50.000` di kalimat "Kas keluar" membacakan arah yang sama
+            // dua kali, dan yang membacanya cepat menyimpulkan dua arah.
+            const nilai = rupiah(h.delta < 0n ? -h.delta : h.delta);
             setPesanKas(
               arah === 'masuk'
-                ? `Kas masuk Rp ${nilai} tercatat. Saldo laci bertambah.`
-                : `Kas keluar Rp ${nilai} tercatat. Saldo laci berkurang.`
+                ? `Kas masuk ${nilai} tercatat. Saldo laci bertambah.`
+                : `Kas keluar ${nilai} tercatat. Saldo laci berkurang.`
             );
           }}
         />
