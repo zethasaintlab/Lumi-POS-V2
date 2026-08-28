@@ -216,13 +216,22 @@ menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk negatif.
   SATU laporan, bukan sembilan.** **Email di DUA tenant tidak dapat masuk lewat
   HP** (tanpa field "ID Tenant" di layar 390px).
 
-⛔ **AC FR-G6 KELIMA tetap terbuka** — *"render < 2 detik pada koneksi
-seluler"*. Ia menuntut pengukuran di jaringan sungguhan, sejajar dengan gate F4
-bagian pertama; jangan menandainya selesai.
+⛔ **AC FR-G6 KELIMA ditandai `Environment-Blocked` oleh user, 25 Agustus
+2026** — *"render < 2 detik pada koneksi seluler"* dipindahkan ke Acceptance
+Test, sejajar dengan gate F4 bagian pertama.
+
+⛔ **Yang menjadi dasarnya adalah UKURAN muatan, bukan latensi terukur.**
+Agregasi terjadi di server dan responsnya beberapa puluh baris; tidak ada satu
+pun pengukuran throttling yang pernah dijalankan **di dalam repo ini**, dan
+tidak ada test yang menegakkan ambang dua detik. Kalimat "sudah diverifikasi"
+tentang AC ini salah; yang benar "biayanya dibatasi di sisi muatan, latensinya
+belum diukur".
 
 ---
 
-⛔ **Gate F4 punya DUA bagian, dan hanya satu yang tertutup.** `ARCH:398`: *"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."* Bagian kedua terbukti lewat test. Bagian pertama menuntut perangkat fisik dan **TETAP TERBUKA** — jangan menandai F4 selesai sampai lima model benar-benar dicoba.
+⛔ **Gate F4 punya DUA bagian.** `ARCH:398`: *"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."* Bagian kedua terbukti lewat test. **Bagian pertama ditandai `Hardware-Blocked` oleh user, 25 Agustus 2026** — ia dipindahkan ke Acceptance Test lapangan, bukan dinyatakan lulus.
+
+⛔ **Perbedaan itu harus dijaga di kalimat mana pun tentang F4.** Yang benar: *"logika pemilihan profil dan antrean cetak selesai dan teruji deterministik; cetak di lima model fisik belum pernah dijalankan."* Yang SALAH: "F4 hijau". Tidak satu byte pun pernah meninggalkan perangkat menuju printer sungguhan — `peripheralAktif()` masih mengembalikan `null`, dan itu tercatat sebagai utang Tauri, bukan sebagai adapter yang bekerja.
 
 ---
 
@@ -289,7 +298,7 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 
 **Gate F2 hijau:** `npm run test:dst` — 10.000 iterasi fault injection, nol pelanggaran atas sepuluh invariant.
 
-**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4) · FR-F5 (menunggu keputusan `cost` di jalur turun). (FR-H8, Modul C-3, refund parsial dengan pemilihan baris, K-16 buka laci, dan K-17 scanner sudah ditutup, 21 Agustus 2026; FR-D5 kas masuk/keluar 24 Agustus 2026.)
+**Yang TIDAK termasuk, dan tercatat sebagai utang:** enkripsi at-rest (menunggu Tauri, F4). (FR-F5 ditutup 25 Agustus 2026 — lihat § FR-F5.) (FR-H8, Modul C-3, refund parsial dengan pemilihan baris, K-16 buka laci, dan K-17 scanner sudah ditutup, 21 Agustus 2026; FR-D5 kas masuk/keluar 24 Agustus 2026.)
 
 **Kas masuk & kas keluar (FR-D5) ditutup 24 Agustus 2026.** `spec-d:189` mendaftarkan `paid_in`/`paid_out` di enum `cash_movement` sejak awal dan `spec-d:202` menetapkan aturannya; sampai hari itu tidak ada satu pun jalan untuk membuatnya, di server maupun di perangkat.
 
@@ -359,7 +368,17 @@ Status F1 sekarang:
 
 **FR-G6 ditutup 25 Agustus 2026** — `GET /reports/daily-summary` + `GET /reports/needs-attention` + `apps/hp`. Rinciannya di § G2.
 
-**FR-A7 AC ketiga masih terbuka** — `cost_at_sale` untuk laporan margin menunggu keputusan FR-F5 (`cost`), yang user tahan.
+**FR-F5 dan FR-A7 AC ketiga ditutup 25 Agustus 2026** (keputusan user).
+
+⛔ **`cost` TIDAK PERNAH turun ke perangkat, dan servernya yang men-snapshot.** Ia margin modal milik owner; perangkat kasir yang memegangnya adalah kebocoran yang tidak dapat ditarik kembali begitu satu tablet hilang. `item_variation.cost` ada di `KOLOM_SENGAJA_TIDAK_TURUN`, dan `POST /orders` mengambil nilainya dari katalog lewat `getVariationSnapshot` saat order masuk.
+
+- ⛔ **Nilai dari KLIEN diabaikan sepenuhnya.** `order_line` lokal PUNYA kolom `cost_at_sale` dan klien menulis nol ke sana; jalur naik yang kelak menyertakannya akan mengirim nol, dan nol yang dipercaya menghasilkan **margin 100%** untuk setiap produk. Angkanya terlihat meyakinkan, dan owner memutuskan harga jual berdasarkan itu.
+- ⛔ **Snapshot BEKU.** `spec-a:227`: laporan margin historis memakai `cost_at_sale`, bukan `cost` katalog hari ini. Merchant yang harga belinya naik pekan depan tidak boleh mendapati margin bulan lalu ikut berubah — laporan yang jawabannya berubah tanpa satu pun transaksi berubah tidak dapat dipakai memutuskan apa pun.
+- ⛔ **Kolom margin HILANG untuk yang tidak berhak, bukan bernilai `null`** (`spec-g:99`). Kolom kosong tetap memberi tahu bahwa margin ada dan tidak boleh dilihat.
+- ⛔ **`view_margin` TIDAK menolak permintaannya.** `spec-g:86` menandai laporan produk tersedia di perangkat kasir; 403 di sana akan menutup seluruh laporan demi satu kolom. Yang berubah hanya kolomnya, dan `margin: boolean` di respons **menyatakannya** — layar yang menyimpulkannya dari baris pertama akan menyembunyikan kolom untuk owner pada periode tanpa penjualan.
+- ⛔ **Baris ber-HPP NOL dihitung dan DISEBUTKAN** (`barisTanpaHpp`). Nol dapat berarti "belum diisi" atau "memang tanpa biaya", dan keduanya menghasilkan margin 100%; layar menyatakan arah kesalahannya ("angka di bawah lebih tinggi dari yang sebenarnya").
+- ⛔ **Margin NEGATIF tidak di-clamp**, dan persennya membawa kata "rugi" — "−60%" di kolom bernama Margin dibaca sekilas sebagai enam puluh persen, dan baris yang rugi adalah tepat yang paling perlu dilihat.
+- **Ekspor CSV TANPA margin**, batas yang dinyatakan: kolom yang berubah menurut peran pengekspor menghasilkan dua berkas bernama sama dengan isi berbeda, dan akuntan merchant tidak punya cara mengetahui mana yang ia pegang.
 
 **FR-A5 ditutup bersama B-09** · **FR-A3 ditutup 22 Agustus 2026** · **FR-A8 (import katalog) sudah ada** — `catalog/handlers/import.ts` + layar impor back-office.
 
@@ -845,7 +864,9 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 | # | Pertanyaan | Memblokir |
 |---|---|---|
 | OQ-14 | Prototipe Tauri Android — printer Bluetooth + scanner HID | Rencana mobile |
-| FR-F5 | Apakah `cost` (HPP) turun ke perangkat? | **DITAHAN user 24 Agustus 2026** — dibahas setelah FR-C3 dan `shift_count_attempt` tuntas (keduanya sudah) |
+
+
+**Sudah diputuskan 25 Agustus 2026 — FR-F5:** `cost` **TIDAK** turun ke perangkat (data leak prevention untuk margin modal owner); server men-snapshot-nya ke `order_line.cost_at_sale` saat order masuk. Jangan tanyakan ulang.
 
 **Sudah diputuskan 1 Agustus 2026 — jangan tanyakan ulang, jangan perlakukan sebagai asumsi:**
 

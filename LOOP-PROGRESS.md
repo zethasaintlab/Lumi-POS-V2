@@ -3897,3 +3897,98 @@ menjalankannya, bukan dengan membacanya.
 **Yang TETAP menunggu Tauri, dan tidak berubah:** adapter yang benar-benar
 menyentuh printer (`peripheralAktif()` masih `null`), gate F4 bagian pertama
 (cetak di ≥5 model fisik), dan enkripsi at-rest.
+
+---
+
+## Task 48 — FR-F5 & FR-A7 AC ketiga: HPP server-side dan laporan margin (25 Agustus 2026) ✅
+
+Keputusan user membuka dua AC yang tertahan sejak 24 Agustus: `cost` **tidak**
+turun ke perangkat, dan server men-snapshot-nya saat order masuk.
+
+### Yang ternyata SUDAH ada, dan yang tidak
+
+Separuh pertama write-path-nya sudah benar sejak Modul B: `getVariationSnapshot`
+mengembalikan `cost`, `POST /orders` menulisnya ke `order_line.cost_at_sale`,
+dan `item_variation.cost` sudah ada di `KOLOM_SENGAJA_TIDAK_TURUN`.
+
+⛔ **Yang TIDAK ada adalah testnya.** Tiga properti yang menentukan benar-salah
+seluruh laporan margin tidak dijaga apa pun, dan ketiganya rusak diam-diam:
+
+| Properti | Kalau rusak |
+|---|---|
+| Snapshot bukan nol | Margin **100%** untuk setiap produk, dan angkanya terlihat meyakinkan |
+| Nilai KLIEN diabaikan | `order_line` lokal punya kolomnya dan klien menulis NOL; jalur naik yang kelak menyertakannya mengirim nol, dan nol yang dipercaya menghasilkan margin 100% |
+| Snapshot BEKU | Margin bulan lalu berubah saat harga beli naik pekan depan (`spec-a:227`) |
+
+Ditambah dua lagi: HPP nol di katalog tidak menolak penjualan, dan `cost`
+tenant lain tidak bocor lewat `variation_id` karangan.
+
+**Sabotase:** server memercayai nilai klien → 1 merah · snapshot dipaku nol →
+3 merah.
+
+### Laporan margin (FR-A7 AC3 · `spec-g:86` · `spec-g:99`)
+
+- ⛔ **Dihitung dari `cost_at_sale`, bukan JOIN ke `item_variation.cost`.**
+  `spec-a:227` menuntutnya, dan JOIN itu juga melanggar invariant #4 — tabelnya
+  milik modul `catalog`.
+- ⛔ **Kolomnya HILANG untuk yang tidak berhak, bukan bernilai `null`.** Kolom
+  kosong tetap memberi tahu bahwa margin ADA dan tidak boleh dilihat, dan itu
+  mengundang pertanyaan yang tidak dapat dijawab kasirnya sendiri.
+- ⛔ **`view_margin` TIDAK menolak permintaannya.** `spec-g:86` menandai laporan
+  produk tersedia di perangkat kasir; 403 di sana menutup seluruh laporan demi
+  satu kolom. Yang berubah hanya kolomnya.
+- ⛔ **`margin: boolean` DINYATAKAN di respons.** Layar yang menyimpulkan hak
+  dari ada/tidaknya kunci pada baris pertama akan menyembunyikan kolomnya untuk
+  owner pada periode tanpa penjualan — dan owner menyimpulkan haknya dicabut.
+- ⛔ **`barisTanpaHpp` dihitung dan disebutkan di layar.** HPP nol berarti
+  "belum diisi" atau "memang tanpa biaya", dan keduanya menghasilkan margin
+  100%. Kalimatnya menyatakan ARAH kesalahannya: *"angka di bawah lebih tinggi
+  dari yang sebenarnya"* — "sebagian HPP kosong" tidak memberi tahu ke arah
+  mana.
+- ⛔ **Margin negatif tidak di-clamp**, dan persennya membawa kata "rugi".
+  "−60%" di kolom bernama Margin dibaca sekilas sebagai enam puluh persen.
+- ⛔ **`marginPersen: null` untuk nilai kotor NOL**, bukan 0%.
+- ⛔ **Persen total SENGAJA kosong** di baris total. Merata-ratakan persen
+  memberi bobot sama pada produk yang terjual satu kali dan yang terjual
+  seribu kali.
+- **Ekspor CSV tanpa margin**, batas yang dinyatakan: kolom yang berubah
+  menurut peran pengekspor menghasilkan dua berkas bernama sama dengan isi
+  berbeda, dan akuntan merchant tidak punya cara mengetahui mana yang ia pegang.
+
+**Sabotase:** gerbang `view_margin` dibuka → 1 merah · `barisTanpaHpp` dipaku
+nol → 1 merah · margin di-clamp → 2 merah.
+
+### Masalah + solusinya
+
+**Backtick di dalam komentar SQL memutus template literal TypeScript** —
+kemunculan KETIGA di repo ini, dan sudah tercatat di `CLAUDE.md`. Gejalanya
+`TS1005: ',' expected` pada baris yang isinya komentar. Backticknya dibuang.
+
+**Response OpenAPI memangkas properti yang tidak terdaftar** — `margin` mendarat
+`undefined` sampai skemanya diperbarui. Juga sudah tercatat; delapan test merah
+serentak menunjukkannya.
+
+### Verifikasi
+
+Seluruh suite hijau: `test:kasir` 515 · `test:domain` 506 · `test:server` 502 ·
+`test:backoffice` 439 · `test:isolation` 211 · `test:ordering` 205 ·
+`test:catalog` 177 · `test:identity` 156 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:hp` 49 · `test:schema` 14 ·
+`test:dst` 14 · `test:oxlint-ds-adherence` 12 · `test:dst-server` 10 ·
+`test:sqlite-local` 8 · `test:runtime` 3. `typecheck` dan `lint:ds` bersih;
+ketiga aplikasi ter-build.
+
+### Status dua gate yang user tandai diblokir
+
+Dicatat di `CLAUDE.md` **sebagai keputusan, bukan sebagai kelulusan** — dan
+kalimatnya sengaja dibuat sulit disalahbacakan:
+
+- **Gate F4 bagian pertama → `Hardware-Blocked`.** Yang benar dikatakan:
+  logika pemilihan profil dan antrean cetak selesai dan teruji deterministik;
+  cetak di lima model fisik **belum pernah dijalankan**, dan
+  `peripheralAktif()` masih mengembalikan `null` — tidak satu byte pun pernah
+  meninggalkan perangkat menuju printer sungguhan.
+- **AC FR-G6 kelima → `Environment-Blocked`.** Dasarnya adalah UKURAN muatan
+  (agregasi di server, respons beberapa puluh baris), **bukan latensi
+  terukur**. Tidak ada pengukuran throttling yang pernah dijalankan di dalam
+  repo ini, dan tidak ada test yang menegakkan ambang dua detik.

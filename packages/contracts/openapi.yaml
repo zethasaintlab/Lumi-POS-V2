@@ -7228,11 +7228,29 @@ components:
                     description: Baris yang belum punya perkiraan tersimpan (ditulis sebelum FR-C12).
     LaporanProduk:
       type: object
-      required: [from, to, outletId, produk]
+      required: [from, to, outletId, margin, produk]
       properties:
         from: { type: string }
         to: { type: string }
         outletId: { type: string, nullable: true }
+        margin:
+          type: boolean
+          description: >-
+            Apakah pemanggil berhak melihat kolom margin (`view_margin`).
+
+
+            ⛔ DINYATAKAN, bukan disimpulkan layar dari ada/tidaknya kunci
+            `margin` pada baris pertama: laporan yang KOSONG tidak punya baris
+            pertama, dan layar yang menyimpulkan dari sana akan menyembunyikan
+            kolomnya untuk owner pada periode tanpa penjualan -- lalu owner
+            menyimpulkan haknya dicabut.
+
+
+            ⛔ `false` TIDAK berarti permintaannya ditolak. `spec-g:99` menulis
+            *"kolom margin tidak muncul untuk peran Kasir"*, bukan "laporan
+            produk tidak dapat dibuka kasir" -- `spec-g:86` justru menandai
+            laporan ini tersedia di perangkat kasir. 403 di sini akan menutup
+            seluruh laporan demi satu kolom.
         produk:
           type: array
           items:
@@ -7260,6 +7278,50 @@ components:
         kuantitasTampil:
           type: string
           description: Bentuk desimal dari `kuantitas`, mis. `"2"` atau `"0,5"`.
+        hpp:
+          type: string
+          description: >-
+            FR-A7 AC ketiga. HPP total baris ini, rupiah utuh sebagai STRING.
+
+
+            ⛔ HANYA ADA bila `margin` bernilai `true`. Kuncinya HILANG untuk
+            yang tidak berhak, bukan bernilai `null` -- kolom kosong tetap
+            memberi tahu bahwa margin ADA dan tidak boleh dilihat.
+
+
+            ⛔ Dihitung dari `order_line.cost_at_sale` -- SNAPSHOT saat
+            penjualan, bukan `item_variation.cost` hari ini. `spec-a:227`
+            menuntutnya persis begitu: merchant yang harga belinya naik pekan
+            depan tidak boleh mendapati margin bulan lalu ikut berubah.
+        margin:
+          type: string
+          description: >-
+            `nilaiKotor - hpp`, rupiah utuh sebagai STRING. Boleh NEGATIF --
+            produk yang dijual rugi itu nyata, dan menjepitnya ke nol
+            menyembunyikan baris yang paling perlu dilihat owner. Hanya ada
+            bila berhak.
+        marginPersen:
+          type: number
+          nullable: true
+          description: >-
+            Margin sebagai persen dari nilai kotor, satu digit desimal. `null`
+            bila nilai kotornya NOL -- bukan 0%: produk yang seluruhnya
+            terjual dengan potongan penuh tidak punya margin persen yang
+            berarti. Hanya ada bila berhak.
+        barisTanpaHpp:
+          type: integer
+          description: >-
+            ⛔ Berapa baris penjualan produk ini yang `cost_at_sale`-nya NOL.
+
+
+            Nol dapat berarti dua hal yang sangat berbeda: merchant belum
+            mengisi HPP, atau produknya memang tidak berbiaya. Keduanya
+            menghasilkan margin 100% yang terlihat meyakinkan, dan yang
+            pertama adalah angka karangan. Layar menyebutkannya. Hanya ada
+            bila berhak.
+        jumlahBaris:
+          type: integer
+          description: Pembanding untuk `barisTanpaHpp`. Hanya ada bila berhak.
         nilaiKotor:
           type: string
           description: Rupiah utuh sebagai STRING -- `bigint`, bukan `number`.

@@ -237,6 +237,17 @@ export function createExportHandlers(pool: Pool): Record<string, unknown> {
         }
 
         if (jenis === 'products') {
+          // ⛔ TANPA margin, dan itu batas yang DINYATAKAN — bukan kelalaian.
+          //
+          // Kolom CSV yang berubah menurut peran pengekspor menghasilkan dua
+          // berkas bernama sama dengan isi berbeda, dan akuntan merchant yang
+          // menerimanya tidak punya cara mengetahui mana yang ia pegang.
+          // Ekspor bermargin menuntut nama berkas dan metadata yang
+          // menyatakannya (`spec-g:§G.5` menuntut metadata di dalam
+          // berkasnya), dan itu pekerjaan tersendiri.
+          //
+          // Margin dibaca di layar (`GET /reports/products`), yang RBAC-nya
+          // ditegakkan per permintaan.
           const produk = await ambilProduk(client, { from, to, outletId });
           return susunCsv(
             ['variation_id', 'produk', 'varian', 'kuantitas_x1000', 'kuantitas', 'nilai_kotor'],

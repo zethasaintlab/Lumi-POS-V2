@@ -2,7 +2,7 @@ import type { FastifyRequest } from 'fastify';
 import type { Pool } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
-import { assertUserVisible } from '../../identity/index.ts';
+import { assertUserVisible, bolehkahAktor } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { STATUS_PENJUALAN_LIST } from '../../../../../../packages/domain/src/posisi-penjualan.ts';
 import { assertRentang } from './rentang.ts';
@@ -65,13 +65,64 @@ interface BarisDb {
   variation_name: string;
   kuantitas: string;
   nilai_kotor: string;
+  hpp: string;
+  jumlah_baris: string;
+  baris_tanpa_hpp: string;
+}
+
+/**
+ * Kolom margin — ADA hanya bila pemanggilnya berhak (`spec-g:99`).
+ *
+ * ⛔ Kuncinya HILANG, bukan bernilai `null`. Kolom kosong di layar tetap
+ * memberi tahu bahwa margin ADA dan tidak boleh dilihat, dan itu mengundang
+ * pertanyaan yang tidak dapat dijawab kasirnya sendiri. Yang tidak berhak
+ * tidak melihat kolomnya sama sekali.
+ */
+export interface MarginProduk {
+  /** HPP total baris ini, rupiah utuh. STRING — uang tidak lewat JSON number. */
+  hpp: string;
+  /** `nilaiKotor - hpp`. Boleh NEGATIF: produk yang dijual rugi itu nyata. */
+  margin: string;
+  /**
+   * Margin sebagai persen dari nilai kotor, satu digit desimal.
+   *
+   * ⛔ `null` bila nilai kotornya NOL — bukan 0%. Produk yang seluruhnya
+   * terjual dengan diskon 100% tidak punya margin persen yang berarti, dan
+   * "0%" untuknya adalah pernyataan yang salah.
+   */
+  marginPersen: number | null;
+  /**
+   * ⛔ Berapa baris penjualan produk ini yang HPP-nya nol saat terjual.
+   *
+   * Nol dapat berarti dua hal yang sangat berbeda: merchant belum mengisi
+   * HPP, atau produknya memang tidak berbiaya. Keduanya menghasilkan margin
+   * 100% yang terlihat meyakinkan — dan yang pertama adalah angka karangan.
+   * Layar menyebutkannya; laporan yang tidak menyebutkannya akan dipercaya.
+   */
+  barisTanpaHpp: number;
+  jumlahBaris: number;
 }
 
 
 /** Data laporan produk. Diekspor untuk dipakai `GET /reports/export`. */
 export async function ambilProduk(
   client: import('../../../db.ts').PoolClient,
-  { from, to, outletId }: { from: string; to: string; outletId: string | null }
+  {
+    from,
+    to,
+    outletId,
+    sertakanMargin = false,
+  }: {
+    from: string;
+    to: string;
+    outletId: string | null;
+    /**
+     * ⛔ Diputuskan PEMANGGIL lewat `assertBoleh(view_margin)`, bukan di sini.
+     * Fungsi ini juga dipakai `GET /reports/export`, dan penjaga peran yang
+     * disalin ke dua tempat akan menyimpang di tempat ketiga.
+     */
+    sertakanMargin?: boolean;
+  }
 ) {
         const { rows } = await client.query<BarisDb>(
     `SELECT ol.variation_id,
@@ -81,7 +132,15 @@ export async function ambilProduk(
             -- ⛔ Dibagi 1000: quantity adalah INTEGER x1000 (konvensi
             -- repo). Tanpa pembagian ini nilainya 1000x terlalu besar,
             -- dan tidak ada satu pun error yang menandainya.
-            SUM(ol.quantity * ol.unit_price / 1000) AS nilai_kotor
+            SUM(ol.quantity * ol.unit_price / 1000) AS nilai_kotor,
+            -- ⛔ cost_at_sale adalah SNAPSHOT saat penjualan, bukan JOIN ke
+            -- item_variation.cost. spec-a:227 menuntutnya persis begitu:
+            -- merchant yang harga belinya naik pekan depan tidak boleh
+            -- mendapati margin bulan lalu ikut berubah. JOIN ke katalog juga
+            -- akan melanggar invariant #4: tabel itu milik modul catalog.
+            SUM(ol.quantity * ol.cost_at_sale / 1000) AS hpp,
+            COUNT(*)                                  AS jumlah_baris,
+            COUNT(*) FILTER (WHERE ol.cost_at_sale = 0) AS baris_tanpa_hpp
        FROM order_line ol
        JOIN "order" o ON o.id = ol.order_id
       WHERE o.business_date BETWEEN $1 AND $2
@@ -98,14 +157,41 @@ export async function ambilProduk(
     [from, to, outletId, STATUS_PENJUALAN_LIST]
   );
 
-  return rows.map((r) => ({
-    variationId: r.variation_id,
-    itemName: r.item_name,
-    variationName: r.variation_name,
-    kuantitas: String(r.kuantitas),
-    kuantitasTampil: tampilkanKuantitas(String(r.kuantitas)),
-    nilaiKotor: String(r.nilai_kotor),
-  }));
+  return rows.map((r) => {
+    const dasar = {
+      variationId: r.variation_id,
+      itemName: r.item_name,
+      variationName: r.variation_name,
+      kuantitas: String(r.kuantitas),
+      kuantitasTampil: tampilkanKuantitas(String(r.kuantitas)),
+      nilaiKotor: String(r.nilai_kotor),
+    };
+    if (!sertakanMargin) return dasar;
+    return { ...dasar, ...hitungMargin(r) };
+  });
+}
+
+/**
+ * Margin satu baris produk.
+ *
+ * ⛔ Seluruh aritmetikanya `bigint`. Uang tidak pernah menyentuh float
+ * (`CLAUDE.md`), dan `nilaiKotor` di sini rutin melewati 2^53 untuk merchant
+ * yang melaporkan setahun penuh.
+ */
+function hitungMargin(r: BarisDb): MarginProduk {
+  const nilaiKotor = BigInt(r.nilai_kotor ?? 0);
+  const hpp = BigInt(r.hpp ?? 0);
+  const margin = nilaiKotor - hpp;
+  return {
+    hpp: hpp.toString(),
+    margin: margin.toString(),
+    // ⛔ Perkalian SEBELUM pembagian, dan pembagiannya `bigint`. Membagi lebih
+    // dulu memotong ke nol untuk setiap margin yang lebih kecil dari nilai
+    // kotornya — yaitu semuanya.
+    marginPersen: nilaiKotor === 0n ? null : Number((margin * 1000n) / nilaiKotor) / 10,
+    barisTanpaHpp: Number(r.baris_tanpa_hpp ?? 0),
+    jumlahBaris: Number(r.jumlah_baris ?? 0),
+  };
 }
 
 export { tampilkanKuantitas };
@@ -122,7 +208,26 @@ export function createProductReportHandlers(pool: Pool): Record<string, unknown>
         await assertUserVisible(client, actorId);
         if (outletId !== null) await assertOutletVisible(client, outletId);
 
-        return { from, to, outletId, produk: await ambilProduk(client, { from, to, outletId }) };
+        // ⛔ Hak margin TIDAK menolak permintaannya — ia hanya menentukan
+        // kolomnya ikut atau tidak. `spec-g:99` menulis *"kolom margin tidak
+        // muncul untuk peran Kasir"*, bukan "laporan produk tidak dapat
+        // dibuka kasir": kasir MEMANG membaca laporan produk (`spec-g:86`
+        // menandainya tersedia di perangkat). 403 di sini akan menutup
+        // seluruh laporan demi satu kolom.
+        const sertakanMargin = await bolehkahAktor(client, actorId, 'view_margin');
+
+        return {
+          from,
+          to,
+          outletId,
+          // ⛔ DINYATAKAN di respons, bukan disimpulkan layar dari ada/
+          // tidaknya kunci `margin` pada baris pertama. Laporan yang KOSONG
+          // tidak punya baris pertama, dan layar yang menyimpulkan dari sana
+          // akan menyembunyikan kolomnya untuk owner — lalu owner
+          // menyimpulkan haknya dicabut.
+          margin: sertakanMargin,
+          produk: await ambilProduk(client, { from, to, outletId, sertakanMargin }),
+        };
       });
     },
   };

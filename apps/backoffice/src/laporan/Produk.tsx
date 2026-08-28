@@ -11,6 +11,8 @@ import {
   rentangSiap,
   totalProduk,
   urutkanProduk,
+  catatanHppKosong,
+  marginPersenTampil,
   type BarisProduk,
   type Rentang,
 } from './b17.ts';
@@ -43,6 +45,13 @@ interface HasilLaporan {
   from: string;
   to: string;
   outletId: string | null;
+  /**
+   * ⛔ Hak margin DINYATAKAN server, bukan disimpulkan dari ada/tidaknya kunci
+   * pada baris pertama. Laporan yang KOSONG tidak punya baris pertama, dan
+   * layar yang menyimpulkan dari sana menyembunyikan kolomnya untuk owner
+   * pada periode tanpa penjualan — lalu owner menyimpulkan haknya dicabut.
+   */
+  margin?: boolean;
   produk: BarisProduk[];
 }
 
@@ -156,6 +165,8 @@ export function ProdukLaporanLayar() {
             (() => {
               const baris = urutkanProduk(keadaan.hasil.produk);
               const total = totalProduk(baris);
+              const adaMargin = keadaan.hasil.margin === true;
+              const catatanHpp = adaMargin ? catatanHppKosong(total) : null;
               return (
                 <div className="stack" style={{ gap: 'var(--space-4)' }}>
                   <div className="row between">
@@ -167,11 +178,31 @@ export function ProdukLaporanLayar() {
                     <Badge tone="neutral">{namaOutlet(keadaan.hasil.outletId)}</Badge>
                   </div>
 
+                  {/* ⛔ Kalimat ini tampil HANYA bila ada baris ber-HPP nol,
+                      dan ia tampil DI ATAS tabelnya. Peringatan yang selalu
+                      ada berhenti dibaca; peringatan di bawah tabel dibaca
+                      setelah keputusannya diambil. */}
+                  {catatanHpp !== null && (
+                    <p className="t-caption" style={{ marginBottom: 'var(--space-3)' }}>
+                      {catatanHpp}
+                    </p>
+                  )}
+
                   <Table
                     columns={[
                       { key: 'nama', header: 'Varian' },
                       { key: 'kuantitas', header: 'Kuantitas', align: 'right' },
                       { key: 'nilai', header: 'Nilai kotor', align: 'right' },
+                      // ⛔ Kolomnya TIDAK ADA untuk yang tidak berhak
+                      // (`spec-g:99`) — bukan kolom kosong. Kolom kosong tetap
+                      // memberi tahu bahwa margin ada dan tidak boleh dilihat.
+                      ...(adaMargin
+                        ? [
+                            { key: 'hpp', header: 'HPP', align: 'right' as const },
+                            { key: 'margin', header: 'Margin', align: 'right' as const },
+                            { key: 'persen', header: '% margin', align: 'right' as const },
+                          ]
+                        : []),
                     ]}
                     rows={[
                       ...baris.map((b) => ({
@@ -182,6 +213,15 @@ export function ProdukLaporanLayar() {
                         // "2000 gelas" untuk dua gelas.
                         kuantitas: <span className="num">{b.kuantitasTampil}</span>,
                         nilai: <span className="num">{rupiah(b.nilaiKotor)}</span>,
+                        ...(adaMargin
+                          ? {
+                              hpp: <span className="num">{rupiah(b.hpp ?? '0')}</span>,
+                              margin: <span className="num">{rupiah(b.margin ?? '0')}</span>,
+                              persen: (
+                                <span className="num">{marginPersenTampil(b.marginPersen)}</span>
+                              ),
+                            }
+                          : {}),
                       })),
                       {
                         nama: (
@@ -193,6 +233,19 @@ export function ProdukLaporanLayar() {
                           <strong className="num">{total.kuantitasTampil}</strong>
                         ),
                         nilai: <strong className="num">{rupiah(total.nilaiKotor)}</strong>,
+                        ...(adaMargin
+                          ? {
+                              hpp: <strong className="num">{rupiah(total.hpp ?? '0')}</strong>,
+                              margin: (
+                                <strong className="num">{rupiah(total.margin ?? '0')}</strong>
+                              ),
+                              // ⛔ Persen total SENGAJA kosong. Ia bukan
+                              // rata-rata dari kolom di atasnya — merata-ratakan
+                              // persen memberi bobot sama pada produk yang
+                              // terjual satu kali dan yang terjual seribu kali.
+                              persen: <span aria-hidden="true">—</span>,
+                            }
+                          : {}),
                       },
                     ]}
                   />
