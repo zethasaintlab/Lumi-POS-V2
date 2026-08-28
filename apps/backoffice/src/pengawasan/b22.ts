@@ -105,6 +105,11 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   device_provisioned: 'Perangkat didaftarkan',
   device_revoked: 'Perangkat dicabut',
   clock_drift_detected: 'Selisih jam perangkat',
+  // ⛔ "Peripheral dikonfigurasi", bukan "Printer diganti". Jenisnya tidak
+  // selalu printer — enum `peripheral.type` punya empat nilai — dan label yang
+  // menyebut satu jenis akan salah untuk tiga lainnya tanpa ada yang
+  // memperhatikannya.
+  peripheral_configured: 'Peripheral dikonfigurasi',
   // Data
   data_exported: 'Data diekspor',
   // ⛔ Keduanya mencatat PEMBERIAN dan PENCABUTAN akses, bukan tindakan yang

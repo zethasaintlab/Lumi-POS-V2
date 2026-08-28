@@ -221,6 +221,17 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   },
   {
     metode: 'POST',
+    pola: '/peripherals',
+    alasan:
+      'jalur perangkat: relay outbox. K-15 bertanda ✅ offline (`IA:65`) — kasir memilih ' +
+      'profil printernya tanpa jaringan, dan barisnya di-relay belakangan. Rute jalur ' +
+      'perangkat yang hanya `DIKECUALIKAN` dijawab 401 lalu berhenti permanen di antrean; ' +
+      'ini kemunculan KEEMPAT bentuk cacat itu (refund offline 21 Agu, kas manual 24 Agu, ' +
+      'abandon). Yang menjaganya tetap `assertBoleh(shift_open_close)` di handler',
+    sesiOpsional: true,
+  },
+  {
+    metode: 'POST',
     pola: '/orders/:orderId/abandon',
     alasan:
       'jalur perangkat: FR-C3. Kasir membatalkan draf QRIS dinamis DI KASIR, dan relay ' +

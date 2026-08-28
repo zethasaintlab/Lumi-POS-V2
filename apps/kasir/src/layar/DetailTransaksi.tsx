@@ -3,6 +3,8 @@ import { EmptyState } from 'ds';
 import { bacaDetail, type DetailOrder } from '../riwayat/baca.ts';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { bacaProfilPrinter } from '../cetak/profil.ts';
+import { profilBerlaku } from '../cetak/berlaku.ts';
+import { bacaPilihanProfil } from '../cetak/pilihan.ts';
 import { bangunUlangStruk } from '../cetak/ulang.ts';
 import { cetakDanCatat } from '../cetak/antrean.ts';
 import { peripheralAktif } from '../cetak/aktif.ts';
@@ -105,15 +107,20 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
   useEffect(() => {
     let hidup = true;
     void (async () => {
-      const [d, k, p] = await Promise.all([
+      const [d, k, p, dipilih] = await Promise.all([
         bacaDetail(db, orderId),
         bacaKonfigPerangkat(db),
         bacaProfilPrinter(db),
+        bacaPilihanProfil(db),
       ]);
       if (!hidup) return;
       setDetail(d);
       setKonfig(k);
-      setProfil(p[0] ?? null);
+      // ⛔ BUKAN `p[0]`. Query profil tidak punya `ORDER BY`, jadi "yang
+      // pertama" tidak dijamin apa pun — dan cetak ulang yang memakai profil
+      // acak menghasilkan struk kedua yang lebarnya berbeda dari yang
+      // pertama, tepat yang `spec-b:145` larang.
+      setProfil(profilBerlaku(p, dipilih).profil);
       if (hidup) setSiap(true);
     })();
     return () => {

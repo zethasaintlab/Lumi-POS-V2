@@ -9,7 +9,11 @@ import { Bidang } from '../Bidang.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { simpanIdentitasPerangkat } from '../perangkat/simpan-identitas.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { useSesi } from '../konteks/useSesi.ts';
 import { bacaProfilPrinter, dokumenUjiCetak } from '../cetak/profil.ts';
+import { pesanProfil, profilBerlaku } from '../cetak/berlaku.ts';
+import { bacaPilihanProfil } from '../cetak/pilihan.ts';
+import { simpanPeripheralPrinter } from '../cetak/simpan-peripheral.ts';
 import {
   jumlahCetakTertunda,
   prosesAntreanCetak,
@@ -50,6 +54,7 @@ const KOSONG: KonfigPerangkat = {
 
 export function Perangkat() {
   const { db } = useDbLokal();
+  const { sesi } = useSesi();
   const [nilai, setNilai] = useState<KonfigPerangkat>(KOSONG);
   const [tersimpan, setTersimpan] = useState<KonfigPerangkat | null>(null);
   const [pesan, setPesan] = useState<string | null>(null);
@@ -63,6 +68,12 @@ export function Perangkat() {
      perangkat tanpa profil tersinkron tetap dapat mencetak. */
   const [profil, setProfil] = useState<PrinterProfile[]>([]);
   const [profilId, setProfilId] = useState('');
+  /* Pilihan yang BENAR-BENAR tersimpan, terpisah dari yang sedang disorot.
+     Tanpa pemisahan itu, layar tidak dapat mengatakan "belum disimpan" — dan
+     kasir yang menutup layar mengira pilihannya berlaku. */
+  const [tersimpanProfil, setTersimpanProfil] = useState<string | null>(null);
+  const [peripheralId, setPeripheralId] = useState<string | null>(null);
+  const [pesanProfilSimpan, setPesanProfilSimpan] = useState<string | null>(null);
   const [hasilUji, setHasilUji] = useState<{ hasil: HasilCetak; byte: number } | null>(null);
   const [tertunda, setTertunda] = useState(0);
   const [pesanAntrean, setPesanAntrean] = useState<string | null>(null);
@@ -75,11 +86,23 @@ export function Perangkat() {
         if (!hidup) return;
         setTersimpan(k);
         if (k) setNilai({ ...k, tokenSecret: k.tokenSecret ?? '' });
-        void bacaProfilPrinter(db).then((daftar) => {
-          if (!hidup) return;
-          setProfil(daftar);
-          setProfilId((kini) => kini || daftar[0]?.id || '');
-        });
+        void Promise.all([bacaProfilPrinter(db), bacaPilihanProfil(db)]).then(
+          ([daftar, dipilih]) => {
+            if (!hidup) return;
+            setProfil(daftar);
+            setTersimpanProfil(dipilih);
+            // ⛔ BUKAN `daftar[0]`. Query profil tidak punya `ORDER BY`, jadi
+            // "yang pertama" tidak dijamin apa pun — dan itu tepat cacat yang
+            // pilihan tersimpan ada untuk memperbaikinya.
+            setProfilId((kini) => kini || profilBerlaku(daftar, dipilih).profil?.id || '');
+          }
+        );
+        void db
+          .getAll<{ peripheral_id: string | null }>(
+            'SELECT peripheral_id FROM device_config WHERE id = 1'
+          )
+          .then((baris) => hidup && setPeripheralId(baris[0]?.peripheral_id ?? null))
+          .catch(() => {});
         void jumlahCetakTertunda(db).then((n) => hidup && setTertunda(n), () => {});
         setMemuat(false);
       },
@@ -114,6 +137,41 @@ export function Perangkat() {
     // menyambungkan PowerSync dua kali dalam satu proses belum pernah kami
     // uji, dan menebaknya di layar pengaturan bukan tempat yang benar.
     setPesan('Tersimpan. Muat ulang aplikasi untuk menyalakan sinkronisasi.');
+  }
+
+  /* K-15 — menyimpan pilihan profil printer perangkat ini.
+
+     ⛔ Sebelum ini, pilihan di layar ini murni state React: ia hilang saat
+     layar ditutup, dan K-09 (cetak ulang) tidak pernah melihatnya sama sekali.
+     Yang dipakai mencetak adalah `p[0]` — baris pertama dari query tanpa
+     `ORDER BY`. */
+  async function simpanProfil() {
+    if (!tersimpan) {
+      setPesanProfilSimpan('Hubungkan perangkat lebih dulu.');
+      return;
+    }
+    // ⛔ Aktor adalah PENGGUNA, bukan perangkat. `audit_event.actor_user_id`
+    // ber-FK ke `"user"` dan NOT NULL; mengirim `deviceId` menghasilkan 404
+    // yang berhenti permanen di antrean — dan yang menemukannya adalah
+    // merchant, berjam-jam kemudian.
+    if (!sesi) {
+      setPesanProfilSimpan('Masuk lebih dulu — perubahan ini tercatat atas nama Anda.');
+      return;
+    }
+    try {
+      const hasil = await simpanPeripheralPrinter(db, {
+        peripheralIdTersimpan: peripheralId,
+        profilId,
+        deviceId: tersimpan.deviceId,
+        outletId: tersimpan.outletId,
+        actorId: sesi.userId,
+      });
+      setPeripheralId(hasil.peripheralId);
+      setTersimpanProfil(profilId);
+      setPesanProfilSimpan('Profil tersimpan untuk perangkat ini.');
+    } catch (e) {
+      setPesanProfilSimpan(`Profil tidak dapat disimpan: ${(e as Error).message}`);
+    }
   }
 
   /* F4 — antrean cetak (`ERD:447`).
@@ -211,6 +269,16 @@ export function Perangkat() {
           Cetak lembar uji untuk memastikan lebar kertasnya benar. Penggaris angka
           di lembar itu harus muat dalam satu baris.
         </div>
+        {/* ⛔ Kalimat yang menyatakan profil mana yang BERLAKU, dan kenapa.
+            Kasir yang melihat profil yang bukan pilihannya harus dapat
+            mengetahui sebabnya, bukan menyimpulkan aplikasinya mengabaikan
+            setelannya. */}
+        <div className="t-caption" style={{ marginTop: 'var(--space-2)' }}>
+          {(() => {
+            const b = profilBerlaku(profil, tersimpanProfil);
+            return pesanProfil(b.sebab, b.profil?.nama ?? null);
+          })()}
+        </div>
         <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
           {profil.map((p) => (
             <Tombol
@@ -228,7 +296,16 @@ export function Perangkat() {
         <Tombol varian="secondary" onClick={ujiCetak}>
           Cetak lembar uji
         </Tombol>
+        <Tombol
+          varian="primary"
+          disabled={profilId === '' || profilId === tersimpanProfil}
+          onClick={simpanProfil}
+        >
+          Simpan profil untuk perangkat ini
+        </Tombol>
       </div>
+
+      {pesanProfilSimpan && <p className="t-caption">{pesanProfilSimpan}</p>}
 
       {hasilUji && (
         <p className="t-caption">

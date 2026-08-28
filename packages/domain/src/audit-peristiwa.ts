@@ -127,6 +127,10 @@ export const PERISTIWA_AUDIT = {
   device_provisioned: 'perangkat',
   device_revoked: 'perangkat',
   clock_drift_detected: 'perangkat',
+  // K-15. Yang dicatat adalah PILIHAN merchant (printer mana, profil mana),
+  // bukan deteksi perangkat keras — deteksi itu menunggu shell Tauri, dan
+  // pilihannya tidak.
+  peripheral_configured: 'perangkat',
 
   // Data
   data_exported: 'data',

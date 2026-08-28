@@ -3782,3 +3782,118 @@ format negatif dikembalikan ke `Rp -8.000` (test format menyala).
 `test:hp` 49 · `test:sync-client` 103 · `test:dst` 14 ·
 `test:oxlint-ds-adherence` 12 · `test:sqlite-local` 8 · `test:runtime` 3.
 `typecheck` dan `lint:ds` bersih; `vite build` aplikasi kasir berhasil.
+
+---
+
+## Task 47 — modul `peripheral`: lubang TERAKHIR audit trail, dan cacat yang menyembunyikannya (25 Agustus 2026) ✅
+
+`peripheral_configured` adalah satu-satunya nama yang tersisa di
+`PERISTIWA_BELUM_DIPANCARKAN`, dan `CLAUDE.md` mencatatnya sebagai "utang F4,
+menunggu shell Tauri". **Itu keliru, dan kekeliruannya menyembunyikan cacat
+nyata.**
+
+Yang menunggu Tauri adalah *mendeteksi* perangkat keras. Yang tidak menunggu
+apa pun adalah **mencatat printer mana yang merchant katakan ada di perangkat
+ini** — dan tanpa itu:
+
+⛔ **K-09 dan K-15 memilih profil printer dengan `p[0]`** — baris PERTAMA yang
+query kembalikan, dari query yang **tidak punya `ORDER BY` sama sekali**.
+Merchant dengan tiga model printer tersinkron mencetak dengan profil yang
+dipilih urutan baris, bukan dengan printer yang benar-benar tercolok. Gejalanya
+bukan error: struk 80 mm dipotong di kolom 32, atau perintah potong tercetak
+sebagai karakter sampah di printer tanpa pemotong. Kasir menyimpulkan
+printernya rusak.
+
+`peripheral` adalah tabel yang ERD siapkan untuk itu sejak F0, dan ia tidak
+punya satu pun endpoint.
+
+### Keputusan yang mengikat kode
+
+- ⛔ **Pilihan hidup di PERANGKAT** (`device_config.printer_profile_id`, murni
+  lokal), bukan di merchant. Printer menempel pada perangkat: kasir 1 dengan
+  Epson dan kasir 2 dengan Xprinter di outlet yang sama adalah keadaan normal,
+  dan setelan per-merchant memaksa keduanya memakai profil yang sama.
+- ⛔ **`profilBerlaku` membedakan EMPAT sebab**, masing-masing dengan
+  kalimatnya: dipilih · pilihan-hilang · belum-dipilih · tidak-ada-profil.
+  Kasir yang melihat profil yang bukan pilihannya harus dapat mengetahui
+  sebabnya, bukan menyimpulkan aplikasinya mengabaikan setelannya. Yang belum
+  memilih jatuh ke **baseline**, dicari lewat `id` — jatuh ke `daftar[0]`
+  mengembalikan cacat yang sama satu lapis lebih dalam.
+- ⛔ **`peripheralId` DIBEKUKAN per perangkat.** Id baru pada setiap
+  penyimpanan menghasilkan lima printer terdaftar untuk merchant yang mengubah
+  profilnya lima kali.
+- ⛔ **Kunci idempotensi `peripheral:{id}:{profilId}`.** Tanpa profil di
+  dalamnya, perubahan KEDUA dijawab server dari cache — pilihan kedua tidak
+  pernah berlaku, tanpa satu pun error.
+- ⛔ **SATU transaksi lokal: pilihan + outbox.** Menulis `device_config` lalu
+  mengantre di luar transaksi meninggalkan jendela tempat perangkat memakai
+  profil baru sementara server tidak pernah mendengarnya. Alasan yang sama
+  persis dengan `simpanHlc` dan pembersihan keranjang.
+- ⛔ **Pengiriman ulang MEMPERBARUI barisnya**, bukan ditolak
+  `ID_ALREADY_EXISTS`. Kasir mengubah profilnya berkali-kali sampai strukanya
+  benar, dan setiap perubahan adalah konfigurasi ULANG peripheral yang sama.
+  `peripheral` bukan tabel transaksional — invariant #2 menjaga transaksi
+  selesai dan katalog, bukan setelan perangkat. Riwayatnya di `audit_event`,
+  dengan `before` memuat keadaan sebelumnya.
+- ⛔ **Perintah printer TIDAK diterima dari klien**, hanya `printerProfileId`.
+  `ERD:445` menetapkan `printer_profile` adalah data milik KAMI; perangkat yang
+  dapat mengarang perintahnya sendiri dapat mengirim byte apa pun ke printer
+  merchant.
+- ⛔ **`ORDER BY name` DINYATAKAN di `GET /printer-profiles`.** Query tanpa
+  urutan adalah tepat cacat yang endpoint ini perbaiki.
+- ⛔ **Kosakata `type`/`connection` di `packages/domain`**, dibandingkan test
+  terhadap CHECK constraint di migrasi — bukan terhadap ingatan. K-15 offline;
+  aturan yang hanya hidup di server berarti barisnya berhenti
+  `gagal-permanen` berjam-jam kemudian.
+- ⛔ **RBAC `shift_open_close`, bukan operasi karangan.** `IA:65` memberi K-15
+  ke "Manajer+" — himpunan yang sama. `[ASUMSI]` yang dinyatakan: matriks
+  `spec-f:38-53` tidak punya baris untuk konfigurasi peripheral, dan matriks
+  yang mengandung baris karangan berhenti dapat dibaca berdampingan dengan
+  spec-nya.
+
+### ⛔ Sabotase yang MENGOREKSI klaim saya sendiri
+
+Berkas relay saya tulis dengan komentar "rutenya `sesiOpsional`, dan itu yang
+membuatnya bekerja". **Sabotase membuktikan itu salah:** menghapus
+`sesiOpsional: true` membiarkan keenam test relay hijau. Yang sebenarnya
+dijaga masing-masing:
+
+| Properti | Yang menjaganya | Sabotase |
+|---|---|---|
+| Entri rutenya ADA di `RUTE_TERBUKA` | test relay | entri dihapus → **5 merah** |
+| `sesiOpsional: true` pada entri itu | `tests/server/peripheral.test.js` | barisnya dihapus → **1 merah** |
+
+Komentarnya dikoreksi menjadi apa yang benar-benar dibuktikan masing-masing.
+Ini bentuk "guard yang tidak dapat DIBEDAKAN dari luar" (§ F1, temuan kelima)
+yang muncul di sisi test alih-alih di sisi kode.
+
+### Sabotase lain
+
+Delapan, semuanya merah: penjaga outlet dilepas · `before` diisi nilai baru ·
+`ORDER BY name` diganti · `peripheralId` digenerate ulang · kunci idempotensi
+tanpa profil.
+
+### Penjaga yang menyala sendiri
+
+Tiga, semuanya bekerja seperti maksudnya — dan ketiganya menemukan hal yang
+saya lupa:
+
+- `test:sync-client` — jenis outbox baru tanpa rute di `tools/pulihkan-antrean.mjs`.
+- `test:ordering` — `RUTE_DIDUKUNG` tanpa test transport asli.
+- `test:backoffice` — jenis peristiwa audit tanpa label di B-22.
+
+### Verifikasi
+
+Seluruh suite hijau: `test:kasir` 515 · `test:domain` 506 · `test:server` 493 ·
+`test:backoffice` 430 · `test:isolation` 211 · `test:ordering` 200 ·
+`test:catalog` 177 · `test:identity` 156 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:hp` 49 · `test:schema` 14 ·
+`test:dst` 14 · `test:oxlint-ds-adherence` 12 · `test:dst-server` 10 ·
+`test:sqlite-local` 8 · `test:runtime` 3. `typecheck` dan `lint:ds` bersih.
+
+**FR-F6 TERTUTUP** — `PERISTIWA_BELUM_DIPANCARKAN` diperiksa kosong dengan
+menjalankannya, bukan dengan membacanya.
+
+**Yang TETAP menunggu Tauri, dan tidak berubah:** adapter yang benar-benar
+menyentuh printer (`peripheralAktif()` masih `null`), gate F4 bagian pertama
+(cetak di ≥5 model fisik), dan enkripsi at-rest.

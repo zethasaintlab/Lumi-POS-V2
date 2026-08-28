@@ -28,6 +28,10 @@ export const ENTITY_TYPES = [
   // tutup kas berjalan tanpa jaringan. Jejaknya harus sampai meski shift-nya
   // sudah ditutup berjam-jam sebelumnya.
   'count_attempt',
+  // K-15. Pilihan profil printer perangkat dicatat saat kasir memilihnya, dan
+  // K-15 bertanda ✅ offline (`IA:65`) — outlet yang printernya diganti saat
+  // internet mati tidak menunggu jaringan untuk mencetak dengan benar.
+  'peripheral',
 ] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 

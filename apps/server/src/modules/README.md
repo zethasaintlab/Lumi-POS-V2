@@ -41,7 +41,11 @@ Batas modul **ditegakkan**, bukan konvensi. Lihat `product/ARCH-lumi-pos-v1.md` 
 | `inventory` | Pergerakan stok, opname, penandaan habis | `POST /inventory/movements` · `POST /inventory/stocktakes` · `POST /inventory/sold-out` · `recordStockMovements` · `detectOversell` |
 | `audit` | Irisan minimal Modul F — hanya penulisan satu event | `recordAuditEvent` |
 
-Belum ada kode: `peripheral`.
+`peripheral` lahir 25 Agustus 2026 dengan dua operasi
+(`POST /peripherals`, `GET /printer-profiles`) — menutup lubang TERAKHIR audit
+trail FR-F6, dan memberi perangkat jalan untuk mengatakan printer mana yang
+ada padanya. Sebelum itu, K-09/K-15 memilih profil dengan `p[0]` dari query
+tanpa `ORDER BY`.
 
 `audit` lahir dengan **satu fungsi**, dan itu bukan penundaan yang malas. Keputusan produk 1 Agustus 2026 menetapkan void berjalan **tanpa PIN manajer**, dengan syarat alasan daftar tertutup + audit + restock otomatis — jadi keduanya bukan pelengkap void, melainkan kontrol yang tersisa untuknya. Invariant #1 menuntut keduanya ditulis dalam transaksi yang sama, dan aturan 2 melarang `ordering` menyentuh `stock_movement` maupun `audit_event` langsung.
 

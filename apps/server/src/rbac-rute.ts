@@ -267,6 +267,33 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
   },
   {
     metode: 'POST',
+    pola: '/peripherals',
+    alasan:
+      'K-15. `IA:65` memberi layarnya ke "Manajer+", dan operasi RBAC-nya ' +
+      '`shift_open_close` — himpunan peran yang sama. Operasi baru sengaja tidak dibuat: ' +
+      'matriks `spec-f:38-53` tidak punya baris untuk konfigurasi peripheral, dan matriks ' +
+      'yang mengandung baris karangan berhenti dapat dibaca berdampingan dengan spec-nya. ' +
+      '[ASUMSI] yang dinyatakan. Yang menjaganya `assertBoleh(shift_open_close)` di ' +
+      'handler — menutup akuntan (`spec-f:82`: tidak dapat melakukan mutasi apa pun)',
+  },
+  {
+    metode: 'GET',
+    pola: '/peripherals',
+    alasan:
+      'MEMBACA apa yang terpasang tidak dijaga peran, alasan yang sama dengan ambang ' +
+      'otorisasi (B-26): kasir yang strukanya tercetak salah lebar berhak tahu profil mana ' +
+      'yang sedang dipakai perangkatnya',
+  },
+  {
+    metode: 'GET',
+    pola: '/printer-profiles',
+    alasan:
+      'Data referensi hardware GLOBAL, dikecualikan RLS dan tanpa `tenant_id`. Tidak satu ' +
+      'pun kolomnya menyebut merchant mana pun — konsekuensi yang sama yang `app_release` ' +
+      'nyatakan',
+  },
+  {
+    metode: 'POST',
     pola: '/auth/logout',
     alasan:
       'Setiap pemegang sesi berhak MENGAKHIRI sesinya sendiri. Peran tidak relevan — ' +

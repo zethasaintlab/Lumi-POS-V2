@@ -22,6 +22,12 @@ const RUTE: Record<string, (entityId: string) => string> = {
   // bersarang di bawahnya, dan saldo laci dihitung per shift.
   cash_movement: (id) => `/shifts/${encodeURIComponent(id)}/cash-movements`,
   count_attempt: (id) => `/shifts/${encodeURIComponent(id)}/count-attempts`,
+  // K-15. `entity_id`-nya id PERIPHERAL, dan rutenya tidak bersarang: satu
+  // peripheral menempel pada perangkat, bukan pada shift. Pengiriman ulang
+  // dengan id yang sama MEMPERBARUI barisnya — kasir mengubah profil printer
+  // berkali-kali sampai strukanya benar, dan setiap perubahan adalah
+  // konfigurasi ulang peripheral yang sama.
+  peripheral: () => '/peripherals',
 };
 
 /**

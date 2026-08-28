@@ -4988,6 +4988,117 @@ paths:
         "403": { description: "Tidak berhak" }
         "404": { description: "Outlet tidak ditemukan" }
 
+  /printer-profiles:
+    get:
+      operationId: listPrinterProfiles
+      summary: Daftar profil printer. Data referensi hardware global.
+      description: >-
+        `ERD:445`: `printer_profile` adalah "data, bukan kode -- menambah model
+        printer = menambah baris". Tabelnya DIKECUALIKAN dari RLS: ia tidak
+        punya `tenant_id`, dan tidak satu pun kolomnya menyebut merchant mana
+        pun. Konsekuensinya dinyatakan -- setiap merchant dapat membacanya.
+
+
+        ⛔ `ORDER BY name` dinyatakan di query. Daftar tanpa urutan adalah
+        tepat cacat yang endpoint ini ada untuk memperbaikinya: sebelum ini,
+        K-09 dan K-15 memilih profil dengan `p[0]` dari query yang tidak punya
+        `ORDER BY` sama sekali.
+      responses:
+        "200": { description: "Daftar profil, urut nama" }
+        "404": { description: "Aktor tidak ditemukan" }
+
+  /peripherals:
+    get:
+      operationId: listPeripherals
+      summary: Peripheral yang terpasang, per outlet atau per perangkat.
+      parameters:
+        - name: device_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { description: "Daftar peripheral" }
+        "404": { description: "Aktor tidak ditemukan" }
+    post:
+      operationId: configurePeripheral
+      summary: Mendaftarkan atau mengonfigurasi ulang satu peripheral.
+      description: >-
+        Menutup lubang TERAKHIR audit trail FR-F6 (`peripheral_configured`).
+
+
+        ⛔ Yang sebenarnya rusak sebelum ini: `printer_profile` sudah turun ke
+        perangkat, dan K-09/K-15 memilih profil dengan `p[0]` -- baris PERTAMA
+        yang query kembalikan, dari query tanpa `ORDER BY`. Merchant dengan
+        tiga model printer mencetak dengan profil yang dipilih urutan baris,
+        bukan dengan printer yang benar-benar tercolok. Tidak ada satu pun
+        error: struk 80 mm dipotong di kolom 32, atau perintah potong tercetak
+        sebagai karakter sampah.
+
+
+        ⛔ Pengiriman ulang dengan `id` yang sama MEMPERBARUI barisnya, bukan
+        ditolak ID_ALREADY_EXISTS. Kasir mengubah profil printernya berkali-kali
+        sampai strukanya benar, dan setiap perubahan adalah konfigurasi ULANG
+        peripheral yang sama. Invariant #2 menjaga transaksi selesai dan
+        katalog, bukan setelan perangkat -- dan riwayat perubahannya ada di
+        `audit_event`, dengan `before` memuat keadaan sebelumnya.
+
+
+        ⛔ Perintah printer TIDAK diterima dari klien, hanya
+        `printerProfileId`. Perangkat yang dapat mengarang perintahnya sendiri
+        adalah perangkat yang dapat mengirim byte apa pun ke printer merchant.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, outletId, type, connection]
+              properties:
+                id: { type: string, description: "ULID/UUIDv7 di-generate klien." }
+                deviceId: { type: string, nullable: true }
+                outletId: { type: string }
+                type: { type: string, enum: [printer, drawer, scanner, display] }
+                connection: { type: string, enum: [usb, bluetooth, network] }
+                address: { type: string, nullable: true }
+                printerProfileId: { type: string, nullable: true }
+                hlc: { type: string }
+                occurredAt: { type: string }
+      responses:
+        "201":
+          description: >-
+            Tersimpan. `baru` membedakan pendaftaran pertama dari konfigurasi
+            ulang -- keduanya 201, dan perbedaannya kalimat yang berbeda di
+            layar.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, outletId, type, connection, baru]
+                properties:
+                  id: { type: string }
+                  deviceId: { type: string, nullable: true }
+                  outletId: { type: string }
+                  type: { type: string }
+                  connection: { type: string }
+                  address: { type: string, nullable: true }
+                  printerProfileId: { type: string, nullable: true }
+                  baru: { type: boolean }
+        "400": { description: "Muatan tidak valid, atau Idempotency-Key hilang" }
+        "403": { description: "Tidak berhak" }
+        "404":
+          description: >-
+            Outlet, perangkat, atau profil printer tidak ditemukan
+            (OUTLET_NOT_FOUND / DEVICE_NOT_FOUND / PRINTER_PROFILE_NOT_FOUND).
+
   /reports/needs-attention:
     get:
       operationId: getNeedsAttention

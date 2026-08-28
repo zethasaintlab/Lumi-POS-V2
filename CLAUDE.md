@@ -470,7 +470,7 @@ cadangkan nomor struk (lokal) → POST /orders (draf, `open`)
 
 **Tiga aplikasi kini ada**: `apps/kasir` (offline-first, PowerSync), `apps/backoffice` (online-only), `apps/hp` (Owner mobile, online-only). Sesi dan pintu HTTP keduanya yang terakhir dibagi lewat `packages/klien-api`.
 
-**Delapan modul kini punya kode**: `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
+**Sembilan modul kini punya kode**: `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`, `peripheral`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
 
 **Keputusan yang mengikat kode ordering:**
 
@@ -740,11 +740,20 @@ Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_
 
 ⛔ **`audit_event.event_type` kini daftar TERTUTUP** (`packages/domain/src/audit-peristiwa.ts`), dan `recordAuditEvent` menerima `PeristiwaAudit`, bukan `string`. Sampai sekarang delapan belas nama tersebar di dua belas berkas tanpa satu pun terdaftar di mana pun. Ejaan yang menyimpang **tidak menghasilkan error** — ia menghasilkan baris audit yang tidak pernah cocok dengan saringan mana pun, dan laporan yang melewatkannya terlihat persis seperti laporan yang tidak menemukan apa pun. Bentuk cacat yang sama persis dengan `stock_movement.type`.
 
-⛔ **Audit trail BERLUBANG terhadap `spec-f:288`, dan lubangnya adalah DATA.** Saat ditemukan: 24 dari 35 nama di tabel spec belum dipancarkan sama sekali. `PERISTIWA_BELUM_DIPANCARKAN` diturunkan dari selisih kedua daftar, ikut di respons `GET /audit-events`, dan **disebutkan di layar**: trail berlubang yang terlihat lengkap lebih berbahaya daripada trail yang tidak ada. Daftarnya menyusut sendiri saat peristiwanya mulai ditulis, jadi tidak ada daftar kedua yang harus diingat untuk dipangkas. FR-F6 **belum tertutup** — jangan menandainya selesai sampai daftar itu kosong.
+⛔ **Audit trail BERLUBANG terhadap `spec-f:288`, dan lubangnya adalah DATA.** Saat ditemukan: 24 dari 35 nama di tabel spec belum dipancarkan sama sekali. `PERISTIWA_BELUM_DIPANCARKAN` diturunkan dari selisih kedua daftar, ikut di respons `GET /audit-events`, dan **disebutkan di layar**: trail berlubang yang terlihat lengkap lebih berbahaya daripada trail yang tidak ada. Daftarnya menyusut sendiri saat peristiwanya mulai ditulis, jadi tidak ada daftar kedua yang harus diingat untuk dipangkas. FR-F6 **ditutup 25 Agustus 2026** — daftar itu kosong.
 
 **Ditutup 23 Agustus 2026, lubang 24 → 9**, lewat satu pembungkus `catatPerubahanServer` di modul `audit`: katalog/harga/stok/pajak (`item_created` · `item_updated` · `item_archived` · `price_changed` · `stock_adjusted` · `stocktake_completed` · `sold_out_toggled` · `tax_rate_changed`), lalu sesi/shift/perangkat/ekspor (`login` · `logout` · `shift_opened` · `cash_variance_approved` · `device_provisioned` · `device_revoked` · `data_exported`). **Lubang 9 → 4 pada 24 Agustus** bersama FR-D5 (`cash_paid_in` · `cash_paid_out`) dan peran/ambang/vertikal.
 
-**Lubang 4 → 2 pada 24 Agustus** bersama F.5 akses support (`support_session_started` · `support_session_ended`), lalu **2 → 1** bersama FR-D2 (`shift_count_attempt`). **Yang tersisa hanya `peripheral_configured`** — utang F4, menunggu shell Tauri.
+**Lubang 4 → 2 pada 24 Agustus** bersama F.5 akses support (`support_session_started` · `support_session_ended`), lalu **2 → 1** bersama FR-D2 (`shift_count_attempt`), lalu **1 → 0 pada 25 Agustus** bersama modul `peripheral` (`peripheral_configured`). **FR-F6 tertutup: `PERISTIWA_BELUM_DIPANCARKAN` kosong.**
+
+⛔ **`peripheral_configured` TIDAK menunggu shell Tauri, dan anggapan sebaliknya menyembunyikan cacat nyata selama berminggu-minggu.** Yang menunggu Tauri adalah *mendeteksi* perangkat keras; yang tidak menunggu apa pun adalah **mencatat printer mana yang merchant katakan ada di perangkat ini** — dan tanpa itu, K-09 dan K-15 memilih profil dengan `p[0]`, baris PERTAMA dari query yang tidak punya `ORDER BY` sama sekali. Merchant dengan tiga model printer mencetak dengan profil yang dipilih urutan baris, bukan dengan printer yang benar-benar tercolok: struk 80 mm dipotong di kolom 32, atau perintah potong tercetak sebagai karakter sampah. Tanpa satu pun error.
+
+- ⛔ **Pilihan hidup di PERANGKAT** (`device_config.printer_profile_id`, murni lokal), bukan di merchant. Kasir 1 dengan Epson dan kasir 2 dengan Xprinter di outlet yang sama adalah keadaan normal.
+- ⛔ **`profilBerlaku` membedakan EMPAT sebab**, dan masing-masing punya kalimatnya: dipilih · pilihan-hilang · belum-dipilih · tidak-ada-profil. Yang belum memilih jatuh ke **baseline**, bukan ke `daftar[0]` — jatuh ke elemen pertama mengembalikan cacat yang sama satu lapis lebih dalam.
+- ⛔ **`peripheralId` DIBEKUKAN per perangkat.** Id baru pada setiap penyimpanan menghasilkan lima printer terdaftar untuk merchant yang mengubah profilnya lima kali. Kunci idempotensinya `peripheral:{id}:{profilId}` — tanpa profil di dalamnya, perubahan KEDUA dijawab dari cache dan tidak pernah berlaku.
+- ⛔ **Rutenya kemunculan KEEMPAT cacat "jalur perangkat 401"**, dan dua propertinya diuji TERPISAH: entri di `RUTE_TERBUKA` (dijaga test relay) dan `sesiOpsional: true` pada entri itu (dijaga test endpoint). Sabotase menunjukkan test relay semula hanya membuktikan yang pertama.
+- ⛔ **Pengiriman ulang MEMPERBARUI barisnya**, bukan ditolak `ID_ALREADY_EXISTS` — `peripheral` bukan tabel transaksional, dan invariant #2 menjaga transaksi selesai dan katalog, bukan setelan perangkat. Riwayat perubahannya ada di `audit_event`, dengan `before` memuat keadaan sebelumnya.
+- ⛔ **Perintah printer TIDAK diterima dari klien**, hanya `printerProfileId`. Perangkat yang dapat mengarang perintahnya sendiri dapat mengirim byte apa pun ke printer merchant.
 
 ### F.5 akses support, ditutup 24 Agustus 2026 (B-30)
 

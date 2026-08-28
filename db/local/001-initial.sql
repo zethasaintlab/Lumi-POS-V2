@@ -526,7 +526,23 @@ CREATE TABLE device_config (
   -- kolom sama sekali.
   hlc_state INTEGER DEFAULT 0,
   hlc_teks TEXT,
-  last_sync_at TEXT
+  last_sync_at TEXT,
+  -- ⛔ Profil printer yang BERLAKU di perangkat ini, dan alasannya bukan
+  -- kenyamanan: sebelum kolom ini ada, K-09 dan K-15 memakai `p[0]` — baris
+  -- PERTAMA yang query kembalikan, tanpa `ORDER BY`. Merchant yang punya tiga
+  -- model printer tersinkron mencetak dengan profil yang dipilih urutan baris,
+  -- bukan dengan profil printer yang benar-benar tercolok — dan gejalanya
+  -- struk selebar 80 mm yang dipotong di kolom 32, atau perintah potong yang
+  -- tercetak sebagai karakter sampah.
+  --
+  -- Ia MURNI LOKAL: printer menempel pada perangkat, bukan pada merchant.
+  -- Kasir 1 dengan Epson dan kasir 2 dengan Xprinter di outlet yang sama
+  -- adalah keadaan normal.
+  --
+  -- NULL berarti belum dipilih; `profilBerlaku` yang memutuskan apa yang
+  -- dipakai sementara itu.
+  printer_profile_id TEXT,
+  peripheral_id TEXT
 );
 -- Sidik jari bentuk raw table pada saat skema terakhir dipasang di perangkat
 -- ini. Ia menggantikan nomor versi yang ditulis tangan, dan alasannya bukan

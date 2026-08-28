@@ -403,6 +403,35 @@ test('pembatalan (order_cancel) mendarat lewat relay', async () => {
   sampai(hasil, 'order_cancel');
 });
 
+test('konfigurasi peripheral (peripheral) mendarat lewat relay', async () => {
+  // K-15. Rincian jalurnya diuji di `tests/ordering/peripheral-offline-relay`
+  // dan `tests/server/peripheral.test.js`; yang ditegakkan DI SINI adalah
+  // bahwa jenisnya benar-benar pernah melewati transport asli — itulah yang
+  // dibaca penjaga `RUTE_DIDUKUNG` di bawah.
+  const fx = await perangkatDanShift();
+  const profilId = crypto.randomUUID();
+  // `printer_profile` DIKECUALIKAN dari RLS — ditulis lewat koneksi owner.
+  await owner.query(
+    `INSERT INTO printer_profile (id, name, paper_width_mm, chars_per_line)
+     VALUES ($1, 'Epson TM-T82', 80, 48)`,
+    [profilId]
+  );
+  const peripheralId = crypto.randomUUID();
+  const hasil = await relaikan({
+    entity_type: 'peripheral',
+    entity_id: peripheralId,
+    payload: {
+      id: peripheralId,
+      deviceId: fx.deviceId,
+      outletId: base.outlet.id,
+      type: 'printer',
+      connection: 'usb',
+      printerProfileId: profilId,
+    },
+  });
+  sampai(hasil, 'peripheral');
+});
+
 // ---------------------------------------------------------------------------
 // Penjaga dua arah
 // ---------------------------------------------------------------------------
