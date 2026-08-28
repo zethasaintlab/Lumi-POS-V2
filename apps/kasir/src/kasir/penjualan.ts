@@ -790,8 +790,9 @@ export async function simpanPenjualan({
         `INSERT INTO order_line
            (id, order_id, check_id, variation_id, item_name, variation_name, unit_price,
             quantity, modifier_snapshot, discount_amount, tax_rate_id, tax_rate, tax_amount,
-            is_tax_inclusive, cost_at_sale, line_total, tax_rate_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?, ?)`,
+            is_tax_inclusive, cost_at_sale, line_total, tax_rate_name,
+            variation_count_at_sale)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?, ?, ?)`,
         [
           b.id, orderId, checkId, b.variationId, b.itemName, b.variationName,
           b.unitPrice, b.quantityMilli,
@@ -808,6 +809,15 @@ export async function simpanPenjualan({
           // ada. Tanpanya struk yang dicetak ulang hanya dapat menulis
           // "Pajak" (`spec-b:145` melarang menyentuh tabel katalog).
           p?.name ?? null,
+          // FR-A2 AC keempat — dibekukan saat item masuk keranjang, bukan
+          // dibaca ulang di sini: katalog dapat turun di tengah antrean
+          // pelanggan.
+          //
+          // ⛔ Minimal 1. Baris keranjang lama yang dipulihkan dari
+          // `keranjang_lokal` (KEP-21) tidak punya bidang ini — ia ditulis
+          // sebelum kolomnya ada — dan `undefined` yang lolos ke SQLite
+          // menjadi NULL pada kolom `NOT NULL`.
+          Math.max(1, Number(b.variationCount ?? 1)),
         ]
       );
 
@@ -1047,6 +1057,7 @@ export async function simpanPenjualan({
       baris: keranjang.baris.map((b, i) => ({
         itemName: b.itemName,
         variationName: b.variationName,
+        variationCountAtSale: b.variationCount,
         quantityMilli: b.quantityMilli,
         lineTotal: Number(lineTotals[i]),
         modifier: b.modifier.map((m) => ({

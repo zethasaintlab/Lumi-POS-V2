@@ -47,6 +47,14 @@ export interface BarisKeranjang {
   variationId: string;
   itemName: string;
   variationName: string;
+  /**
+   * FR-A2 AC keempat — berapa varian yang item ini punya saat dimasukkan.
+   *
+   * ⛔ Dibekukan DI SINI, bukan dibaca ulang saat menyimpan. Katalog dapat
+   * turun di tengah antrean pelanggan; keranjang yang membaca ulang akan
+   * menyimpan jumlah varian dari SESUDAH kasir menekan kartunya.
+   */
+  variationCount: number;
   /** Rupiah utuh, sudah diresolusi lewat tangga harga. */
   unitPrice: number;
   /** ×1000. `CLAUDE.md`: REAL membuat `WHERE stok = 0` gagal diam-diam. */
@@ -180,6 +188,15 @@ export function tambah(
         // boleh mengubah struk yang sudah tercetak hari ini.
         itemName: item.nama,
         variationName: variation.nama,
+        // FR-A2 — dibekukan bersama namanya, alasan yang sama.
+        //
+        // ⛔ `?? 1` bukan kelonggaran tipe. `ItemKatalog` menuntut
+        // `variations`, jadi TypeScript menjaminnya di setiap pemanggil
+        // produksi — yang dijaga di sini adalah kasir yang sedang melayani
+        // antrean. Item yang entah bagaimana sampai tanpa daftar variannya
+        // tidak boleh menjatuhkan penjualan demi satu kata di struk; 1
+        // menghasilkan perilaku yang sama dengan sebelum kolom ini ada.
+        variationCount: item.variations?.length ?? 1,
         unitPrice: variation.harga,
         quantityMilli: qtyMilli,
         modifier: [...modifier],

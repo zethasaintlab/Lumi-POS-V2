@@ -213,3 +213,81 @@ test('modifier BERHARGA NOL tidak mencetak angka', async () => {
   const line = out.split('\n').find((l) => l.includes('Tanpa Gula'));
   assert.equal(/\d/.test(line), false, `modifier gratis mencetak angka: ${JSON.stringify(line)}`);
 });
+
+// ---------------------------------------------------------------------------
+// FR-A2 AC keempat — nama varian di struk
+// ---------------------------------------------------------------------------
+
+/** `CONTOH` dengan baris pertama diganti. */
+const dengan = (over) => ({
+  ...CONTOH,
+  baris: [{ ...CONTOH.baris[0], modifier: undefined, ...over }],
+});
+
+test('⛔ item MULTI-VARIAN mencetak nama variannya', async () => {
+  // Sebelum ini `variationName` dibawa sepanjang jalur cetak lalu DIJATUHKAN
+  // di titik render: merchant yang menjual "Kopi Susu Regular" dan "Kopi Susu
+  // Large" mencetak dua baris struk yang tidak dapat dibedakan — dan struk
+  // adalah satu-satunya bukti yang pelanggan pegang.
+  const out = await cetak(
+    dengan({ itemName: 'Kopi Susu', variationName: 'Large', variationCountAtSale: 2 })
+  );
+  assert.ok(out.includes('Kopi Susu Large'), `varian tidak tercetak:\n${out}`);
+});
+
+test('⛔ dua varian item yang SAMA menghasilkan baris yang BERBEDA', async () => {
+  // Inti ACnya. Dua baris yang identik di struk membuat pelanggan yang
+  // mempersoalkan ukurannya tidak dapat dijawab siapa pun.
+  const regular = await cetak(
+    dengan({ itemName: 'Kopi Susu', variationName: 'Regular', variationCountAtSale: 2 })
+  );
+  const large = await cetak(
+    dengan({ itemName: 'Kopi Susu', variationName: 'Large', variationCountAtSale: 2 })
+  );
+  assert.notEqual(regular, large);
+  assert.ok(regular.includes('Kopi Susu Regular'));
+  assert.ok(large.includes('Kopi Susu Large'));
+});
+
+test('⛔ item SATU-VARIAN tidak mencetak nama variannya (`spec-a:98`)', async () => {
+  // Dan itu yang menjaga contoh `spec-c:376` tetap utuh: ia mencetak
+  // "2x Kopi Susu" untuk baris yang varian-nya bernama "Regular".
+  const out = await cetak(
+    dengan({ itemName: 'Kopi Susu', variationName: 'Regular', variationCountAtSale: 1 })
+  );
+  assert.ok(out.includes('Kopi Susu'), out);
+  assert.ok(!out.includes('Kopi Susu Regular'), `varian tercetak untuk item satu-varian:\n${out}`);
+});
+
+test('⛔ jumlah varian yang HILANG diperlakukan sebagai SATU, bukan sebagai >1', async () => {
+  // Baris dari jalur lama tidak boleh tiba-tiba mencetak nama varian di struk
+  // yang seharusnya identik dengan cetakan pertamanya (`spec-b:145`).
+  const out = await cetak(dengan({ itemName: 'Kopi Susu', variationName: 'Regular' }));
+  assert.ok(!out.includes('Kopi Susu Regular'), out);
+});
+
+test('nama varian KOSONG tidak menambah apa pun', async () => {
+  // Varian tanpa nama pada item multi-varian adalah data yang cacat, tapi ia
+  // tidak boleh menghasilkan "Kopi Susu " dengan spasi menggantung — struk
+  // 32 kolom tidak punya ruang untuk karakter yang tidak berarti apa-apa.
+  //
+  // Dibandingkan terhadap keluaran item SATU-varian, bukan lewat regex atas
+  // barisnya: kolom dua-sisi memang dipisahkan spasi, dan regex apa pun atas
+  // itu akan menandai baris yang benar.
+  const kosong = await cetak(
+    dengan({ itemName: 'Kopi Susu', variationName: '   ', variationCountAtSale: 2 })
+  );
+  const satu = await cetak(
+    dengan({ itemName: 'Kopi Susu', variationName: '   ', variationCountAtSale: 1 })
+  );
+  assert.equal(kosong, satu);
+});
+
+test('⛔ contoh spec-c:376 TETAP mencetak "2x Kopi Susu", bukan "Kopi Susu Regular"', async () => {
+  // Kontrol negatif untuk seluruh perubahan ini. `CONTOH` adalah contoh spec
+  // apa adanya, dan barisnya bervarian "Regular" tanpa `variationCountAtSale`
+  // — persis bentuk yang aturan berbasis NAMA akan cetak salah.
+  const out = await cetak(CONTOH);
+  assert.ok(out.includes('2x Kopi Susu'), out);
+  assert.ok(!out.includes('Kopi Susu Regular'), `contoh spec berubah:\n${out}`);
+});

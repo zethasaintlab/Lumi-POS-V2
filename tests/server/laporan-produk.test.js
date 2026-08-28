@@ -93,8 +93,9 @@ async function buatBaris(orderId, { variationId, itemName, variationName = 'Regu
   await appSetup.query(
     `INSERT INTO order_line
        (id, tenant_id, outlet_id, device_id, order_id, check_id, variation_id, item_name,
-        variation_name, unit_price, quantity, cost_at_sale, line_total, created_by, occurred_at, hlc)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::bigint)`,
+        variation_name, unit_price, quantity, cost_at_sale, line_total, created_by, occurred_at, hlc,
+        variation_count_at_sale)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::bigint, 1)`,
     [crypto.randomUUID(), tenant.id, base.outlet.id, device, orderId, `chk-${orderId}`,
      variationId, itemName, variationName, unitPrice, quantity, costAtSale,
      Math.trunc((quantity * unitPrice) / 1000), base.user.id, occurredAt, n]

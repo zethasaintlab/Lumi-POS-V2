@@ -105,9 +105,10 @@ export async function bangunUlangStruk(
     line_total: number;
     tax_rate_name: string | null;
     tax_amount: number | null;
+    variation_count_at_sale: number | null;
   }>(
     `SELECT id, item_name, variation_name, quantity, line_total,
-            tax_rate_name, tax_amount
+            tax_rate_name, tax_amount, variation_count_at_sale
        FROM order_line WHERE order_id = ?`,
     [orderId]
   );
@@ -157,6 +158,9 @@ export async function bangunUlangStruk(
     baris: baris.map((b) => ({
       itemName: b.item_name,
       variationName: b.variation_name,
+      // ⛔ Dari `order_line`, bukan dari katalog — `spec-b:145` melarang cetak
+      // ulang menyentuh tabel katalog, dan itulah alasan kolom ini ada.
+      variationCountAtSale: Number(b.variation_count_at_sale ?? 1),
       quantityMilli: Number(b.quantity),
       lineTotal: Number(b.line_total),
       modifier: perBaris.get(b.id) ?? [],

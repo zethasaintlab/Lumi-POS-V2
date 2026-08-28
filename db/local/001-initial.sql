@@ -369,6 +369,21 @@ CREATE TABLE order_line (
   tax_rate_id TEXT, tax_rate INTEGER DEFAULT 0, tax_amount INTEGER DEFAULT 0,
   tax_rate_name TEXT,
   is_tax_inclusive INTEGER DEFAULT 0, cost_at_sale INTEGER NOT NULL DEFAULT 0,
+  -- FR-A2 AC keempat — berapa varian yang item ini punya SAAT PENJUALAN.
+  --
+  -- ⛔ Ia ada DI BARISNYA karena cetak ulang membangun dokumennya dari sini
+  -- dan `spec-b:145` melarangnya menyentuh tabel katalog. Tanpa kolom ini,
+  -- cetakan pertama (yang punya katalog di tangan) dan cetak ulang (yang
+  -- tidak) akan berbeda tepat pada hari merchant menambahkan varian kedua.
+  --
+  -- ⛔ DEFAULT 1, berbeda dari sisi PostgreSQL yang membuang defaultnya.
+  -- Alasannya bukan kelonggaran: kolom ini ditambahkan ke tabel yang SUDAH
+  -- ADA di perangkat merchant lewat `ALTER TABLE ADD COLUMN`, dan SQLite
+  -- menuntut kolom baru pada tabel berisi data punya nilai untuk baris lama.
+  -- Satu adalah yang JUJUR untuk baris lama — kita tidak tahu berapa varian
+  -- item itu punya saat itu, dan satu menghasilkan perilaku yang sama dengan
+  -- sebelum kolom ini ada.
+  variation_count_at_sale INTEGER NOT NULL DEFAULT 1,
   line_total INTEGER NOT NULL
 );
 CREATE TABLE order_line_modifier (

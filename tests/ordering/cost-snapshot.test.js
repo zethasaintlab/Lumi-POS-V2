@@ -263,3 +263,104 @@ test('⛔ cost tenant lain tidak pernah bocor lewat snapshot', async () => {
   assert.equal(res.statusCode, 404, res.body);
   assert.equal(res.json().error.code, 'VARIATION_NOT_FOUND');
 });
+
+// ---------------------------------------------------------------------------
+// FR-A2 AC keempat — jumlah varian di-snapshot ke order_line
+// ---------------------------------------------------------------------------
+
+/** Varian KEDUA untuk item yang sama. */
+async function tambahVarian(nama = 'Large') {
+  const id = crypto.randomUUID();
+  await kueri(
+    `INSERT INTO item_variation (id, tenant_id, item_id, name, sku, price, cost, sort_order)
+     VALUES ($1, $2, (SELECT item_id FROM item_variation WHERE id = $3), $4, $5, 30000, 9000, 2)`,
+    [id, tenant.id, base.item_variation.id, nama, `SKU-${nama}`]
+  );
+  return id;
+}
+
+test('⛔ item SATU-VARIAN disnapshot 1', async () => {
+  const { deviceId, shiftId } = await perangkatDanShift();
+  const order = await buatOrder({ deviceId, shiftId });
+  const rows = await kueri(
+    'SELECT variation_count_at_sale FROM order_line WHERE order_id = $1',
+    [order.id]
+  );
+  assert.equal(rows[0].variation_count_at_sale, 1);
+});
+
+test('⛔ item MULTI-VARIAN disnapshot jumlah sebenarnya', async () => {
+  await tambahVarian();
+  const { deviceId, shiftId } = await perangkatDanShift();
+  const order = await buatOrder({ deviceId, shiftId });
+  const rows = await kueri(
+    'SELECT variation_count_at_sale FROM order_line WHERE order_id = $1',
+    [order.id]
+  );
+  assert.equal(rows[0].variation_count_at_sale, 2, 'jumlah varian tidak dihitung');
+});
+
+test('⛔ snapshot BEKU — varian yang ditambah besok tidak mengubah struk kemarin', async () => {
+  // `spec-b:145` menuntut cetak ulang identik dengan cetakan pertama. Struk
+  // yang sudah dipegang pelanggan tidak boleh berubah karena merchant
+  // menambahkan ukuran baru.
+  const { deviceId, shiftId } = await perangkatDanShift();
+  const lama = await buatOrder({ deviceId, shiftId });
+
+  await tambahVarian('Jumbo');
+
+  const baru = await buatOrder({ deviceId, shiftId });
+  const rowsLama = await kueri(
+    'SELECT variation_count_at_sale FROM order_line WHERE order_id = $1',
+    [lama.id]
+  );
+  const rowsBaru = await kueri(
+    'SELECT variation_count_at_sale FROM order_line WHERE order_id = $1',
+    [baru.id]
+  );
+  assert.equal(rowsLama[0].variation_count_at_sale, 1, 'penjualan LAMA ikut berubah');
+  assert.equal(rowsBaru[0].variation_count_at_sale, 2, 'penjualan BARU tidak melihat varian baru');
+});
+
+test('⛔ varian yang DIARSIPKAN tetap dihitung', async () => {
+  // Yang pertanyaannya jawab adalah "apakah nama varian menambah informasi
+  // bagi pelanggan". Merchant yang mengarsipkan "Large" hari ini tetap punya
+  // pelanggan yang memegang struk "Regular" dari kemarin — dan menghitung yang
+  // aktif saja membuat struk berikutnya berhenti menyebut ukurannya.
+  const kedua = await tambahVarian();
+  await kueri('UPDATE item_variation SET archived_at = now() WHERE id = $1', [kedua]);
+
+  const { deviceId, shiftId } = await perangkatDanShift();
+  const order = await buatOrder({ deviceId, shiftId });
+  const rows = await kueri(
+    'SELECT variation_count_at_sale FROM order_line WHERE order_id = $1',
+    [order.id]
+  );
+  assert.equal(rows[0].variation_count_at_sale, 2);
+});
+
+test('⛔ kolomnya NOT NULL tanpa default — jalur tulis yang lupa GAGAL', async () => {
+  // Default yang tertinggal membuat jalur tulis berikutnya diam-diam mengaku
+  // "produk ini hanya punya satu varian", dan nama varian menghilang dari
+  // struk tanpa satu pun error. Diperiksa terhadap katalog sistem, bukan
+  // terhadap ingatan.
+  const { rows } = await appSetup.query(
+    `SELECT is_nullable, column_default
+       FROM information_schema.columns
+      WHERE table_name = 'order_line' AND column_name = 'variation_count_at_sale'`
+  );
+  assert.equal(rows.length, 1, 'kolomnya tidak ada');
+  assert.equal(rows[0].is_nullable, 'NO');
+  assert.equal(rows[0].column_default, null, 'default tertinggal setelah migrasi');
+});
+
+test('⛔ NOL ditolak CHECK — item tanpa varian adalah keadaan yang tidak dapat ada', async () => {
+  // Nol yang lolos membuat `> 1` bernilai false dan nama varian hilang —
+  // gejala yang sama dengan default yang tertinggal.
+  const { deviceId, shiftId } = await perangkatDanShift();
+  const order = await buatOrder({ deviceId, shiftId });
+  await assert.rejects(
+    () => kueri('UPDATE order_line SET variation_count_at_sale = 0 WHERE order_id = $1', [order.id]),
+    /ck_order_line_variation_count|check constraint/i
+  );
+});

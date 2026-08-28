@@ -146,7 +146,7 @@ test('⛔ qty di keranjang dijumlahkan LINTAS baris untuk variation yang sama', 
   // mengambil 4 dari rak — memeriksa per baris akan meloloskan penjualan yang
   // melewati stok tanpa satu pun peringatan.
   const { keranjangKosong, tambah, qtyDiKeranjang } = await import(MOD);
-  const item = { id: 'i1', nama: 'Kopi' };
+  const item = { id: 'i1', nama: 'Kopi', variations: [{ id: 'v1', nama: 'Regular', harga: 20000 }] };
   const v = { id: 'v1', nama: 'Regular', harga: 20000 };
 
   let k = keranjangKosong();
@@ -172,7 +172,7 @@ test('variation yang belum ada di keranjang: nol', async () => {
 
 test('⛔ kuantitas modifier MEMISAHKAN baris', async () => {
   const { keranjangKosong, tambah } = await import(MOD);
-  const item = { id: 'i1', nama: 'Kopi' };
+  const item = { id: 'i1', nama: 'Kopi', variations: [{ id: 'v1', nama: 'Regular', harga: 20000 }] };
   const v = { id: 'v1', nama: 'Regular', harga: 20000 };
   const satu = [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }];
   const dua = [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 2000 }];
@@ -189,7 +189,7 @@ test('⛔ kuantitas modifier MEMISAHKAN baris', async () => {
 
 test('⛔ subtotal MENGALIKAN harga modifier dengan kuantitasnya', async () => {
   const { keranjangKosong, tambah, subtotalKeranjang, satuanKeranjang } = await import(MOD);
-  const item = { id: 'i1', nama: 'Kopi' };
+  const item = { id: 'i1', nama: 'Kopi', variations: [{ id: 'v1', nama: 'Regular', harga: 20000 }] };
   const v = { id: 'v1', nama: 'Regular', harga: 20000 };
 
   let k = keranjangKosong();

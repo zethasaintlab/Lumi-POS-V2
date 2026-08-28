@@ -26,6 +26,20 @@ import type { BarisStruk, ReceiptDocument } from './escpos.ts';
 export interface BarisStrukOrder {
   itemName: string;
   variationName: string;
+  /**
+   * FR-A2 AC keempat — berapa varian yang item ini punya SAAT PENJUALAN.
+   *
+   * `spec-a:98`: nama varian dicetak **hanya** bila item punya lebih dari
+   * satu. Angkanya datang dari `order_line.variation_count_at_sale`, jadi
+   * cetakan pertama dan cetak ulang memutuskannya dari sumber yang SAMA —
+   * `spec-b:145` menuntut keduanya identik, dan cetak ulang tidak boleh
+   * menyentuh tabel katalog untuk mencari tahu.
+   *
+   * ⛔ Bawaannya 1, bukan `undefined` yang dianggap ">1". Baris yang datang
+   * dari jalur lama tidak boleh tiba-tiba mencetak nama varian di struk yang
+   * seharusnya identik dengan cetakan pertamanya.
+   */
+  variationCountAtSale?: number;
   /** ×1000. */
   quantityMilli: number;
   lineTotal: number;
@@ -103,9 +117,25 @@ export function bangunDokumenStruk(data: DataStruk): ReceiptDocument {
   baris.push({ jenis: 'garis' });
 
   for (const b of data.baris) {
+    // ⛔ FR-A2 AC keempat. Sebelum ini `variationName` dibawa sepanjang jalur
+    // cetak lalu DIJATUHKAN di sini: merchant yang menjual "Kopi Susu Regular"
+    // dan "Kopi Susu Large" mencetak dua baris struk yang tidak dapat
+    // dibedakan, dan struk adalah satu-satunya bukti yang pelanggan pegang.
+    //
+    // ⛔ Diputuskan dari `variationCountAtSale` — SNAPSHOT di barisnya —
+    // bukan dari nama variannya. Aturan berbasis nama ("sebut bila berbeda
+    // dari nama item") DICOBA dan DIKEMBALIKAN: `spec-c:376` mencetak
+    // "2x Kopi Susu" untuk baris ber-varian "Regular", jadi ia bertentangan
+    // dengan contoh spec sendiri.
+    const varian = String(b.variationName ?? '').trim();
+    const sebutVarian = (b.variationCountAtSale ?? 1) > 1 && varian.length > 0;
+    const nama = sebutVarian ? `${b.itemName} ${varian}` : b.itemName;
     baris.push({
       jenis: 'duaKolom',
-      kiri: `${qty(b.quantityMilli)}× ${b.itemName}`,
+      // Nama yang terlalu panjang dipotong `duaKolom` DI KIRI, tidak pernah di
+      // angkanya — aturan itu sudah ada; yang berubah hanya panjang teks yang
+      // masuk ke sana.
+      kiri: `${qty(b.quantityMilli)}× ${nama}`,
       kanan: uang(b.lineTotal),
     });
     for (const m of b.modifier ?? []) {

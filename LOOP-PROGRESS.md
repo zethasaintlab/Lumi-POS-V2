@@ -4055,3 +4055,132 @@ menemukan pertentangannya sesudah rilis.
 Tidak ada lagi item yang dapat dikerjakan tanpa perangkat fisik, jaringan
 sungguhan, atau keputusan user. `PERISTIWA_BELUM_DIPANCARKAN` diperiksa kosong
 dengan menjalankannya.
+
+---
+
+## Task 50 — FR-A2 AC keempat: nama varian di struk (25 Agustus 2026) ✅
+
+Keputusan user: **pakai migrasi skema**. `order_line.variation_count_at_sale`
+di PostgreSQL dan SQLite lokal; struk merender `variationName` hanya bila
+`> 1`.
+
+### Rantainya
+
+```
+getVariationSnapshot (COUNT varian)  →  order_line.variation_count_at_sale
+                                     ↘  BarisKeranjang.variationCount (lokal)
+                                            ↓
+       cetakan pertama ─────────────┬──────→ dokumen.ts: sebutVarian = count > 1
+       cetak ulang (order_line) ────┘
+```
+
+Kedua jalur cetak memutuskannya dari sumber yang SAMA, jadi `spec-b:145`
+(cetak ulang identik) terpenuhi menurut **konstruksi**, bukan menurut
+kehati-hatian.
+
+### Keputusan yang mengikat kode
+
+- ⛔ **`DEFAULT 1` dibuang setelah backfill** (pola `refund.method`, migrasi
+  `0021`). Backfill lintas-tenant mustahil lewat DML — `UPDATE` ditolak
+  `FORCE ROW LEVEL SECURITY` — jadi jalannya `ADD COLUMN … DEFAULT` (DDL) lalu
+  `DROP DEFAULT`. Default yang tertinggal membuat jalur tulis berikutnya yang
+  lupa diam-diam mengaku "produk ini hanya punya satu varian", dan nama varian
+  menghilang dari struk tanpa satu pun error.
+- ⛔ **Nilai 1 untuk baris LAMA adalah yang jujur.** Kita tidak tahu berapa
+  varian item itu punya saat penjualan lama terjadi, dan 1 menghasilkan
+  perilaku yang sama dengan sebelum kolom ini ada. Ia tidak mengarang
+  informasi baru.
+- ⛔ **`CHECK (>= 1)`.** Nol berarti "item tanpa varian", keadaan yang tidak
+  dapat ada (`POST /items` menuntut minimal satu). Nol yang lolos membuat
+  `> 1` bernilai false — gejala yang sama dengan default yang tertinggal.
+- ⛔ **Varian yang DIARSIPKAN ikut dihitung.** Pertanyaannya "apakah nama
+  varian menambah informasi bagi pelanggan", dan merchant yang mengarsipkan
+  "Large" hari ini tetap punya pelanggan yang memegang struk "Regular" dari
+  kemarin. Menghitung yang aktif saja membuat struk berikutnya berhenti
+  menyebut ukurannya.
+- ⛔ **`COUNT` diambil di `getVariationSnapshot`**, bukan di modul ordering —
+  invariant #4: ordering tidak menghitung baris `item_variation` sendiri.
+- ⛔ **Jumlah dibekukan di `BarisKeranjang`**, bukan dibaca ulang saat
+  menyimpan: katalog dapat turun di tengah antrean pelanggan, dan keranjang
+  yang membaca ulang menyimpan jumlah dari SESUDAH kasir menekan kartunya.
+- ⛔ **`variationCountAtSale` yang HILANG diperlakukan sebagai 1**, bukan
+  ">1". Baris dari jalur lama tidak boleh tiba-tiba mencetak nama varian di
+  struk yang seharusnya identik dengan cetakan pertamanya.
+
+### ⛔ Test kontrol yang menahan aturan yang SALAH
+
+Aturan berbasis nama ("sebut varian bila berbeda dari nama item") — yang Task
+49 coba dan kembalikan — kini punya penjaganya: satu test mereproduksi contoh
+`spec-c:376` dan menuntut ia tetap mencetak **"2x Kopi Susu"**, bukan "Kopi
+Susu Regular". Sabotase memasang aturan nama itu kembali → **3 merah**,
+termasuk kontrol itu.
+
+Itu yang hilang di Task 49: aturan salah lolos seluruh suite karena assertion
+lamanya `includes('2x Kopi Susu')`, dan "2x Kopi Susu Regular" cocok sebagai
+prefiks.
+
+### ⛔ Biaya yang dinyatakan
+
+`order_line` adalah **raw table**, jadi kolom baru mengubah sidik jari skema
+lokal dan setiap perangkat menjalankan `disconnectAndClear()` + membangun ulang
+tabel raw-nya. **Riwayat penjualan LOKAL perangkat hilang karenanya** — K-08
+dan cetak ulang K-09 untuk penjualan lama berhenti bekerja di perangkat yang
+sudah terpasang. Datanya ada di server dan dapat dilihat di back-office;
+`order_line` belum ada di sync rules jalur turun, jadi ia tidak kembali
+sendiri.
+
+Ini konsekuensi mekanisme yang memang sudah dirancang begitu (`skema.ts`
+menyebutnya "membuang jendela riwayat"), bukan yang ditemukan setelahnya.
+
+### Masalah + solusinya
+
+- **Enam fixture test gagal keras** begitu migrasi jalan — `NOT NULL` tanpa
+  default. Itu **penjaganya bekerja**, bukan regresi: setiap jalur tulis
+  `order_line` kini harus menyebutkan kolomnya. Keenamnya diperbaiki
+  (`dasbor`, `detail-transaksi`, `laporan-ekspor`, `laporan-produk`, seed
+  isolasi, fixture keranjang).
+- **Sisipan otomatis menimpa `unitPrice`** di `BarisKeranjang` — tertangkap
+  typecheck dalam satu putaran, dikembalikan.
+- **Satu assertion yang saya tulis sendiri salah**: regex "tanpa spasi
+  menggantung" menandai baris yang benar, karena kolom dua-sisi memang
+  dipisahkan spasi. Diganti perbandingan terhadap keluaran item satu-varian.
+
+### Sabotase
+
+Empat, semuanya merah: aturan berbasis nama dipasang (3 merah, termasuk
+kontrol `spec-c:376`) · varian tidak pernah dicetak (2 merah) · hanya varian
+aktif dihitung (1 merah) · `variationCount` dipaku 1 (3 merah).
+
+### Verifikasi
+
+Seluruh suite hijau, berurutan: `test:kasir` 521 · `test:domain` 506 ·
+`test:server` 502 · `test:backoffice` 439 · `test:isolation` 211 ·
+`test:ordering` 211 · `test:catalog` 177 · `test:identity` 156 ·
+`test:payment` 132 · `test:sync-client` 103 · `test:tenancy` 75 ·
+`test:hp` 49 · `test:schema` 14 · `test:dst` 14 ·
+`test:oxlint-ds-adherence` 12 · `test:dst-server` 10 · `test:sqlite-local` 8 ·
+`test:runtime` 3. `typecheck` dan `lint:ds` bersih; ketiga aplikasi ter-build.
+
+---
+
+## Checkpoint akhir — cakupan kode v1
+
+Seluruh 77 FR PRD dirujuk kode, dan `PERISTIWA_BELUM_DIPANCARKAN` diperiksa
+kosong dengan menjalankannya (FR-F6 tertutup).
+
+**Tiga aplikasi berdiri:** `apps/kasir` (offline-first, PowerSync) ·
+`apps/backoffice` (26 layar) · `apps/hp` (Owner mobile, 4 layar).
+**Sembilan modul server** punya kode.
+
+### Yang TIDAK dapat ditutup dari dalam repo, dan statusnya
+
+| Item | Status resmi | Yang benar dikatakan |
+|---|---|---|
+| Gate F4 bagian pertama | `Logika & Profil Production-Ready (Hardware-Blocked)` | Logika pemilihan profil dan antrean cetak selesai dan teruji deterministik. `peripheralAktif()` masih mengembalikan `null` — **tidak satu byte pun pernah meninggalkan perangkat menuju printer sungguhan** |
+| AC FR-G6 kelima | `Payload Optimized <50KB (Environment-Blocked)` | Agregasi di server, respons beberapa puluh baris. **Tidak ada pengukuran throttling yang pernah dijalankan di repo ini**, dan tidak ada test yang menegakkan ambang dua detik |
+| Enkripsi at-rest | Menunggu shell Tauri | `token_secret` disimpan apa adanya di SQLite lokal (AC ketiga FR-F12) |
+| OQ-14 | Terbuka | Prototipe Tauri Android — printer Bluetooth + scanner HID |
+
+⛔ **Perbedaan itu harus dijaga di kalimat mana pun tentang v1.** "Cakupan kode
+selesai" benar; "v1 terverifikasi di lapangan" tidak — dan yang kedua hanya
+dapat dikatakan setelah Acceptance Test yang keempat baris di atas tunggu.

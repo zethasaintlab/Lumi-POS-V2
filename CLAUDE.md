@@ -216,36 +216,50 @@ menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk negatif.
   SATU laporan, bukan sembilan.** **Email di DUA tenant tidak dapat masuk lewat
   HP** (tanpa field "ID Tenant" di layar 390px).
 
-⛔ **AC FR-A2 KEEMPAT terbuka, dan ia menyembunyikan cacat NYATA** (ditemukan
-25 Agustus 2026). `spec-a:98`: *"struk mencetak nama variation **hanya** bila
-item punya >1 variation"*.
+**AC FR-A2 KEEMPAT ditutup 25 Agustus 2026** (migrasi `0035`, keputusan user).
 
-Yang sebenarnya terjadi: `cetak/dokumen.ts` menerima `variationName` di setiap
-baris dan **tidak pernah merendernya sama sekali**. Merchant yang menjual "Kopi
-Susu Regular" dan "Kopi Susu Large" mencetak dua baris struk yang **tidak dapat
-dibedakan** — dan struk adalah satu-satunya bukti yang pelanggan pegang. Tidak
-ada satu pun error; bidangnya dibawa sepanjang jalur cetak lalu dijatuhkan di
-titik render, dan 515 test kasir hijau di atasnya.
+⛔ **Yang diperbaikinya adalah cacat NYATA:** `cetak/dokumen.ts` menerima
+`variationName` di setiap baris dan **tidak pernah merendernya sama sekali**.
+Merchant yang menjual "Kopi Susu Regular" dan "Kopi Susu Large" mencetak dua
+baris struk yang **tidak dapat dibedakan** — dan struk adalah satu-satunya
+bukti yang pelanggan pegang. Bidangnya dibawa sepanjang jalur cetak lalu
+dijatuhkan di titik render; 515 test kasir hijau di atasnya.
 
-⛔ **Perbaikannya MENUNTUT keputusan skema, dan karena itu tidak dikerjakan.**
-Aturannya harus dapat diputuskan dari BARIS-nya saja: cetak ulang membaca
-`order_line`, yang menyimpan `variation_name` tapi **tidak menyimpan berapa
-varian item itu punya** — dan `spec-b:145` melarang cetak ulang menyentuh tabel
-katalog. Dua jalan yang ada, keduanya berbiaya:
+- ⛔ **`order_line.variation_count_at_sale` adalah SNAPSHOT, dan itu yang
+  membuat ACnya dapat ditegakkan sama sekali.** Cetak ulang membangun
+  dokumennya dari `order_line` dan `spec-b:145` melarangnya menyentuh tabel
+  katalog; jumlah varian karena itu harus ada DI BARISNYA, kalau tidak cetakan
+  pertama (yang punya katalog di tangan) dan cetak ulang (yang tidak) akan
+  berbeda tepat pada hari merchant menambahkan varian kedua.
+- ⛔ **Aturan berbasis NAMA ("sebut varian bila berbeda dari nama item")
+  DICOBA dan DIKEMBALIKAN.** Ia bertentangan dengan contoh spec sendiri:
+  `spec-c:376` mencetak "2x Kopi Susu" untuk baris ber-varian "Regular". Ada
+  test kontrol yang mereproduksi contoh itu dan menolak aturan tersebut —
+  sabotase memastikan ia menyala.
+- ⛔ **`DEFAULT 1` dibuang setelah backfill** (pola `refund.method`, migrasi
+  `0021`). Default yang tertinggal membuat jalur tulis berikutnya yang lupa
+  mengirimnya diam-diam mengaku "produk ini hanya punya satu varian", dan nama
+  varian menghilang dari struk tanpa satu pun error. Enam fixture test langsung
+  gagal keras saat migrasi jalan — itu justru gunanya.
+- ⛔ **Varian yang DIARSIPKAN ikut dihitung.** Pertanyaannya "apakah nama
+  varian menambah informasi bagi pelanggan", dan merchant yang mengarsipkan
+  "Large" hari ini tetap punya pelanggan yang memegang struk "Regular" dari
+  kemarin.
+- ⛔ **Jumlah dibekukan di baris keranjang**, bukan dibaca ulang saat menyimpan:
+  katalog dapat turun di tengah antrean pelanggan.
+- ⛔ **`CHECK (>= 1)`.** Nol berarti "item tanpa varian", keadaan yang tidak
+  dapat ada — dan nol yang lolos membuat `> 1` bernilai false, gejala yang sama
+  dengan default yang tertinggal.
+- ⛔ **Biaya yang dinyatakan:** `order_line` adalah raw table, jadi kolom baru
+  mengubah sidik jari skema lokal dan setiap perangkat membangun ulang tabel
+  raw-nya (`disconnectAndClear()`). Riwayat penjualan LOKAL perangkat hilang
+  karenanya — K-08 dan cetak ulang K-09 untuk penjualan lama berhenti bekerja
+  di perangkat yang sudah terpasang. Datanya ada di server; `order_line` belum
+  ada di sync rules jalur turun, jadi ia tidak kembali sendiri.
 
-- **Kolom baru di `order_line`** (mis. `variation_is_only`) yang dibekukan saat
-  penjualan. Benar, dan menuntut migrasi.
-- **Aturan "sebut varian bila ia menambah informasi"** (nama varian ≠ nama
-  item). Tanpa migrasi — tapi ia **bertentangan dengan contoh spec sendiri**:
-  `spec-c:376` mencetak "2x Kopi Susu" untuk baris yang varian-nya bernama
-  "Regular". Dicoba dan DIKEMBALIKAN pada hari yang sama.
-
-Jangan menutup AC ini dengan aturan kedua tanpa memutuskan contoh `spec-c:376`
-lebih dulu.
-
-⛔ **AC FR-G6 KELIMA ditandai `Environment-Blocked` oleh user, 25 Agustus
-2026** — *"render < 2 detik pada koneksi seluler"* dipindahkan ke Acceptance
-Test, sejajar dengan gate F4 bagian pertama.
+⛔ **AC FR-G6 KELIMA: `Payload Optimized <50KB (Environment-Blocked)`** —
+status resmi user, 25 Agustus 2026. *"Render < 2 detik pada koneksi seluler"*
+dipindahkan ke Acceptance Test, sejajar dengan gate F4 bagian pertama.
 
 ⛔ **Yang menjadi dasarnya adalah UKURAN muatan, bukan latensi terukur.**
 Agregasi terjadi di server dan responsnya beberapa puluh baris; tidak ada satu
@@ -256,7 +270,7 @@ belum diukur".
 
 ---
 
-⛔ **Gate F4 punya DUA bagian.** `ARCH:398`: *"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."* Bagian kedua terbukti lewat test. **Bagian pertama ditandai `Hardware-Blocked` oleh user, 25 Agustus 2026** — ia dipindahkan ke Acceptance Test lapangan, bukan dinyatakan lulus.
+⛔ **Gate F4 punya DUA bagian.** `ARCH:398`: *"Cetak berhasil di ≥5 model; penjualan tetap tersimpan saat cetak gagal."* Bagian kedua terbukti lewat test. **Bagian pertama: `Logika & Profil Production-Ready (Hardware-Blocked)`** — status resmi user, 25 Agustus 2026. Ia dipindahkan ke Acceptance Test lapangan, bukan dinyatakan lulus.
 
 ⛔ **Perbedaan itu harus dijaga di kalimat mana pun tentang F4.** Yang benar: *"logika pemilihan profil dan antrean cetak selesai dan teruji deterministik; cetak di lima model fisik belum pernah dijalankan."* Yang SALAH: "F4 hijau". Tidak satu byte pun pernah meninggalkan perangkat menuju printer sungguhan — `peripheralAktif()` masih mengembalikan `null`, dan itu tercatat sebagai utang Tauri, bukan sebagai adapter yang bekerja.
 

@@ -75,8 +75,9 @@ async function jual({ total = 100000, tax = 0, itemName = 'Kopi Susu' } = {}) {
   );
   await appSetup.query(
     `INSERT INTO order_line (id,tenant_id,outlet_id,device_id,order_id,check_id,variation_id,item_name,
-       variation_name,unit_price,quantity,line_total,created_by,occurred_at,hlc)
-     VALUES ($1,$2,$3,$4,$5,$6,'v1',$7,'Regular',$8,1000,$8,$9,'2026-08-10T10:00:00Z',$10::bigint)`,
+       variation_name,unit_price,quantity,line_total,created_by,occurred_at,hlc,
+       variation_count_at_sale)
+     VALUES ($1,$2,$3,$4,$5,$6,'v1',$7,'Regular',$8,1000,$8,$9,'2026-08-10T10:00:00Z',$10::bigint,1)`,
     [crypto.randomUUID(), tenant.id, base.outlet.id, device, id, `c-${id}`, itemName, total, base.user.id, n]
   );
   await appSetup.query(

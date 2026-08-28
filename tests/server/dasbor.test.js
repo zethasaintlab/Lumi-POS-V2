@@ -101,10 +101,11 @@ async function jual({ variationId, qtyMilli = 1000, total = 25000, tanggal = '20
   );
   await db.query(
     `INSERT INTO order_line (id,tenant_id,outlet_id,device_id,order_id,check_id,variation_id,item_name,
-       variation_name,unit_price,quantity,line_total,created_by,occurred_at,hlc)
+       variation_name,unit_price,quantity,line_total,created_by,occurred_at,hlc,
+       variation_count_at_sale)
      VALUES ($1,$2,$3,$4,$5,$6,$7,
              (SELECT i.name FROM item i JOIN item_variation iv ON iv.item_id = i.id WHERE iv.id = $7),
-             'Reguler',$8,$9::bigint,$10,$11,($12::date + time '10:00') AT TIME ZONE 'UTC',$13::bigint)`,
+             'Reguler',$8,$9::bigint,$10,$11,($12::date + time '10:00') AT TIME ZONE 'UTC',$13::bigint,1)`,
     [crypto.randomUUID(), tenant.id, outletId, device, id, checkId, variationId,
      total, qtyMilli, total, base.user.id, tanggal, seq]
   );

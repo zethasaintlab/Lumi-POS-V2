@@ -435,6 +435,14 @@ export interface VariationSnapshotRow {
   categoryId: string | null;
   /** FR-E2 — `sale` hanya ditulis untuk variation yang stoknya dilacak. */
   trackStock: boolean;
+  /**
+   * FR-A2 AC keempat — berapa varian yang item ini punya SAAT PENJUALAN.
+   *
+   * Di-snapshot ke `order_line.variation_count_at_sale` supaya cetak ulang
+   * dapat memutuskan sendiri apakah nama varian disebut, tanpa menyentuh tabel
+   * katalog (`spec-b:145`).
+   */
+  variationCount: number;
 }
 
 // T5 (PLAN-ordering-fondasi.md §T5/T6) -- diekspor lewat catalog/index.ts
@@ -460,6 +468,7 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
   const { rows } = await client.query<{
     item_name: string; variation_name: string; cost: string;
     item_id: string; category_id: string | null; track_stock: boolean;
+    variation_count: string;
   }>(
     // ⛔ `item_id` dan `category_id` DISELEKSI. Versi sebelumnya
     // memetakannya ke hasil tanpa pernah memintanya, jadi keduanya
@@ -472,9 +481,22 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
     // `track_stock` untuk FR-E2 — `sale` hanya ditulis untuk variation yang
     // stoknya dilacak. Ia ikut di sini, bukan lewat SELECT kedua dari modul
     // ordering: invariant #4 melarang akses lintas modul ke tabel katalog.
+    //
+    // FR-A2 AC keempat — `variation_count` di-SNAPSHOT ke `order_line`, dan
+    // ia diambil DI SINI karena invariant #4: modul ordering tidak boleh
+    // menghitung baris `item_variation` sendiri.
+    //
+    // ⛔ Varian yang DIARSIPKAN ikut dihitung, dan itu disengaja. Yang
+    // pertanyaannya jawab adalah "apakah nama varian menambah informasi bagi
+    // pelanggan" — dan merchant yang mengarsipkan "Large" hari ini tetap
+    // punya pelanggan yang memegang struk "Regular" dari kemarin. Menghitung
+    // yang aktif saja membuat produk berubah menjadi "satu varian" begitu
+    // sisanya diarsipkan, lalu struk berikutnya berhenti menyebut ukurannya.
     `SELECT i.name AS item_name, iv.name AS variation_name, iv.cost AS cost,
             iv.item_id AS item_id, i.category_id AS category_id,
-            iv.track_stock AS track_stock
+            iv.track_stock AS track_stock,
+            (SELECT COUNT(*) FROM item_variation s WHERE s.item_id = iv.item_id)
+              AS variation_count
      FROM item_variation iv
      JOIN item i ON i.id = iv.item_id
      WHERE iv.id = $1`,
@@ -490,6 +512,11 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
     itemId: rows[0].item_id,
     categoryId: rows[0].category_id,
     trackStock: rows[0].track_stock,
+    // ⛔ Minimal 1. `COUNT(*)` di atas selalu menghitung barisnya sendiri, jadi
+    // nol mustahil — tapi `CHECK (variation_count_at_sale >= 1)` menolak nol,
+    // dan galat constraint di tengah penjualan adalah kegagalan yang paling
+    // mahal di produk ini. Dijaga di sini juga.
+    variationCount: Math.max(1, Number(rows[0].variation_count ?? 1)),
   };
 }
 
