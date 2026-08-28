@@ -216,6 +216,33 @@ menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk negatif.
   SATU laporan, bukan sembilan.** **Email di DUA tenant tidak dapat masuk lewat
   HP** (tanpa field "ID Tenant" di layar 390px).
 
+⛔ **AC FR-A2 KEEMPAT terbuka, dan ia menyembunyikan cacat NYATA** (ditemukan
+25 Agustus 2026). `spec-a:98`: *"struk mencetak nama variation **hanya** bila
+item punya >1 variation"*.
+
+Yang sebenarnya terjadi: `cetak/dokumen.ts` menerima `variationName` di setiap
+baris dan **tidak pernah merendernya sama sekali**. Merchant yang menjual "Kopi
+Susu Regular" dan "Kopi Susu Large" mencetak dua baris struk yang **tidak dapat
+dibedakan** — dan struk adalah satu-satunya bukti yang pelanggan pegang. Tidak
+ada satu pun error; bidangnya dibawa sepanjang jalur cetak lalu dijatuhkan di
+titik render, dan 515 test kasir hijau di atasnya.
+
+⛔ **Perbaikannya MENUNTUT keputusan skema, dan karena itu tidak dikerjakan.**
+Aturannya harus dapat diputuskan dari BARIS-nya saja: cetak ulang membaca
+`order_line`, yang menyimpan `variation_name` tapi **tidak menyimpan berapa
+varian item itu punya** — dan `spec-b:145` melarang cetak ulang menyentuh tabel
+katalog. Dua jalan yang ada, keduanya berbiaya:
+
+- **Kolom baru di `order_line`** (mis. `variation_is_only`) yang dibekukan saat
+  penjualan. Benar, dan menuntut migrasi.
+- **Aturan "sebut varian bila ia menambah informasi"** (nama varian ≠ nama
+  item). Tanpa migrasi — tapi ia **bertentangan dengan contoh spec sendiri**:
+  `spec-c:376` mencetak "2x Kopi Susu" untuk baris yang varian-nya bernama
+  "Regular". Dicoba dan DIKEMBALIKAN pada hari yang sama.
+
+Jangan menutup AC ini dengan aturan kedua tanpa memutuskan contoh `spec-c:376`
+lebih dulu.
+
 ⛔ **AC FR-G6 KELIMA ditandai `Environment-Blocked` oleh user, 25 Agustus
 2026** — *"render < 2 detik pada koneksi seluler"* dipindahkan ke Acceptance
 Test, sejajar dengan gate F4 bagian pertama.

@@ -3992,3 +3992,66 @@ kalimatnya sengaja dibuat sulit disalahbacakan:
   (agregasi di server, respons beberapa puluh baris), **bukan latensi
   terukur**. Tidak ada pengukuran throttling yang pernah dijalankan di dalam
   repo ini, dan tidak ada test yang menegakkan ambang dua detik.
+
+---
+
+## Task 49 — sapuan penutup cakupan v1 (25 Agustus 2026)
+
+Sapuan sistematis atas 77 FR di PRD terhadap seluruh kode, test, migrasi, dan
+alat. Dua nomor tidak dirujuk satu berkas pun: **FR-A2** dan **FR-A4**.
+
+- **FR-A4** (kategori maksimal dua tingkat) — ditegakkan sungguhan.
+  `CATEGORY_DEPTH_EXCEEDED` di `categories.ts`, dengan test untuk tingkat
+  ketiga DAN untuk balapan reparent yang membentuk tingkat ketiga tersembunyi.
+  Nomornya saja yang tidak disebut.
+- **FR-A2** — tiga dari empat ACnya terpenuhi. **Yang keempat menyembunyikan
+  cacat nyata.**
+
+### ⛔ Cacat yang ditemukan: nama varian TIDAK PERNAH tercetak di struk
+
+`spec-a:98`: *"struk mencetak nama variation hanya bila item punya >1
+variation"*. `cetak/dokumen.ts` menerima `variationName` di setiap baris dan
+**tidak pernah merendernya sama sekali** — bidangnya dibawa sepanjang jalur
+cetak (`penjualan.ts:1049`, `ulang.ts:159`) lalu dijatuhkan di titik render.
+
+Merchant yang menjual "Kopi Susu Regular" dan "Kopi Susu Large" mencetak dua
+baris struk yang **tidak dapat dibedakan**. Struk adalah satu-satunya bukti
+yang pelanggan pegang; saat ia kembali mempersoalkan ukuran yang ia terima,
+tidak ada yang dapat menjawabnya. Tidak ada satu pun error, dan 515 test kasir
+hijau di atasnya.
+
+### Kenapa TIDAK diperbaiki di sini
+
+Perbaikannya menuntut **keputusan skema**, dan itu batas berhenti yang user
+tetapkan.
+
+Aturannya harus dapat diputuskan dari BARIS-nya saja: cetak ulang membangun
+dokumennya dari `order_line` — yang menyimpan `variation_name` tapi **tidak
+menyimpan berapa varian item itu punya** — dan `spec-b:145` melarang cetak
+ulang menyentuh tabel katalog (ada test yang memeriksa tabel mana yang
+benar-benar disentuh query). Aturan yang bergantung pada jumlah varian akan
+menyebut varian pada cetakan pertama dan diam pada cetak ulang, tepat pada hari
+merchant menambahkan varian kedua.
+
+Dua jalan, keduanya berbiaya:
+
+| Jalan | Biaya |
+|---|---|
+| Kolom baru di `order_line` (mis. `variation_is_only`), dibekukan saat penjualan | Benar; menuntut migrasi |
+| "Sebut varian bila ia menambah informasi" (nama varian ≠ nama item) | Tanpa migrasi — tapi **bertentangan dengan contoh spec sendiri**: `spec-c:376` mencetak "2x Kopi Susu" untuk baris ber-varian "Regular" |
+
+⛔ **Jalan kedua DICOBA dan DIKEMBALIKAN pada hari yang sama.** Ia lolos seluruh
+suite — termasuk test yang mereproduksi contoh `spec-c:376` baris demi baris,
+karena assertion-nya `includes('2x Kopi Susu')` dan "2x Kopi Susu Regular"
+cocok sebagai prefiks. Test yang hijau karena pola cocoknya terlalu longgar,
+kelas yang sama dengan "hijau karena hampa".
+
+Dicatat di `CLAUDE.md` § F4 sebagai AC terbuka beserta kedua jalannya, supaya
+yang menutupnya kelak memutuskan contoh `spec-c:376` lebih dulu alih-alih
+menemukan pertentangannya sesudah rilis.
+
+### Sisa cakupan v1
+
+Tidak ada lagi item yang dapat dikerjakan tanpa perangkat fisik, jaringan
+sungguhan, atau keputusan user. `PERISTIWA_BELUM_DIPANCARKAN` diperiksa kosong
+dengan menjalankannya.
