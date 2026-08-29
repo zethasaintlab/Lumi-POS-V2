@@ -4415,3 +4415,77 @@ kegagalan di `test:server` yang tidak ada hubungannya dengan perubahan ini.
 Gejalanya menipu — test yang gagal termasuk "password < 10 karakter ditolak",
 yang tidak menyentuh satu pun berkas yang disunting. Yang membedakannya:
 kegagalannya SERAGAM dan mencakup test yang tidak mungkin terpengaruh.
+
+---
+
+## Task 53 — balapan idempotency gateway, dan tiga test HAMPA yang saya tulis sendiri
+
+**29 Agustus 2026.** `HANDOFF.md`:104 — *"Idempotency key gateway pada balapan
+dua request bersamaan belum diuji."* Satu-satunya item backlog yang murni kode.
+
+### ⛔ Versi pertama saya HAMPA, dan sabotase yang membuktikannya
+
+Tiga test ditulis, ketiganya hijau. Lalu `claimIdempotencyKey` dilewati
+sepenuhnya — **ketiganya tetap hijau.**
+
+Dua sebab, keduanya ada di assertion saya:
+
+1. **`gatewayTransactions()` adalah `byKey.size` di fake, dan `byKey` di-key
+   oleh idempotency key.** Fake itu SENDIRI yang men-dedupe (meniru Midtrans).
+   Untuk satu key, angka itu tidak dapat melebihi 1 apa pun yang server lakukan.
+2. **Kedua request memakai `id` payment yang SAMA**, jadi yang men-dedupe baris
+   payment adalah PRIMARY KEY-nya, bukan mekanisme idempotensi.
+
+Nama testnya berbunyi "tepat SATU transaksi gateway" sementara yang ia ukur
+adalah properti fake. Ini kelas yang sama persis dengan yang F3 temukan:
+**test yang memeriksa keadaan yang tidak dapat gagal.**
+
+### ⛔ Yang ditemukan saat assertion diperbaiki: 10 request → 10 panggilan gateway
+
+Diganti ke `initiateCalls()`, dan test langsung MERAH: `actual: 10`.
+
+Itu **bukan cacat**. QRIS dinamis memakai DUA transaksi — payment
+`pending_confirmation` di-commit SEBELUM gateway dipanggil (FR-C14), supaya
+kegagalan gateway tidak me-rollback satu-satunya jejak bahwa QR pernah diminta.
+Request yang tiba saat payment sudah ada tapi `provider_reference` belum terisi
+akan memanggil gateway lagi — jalur yang SAMA yang membuat retry setelah
+timeout akhirnya mendapat QR-nya.
+
+⛔ **Jadi yang melindungi uang di jalur ini HANYA SATU HAL:** setiap panggilan
+membawa idempotency key yang SAMA, sehingga gateway men-dedupe-nya. Kalau
+server menurunkan key per-percobaan, sepuluh request menerbitkan **sepuluh QR
+untuk satu pesanan** — pelanggan membayar salah satunya, sembilan sisanya
+menagih uang yang tidak ada pesanannya.
+
+Itulah yang diuji sekarang, dan ketergantungan pada dedupe gateway **ditulis di
+testnya**, bukan tersirat. `initiateCalls()` dinyatakan terpisah supaya
+perubahan bentuk jalur ini terlihat.
+
+### Sabotase yang BENAR
+
+Key gateway diturunkan per-percobaan (`idempotencyKey + Math.random()`).
+Kedua test baru **merah**; dua test retry BERURUTAN yang sudah ada tetap
+**hijau** — bukti langsung bahwa test baru menangkap sesuatu yang test lama
+secara struktural tidak dapat tangkap. Itulah persis celah yang `HANDOFF`
+sebutkan.
+
+### Task 54 — penjaga `id TEXT PRIMARY KEY NOT NULL`
+
+`HANDOFF`:107 mencatat ~15 tabel lokal tanpa `NOT NULL` eksplisit. Diperiksa:
+**ke-31 tabelnya sudah benar** — utangnya lunas tanpa tercatat lunas. Yang
+tidak ada adalah penjaganya: tabel ke-32 dapat ditambahkan tanpa `NOT NULL`
+dan tidak satu pun test merah. SQLite MENERIMA NULL di kolom PRIMARY KEY pada
+tabel rowid.
+
+Penjaga ditambahkan, beserta penjaga-untuk-penjaga (pola yang berhenti cocok
+membuat test hijau karena hampa). `INTEGER PRIMARY KEY` dikecualikan — ia alias
+rowid, dan NULL di sana mustahil. Sabotase: satu `NOT NULL` dilepas → merah.
+
+### Verifikasi
+
+18 suite hijau: `test:kasir` 525 · `test:domain` 506 · `test:server` 502 ·
+`test:backoffice` 439 · `test:isolation` 211 · `test:ordering` 211 ·
+`test:catalog` 177 · `test:identity` 157 · `test:payment` 134 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:hp` 49 · `test:schema` 15 ·
+`test:dst` 14 · `test:oxlint-ds-adherence` 12 · `test:dst-server` 10 ·
+`test:sqlite-local` 8 · `test:runtime` 6. `typecheck` dan `lint:ds` bersih.

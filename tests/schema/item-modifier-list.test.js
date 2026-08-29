@@ -27,6 +27,8 @@
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { resolve } = require('node:path');
 const { connectAsOwner } = require('../isolation/helpers/db');
 
 let owner;
@@ -140,4 +142,52 @@ test('INSERT pasangan ganda ditolak database, bukan hanya oleh aplikasi', async 
   } finally {
     await owner.query('ROLLBACK');
   }
+});
+
+// ---------------------------------------------------------------------------
+// Penjaga: setiap PRIMARY KEY tekstual di skema lokal wajib NOT NULL
+// ---------------------------------------------------------------------------
+
+test('⛔ setiap `id TEXT PRIMARY KEY` lokal ditulis NOT NULL', () => {
+  // ⛔ SQLite MENERIMA NULL di kolom PRIMARY KEY pada tabel rowid — bug lama
+  // yang dipertahankan demi kompatibilitas, dan satu-satunya penawarnya adalah
+  // menulis `NOT NULL` sendiri.
+  //
+  // Akibat kalau lupa: baris ber-id NULL diterima di perangkat sementara
+  // PostgreSQL menolaknya, dan selisihnya baru terlihat saat sync — jauh dari
+  // tempat dan waktu penyebabnya. PowerSync menuntut kolom `id` pada setiap
+  // raw table justru karena identitas baris adalah fondasi replikasinya.
+  //
+  // `HANDOFF.md` mencatat ini sebagai utang atas ~15 tabel. Saat penjaga ini
+  // ditulis (29 Agustus 2026), ke-31 tabelnya SUDAH benar — utangnya lunas
+  // tanpa tercatat lunas. Yang tidak ada adalah penjaganya: tabel ke-32 dapat
+  // ditambahkan tanpa `NOT NULL` dan tidak ada satu pun test yang merah.
+  //
+  // `INTEGER PRIMARY KEY` dikecualikan dan itu BUKAN kelonggaran: ia alias
+  // rowid, dan SQLite mengisinya otomatis — NULL di sana mustahil.
+  const sql = readFileSync(
+    resolve(__dirname, '../../db/local/001-initial.sql'),
+    'utf8'
+  ).replace(/\r\n?/g, '\n');
+
+  const pelanggar = [];
+  for (const baris of sql.split('\n')) {
+    const bersih = baris.replace(/--.*$/, '');
+    if (!/\bTEXT\s+PRIMARY\s+KEY/i.test(bersih)) continue;
+    if (/\bNOT\s+NULL\b/i.test(bersih)) continue;
+    pelanggar.push(baris.trim());
+  }
+
+  assert.deepEqual(
+    pelanggar,
+    [],
+    'kolom PRIMARY KEY tekstual tanpa NOT NULL — SQLite akan menerima id NULL di perangkat:\n' +
+      pelanggar.join('\n')
+  );
+
+  // Penjaga untuk penjaga: kalau polanya berhenti cocok dengan apa pun, test
+  // di atas hijau karena HAMPA. Angka pastinya tidak dipaku — yang dijaga
+  // adalah bahwa ia benar-benar melihat tabel.
+  const jumlah = sql.split('\n').filter((b) => /\bTEXT\s+PRIMARY\s+KEY/i.test(b.replace(/--.*$/, ''))).length;
+  assert.ok(jumlah >= 25, `hanya ${jumlah} kolom PRIMARY KEY tekstual terbaca; pola penjaga rusak`);
 });
