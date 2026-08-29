@@ -13,6 +13,10 @@ import {
   type RilisAktif,
 } from '../../../../../packages/domain/src/rilis.ts';
 import { ambilBearer, catatPenundaanUpdate, verifikasiPerangkat } from '../identity/index.ts';
+import {
+  resolusiSemuaFitur,
+  type PenyimpanganFitur,
+} from '../../../../../packages/domain/src/fitur.ts';
 import { getKonteksRilis } from '../tenancy/index.ts';
 
 /**
@@ -80,6 +84,38 @@ export async function ambilRilisAktif(client: PoolClient): Promise<RilisAktif | 
   };
 }
 
+interface BarisFlag {
+  key: string;
+  tenant_id: string | null;
+  enabled: boolean;
+}
+
+/**
+ * Penyimpangan fitur yang berlaku untuk satu tenant.
+ *
+ * ⛔ SATU-SATUNYA query atas `feature_flag` di seluruh repo, dan ia menyaring
+ * tenant. Tabelnya dikecualikan dari RLS (migrasi 0032) karena flag adalah
+ * keputusan operator, jadi tidak ada apa pun di database yang menghentikan
+ * query kedua yang lupa menyaring — yang menjaganya adalah penjaga struktural
+ * di `tests/server/fitur.test.js`.
+ *
+ * ⛔ Baris GLOBAL (`tenant_id IS NULL`) ikut, dan itu bukan kebocoran: ia
+ * memang berlaku untuk tenant ini juga. Yang tidak boleh ikut adalah baris
+ * milik tenant LAIN, dan `OR` di bawah tidak dapat menghasilkan itu.
+ */
+export async function ambilPenyimpanganFitur(
+  client: PoolClient,
+  tenantId: string
+): Promise<PenyimpanganFitur[]> {
+  const { rows } = await client.query<BarisFlag>(
+    `SELECT key, tenant_id, enabled
+       FROM feature_flag
+      WHERE tenant_id IS NULL OR tenant_id = $1`,
+    [tenantId]
+  );
+  return rows.map((r) => ({ kunci: r.key, tenantId: r.tenant_id, aktif: r.enabled }));
+}
+
 /**
  * Jendela outlet, atau bawaan.
  *
@@ -134,6 +170,35 @@ export function createRilisHandlers(pool: Pool): Record<string, unknown> {
         jamLokal: hasil.ctx.jamLokal,
         jendela: jendelaDari(hasil.ctx.jendelaMulai, hasil.ctx.jendelaSelesai),
       };
+    },
+
+    /**
+     * `ARCH:358` — fitur mana yang menyala untuk perangkat ini.
+     *
+     * ⛔ Dijawab sebagai BOOLEAN per fitur, bukan sebagai baris `feature_flag`.
+     * Perangkat tidak perlu tahu apakah keadaannya datang dari penyimpangan
+     * global, penyimpangan merchantnya, atau bawaan kode — dan mengirimkan
+     * barisnya berarti mengirimkan `tenant_id` merchant lain ke perangkat.
+     *
+     * ⛔ Diautentikasi SECRET PERANGKAT, sama dengan telemetri dan token
+     * sinkronisasi. Kill switch harus sampai ke perangkat yang tidak ada
+     * orangnya — justru itu keadaan yang membuatnya dibutuhkan.
+     */
+    async getDeviceFeatures(req: FastifyRequest, reply: FastifyReply) {
+      const tenantId = getTenantId(req);
+      const { deviceId } = req.params as { deviceId: string };
+      const secret = ambilBearer(req);
+
+      const fitur = await withTenantTransaction(pool, tenantId, async (client) => {
+        // Perangkat diverifikasi LEBIH DULU. Menjawab flag ke pemanggil yang
+        // hanya menebak device id membuat daftar fitur merchant dapat dibaca
+        // siapa pun yang tahu satu uuid.
+        await verifikasiPerangkat(client, deviceId, secret);
+        return resolusiSemuaFitur(await ambilPenyimpanganFitur(client, tenantId), tenantId);
+      });
+
+      reply.code(200);
+      return { fitur };
     },
 
     /**

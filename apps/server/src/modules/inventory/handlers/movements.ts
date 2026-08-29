@@ -4,6 +4,7 @@ import type { Pool } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import { assertUserVisible, assertBoleh } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
@@ -147,6 +148,29 @@ export function createMovementHandlers(pool: Pool, hlc: Hlc): Record<string, unk
             hlc: hlc.tick(),
           },
         ]);
+
+        // FR-F6 + `spec-f:296` (`stock_adjusted`). Di dalam transaksi yang
+        // sama (AC ketiga).
+        //
+        // ⛔ `delta` DAN alasannya, bukan stok akhirnya. Stok adalah
+        // `SUM(stock_movement.delta)` dan tidak punya kolom (`CLAUDE.md`);
+        // menuliskan "stok akhir" ke audit berarti angka kedua yang harus
+        // dijaga sepakat dengan ledger-nya, dan yang menyimpang di antaranya
+        // tidak dapat diputuskan mana yang benar.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'stock_adjusted',
+          entityType: 'item_variation',
+          entityId: body.variationId as string,
+          outletId: body.outletId as string,
+          after: {
+            movementId: id,
+            type: tipe,
+            delta: delta.toString(),
+            reasonCode: reasonCode === '' ? null : reasonCode,
+          },
+        });
 
         // 201: sumber daya baru dibuat. Tanpa ini Fastify menjawab 200, dan
         // klien yang membedakan keduanya tidak dapat tahu barisnya tertulis.

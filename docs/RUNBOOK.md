@@ -712,6 +712,78 @@ keamanan harus mencapai semua merchant sekarang, naikkan tahapnya ke `penuh`
 
 ---
 
+## 13. Feature flag & kill switch
+
+`ARCH:358` — *"Kill switch: per fitur per merchant, dari server tanpa rilis —
+kebutuhan operasional, bukan kemewahan."*
+
+Dipakai saat sebuah fitur harus berhenti untuk **satu merchant** (dugaan
+fraud, penyalahgunaan) atau **seluruh merchant** (cacat yang baru ketahuan)
+tanpa menunggu rilis berikutnya.
+
+### 13.1 Melihat yang dapat dimatikan
+
+```
+node --env-file=.env tools/kill-switch.mjs --daftar
+node --env-file=.env tools/kill-switch.mjs --status --tenant=<uuid>
+```
+
+Daftarnya dibaca dari `packages/domain/src/fitur.ts`. Fitur yang tidak ada di
+sana tidak dapat dimatikan, dan itu disengaja: **tidak ada flag yang dapat
+mematikan audit** (`spec-f:369`) maupun menghentikan penjualan.
+
+### 13.2 Mematikan untuk satu merchant
+
+```
+node --env-file=.env tools/kill-switch.mjs pembayaran_qris_statis off \
+  --tenant=<uuid> --alasan="dugaan fraud, tiket #123" --kering
+```
+
+Jalankan dengan `--kering` lebih dulu; ia mencetak apa yang akan ditulis tanpa
+menulisnya. Hilangkan `--kering` untuk benar-benar menerapkannya.
+
+⛔ `--alasan` **wajib** saat mematikan. Kill switch dinyalakan saat insiden dan
+dilupakan sesudahnya; baris tanpa alasan adalah fitur yang mati berbulan-bulan
+tanpa ada yang tahu kenapa — dan yang menemukannya adalah merchant yang
+menelepon karena tombolnya hilang.
+
+### 13.3 Mematikan untuk SELURUH merchant
+
+Hilangkan `--tenant`. Untuk menyalakannya kembali di satu merchant yang sudah
+diperiksa, tulis penyimpangan tenant `on` di atas penyimpangan global `off` —
+**baris tenant menang atas baris global.**
+
+### 13.4 Mengembalikan ke normal
+
+```
+node --env-file=.env tools/kill-switch.mjs pembayaran_qris_statis bawaan --tenant=<uuid>
+```
+
+`bawaan` **menghapus** barisnya sehingga fitur kembali mengikuti bawaan kode.
+Ia bukan sinonim `on`: fitur yang bawaannya mati akan kembali mati.
+
+### 13.5 Berapa lama sampai ke perangkat
+
+Perangkat menyegarkan lewat `GET /devices/{deviceId}/features` saat boot dan
+setiap **15 menit**. Perangkat yang sedang offline **tetap memakai flag
+terakhir yang diketahuinya** — tidak ada kedaluwarsa, dan itu disengaja: kill
+switch yang berhenti berlaku setelah beberapa jam offline tidak berlaku pada
+perangkat yang paling membutuhkannya.
+
+⛔ Konsekuensinya juga harus dinyatakan: perangkat yang **belum pernah**
+menyegarkan memakai bawaan kode, yaitu **menyala**. Kill switch tidak dapat
+mendahului perangkat yang belum pernah terhubung sama sekali.
+
+### 13.6 Yang TIDAK dilakukan kill switch
+
+| Bukan | Kenapa |
+|---|---|
+| Menghentikan penjualan | Kill switch yang dapat menghentikan penjualan adalah SEV-1 yang dipicu sendiri. Tunai, penyimpanan penjualan, dan tutup kas tidak punya flag |
+| Mematikan audit | `spec-f:369` melarangnya tanpa pengecualian; daftar tertutup yang menegakkannya |
+| Menghapus data | Ia hanya menyembunyikan jalan masuk sebuah fitur. Transaksi yang sudah dibuat lewat fitur itu tetap ada, tetap terkirim, dan tetap dilaporkan |
+
+---
+
 ## 11. Yang TIDAK boleh dilakukan, apa pun tekanannya
 
 1. ⛔ `UPDATE` pada `order`, `payment`, `refund`, `cash_movement`, atau

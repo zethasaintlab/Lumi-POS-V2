@@ -51,6 +51,9 @@ const RUTE = {
   sold_out: () => '/inventory/sold-out',
   // FR-D7. `entityId`-nya adalah id SHIFT — rutenya bersarang di bawahnya.
   no_sale: (id) => `/shifts/${encodeURIComponent(id)}/no-sale`,
+  cash_movement: (id) => `/shifts/${encodeURIComponent(id)}/cash-movements`,
+  count_attempt: (id) => `/shifts/${encodeURIComponent(id)}/count-attempts`,
+  peripheral: () => '/peripherals',
 };
 
 function argumen(nama, bawaan) {

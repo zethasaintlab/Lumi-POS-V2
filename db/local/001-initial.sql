@@ -116,6 +116,17 @@ CREATE TABLE outlet (
   -- diam-diam memakai angka lama selamanya.
   discount_threshold_percent INTEGER,   -- x10000
   discount_threshold_amount INTEGER,
+  -- B-26 — dua ambang sisanya, alasan yang SAMA: keduanya diputuskan di
+  -- perangkat, dan keduanya offline.
+  --
+  -- ⛔ Tutup kas (K-12) dan buka laci no-sale (K-16) berjalan tanpa jaringan.
+  -- Perangkat yang tidak tahu ambang outletnya memakai bawaan domain, dan
+  -- server memakai angka yang merchant setel — kasir yang sama, shift yang
+  -- sama, jawaban berbeda. Itu persis bentuk penyimpangan yang
+  -- `packages/domain/src/buku-kas.ts` catat saat konstantanya dipindahkan ke
+  -- domain.
+  cash_variance_threshold INTEGER,
+  no_sale_threshold INTEGER,
   archived_at TEXT
 );
 
@@ -190,6 +201,106 @@ CREATE TABLE telemetry_local (
 -- Pemangkasan buffer membuang yang TERLAMA; index ini yang membuatnya murah.
 CREATE INDEX ix_telemetry_waktu ON telemetry_local(pada_waktu);
 
+-- ---------- FEATURE FLAG (murni lokal, disegarkan dari server) ----------
+-- `ARCH:358` — kill switch per fitur per merchant, tanpa rilis.
+--
+-- ⛔ TIDAK didaftarkan sebagai raw table, dan itu keputusan, bukan kelalaian.
+-- Menambah raw table mengubah SIDIK JARI skema lokal, dan itu menuntut
+-- `disconnectAndClear()` + unduh ulang katalog di SETIAP perangkat merchant.
+-- Biaya nyata itu untuk tiga boolean yang dapat diambil satu permintaan HTTP.
+--
+-- ⛔ Barisnya BERTAHAN saat perangkat offline. Kill switch yang hilang begitu
+-- internet mati adalah kill switch yang tidak berlaku justru pada perangkat
+-- yang paling sulit dijangkau. Fitur yang tidak punya baris sama sekali
+-- mengikuti bawaan `packages/domain/src/fitur.ts` — perangkat yang belum
+-- pernah menyegarkan tetap dapat berjualan penuh.
+CREATE TABLE fitur_lokal (
+  kunci TEXT PRIMARY KEY NOT NULL,
+  aktif INTEGER NOT NULL,
+  disegarkan_pada TEXT NOT NULL
+);
+
+-- KEP-21 — keranjang K-03 yang BERTAHAN melewati muat ulang.
+--
+-- Sampai sekarang keranjang hanya hidup di memori modul
+-- (`apps/kasir/src/kasir/simpanan.ts`): tab yang ter-refresh, tablet yang mati
+-- baterai, atau browser yang membuang tab di belakang membuat kasir memasukkan
+-- ulang seluruh pesanan di depan pelanggan yang sedang menunggu.
+--
+-- ⛔ Ini BUKAN `order` berstatus `open`, dan itu keputusan.
+--
+-- `ERD` menyiapkan `order.status = 'open'` + `owned_by_device_id` untuk
+-- keranjang yang bertahan, tapi menulis baris `order` berarti mengirimkannya
+-- ke server — dan order `open` yang tidak pernah dibayar lalu muncul di
+-- laporan, menuntut jalan penutupan yang belum ada. Ia juga tidak dibutuhkan
+-- v1: berbagi order antar device saat offline adalah non-goal yang DINYATAKAN
+-- (`PRD` § 4, ditunda ke v1.1). Yang dipecahkan di sini hanya "keranjang
+-- perangkat INI hilang saat dimuat ulang", dan untuk itu tabel lokal cukup.
+--
+-- ⛔ SENGAJA bukan raw table, alasan yang sama dengan `fitur_lokal`: sidik
+-- jari skema yang berubah menuntut unduh ulang katalog di setiap perangkat.
+--
+-- ⛔ SATU baris, dan `id` selalu 'kini'. Perangkat ini punya satu keranjang
+-- yang sedang berjalan; primary key konstan membuat "simpan keranjang"
+-- menjadi satu UPSERT yang tidak dapat meninggalkan baris yatim, dan membuat
+-- mustahil ada dua keranjang yang keduanya mengaku sedang berjalan.
+--
+-- ⛔ `shift_id` disimpan supaya keranjang milik shift yang SUDAH DITUTUP tidak
+-- pernah bangkit. Kasir berikutnya yang membuka shift baru dan menemukan
+-- pesanan pelanggan kemarin di layarnya akan menjualnya kepada orang yang
+-- salah.
+--
+-- `isi` adalah JSON `Keranjang` apa adanya (baris + modifier + diskon).
+-- Bentuknya milik klien sepenuhnya dan tidak pernah dikirim ke mana pun, jadi
+-- ia tidak menuntut kolom per-field maupun kesepakatan dengan skema server.
+-- FR-C3/FR-C14 — draf penjualan QRIS DINAMIS yang menunggu konfirmasi gateway.
+--
+-- ⛔ Kenapa ia harus BERTAHAN, dan kenapa ini bukan kemewahan
+--
+-- `spec-c:328` menuntutnya sebagai acceptance criteria: *"Aplikasi mati di
+-- tengah polling → setelah restart, payment masih `pending_confirmation` dan
+-- polling dilanjutkan."*
+--
+-- Jalur QRIS dinamis menulis order ke SERVER lebih dulu lalu menunggu. Di
+-- antara keduanya ada jendela — kadang lima menit penuh — tempat uang sudah
+-- (atau sedang) berpindah dan perangkat belum menulis apa pun secara lokal.
+-- Tab yang ter-refresh di jendela itu membuat kasir kehilangan seluruh jejak
+-- transaksi yang pelanggannya mungkin SUDAH bayar, dan satu-satunya yang tahu
+-- adalah server.
+--
+-- ⛔ SATU baris, `id = 'kini'`, pola yang sama dengan `keranjang_lokal`. Satu
+-- perangkat menunggu paling banyak satu QR: kasir tidak dapat melayani
+-- pelanggan berikutnya sebelum yang ini selesai, dan dua draf berjalan berarti
+-- dua QR di layar yang sama.
+--
+-- ⛔ Murni lokal, SENGAJA bukan raw table — alasan yang sama dengan
+-- `keranjang_lokal` dan `fitur_lokal`: sidik jari skema yang berubah menuntut
+-- `disconnectAndClear()` di setiap perangkat merchant.
+--
+-- `muatan` adalah JSON muatan order yang SUDAH dikirim ke server, apa adanya.
+-- Menyimpannya berarti pemulihan tidak perlu menyusun ulang apa pun — dan
+-- muatan yang disusun ulang setelah restart dapat berbeda dari yang server
+-- terima, karena harga katalog mungkin sudah berubah di antaranya.
+CREATE TABLE draf_qris_lokal (
+  id            TEXT PRIMARY KEY NOT NULL,
+  order_id      TEXT NOT NULL,
+  payment_id    TEXT NOT NULL,
+  shift_id      TEXT NOT NULL,
+  -- Draf `DrafTerkirim` + muatan order, keduanya JSON.
+  draf          TEXT NOT NULL,
+  muatan        TEXT NOT NULL,
+  -- QR yang sedang ditampilkan. Kosong berarti gateway belum menjawab.
+  qr_string     TEXT,
+  dibuat_pada   TEXT NOT NULL
+);
+
+CREATE TABLE keranjang_lokal (
+  id TEXT PRIMARY KEY NOT NULL,
+  shift_id TEXT NOT NULL,
+  isi TEXT NOT NULL,
+  diperbarui_pada TEXT NOT NULL
+);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.
@@ -258,6 +369,21 @@ CREATE TABLE order_line (
   tax_rate_id TEXT, tax_rate INTEGER DEFAULT 0, tax_amount INTEGER DEFAULT 0,
   tax_rate_name TEXT,
   is_tax_inclusive INTEGER DEFAULT 0, cost_at_sale INTEGER NOT NULL DEFAULT 0,
+  -- FR-A2 AC keempat — berapa varian yang item ini punya SAAT PENJUALAN.
+  --
+  -- ⛔ Ia ada DI BARISNYA karena cetak ulang membangun dokumennya dari sini
+  -- dan `spec-b:145` melarangnya menyentuh tabel katalog. Tanpa kolom ini,
+  -- cetakan pertama (yang punya katalog di tangan) dan cetak ulang (yang
+  -- tidak) akan berbeda tepat pada hari merchant menambahkan varian kedua.
+  --
+  -- ⛔ DEFAULT 1, berbeda dari sisi PostgreSQL yang membuang defaultnya.
+  -- Alasannya bukan kelonggaran: kolom ini ditambahkan ke tabel yang SUDAH
+  -- ADA di perangkat merchant lewat `ALTER TABLE ADD COLUMN`, dan SQLite
+  -- menuntut kolom baru pada tabel berisi data punya nilai untuk baris lama.
+  -- Satu adalah yang JUJUR untuk baris lama — kita tidak tahu berapa varian
+  -- item itu punya saat itu, dan satu menghasilkan perilaku yang sama dengan
+  -- sebelum kolom ini ada.
+  variation_count_at_sale INTEGER NOT NULL DEFAULT 1,
   line_total INTEGER NOT NULL
 );
 CREATE TABLE order_line_modifier (
@@ -415,7 +541,23 @@ CREATE TABLE device_config (
   -- kolom sama sekali.
   hlc_state INTEGER DEFAULT 0,
   hlc_teks TEXT,
-  last_sync_at TEXT
+  last_sync_at TEXT,
+  -- ⛔ Profil printer yang BERLAKU di perangkat ini, dan alasannya bukan
+  -- kenyamanan: sebelum kolom ini ada, K-09 dan K-15 memakai `p[0]` — baris
+  -- PERTAMA yang query kembalikan, tanpa `ORDER BY`. Merchant yang punya tiga
+  -- model printer tersinkron mencetak dengan profil yang dipilih urutan baris,
+  -- bukan dengan profil printer yang benar-benar tercolok — dan gejalanya
+  -- struk selebar 80 mm yang dipotong di kolom 32, atau perintah potong yang
+  -- tercetak sebagai karakter sampah.
+  --
+  -- Ia MURNI LOKAL: printer menempel pada perangkat, bukan pada merchant.
+  -- Kasir 1 dengan Epson dan kasir 2 dengan Xprinter di outlet yang sama
+  -- adalah keadaan normal.
+  --
+  -- NULL berarti belum dipilih; `profilBerlaku` yang memutuskan apa yang
+  -- dipakai sementara itu.
+  printer_profile_id TEXT,
+  peripheral_id TEXT
 );
 -- Sidik jari bentuk raw table pada saat skema terakhir dipasang di perangkat
 -- ini. Ia menggantikan nomor versi yang ditulis tangan, dan alasannya bukan

@@ -265,3 +265,35 @@ test('⛔ dua tarif berbeda menghasilkan DUA baris, digabung per tarif', async (
   assert.ok(out.includes('PBJT 10%'));
   assert.ok(out.includes('PPN 11%'));
 });
+
+// ---------------------------------------------------------------------------
+// FR-A3 — kuantitas modifier pada cetak ulang
+// ---------------------------------------------------------------------------
+
+test('⛔ cetak ulang menyebut kuantitas modifier dan MENGALIKAN harganya', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(
+    `UPDATE order_line_modifier SET quantity = 2000 WHERE id = 'm-1'`
+  );
+
+  const out = await cetak(db);
+  // `spec-b:145` menuntut cetak ulang IDENTIK dengan cetakan pertama. Yang
+  // melewatkan kuantitas mencetak "Extra Shot" seharga satu shot pada struk
+  // yang totalnya memuat dua — dan selisihnya hanya muncul pada cetakan kedua.
+  // `×` ditransliterasi jadi `x` oleh renderer SEBELUM lebar dihitung —
+  // aturan yang sama dengan `…`, dan alasan struk ini tetap muat 32 kolom.
+  assert.match(out, /Extra Shot 2x/, `kuantitas modifier hilang: ${out}`);
+  assert.match(out, /10\.000/, 'harga modifier tidak dikalikan kuantitasnya');
+});
+
+test('⛔ cetak ulang mencetak DISKON, bukan nol', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(`UPDATE "order" SET order_discount = 5000 WHERE id = 'ord-1'`);
+
+  const out = await cetak(db);
+  // `order.subtotal` adalah subtotal KOTOR — cetak ulang yang menulis nol
+  // menyodorkan dua angka yang selisihnya tidak dapat dijelaskan.
+  assert.match(out, /Diskon/, `baris diskon hilang: ${out}`);
+});

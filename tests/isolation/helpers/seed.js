@@ -441,6 +441,9 @@ async function seedTransactionCycle(appClient, base, { cycleLabel, printerProfil
     tax_amount: 2000,
     is_tax_inclusive: true,
     cost_at_sale: 8000,
+    // FR-A2 — `NOT NULL` tanpa default sejak migrasi `0035`. Setiap jalur
+    // tulis harus menyebutkannya; itu justru gunanya.
+    variation_count_at_sale: 1,
     line_total: 22000,
     created_by: base.user.id,
     occurred_at: occurredAt,

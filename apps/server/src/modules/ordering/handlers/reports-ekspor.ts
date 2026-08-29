@@ -5,6 +5,7 @@ import { HttpError } from '../../../http-error.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import { assertUserVisible } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import { assertRentang } from './rentang.ts';
 import { ambilPenjualan } from './reports.ts';
 import { ambilProduk } from './reports-produk.ts';
@@ -196,6 +197,29 @@ export function createExportHandlers(pool: Pool): Record<string, unknown> {
         await assertUserVisible(client, actorId);
         if (outletId !== null) await assertOutletVisible(client, outletId);
 
+        // FR-F6 + `spec-f:300` (`data_exported`).
+        //
+        // ⛔ Peristiwa audit pada endpoint GET, dan itu disengaja. Ekspor
+        // TIDAK mengubah apa pun di sistem — yang berubah adalah di mana
+        // datanya berada: sesudah ini ia ada di laptop seseorang, di luar
+        // seluruh kontrol akses yang produk ini punya. Justru karena itu
+        // `spec-f:300` mendaftarkannya, dan justru karena itu ia satu-satunya
+        // pembacaan yang meninggalkan jejak.
+        //
+        // ⛔ Yang dicatat LINGKUPNYA, bukan isinya. Menyalin CSV-nya ke
+        // `after` menaruh omzet, nama kasir, dan seluruh angka penjualan ke
+        // dalam tabel yang bertahan lima tahun — dan menggandakan setiap data
+        // yang diekspor, di tempat yang tidak seorang pun kira memuatnya.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'data_exported',
+          entityType: 'report',
+          entityId: jenis,
+          outletId,
+          after: { jenis, from, to, format: 'csv' },
+        });
+
         if (jenis === 'sales') {
           const p = await ambilPenjualan(client, { from, to, outletId });
           return susunCsv(
@@ -213,6 +237,17 @@ export function createExportHandlers(pool: Pool): Record<string, unknown> {
         }
 
         if (jenis === 'products') {
+          // ⛔ TANPA margin, dan itu batas yang DINYATAKAN — bukan kelalaian.
+          //
+          // Kolom CSV yang berubah menurut peran pengekspor menghasilkan dua
+          // berkas bernama sama dengan isi berbeda, dan akuntan merchant yang
+          // menerimanya tidak punya cara mengetahui mana yang ia pegang.
+          // Ekspor bermargin menuntut nama berkas dan metadata yang
+          // menyatakannya (`spec-g:§G.5` menuntut metadata di dalam
+          // berkasnya), dan itu pekerjaan tersendiri.
+          //
+          // Margin dibaca di layar (`GET /reports/products`), yang RBAC-nya
+          // ditegakkan per permintaan.
           const produk = await ambilProduk(client, { from, to, outletId });
           return susunCsv(
             ['variation_id', 'produk', 'varian', 'kuantitas_x1000', 'kuantitas', 'nilai_kotor'],

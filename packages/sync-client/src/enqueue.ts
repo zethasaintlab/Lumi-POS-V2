@@ -14,7 +14,25 @@ import type { DbLokal } from './ports.ts';
  * (kas masuk/keluar, no-sale) memang belum punya endpoint -- itu pekerjaan
  * Modul D, dan sampai ia ada, item seperti itu TIDAK BOLEH masuk antrean.
  */
-export const ENTITY_TYPES = ['shift', 'order', 'order_cancel', 'payment', 'sold_out', 'no_sale'] as const;
+export const ENTITY_TYPES = [
+  'shift',
+  'order',
+  'order_cancel',
+  'payment',
+  'sold_out',
+  'no_sale',
+  // FR-D5. Kas masuk/keluar dicatat di perangkat, offline — owner yang
+  // mengambil uang dari laci untuk membayar pemasok tidak menunggu jaringan.
+  'cash_movement',
+  // FR-D2. Percobaan hitungan kas dicatat di perangkat saat tutup kas, dan
+  // tutup kas berjalan tanpa jaringan. Jejaknya harus sampai meski shift-nya
+  // sudah ditutup berjam-jam sebelumnya.
+  'count_attempt',
+  // K-15. Pilihan profil printer perangkat dicatat saat kasir memilihnya, dan
+  // K-15 bertanda ✅ offline (`IA:65`) — outlet yang printernya diganti saat
+  // internet mati tidak menunggu jaringan untuk mencetak dengan benar.
+  'peripheral',
+] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
 export interface ItemOutbox {

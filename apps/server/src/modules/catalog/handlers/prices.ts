@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import { fetchVariationOrThrow } from './items.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
@@ -331,7 +332,44 @@ export function createPriceHandlers(pool: Pool) {
         if (body.outletId !== null && body.outletId !== undefined) {
           await assertOutletVisible(client, body.outletId);
         }
-        return insertPrice(client, tenantId, variationId, actorId, body);
+        // ⛔ Harga yang BERLAKU diresolusi SEBELUM baris baru ditulis.
+        //
+        // Sesudahnya, baris baru itu sendiri yang menang di tangga resolusi —
+        // `before` akan sama dengan `after`, dan audit yang menjawab "harganya
+        // diubah dari berapa" dengan angka barunya sendiri lebih buruk
+        // daripada audit yang tidak menjawab.
+        //
+        // ⛔ Yang diresolusi harga pada `effective_from` baris BARU, di outlet
+        // yang sama — bukan baris `price_history` sebelumnya. Tangga tiga
+        // tingkat berarti baris terakhir yang ditulis belum tentu yang sedang
+        // berlaku, dan menyebut baris yang salah menghasilkan angka yang tidak
+        // pernah dibayar siapa pun.
+        //
+        // `null` berarti tidak ada harga yang berlaku sebelumnya — sah, dan
+        // berbeda dari nol.
+        const sebelum = await resolvePrice(
+          client,
+          variationId,
+          body.outletId ?? null,
+          body.effectiveFrom === undefined ? null : new Date(body.effectiveFrom)
+        ).catch(() => null);
+
+        const baru = await insertPrice(client, tenantId, variationId, actorId, body);
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'price_changed',
+          entityType: 'item_variation',
+          entityId: variationId,
+          outletId: body.outletId ?? null,
+          before: sebelum === null ? null : { price: String(sebelum.price), asal: sebelum.source },
+          after: {
+            price: String(baru.price),
+            effectiveFrom: String(baru.effective_from),
+            outletId: baru.outlet_id,
+          },
+        });
+        return baru;
       });
       reply.code(201);
       return toPrice(row);

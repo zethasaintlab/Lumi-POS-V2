@@ -342,11 +342,39 @@ async function main() {
 
   // --- 6. device + shift + penjualan ----------------------------------------
   const devId = id();
+  const devCode = 'K1';
   await fetch(`${API}/devices`, {
     method: 'POST',
     headers: H,
-    body: JSON.stringify({ id: devId, outletId: outletUtamaId, code: 'K1', name: 'Kasir Depan' }),
+    body: JSON.stringify({ id: devId, outletId: outletUtamaId, code: devCode, name: 'Kasir Depan' }),
   });
+
+  // ⛔ Kredensial perangkat diterbitkan DI SINI, dan tanpa langkah ini aplikasi
+  // kasir tidak dapat dipakai sama sekali.
+  //
+  // K-15 menuntut enam nilai: alamat server, tenant, outlet, id perangkat, kode
+  // perangkat, dan SECRET. Lima yang pertama adalah UUID yang hanya ada di
+  // dalam proses ini; yang keenam dikembalikan `POST /devices/{id}/credentials`
+  // **sekali saja** — yang tersimpan di server hanya SHA-256-nya (FR-F12).
+  //
+  // Sebelum ini seed mencetak email dan PIN lalu berhenti, jadi satu-satunya
+  // jalan menyiapkan kasir adalah menggali UUID lewat psql. Orang yang mencoba
+  // produk ini pertama kali tidak akan menemukannya, dan yang ia simpulkan
+  // adalah aplikasi kasirnya rusak.
+  //
+  // `-d '{}'`-nya bukan hiasan: body kosong dengan `content-type: application/json`
+  // ditolak Fastify sebagai `FST_ERR_CTP_EMPTY_JSON_BODY`.
+  let devSecret = null;
+  r = await fetch(`${API}/devices/${devId}/credentials`, {
+    method: 'POST',
+    headers: H,
+    body: '{}',
+  });
+  if (r.status === 201) {
+    devSecret = (await j(r)).secret;
+  } else {
+    console.log('  kredensial perangkat GAGAL', r.status, JSON.stringify(await j(r)).slice(0, 160));
+  }
 
   const hariIni = new Date().toISOString().slice(0, 10);
   const shiftId = id();
@@ -468,6 +496,8 @@ async function main() {
   console.log('  The Cafe by ORIGEN — siap dieksplorasi');
   console.log('='.repeat(66));
   console.log(`  Back office : ${API.replace('3000', '1422')}`);
+  console.log(`  Owner (HP)  : ${API.replace('3000', '1423')}`);
+  console.log(`  Kasir       : ${API.replace('3000', '1420')}`);
   console.log(`  Password    : ${PASSWORD}   (semua akun)`);
   console.log(`  PIN kasir   : ${PIN_KASIR}`);
   console.log(`  Tanggal     : ${hariIni}`);
@@ -475,6 +505,27 @@ async function main() {
   for (const a of akun) {
     console.log(`  ${(LABEL[a.peran] ?? a.peran).padEnd(16)} ${a.email}`);
   }
+
+  // Blok K-15. Dicetak sebagai daftar berlabel, bukan JSON: yang membacanya
+  // MENGETIKNYA ulang ke enam bidang di layar perangkat, satu per satu.
+  console.log('');
+  console.log('  ' + '-'.repeat(62));
+  console.log('  Aplikasi kasir → layar "Perangkat" (K-15), isi enam bidang ini:');
+  console.log('  ' + '-'.repeat(62));
+  console.log(`  Alamat server       ${API}`);
+  console.log(`  Tenant              ${sesi.tenantId}`);
+  console.log(`  Outlet              ${outletUtamaId}`);
+  console.log(`  ID perangkat        ${devId}`);
+  console.log(`  Kode perangkat      ${devCode}`);
+  console.log(`  Kredensial          ${devSecret ?? '(GAGAL diterbitkan — lihat pesan di atas)'}`);
+  console.log('');
+  console.log('  ⛔ Kredensial di atas TIDAK dapat dibaca lagi. Server hanya');
+  console.log('     menyimpan SHA-256-nya (FR-F12). Kehilangannya berarti');
+  console.log('     menerbitkan ulang, dan penerbitan ulang mematikan yang lama.');
+  console.log('  Simpan, lalu MUAT ULANG aplikasi kasir — sinkronisasi menyala');
+  console.log('  saat aplikasi dimuat, bukan saat pengaturan disimpan.');
+  console.log('');
+  console.log(`  Outlet kedua (tanpa transaksi): ${outletKeduaId}`);
   console.log('');
   for (const baris of catatanPassword) console.log(`  ${baris}`);
   console.log('='.repeat(66));

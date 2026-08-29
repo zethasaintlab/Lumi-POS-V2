@@ -92,6 +92,50 @@ export const PETA_PERAN: readonly AturanRute[] = [
   { metode: 'POST', pola: '/tax-rates', operasi: 'tax_settings' },
   { metode: 'POST', pola: '/tax-rates/:taxRateId/end', operasi: 'tax_settings' },
 
+  // --- ambang otorisasi (B-26) ----------------------------------------------
+  //
+  // ⛔ Owner dan Manajer Area saja, diturunkan dari `IA:205`. Manajer Outlet
+  // SENGAJA di luar: ambang inilah yang memutuskan kapan persetujuan Manajer
+  // Outlet dituntut, dan yang dapat menaikkannya dapat menghapus kebutuhan
+  // atas persetujuannya sendiri — pemisahan tugas `spec-f:91` runtuh tanpa
+  // satu pun aturan terlihat dilanggar.
+  //
+  // ⛔ MEMBACA (`GET`) sengaja tidak di sini. Kasir yang ditolak PIN-nya
+  // berhak tahu ambang mana yang menolaknya, dan angkanya sudah turun ke
+  // perangkat lewat jalur diskon. Yang dijaga adalah MENULISNYA.
+  //
+  // Handler-nya juga memanggil `assertBoleh` — dua lapisan, dan itu disengaja
+  // di sini: peta ini menjaga rute, `assertBoleh` menjaga fungsinya kalau
+  // kelak dipanggil dari jalur lain.
+  { metode: 'PUT', pola: '/outlets/:outletId/thresholds', operasi: 'threshold_settings' },
+
+  // --- akses support (F.5) --------------------------------------------------
+  //
+  // ⛔ MEMBERI dan MENGAKHIRI dijaga; MEMBACA daftarnya tidak.
+  //
+  // Setiap orang di merchant berhak tahu bahwa pihak kami sedang punya akses
+  // ke datanya, dan kapan itu berakhir. `spec-f:401` menuntut banner "terlihat
+  // di SELURUH layar" — banner yang hanya muncul untuk owner tidak memenuhi
+  // kalimat itu, dan menyembunyikannya dari staf lain berarti orang yang
+  // sedang bekerja di layar itu tidak tahu siapa lagi yang sedang melihatnya.
+  { metode: 'POST', pola: '/support-sessions', operasi: 'support_grant' },
+  { metode: 'POST', pola: '/support-sessions/:sessionId/end', operasi: 'support_grant' },
+
+  // --- profil vertikal (B-24) -----------------------------------------------
+  //
+  // Owner saja (`IA:203`), operasi yang sama dengan membuat outlet: profil
+  // vertikal menentukan perilaku SELURUH outlet yang mewarisinya, dan
+  // `spec-f:30` menaruh "membuat/menghapus outlet" di kolom yang TIDAK BOLEH
+  // milik Manajer Area.
+  //
+  // ⛔ `outlet_manage` dipakai ulang, BUKAN operasi baru: himpunan perannya
+  // sama persis ({owner}) dan cakupannya sama — keduanya menentukan bentuk
+  // jaringan outlet merchant. Operasi baru yang himpunannya identik hanya
+  // menambah baris ke matriks yang spec tidak nyatakan.
+  { metode: 'POST', pola: '/vertical-profiles', operasi: 'outlet_manage' },
+  { metode: 'PATCH', pola: '/vertical-profiles/:profileId', operasi: 'outlet_manage' },
+  { metode: 'PUT', pola: '/outlets/:outletId/vertical-profile', operasi: 'outlet_manage' },
+
   // --- perangkat -----------------------------------------------------------
   { metode: 'POST', pola: '/devices', operasi: 'device_revoke' },
   { metode: 'POST', pola: '/devices/:deviceId/credentials', operasi: 'device_revoke' },
@@ -197,6 +241,56 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
       'perilaku yang benar. Yang menjaganya: `assertBoleh(shift_open_close)` di handler ' +
       '(menutup akuntan, `spec-f:82`) plus AMBANG FREKUENSI — PIN manajer mulai ' +
       'pembukaan ke-4 dalam shift',
+  },
+  {
+    metode: 'POST',
+    pola: '/shifts/:shiftId/count-attempts',
+    alasan:
+      'FR-D2. Alasan yang SAMA dengan no-sale dan kas manual: kasir justru ORANG YANG ' +
+      'MENGHITUNG LACI, dan setiap entri di PETA_PERAN diuji MENOLAK kasir. Yang ditulis ' +
+      'endpoint ini hanya JEJAK — ia tidak menyentuh `cash_drawer_shift` sama sekali, ' +
+      'jadi ia bukan jalan kedua menuju penutupan. Yang menjaganya ' +
+      '`assertBoleh(shift_open_close)` di handler (menutup akuntan, `spec-f:82`)',
+  },
+  {
+    metode: 'POST',
+    pola: '/shifts/:shiftId/cash-movements',
+    alasan:
+      'FR-D5. Alasan yang SAMA dengan no-sale, dan lebih kuat: kasir yang menerima ' +
+      'kembalian dari bank atau owner yang mengambil uang untuk membayar pemasok tidak ' +
+      'dapat menunggu manajer, dan di kafe kecil ia SATU-SATUNYA orang yang ada. Setiap ' +
+      'entri di PETA_PERAN diuji MENOLAK kasir; menaruh rute ini di sana akan menuntut ' +
+      'test yang menyatakan kebalikan dari perilaku yang benar. Yang menjaganya: ' +
+      '`assertBoleh(shift_open_close)` di handler (menutup akuntan, `spec-f:82`) plus ' +
+      'alasan daftar tertutup + audit untuk SETIAP baris — kontrol yang sama yang ' +
+      'keputusan 1 Agustus 2026 tetapkan untuk void',
+  },
+  {
+    metode: 'POST',
+    pola: '/peripherals',
+    alasan:
+      'K-15. `IA:65` memberi layarnya ke "Manajer+", dan operasi RBAC-nya ' +
+      '`shift_open_close` — himpunan peran yang sama. Operasi baru sengaja tidak dibuat: ' +
+      'matriks `spec-f:38-53` tidak punya baris untuk konfigurasi peripheral, dan matriks ' +
+      'yang mengandung baris karangan berhenti dapat dibaca berdampingan dengan spec-nya. ' +
+      '[ASUMSI] yang dinyatakan. Yang menjaganya `assertBoleh(shift_open_close)` di ' +
+      'handler — menutup akuntan (`spec-f:82`: tidak dapat melakukan mutasi apa pun)',
+  },
+  {
+    metode: 'GET',
+    pola: '/peripherals',
+    alasan:
+      'MEMBACA apa yang terpasang tidak dijaga peran, alasan yang sama dengan ambang ' +
+      'otorisasi (B-26): kasir yang strukanya tercetak salah lebar berhak tahu profil mana ' +
+      'yang sedang dipakai perangkatnya',
+  },
+  {
+    metode: 'GET',
+    pola: '/printer-profiles',
+    alasan:
+      'Data referensi hardware GLOBAL, dikecualikan RLS dan tanpa `tenant_id`. Tidak satu ' +
+      'pun kolomnya menyebut merchant mana pun — konsekuensi yang sama yang `app_release` ' +
+      'nyatakan',
   },
   {
     metode: 'POST',

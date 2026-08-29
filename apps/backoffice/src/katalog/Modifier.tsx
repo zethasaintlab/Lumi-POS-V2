@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
-import { rupiah } from './produk.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import {
   buatMuatanList,
   buatMuatanModifier,

@@ -309,7 +309,7 @@ PostgreSQL sungguhan — bukan hanya lewat test.
 | **Penjualan** | B-04 daftar shift · B-05 detail shift | ✅ MERGED | #41 |
 | **Inventori** | B-12 stok · B-13 penyesuaian | ✅ MERGED | #38, #39, #40 |
 | **Inventori** | B-14 opname · B-15 perlu diperiksa | ✅ MERGED | #42, #43 |
-| **Pengawasan** | B-21 laporan exception | ✅ MERGED | #32, #33 |
+| **Pengawasan** | B-21 laporan exception (8 laporan) | ✅ MERGED | #32, #33 |
 
 **Epik Inventori selesai 100%** — keempat layarnya ada, dan penjaga
 `tests/backoffice/navigasi.test.js` menolak grup Inventori yang punya layar
@@ -1009,3 +1009,581 @@ ada dan teruji, layarnya belum memakainya.
 | Ukuran halaman 50 | `[ASUMSI]`. Server membatasi `limit` ke 200 (`BATAS_MAKS_ITEM`) |
 | B-10 Harga | Masih memuat `/items` tanpa paginasi. Layar itu memilih varian untuk diberi harga per outlet; ia akan terpotong pada katalog besar dengan cara yang sama, dan belum diperbaiki |
 | Verifikasi browser | **Belum dijalankan** untuk alur pencarian + muat-lebih-banyak |
+
+---
+
+## FR-B8 di layar kasir — K-03 diskon + K-11 (22 Agustus 2026)
+
+Task 16 menutup server dan domain; FR-B8 tetap **tidak dapat dicapai
+merchant** sampai ini — satu-satunya jalan memberi diskon adalah memanggil
+REST langsung. Yang ditambahkan: `DialogDiskon` (K-03) yang merantai ke
+`DialogOtorisasi` (K-11), baris diskon di keranjang dan layar bayar, dan
+baris diskon **di struk**.
+
+### ⛔ Persetujuan berlaku untuk ANGKA, bukan untuk persentase
+
+Cacat yang ditemukan saat menulis alurnya, bukan dari spec. Manajer menyetujui
+30% dari Rp 100.000 — Rp 30.000 — lalu kasir menambahkan barang senilai
+Rp 900.000 dan potongannya menjadi Rp 300.000 dengan persetujuan yang sama.
+Persetujuan yang menempel pada persen adalah cek kosong yang ditandatangani di
+depan antrean.
+
+`DiskonKeranjang.nominalDisetujui` membekukan angka yang penyetuju lihat.
+Potongan yang **tumbuh** melewatinya menuntut persetujuan baru; yang
+**mengecil** tidak — meminta PIN untuk potongan yang lebih kecil hanya melatih
+manajer mengetik tanpa membaca. `approverId` tanpa `nominalDisetujui` tidak
+menutup apa pun: satu field yang hilang tidak boleh mematikan aturannya
+diam-diam.
+
+### ⛔ Struk sempat mencetak Diskon nol
+
+`penjualan.ts` memaku `diskon: 0` ke `bangunDokumenStruk`. `computeOrderTotals`
+**tidak** mengurangi `subtotal`, jadi struk mencetak Subtotal 20.000 lalu TOTAL
+20.900 dengan potongan Rp 1.000 yang tidak muncul di mana pun — selisih yang
+tidak dapat dijelaskan pelanggan mana pun, dan keluhan yang berakhir di kasir.
+
+### Yang tidak dibangun, dan kenapa
+
+| Batas | Keadaan |
+|---|---|
+| Diskon per BARIS | `spec-b:267` menyebutnya dan `order_line.discount_amount` ada di skema, tapi `POST /orders` hanya menerima diskon tingkat order. Membangun setengahnya di klien menghasilkan angka yang tidak dapat dikirim ke mana pun |
+| Verifikasi browser | **Belum dijalankan.** Seluruh alur diuji lewat `node --test` di atas fake `DbLokal` dan `node:sqlite`; dialog dan rantai ke K-11 belum dijalankan di browser sungguhan |
+| Angka ambang | Tetap `[ASUMSI]` — `spec-b:462` menuntut validasi tiga merchant untuk NILAINYA. Yang tidak dapat diubah adalah keberadaan ambangnya |
+
+### ⛔ Lubang pemindai yang ikut ditemukan
+
+Pemindai global dimatikan saat dialog terbuka. Kolom teksnya memang sudah
+diabaikan `usePemindaiGlobal`, tapi fokus yang berada di **radio button** tidak
+— dan scan di sana menambahkan produk ke keranjang **di belakang dialog**,
+perubahan yang tidak terlihat siapa pun sampai struk tercetak. `DialogNoSale`
+punya lubang yang sama dan ikut ditutup.
+
+---
+
+## FR-A3 — aturan pemilihan modifier di kasir (22 Agustus 2026)
+
+`max_selections` dan `allow_duplicate` ada di skema sejak F0, turun ke
+perangkat, dan dibaca `bacaModifier` — lalu **diabaikan**. Kasir dapat memilih
+enam topping pada list bermaksimal tiga; pesanannya tersimpan, barista tidak
+dapat membuatnya, dan tidak ada satu pun error di jalan.
+
+Aturannya kini di `packages/domain/src/modifier-pilihan.ts` sebagai fungsi
+murni, dan `DialogModifier.tsx` hanya bentuk layarnya.
+
+### ⛔ Batas menghitung UNIT, bukan baris — `[ASUMSI]`
+
+`spec-a:120` menulis batasnya sebagai "pilihan ke-4 dinonaktifkan" dan tidak
+menyatakan apa pun tentang interaksinya dengan `allow_duplicate`. Yang dipakai:
+`Extra Shot ×2` dihitung **dua**, karena pelanggan membayarnya dan barista
+membuatnya. Menghitung baris saja membuat `max_selections = 3` meloloskan enam
+shot lewat tiga baris ber-qty 2.
+
+### ⛔ Snapshot modifier lokal BERBEDA bentuk dari snapshot server
+
+Klien menulis `[{nama, qtyMilli}]`; server menulis
+`[{id, modifierId, name, price, quantityMilli}]`. Keduanya mengisi kolom yang
+sama (`order_line.modifier_snapshot`).
+
+Tidak berbahaya **hari ini**: `order_line` tidak ada di sync rules jalur turun,
+jadi baris server tidak pernah mendarat di perangkat. Ia menjadi berbahaya pada
+hari `order_line` masuk ke sana — `uraikanModifier` akan membaca `name` sebagai
+`undefined` dan menampilkan "undefined" di layar riwayat. Kelas yang sama
+dengan `tax_rate.rate`: bentuk yang berbeda antara dua sisi, tanpa satu pun
+error yang menunjukkannya.
+
+### Yang tidak dibangun
+
+| Batas | Keadaan |
+|---|---|
+| Penegakan di server | `POST /orders` menerima modifier apa adanya. Menegakkannya menuntut server membaca `modifier_list` pada setiap penjualan, dan aturannya dapat berubah setelah order antre offline berjam-jam |
+| Verifikasi browser | **Belum dijalankan** untuk stepper `allow_duplicate` dan pilihan yang dinonaktifkan |
+
+---
+
+## K-06 QRIS statis + EDC (22 Agustus 2026)
+
+Server menerima keempat metode sejak Modul C sub-project 2. Yang tidak ada
+adalah jalan bagi **kasir** memakainya — `MetodeBayar` di klien secara harfiah
+`'cash'`. Merchant yang pelanggannya membayar QRIS harus mencatatnya sebagai
+tunai, dan saldo laci lalu berbohong sebesar seluruh omzet QRIS.
+
+### ⛔ Cacat yang ikut lahir bila non-tunai menyentuh laci
+
+Bentuknya PERSIS sama dengan yang F3 temukan pada refund tunai, arahnya
+terbalik: `cash_movement` untuk QRIS membuat saldo laci naik pada penjualan
+yang tidak memindahkan satu lembar pun, dan tutup kas lalu menuntut otorisasi
+manajer untuk selisih yang tidak pernah ada. Klien dan server sama-sama
+menulisnya hanya untuk `cash`, dan ada test relay yang membuktikan keduanya
+sepakat.
+
+### Yang masih terbuka di Modul C
+
+| Batas | Kenapa |
+|---|---|
+| **QRIS dinamis di kasir** | Menuntut gateway menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di server — sementara jalur penjualan perangkat menulis lokal lebih dulu lalu me-relay. Ia menuntut jalur penjualan **online-first** yang belum ada, dan itu keputusan arsitektur, bukan penambahan layar |
+| **FR-C3** | "Nonaktifkan metode online saat offline" menuntut metode online ADA lebih dulu. Ketiga metode yang kini ada semuanya berfungsi tanpa jaringan |
+| **Pembayaran campuran** | Satu penjualan = satu payment di jalur perangkat. Server sudah mengembalikan `outstanding`; layarnya belum memakainya |
+| Verifikasi browser | **Belum dijalankan** untuk pemilih metode dan kedua form |
+
+---
+
+## Pembayaran campuran di perangkat (FR-C1, 22 Agustus 2026)
+
+### ⛔ Urutan kedatangan bagian pembayaran adalah bagian dari kebenarannya
+
+Server menghitung nominal pembayaran tunai dari `total − SUM(payment
+confirmed)` lalu **membulatkannya** (`spec-c:181`). Konsekuensinya: bagian
+tunai yang mendarat sebelum bagian non-tunai menagih **seluruh total**, menutup
+ordernya, dan membuat bagian berikutnya ditolak — untuk penjualan yang
+sempurna, hanya karena urutan kedatangannya.
+
+Urutan antar-baris `outbox_local` tidak dijamin apa pun kecuali `depends_on`,
+jadi perangkat menyusun rantainya sendiri: seluruh bagian non-tunai lebih dulu,
+tunai terakhir, masing-masing bergantung pada yang sebelumnya. Ada test yang
+membalik urutannya terhadap server sungguhan dan membuktikan penolakannya —
+serta membuktikan uangnya berpisah: laci menerima seluruh total sementara
+pelanggan membayar sebagian lewat QRIS.
+
+### ⛔ Kemunculan KETIGA cacat "laci menerima uang yang tidak pernah masuk"
+
+1. F3: saldo laci dihitung dari `payment`, bukan `cash_movement`.
+2. K-06 non-tunai: `cash_movement` ditulis untuk QRIS.
+3. Pembayaran campuran: `delta` memakai `amount_due`, yang memuat bagian bank.
+
+Ketiganya menghasilkan gejala yang sama — tutup kas menuntut otorisasi manajer
+untuk selisih yang tidak pernah ada — dan tidak satu pun menghasilkan error.
+
+### Yang tidak dibangun
+
+| Batas | Kenapa |
+|---|---|
+| Order `open` parsial di perangkat | Penjualan ditulis hanya saat LUNAS. Order `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21) |
+| Lebih dari satu bagian tunai | Uang tunai tidak punya identitas yang membedakan; dua baris membuat "berapa kembaliannya" punya lebih dari satu jawaban yang sama benarnya |
+| Verifikasi browser | **Belum dijalankan** untuk daftar bagian dan sisa tagihan |
+
+---
+
+## FR-H4 dan kill switch (23 Agustus 2026)
+
+### FR-H4 — blokir operasi destruktif
+
+Dari empat operasi `spec-h:274`, hanya **logout** yang benar-benar diblokir.
+Layar Perangkat menerima perubahan `tenantId`/`outletId`/`deviceId` tanpa
+memeriksa antrean sama sekali.
+
+⛔ **Yang TIDAK diblokir adalah bagian terpenting aturannya.** Alamat server
+dan kredensial perangkat tidak pernah diblokir — keduanya adalah jalan
+**memperbaiki** antrean yang macet, dan memblokirnya mengunci merchant di
+dalam keadaan itu selamanya. `deviceCode` juga lolos.
+
+**Pelajaran metodologis:** versi pertama menaruh blokirnya di dalam komponen
+React, dijaga penjaga yang memindai kode. Sabotase membuktikan penjaga itu
+**lolos** ketika pemanggilnya dihapus dan import-nya tertinggal. Pemeriksaan
+yang dapat dipalsukan oleh satu baris import bukan pemeriksaan — aturannya
+dipindah ke `perangkat/simpan-identitas.ts` supaya dapat dijalankan test, dan
+penjaganya diubah jadi "hanya ADA SATU penulis `device_config`".
+
+**Belum ada jalurnya:** `resync` dan `hapus_data` tidak punya tombol di mana
+pun. Aturannya sudah ada dan diuji; ada penjaga yang menandai bila keduanya
+mulai punya pemanggil. `uninstall` tidak dapat dicegah aplikasi mana pun
+(`spec-h:280`); mitigasinya — ekspor darurat — sudah ada di K-14.
+
+### Kill switch — batas yang dinyatakan
+
+| Batas | Keadaan |
+|---|---|
+| Perangkat yang **belum pernah** terhubung | Memakai bawaan kode, yaitu MENYALA. Kill switch tidak dapat mendahului perangkat yang tidak pernah menyegarkan. Runbook §13.5 |
+| Jeda sampai berlaku | Boot + tiap 15 menit. Bukan langsung, dan tidak ada jalur push |
+| Cakupan | Tiga fitur (`pembayaran_qris_statis`, `diskon_kasir`, `buka_laci_no_sale`). Menambah fitur keempat menuntut baris di `packages/domain/src/fitur.ts` dan pembacaannya di layar yang bersangkutan |
+| Verifikasi browser | **Belum dijalankan** untuk tombol yang hilang saat fitur dimatikan |
+
+---
+
+## FR-G5 — tujuh dari delapan laporan exception (23 Agustus 2026)
+
+X1 sudah ada sejak B-21. X8 ditutup bersama FR-F8. X2, X3, X4, X5, dan X7
+ditutup di sini. **X6 tidak dapat dibangun** — lihat di bawah.
+
+### ⛔ X6: keranjang tidak meninggalkan jejak
+
+`spec-g:162`: *"item yang ditambah lalu dihapus berkali-kali pada satu order —
+manipulasi keranjang sebelum pembayaran"*.
+
+Keranjang K-03 hidup di `apps/kasir/src/kasir/simpanan.ts`, **di memori
+saja**. Ia tidak pernah ditulis ke SQLite lokal, tidak pernah masuk
+`outbox_local`, tidak pernah dikirim. Penambahan dan penghapusan sebelum
+pembayaran karena itu tidak meninggalkan jejak di tabel mana pun, audit mana
+pun, atau metrik mana pun.
+
+Dua jalan yang mungkin, keduanya keputusan yang lebih besar daripada satu
+laporan:
+
+| Jalan | Konsekuensinya |
+|---|---|
+| Persistensi keranjang (KEP-21) | Order `open` yang tidak pernah dibayar muncul di laporan dan belum punya jalan penutupan. Skema sudah menyiapkannya (`order.status = 'open'` + `owned_by_device_id`); yang belum ada adalah jalan penutupannya |
+| Telemetri peristiwa keranjang | `ARCH:309` melarang telemetri memuat nama produk, dan X6 menuntut TEPAT itu untuk berguna — "produk mana yang berulang dibatalkan" |
+
+Jangan menandai FR-G5 selesai penuh sampai salah satunya diputuskan.
+
+### Batas lain
+
+| Batas | Keadaan |
+|---|---|
+| X7 memakai `closed_by` | Shift yang ditutup manajer atas nama kasir ternisbat ke manajer. Itu benar untuk "siapa yang menghitung", dan mungkin bukan yang owner cari |
+| Verifikasi browser | **Belum dijalankan** — layarnya ada dan ter-build, tapi belum dibuka terhadap data sungguhan |
+
+### Layar B-21 menampung kedelapan laporan (23 Agustus 2026)
+
+`IA:200` menamainya "Laporan Exception (8 laporan)". Yang dibangun satu layar
+dengan penyeleksi tab, bukan delapan entri menu — `IA:173` menjelaskan kenapa
+PENGAWASAN dipisah dari LAPORAN sama sekali, dan memecahnya delapan
+mengembalikan masalah yang pemisahan itu selesaikan.
+
+Daftar laporan hidup sebagai DATA di
+`apps/backoffice/src/pengawasan/b21-daftar.ts` (judul, deskripsi, endpoint,
+kunci baris, catatan kaki, kosakata keadaan kosong). Penjaga bahasa menuduh
+membaca data itu, bukan berkasnya — laporan kesembilan yang lahir kelak
+diperiksa tanpa siapa pun mengingat penjaganya ada.
+
+X6 tetap punya tabnya, dan tabnya menampilkan alasan di atas untuk **setiap**
+keadaan layar. Menghilangkannya membuat merchant yang membaca spec
+menyimpulkan laporannya rusak, atau bahwa ia salah mencari.
+
+⛔ **Utang yang tersisa dari layar ini:** `pesanKeadaan` lama dihapus dari
+`b21.ts` dan diganti `pesanLaporan` yang menerima definisi laporan. Kalau
+laporan berikutnya ditambahkan, ia WAJIB punya `kosong.{judul,benda,simpul}` —
+tanpanya keadaan kosongnya berbunyi "Tidak ada  yang tercatat" dan kalimat
+sinkronisasinya kehilangan penutup. Ada test yang menuntutnya untuk setiap
+laporan ber-endpoint.
+
+---
+
+## B-22 Audit & Aktivitas, dan lubang FR-F6 (23 Agustus 2026)
+
+`GET /audit-events` + layar B-22. Rantainya: `audit_event` → `reporting/handlers/audit.ts`
+→ `apps/backoffice/src/pengawasan/{b22.ts,Audit.tsx}`.
+
+### ⛔ FR-F6 BELUM tertutup, dan jaraknya sekarang terukur
+
+AC pertamanya: *"Setiap event dalam daftar menghasilkan record."* Saat
+ditemukan, **24 dari 35** nama di tabel `spec-f:288` belum dipancarkan sama
+sekali. Ditutup 23 Agustus 2026 dalam dua putaran — katalog/harga/stok/pajak,
+lalu sesi/shift/perangkat/ekspor. **9 tersisa, dan tidak satu pun punya
+endpoint hari ini:**
+
+| Kelompok | Yang belum ada | Kenapa |
+|---|---|---|
+| Shift | `shift_count_attempt` | Server hanya mencatat percobaan hitungan yang **berhasil** menutup shift. Yang ditolak dilempar SEBELUM `UPDATE` dan ikut ter-rollback — dan percobaan yang gagal itulah yang `spec-d` ingin buktikan tidak dapat diulang diam-diam. Menuntut jalur tulis yang bertahan melewati rollback: perubahan rancangan |
+| Identitas | `user_role_changed` | **Tidak ada endpointnya.** `updateUser` hanya menerima `name`/`email`/`isActive`; peran hanya dapat diberikan saat `createUser`. Merchant tidak dapat menaikkan kasir menjadi manajer outlet sama sekali — gap PRODUK, bukan gap audit |
+| Kas | `cash_paid_in` · `cash_paid_out` | Setoran/penarikan kas di luar penjualan belum dibangun |
+| Konfigurasi | `threshold_changed` | B-26 (Ambang Otorisasi) belum ada |
+| Konfigurasi | `vertical_profile_changed` | B-24 (Profil Vertikal) belum ada |
+| Perangkat | `peripheral_configured` | `printer_profile` belum punya endpoint mutasi |
+| Data | `support_session_started` · `support_session_ended` | Akses support belum dibangun |
+
+**Jangan menandai FR-F6 selesai sampai daftar ini kosong.** Ia tidak perlu
+diingat: `PERISTIWA_BELUM_DIPANCARKAN` di `packages/domain/src/audit-peristiwa.ts`
+**diturunkan** dari selisih daftar spec dan daftar kode, ikut di respons
+endpoint, dan disebutkan di layar B-22. Menambah pemanggilan `recordAuditEvent`
+untuk salah satunya memangkasnya sendiri.
+
+### Apa yang mengikat kode
+
+- ⛔ **`recordAuditEvent` menerima `PeristiwaAudit`, bukan `string`.** Nama baru
+  wajib didaftarkan di domain lebih dulu; typecheck yang menahannya. Sabotase
+  membuktikannya: `'shift_closed'` diubah jadi `'shift_ditutup'` → typecheck
+  merah dengan seluruh daftar sah tercetak.
+- ⛔ **Ejaan kode dibekukan, ejaan spec dipetakan.** `order.voided` vs
+  `order_voided`. Baris lama ada di database merchant dan tidak dapat ditulis
+  ulang (invariant #2).
+- ⛔ **Keyset `(occurred_at, id)`, perbandingan baris utuh.** Beberapa baris
+  audit pada timestamp identik adalah keadaan normal.
+- ⛔ **Kelompok `tenant` adalah `[ASUMSI]`** — tabel `spec-f:288` tidak
+  punya kelompok untuk pendaftaran merchant, pembuatan outlet, dan perubahan
+  paket. Kelompoknya ditambahkan alih-alih peristiwanya diselundupkan ke
+  kelompok yang salah.
+- ⛔ **RBAC `report_exception` untuk B-22 adalah `[ASUMSI]`** yang mengubah
+  keputusan sebelumnya (`navigasi.ts` mencatat bahwa B-22 sengaja tidak punya
+  operasi). Alasannya di `reporting/index.ts`. Kalau merchant pertama
+  memutuskan lain, yang berubah satu baris di `navigasi.ts` dan satu
+  `assertBoleh`.
+
+### Batas yang dinyatakan
+
+| Batas | Keadaan |
+|---|---|
+| `before`/`after` | Tidak dikembalikan sama sekali (FR-F5). Detail perubahan punya layarnya sendiri — B-03 untuk transaksi, B-13 untuk stok |
+| Saringan pelaku | Endpoint menerima `actor_user_id`, layar belum menyediakan pemilihnya (butuh daftar pengguna) |
+| Ekspor | Tidak ada. `data_exported` sendiri belum dipancarkan |
+| Verifikasi browser | **Belum dijalankan** — layarnya ter-build, belum dibuka terhadap data sungguhan |
+
+### Mutasi katalog/harga/stok/pajak menulis audit (23 Agustus 2026)
+
+Satu pembungkus, `catatPerubahanServer` di modul `audit`: tanpa perangkat,
+tanpa penyetuju, tanpa alasan, `hlc: 0n`. Dua belas endpoint memakainya.
+
+⛔ **Kalau kamu menambah endpoint mutasi katalog/konfigurasi baru, panggil
+`catatPerubahanServer` di dalam transaksinya.** Tidak ada penjaga struktural
+yang menahan yang lupa — `PERISTIWA_BELUM_DIPANCARKAN` hanya melihat daftar
+spec, dan endpoint baru yang bukan bagian dari daftar itu tidak muncul di mana
+pun. Yang ada adalah `tests/server/audit-perubahan.test.js`, yang memanggil
+endpoint sungguhan lewat `app.inject` dan membaca `audit_event` dari database;
+tambahkan satu test di sana untuk setiap endpoint baru.
+
+⛔ **Assertion `audit_event` di test lama sekarang WAJIB menyaring
+`event_type`.** Sepuluh assertion di `tests/ordering/` menghitung seluruh baris
+tabel, dan nol adalah jawaban benar karena alasan yang salah — sampai katalog
+mulai menulis audit dan setup test-nya sendiri menghasilkan baris. Bentuk yang
+sama dengan 18 test `stock_movement` yang F3 temukan.
+
+### Sesi, shift, perangkat, dan ekspor menulis audit (23 Agustus 2026)
+
+`login` · `logout` · `shift_opened` · `cash_variance_approved` ·
+`device_provisioned` · `device_revoked` · `data_exported`.
+
+⛔ **`shift_opened` sama sekali tidak ada sebelum ini** — pasangannya
+(`shift_closed`) sudah punya sejak F3, sementara `cash/handlers/shifts.ts` tidak
+menyentuh `recordAuditEvent`.
+
+⛔ **`data_exported` ditulis pada endpoint GET.** Satu-satunya PEMBACAAN di
+seluruh sistem yang meninggalkan jejak, dan itu disengaja: ekspor tidak
+mengubah apa pun, yang berubah adalah di mana datanya berada. Yang dicatat
+lingkupnya (jenis, rentang, outlet), tidak pernah isinya.
+
+⛔ **Batas yang dinyatakan: tidak ada `login_failed`.**
+`audit_event.actor_user_id` adalah `NOT NULL` ber-FK ke `"user"`, dan login
+gagal sering memakai email yang tidak menunjuk siapa pun. `spec-f:290` sendiri
+tidak memuatnya. Kalau kelak dibutuhkan, ia menuntut kolom aktor yang boleh
+NULL — perubahan skema.
+
+### Peran dapat diubah, dan `user_role_changed` (24 Agustus 2026)
+
+`PATCH /users/{id}` kini menerima `roles` dan `outletIds`. Sebelumnya peran
+hanya dapat diberikan saat pengguna DIBUAT — gap produk, bukan gap audit.
+
+⛔ **Dua penjaga yang hanya ada di jalur ubah**, dan keduanya diuji lewat
+sabotase:
+
+1. Peran **lama** target ikut diperiksa. Tanpa itu, Manajer Outlet dapat
+   menurunkan seorang Owner menjadi kasir lalu mengelolanya dengan bebas.
+2. Owner terakhir tidak dapat dicabut perannya — bukan hanya tidak dapat
+   dinonaktifkan.
+
+⛔ **`user_role` dihapus lalu ditulis ulang.** Kalau kelak dibutuhkan "peran
+seseorang pada tanggal T", jawabannya HANYA ada di `audit_event` bertipe
+`user_role_changed`. Jangan menambahkan kolom riwayat kedua di `user_role`;
+dua sumber untuk satu pertanyaan akan menyimpang.
+
+⛔ **Sisa 8 lubang FR-F6 tidak satu pun punya endpoint.** Menutupnya berarti
+membangun fiturnya lebih dulu: setoran/penarikan kas (`cash_paid_in`/`out`),
+B-26 Ambang Otorisasi (`threshold_changed`), B-24 Profil Vertikal
+(`vertical_profile_changed`), endpoint `printer_profile`
+(`peripheral_configured`), akses support (`support_session_*`), dan jalur tulis
+yang bertahan melewati rollback (`shift_count_attempt`).
+
+### B-26 Ambang Otorisasi (24 Agustus 2026)
+
+Migrasi `0033` menambah `outlet.cash_variance_threshold` dan
+`outlet.no_sale_threshold` — nullable, tanpa `DEFAULT`, pola yang sama dengan
+`0031`. Endpoint `GET`/`PUT /outlets/{id}/thresholds`, RBAC
+`threshold_settings` = {owner, area_manager}.
+
+⛔ **Kalau kamu menambah ambang keempat, ia harus dibaca di EMPAT tempat.**
+Server (`closeShift`, `recordNoSale`) DAN klien (`tutupKas`,
+`rencanaNoSaleLokal`) — dan kolomnya harus turun lewat sync rules + skema
+lokal, atau perangkat offline memakai bawaan sementara server memakai angka
+merchant. Setelan yang hanya dibaca di server adalah layar pengaturan yang
+diam-diam tidak berlaku pada jalur yang paling sering dipakai.
+
+⛔ **Menambah kolom ber-tenant baru mengubah SIDIK JARI skema lokal.** Kedua
+kolom ini masuk raw table, jadi perangkat merchant akan menjalankan
+`disconnectAndClear()` + unduh ulang katalog pada boot berikutnya. Itu biaya
+yang sudah dibayar `0031`; jangan menambahkannya lagi tanpa alasan yang sekuat
+"kontrol ini harus bekerja offline".
+
+⛔ **Utang kecil yang dinyatakan: pesan penolakan RBAC selalu generik.**
+Penjaga rute (`PETA_PERAN` di `sesi.ts`) berjalan di `preHandler` dan SELALU
+menang atas `assertBoleh` di handler. Pesannya "tidak berhak melakukan operasi
+ini" tanpa menyebut operasinya; frasa yang lebih menjelaskan ("mengubah ambang
+otorisasi") tidak pernah terlihat lewat HTTP. Keduanya tetap ada dengan
+sengaja — peta menjaga rute, `assertBoleh` menjaga fungsinya kalau kelak
+dipanggil dari jalur lain. Memperbaikinya menuntut tabel label operasi
+(sejajar `LABEL_PERAN`), dan itu tugas tersendiri.
+
+⛔ **B-24 Profil Vertikal adalah satu-satunya layar back-office yang tersisa.**
+`vertical_profile` punya tabel dan sudah turun ke perangkat, tapi NOL endpoint
+mutasi — itu juga yang menahan `vertical_profile_changed` di daftar lubang
+FR-F6.
+
+### B-24 Profil Vertikal (24 Agustus 2026) — back-office LENGKAP
+
+Empat endpoint: `GET`/`POST /vertical-profiles`,
+`PATCH /vertical-profiles/{id}`, `PUT /outlets/{id}/vertical-profile`. RBAC
+`outlet_manage` (owner saja). Seluruh 26 layar di `IA:§3.3` kini punya isi.
+
+⛔ **Kalau kamu membuka kolom `vertical_profile` yang lain di layar, periksa
+dulu apakah ada kode yang membacanya.** Lima dari enam kolom perilaku hari ini
+data mati — `default_channel`, `requires_barcode_flow`, `default_tax_type`,
+`modules_enabled`, dan `name` untuk retail. Setelan yang tersimpan dengan benar
+dan tidak mengubah apa pun adalah bentuk kegagalan yang tidak menghasilkan
+error di mana pun.
+
+⛔ **`retail` menuntut lebih dari melepas penolakannya.** `IA:293` menyebut apa
+yang harus berbeda: input barcode primer di K-03, konversi satuan di B-07,
+retur barang, preset pajak PPN. Endpoint menolaknya dengan
+`VERTICAL_NOT_AVAILABLE` dan pesan yang menyebut daftar itu; melepasnya tanpa
+membangunnya hanya mengubah label.
+
+⛔ **Bawaan tenant tidak dapat dikosongkan.** Kalau kelak dibutuhkan (mis.
+tenant yang seluruh outletnya punya profil sendiri), yang harus diputuskan
+lebih dulu adalah apa yang berlaku untuk outlet BARU — bukan cara mencabutnya.
+
+### FR-D5 kas masuk & kas keluar (24 Agustus 2026)
+
+`POST /shifts/{shiftId}/cash-movements` di server, `DialogKasManual` di kasir
+(offline lewat `outbox_local`). Aturannya di `packages/domain/src/kas-manual.ts`
+dan **dipakai keduanya**.
+
+⛔ **Rute jalur perangkat butuh DUA hal, bukan satu.** Ia harus ada di
+`DIKECUALIKAN` (peta RBAC rute) **dan** ditandai `sesiOpsional` di
+`apps/server/src/sesi.ts`. Yang pertama saja membuat relay dijawab **401**;
+barisnya berhenti permanen di antrean sementara uangnya sudah keluar dari laci.
+Ini ditemukan test transport, bukan review — 16 test endpoint langsung hijau
+selama itu. **Rute perangkat berikutnya: periksa keduanya.**
+
+⛔ **Penjaga `⛔ SETIAP jenis di RUTE_DIDUKUNG diuji lewat transport asli` hanya
+melihat berkasnya sendiri** (`tests/ordering/relay-transport.test.js`, lewat
+`DIUJI` yang diisi `relaikan`). Test transport di berkas lain **tidak**
+dihitungnya. Jenis outbox baru karena itu butuh satu relay di berkas itu juga,
+sesingkat apa pun; rinciannya boleh hidup di berkas terpisah.
+
+**Batas yang dinyatakan:**
+
+- **Tidak ada layar back-office untuk kas manual.** `IA:§3.3` tidak menamai
+  satu pun, dan uangnya berpindah di konter. Barisnya terlihat di B-05 (detail
+  shift) dan B-22 (audit) — dua tempat yang memang dibaca saat sengketa.
+- **Tidak ada cara MEMBATALKAN baris kas manual.** `cash_movement` tidak pernah
+  di-`UPDATE` (invariant #2), jadi koreksinya adalah baris berlawanan arah
+  beralasan `koreksi_pencatatan`. Itu berfungsi hari ini, tetapi tidak ada apa
+  pun yang menghubungkan baris koreksi ke baris yang dikoreksinya — kalau itu
+  dibutuhkan, ia kolom baru, bukan penafsiran atas data yang ada.
+- **`bank_deposit` tetap tidak dibangun** (`spec-d:339` masih terbuka).
+  Sementara itu setoran dicatat `paid_out` beralasan `setor_ke_bank` dengan
+  `counterpart_type = 'bank'`, supaya barisnya dapat ditemukan lagi kelak.
+
+### KEP-21 keranjang yang bertahan (24 Agustus 2026)
+
+Tabel murni lokal `keranjang_lokal` (satu baris, `id = 'kini'`),
+`apps/kasir/src/kasir/keranjang-simpan.ts`, efek tulis + pemulihan di K-03.
+
+⛔ **Kalau kamu menyentuh jalur penjualan, `bersihkanKeranjangDi(tx)` harus
+tetap DI DALAM `db.transaction`.** Memindahkannya ke luar membuat perangkat
+yang mati di antara commit dan pembersihan memulihkan keranjang untuk
+penjualan yang sudah dibayar — kasir menagih pelanggan berikutnya dua kali,
+tanpa satu pun error. Ada test yang menegakkannya.
+
+⛔ **Tabel lokal baru wajib masuk `TABEL_LOKAL_SAJA`.** `jalankanDdl` hanya
+berjalan saat sidik jari raw table berubah, dan sidik jari itu tidak
+menghitung tabel lokal — tabel lokal yang terlewat adalah `no such table`
+permanen di setiap perangkat yang sudah terpasang. Penjaga
+`⛔ T5b SETIAP tabel lokal-saja dibuat saat hilang` kini menyusuri seluruh
+daftar, bukan menyebut satu nama.
+
+⛔ **Bentuk SQL-nya belum dijalankan di BROWSER.** `INSERT ... ON CONFLICT(id)
+DO UPDATE` diterima `node:sqlite`; `ON CONFLICT(id)` tanpa aksi pernah DITOLAK
+`wa-sqlite` (8 Agustus 2026). Bentuk ini berbeda dan seharusnya aman, tetapi
+aturannya tetap berlaku — jalankan `apps/kasir/harness.html` sebelum
+mempercayainya di perangkat merchant.
+
+**Batas yang dinyatakan:**
+
+- **Satu keranjang per perangkat**, bukan per pelanggan. Beberapa pesanan
+  berjalan bersamaan (table management) adalah v1.1.
+- **Harga TIDAK dibekukan di keranjang tersimpan.** Baris menyimpan
+  `unitPrice` hasil resolusi saat item ditambahkan; penjualan meresolusi ulang
+  pada `occurred_at` (FR-H6). Keranjang yang dipulihkan setelah jadwal
+  perubahan harga lewat karena itu menampilkan harga lama dan menagih harga
+  baru — selisihnya ditangani jalur `has_calculation_variance` yang sudah ada,
+  tetapi layarnya tidak menyebutkannya. Kalau ini pernah mengganggu merchant,
+  yang dibutuhkan adalah pembacaan ulang katalog saat pemulihan, bukan
+  pembekuan harga.
+- **Produk yang diarsipkan atau ditandai habis setelah keranjang disimpan
+  tetap muncul saat dipulihkan.** Ia akan ditolak (atau diperingatkan) di jalur
+  penjualan seperti biasa; yang belum ada adalah penandaan di layar saat
+  pemulihan.
+
+### F.5 akses support (24 Agustus 2026) — B-30
+
+Migrasi `0034` (`support_session` + `audit_event.support_session_id`), domain
+`sesi-support.ts`, tiga endpoint, penjaga token di `sesi.ts`, layar B-30 dan
+banner global.
+
+⛔ **`apps/server/src/konteks-permintaan.ts` memakai `AsyncLocalStorage`, dan
+urutan pemasangannya KRITIS.** `mulaiKonteks()` dipanggil sinkron di hook
+`onRequest` PERTAMA — sebelum satu `await` pun di rantai permintaan. Kalau ia
+dipindahkan ke dalam hook async (mis. digabungkan dengan penjaga sesi), store
+hanya mencakup kelanjutan hook itu dan hilang sebelum handler: penanda audit
+mendarat `null` tanpa satu pun error, dan tindakan support tercatat atas nama
+owner merchant secara pribadi.
+
+⛔ **Jangan menambahkan `supportSessionId` sebagai parameter ke pemanggil
+`recordAuditEvent`.** Itu justru bentuk yang dihindari — penanda yang harus
+diingat 20 kali akan terlupa yang ke-21. Konteks menang bila field-nya tidak
+diisi eksplisit; field eksplisit hanya dipakai untuk `null` yang DISENGAJA
+(pemberian dan pengakhiran akses adalah tindakan owner, bukan tindakan
+support).
+
+**Yang belum ada, dan menuntut keputusan lebih dulu:**
+
+- **Otentikasi petugas support.** Token diserahkan owner kepada petugas di luar
+  sistem (WhatsApp, telepon). Membangun akun staf berarti permukaan otentikasi
+  kedua yang tidak ber-`tenant_id` — keputusan arsitektur, bukan penambahan
+  endpoint. Batas yang sama sudah berlaku untuk `tools/naikkan-tahap.mjs`.
+- **Notifikasi ke merchant** saat sesi dimulai atau berakhir. Banner memenuhi
+  `spec-f:401`; email/push adalah permukaan yang belum ada di produk ini.
+- **Perpanjangan sesi.** Sengaja tidak ada: yang habis waktunya digantikan sesi
+  baru, dan itu berarti persetujuan baru. Menambahkannya berarti memutuskan
+  apakah perpanjangan menuntut persetujuan ulang — dan jawaban yang mudah
+  (tidak) menghapus batas waktunya.
+- **Daftar tindakan per sesi di layar.** `audit_event.support_session_id` sudah
+  terisi dan berindeks; yang belum ada adalah saringan di B-22 untuk
+  menampilkan "apa saja yang dilakukan selama sesi ini". Satu query, bukan
+  rancangan baru.
+
+### FR-C3 + QRIS dinamis (24 Agustus 2026) — jalur ONLINE-FIRST
+
+⛔ **Kalau kamu menyentuh `simpanPenjualan`, parameter `draf` mengubah TIGA
+perilaku sekaligus** dan ketiganya wajib tetap bersama: identitas tidak
+di-generate ulang, counter nomor struk tidak dinaikkan, dan outbox tidak diisi.
+Ada tujuh test untuk jalur ini plus kontrol negatif bahwa jalur NORMAL tetap
+mengisi outbox dan menaikkan counter.
+
+⛔ **`draf_qris_lokal` belum diuji di BROWSER.** `INSERT ... ON CONFLICT(id) DO
+UPDATE` diterima `node:sqlite`; bentuk `ON CONFLICT(id)` tanpa aksi pernah
+DITOLAK `wa-sqlite` (8 Agustus 2026). Jalankan `apps/kasir/harness.html`
+sebelum mempercayainya di perangkat merchant. Berlaku sama untuk
+`keranjang_lokal` (KEP-21).
+
+**Yang belum ada, dan menuntut keputusan lebih dulu:**
+
+- **QR dirender sebagai TEKS.** Pustaka QR adalah dependensi baru, dan stack
+  dikunci. Kalau merchant menuntut gambar, itu keputusan dependensi — bukan
+  perubahan layar.
+- **QRIS dinamis belum dapat DIGABUNG** dengan metode lain. `MetodeCampuran`
+  sudah memuatnya sehingga aritmetikanya benar bila kelak digabung; yang belum
+  ada adalah jalurnya (gateway dipanggil untuk satu nominal penuh).
+- **Webhook belum memotong polling.** `spec-c` menyebut keduanya; yang
+  dibangun polling, dan webhook Midtrans sudah ada di server sejak Modul C-2.
+  Menyambungkannya ke perangkat menuntut kanal push ke kasir — permukaan yang
+  belum ada.
+
+### FR-D2 percobaan hitungan (24 Agustus 2026)
+
+⛔ **`catatHitungan` TIDAK boleh dipanggil dari dalam transaksi `tutupKas`.**
+Seluruh gunanya adalah bertahan melewati rollback penutupan. Ada test yang
+menegakkan ia membuka transaksinya sendiri.
+
+⛔ **Jangan menambahkan `UPDATE cash_drawer_shift` ke
+`POST /shifts/{id}/count-attempts`.** Itu membuatnya jalan kedua menuju
+penutupan, tanpa ambang, penyetuju, maupun buku kas. Ada test yang
+membandingkan seluruh baris shift sebelum dan sesudah.

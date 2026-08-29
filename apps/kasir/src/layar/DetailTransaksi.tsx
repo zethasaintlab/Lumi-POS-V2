@@ -3,6 +3,8 @@ import { EmptyState } from 'ds';
 import { bacaDetail, type DetailOrder } from '../riwayat/baca.ts';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { bacaProfilPrinter } from '../cetak/profil.ts';
+import { profilBerlaku } from '../cetak/berlaku.ts';
+import { bacaPilihanProfil } from '../cetak/pilihan.ts';
 import { bangunUlangStruk } from '../cetak/ulang.ts';
 import { cetakDanCatat } from '../cetak/antrean.ts';
 import { peripheralAktif } from '../cetak/aktif.ts';
@@ -14,6 +16,7 @@ import { Tombol } from '../Tombol.tsx';
 import { rencanaPembatalan } from '../kasir/pembatalan.ts';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-09 — Detail Transaksi (IA §2.2).
 
@@ -21,10 +24,6 @@ import { BASIS } from '../rute/tabel.ts';
    tidak pernah di-UPDATE (invariant #2), jadi void dan refund adalah baris
    LAIN. Layar yang hanya menampilkan order-nya sendiri akan memperlihatkan
    transaksi yang terlihat utuh padahal uangnya sudah dikembalikan. */
-
-function rupiah(n: number): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 const ALASAN: Record<string, string> = {
   barang_rusak: 'Barang rusak',
@@ -108,15 +107,20 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
   useEffect(() => {
     let hidup = true;
     void (async () => {
-      const [d, k, p] = await Promise.all([
+      const [d, k, p, dipilih] = await Promise.all([
         bacaDetail(db, orderId),
         bacaKonfigPerangkat(db),
         bacaProfilPrinter(db),
+        bacaPilihanProfil(db),
       ]);
       if (!hidup) return;
       setDetail(d);
       setKonfig(k);
-      setProfil(p[0] ?? null);
+      // ⛔ BUKAN `p[0]`. Query profil tidak punya `ORDER BY`, jadi "yang
+      // pertama" tidak dijamin apa pun — dan cetak ulang yang memakai profil
+      // acak menghasilkan struk kedua yang lebarnya berbeda dari yang
+      // pertama, tepat yang `spec-b:145` larang.
+      setProfil(profilBerlaku(p, dipilih).profil);
       if (hidup) setSiap(true);
     })();
     return () => {

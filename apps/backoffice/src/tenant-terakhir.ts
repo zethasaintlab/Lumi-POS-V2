@@ -1,4 +1,4 @@
-import type { Penyimpanan } from './sesi-simpanan.ts';
+import type { Penyimpanan } from '../../../packages/klien-api/src/sesi-simpanan.ts';
 
 /**
  * Id tenant yang diingat antar kunjungan.

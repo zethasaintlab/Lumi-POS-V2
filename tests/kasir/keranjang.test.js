@@ -15,7 +15,7 @@ const V1 = { id: 'v1', nama: 'Regular', harga: 20000, sumberHarga: 'outlet', bar
 const V2 = { id: 'v2', nama: 'Large', harga: 25000, sumberHarga: 'variation', barcode: null, lacakStok: true };
 const ITEM = { id: 'i1', nama: 'Kopi Susu', categoryId: 'c1', variations: [V1, V2] };
 
-const GULA = { id: 'm1', nama: 'Ekstra gula', harga: 3000, bawaan: false };
+const GULA = { id: 'm1', nama: 'Ekstra gula', harga: 3000, qtyMilli: 1000 };
 
 // ---------------------------------------------------------------------------
 
@@ -146,14 +146,14 @@ test('⛔ qty di keranjang dijumlahkan LINTAS baris untuk variation yang sama', 
   // mengambil 4 dari rak — memeriksa per baris akan meloloskan penjualan yang
   // melewati stok tanpa satu pun peringatan.
   const { keranjangKosong, tambah, qtyDiKeranjang } = await import(MOD);
-  const item = { id: 'i1', nama: 'Kopi' };
+  const item = { id: 'i1', nama: 'Kopi', variations: [{ id: 'v1', nama: 'Regular', harga: 20000 }] };
   const v = { id: 'v1', nama: 'Regular', harga: 20000 };
 
   let k = keranjangKosong();
   k = tambah(k, { item, variation: v, modifier: [], idBaris: () => 'b1', qtyMilli: 2000 });
   k = tambah(k, {
     item, variation: v,
-    modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000 }],
+    modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }],
     idBaris: () => 'b2', qtyMilli: 2000,
   });
 
@@ -164,4 +164,43 @@ test('⛔ qty di keranjang dijumlahkan LINTAS baris untuk variation yang sama', 
 test('variation yang belum ada di keranjang: nol', async () => {
   const { keranjangKosong, qtyDiKeranjang } = await import(MOD);
   assert.equal(qtyDiKeranjang(keranjangKosong(), 'v-belum'), 0);
+});
+
+// ---------------------------------------------------------------------------
+// FR-A3 — kuantitas modifier (`allow_duplicate`)
+// ---------------------------------------------------------------------------
+
+test('⛔ kuantitas modifier MEMISAHKAN baris', async () => {
+  const { keranjangKosong, tambah } = await import(MOD);
+  const item = { id: 'i1', nama: 'Kopi', variations: [{ id: 'v1', nama: 'Regular', harga: 20000 }] };
+  const v = { id: 'v1', nama: 'Regular', harga: 20000 };
+  const satu = [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }];
+  const dua = [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 2000 }];
+
+  let k = keranjangKosong();
+  k = tambah(k, { item, variation: v, modifier: satu, idBaris: () => 'b1' });
+  k = tambah(k, { item, variation: v, modifier: dua, idBaris: () => 'b2' });
+
+  // "Extra Shot ×1" dan "Extra Shot ×2" adalah dua pesanan dengan harga
+  // berbeda. Menggabungkannya membuat pelanggan kedua menerima kopi pelanggan
+  // pertama, dan totalnya salah tanpa satu pun error.
+  assert.equal(k.baris.length, 2, 'kuantitas modifier tidak masuk sidik jari');
+});
+
+test('⛔ subtotal MENGALIKAN harga modifier dengan kuantitasnya', async () => {
+  const { keranjangKosong, tambah, subtotalKeranjang, satuanKeranjang } = await import(MOD);
+  const item = { id: 'i1', nama: 'Kopi', variations: [{ id: 'v1', nama: 'Regular', harga: 20000 }] };
+  const v = { id: 'v1', nama: 'Regular', harga: 20000 };
+
+  let k = keranjangKosong();
+  k = tambah(k, {
+    item, variation: v,
+    modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 2000 }],
+    idBaris: () => 'b1',
+    qtyMilli: 2000,
+  });
+
+  // 20.000 + (5.000 × 2) = 30.000 per unit; dua unit = 60.000.
+  assert.equal(satuanKeranjang(k.baris[0]), 30000n);
+  assert.equal(subtotalKeranjang(k), 60000n);
 });

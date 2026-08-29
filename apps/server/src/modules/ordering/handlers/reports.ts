@@ -133,6 +133,121 @@ export async function ambilPenjualan(
   );
 }
 
+export interface PenjualanOutlet {
+  outletId: string;
+  outletNama: string | null;
+  omzetKotor: string;
+  voidAmount: string;
+  refundAmount: string;
+  omzetBersih: string;
+  pajakTerkumpul: string;
+  jumlahTransaksi: number;
+  rataRataPerTransaksi: string;
+}
+
+/**
+ * Omzet dipecah PER OUTLET — AC FR-G6 keempat, "ringkasan agregat dengan
+ * rincian per outlet dapat dibuka".
+ *
+ * ## ⛔ Dua query, bukan satu per outlet
+ *
+ * Merchant dapat punya dua puluh outlet (`PRD`), dan memanggil
+ * `ambilPenjualan` sekali per outlet berarti empat puluh query untuk satu
+ * layar. Barisnya diambil SEKALI dengan `outlet_id` ikut, lalu dikelompokkan
+ * di JS.
+ *
+ * ## ⛔ Yang menghitung tetap `posisiPenjualan`, per kelompok
+ *
+ * Bukan `GROUP BY` dengan `SUM` di SQL. Definisi omzet hidup di satu tempat
+ * (`packages/domain/src/posisi-penjualan.ts`), dan ada penjaga yang menolak
+ * `SUM(...)` atas tabel `"order"` di berkas mana pun selain itu. Rincian per
+ * outlet yang menjumlahkan sendiri akan menyimpang dari totalnya tepat pada
+ * order yang dibatalkan — dan owner yang menjumlahkan barisnya lalu mendapat
+ * angka lain dari yang tertera di atas tidak punya cara memutuskan mana yang
+ * benar.
+ *
+ * ## ⛔ Refund menempel pada outlet ORDER-nya
+ *
+ * `refund` tidak punya `outlet_id`; ia diambil lewat JOIN ke ordernya. Refund
+ * yang jatuh ke outlet yang salah membuat satu cabang terlihat merugi dan
+ * cabang lain terlihat untung, keduanya sebesar nilai yang sama.
+ *
+ * ## ⛔ Pengelompokan ini bergantung pada order PEMBATAL berbagi outlet
+ *
+ * `posisiPenjualan` menyimpulkan sebuah order dibatalkan dari ADANYA pembatal
+ * yang menunjuknya **di dalam himpunan yang diberikan**. Pengelompokan per
+ * outlet karena itu hanya benar selama pembatal berada di outlet yang sama
+ * dengan order aslinya — dan itu benar hari ini karena `cancel.ts` menyalin
+ * `outlet_id` dari baris asli (`INSERT … SELECT`), bukan menerimanya dari
+ * klien. Kalau kelak pembatalan lintas-outlet menjadi mungkin, rincian di sini
+ * akan diam-diam menghitung order batal sebagai omzet pada satu cabang dan
+ * mengurangkannya di cabang lain.
+ */
+export async function ambilPenjualanPerOutlet(
+  client: import('../../../db.ts').PoolClient,
+  { from, to }: { from: string; to: string }
+): Promise<PenjualanOutlet[]> {
+  const { rows: orders } = await client.query<BarisOrder & { outlet_id: string }>(
+    `SELECT id, status, total, tax_amount, voided_by_order_id, outlet_id
+       FROM "order"
+      WHERE business_date BETWEEN $1 AND $2`,
+    [from, to]
+  );
+  const { rows: refunds } = await client.query<{
+    order_id: string;
+    amount: string;
+    outlet_id: string;
+  }>(
+    `SELECT r.order_id, r.amount, o.outlet_id
+       FROM refund r
+       JOIN "order" o ON o.id = r.order_id
+      WHERE o.business_date BETWEEN $1 AND $2`,
+    [from, to]
+  );
+  const { rows: outlets } = await client.query<{ id: string; name: string }>(
+    `SELECT id, name FROM outlet`
+  );
+  const nama = new Map(outlets.map((o) => [o.id, o.name]));
+
+  // ⛔ Outlet yang PUNYA order saja. Outlet tanpa satu pun transaksi hari itu
+  // sengaja tidak muncul sebagai baris nol: dua puluh baris "Rp 0" mengubur
+  // dua yang berisi, dan layar 390px hanya memuat beberapa baris. Owner yang
+  // mencari cabang yang tidak muncul menemukannya lewat penyeleksi outlet.
+  const perOutlet = new Map<string, { orders: typeof orders; refunds: typeof refunds }>();
+  for (const o of orders) {
+    const k = perOutlet.get(o.outlet_id) ?? { orders: [], refunds: [] };
+    k.orders.push(o);
+    perOutlet.set(o.outlet_id, k);
+  }
+  for (const r of refunds) {
+    const k = perOutlet.get(r.outlet_id) ?? { orders: [], refunds: [] };
+    k.refunds.push(r);
+    perOutlet.set(r.outlet_id, k);
+  }
+
+  const hasil = [...perOutlet.entries()].map(([outletId, isi]) => ({
+    outletId,
+    outletNama: nama.get(outletId) ?? null,
+    ...keJson(
+      posisiPenjualan({
+        orders: isi.orders.map((o) => ({
+          id: o.id,
+          status: o.status,
+          total: o.total,
+          taxAmount: o.tax_amount,
+          voidedByOrderId: o.voided_by_order_id,
+        })),
+        refunds: isi.refunds.map((r) => ({ orderId: r.order_id, amount: r.amount })),
+      })
+    ),
+  }));
+
+  // Terbesar lebih dulu — yang owner cari di layar 390px adalah cabang yang
+  // paling banyak bergerak, bukan yang namanya paling awal secara abjad.
+  hasil.sort((a, b) => (BigInt(a.omzetBersih) < BigInt(b.omzetBersih) ? 1 : -1));
+  return hasil;
+}
+
 export function createReportHandlers(pool: Pool): Record<string, unknown> {
   return {
     async getSalesReport(req: FastifyRequest) {

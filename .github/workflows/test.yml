@@ -106,6 +106,9 @@ jobs:
       # Sidebar back-office diperiksa terhadap tabel layar di IA §3.3. Tanpa
       # database, sekelas test:kasir.
       - run: npm run test:backoffice
+      # Owner mobile (IA §4). Aturan tampilan M-01 sebagai modul murni; sekelas
+      # test:backoffice, tanpa database dan tanpa DOM.
+      - run: npm run test:hp
 
       - run: npm run db:bootstrap
       - run: npm run db:migrate

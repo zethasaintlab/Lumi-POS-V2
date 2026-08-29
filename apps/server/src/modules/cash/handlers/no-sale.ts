@@ -5,6 +5,8 @@ import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertUserVisible, assertApproverVisible, assertBoleh } from '../../identity/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
+import { bacaAmbangOutlet } from '../../tenancy/index.ts';
+import { ambangBerlaku } from '../../../../../../packages/domain/src/ambang.ts';
 import {
   findIdempotencyKey,
   claimIdempotencyKey,
@@ -13,7 +15,6 @@ import {
 } from '../../sync/index.ts';
 import {
   ALASAN_NO_SALE,
-  AMBANG_NO_SALE,
   EVENT_NO_SALE,
   adalahAlasanNoSale,
   butuhPenyetujuNoSale,
@@ -150,13 +151,17 @@ export function createNoSaleHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
         }
 
         const sudah = await hitungNoSale(client, shiftId);
-        const butuh = butuhPenyetujuNoSale(sudah);
+        // ⛔ Ambang dari OUTLET, bukan konstanta. B-26 membuatnya dapat
+        // disetel merchant; setelan yang tidak dibaca di sini adalah layar
+        // pengaturan yang tidak mengubah apa pun.
+        const ambang = ambangBerlaku(await bacaAmbangOutlet(client, shift.outlet_id)).noSale;
+        const butuh = butuhPenyetujuNoSale(sudah, ambang);
         if (butuh && (typeof approverId !== 'string' || approverId.trim() === '')) {
           throw new HttpError(
             403,
             'APPROVAL_REQUIRED',
             `Pembukaan ke-${sudah + 1} dalam shift ini menuntut otorisasi manajer ` +
-              `(ambang ${AMBANG_NO_SALE}× per shift).`
+              `(ambang ${ambang}× per shift).`
           );
         }
         const penyetuju = butuh ? (approverId as string) : null;
@@ -187,7 +192,11 @@ export function createNoSaleHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
           reasonNote,
           // `after` membawa urutannya supaya laporan exception dapat
           // menampilkan "ke-4 dari shift" tanpa menghitung ulang.
-          after: { urutan: sudah + 1, ambang: AMBANG_NO_SALE },
+          // ⛔ Ambang yang BERLAKU saat itu, bukan konstanta bawaan. Merchant
+          // dapat menyetelnya (B-26), dan laporan exception yang menampilkan
+          // "ke-4 dari 3" untuk outlet berambang 6 menuduh orang atas aturan
+          // yang tidak pernah berlaku baginya.
+          after: { urutan: sudah + 1, ambang },
           hlc: hlcValue,
           occurredAt: typeof body.occurredAt === 'string' ? body.occurredAt : null,
         });

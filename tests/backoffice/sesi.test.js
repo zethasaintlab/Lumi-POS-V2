@@ -12,8 +12,8 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const AKAR = join(__dirname, '..', '..');
-const SIMPANAN = '../../apps/backoffice/src/sesi-simpanan.ts';
-const HTTP = '../../apps/backoffice/src/http.ts';
+const SIMPANAN = '../../packages/klien-api/src/sesi-simpanan.ts';
+const HTTP = '../../packages/klien-api/src/http.ts';
 
 const SESI_SAH = {
   token: 'token-abc',

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
-import type { Pool } from '../../../db.ts';
+import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
@@ -8,6 +8,7 @@ import { isTransitionAllowed } from '../../../../../../packages/domain/src/order
 import { assertUserVisible, assertBoleh } from '../../identity/index.ts';
 import { reverseSaleMovements } from '../../inventory/index.ts';
 import { recordAuditEvent } from '../../audit/index.ts';
+import { HttpError } from '../../../http-error.ts';
 
 /**
  * `POST /orders/cleanup-abandoned` — menutup keranjang mati dan MEMBEBASKAN
@@ -75,8 +76,155 @@ interface BarisOrder {
   receipt_number: string;
 }
 
+
+/**
+ * Menutup SATU keranjang dan membebaskan stok yang dikuncinya.
+ *
+ * ⛔ Diekstrak justru karena ada pemanggil KEDUA sekarang: kasir yang
+ * membatalkan draf QRIS dinamis (FR-C3) harus dapat membebaskan stoknya
+ * SEKETIKA, bukan menunggu pembersihan massal berumur 24 jam. Dua salinan
+ * aturan "apa artinya meninggalkan sebuah order" akan menyimpang, dan yang
+ * menyimpang meninggalkan stok terkunci atau audit yang tidak ditulis.
+ *
+ * Mengembalikan `null` bila transisinya tidak sah — dan itu diperiksa terhadap
+ * state machine, bukan diasumsikan dari pemanggilnya.
+ */
+export async function tinggalkanOrder(
+  client: PoolClient,
+  {
+    tenantId,
+    actorId,
+    order,
+    alasanCatatan,
+    hlc,
+  }: {
+    tenantId: string;
+    actorId: string;
+    order: BarisOrder;
+    alasanCatatan: string | null;
+    hlc: Hlc;
+  }
+): Promise<{ ditulis: number; totalDikembalikan: bigint } | null> {
+  if (!isTransitionAllowed(order.status, 'abandoned')) return null;
+
+  const hasil = await reverseSaleMovements(client, {
+    tenantId,
+    orderId: order.id,
+    type: 'void',
+    reasonCode: 'order_abandoned',
+    note: alasanCatatan,
+    createdBy: actorId,
+    hlc: hlc.tick(),
+  });
+
+  // ⛔ Satu-satunya `UPDATE` pada tabel `order` di seluruh repo, dan ia sah:
+  // invariant #2 melarang UPDATE pada transaksi SELESAI, dan keranjang yang
+  // belum pernah dibayar bukan salah satunya. Transisi `open → abandoned` ada
+  // di tabel transisi `spec-b:57-69`.
+  await client.query(`UPDATE "order" SET status = 'abandoned' WHERE id = $1`, [order.id]);
+
+  await recordAuditEvent(client, {
+    id: randomUUID(),
+    tenantId,
+    outletId: order.outlet_id,
+    deviceId: order.device_id,
+    actorUserId: actorId,
+    // Bukan tindakan yang disetujui orang lain — ia pembersihan.
+    approverUserId: null,
+    eventType: 'order.abandoned',
+    entityType: 'order',
+    entityId: order.id,
+    before: { status: order.status, receiptNumber: order.receipt_number },
+    after: { status: 'abandoned', stokDikembalikan: hasil.totalDikembalikan.toString() },
+    reasonCode: 'order_abandoned',
+    reasonNote: alasanCatatan,
+    hlc: hlc.tick(),
+  });
+
+  return hasil;
+}
+
 export function createCleanupHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
+
+    /**
+     * `POST /orders/{orderId}/abandon` — kasir membatalkan SATU draf.
+     *
+     * ## ⛔ Kenapa ia ada di samping pembersihan massal
+     *
+     * Jalur QRIS dinamis (FR-C3) menulis order ke server SEBELUM pelanggan
+     * membayar. Pelanggan yang batal membayar meninggalkan order `open` yang
+     * memegang stok — dan pembersihan massal baru menyentuhnya setelah 24 JAM,
+     * lewat endpoint bertingkat manajer. Kasir yang membatalkan di depan
+     * pelanggan tidak dapat menunggu keduanya.
+     *
+     * ## ⛔ `sale`, bukan `stock_adjust`
+     *
+     * Pembersihan massal membebaskan stok SELURUH outlet dalam satu permintaan
+     * — itu tingkat manajer, dan benar. Membatalkan satu draf yang kasir itu
+     * sendiri baru saja buat adalah bagian dari menjual, dan kasir memang
+     * satu-satunya orang yang ada di konter.
+     *
+     * ## ⛔ Order yang SUDAH dibayar ditolak 409, bukan dibatalkan
+     *
+     * Pembatalan transaksi yang sudah lunas adalah void/refund, dengan kontrol
+     * dan jejaknya sendiri. Membiarkan endpoint ini menyentuhnya berarti jalan
+     * kedua untuk membatalkan penjualan — tanpa restock yang benar, tanpa
+     * alasan daftar tertutup, dan tanpa baris pembatal.
+     */
+    async abandonOrder(req: FastifyRequest) {
+      const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
+      const { orderId } = req.params as { orderId: string };
+      const body = (req.body ?? {}) as { reasonCode?: unknown };
+
+      return withTenantTransaction(pool, tenantId, async (client) => {
+        await assertUserVisible(client, actorId);
+        await assertBoleh(client, actorId, 'sale', 'membatalkan draf pembayaran');
+
+        // FK klien-suplai ke tabel ber-`tenant_id` (temuan F1): FK PostgreSQL
+        // tidak tunduk RLS, jadi keberadaannya dibuktikan SELECT ini.
+        //
+        // `FOR UPDATE` menahan dua pembatalan bersamaan mengembalikan stok
+        // yang sama dua kali — alasan yang sama dengan pembersihan massal.
+        const { rows } = await client.query<BarisOrder>(
+          `SELECT id, outlet_id, device_id, status, receipt_number
+             FROM "order" WHERE id = $1 FOR UPDATE`,
+          [orderId]
+        );
+        if (rows.length === 0) {
+          throw new HttpError(404, 'ORDER_NOT_FOUND', `Order ${orderId} tidak ditemukan.`);
+        }
+        const order = rows[0];
+
+        const hasil = await tinggalkanOrder(client, {
+          tenantId,
+          actorId,
+          order,
+          alasanCatatan:
+            typeof body.reasonCode === 'string' && body.reasonCode.trim() !== ''
+              ? body.reasonCode.trim()
+              : null,
+          hlc,
+        });
+        if (hasil === null) {
+          throw new HttpError(
+            409,
+            'ORDER_NOT_ABANDONABLE',
+            `Order ${orderId} berstatus ${order.status} dan tidak dapat ditinggalkan. ` +
+              'Transaksi yang sudah dibayar dibatalkan lewat void atau refund.'
+          );
+        }
+
+        return {
+          orderId,
+          status: 'abandoned',
+          movementDitulis: hasil.ditulis,
+          totalStokDikembalikan: hasil.totalDikembalikan.toString(),
+        };
+      });
+    },
+
     async cleanupAbandonedOrders(req: FastifyRequest) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);
@@ -106,46 +254,18 @@ export function createCleanupHandlers(pool: Pool, hlc: Hlc): Record<string, unkn
         let totalDikembalikan = 0n;
 
         for (const o of rows) {
-          // Diperiksa terhadap state machine, bukan diasumsikan dari WHERE.
-          // Kalau transisinya kelak dicabut, endpoint ini berhenti — bukan
-          // diam-diam menulis status yang tidak sah.
-          if (!isTransitionAllowed(o.status, 'abandoned')) continue;
-
-          const hasil = await reverseSaleMovements(client, {
+          const hasil = await tinggalkanOrder(client, {
             tenantId,
-            orderId: o.id,
-            type: 'void',
-            reasonCode: 'order_abandoned',
-            note: `Keranjang tidak dibayar lebih dari ${JAM_KEDALUWARSA} jam.`,
-            createdBy: actorId,
-            hlc: hlc.tick(),
+            actorId,
+            order: o,
+            alasanCatatan: `Keranjang tidak dibayar lebih dari ${JAM_KEDALUWARSA} jam.`,
+            hlc,
           });
+          // `null` = transisinya tidak sah. Kalau ia kelak dicabut, endpoint
+          // ini berhenti — bukan diam-diam menulis status yang tidak sah.
+          if (hasil === null) continue;
           movementDitulis += hasil.ditulis;
           totalDikembalikan += hasil.totalDikembalikan;
-
-          // ⛔ Satu-satunya `UPDATE` pada tabel `order` di seluruh repo, dan
-          // ia sah: invariant #2 melarang UPDATE pada transaksi SELESAI, dan
-          // keranjang yang belum pernah dibayar bukan salah satunya. Transisi
-          // `open → abandoned` ada di tabel transisi `spec-b:57-69`.
-          await client.query(`UPDATE "order" SET status = 'abandoned' WHERE id = $1`, [o.id]);
-
-          await recordAuditEvent(client, {
-            id: randomUUID(),
-            tenantId,
-            outletId: o.outlet_id,
-            deviceId: o.device_id,
-            actorUserId: actorId,
-            // Bukan tindakan yang disetujui orang lain — ia pembersihan.
-            approverUserId: null,
-            eventType: 'order.abandoned',
-            entityType: 'order',
-            entityId: o.id,
-            before: { status: 'open', receiptNumber: o.receipt_number },
-            after: { status: 'abandoned', stokDikembalikan: hasil.totalDikembalikan.toString() },
-            reasonCode: 'order_abandoned',
-            reasonNote: null,
-            hlc: hlc.tick(),
-          });
 
           dibersihkan.push(o.id);
         }

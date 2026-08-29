@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from '../../db.ts';
 import { HttpError } from '../../http-error.ts';
 import { parseRateToScaled } from '../../../../../packages/domain/src/numeric.ts';
+import type { AmbangTersimpan } from '../../../../../packages/domain/src/ambang.ts';
 import {
   adalahKategoriMerchant,
   type KategoriMerchant,
@@ -8,6 +9,7 @@ import {
 import type { Hlc } from '../../../../../packages/domain/src/hlc.ts';
 import { createRegisterHandlers } from './handlers/register.ts';
 import { createOutletHandlers } from './handlers/outlets.ts';
+import { createVerticalProfileHandlers } from './handlers/profil-vertikal.ts';
 import { createUsageHandlers, createSettingsHandlers } from './handlers/usage.ts';
 import { createSubscriptionHandlers } from './handlers/langganan.ts';
 import type { SubscriptionProvider } from '../payment/providers/langganan.ts';
@@ -122,6 +124,52 @@ export async function getOutletSettings(client: PoolClient, outletId: string): P
 }
 
 /**
+ * Ambang otorisasi yang DISETEL outlet ini. B-26, migrasi `0031` + `0033`.
+ *
+ * ⛔ Mengembalikan yang TERSIMPAN (`null` = belum disetel), bukan yang
+ * berlaku. Resolusinya `ambangBerlaku` di domain, dan memisahkan keduanya
+ * bukan kerapian: pemanggil yang menerima nilai sudah-teresolusi tidak dapat
+ * membedakan "merchant memilih Rp 20.000" dari "merchant tidak memilih apa
+ * pun", dan perbedaan itu yang menentukan apakah outlet ikut berubah saat
+ * bawaannya berubah.
+ *
+ * ⛔ Ada di modul `tenancy` karena `outlet` miliknya (invariant #4). Modul
+ * `cash` memanggil lewat sini alih-alih meng-query tabelnya sendiri.
+ */
+export async function bacaAmbangOutlet(
+  client: PoolClient,
+  outletId: string
+): Promise<AmbangTersimpan> {
+  const { rows } = await client.query<{
+    discount_threshold_percent: string | null;
+    discount_threshold_amount: string | null;
+    cash_variance_threshold: string | null;
+    no_sale_threshold: number | null;
+  }>(
+    `SELECT discount_threshold_percent, discount_threshold_amount,
+            cash_variance_threshold, no_sale_threshold
+       FROM outlet WHERE id = $1 AND archived_at IS NULL`,
+    [outletId]
+  );
+  if (rows.length === 0) {
+    throw new HttpError(404, 'OUTLET_NOT_FOUND', `Outlet ${outletId} tidak ditemukan.`);
+  }
+  const r = rows[0];
+  return {
+    // `numeric` kembali sebagai STRING berpresisi penuh dari pg; lewat
+    // `parseRateToScaled`, tidak pernah lewat `Number()`.
+    diskonPersenSkala:
+      r.discount_threshold_percent === null
+        ? null
+        : parseRateToScaled(r.discount_threshold_percent),
+    diskonNominal:
+      r.discount_threshold_amount === null ? null : BigInt(r.discount_threshold_amount),
+    selisihKas: r.cash_variance_threshold === null ? null : BigInt(r.cash_variance_threshold),
+    noSale: r.no_sale_threshold,
+  };
+}
+
+/**
  * FR-C12 — kategori merchant, untuk memperkirakan potongan MDR.
  *
  * `tenant` milik modul ini (`modules/README.md`), jadi modul `payment` yang
@@ -215,6 +263,7 @@ export function createTenancyHandlers(
   return {
     ...createRegisterHandlers(pool, hlc),
     ...createOutletHandlers(pool, hlc),
+    ...createVerticalProfileHandlers(pool),
     ...createUsageHandlers(pool),
     ...createSettingsHandlers(pool),
     ...createSubscriptionHandlers(pool, hlc, subscriptionProvider),

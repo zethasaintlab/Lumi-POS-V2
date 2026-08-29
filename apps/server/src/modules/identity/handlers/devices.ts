@@ -5,6 +5,7 @@ import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertOutletVisible, assertKuota } from '../../tenancy/index.ts';
 import { hitungPerangkat, assertUserVisible, assertBoleh } from '../index.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // T0b (PLAN-ordering-fondasi.md §T0b) -- POST /devices, menutup FR-B6
@@ -136,6 +137,7 @@ export function createDeviceHandlers(pool: Pool) {
   return {
     async createDevice(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const body = req.body as DeviceInput;
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
         // Guard ini BUKAN formalitas -- FK outlet_id REFERENCES outlet(id)
@@ -149,7 +151,24 @@ export function createDeviceHandlers(pool: Pool) {
         // menyimpang.
         await assertKuota(client, tenantId, 'device', await hitungPerangkat(client), 1);
 
-        return insertDevice(client, tenantId, body);
+        const row = await insertDevice(client, tenantId, body);
+        // FR-F6 + `spec-f:298` (`device_provisioned`).
+        //
+        // ⛔ Tanpa `token_hash`, dan tanpa secret. Perangkat baru belum punya
+        // kredensial — ia diterbitkan `issueDeviceCredentials` — tapi aturannya
+        // berlaku sejak sekarang: bahan kredensial tidak pernah masuk audit
+        // trail, yang justru tabel paling panjang umurnya di sistem ini (lima
+        // tahun, `spec-f:372`).
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'device_provisioned',
+          entityType: 'device',
+          entityId: row.id,
+          outletId: body.outletId,
+          after: { code: row.code, name: row.name, platform: row.platform },
+        });
+        return row;
       });
       reply.code(201);
       return toDevice(row);
@@ -210,17 +229,39 @@ export function createDeviceHandlers(pool: Pool) {
 
     async revokeDevice(req: FastifyRequest) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const { deviceId } = req.params as { deviceId: string };
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
         // fetchDeviceOrThrow berjalan lewat client yang app.tenant_id-nya
         // sudah di-SET LOCAL (withTenantTransaction) -- RLS menyembunyikan
         // device tenant lain sepenuhnya, jadi deviceId lintas tenant SELALU
         // jatuh ke 404 di sini, sama seperti fetchItemOrThrow di catalog.
-        await fetchDeviceOrThrow(client, deviceId);
+        const sebelum = await fetchDeviceOrThrow(client, deviceId);
         const { rows } = await client.query<DeviceRow>(
           'UPDATE device SET revoked_at = now() WHERE id = $1 RETURNING *',
           [deviceId]
         );
+        // FR-F6 + `spec-f:298` (`device_revoked`).
+        //
+        // ⛔ `before.revokedAt` ikut. `UPDATE ... SET revoked_at = now()` tanpa
+        // syarat membuat pencabutan kedua menimpa stempel yang pertama; tanpa
+        // `before`, audit tidak dapat membedakan perangkat yang baru saja
+        // dicabut dari perangkat yang sudah lama dicabut lalu diklik lagi —
+        // dan "kapan perangkat ini berhenti dipercaya" adalah pertanyaan
+        // sengketa.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'device_revoked',
+          entityType: 'device',
+          entityId: deviceId,
+          outletId: rows[0].outlet_id,
+          before: {
+            code: sebelum.code,
+            revokedAt: sebelum.revoked_at === null ? null : String(sebelum.revoked_at),
+          },
+          after: { revokedAt: String(rows[0].revoked_at) },
+        });
         return rows[0];
       });
       return toDevice(row);

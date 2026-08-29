@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
 import { getTenantId } from '../../../tenant-context.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import type { PinHasher } from '../../../../../../packages/domain/src/pin.ts';
 import { periksaPassword } from '../../../../../../packages/domain/src/password.ts';
 
@@ -146,10 +147,10 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
         if (!pengguna || !cocok) tolakLogin();
 
         const token = randomBytes(32).toString('base64url');
-        const { rows: sesi } = await client.query<{ expires_at: string }>(
+        const { rows: sesi } = await client.query<{ id: string; expires_at: string }>(
           `INSERT INTO user_session (id, tenant_id, user_id, token_hash, expires_at)
            VALUES ($1, $2, $3, $4, now() + ($5 || ' hours')::interval)
-           RETURNING expires_at`,
+           RETURNING id, expires_at`,
           [randomUUID(), tenantId, pengguna.id, hashToken(token), String(UMUR_SESI_JAM)]
         );
 
@@ -157,6 +158,28 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
           'SELECT role FROM user_role WHERE user_id = $1 ORDER BY role',
           [pengguna.id]
         );
+
+        // FR-F6 + `spec-f:290` (`login`).
+        //
+        // ⛔ Hanya login yang BERHASIL. `audit_event.actor_user_id` adalah
+        // `NOT NULL` ber-FK ke `"user"`, dan login yang gagal justru sering
+        // memakai email yang tidak menunjuk pengguna mana pun — tidak ada
+        // aktor untuk dicatat. Daftar `spec-f:290` sendiri hanya memuat
+        // `login`, `logout`, `pin_failed`, dan `pin_lockout`; kegagalan
+        // password tidak ada di sana. Batas yang dinyatakan.
+        //
+        // ⛔ Tanpa email, tanpa alamat IP, tanpa user-agent. `after` hanya
+        // memuat peran yang berlaku pada saat itu — itu yang menjelaskan
+        // "kenapa orang ini dapat melakukan itu" berbulan-bulan kemudian,
+        // saat perannya sudah berbeda.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: pengguna.id,
+          eventType: 'login',
+          entityType: 'user_session',
+          entityId: sesi[0].id,
+          after: { roles: peran.map((p) => p.role) },
+        });
 
         return {
           token,
@@ -213,6 +236,20 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
         // Dihapus lewat `id` dari sesi terverifikasi, bukan lewat hash token
         // yang dibaca ulang dari header.
         await client.query('DELETE FROM user_session WHERE id = $1', [sesi.sesiId]);
+
+        // FR-F6 + `spec-f:290` (`logout`).
+        //
+        // ⛔ Ditulis SESUDAH DELETE, di transaksi yang sama. Baris sesinya
+        // hilang, jejaknya tidak — itu justru pemisahan yang benar: tidak ada
+        // yang membutuhkan riwayat sesi back-office, tapi "sampai kapan orang
+        // ini masih masuk" adalah pertanyaan sengketa.
+        await catatPerubahanServer(client, {
+          tenantId: sesi.tenantId,
+          actorUserId: sesi.userId,
+          eventType: 'logout',
+          entityType: 'user_session',
+          entityId: sesi.sesiId,
+        });
       });
 
       reply.code(204);

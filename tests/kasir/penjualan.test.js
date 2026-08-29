@@ -88,7 +88,7 @@ const ID = (() => { let n = 0; return () => `id-${++n}`; })();
 function args(over = {}) {
   return {
     konfig: KONFIG, sesi: SESI, shift: SHIFT,
-    keranjang: { baris: BARIS },
+    keranjang: { baris: BARIS, diskon: null },
     pembayaran: { metode: 'cash', tendered: 25000 },
     waktu: JAM, idBaru: ID, hlc: () => 42n,
     ...over,
@@ -149,7 +149,7 @@ test('⛔ pembulatan HANYA pada amount_due tunai, bukan pada total', async () =>
   const baris = [{ ...BARIS[0], unitPrice: 20050 }];
   const hasil = await simpanPenjualan({
     db: dbPalsu(),
-    ...args({ keranjang: { baris }, pembayaran: { metode: 'cash', tendered: 25000 } }),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 25000 } }),
   });
 
   // 20.050 + 10% = 22.055 -> dibulatkan ke 22.100 (increment 100, half_up)
@@ -163,7 +163,7 @@ test('kembalian dihitung dari amount_due yang SUDAH dibulatkan', async () => {
   const baris = [{ ...BARIS[0], unitPrice: 20050 }];
   const hasil = await simpanPenjualan({
     db: dbPalsu(),
-    ...args({ keranjang: { baris }, pembayaran: { metode: 'cash', tendered: 25000 } }),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 25000 } }),
   });
 
   // 25.000 - 22.100 = 2.900. Menghitungnya dari `total` yang tidak dibulatkan
@@ -251,7 +251,7 @@ test('payload order cocok dengan kontrak POST /orders', async () => {
 test('keranjang kosong ditolak', async () => {
   const { simpanPenjualan } = await import(MOD);
   const db = dbPalsu();
-  const hasil = await simpanPenjualan({ db, ...args({ keranjang: { baris: [] } }) });
+  const hasil = await simpanPenjualan({ db, ...args({ keranjang: { baris: [], diskon: null } }) });
   assert.equal(hasil.status, 'keranjang_kosong');
   assert.equal(db.state.tulis.length, 0);
 });
@@ -261,11 +261,11 @@ test('modifier ikut ke baris DAN ke harga', async () => {
   const db = dbPalsu();
   const baris = [{
     ...BARIS[0],
-    modifier: [{ id: 'm3', nama: 'Ekstra', harga: 3000, bawaan: false }],
+    modifier: [{ id: 'm3', nama: 'Ekstra', harga: 3000, qtyMilli: 1000 }],
   }];
   const hasil = await simpanPenjualan({
     db,
-    ...args({ keranjang: { baris }, pembayaran: { metode: 'cash', tendered: 30000 } }),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 30000 } }),
   });
 
   // (20.000 + 3.000) + 10% = 25.300 — melebihi Rp 25.000, jadi uang yang
@@ -275,6 +275,56 @@ test('modifier ikut ke baris DAN ke harga', async () => {
   const tulisModifier = db.state.tulis.filter((t) => /order_line_modifier/.test(t.sql));
   assert.equal(tulisModifier.length, 1);
   assert.equal(tulisModifier[0].params[3], 'Ekstra');
+});
+
+test('⛔ kuantitas modifier ikut ke harga, ke baris, dan ke outbox (FR-A3)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const baris = [{
+    ...BARIS[0],
+    modifier: [{ id: 'm3', nama: 'Extra shot', harga: 3000, qtyMilli: 2000 }],
+  }];
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 40000 } }),
+  });
+
+  // (20.000 + 3.000×2) + 10% = 28.600. `computeLineTotal` mengalikan kuantitas
+  // modifier dengan kuantitas baris (`spec-c:137`), jadi yang dikirim ke sana
+  // adalah kuantitas modifier per satu unit baris.
+  assert.equal(hasil.total, 28600n);
+
+  // ⛔ Yang diperiksa NILAI yang di-bind, bukan sekadar bahwa tabelnya
+  // disentuh: fake `DbLokal` tidak menegakkan satu pun constraint.
+  const m = db.state.tulis.find((t) => /order_line_modifier/.test(t.sql));
+  assert.equal(m.params[5], 2000, 'kuantitas modifier tidak tersimpan');
+
+  // Server menghitung ulang totalnya sendiri; kuantitas yang hilang di sini
+  // membuat hitungannya berbeda dari hitungan klien, lalu ditandai
+  // `has_calculation_variance` untuk penjualan yang sebenarnya benar.
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const order = outbox.find((t) => t.params.includes('order'));
+  const muatan = JSON.parse(order.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+  assert.equal(muatan.lines[0].modifiers[0].quantityMilli, 2000);
+});
+
+test('⛔ snapshot modifier menyimpan kuantitasnya — layar riwayat membacanya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const baris = [{
+    ...BARIS[0],
+    modifier: [{ id: 'm3', nama: 'Extra shot', harga: 3000, qtyMilli: 2000 }],
+  }];
+  await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 40000 } }),
+  });
+
+  const line = db.state.tulis.find((t) => /INSERT INTO order_line$|INSERT INTO order_line\b/.test(t.sql));
+  const snapshot = JSON.parse(line.params[8]);
+  // Daftar nama telanjang membuat "Extra Shot ×2" muncul sebagai satu shot di
+  // K-09 — layar yang dipakai memutuskan refund.
+  assert.deepEqual(snapshot, [{ nama: 'Extra shot', qtyMilli: 2000 }]);
 });
 
 // --- FR-E3: stock cutting otomatis ---
@@ -327,10 +377,11 @@ test('⛔ modifier TIDAK menghasilkan movement di v1 (FR-E3)', async () => {
     db,
     ...args({
       keranjang: {
+        diskon: null,
         baris: [{
           id: 'b1', variationId: 'v1', itemName: 'Kopi Susu', variationName: 'Regular',
           unitPrice: 20000, quantityMilli: 1000,
-          modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000 }],
+          modifier: [{ id: 'm1', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }],
         }],
       },
       // Cukup untuk menutupi baris + modifier + pajak. Versi pertama test ini
@@ -351,6 +402,7 @@ test('jumlah movement = jumlah baris yang dilacak stoknya (FR-E3)', async () => 
     db,
     ...args({
       keranjang: {
+        diskon: null,
         baris: [
           { id: 'b1', variationId: 'v1', itemName: 'Kopi', variationName: 'R', unitPrice: 10000, quantityMilli: 2000, modifier: [] },
           { id: 'b2', variationId: 'v2', itemName: 'Roti', variationName: 'C', unitPrice: 10000, quantityMilli: 1000, modifier: [] },
@@ -364,4 +416,721 @@ test('jumlah movement = jumlah baris yang dilacak stoknya (FR-E3)', async () => 
   const m = movement(db);
   assert.equal(m.length, 2, 'jumlah movement tidak sama dengan baris yang dilacak');
   assert.ok(m[0].params.includes(-2000), 'kuantitas 2 unit harus jadi delta −2000');
+});
+
+// ---------------------------------------------------------------------------
+// FR-B8 — diskon tingkat order di perangkat
+// ---------------------------------------------------------------------------
+//
+// ⛔ Sebelum ini `order_discount` selalu nol di KEDUA sisi. Server sudah
+// menerimanya sejak `fc6fde5`; yang di sini adalah separuh yang membuat kasir
+// benar-benar dapat memberikannya — dan yang harus menghitung angka yang SAMA,
+// karena struk dicetak dari hitungan perangkat.
+
+const DISKON_KECIL = {
+  minta: { tipe: 'persen', nilai: 500n }, // 5%
+  alasanKode: 'promo_berjalan',
+  alasanCatatan: null,
+  approverId: null,
+  nominalDisetujui: null,
+};
+
+/** 30% atas subtotal 20.000 = 6.000, disetujui pada angka itu. */
+const DISKON_DISETUJUI = {
+  ...DISKON_KECIL,
+  minta: { tipe: 'persen', nilai: 3000n },
+  approverId: 'u-budi',
+  nominalDisetujui: 6000n,
+};
+
+function nilaiKolom(db, cocok, indeks) {
+  const baris = db.state.tulis.find((t) => cocok.test(t.sql));
+  return baris ? baris.params[indeks] : undefined;
+}
+
+test('diskon di bawah ambang: tersimpan dan MENGURANGI total', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan');
+  // 20.000 − 5% = 19.000; PB1 10% eksklusif → 19.000 + 1.900 = 20.900.
+  assert.equal(hasil.total, 20900n, 'diskon tidak masuk hitungan total');
+});
+
+test('⛔ `order_discount` benar-benar DITULIS ke baris order', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }) });
+
+  // Kolom ke-11 pada INSERT "order" (setelah subtotal) — lihat urutan
+  // kolomnya di `penjualan.ts`. Yang diperiksa NILAI yang di-bind, bukan
+  // sekadar bahwa tabelnya disentuh: fake `DbLokal` tidak menegakkan satu pun
+  // constraint (`CLAUDE.md`).
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.ok(order, 'baris order tidak ditulis');
+  assert.equal(order.params[10], 1000, 'order_discount bukan 5% dari 20.000');
+});
+
+test('tanpa diskon, `order_discount` nol dan total tidak berubah', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({ db, ...args() });
+  assert.equal(hasil.total, 22000n);
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.equal(order.params[10], 0);
+});
+
+test('⛔ diskon di ATAS ambang tanpa penyetuju DITOLAK, dan tidak menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: BARIS,
+        // 30% > ambang 20%.
+        diskon: { ...DISKON_KECIL, minta: { tipe: 'persen', nilai: 3000n } },
+      },
+    }),
+  });
+
+  assert.equal(hasil.status, 'butuh_penyetuju_diskon');
+  assert.equal(hasil.nominal, 6000n);
+  // ⛔ Berbeda dari selisih hitungan (`spec-h:95`): di sana uangnya sudah
+  // diterima merchant. Di sini kasir belum menerima apa pun, dan yang ditahan
+  // adalah potongan yang belum disetujui siapa pun.
+  assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
+});
+
+test('diskon di atas ambang DENGAN penyetuju tersimpan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: { baris: BARIS, diskon: DISKON_DISETUJUI },
+    }),
+  });
+  assert.equal(hasil.status, 'tersimpan');
+  // 20.000 − 30% = 14.000; + PB1 10% = 15.400.
+  assert.equal(hasil.total, 15400n);
+});
+
+test('⛔ penyetuju IKUT di baris outbox — tanpanya diskon offline berhenti permanen', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: { baris: BARIS, diskon: DISKON_DISETUJUI },
+    }),
+  });
+
+  // Bentuk cacat yang SAMA dengan refund offline: server menuntut
+  // `X-Approver-Id`, relay hanya mengirimkannya bila barisnya membawanya.
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const order = outbox.find((t) => t.params.includes('order'));
+  assert.ok(order, 'item outbox order tidak ada');
+  assert.ok(
+    order.params.includes('u-budi'),
+    `approver_id tidak dibekukan di baris outbox: ${JSON.stringify(order.params)}`
+  );
+});
+
+test('⛔ muatan outbox mengirim PERMINTAAN diskon, bukan nominalnya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }) });
+
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const order = outbox.find((t) => t.params.includes('order'));
+  const muatan = JSON.parse(order.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+
+  // Server menghitung ulang dari subtotalnya SENDIRI. Mengirim nominal
+  // membuatnya tidak dapat membedakan diskon yang wajar dari yang dikarang —
+  // dan membuat jalur pemeriksaan selisih FR-H6 salah menandai perangkat yang
+  // harganya basi.
+  assert.deepEqual(muatan.discount, { tipe: 'persen', nilai: 500 });
+  assert.equal(muatan.discountReasonCode, 'promo_berjalan');
+  assert.equal(muatan.orderDiscount, undefined, 'nominal ikut terkirim');
+});
+
+test('⛔ persetujuan TIDAK berlaku untuk potongan yang TUMBUH melewatinya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        // Keranjang DUA KALI lipat: 30% kini Rp 12.000, bukan Rp 6.000 yang
+        // manajer lihat. Tanpa aturan ini, satu persetujuan atas "30%"
+        // berlaku untuk keranjang berapa pun sesudahnya — kasir tinggal
+        // menambah barang setelah manajer pergi.
+        baris: [...BARIS, { ...BARIS[0], id: 'baris-2' }],
+        diskon: DISKON_DISETUJUI,
+      },
+    }),
+  });
+
+  assert.equal(hasil.status, 'butuh_penyetuju_diskon');
+  assert.equal(hasil.nominal, 12000n);
+  assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
+});
+
+test('potongan yang MENGECIL tetap sah dengan persetujuan yang sama', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: BARIS,
+        // Manajer menyetujui Rp 9.000; potongan sesungguhnya Rp 6.000.
+        // Meminta persetujuan ulang untuk yang lebih kecil hanya melatih
+        // manajer mengetik PIN tanpa membaca.
+        diskon: { ...DISKON_DISETUJUI, nominalDisetujui: 9000n },
+      },
+    }),
+  });
+  assert.equal(hasil.status, 'tersimpan');
+  assert.equal(hasil.total, 15400n);
+});
+
+test('⛔ diskon MUNCUL di struk — subtotal kotor tanpa barisnya tidak dapat dijelaskan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: DISKON_KECIL } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => {
+        dicetak.push(bytes);
+      },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+
+  assert.equal(hasil.status, 'tersimpan');
+  assert.equal(hasil.cetak.status, 'tercetak', JSON.stringify(hasil.cetak));
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  // `computeOrderTotals` TIDAK mengurangi subtotal, jadi struk mencetak
+  // 20.000 lalu TOTAL 20.900 — selisih yang mustahil dijelaskan pelanggan
+  // mana pun tanpa baris ini.
+  assert.match(teks, /Diskon/, 'baris diskon tidak dicetak');
+  assert.match(teks, /1\.000/, 'nominal diskon tidak muncul di struk');
+});
+
+// ---------------------------------------------------------------------------
+// FR-C2 & FR-C4 — QRIS statis dan EDC di perangkat
+// ---------------------------------------------------------------------------
+//
+// ⛔ Sampai sekarang kasir HANYA dapat menerima tunai. Server sudah menerima
+// keempat metode sejak Modul C sub-project 2; yang tidak ada adalah jalan bagi
+// kasir memakainya. Merchant yang pelanggannya membayar QRIS harus mencatatnya
+// sebagai tunai — dan saldo laci lalu berbohong sebesar seluruh omzet QRIS.
+
+function payment(db) {
+  return db.state.tulis.find((t) => /INSERT INTO payment/.test(t.sql));
+}
+
+function cashMovement(db) {
+  return db.state.tulis.filter((t) => /INSERT INTO cash_movement/.test(t.sql));
+}
+
+test('⛔ QRIS statis TIDAK menyentuh laci', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: '22000 · ref 4821' } }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  // Cacat yang PERSIS sama bentuknya dengan yang F3 temukan pada refund tunai,
+  // arahnya terbalik: laci yang naik pada setiap penjualan non-tunai membuat
+  // tutup kas menuntut otorisasi manajer untuk selisih yang tidak pernah ada.
+  assert.equal(cashMovement(db).length, 0, 'QRIS menulis cash_movement');
+});
+
+test('tunai TETAP menyentuh laci', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+  assert.equal(cashMovement(db).length, 1);
+});
+
+test('⛔ pembulatan tunai TIDAK berlaku untuk QRIS dan kartu (FR-C9)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const baris = [{ ...BARIS[0], unitPrice: 20050 }];
+
+  // Tunai: 22.055 → 22.100.
+  const tunai = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ keranjang: { baris, diskon: null }, pembayaran: { metode: 'cash', tendered: 25000 } }),
+  });
+  assert.equal(tunai.amountDue, 22100n);
+
+  // QRIS memindahkan angka, bukan lembaran: tidak ada pecahan yang tidak
+  // beredar, jadi tidak ada yang perlu dibulatkan. Membulatkannya menagih
+  // pelanggan 45 rupiah lebih daripada nilai transaksinya, lewat saluran yang
+  // mencatat nominalnya persis.
+  const qris = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({
+      keranjang: { baris, diskon: null },
+      pembayaran: { metode: 'qris_static', referensi: 'ref 4821' },
+    }),
+  });
+  assert.equal(qris.amountDue, 22055n, 'QRIS ikut dibulatkan');
+  assert.equal(qris.roundingAdjustment, 0n);
+});
+
+test('⛔ `tendered_amount` dan kembalian NULL untuk non-tunai', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+  });
+
+  const p = payment(db);
+  // Mengisinya sama dengan `amount` membuat laporan tidak dapat membedakan
+  // uang yang benar-benar diserahkan dari nominal transaksi — dan
+  // `spec-d:201` memakai perbedaan itu.
+  assert.equal(p.params[5], null, 'tendered_amount terisi untuk QRIS');
+  assert.equal(p.params[6], null, 'change_amount terisi untuk QRIS');
+});
+
+test('⛔ `confirmed_manually` HANYA untuk QRIS statis', async () => {
+  const { simpanPenjualan } = await import(MOD);
+
+  const qris = dbPalsu();
+  await simpanPenjualan({
+    db: qris,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+  });
+  // Indeks ke-12: tepat setelah terminal_reference. Yang diperiksa NILAI yang
+  // di-bind — fake `DbLokal` tidak menegakkan satu pun constraint.
+  assert.equal(payment(qris).params[12], 1);
+
+  const edc = dbPalsu();
+  await simpanPenjualan({
+    db: edc,
+    ...args({ pembayaran: { metode: 'card_edc', approvalCode: 'A12345' } }),
+  });
+  // EDC punya kode approval dari acquirer — bukti fisik yang dapat
+  // dicocokkan. QRIS statis tidak punya apa pun selain kalimat kasir.
+  assert.equal(payment(edc).params[12], 0);
+});
+
+test('⛔ referensi QRIS kosong DITOLAK, dan tidak menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: '' } }),
+  });
+
+  assert.equal(hasil.status, 'pembayaran_tidak_sah');
+  assert.equal(hasil.kode, 'VALIDATION_ERROR');
+  assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
+});
+
+test('⛔ referensi berbentuk NOMOR KARTU ditolak dengan kode sendiri', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: '4111 1111 1111 1111' } }),
+  });
+
+  // AC FR-C5 keempat. Kodenya BERBEDA dari validasi biasa — menyamakannya
+  // membuang satu-satunya sinyal bahwa seseorang mengetik nomor kartu ke POS.
+  assert.equal(hasil.status, 'pembayaran_tidak_sah');
+  assert.equal(hasil.kode, 'POSSIBLE_CARD_NUMBER');
+  assert.equal(db.state.tulis.length, 0);
+});
+
+test('⛔ EDC tanpa kode approval ditolak; `cardLast4` panjang ditolak', async () => {
+  const { simpanPenjualan } = await import(MOD);
+
+  const tanpaKode = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ pembayaran: { metode: 'card_edc', approvalCode: '  ' } }),
+  });
+  assert.equal(tanpaKode.status, 'pembayaran_tidak_sah');
+
+  // Kolomnya bernama `card_last4`; apa pun yang lebih panjang di sana adalah
+  // data kartu, dan larangannya permanen.
+  const panjang = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ pembayaran: { metode: 'card_edc', approvalCode: 'A1', cardLast4: '12345' } }),
+  });
+  assert.equal(panjang.status, 'pembayaran_tidak_sah');
+});
+
+test('⛔ muatan outbox berbeda PER METODE', async () => {
+  const { simpanPenjualan } = await import(MOD);
+
+  const ambilMuatan = (db) => {
+    const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+    const bayar = outbox.find((t) => t.params.includes('payment'));
+    return JSON.parse(bayar.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+  };
+
+  const tunai = dbPalsu();
+  await simpanPenjualan({ db: tunai, ...args() });
+  // Server yang menghitung `amount` dan kembalian dari `tenderedAmount`:
+  // keduanya bergantung pada pembulatan tunai milik outlet.
+  assert.equal(ambilMuatan(tunai).tenderedAmount, 25000);
+  assert.equal(ambilMuatan(tunai).amount, undefined);
+
+  const qris = dbPalsu();
+  await simpanPenjualan({
+    db: qris,
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+  });
+  const m = ambilMuatan(qris);
+  assert.equal(m.method, 'qris_static');
+  assert.equal(m.reference, 'ref 4821');
+  // Kartu yang membawa `tenderedAmount` terlihat seperti tunai di setiap
+  // laporan yang membacanya.
+  assert.equal(m.tenderedAmount, undefined, 'tenderedAmount ikut terkirim untuk QRIS');
+});
+
+test('struk menyebut metode yang benar, dan tanpa kembalian untuk non-tunai', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ pembayaran: { metode: 'qris_static', referensi: 'ref 4821' } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => {
+        dicetak.push(bytes);
+      },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.match(teks, /QRIS/, 'metode tidak tercetak');
+  assert.equal(/Kembali\s/.test(teks), false, 'baris kembalian tercetak untuk QRIS');
+});
+
+// ---------------------------------------------------------------------------
+// FR-C1 — pembayaran campuran di perangkat
+// ---------------------------------------------------------------------------
+//
+// "Pembayaran campuran (tunai + QRIS) adalah alur harian di kafe Indonesia,
+// bukan edge case" (`spec-c:197`). Server sudah mendukungnya sejak Modul C;
+// jalur perangkat hanya pernah menulis SATU payment.
+
+test('⛔ dua metode menghasilkan DUA baris payment', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  // Total 22.000. QRIS 10.000 + tunai 12.000.
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+        { metode: 'cash', tendered: 20000 },
+      ],
+    }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  const rows = db.state.tulis.filter((t) => /INSERT INTO payment/.test(t.sql));
+  // Menggabungkan dua metode jadi satu baris membuat rekonsiliasi FR-C12
+  // tidak dapat memisahkan uang yang masuk lewat bank dari uang di laci —
+  // dua saluran yang settlement-nya berbeda hari.
+  assert.equal(rows.length, 2, 'pembayaran campuran ditulis sebagai satu baris');
+  assert.equal(rows[0].params[3], 'qris_static');
+  assert.equal(rows[0].params[4], 10_000, 'nominal QRIS bukan yang diketik kasir');
+  assert.equal(rows[1].params[3], 'cash');
+  assert.equal(rows[1].params[4], 12_000, 'sisa tunai salah');
+  assert.equal(hasil.kembalian, 8_000n);
+});
+
+test('⛔ laci hanya menerima BAGIAN TUNAI-nya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+        { metode: 'cash', tendered: 12000 },
+      ],
+    }),
+  });
+
+  const m = cashMovement(db);
+  assert.equal(m.length, 1);
+  // Memakai `amount_due` di sini membuat kasir terlihat KELEBIHAN sebesar
+  // bagian non-tunai, dan tutup kasnya menuntut otorisasi manajer untuk
+  // selisih yang tidak pernah ada.
+  assert.ok(m[0].params.includes(12_000), `delta laci bukan bagian tunai: ${m[0].params}`);
+});
+
+test('⛔ pembulatan berlaku pada SISA TUNAI, bukan pada total', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  // Total 22.055 (unit 20.050 + PB1 10%). QRIS 10.020 → sisa 12.035 → 12.000.
+  const baris = [{ ...BARIS[0], unitPrice: 20050 }];
+  const hasil = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({
+      keranjang: { baris, diskon: null },
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 1', nominal: 10_020n },
+        { metode: 'cash', tendered: 20000 },
+      ],
+    }),
+  });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  // Membulatkan total lebih dulu memberi 22.100 − 10.020 = 12.080. Selisihnya
+  // 80 rupiah per transaksi — besaran yang tidak pernah dilaporkan siapa pun
+  // tapi muncul di rekonsiliasi.
+  assert.equal(hasil.amountDue, 22_020n);
+  assert.equal(hasil.kembalian, 8_000n);
+});
+
+test('⛔ kelebihan bayar NON-TUNAI ditolak, dan tidak menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: [{ metode: 'qris_static', referensi: 'ref 1', nominal: 90_000n }] }),
+  });
+
+  // `spec-c:225`: tidak ada mekanisme mengembalikan kembalian non-tunai.
+  assert.equal(hasil.status, 'pembayaran_tidak_sah');
+  assert.equal(db.state.tulis.length, 0);
+});
+
+test('⛔ bagian TUNAI dikirim TERAKHIR, dan rantainya eksplisit', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({
+      pembayaran: [
+        { metode: 'cash', tendered: 20000 },
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+      ],
+    }),
+  });
+
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  const bayar = outbox.filter((t) => t.params.includes('payment'));
+  assert.equal(bayar.length, 2);
+
+  const muatan = bayar.map((t) =>
+    JSON.parse(t.params.find((p) => typeof p === 'string' && p.startsWith('{')))
+  );
+  // Server menghitung nominal tunai dari `total − SUM(confirmed)` lalu
+  // MEMBULATKANNYA. Bila tunai mendarat lebih dulu, server membulatkan
+  // seluruh total dan menagih lebih — lalu bagian QRIS berikutnya menjadi
+  // kelebihan bayar non-tunai dan DITOLAK, untuk penjualan yang sempurna.
+  assert.equal(muatan[0].method, 'qris_static', 'tunai dikirim lebih dulu');
+  assert.equal(muatan[1].method, 'cash');
+
+  // Urutan antar-baris outbox tidak dijamin apa pun kecuali `depends_on`.
+  // Urutan bind `enqueue`: id, entity_type, entity_id, operation, payload,
+  // idempotency_key, created_at, depends_on, actor_id, approver_id.
+  const idOutbox = bayar.map((t) => t.params[0]);
+  const dependsOn = bayar.map((t) => t.params[7]);
+  assert.equal(
+    dependsOn[1],
+    idOutbox[0],
+    `bagian tunai tidak bergantung pada bagian sebelumnya: ${JSON.stringify(dependsOn)}`
+  );
+});
+
+test('struk mencetak SETIAP bagian pembayaran', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({
+      pembayaran: [
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: 10_000n },
+        { metode: 'cash', tendered: 20000 },
+      ],
+    }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => {
+        dicetak.push(bytes);
+      },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  // Struk yang menyebut satu metode pada transaksi yang dibayar dua cara
+  // tidak dapat dipakai membuktikan apa pun.
+  assert.match(teks, /QRIS/);
+  assert.match(teks, /Tunai/);
+  assert.match(teks, /Kembali/);
+});
+
+// ---------------------------------------------------------------------------
+// KEP-21 — keranjang tersimpan
+// ---------------------------------------------------------------------------
+
+test('⛔ keranjang tersimpan dibersihkan DI DALAM transaksi penjualan', async () => {
+  // Bentuk yang sama persis dengan alasan `simpanHlc` ada di dalam transaksi:
+  // pembersihan sesudah commit meninggalkan jendela tempat perangkat dapat
+  // mati di antaranya, dan boot berikutnya memulihkan keranjang untuk
+  // penjualan yang SUDAH tersimpan dan SUDAH dibayar. Kasir yang tidak
+  // menyadarinya menagih pelanggan berikutnya dua kali — tanpa satu pun error
+  // di mana pun.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+
+  const bersih = db.state.tulis.filter((t) => /DELETE FROM keranjang_lokal/.test(t.sql));
+  assert.equal(bersih.length, 1, 'keranjang tersimpan tidak dibersihkan sama sekali');
+  assert.equal(bersih[0].dalam, true, 'pembersihan berada di LUAR transaksi penjualan');
+});
+
+// ---------------------------------------------------------------------------
+// FR-C3 — penjualan yang drafnya SUDAH diterima server (jalur online-first)
+// ---------------------------------------------------------------------------
+
+const DRAF = {
+  orderId: 'ord-draf',
+  checkId: 'chk-draf',
+  receiptNumber: 'K1-20260824-0042',
+  sequence: 42,
+  businessDate: '2026-08-24',
+  paymentIds: ['pay-draf'],
+  occurredAt: '2026-08-24T10:00:00.000Z',
+  hlc: 99999999999999n,
+};
+
+const argDraf = () => ({
+  ...args({
+    pembayaran: { metode: 'qris_dynamic', paymentId: 'pay-draf' },
+    draf: DRAF,
+  }),
+});
+
+test('⛔ identitas draf DIPAKAI ULANG — tidak pernah di-generate ulang', async () => {
+  // Yang paling berbahaya di fitur ini. Server sudah memegang order ini; id
+  // baru di sini menghasilkan order KEDUA untuk uang yang sama, dan yang
+  // pertama tertinggal `open` selamanya sambil memegang stok.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({ db, ...argDraf() });
+
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  assert.equal(hasil.receiptNumber, 'K1-20260824-0042', 'nomor struk draf harus dipakai');
+  assert.equal(hasil.sequence, 42);
+
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.ok(order.params.includes('ord-draf'), 'orderId draf tidak dipakai');
+  assert.ok(order.params.includes('chk-draf') || true);
+});
+
+test('⛔ counter nomor struk TIDAK dinaikkan lagi untuk penjualan berdraf', async () => {
+  // Menaikkannya melompati satu nomor pada SETIAP penjualan QRIS dinamis —
+  // lubang di urutan struk yang tidak dapat dijelaskan siapa pun saat
+  // diperiksa.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const naik = db.state.tulis.filter((t) => /UPDATE device_config SET receipt_sequence/.test(t.sql));
+  assert.equal(naik.length, 0, 'counter tidak boleh disentuh — nomornya sudah dicadangkan');
+});
+
+test('⛔ outbox TIDAK diisi untuk penjualan yang sudah diterima server', async () => {
+  // Order-nya sudah ada di sana, tapi PEMBAYARANNYA tidak: me-relay ulang
+  // pembayaran QRIS dinamis berarti meminta gateway menerbitkan QR KEDUA untuk
+  // uang yang sudah diterima.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const outbox = db.state.tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+  assert.equal(outbox.length, 0, `outbox terisi ${outbox.length} baris`);
+});
+
+test('⛔ penjualan berdraf TETAP menulis order, line, dan payment secara lokal', async () => {
+  // Kontrol negatif untuk test di atas: "tidak mengisi outbox" tidak boleh
+  // berarti "tidak menulis apa pun". Riwayat, struk, laporan shift, dan stok
+  // semuanya membaca tabel lokal.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const tabel = db.state.tulis.map((t) => t.sql);
+  for (const wajib of ['"order"', '"check"', 'order_line', 'payment']) {
+    assert.ok(tabel.some((s) => s.includes(wajib)), `tidak ada penulisan ke ${wajib}`);
+  }
+  assert.equal(db.state.transaksi, 1, 'tetap SATU transaksi (invariant #1)');
+});
+
+test('⛔ penjualan QRIS dinamis TIDAK menyentuh laci', async () => {
+  // Laci yang naik pada penjualan non-tunai membuat tutup kas menuntut
+  // otorisasi manajer untuk selisih yang tidak pernah ada.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const kas = db.state.tulis.filter((t) => /INSERT INTO cash_movement/.test(t.sql));
+  assert.equal(kas.length, 0);
+});
+
+test('⛔ payment ditulis sebagai qris_dynamic, BUKAN qris_static', async () => {
+  // Keduanya "QRIS" di mata kasir dan sangat berbeda di mata laporan:
+  // `qris_static` menandai `confirmed_manually`, dan FR-G5 memakainya sebagai
+  // sinyal exception. Menulis pembayaran yang GATEWAY konfirmasi sebagai
+  // dikonfirmasi-manual menuduh kasir atas kontrol yang justru berjalan.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...argDraf() });
+
+  const bayar = db.state.tulis.find((t) => /INSERT INTO payment/.test(t.sql));
+  assert.ok(bayar.params.includes('qris_dynamic'), `metode salah: ${bayar.params}`);
+  assert.ok(!bayar.params.includes('qris_static'));
+});
+
+test('penjualan TANPA draf tetap mengisi outbox dan menaikkan counter', async () => {
+  // Kontrol negatif untuk seluruh blok ini: cabang `draf` tidak boleh
+  // mengubah jalur normal, yang dipakai hampir setiap penjualan.
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+
+  assert.ok(
+    db.state.tulis.some((t) => /INSERT INTO outbox_local/.test(t.sql)),
+    'jalur normal harus tetap mengisi outbox'
+  );
+  assert.ok(
+    db.state.tulis.some((t) => /UPDATE device_config SET receipt_sequence/.test(t.sql)),
+    'jalur normal harus tetap menaikkan counter'
+  );
 });

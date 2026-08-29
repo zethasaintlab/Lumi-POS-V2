@@ -39,8 +39,16 @@ import { VOID_REASON_CODES, REFUND_REASON_CODES } from '../../../../packages/dom
  * ditampilkan, bukan hari mana peristiwa itu masuk.
  */
 
-/** Judul layar. Deskriptif — "exception" adalah kosakata IA, bukan tuduhan. */
-export const JUDUL_LAYAR = 'Riwayat Void & Refund';
+/**
+ * Judul layar. Deskriptif — "exception" adalah kosakata IA, bukan tuduhan.
+ *
+ * ⛔ Ia berbunyi "Laporan Exception", bukan "Riwayat Void & Refund", sejak
+ * ketujuh laporan lain punya layar (23 Agustus 2026). `IA:200` menamai B-21
+ * **"Laporan Exception (8 laporan)"**, dan judul yang menyebut satu di
+ * antaranya membuat tujuh sisanya terbaca seperti tempelan. Judul per laporan
+ * hidup di `b21-daftar.ts`.
+ */
+export const JUDUL_LAYAR = 'Laporan Exception';
 
 /**
  * ⛔ Label untuk SETIAP kode di daftar tertutup domain.
@@ -210,51 +218,16 @@ export interface PesanLayar {
 }
 
 /**
- * Pesan yang menggantikan tabel, atau `null` bila tabelnya yang dirender.
+ * ⛔ `pesanKeadaan` sudah TIDAK ada di sini.
  *
- * ## ⛔ Tiga keadaan yang tampak sama dan berarti sangat berbeda
+ * Ia dulu memutuskan keadaan layar untuk X1 sendirian. Sejak ketujuh laporan
+ * lain punya layar, keputusannya sama persis untuk kedelapannya — dan tiga
+ * keadaan yang tampak sama ("belum dimuat", "tidak ada apa-apa", "gagal
+ * memuat") adalah tepat jenis keputusan yang tidak boleh punya delapan salinan.
+ * Yang kedua adalah kabar baik; yang ketiga adalah laporan yang **tidak boleh**
+ * dipercaya sebagai bukti tidak ada apa-apa, dan salinan yang lupa
+ * membedakannya membuat kegagalan jaringan terbaca sebagai pembebasan.
  *
- * "Belum dimuat", "tidak ada pembatalan", dan "gagal memuat" semuanya berupa
- * layar tanpa tabel. Yang kedua adalah kabar baik; yang ketiga adalah laporan
- * yang **tidak boleh** dipercaya sebagai bukti tidak ada pembatalan. Layar yang
- * menyamakan keduanya membuat kegagalan jaringan terbaca sebagai pembebasan.
- *
- * ## ⛔ Kosong pun tidak berbunyi seperti pembebasan
- *
- * Rentang yang perangkat kasirnya belum tersinkronisasi juga menghasilkan nol
- * baris. Keadaan kosong menyebut kemungkinan itu — laporan ini dipakai untuk
- * menilai orang, dan "tidak ada apa-apa" yang sebenarnya berarti "datanya belum
- * sampai" adalah kesimpulan yang salah dengan akibat pada manusia.
+ * Penggantinya `pesanLaporan` di `b21-daftar.ts`, yang menerima definisi
+ * laporannya. Kosakata per laporan ada di definisi itu; aturannya satu.
  */
-export function pesanKeadaan(
-  keadaan: Keadaan,
-  namaOutlet: (id: string | null) => string
-): PesanLayar | null {
-  if (keadaan.jenis === 'memuat') {
-    return {
-      judul: 'Menghitung…',
-      badan: 'Server sedang mengumpulkan pembatalan pada rentang ini.',
-    };
-  }
-  if (keadaan.jenis === 'awal') {
-    return {
-      judul: 'Pilih rentang tanggal',
-      badan: 'Tentukan tanggal awal dan akhir, lalu tekan Tampilkan.',
-    };
-  }
-  if (keadaan.jenis === 'galat') {
-    return { judul: 'Laporan tidak dapat dimuat', badan: keadaan.pesan };
-  }
-
-  const { hasil } = keadaan;
-  if (hasil.peristiwa.length > 0) return null;
-
-  const periode = hasil.from === hasil.to ? `pada ${hasil.from}` : `antara ${hasil.from} dan ${hasil.to}`;
-  return {
-    judul: 'Tidak ada pembatalan pada rentang ini',
-    badan:
-      `Tidak ada void maupun refund yang tercatat ${periode} untuk ${namaOutlet(hasil.outletId)}. ` +
-      'Perlu diingat: perangkat kasir yang belum tersinkronisasi juga menghasilkan daftar kosong, ' +
-      'jadi periksa status sinkronisasi sebelum menyimpulkan tidak ada pembatalan.',
-  };
-}

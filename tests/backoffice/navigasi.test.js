@@ -218,17 +218,37 @@ test('B-25 sudah ditandai siap', async () => {
   assert.ok(LAYAR_SIAP.has('B-25'), 'B-25 sudah dibangun tapi masih menampilkan keadaan kosong');
 });
 
-test('⛔ B-24 dan B-26 TIDAK ditandai siap — endpointnya belum ada', async () => {
-  // Penyelidikan kontrak: `vertical_profile` punya tabel tapi NOL endpoint;
-  // ambang otorisasi tidak punya tabel maupun endpoint (yang ada hanya
-  // konstanta `AMBANG_SELISIH` yang dipanggang di `apps/kasir/src/kas/tutup.ts`).
+test('⛔ SETIAP layar di sidebar sudah siap, atau endpointnya memang belum ada', async () => {
+  // Penjaga ini dulu menyebut B-24 dan B-26 sebagai daftar tulisan tangan.
+  // Keduanya sudah keluar (24 Agustus 2026), dan daftar yang dikosongkan
+  // sepotong-sepotong berhenti menjaga apa pun — jadi yang dijaga sekarang
+  // MEKANISMENYA.
   //
-  // Menandainya siap berarti sidebar menjanjikan layar yang tidak dapat
-  // memuat apa pun. Keadaan kosong bawaan sudah jujur — dan test ini menahan
-  // seseorang menandainya siap sebelum endpointnya benar-benar ada.
+  // Dua arah, dan keduanya berbahaya:
+  //
+  // - Layar SIAP tanpa endpoint = sidebar menjanjikan layar yang tidak dapat
+  //   memuat apa pun.
+  // - Layar BELUM siap padahal endpointnya ada = layar yang sudah berfungsi
+  //   disembunyikan di balik keadaan kosong "belum dibangun".
+  //
+  // Yang dipetakan hanya layar yang punya endpoint KHUSUS; sisanya memakai
+  // endpoint bersama dan tidak dapat diperiksa begini.
+  const OPERASI_LAYAR = {
+    'B-24': ['listVerticalProfiles', 'updateVerticalProfile'],
+    'B-26': ['getOutletThresholds', 'setOutletThresholds'],
+  };
   const { LAYAR_SIAP } = await import(NAV);
-  for (const id of ['B-24', 'B-26']) {
-    assert.ok(!LAYAR_SIAP.has(id), `${id} ditandai siap padahal endpointnya belum ada`);
+  const yaml = readFileSync(join(AKAR, 'packages', 'contracts', 'openapi.yaml'), 'utf8');
+
+  for (const [layar, operasi] of Object.entries(OPERASI_LAYAR)) {
+    const adaSemua = operasi.every((o) => yaml.includes(`operationId: ${o}`));
+    assert.equal(
+      LAYAR_SIAP.has(layar),
+      adaSemua,
+      adaSemua
+        ? `${layar} punya endpoint tapi masih menampilkan keadaan kosong "belum dibangun"`
+        : `${layar} ditandai siap padahal endpointnya belum ada`
+    );
   }
 });
 
@@ -267,13 +287,31 @@ test('⛔ akuntan melihat grup Laporan DAN Pengawasan', async () => {
   assert.deepEqual(grup, ['Laporan', 'Pengawasan']);
 });
 
-test('⛔ akuntan melihat B-21 tapi TIDAK B-22', async () => {
-  // Pengawasan tidak dibuka sebagai grup utuh. B-22 (Audit & Aktivitas) tidak
-  // punya operasi di matriks, dan grup yang dibuka borongan akan menyeretnya
-  // ikut — memberi akuntan menu yang tidak seorang pun pernah putuskan.
-  const { navigasiUntuk } = await import(NAV);
-  const pengawasan = navigasiUntuk(['accountant']).find((g) => g.group === 'Pengawasan');
-  assert.deepEqual(pengawasan.items.map((i) => i.id), ['B-21']);
+test('⛔ akuntan melihat Pengawasan per ITEM, bukan grupnya dibuka borongan', async () => {
+  // Sampai 23 Agustus 2026 penjaga ini berbunyi "akuntan melihat B-21 tapi
+  // TIDAK B-22", dan itu benar untuk keadaan saat itu: B-22 belum punya operasi
+  // di matriks sama sekali. Sekarang ia punya (`report_exception`, `[ASUMSI]`
+  // yang dinyatakan di `reporting/index.ts` — isi audit trail adalah superset
+  // dari X1 yang matriks sudah berikan kepada keempat peran yang sama).
+  //
+  // Yang dijaga karena itu bukan lagi daftar id — daftar id akan berubah lagi —
+  // melainkan MEKANISMENYA: setiap item di luar grup Akuntan yang terlihat
+  // olehnya harus punya operasi yang matriks benar-benar berikan. Grup yang
+  // dibuka borongan akan meloloskan item tanpa operasi, dan itu memberi akuntan
+  // menu yang tidak seorang pun pernah putuskan.
+  const { navigasiUntuk, GRUP_AKUNTAN } = await import(NAV);
+  const { bolehkah } = await import('../../packages/domain/src/rbac.ts');
+
+  const luar = navigasiUntuk(['accountant']).filter((g) => !GRUP_AKUNTAN.has(g.group));
+  assert.ok(luar.length > 0, 'tidak ada grup di luar GRUP_AKUNTAN untuk diuji');
+  for (const grup of luar) {
+    for (const item of grup.items) {
+      assert.ok(
+        item.operasi !== undefined && bolehkah(['accountant'], item.operasi),
+        `${item.id} terlihat akuntan tanpa operasi yang matriks berikan`
+      );
+    }
+  }
 });
 
 test('⛔ akuntan tidak melihat Katalog, Pengguna, atau Pengaturan', async () => {

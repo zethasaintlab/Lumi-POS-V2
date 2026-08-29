@@ -18,6 +18,16 @@ const RUTE: Record<string, (entityId: string) => string> = {
   // FR-D7. `entity_id`-nya adalah id SHIFT — rutenya bersarang di bawahnya,
   // dan ambang frekuensinya dihitung per shift.
   no_sale: (id) => `/shifts/${encodeURIComponent(id)}/no-sale`,
+  // FR-D5. `entity_id`-nya SHIFT, alasan yang sama dengan no-sale: rutenya
+  // bersarang di bawahnya, dan saldo laci dihitung per shift.
+  cash_movement: (id) => `/shifts/${encodeURIComponent(id)}/cash-movements`,
+  count_attempt: (id) => `/shifts/${encodeURIComponent(id)}/count-attempts`,
+  // K-15. `entity_id`-nya id PERIPHERAL, dan rutenya tidak bersarang: satu
+  // peripheral menempel pada perangkat, bukan pada shift. Pengiriman ulang
+  // dengan id yang sama MEMPERBARUI barisnya — kasir mengubah profil printer
+  // berkali-kali sampai strukanya benar, dan setiap perubahan adalah
+  // konfigurasi ulang peripheral yang sama.
+  peripheral: () => '/peripherals',
 };
 
 /**
@@ -45,6 +55,20 @@ export interface KonfigHttp {
    * kemampuan bawaan modul.
    */
   fetchFn: typeof fetch;
+  /**
+   * Jam perangkat, di-INJECT. FR-F8.
+   *
+   * ⛔ Dipakai satu-satunya untuk mengisi `X-Device-Time`, dan ia sengaja
+   * bukan `Date.now()` yang dipanggil langsung di dalam adapter: deteksi
+   * manipulasi jam yang jamnya tidak dapat dipalsukan test tidak dapat diuji
+   * sama sekali. Pola yang sama dengan seluruh lapisan sync (`CLAUDE.md`:
+   * "waktu, keacakan, dan I/O di-inject").
+   *
+   * Tidak wajib — pemanggil lama tetap bekerja, dan headernya lalu tidak
+   * dikirim. Server memperlakukan header yang hilang sebagai "tidak tahu",
+   * bukan sebagai anomali.
+   */
+  waktu?: () => Date;
 }
 
 /**
@@ -60,7 +84,7 @@ export interface KonfigHttp {
  * dan mendiamkannya berarti penjualan yang hilang tanpa jejak.
  */
 export function buatPengirimHttp(konfig: KonfigHttp): (baris: BarisOutbox) => Promise<HasilKirim> {
-  const { baseUrl, tenantId, actorId, fetchFn } = konfig;
+  const { baseUrl, tenantId, actorId, fetchFn, waktu } = konfig;
 
   return async function kirim(baris: BarisOutbox): Promise<HasilKirim> {
     const rute = RUTE[baris.entity_type];
@@ -98,6 +122,14 @@ export function buatPengirimHttp(konfig: KonfigHttp): (baris: BarisOutbox) => Pr
           // menolak string kosong dengan pesan yang sama, jadi mengirimnya
           // selalu hanya memindahkan kegagalan tanpa memperbaikinya.
           ...(baris.approver_id ? { 'X-Approver-Id': baris.approver_id } : {}),
+          // FR-F8 — jam perangkat SAAT MENGIRIM, bukan `occurred_at`.
+          //
+          // ⛔ Keduanya berbeda, dan perbedaannya seluruh gunanya: transaksi
+          // ber-`occurred_at` berjam-jam lebih tua adalah durasi offline yang
+          // WAJAR (`spec-f:346`), dan menandainya berarti menandai setiap
+          // penjualan offline. Yang tidak dapat dijelaskan apa pun adalah dua
+          // jam yang sama-sama mengaku "sekarang" tapi berbeda.
+          ...(waktu ? { 'X-Device-Time': waktu().toISOString() } : {}),
         },
         // Dikirim APA ADANYA, dan itu pilihan yang disengaja: server
         // menghitung hash request dari body untuk mendeteksi "key sama, body

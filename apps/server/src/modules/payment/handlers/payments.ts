@@ -15,6 +15,13 @@ import {
 import { computeCashRounding } from '../../../../../../packages/domain/src/money.ts';
 import { assertTransition } from '../../../../../../packages/domain/src/order-state.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../../../packages/domain/src/buku-kas.ts';
+import {
+  periksaApprovalCode,
+  periksaBukanNomorKartu,
+  periksaCardLast4,
+  periksaReferensi,
+  type GalatBayar,
+} from '../../../../../../packages/domain/src/pembayaran-manual.ts';
 import { perkiraanMdr, metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/mdr.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { PaymentProvider, InitiateResult, GatewayStatus } from '../providers/index.ts';
@@ -137,67 +144,33 @@ function assertGatewayAmountValid(value: unknown): asserts value is number {
 
 
 /**
- * Menolak apa pun yang berbentuk nomor kartu.
+ * ⛔ Aturannya di `packages/domain/src/pembayaran-manual.ts`, bukan di sini.
  *
- * AC FR-C5 keempat: "Tidak ada field bebas (`notes`, `reference`) yang
- * divalidasi menerima 13-19 digit berurutan tanpa peringatan."
+ * QRIS statis dan EDC berfungsi OFFLINE, jadi kasir memvalidasi masukannya
+ * sendiri sebelum menulis penjualan. Aturan yang hanya hidup di berkas ini
+ * berarti perangkat menerima referensi kosong lalu server menolaknya
+ * berjam-jam kemudian — dan barisnya berhenti `gagal-permanen` di antrean,
+ * bentuk cacat yang sama persis dengan refund offline.
  *
- * Pemisah (spasi dan tanda hubung) dibuang lebih dulu, karena `4111 1111 1111
- * 1111` adalah bentuk yang paling mungkin diketik orang -- memeriksa digit
- * berurutan saja akan meloloskannya.
- *
- * Ambangnya 13, bukan 12: referensi bank dan nominal rupiah rutin mencapai 12
- * digit, dan kontrol yang menolak referensi sah akan dimatikan orang pertama
- * yang terhalang olehnya. 13 adalah panjang PAN terpendek yang beredar.
+ * Yang tersisa di sini hanya penerjemahannya menjadi `HttpError`, beserta
+ * KODE yang berbeda-beda: `POSSIBLE_CARD_NUMBER` bukan `VALIDATION_ERROR`,
+ * dan menyamakannya membuang satu-satunya sinyal bahwa seseorang mengetik
+ * nomor kartu ke dalam POS.
  */
-const KEMUNGKINAN_PAN = /\d{13,19}/;
-
-function assertBukanNomorKartu(value: string, label: string): void {
-  const tanpaPemisah = value.replace(/[\s-]/g, '');
-  if (KEMUNGKINAN_PAN.test(tanpaPemisah)) {
-    throw new HttpError(
-      400,
-      'POSSIBLE_CARD_NUMBER',
-      `${label} tampak memuat nomor kartu. Data kartu tidak boleh masuk ke POS (FR-C5).`
-    );
-  }
+function lempar(galat: GalatBayar | null): void {
+  if (galat) throw new HttpError(400, galat.kode, galat.pesan);
 }
 
-const MIN_REFERENCE_LENGTH = 3;
-
 function assertReferenceValid(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || value.trim().length < MIN_REFERENCE_LENGTH) {
-    // Kontrol anti-fraud FR-C2, bukan formalitas: QRIS statis dikonfirmasi
-    // kasir TANPA verifikasi sistem apa pun, dan berfungsi offline. Tanpa
-    // referensi, "sudah dibayar" hanyalah pernyataan kasir tanpa jejak.
-    throw new HttpError(
-      400,
-      'VALIDATION_ERROR',
-      `reference wajib untuk QRIS statis (minimal ${MIN_REFERENCE_LENGTH} karakter): nominal + 4 digit terakhir nomor referensi, atau catatan.`
-    );
-  }
-  assertBukanNomorKartu(value, 'reference');
+  lempar(periksaReferensi(value));
 }
 
 function assertApprovalCodeValid(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new HttpError(400, 'VALIDATION_ERROR', 'approvalCode wajib untuk pembayaran EDC (FR-C4).');
-  }
-  assertBukanNomorKartu(value, 'approvalCode');
+  lempar(periksaApprovalCode(value));
 }
 
-/**
- * `card_last4` maksimal 4 DIGIT.
- *
- * Database sudah punya `CHECK (length(card_last4) <= 4)`, dan test menulis
- * langsung ke tabel untuk membuktikan ia sungguh menolak. Pemeriksaan di sini
- * lebih ketat: ia menuntut DIGIT, sehingga tidak ada jalan sepotong data lain
- * menyelinap ke kolom yang namanya menjanjikan empat digit terakhir kartu.
- */
 function assertCardLast4Valid(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || !/^\d{1,4}$/.test(value)) {
-    throw new HttpError(400, 'VALIDATION_ERROR', 'cardLast4 harus 1-4 digit angka (FR-C4: tidak pernah lebih).');
-  }
+  lempar(periksaCardLast4(value));
 }
 
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
@@ -539,7 +512,7 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   const acquirer = typeof body.acquirer === 'string' ? body.acquirer : null;
   const terminalReference = typeof body.terminalReference === 'string' ? body.terminalReference : null;
   if (terminalReference !== null) {
-    assertBukanNomorKartu(terminalReference, 'terminalReference');
+    lempar(periksaBukanNomorKartu(terminalReference, 'terminalReference'));
   }
 
   const amount = BigInt(body.amount);

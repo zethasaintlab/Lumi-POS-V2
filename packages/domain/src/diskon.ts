@@ -169,6 +169,74 @@ export function rencanaDiskon(
   return { nominal, butuhPenyetuju: butuhOtorisasiDiskon(subtotal, nominal, ambang) };
 }
 
+/**
+ * Angka yang DIKETIK kasir → `PermintaanDiskon.nilai`.
+ *
+ * ⛔ Di domain, bukan di komponen React. Server memakai bentuk terurai
+ * (`{ tipe, nilai }`) dan tidak pernah memanggil ini; yang membuatnya milik
+ * domain adalah bahwa ia memutuskan APA YANG SAH sebagai diskon, dan aturan
+ * itu tidak boleh punya salinan kedua di layar mana pun — dialog K-03 hari ini,
+ * layar diskon per-baris kelak.
+ *
+ * ⛔ Koma DAN titik diterima sebagai pemisah desimal. Kasir Indonesia mengetik
+ * "12,5"; keyboard numerik perangkat mengetik "12.5". Menolak salah satunya
+ * berarti separuh perangkat tidak dapat memberi diskon pecahan sama sekali.
+ *
+ * ⛔ Nominal TIDAK menerima desimal. Uang di sistem ini rupiah utuh
+ * (`CLAUDE.md`), dan "5000,50" yang diterima lalu dipotong diam-diam adalah
+ * potongan yang berbeda dari yang diketik.
+ *
+ * Digit desimal persen DITURUNKAN dari skalanya, bukan dipilih. "15%" adalah
+ * rate 0,15, dan rate berskala 10.000 menyimpannya sebagai 1500 — jadi angka
+ * persennya sendiri berskala `SKALA_TARIF / 100` = 100, yaitu tepat dua digit
+ * desimal. Menerima digit ketiga berarti menerima angka yang tidak dapat
+ * disimpan, lalu memotongnya diam-diam.
+ *
+ * `null` = bukan angka yang sah. Ia DIKEMBALIKAN, bukan dilempar: masukan
+ * setengah jadi ("12,") adalah keadaan normal saat orang sedang mengetik.
+ */
+const FAKTOR_PERSEN = SKALA_TARIF / 100n;
+const DESIMAL_PERSEN = String(FAKTOR_PERSEN).length - 1;
+const POLA_PERSEN = /^(\d*)(?:[.,](\d*))?$/;
+
+export function parseNilaiDiskon(tipe: TipeDiskon, teks: string): bigint | null {
+  const bersih = teks.trim();
+  if (bersih === '') return null;
+
+  if (tipe === 'nominal') {
+    if (!/^\d+$/.test(bersih)) return null;
+    return BigInt(bersih);
+  }
+  if (tipe !== 'persen') return null;
+
+  const cocok = POLA_PERSEN.exec(bersih);
+  if (cocok === null) return null;
+  const bulat = cocok[1] ?? '';
+  const pecahan = cocok[2] ?? '';
+  if (bulat === '' && pecahan === '') return null;
+  if (pecahan.length > DESIMAL_PERSEN) return null;
+
+  // Murni operasi string + BigInt, alasan yang sama dengan `parseRateToScaled`:
+  // jalur uang tidak menyentuh float, tanpa pengecualian "tapi di sini aman".
+  const nilai = BigInt((bulat === '' ? '0' : bulat) + pecahan.padEnd(DESIMAL_PERSEN, '0'));
+  if (nilai > SKALA_TARIF) return null;
+  return nilai;
+}
+
+/**
+ * Kebalikan `parseNilaiDiskon` untuk persen — `1250n` → `"12,5"`.
+ *
+ * Dipakai saat dialog dibuka ulang atas diskon yang sudah menempel: kasir
+ * harus melihat angka yang IA ketik, bukan bentuk berskalanya. Nol desimal
+ * dipangkas supaya "15%" tidak muncul sebagai "15,00%".
+ */
+export function formatPersenDiskon(nilai: bigint): string {
+  wajibBigint(nilai, 'nilai persen');
+  const bulat = nilai / FAKTOR_PERSEN;
+  const pecahan = (nilai % FAKTOR_PERSEN).toString().padStart(DESIMAL_PERSEN, '0').replace(/0+$/, '');
+  return pecahan === '' ? `${bulat}` : `${bulat},${pecahan}`;
+}
+
 /** `null` bila sah. Lihat `periksaAlasan`. */
 export function periksaAlasanDiskon(kode: unknown, catatan?: string | null): string | null {
   return periksaAlasan(ALASAN_DISKON, kode, catatan);

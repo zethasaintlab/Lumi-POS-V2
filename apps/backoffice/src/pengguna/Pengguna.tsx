@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
-import { buatMuatanPengguna, periksaPinBaru, type FormPengguna } from './muatan.ts';
+import {
+  buatMuatanPengguna,
+  buatMuatanPeran,
+  periksaPinBaru,
+  type FormPengguna,
+} from './muatan.ts';
 import { LABEL_PERAN, type Peran } from '../../../../packages/domain/src/rbac.ts';
 
 /**
@@ -89,6 +94,18 @@ export function PenggunaLayar() {
   // menjawab 409 ID_ALREADY_EXISTS untuk id yang sama — itu yang membuat
   // percobaan ulang setelah respons hilang tidak menghasilkan pengguna kedua.
   const [userId, setUserId] = useState(() => crypto.randomUUID());
+
+  // ⛔ Panel UBAH PERAN, dan kenapa ia ada sama sekali.
+  //
+  // Sampai 24 Agustus 2026 `updateUser` tidak menerima `roles`, jadi merchant
+  // yang menaikkan kasirnya menjadi manajer outlet tidak punya jalan apa pun —
+  // kecuali membuat pengguna KEDUA dengan nama orang yang sama. Sesudah itu
+  // setiap laporan per kasir memecah orang itu menjadi dua baris, dan riwayat
+  // lamanya menggantung pada akun yang dinonaktifkan.
+  const [peranUntuk, setPeranUntuk] = useState<Pengguna | null>(null);
+  const [peranBaru, setPeranBaru] = useState('cashier');
+  const [outletPeran, setOutletPeran] = useState<string[]>([]);
+  const [pesanPeran, setPesanPeran] = useState<string | null>(null);
 
   const [pinUntuk, setPinUntuk] = useState<Pengguna | null>(null);
   const [pin, setPin] = useState('');
@@ -208,6 +225,40 @@ export function PenggunaLayar() {
     }
   }
 
+  function bukaPeran(p: Pengguna) {
+    setPeranUntuk(p);
+    // ⛔ Diisi dengan keadaan SEKARANG, bukan dikosongkan. Panel yang terbuka
+    // kosong membuat "simpan" tanpa mengubah apa pun menghapus seluruh peran
+    // dan outlet orang itu — penghapusan yang tidak seorang pun maksudkan.
+    setPeranBaru([...new Set(p.roles)][0] ?? 'cashier');
+    setOutletPeran([...p.outletIds]);
+    setPesanPeran(null);
+    setKabar(null);
+  }
+
+  async function simpanPeran() {
+    if (!peranUntuk) return;
+    const hasil = buatMuatanPeran(peranBaru, outletPeran, sesi?.tenantId ?? '');
+    if (!hasil.ok) {
+      setPesanPeran(hasil.pesan);
+      return;
+    }
+    setPesanPeran(null);
+    try {
+      await api.minta(`/users/${peranUntuk.id}`, { metode: 'PATCH', body: hasil.muatan });
+      setKabar(
+        `Peran ${peranUntuk.name} diperbarui. Perubahan berlaku pada sesi berikutnya — perangkat ` +
+          'yang sedang terbuka masih memakai peran lamanya sampai kasirnya keluar.'
+      );
+      setPeranUntuk(null);
+      await muat();
+    } catch (err) {
+      // `LAST_OWNER`, `ROLE_SCOPE_TOO_WIDE`, dan `FORBIDDEN_ROLE_MANAGEMENT`
+      // semuanya mendarat di sini, dan ketiganya sudah menjelaskan dirinya.
+      setPesanPeran(err instanceof GalatHttp ? err.message : 'Peran tidak dapat diubah.');
+    }
+  }
+
   async function ubahAktif(p: Pengguna) {
     setPesanForm(null);
     setKabar(null);
@@ -246,6 +297,74 @@ export function PenggunaLayar() {
             <span className="t-body-md" role="status">
               {kabar}
             </span>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* --- ubah peran --------------------------------------------------- */}
+      {peranUntuk ? (
+        <Card>
+          <div className="card-pad">
+            <div className="stack" style={{ gap: 'var(--space-4)' }}>
+              <span className="t-body-md">Peran {peranUntuk.name}</span>
+              {/* ⛔ Dinyatakan, bukan didiamkan: peran dibaca saat sesi dibuat.
+                  Manajer yang menurunkan kasirnya lalu mengira haknya langsung
+                  hilang akan menyimpulkan sistemnya bocor. */}
+              <span className="t-caption">
+                Perubahan berlaku pada sesi berikutnya. Perangkat yang sedang terbuka masih memakai
+                peran lama sampai kasirnya keluar; cabut perangkatnya di B-28 kalau harus segera.
+              </span>
+
+              <div className="stack" style={{ gap: 'var(--space-2)' }}>
+                <span className="label">Peran</span>
+                <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  {URUTAN_PERAN.map((r) => (
+                    <Tombol
+                      key={r}
+                      varian={peranBaru === r ? 'primary' : 'secondary'}
+                      onClick={() => {
+                        setPeranBaru(r);
+                        setPesanPeran(null);
+                      }}
+                    >
+                      {LABEL_PERAN[r as Peran]}
+                    </Tombol>
+                  ))}
+                </div>
+              </div>
+
+              <div className="stack" style={{ gap: 'var(--space-2)' }}>
+                <span className="label">Outlet</span>
+                <div className="row" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  {outletAktif.map((o) => (
+                    <Tombol
+                      key={o.id}
+                      varian={outletPeran.includes(o.id) ? 'primary' : 'secondary'}
+                      onClick={() => {
+                        setOutletPeran((s) =>
+                          s.includes(o.id) ? s.filter((x) => x !== o.id) : [...s, o.id]
+                        );
+                        setPesanPeran(null);
+                      }}
+                    >
+                      {o.name}
+                    </Tombol>
+                  ))}
+                </div>
+              </div>
+
+              <div className="row" style={{ gap: 'var(--space-3)' }}>
+                <Tombol varian="primary" onClick={() => void simpanPeran()}>
+                  Simpan peran
+                </Tombol>
+                <Tombol onClick={() => setPeranUntuk(null)}>Batal</Tombol>
+                {pesanPeran ? (
+                  <span className="t-caption" style={{ color: 'var(--danger)' }} role="alert">
+                    {pesanPeran}
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
         </Card>
       ) : null}
@@ -460,6 +579,7 @@ export function PenggunaLayar() {
                         {p.hasPin ? 'Ganti PIN' : 'Setel PIN'}
                       </Tombol>
                     ) : null}
+                    {p.isActive ? <Tombol onClick={() => bukaPeran(p)}>Ubah peran</Tombol> : null}
                     <Tombol varian={p.isActive ? 'danger' : 'secondary'} onClick={() => void ubahAktif(p)}>
                       {p.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                     </Tombol>

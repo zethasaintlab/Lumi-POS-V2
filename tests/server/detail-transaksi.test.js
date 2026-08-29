@@ -80,9 +80,10 @@ async function transaksi({ total = 100000, status = 'closed', qty = 1000 } = {})
   );
   await db.query(
     `INSERT INTO order_line (id,tenant_id,outlet_id,device_id,order_id,check_id,variation_id,item_name,
-       variation_name,unit_price,quantity,line_total,created_by,occurred_at,hlc)
+       variation_name,unit_price,quantity,line_total,created_by,occurred_at,hlc,
+       variation_count_at_sale)
      VALUES ($1,$2,$3,$4,$5,$6,'v1','Kopi Susu','Regular',$7,$8::bigint,$7,$9,
-             timestamptz '2026-08-10 10:00:00+00',$10::bigint)`,
+             timestamptz '2026-08-10 10:00:00+00',$10::bigint,1)`,
     [lineId, tenant.id, base.outlet.id, device, id, checkId, total, qty, base.user.id, n]
   );
   await db.query('COMMIT');

@@ -1353,6 +1353,466 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /vertical-profiles:
+    get:
+      operationId: listVerticalProfiles
+      summary: B-24 -- profil vertikal tenant, dan yang berlaku di tiap outlet.
+      description: >-
+        ⛔ Resolusi `COALESCE(profil_outlet, profil_default_tenant)` dihitung DI
+        SERVER lewat `resolusiProfil` yang SAMA yang perangkat pakai. Layar yang
+        menghitungnya sendiri adalah tempat kedua yang memutuskan "profil mana
+        yang berlaku di cabang ini", dan yang menyimpang menampilkan aturan yang
+        berbeda dari yang kasirnya alami.
+
+
+        `berlaku.dariBawaan` menandai outlet yang jatuh ke bawaan KERAS domain
+        (tenant tanpa profil bawaan sama sekali) -- aturan yang tidak dipilih
+        siapa pun.
+      responses:
+        '200':
+          description: Profil dan resolusi per outlet.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles, outlets]
+                properties:
+                  profiles:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProfilVertikal' }
+                  outlets:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, verticalProfileId, berlaku]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        verticalProfileId:
+                          type: string
+                          nullable: true
+                          description: '`null` berarti mengikuti bawaan tenant.'
+                        berlaku:
+                          type: object
+                          required: [id, name, allowNegativeStock, dariBawaan]
+                          properties:
+                            id: { type: string }
+                            name: { type: string }
+                            allowNegativeStock: { type: boolean }
+                            isTenantDefault: { type: boolean }
+                            dariBawaan: { type: boolean }
+    post:
+      operationId: createVerticalProfile
+      summary: B-24 -- membuat profil vertikal baru.
+      description: >-
+        ⛔ Hanya `fnb`. `retail` ada di CHECK constraint sejak F0 dan ditulis
+        IA:291 sebagai kolom v1.3; daftar "jangan bangun" menaruh UI vertikal
+        retail di v1.1+. Merchant yang dapat menekan "retail" mendapat aplikasi
+        kasir yang dibangun untuk F&B dengan label yang mengatakan sebaliknya --
+        layar yang menjanjikan produk yang tidak ada. Ditolak
+        `VERTICAL_NOT_AVAILABLE` dengan pesan yang menjelaskan, bukan
+        VALIDATION_ERROR generik.
+
+
+        ⛔ Hanya `allowNegativeStock` yang dapat disetel. Lima kolom perilaku
+        lain (`default_channel`, `requires_barcode_flow`, `default_tax_type`,
+        `modules_enabled`, dan `name` untuk retail) TIDAK dibaca satu baris kode
+        pun di luar pendaftaran tenant -- membukanya di layar adalah setelan
+        yang tersimpan dengan benar dan tidak mengubah apa pun.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+                name:
+                  type: string
+                  description: 'Hanya `fnb`. Lihat deskripsi.'
+                allowNegativeStock: { type: boolean }
+      responses:
+        '201':
+          description: Profil dibuat.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilVertikal' }
+        '400':
+          description: Vertikal belum tersedia (VERTICAL_NOT_AVAILABLE).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Id sudah dipakai (ID_ALREADY_EXISTS).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /vertical-profiles/{profileId}:
+    patch:
+      operationId: updateVerticalProfile
+      summary: B-24 -- menyetel stok negatif atau memindahkan bawaan tenant.
+      description: >-
+        ⛔ Bawaan tenant tidak dapat DIKOSONGKAN, hanya DIPINDAHKAN.
+        `resolusiProfil` punya bawaan keras (`allowNegativeStock: true`) untuk
+        perangkat yang katalognya belum turun; membiarkan merchant menghapus
+        bawaan tenantnya berarti setiap outlet ber-override NULL diam-diam jatuh
+        ke aturan yang tidak seorang pun pilih, di jalur yang paling tidak
+        terlihat. Ditolak DEFAULT_PROFILE_REQUIRED.
+
+
+        ⛔ Menetapkan bawaan baru MENCABUT yang lama di transaksi yang sama.
+        `ux_vertical_profile_tenant_default` adalah index unik parsial:
+        menetapkan bawaan kedua tanpa mencabut yang pertama ditolak database
+        dengan 23505 -- benar, tapi jawabannya 500 dan pesannya menyebut nama
+        index.
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowNegativeStock: { type: boolean }
+                isTenantDefault: { type: boolean }
+      responses:
+        '200':
+          description: Profil setelah disimpan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilVertikal' }
+        '403':
+          description: Bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Profil tidak ditemukan (VERTICAL_PROFILE_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Bawaan tenant tidak dapat dicabut (DEFAULT_PROFILE_REQUIRED).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /outlets/{outletId}/vertical-profile:
+    put:
+      operationId: setOutletVerticalProfile
+      summary: B-24 -- override profil untuk satu outlet.
+      description: >-
+        `verticalProfileId: null` berarti outlet ini mengikuti bawaan tenant.
+
+
+        ⛔ BUKAN bagian dari "ubah outlet": endpoint ini tidak menyentuh nama,
+        alamat, zona waktu, maupun `archived_at`. B-23 sengaja tidak punya
+        ubah/arsip outlet, dan batas itu masih berlaku.
+
+
+        ⛔ Profilnya divalidasi lewat SELECT yang tunduk RLS sebelum ditulis.
+        FK PostgreSQL tidak tunduk RLS (temuan F1) -- ia hanya membuktikan
+        barisnya ada di SUATU tenant, dan profil merchant lain akan menentukan
+        perilaku stok negatif outlet ini.
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verticalProfileId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Override setelah disimpan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [outletId, verticalProfileId]
+                properties:
+                  outletId: { type: string }
+                  verticalProfileId: { type: string, nullable: true }
+        '403':
+          description: Bukan Owner (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >-
+            Outlet atau profil tidak ditemukan (OUTLET_NOT_FOUND /
+            VERTICAL_PROFILE_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /support-sessions:
+    post:
+      operationId: grantSupportSession
+      summary: F.5 -- owner memberi akses support, berbatas waktu.
+      description: >-
+        `spec-f:393`: *"Untuk mendukung ratusan merchant, akses support
+        diperlukan -- tetapi harus menjadi fitur SISTEM, bukan akses database
+        langsung."* Alternatif yang tidak dibangun adalah alternatif yang akan
+        dipakai: staf yang tidak punya jalan resmi akan diberi kredensial
+        database, dan sejak saat itu tidak ada satu pun baris yang mencatat
+        siapa membaca apa milik merchant mana.
+
+
+        ⛔ AC pertama (`spec-f:409`, "akses support tanpa persetujuan merchant
+        tidak mungkin") benar karena BENTUKNYA, bukan karena sebuah
+        pemeriksaan: token akses hanya ada sebagai keluaran endpoint ini, dan
+        tidak ada endpoint mana pun yang menerbitkannya tanpa owner
+        menekannya.
+
+
+        ⛔ Token dikembalikan SEKALI dan tidak pernah dapat dibaca lagi -- yang
+        tersimpan hanya SHA-256-nya, sejajar `user_session.token_hash` dan
+        `device.token_hash`. Owner yang kehilangannya mengakhiri sesi ini dan
+        memberi persetujuan baru.
+
+
+        ⛔ Read-only adalah BAWAAN (`spec-f:403`). `writeEnabled` harus dikirim
+        `true` dengan sengaja; owner yang sedang panik tidak boleh memberikan
+        akses tulis tanpa memilihnya.
+
+
+        ⛔ Durasi bawaan 2 jam, maksimum 24 jam (`spec-f:400`), dan batasnya
+        ditegakkan CHECK constraint juga -- aturan yang hanya hidup di aplikasi
+        adalah aturan yang hilang pada jalan masuk berikutnya. Yang tidak
+        disebut memakai BAWAAN, bukan maksimum.
+
+
+        ⛔ Sesi aktif yang sudah ada menolak yang baru (409). Dua token hidup
+        untuk satu merchant berarti mengakhiri "sesi support" di layar tidak
+        benar-benar memutus akses, dan owner tidak punya cara mengetahui ada
+        yang kedua.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: "Tidak dipakai endpoint ini; setiap pemberian akses adalah peristiwa tersendiri."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adminLabel, reasonCode]
+              properties:
+                adminLabel:
+                  type: string
+                  description: >-
+                    Siapa dari pihak kami yang meminta, sebagaimana merchant
+                    menuliskannya. Teks bebas dan itu DISENGAJA -- ia bukan
+                    otentikasi melainkan catatan tentang persetujuan siapa yang
+                    diberikan. `spec-f:405` menulis `admin_user_id`, dan kolom
+                    itu mengandaikan tabel pengguna STAF yang tidak ada di
+                    sistem ini: setiap peran di spec-f adalah peran merchant,
+                    dan tabel `user` ber-tenant_id serta tunduk RLS.
+                reasonCode:
+                  type: string
+                  enum:
+                    - investigasi_laporan_bug
+                    - pemulihan_data
+                    - bantuan_konfigurasi
+                    - audit_atas_permintaan_merchant
+                    - lainnya
+                reasonNote:
+                  type: string
+                  nullable: true
+                  description: "Wajib bila reasonCode = lainnya."
+                durationMinutes:
+                  type: integer
+                  minimum: 5
+                  maximum: 1440
+                  description: "Bawaan 120 (2 jam). Maksimum 1440 (24 jam)."
+                writeEnabled:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: "Akses diberikan. `token` muncul di sini dan tidak pernah lagi."
+        "400": { description: "Muatan tidak valid atau alasan di luar daftar" }
+        "403": { description: "Bukan owner" }
+        "409": { description: "Sudah ada sesi support yang aktif" }
+    get:
+      operationId: listSupportSessions
+      summary: F.5 -- daftar sesi support, termasuk riwayatnya.
+      description: >-
+        ⛔ TIDAK dijaga peran. Setiap orang di merchant berhak tahu bahwa pihak
+        kami sedang punya akses ke datanya dan kapan itu berakhir; `spec-f:401`
+        menuntut banner "terlihat di SELURUH layar", dan banner yang hanya
+        muncul untuk owner tidak memenuhi kalimat itu.
+
+
+        ⛔ Riwayat ikut, bukan hanya yang aktif. "Berapa kali support masuk ke
+        data kami, kapan, dan untuk apa" adalah pertanyaan yang merchant berhak
+        jawab tanpa meminta siapa pun, dan daftar yang hanya menampilkan sesi
+        aktif menjawabnya dengan "tidak pernah".
+
+
+        `state` diturunkan di SERVER lewat fungsi domain yang sama dengan yang
+        menjaga aksesnya -- layar yang menghitungnya dari `expiresAt` sendiri
+        akan menampilkan "aktif" untuk sesi yang setiap permintaannya sudah
+        ditolak, karena jam browser merchant bukan jam database.
+      responses:
+        "200": { description: "Daftar sesi, terbaru dulu" }
+
+  /support-sessions/{sessionId}/end:
+    post:
+      operationId: endSupportSession
+      summary: F.5 -- merchant mengakhiri akses support lebih awal.
+      description: >-
+        ⛔ "Diakhiri" DIBEDAKAN dari "kedaluwarsa", dan perbedaannya dicatat di
+        audit. Keduanya berarti akses sudah tidak berlaku, tetapi yang pertama
+        berarti merchant merasa perlu memutus akses lebih awal -- dan riwayat
+        yang menyamakannya menghapus satu-satunya sinyal itu.
+
+
+        ⛔ Kedaluwarsa OTOMATIS tidak memakai endpoint ini dan tidak memakai
+        pekerjaan terjadwal: ia dihitung saat dibaca. Job pembersih yang tidak
+        berjalan -- deploy yang gagal, worker yang mati -- akan membiarkan
+        akses hidup melewati batas yang merchant setujui, tanpa siapa pun
+        melihatnya.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: "Sesi diakhiri" }
+        "403": { description: "Bukan owner" }
+        "404": { description: "Sesi tidak ditemukan" }
+        "409": { description: "Sesi sudah berakhir" }
+
+  /outlets/{outletId}/thresholds:
+    get:
+      operationId: getOutletThresholds
+      summary: B-26 Ambang Otorisasi -- yang disetel dan yang berlaku.
+      description: >-
+        ⛔ Mengembalikan `tersimpan` DAN `berlaku`, dan itu bukan kelebihan
+        data. `tersimpan.selisihKas = null` berarti outlet ini belum menyetel
+        apa pun, dan layar harus menampilkan isian KOSONG dengan bawaannya
+        sebagai petunjuk -- bukan angka bawaan yang terlihat seperti pilihan
+        merchant. `berlaku` adalah yang benar-benar menentukan hari ini.
+
+
+        Layar yang menebak `tersimpan` dari `berlaku` akan menuliskan bawaan
+        sebagai pilihan pada penyimpanan berikutnya, dan sejak saat itu outlet
+        berhenti mengikuti perubahan bawaan tanpa siapa pun memutuskannya.
+
+
+        ⛔ MEMBACA tidak menuntut `threshold_settings`. Kasir yang ditolak
+        PIN-nya berhak tahu ambang mana yang menolaknya. Yang dijaga adalah
+        menulisnya.
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Ambang outlet ini.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AmbangOutlet' }
+        '404':
+          description: Outlet tidak ditemukan (OUTLET_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      operationId: setOutletThresholds
+      summary: B-26 -- menyetel ketiga ambang otorisasi outlet.
+      description: >-
+        ⛔ PUT, bukan PATCH: bidang yang tidak dikirim menjadi `null`, yaitu
+        kembali ke bawaan. Layarnya menampilkan keempat isian sekaligus, dan
+        PATCH yang menyimpan sebagian membuat "kosongkan isian ini" tidak dapat
+        dinyatakan sama sekali -- padahal mengosongkan adalah satu-satunya cara
+        kembali ke bawaan.
+
+
+        ⛔ `null` BERBEDA dari nol. `selisihKas: "0"` berarti SETIAP selisih
+        menuntut otorisasi manajer -- pilihan yang sah untuk merchant yang
+        lacinya kecil, dan yang tidak dapat dinyatakan kalau nol diperlakukan
+        sebagai "tidak diatur".
+
+
+        ⛔ TIDAK ADA nilai yang berarti "tidak pernah menuntut otorisasi".
+        Ambang yang dapat dimatikan adalah kontrol yang hilang pada hari
+        seseorang membutuhkannya, dan yang mematikannya adalah orang yang
+        paling ingin ia mati. Merchant yang menginginkan praktis tanpa PIN
+        menyetel angkanya tinggi -- terlihat sebagai angka, tercatat di
+        `audit_event` sebagai `threshold_changed` dengan nilai lama dan
+        barunya.
+
+
+        RBAC `threshold_settings` = {owner, area_manager}, diturunkan dari
+        IA:205. ⛔ Manajer Outlet sengaja di luar: ambang inilah yang
+        memutuskan kapan persetujuan MANAJER OUTLET dituntut, dan yang dapat
+        menaikkannya dapat menghapus kebutuhan atas persetujuannya sendiri.
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                diskonPersenSkala:
+                  type: string
+                  nullable: true
+                  description: >-
+                    Persen berskala 10.000 sebagai STRING (20% = "2000").
+                    String, bukan number: jalur yang memutuskan kapan PIN
+                    manajer dituntut tidak menyentuh float.
+                diskonNominal: { type: string, nullable: true }
+                selisihKas: { type: string, nullable: true }
+                noSale:
+                  type: integer
+                  nullable: true
+                  description: >-
+                    Berapa pembukaan laci yang BEBAS PIN dalam satu shift.
+                    Pembukaan berikutnya menuntut PIN (spec-d:239).
+      responses:
+        '200':
+          description: Ambang setelah disimpan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AmbangOutlet' }
+        '400':
+          description: Nilai di luar batas wajar (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak mengubah ambang otorisasi (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Outlet tidak ditemukan (OUTLET_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /outlets/{outletId}/prices:
     get:
       operationId: listOutletPrices
@@ -2041,12 +2501,56 @@ paths:
                 name: { type: string, minLength: 1 }
                 email: { type: string, nullable: true }
                 isActive: { type: boolean }
+                roles:
+                  type: array
+                  description: >-
+                    FR-F1. Diganti SELURUHNYA bila dikirim; tidak dikirim
+                    berarti tidak diubah. Sampai 24 Agustus 2026 peran hanya
+                    dapat diberikan saat pengguna DIBUAT -- merchant tidak
+                    dapat menaikkan kasir menjadi manajer outlet sama sekali.
+
+
+                    ⛔ Penjaga yang sama dengan createUser berlaku, DITAMBAH
+                    satu yang hanya ada di sini: peran LAMA target ikut
+                    diperiksa. Tanpa itu, Manajer Outlet -- yang matriks
+                    izinkan mengelola "kasir saja" -- dapat menurunkan seorang
+                    Owner menjadi kasir, dan pemisahan tugas spec-f:91 runtuh
+                    tanpa satu pun aturan terlihat dilanggar.
+                  items:
+                    type: object
+                    required: [role, scopeType, scopeId]
+                    properties:
+                      role:
+                        type: string
+                        enum: [owner, area_manager, outlet_manager, cashier, accountant]
+                      scopeType: { type: string, enum: [tenant, outlet] }
+                      scopeId: { type: string }
+                outletIds:
+                  type: array
+                  description: >-
+                    Diganti seluruhnya bila dikirim. Cakupan peran diperiksa
+                    terhadap daftar ini -- peran bercakupan satu outlet dengan
+                    dua outlet ditolak ROLE_SCOPE_TOO_WIDE.
+                  items: { type: string }
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
+        '400':
+          description: >-
+            Cakupan peran terlalu luas (ROLE_SCOPE_TOO_WIDE, spec-f:31).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >-
+            Tidak berhak mengelola peran ini (FORBIDDEN, spec-f:50) -- berlaku
+            untuk peran LAMA maupun BARU.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404':
           description: Pengguna tidak ditemukan
           content:
@@ -2054,7 +2558,8 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: >-
-            Owner terakhir tidak dapat dinonaktifkan (LAST_OWNER, spec-f:425).
+            Owner terakhir tidak dapat dinonaktifkan MAUPUN dicabut peran
+            ownernya (LAST_OWNER, spec-f:425).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2316,6 +2821,50 @@ paths:
                 $ref: '#/components/schemas/Error'
         '503':
           description: Kunci penandatangan belum diatur di server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /devices/{deviceId}/features:
+    get:
+      operationId: getDeviceFeatures
+      summary: >-
+        `ARCH:358` -- fitur mana yang menyala untuk perangkat ini. Feature flag
+        dan kill switch, per fitur per merchant, tanpa rilis.
+      description: >-
+        Dijawab sebagai BOOLEAN per fitur, bukan sebagai baris `feature_flag`.
+        Perangkat tidak perlu tahu apakah keadaannya datang dari penyimpangan
+        global, penyimpangan merchantnya, atau bawaan kode -- dan mengirimkan
+        barisnya berarti mengirimkan `tenant_id` merchant lain ke perangkat.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Authorization
+          in: header
+          required: false
+          description: "'Bearer <secret perangkat>'. Tidak `required` -- kredensial hilang berarti 401, bukan 400."
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [fitur]
+                properties:
+                  fitur:
+                    type: object
+                    additionalProperties: { type: boolean }
+                    description: >-
+                      Kunci dari `packages/domain/src/fitur.ts`. Fitur yang
+                      dihapus dari daftar berhenti muncul di sini; perangkat
+                      yang belum diperbarui membacanya lewat bawaan kodenya
+                      sendiri.
+        '401':
+          description: Kredensial perangkat tidak sah, dicabut, atau kedaluwarsa
           content:
             application/json:
               schema:
@@ -3060,6 +3609,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /orders/{orderId}/abandon:
+    post:
+      operationId: abandonOrder
+      summary: FR-C3 -- kasir membatalkan satu draf pembayaran, stok dibebaskan seketika.
+      description: >-
+        Jalur QRIS dinamis menulis order ke server SEBELUM pelanggan membayar
+        (spec-c:320 melarang menandai lunas tanpa konfirmasi gateway).
+        Pelanggan yang batal membayar meninggalkan order `open` yang memegang
+        stok -- movement `sale` ditulis saat order DIBUAT, bukan saat dibayar.
+
+
+        ⛔ Pembersihan massal (`POST /orders/cleanup-abandoned`) baru
+        menyentuhnya setelah 24 JAM dan menuntut peran `stock_adjust`. Kasir
+        yang membatalkan di depan pelanggan tidak dapat menunggu keduanya, dan
+        stok yang terkunci sehari membuat produk berikutnya terlihat habis.
+
+
+        ⛔ Ordernya TIDAK dihapus, dan nomor struknya tetap melekat padanya.
+        Nomor yang terpakai untuk order yang dibatalkan jauh lebih baik
+        daripada LUBANG di urutan struk -- 41 dan 43 ada sementara 42 tidak
+        pernah ada di mana pun tidak dapat dijelaskan siapa pun saat diperiksa.
+
+
+        ⛔ Order yang SUDAH dibayar ditolak 409. Membatalkan transaksi lunas
+        adalah void/refund, dengan restock, alasan daftar tertutup, dan baris
+        pembatalnya sendiri; jalan kedua ke sana tidak punya satu pun dari itu.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reasonCode: { type: string }
+      responses:
+        "200": { description: "Draf ditinggalkan, stok dibebaskan" }
+        "403": { description: "Tidak berhak" }
+        "404": { description: "Order tidak ditemukan" }
+        "409": { description: "Order tidak berstatus open" }
 
   /orders/{orderId}/cancel:
     post:
@@ -3849,6 +4446,980 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /reports/exceptions/shift-end-voids:
+    get:
+      operationId: getShiftEndVoidReport
+      summary: >-
+        FR-G5 X2 -- void mendekati atau sesudah tutup shift.
+      description: >-
+        ⛔ Yang dibandingkan `audit_event.occurred_at` dengan `shift.closed_at`,
+        BUKAN dengan jam sekarang. Shift yang belum ditutup tidak punya "60
+        menit terakhir": menghitungnya dari sekarang membuat setiap void pada
+        shift berjalan tertandai selama satu jam lalu berhenti tertandai
+        sendiri -- laporan yang jawabannya berubah tanpa satu pun data
+        berubah.
+
+
+        Void `sesudah_tutup` selalu di atas: ia keadaan yang BERBEDA, bukan
+        sekadar lebih dekat ke penutupan.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, void]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  void:
+                    type: array
+                    items:
+                      type: object
+                      required: [auditId, occurredAt, posisi, aktorId, orderId, nilai]
+                      properties:
+                        auditId: { type: string }
+                        occurredAt: { type: string }
+                        posisi:
+                          type: string
+                          enum: [akhir_shift, sesudah_tutup]
+                        menitKeTutup:
+                          type: integer
+                          nullable: true
+                          description: Menit sebelum tutup; NEGATIF berarti sesudah tutup.
+                        aktorId: { type: string }
+                        aktorNama: { type: string }
+                        orderId: { type: string }
+                        receiptNumber: { type: string }
+                        nilai: { type: string, description: 'STRING -- bigint rupiah.' }
+                        shiftId: { type: string }
+                        outletId: { type: string, nullable: true }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/high-refunds:
+    get:
+      operationId: getHighRefundReport
+      summary: >-
+        FR-G5 X3 -- refund di atas persentil 90, dengan alasan dan penyetujunya.
+      description: >-
+        ⛔ Persentil, bukan ambang rupiah tetap. Kafe yang omzetnya besar punya
+        refund besar; ambang tetap menandai seluruh kasirnya sementara kafe
+        kecil tidak pernah menandai siapa pun. spec-g:153 menyebut prinsipnya:
+        yang dicari VARIASI, bukan nilai absolut.
+
+
+        Ambangnya dihitung dari periode YANG DIMINTA dan ikut dikembalikan --
+        daftar tanpa ambangnya tidak dapat dijelaskan kepada kasir yang
+        namanya ada di sana.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, laporan]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  laporan:
+                    type: object
+                    required: [ambang, jumlahSeluruhRefund, refund]
+                    properties:
+                      ambang:
+                        type: string
+                        description: 'Nilai p90 pada periode ini, STRING rupiah.'
+                      jumlahSeluruhRefund: { type: integer }
+                      refund:
+                        type: array
+                        items:
+                          type: object
+                          required: [refundId, occurredAt, nilai, reasonCode, aktorId, penyetujuId]
+                          properties:
+                            refundId: { type: string }
+                            occurredAt: { type: string }
+                            nilai: { type: string }
+                            reasonCode: { type: string }
+                            reasonNote: { type: string, nullable: true }
+                            aktorId: { type: string }
+                            aktorNama: { type: string }
+                            penyetujuId: { type: string }
+                            penyetujuNama: { type: string }
+                            orderId: { type: string }
+                            receiptNumber: { type: string }
+                            outletId: { type: string, nullable: true }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/no-sales:
+    get:
+      operationId: getNoSaleExceptionReport
+      summary: >-
+        FR-G5 X4 -- frekuensi pembukaan laci tanpa transaksi, per kasir per shift.
+      description: >-
+        Sinyal yang dicari: frekuensi jauh di atas rekan kerja. Dihitung dari
+        `audit_event`, bukan dari kolom hitungan -- kolom hitungan adalah angka
+        kedua yang harus dijaga sepakat dengan jejaknya, dan yang menyimpang di
+        antaranya tidak dapat diputuskan mana yang benar.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, perKasir]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  perKasir:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, name, jumlah, jumlahShift, perShift, rasio]
+                      properties:
+                        userId: { type: string }
+                        name: { type: string }
+                        jumlah: { type: integer }
+                        jumlahShift: { type: integer }
+                        perShift: { type: string, description: 'Rata-rata per shift, satu desimal.' }
+                        rasio: { type: string, description: 'Terhadap rata-rata seluruh kasir.' }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/discounts:
+    get:
+      operationId: getDiscountExceptionReport
+      summary: >-
+        FR-G5 X5 -- diskon manual per kasir: nilai, frekuensi, sebaran alasan.
+      description: >-
+        Sinyal yang dicari bukan diskon besar melainkan diskon yang selalu
+        beralasan sama -- karena itu `alasan` ikut, terurut dari yang tersering.
+
+
+        ⛔ Nilai potongan dibaca dari `audit_event.after.orderDiscount`, BUKAN
+        dari `order.order_discount`. Keduanya sama hari ini, tapi audit adalah
+        yang mencatat SIAPA yang menekannya, dan itu pertanyaan laporan ini.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, perKasir]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  perKasir:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, name, jumlah, nilai, rasio, alasan]
+                      properties:
+                        userId: { type: string }
+                        name: { type: string }
+                        jumlah: { type: integer }
+                        nilai: { type: string, description: 'STRING -- total rupiah potongan.' }
+                        jumlahBerpenyetuju:
+                          type: integer
+                          description: 'Berapa kali diskonnya menuntut PIN manajer.'
+                        rasio: { type: string }
+                        alasan:
+                          type: array
+                          items:
+                            type: object
+                            required: [reasonCode, jumlah]
+                            properties:
+                              reasonCode: { type: string }
+                              jumlah: { type: integer }
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/cash-variance:
+    get:
+      operationId: getCashVarianceExceptionReport
+      summary: >-
+        FR-G5 X7 -- selisih kas per kasir, dengan trennya.
+      description: >-
+        Sinyal yang dicari: selisih KONSISTEN SATU ARAH. Kasir yang kurang
+        Rp 5.000 sekali adalah manusia; kasir yang kurang setiap shift adalah
+        pola.
+
+
+        ⛔ `totalSelisih` DAN `totalMutlak` keduanya dikembalikan, dan itu
+        bukan kelebihan data: kasir yang kurang Rp 50.000 lalu lebih Rp 50.000
+        punya total nol dan mutlak Rp 100.000 -- dua angka yang menceritakan
+        hal yang sangat berbeda.
+
+
+        Selisih TIDAK di-clamp ke positif; arahnya adalah informasinya.
+
+
+        RBAC-nya sama dengan seluruh laporan exception: `report_exception`, dan
+        kasir tidak dapat membukanya. Tanpa bahasa menuduh -- tidak ada skor,
+        tidak ada label; yang dikembalikan angka dan konteks.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Terurut tingkat anomali -- baris teratas paling layak diselidiki.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, perKasir]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  perKasir:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, name, jumlahShift, totalSelisih, totalMutlak, tren]
+                      properties:
+                        userId: { type: string }
+                        name: { type: string }
+                        jumlahShift: { type: integer }
+                        totalSelisih: { type: string, description: 'STRING -- boleh NEGATIF.' }
+                        totalMutlak: { type: string }
+                        jumlahKurang: { type: integer }
+                        jumlahLebih: { type: integer }
+                        tren:
+                          type: string
+                          enum: [naik, turun, datar]
+                          description: >-
+                            `datar` juga berarti deretnya terlalu pendek untuk
+                            menunjukkan kecenderungan -- dua shift tidak
+                            menunjukkan apa pun.
+                        deret:
+                          type: array
+                          items: { type: string }
+                          description: Selisih per shift, terurut waktu.
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/exceptions/clock:
+    get:
+      operationId: getClockExceptionReport
+      summary: >-
+        FR-G5 X8 -- anomali waktu: perangkat yang jamnya menyimpang dari jam
+        server (FR-F8).
+      description: >-
+        ⛔ Membaca `audit_event` bertipe `clock_drift_detected`, BUKAN selisih
+        `occurred_at` vs `recorded_at`. spec-g:164 menggambarkan X8 sebagai
+        selisih besar keduanya "DI LUAR DURASI OFFLINE YANG WAJAR", dan
+        kalimat terakhir itu yang menentukan: selisih keduanya adalah durasi
+        offline pada hampir setiap penjualan yang produk ini ada untuk
+        mendukung. Melaporkannya apa adanya menghasilkan daftar yang seluruh
+        isinya penjualan sehat, dan daftar semacam itu berhenti dibaca pada
+        minggu pertama.
+
+
+        Yang tidak dapat dijelaskan durasi offline adalah dua jam yang
+        sama-sama mengaku "sekarang" tapi berbeda -- dicatat saat perangkat
+        me-relay penjualan, dibatasi satu per perangkat per jam supaya satu
+        tablet yang salah setel tidak mengubur seluruh audit trail.
+
+
+        ⛔ Diurutkan berdasarkan BESAR selisih, bukan waktu (spec-g:166:
+        "baris teratas adalah yang paling layak diselidiki").
+
+
+        ⛔ Tanpa bahasa menuduh. Jam yang meleset jauh lebih sering berarti
+        baterai RTC tablet habis daripada berarti seseorang memanipulasinya.
+
+
+        RBAC-nya sama dengan X1: `report_exception`, dan kasir tidak dapat
+        membukanya.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Daftar anomali, terurut dari selisih terbesar.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, ambangDetik, anomali]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  ambangDetik:
+                    type: integer
+                    description: >-
+                      spec-f:354 -- selisih di atas ini yang dicatat. Ikut di
+                      respons supaya layar tidak menyalinnya.
+                  anomali:
+                    type: array
+                    items:
+                      type: object
+                      required: [auditId, occurredAt, deviceId, aktorId, skewDetik]
+                      properties:
+                        auditId: { type: string }
+                        occurredAt: { type: string }
+                        deviceId: { type: string }
+                        deviceCode: { type: string, nullable: true }
+                        outletId: { type: string, nullable: true }
+                        aktorId: { type: string }
+                        aktorNama: { type: string }
+                        skewDetik:
+                          type: integer
+                          description: Positif = jam perangkat MAJU terhadap server.
+        '400':
+          description: Rentang tidak valid (VALIDATION_ERROR).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat laporan exception (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /reports/daily-summary:
+    get:
+      operationId: getDailySummary
+      summary: FR-G6 -- ringkasan satu hari untuk HP (M-01).
+      description: >-
+        `spec-g:212`: *"Persona P3 membuka aplikasi pukul 23:00 di HP 390x844
+        untuk satu pertanyaan: hari ini bagaimana, dan apakah ada yang aneh."*
+
+
+        ⛔ Angkanya dari `ambilPenjualan` dan `ambilPembayaran` -- fungsi yang
+        SAMA yang /reports/sales dan /reports/payments pakai. Owner yang
+        melihat omzet berbeda tergantung layar mana yang ia buka akan
+        mempercayai yang ia lihat pukul 23:00, dan itu yang paling jarang
+        diperiksa ulang.
+
+
+        ⛔ Delta dibandingkan rata-rata HARI YANG SAMA empat minggu terakhir
+        (spec-g:243), bukan hari sebelumnya. Omzet kafe pada Sabtu dan Selasa
+        berbeda jauh dan itu normal; delta terhadap hari sebelumnya membuat
+        SETIAP SENIN terlihat seperti bencana dan setiap Jumat seperti rekor --
+        dua sinyal palsu setiap minggu, selamanya.
+
+
+        ⛔ `tren.deltaPersen` bernilai `null` bila belum ada cukup hari
+        pembanding, dan itu BUKAN nol. Merchant yang baru dua minggu berjualan
+        tidak punya empat Senin sebelumnya; "0%" untuknya adalah pernyataan
+        yang salah -- ia mengaku omzet hari ini persis sama dengan
+        kebiasaannya, dan kebiasaan itu belum ada. `basisMinggu` menyatakan
+        seberapa kasar pembandingnya.
+
+
+        ⛔ `rataRataPerTransaksi` bernilai `null` untuk NOL transaksi, bukan
+        "Rp 0 per transaksi" -- yang kedua mengaku ada transaksi bernilai nol.
+
+
+        ⛔ `perOutlet` (AC FR-G6 keempat) bernilai `null` saat `outlet_id`
+        DISEBUT, bukan larik berisi satu baris -- rincian dari satu outlet
+        mengulang angka yang sudah tertera di atasnya, dan pengulangan itu
+        membuat pembacanya mencari perbedaan yang tidak ada. Outlet tanpa
+        transaksi tidak muncul sebagai baris nol. Barisnya dihitung
+        `posisiPenjualan` yang sama dengan totalnya, jadi menjumlahkannya
+        selalu menghasilkan `omzetBersih`.
+
+
+        Uang selalu STRING: `bigint` tidak dapat melewati JSON, dan `Number`
+        membuang presisi di atas 2^53.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: >-
+            Tanggal BISNIS, bentuk YYYY-MM-DD. DIKOSONGKAN berarti hari ini,
+            dan yang menghitungnya SERVER -- dari jam database, zona outlet,
+            dan jam tutupnya. Jam HP dapat salah (FR-F8 ada justru karena jam
+            perangkat berbohong cukup sering untuk perlu dideteksi), dan HP
+            yang jamnya maju satu hari akan meminta ringkasan hari yang belum
+            terjadi lalu menerima nol transaksi tanpa satu pun error.
+            Tanpa `outlet_id`, "hari ini" hanya dapat dijawab bila SELURUH
+            outlet aktif sepakat zona waktu dan jam tutupnya -- kalau tidak,
+            400 BUSINESS_DATE_AMBIGUOUS.
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { description: "Ringkasan satu hari" }
+        "400":
+          description: >-
+            Tanggal tidak valid (VALIDATION_ERROR), atau "hari ini" tidak dapat
+            diputuskan karena outlet memakai zona atau jam tutup berbeda
+            (BUSINESS_DATE_AMBIGUOUS).
+        "403": { description: "Tidak berhak" }
+        "404": { description: "Outlet tidak ditemukan" }
+
+  /printer-profiles:
+    get:
+      operationId: listPrinterProfiles
+      summary: Daftar profil printer. Data referensi hardware global.
+      description: >-
+        `ERD:445`: `printer_profile` adalah "data, bukan kode -- menambah model
+        printer = menambah baris". Tabelnya DIKECUALIKAN dari RLS: ia tidak
+        punya `tenant_id`, dan tidak satu pun kolomnya menyebut merchant mana
+        pun. Konsekuensinya dinyatakan -- setiap merchant dapat membacanya.
+
+
+        ⛔ `ORDER BY name` dinyatakan di query. Daftar tanpa urutan adalah
+        tepat cacat yang endpoint ini ada untuk memperbaikinya: sebelum ini,
+        K-09 dan K-15 memilih profil dengan `p[0]` dari query yang tidak punya
+        `ORDER BY` sama sekali.
+      responses:
+        "200": { description: "Daftar profil, urut nama" }
+        "404": { description: "Aktor tidak ditemukan" }
+
+  /peripherals:
+    get:
+      operationId: listPeripherals
+      summary: Peripheral yang terpasang, per outlet atau per perangkat.
+      parameters:
+        - name: device_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { description: "Daftar peripheral" }
+        "404": { description: "Aktor tidak ditemukan" }
+    post:
+      operationId: configurePeripheral
+      summary: Mendaftarkan atau mengonfigurasi ulang satu peripheral.
+      description: >-
+        Menutup lubang TERAKHIR audit trail FR-F6 (`peripheral_configured`).
+
+
+        ⛔ Yang sebenarnya rusak sebelum ini: `printer_profile` sudah turun ke
+        perangkat, dan K-09/K-15 memilih profil dengan `p[0]` -- baris PERTAMA
+        yang query kembalikan, dari query tanpa `ORDER BY`. Merchant dengan
+        tiga model printer mencetak dengan profil yang dipilih urutan baris,
+        bukan dengan printer yang benar-benar tercolok. Tidak ada satu pun
+        error: struk 80 mm dipotong di kolom 32, atau perintah potong tercetak
+        sebagai karakter sampah.
+
+
+        ⛔ Pengiriman ulang dengan `id` yang sama MEMPERBARUI barisnya, bukan
+        ditolak ID_ALREADY_EXISTS. Kasir mengubah profil printernya berkali-kali
+        sampai strukanya benar, dan setiap perubahan adalah konfigurasi ULANG
+        peripheral yang sama. Invariant #2 menjaga transaksi selesai dan
+        katalog, bukan setelan perangkat -- dan riwayat perubahannya ada di
+        `audit_event`, dengan `before` memuat keadaan sebelumnya.
+
+
+        ⛔ Perintah printer TIDAK diterima dari klien, hanya
+        `printerProfileId`. Perangkat yang dapat mengarang perintahnya sendiri
+        adalah perangkat yang dapat mengirim byte apa pun ke printer merchant.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, outletId, type, connection]
+              properties:
+                id: { type: string, description: "ULID/UUIDv7 di-generate klien." }
+                deviceId: { type: string, nullable: true }
+                outletId: { type: string }
+                type: { type: string, enum: [printer, drawer, scanner, display] }
+                connection: { type: string, enum: [usb, bluetooth, network] }
+                address: { type: string, nullable: true }
+                printerProfileId: { type: string, nullable: true }
+                hlc: { type: string }
+                occurredAt: { type: string }
+      responses:
+        "201":
+          description: >-
+            Tersimpan. `baru` membedakan pendaftaran pertama dari konfigurasi
+            ulang -- keduanya 201, dan perbedaannya kalimat yang berbeda di
+            layar.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, outletId, type, connection, baru]
+                properties:
+                  id: { type: string }
+                  deviceId: { type: string, nullable: true }
+                  outletId: { type: string }
+                  type: { type: string }
+                  connection: { type: string }
+                  address: { type: string, nullable: true }
+                  printerProfileId: { type: string, nullable: true }
+                  baru: { type: boolean }
+        "400": { description: "Muatan tidak valid, atau Idempotency-Key hilang" }
+        "403": { description: "Tidak berhak" }
+        "404":
+          description: >-
+            Outlet, perangkat, atau profil printer tidak ditemukan
+            (OUTLET_NOT_FOUND / DEVICE_NOT_FOUND / PRINTER_PROFILE_NOT_FOUND).
+
+  /reports/needs-attention:
+    get:
+      operationId: getNeedsAttention
+      summary: M-01/M-02 -- hal yang perlu diperiksa, untuk Owner mobile.
+      description: >-
+        `IA:§8` mendaftarkan oversell terdeteksi dan pembayaran
+        `pending_confirmation` lebih dari 24 jam sebagai isi bagian "perlu
+        diperiksa" di Owner mobile; `spec-g:231` menggambar selisih kas di
+        wireframe M-01 yang sama.
+
+
+        ⛔ Ia TERTUNGGAK, bukan "terjadi hari ini", dan karena itu tidak
+        disaring per tanggal. Oversell yang belum ditindaklanjuti tiga hari
+        lalu masih perlu ditindaklanjuti malam ini, dan pembayaran yang
+        menggantung 48 jam lebih mendesak daripada yang 25 jam. Daftar yang
+        hanya memuat temuan hari ini mengosongkan dirinya setiap tengah malam.
+
+
+        ⛔ `jumlah` adalah TOTAL, bukan panjang `temuan`. M-01 hanya
+        menampilkan tiga (IA:373); tiga dari sembilan yang tidak menyebut
+        sembilan mengecilkan apa yang menunggu.
+
+
+        ⛔ Yang dikirim DATA, bukan kalimat. Tanpa skor, tanpa label, tanpa
+        kata yang menyalahkan siapa pun (spec-g:168) -- kalimatnya disusun di
+        klien, tempat yang sama yang menyusun kalimat lain di layar itu.
+
+
+        Uang dan kuantitas selalu STRING.
+      parameters:
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Daftar tertunggak, terbaru lebih dulu.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [outletId, jumlah, temuan]
+                properties:
+                  outletId: { type: string, nullable: true }
+                  jumlah: { type: integer }
+                  temuan:
+                    type: array
+                    items:
+                      type: object
+                      required: [jenis, id, outletId, outletNama, nilai, terjadiPada, keterangan]
+                      properties:
+                        jenis:
+                          type: string
+                          enum: [oversell, selisih_kas, pembayaran_menggantung]
+                        id: { type: string }
+                        outletId: { type: string }
+                        outletNama: { type: string, nullable: true }
+                        nilai: { type: string }
+                        terjadiPada: { type: string }
+                        keterangan: { type: string, nullable: true }
+        "403": { description: "Tidak berhak" }
+        "404": { description: "Outlet tidak ditemukan" }
+
+  /reports/stale-price-devices:
+    get:
+      operationId: getStalePriceDevices
+      summary: FR-A7 -- perangkat yang belum menerima perubahan harga terakhir.
+      description: >-
+        `spec-a:220` menyatakan bahwa perangkat offline yang memakai harga lama
+        adalah BENAR: itulah harga yang tercetak dan dibayar pelanggan. Yang
+        TIDAK benar adalah merchant yang menaikkan harga lalu tidak tahu bahwa
+        satu kasirnya masih menjual dengan harga lama -- berhari-hari, tanpa
+        satu pun error di mana pun.
+
+
+        ⛔ "Terakhir terlihat" adalah PROKSI, bukan bukti, dan arahnya SATU
+        ARAH. Checkpoint PowerSync hidup di tabel `ps_*` MILIK PERANGKAT dan
+        server kami tidak dapat membacanya; yang server tahu hanya kapan
+        perangkat terakhir meminta token sinkronisasi.
+
+
+        - `last_seen_at < effective_from` → perangkat PASTI belum menerimanya.
+
+        - `last_seen_at >= effective_from` → BELUM TENTU sudah; replikasinya
+          mungkin masih berjalan.
+
+
+        Layar wajib menyatakan asimetri itu. Merchant yang membaca daftar
+        kosong sebagai "semua perangkat sudah memakai harga baru" menyimpulkan
+        lebih dari yang datanya dukung -- karena itu `jumlahDiperiksa` ikut di
+        respons: daftar kosong dari NOL perangkat berarti hal yang sangat
+        berbeda dari daftar kosong dari sepuluh perangkat.
+
+
+        ⛔ Harga ber-`effective_from` di MASA DEPAN tidak dihitung tertinggal.
+        Harga terjadwal memang belum berlaku untuk siapa pun, dan perangkat
+        yang belum menerimanya belum kehilangan apa pun.
+
+
+        ⛔ RBAC `price_edit`, bukan operasi baru: yang bertanya "perangkat mana
+        yang belum menerima harga baru" adalah orang yang baru mengubah harga
+        itu.
+      parameters:
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Perangkat yang tertinggal, paling lama tidak terlihat lebih dulu.
+        "403": { description: "Tidak berhak mengubah harga" }
+        "404": { description: "Outlet tidak ditemukan" }
+
+  /audit-events:
+    get:
+      operationId: getAuditEvents
+      summary: >-
+        B-22 Audit & Aktivitas -- satu halaman audit trail, terbaru lebih
+        dulu. FR-F6, FR-F7.
+      description: >-
+        ⛔ Paginasi KEYSET, bukan offset. Perangkat yang antreannya terkuras
+        menyisipkan baris ber-`occurred_at` historis DI TENGAH urutan; offset
+        akan melewatkan atau menggandakan baris tepat saat antrean bergerak,
+        dan baris audit yang terlewat tidak meninggalkan lubang yang terlihat.
+        Kursornya pasangan `(occurred_at, id)` -- sama dengan primary key
+        tabel -- dan klien memperlakukannya sebagai nilai buram.
+
+
+        ⛔ Rentang memakai `occurred_at`, bukan `business_date` sebuah order.
+        Sebagian besar peristiwa di sini tidak menempel pada order mana pun,
+        dan yang menempel pun tidak boleh hilang dari trail karena ordernya
+        bertanggal bisnis lain.
+
+
+        ⛔ `before`/`after` TIDAK dikembalikan. Keduanya muatan bebas yang pada
+        `item_updated` akan memuat `cost`, dan FR-F5 melarang HPP sampai ke
+        mata yang tidak berhak. Detail perubahan punya layarnya sendiri (B-03
+        untuk transaksi, B-13 untuk stok) dengan batasnya masing-masing.
+
+
+        ⛔ Jenis peristiwa yang tidak dikenal DITOLAK, bukan dijawab nol baris.
+        Nol baris terlihat persis seperti "tidak ada yang melakukannya", dan
+        salah ketik pada saringan audit adalah cara paling mudah menyimpulkan
+        hal yang salah tentang seseorang.
+
+
+        ⛔ Setiap saringan yang dipakai ikut dikembalikan. Daftar audit yang
+        tidak menyebut apa yang sedang disaring terbaca seperti daftar lengkap.
+
+
+        RBAC `report_exception`. Matriks spec-f:38-53 tidak punya baris untuk
+        audit trail; himpunan peran `report_exception` (owner, manajer area,
+        manajer outlet, akuntan) sama persis dengan minimum IA:201, dan isi
+        trail adalah superset dari X1 yang matriks sudah berikan kepada
+        keempatnya. [ASUMSI] yang dinyatakan, bukan operasi karangan baru.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+        - name: outlet_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: event_type
+          in: query
+          required: false
+          description: Satu nilai dari daftar tertutup; yang asing ditolak 400.
+          schema: { type: string }
+        - name: actor_user_id
+          in: query
+          required: false
+          schema: { type: string }
+        - name: entity_id
+          in: query
+          required: false
+          description: Menelusuri satu objek -- mis. seluruh peristiwa satu order.
+          schema: { type: string }
+        - name: support_only
+          in: query
+          required: false
+          description: >-
+            F.5 -- hanya tindakan yang dilakukan selama sesi akses support.
+            Hanya nilai `true` yang menyalakannya; apa pun selain itu tidak
+            menyaring, sehingga form yang belum diisi tidak diam-diam
+            menyembunyikan seluruh audit non-support.
+
+
+            ⛔ TIDAK ADA kebalikannya. "Sembunyikan tindakan support" adalah
+            saringan yang membuat audit dapat menyembunyikan sebagian dirinya,
+            dan yang paling ingin memakainya adalah pihak yang tindakannya
+            sedang diperiksa.
+
+
+            Penandanya (`supportSessionId` dan `supportAdmin`) ikut di SETIAP
+            baris apa pun saringannya: baris yang dilakukan support terlihat
+            sama persis dengan baris yang orang merchant lakukan sendiri kalau
+            penandanya tidak dibawa.
+          schema: { type: string, enum: ["true"] }
+        - name: cursor
+          in: query
+          required: false
+          description: Nilai buram dari `kursorBerikut` halaman sebelumnya.
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          description: Dijepit ke 200; bukan ditolak.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Satu halaman audit trail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, batas, peristiwa, belumDipancarkan]
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  outletId: { type: string, nullable: true }
+                  eventType: { type: string, nullable: true }
+                  actorUserId: { type: string, nullable: true }
+                  entityId: { type: string, nullable: true }
+                  hanyaSupport:
+                    type: boolean
+                    description: >-
+                      Saringan yang sedang aktif. Ia ikut dikembalikan karena
+                      daftar audit yang tidak menyebut apa yang disaring
+                      terbaca seperti daftar lengkap.
+                  batas: { type: integer }
+                  kursorBerikut:
+                    type: string
+                    nullable: true
+                    description: >-
+                      `null` berarti halaman terakhir. Server mengambil satu
+                      baris lebih banyak daripada yang diminta justru supaya
+                      halaman penuh yang kebetulan pas tidak menghasilkan
+                      tombol yang membuka halaman kosong.
+                  belumDipancarkan:
+                    type: array
+                    description: >-
+                      Peristiwa yang spec-f:288 sebut dan kode belum pancarkan,
+                      diturunkan di domain. FR-F6 AC pertama menuntut setiap
+                      event dalam daftar menghasilkan record; ini jarak yang
+                      tersisa ke sana. Layar menyebutkannya -- trail berlubang
+                      yang terlihat lengkap adalah bentuk paling berbahaya dari
+                      trail yang tidak lengkap.
+                    items: { type: string }
+                  peristiwa:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        [id, occurredAt, recordedAt, eventType, aktorId, aktorNama]
+                      properties:
+                        id: { type: string }
+                        occurredAt: { type: string }
+                        recordedAt: { type: string }
+                        eventType: { type: string }
+                        kelompok:
+                          type: string
+                          nullable: true
+                          description: >-
+                            Kelompok pada tabel spec-f:288. `null` untuk nama
+                            yang tidak lagi dipancarkan siapa pun -- baris lama
+                            tidak dapat ditulis ulang (invariant #2).
+                        entityType: { type: string, nullable: true }
+                        entityId: { type: string, nullable: true }
+                        aktorId: { type: string }
+                        aktorNama: { type: string }
+                        penyetujuId:
+                          type: string
+                          nullable: true
+                          description: >-
+                            FR-F7 -- identitas kedua. `null` bermakna: operasi
+                            ini memang tidak menuntut persetujuan.
+                        penyetujuNama: { type: string, nullable: true }
+                        outletId: { type: string, nullable: true }
+                        outletNama: { type: string, nullable: true }
+                        deviceId: { type: string, nullable: true }
+                        deviceKode: { type: string, nullable: true }
+                        reasonCode: { type: string, nullable: true }
+                        reasonNote: { type: string, nullable: true }
+                        supportSessionId:
+                          type: string
+                          nullable: true
+                          description: >-
+                            F.5 -- PENANDA sesi akses support. `null` berarti
+                            tindakan ini dilakukan langsung oleh orang
+                            merchant.
+
+
+                            ⛔ Ia ikut di SETIAP baris, bukan hanya saat
+                            disaring: `aktorId` pada baris support adalah OWNER
+                            YANG MENYETUJUI akses itu -- nama yang benar secara
+                            faktual, dan yang akan dibaca sebagai "owner
+                            melakukannya sendiri" oleh siapa pun yang tidak
+                            melihat penanda ini.
+                        supportAdmin:
+                          type: string
+                          nullable: true
+                          description: >-
+                            Nama petugas support sebagaimana merchant
+                            menuliskannya saat menyetujui.
+        '400':
+          description: >-
+            Rentang, kursor, batas, atau jenis peristiwa tidak valid
+            (VALIDATION_ERROR / INVALID_CURSOR / UNKNOWN_EVENT_TYPE).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Tidak berhak melihat audit trail (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /reports/exceptions/voids:
     get:
       operationId: getVoidExceptionReport
@@ -4234,6 +5805,179 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /shifts/{shiftId}/count-attempts:
+    post:
+      operationId: recordCountAttempt
+      summary: FR-D2/FR-D3 -- satu percobaan hitungan kas, jalur tulis tersendiri.
+      description: >-
+        `spec-d:127`: *"Kasir tidak dapat mengubah hitungan fisik setelah
+        melihat selisih. Untuk mengoreksi, kasir memasukkan hitungan ulang yang
+        tercatat sebagai PERCOBAAN KEDUA di audit trail."*
+
+
+        ⛔ Endpoint TERSENDIRI, dan itu inti persoalannya. Percobaan yang
+        DITOLAK -- selisih melewati ambang tanpa penyetuju -- dilempar
+        `closeShift` SEBELUM satu pun UPDATE, dan seluruh transaksinya
+        di-rollback. Mencatatnya dari sana berarti tidak mencatatnya sama
+        sekali. Dan justru percobaan yang gagal itulah yang spec ingin
+        buktikan tidak dapat diulang diam-diam: kasir yang mencoba
+        Rp 2.450.000, melihat selisihnya, lalu mengetik Rp 2.485.000 supaya
+        cocok, meninggalkan jejak NOL di jalur tutup kas.
+
+
+        ⛔ Ia TIDAK menyentuh `cash_drawer_shift` sama sekali, dan itu yang
+        membuatnya aman. Endpoint yang menulis percobaan DAN memperbarui shift
+        akan menjadi jalan kedua menuju penutupan -- tanpa pemeriksaan ambang,
+        tanpa penyetuju, tanpa buku kas. Yang ditulis di sini hanya JEJAK.
+
+
+        ⛔ Shift yang sudah TERTUTUP tetap menerima percobaan. Yang dikirim
+        terlambat -- perangkat yang antreannya baru terkuras -- adalah jejak
+        dari SEBELUM penutupan, dan menolaknya menghapus jejak justru pada
+        perangkat yang paling lama offline.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, countedAmount, attemptNumber]
+              properties:
+                id: { type: string }
+                countedAmount:
+                  type: string
+                  description: Rupiah utuh sebagai STRING, konvensi jalur kas.
+                attemptNumber: { type: integer, minimum: 1 }
+                occurredAt: { type: string }
+      responses:
+        "201": { description: "Percobaan tercatat di audit" }
+        "400": { description: "Muatan tidak valid" }
+        "403": { description: "Tidak berhak" }
+        "404": { description: "Shift tidak ditemukan" }
+
+  /shifts/{shiftId}/cash-movements:
+    post:
+      operationId: recordCashMovement
+      summary: FR-D5 -- kas masuk / kas keluar di luar penjualan.
+      description: >-
+        ⛔ Ketiadaannya adalah cacat yang menghasilkan SELISIH PALSU. Saldo laci
+        adalah `saldo_awal + SUM(cash_movement.delta)` (spec-d:14); owner yang
+        mengambil Rp 500.000 dari laci untuk membayar pemasok tanpa cara
+        mencatatnya membuat tutup kas melaporkan kekurangan Rp 500.000,
+        menuntut otorisasi manajer untuk selisih yang sepenuhnya dapat
+        dijelaskan, dan laporan exception FR-G5 menandai kasirnya.
+
+
+        ⛔ TANPA PIN manajer, ditiru dari keputusan void 1 Agustus 2026 --
+        alasan daftar tertutup + audit sebagai kontrolnya. Orang yang mengambil
+        uang dari laci sering satu-satunya orang yang ada, dan ia pemiliknya;
+        penyetuju yang wajib berbeda dari aktor (CHECK di audit_event) membuat
+        fiturnya mustahil dipakai justru oleh yang paling membutuhkannya, dan
+        yang tidak dapat mencatat tetap mengambil uangnya. [ASUMSI] -- spec-d
+        hanya menyatakan alasannya wajib, bukan siapa yang boleh.
+
+
+        ⛔ `jumlah` selalu POSITIF dan `arah` yang menentukan tandanya. Klien
+        yang mengirim -50000 untuk kas MASUK akan mengurangi laci yang
+        seharusnya bertambah, dan tidak ada apa pun di layar yang berbeda.
+
+
+        ⛔ `counterpart_type` diturunkan dari ALASANNYA, bukan dari arahnya
+        (FR-D6). "Ambil pemilik" dan "bayar pemasok" keduanya paid_out dengan
+        jumlah yang sama, tapi yang pertama `owner_draw` dan yang kedua
+        `expense` -- pembukuan yang menyamakannya melaporkan biaya operasional
+        yang tidak pernah terjadi.
+
+
+        ⛔ Shift yang sudah TERTUTUP menolak movement baru: saldo dan
+        selisihnya sudah dihitung dan disetujui, dan menambahkan baris
+        sesudahnya mengubah angka yang seseorang sudah tanda tangani.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: >-
+            WAJIB, dan sengaja TIDAK ditandai `required` -- pola yang sama
+            dengan setiap endpoint idempoten lain di kontrak ini. Validator
+            menjawab `400 VALIDATION_ERROR`, sementara yang dimaksud adalah
+            `MISSING_IDEMPOTENCY_KEY`; "muatan Anda cacat" mengirim klien
+            memeriksa body yang sebenarnya benar. Menandainya `required` juga
+            membuat penjaga di handler tidak dapat dibedakan dari luar --
+            bentuk guard-yang-tidak-teruji yang `CLAUDE.md` catat pada
+            penyetuju refund.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, arah, jumlah, reasonCode]
+              properties:
+                id:
+                  type: string
+                  description: ULID/UUIDv7 dari klien; juga id `cash_movement`-nya.
+                arah: { type: string, enum: [masuk, keluar] }
+                jumlah:
+                  type: string
+                  description: >-
+                    Rupiah utuh POSITIF sebagai string. String, bukan number:
+                    rupiah melampaui 2^53 pada nilai yang masih mungkin di
+                    gudang uang.
+                reasonCode:
+                  type: string
+                  description: Daftar tertutup, berbeda per arah.
+                reasonNote:
+                  type: string
+                  nullable: true
+                  description: WAJIB bila `reasonCode` = `lainnya`.
+                hlc: { type: string }
+                occurredAt: { type: string }
+      responses:
+        '201':
+          description: Movement tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, shiftId, arah, delta, counterpartType]
+                properties:
+                  id: { type: string }
+                  shiftId: { type: string }
+                  arah: { type: string }
+                  delta:
+                    type: string
+                    description: BERTANDA. Negatif untuk kas keluar.
+                  counterpartType: { type: string }
+        '400':
+          description: >-
+            Alasan tidak dikenal (REASON_INVALID), catatan wajib untuk
+            `lainnya` (REASON_NOTE_REQUIRED), atau muatan cacat
+            (VALIDATION_ERROR / MISSING_IDEMPOTENCY_KEY).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Shift tidak ditemukan (SHIFT_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Shift sudah tertutup (SHIFT_NOT_OPEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /shifts/{shiftId}/no-sale:
     post:
       operationId: recordNoSale
@@ -5484,11 +7228,29 @@ components:
                     description: Baris yang belum punya perkiraan tersimpan (ditulis sebelum FR-C12).
     LaporanProduk:
       type: object
-      required: [from, to, outletId, produk]
+      required: [from, to, outletId, margin, produk]
       properties:
         from: { type: string }
         to: { type: string }
         outletId: { type: string, nullable: true }
+        margin:
+          type: boolean
+          description: >-
+            Apakah pemanggil berhak melihat kolom margin (`view_margin`).
+
+
+            ⛔ DINYATAKAN, bukan disimpulkan layar dari ada/tidaknya kunci
+            `margin` pada baris pertama: laporan yang KOSONG tidak punya baris
+            pertama, dan layar yang menyimpulkan dari sana akan menyembunyikan
+            kolomnya untuk owner pada periode tanpa penjualan -- lalu owner
+            menyimpulkan haknya dicabut.
+
+
+            ⛔ `false` TIDAK berarti permintaannya ditolak. `spec-g:99` menulis
+            *"kolom margin tidak muncul untuk peran Kasir"*, bukan "laporan
+            produk tidak dapat dibuka kasir" -- `spec-g:86` justru menandai
+            laporan ini tersedia di perangkat kasir. 403 di sini akan menutup
+            seluruh laporan demi satu kolom.
         produk:
           type: array
           items:
@@ -5516,6 +7278,50 @@ components:
         kuantitasTampil:
           type: string
           description: Bentuk desimal dari `kuantitas`, mis. `"2"` atau `"0,5"`.
+        hpp:
+          type: string
+          description: >-
+            FR-A7 AC ketiga. HPP total baris ini, rupiah utuh sebagai STRING.
+
+
+            ⛔ HANYA ADA bila `margin` bernilai `true`. Kuncinya HILANG untuk
+            yang tidak berhak, bukan bernilai `null` -- kolom kosong tetap
+            memberi tahu bahwa margin ADA dan tidak boleh dilihat.
+
+
+            ⛔ Dihitung dari `order_line.cost_at_sale` -- SNAPSHOT saat
+            penjualan, bukan `item_variation.cost` hari ini. `spec-a:227`
+            menuntutnya persis begitu: merchant yang harga belinya naik pekan
+            depan tidak boleh mendapati margin bulan lalu ikut berubah.
+        margin:
+          type: string
+          description: >-
+            `nilaiKotor - hpp`, rupiah utuh sebagai STRING. Boleh NEGATIF --
+            produk yang dijual rugi itu nyata, dan menjepitnya ke nol
+            menyembunyikan baris yang paling perlu dilihat owner. Hanya ada
+            bila berhak.
+        marginPersen:
+          type: number
+          nullable: true
+          description: >-
+            Margin sebagai persen dari nilai kotor, satu digit desimal. `null`
+            bila nilai kotornya NOL -- bukan 0%: produk yang seluruhnya
+            terjual dengan potongan penuh tidak punya margin persen yang
+            berarti. Hanya ada bila berhak.
+        barisTanpaHpp:
+          type: integer
+          description: >-
+            ⛔ Berapa baris penjualan produk ini yang `cost_at_sale`-nya NOL.
+
+
+            Nol dapat berarti dua hal yang sangat berbeda: merchant belum
+            mengisi HPP, atau produknya memang tidak berbiaya. Keduanya
+            menghasilkan margin 100% yang terlihat meyakinkan, dan yang
+            pertama adalah angka karangan. Layar menyebutkannya. Hanya ada
+            bila berhak.
+        jumlahBaris:
+          type: integer
+          description: Pembanding untuk `barisTanpaHpp`. Hanya ada bila berhak.
         nilaiKotor:
           type: string
           description: Rupiah utuh sebagai STRING -- `bigint`, bukan `number`.
@@ -6177,6 +7983,46 @@ components:
           type: integer
           nullable: true
           description: '`null` = tanpa batas.'
+    AmbangOutlet:
+      type: object
+      required: [outletId, tersimpan, berlaku]
+      properties:
+        outletId: { type: string }
+        tersimpan:
+          type: object
+          description: >-
+            Apa yang outlet ini SETEL. `null` berarti belum disetel dan
+            bawaannya yang berlaku.
+          properties:
+            diskonPersenSkala: { type: string, nullable: true }
+            diskonNominal: { type: string, nullable: true }
+            selisihKas: { type: string, nullable: true }
+            noSale: { type: integer, nullable: true }
+        berlaku:
+          type: object
+          description: Apa yang benar-benar menentukan hari ini. Tidak ada null.
+          required: [diskonPersenSkala, diskonNominal, selisihKas, noSale]
+          properties:
+            diskonPersenSkala: { type: string }
+            diskonNominal: { type: string }
+            selisihKas: { type: string }
+            noSale: { type: integer }
+    ProfilVertikal:
+      type: object
+      required: [id, name, allowNegativeStock, isTenantDefault]
+      properties:
+        id: { type: string }
+        name:
+          type: string
+          description: 'Hanya `fnb` di v1. `retail` menunggu UI-nya (v1.1+).'
+        allowNegativeStock:
+          type: boolean
+          description: >-
+            FR-E4. Satu-satunya kolom perilaku yang benar-benar dibaca kode
+            hari ini -- dan ia dibaca di PERANGKAT, offline.
+        isTenantDefault:
+          type: boolean
+          description: Diwarisi outlet ber-`vertical_profile_id` NULL.
     Error:
       type: object
       required: [error]

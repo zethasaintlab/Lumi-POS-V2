@@ -189,3 +189,74 @@ test('⛔ aturan catatan SATU sumber — sama dengan void dan refund', async () 
   assert.throws(() => assertCancellationReason('void', 'lainnya', kurang));
   assert.doesNotThrow(() => assertCancellationReason('void', 'lainnya', cukup));
 });
+
+// ---------------------------------------------------------------------------
+// Angka yang DIKETIK kasir
+// ---------------------------------------------------------------------------
+//
+// ⛔ Parsernya di domain, bukan di komponen React: ia memutuskan APA YANG SAH
+// sebagai diskon, dan aturan itu tidak boleh punya salinan kedua di layar mana
+// pun — dialog K-03 hari ini, layar diskon per-baris kelak.
+
+test('persen yang diketik jadi bigint berskala 10.000', async () => {
+  const { parseNilaiDiskon } = await import(MOD);
+  assert.equal(parseNilaiDiskon('persen', '15'), 1500n);
+  assert.equal(parseNilaiDiskon('persen', '100'), 10_000n);
+  assert.equal(parseNilaiDiskon('persen', '0'), 0n);
+});
+
+test('⛔ koma DAN titik diterima sebagai pemisah desimal', async () => {
+  const { parseNilaiDiskon } = await import(MOD);
+  // Kasir Indonesia mengetik "12,5"; papan ketik numerik perangkat mengetik
+  // "12.5". Menolak salah satunya berarti separuh perangkat tidak dapat
+  // memberi diskon pecahan sama sekali.
+  assert.equal(parseNilaiDiskon('persen', '12,5'), 1250n);
+  assert.equal(parseNilaiDiskon('persen', '12.5'), 1250n);
+});
+
+test('⛔ digit desimal persen diturunkan dari SKALA, bukan dipilih', async () => {
+  const { parseNilaiDiskon } = await import(MOD);
+  const { SKALA_TARIF } = await import('../../packages/domain/src/numeric.ts');
+
+  // "15%" adalah rate 0,15 — berskala 10.000 ia 1500. Angka persennya sendiri
+  // karena itu berskala SKALA_TARIF/100, yaitu tepat dua digit desimal.
+  // Digit ketiga adalah angka yang tidak dapat disimpan; menerimanya berarti
+  // memotongnya diam-diam.
+  assert.equal(parseNilaiDiskon('persen', '12,55'), 1255n);
+  assert.equal(parseNilaiDiskon('persen', '12,555'), null);
+  assert.equal(String(SKALA_TARIF / 100n).length - 1, 2);
+});
+
+test('⛔ nominal TIDAK menerima desimal — uang di sini rupiah utuh', async () => {
+  const { parseNilaiDiskon } = await import(MOD);
+  assert.equal(parseNilaiDiskon('nominal', '5000'), 5000n);
+  // "5000,50" yang diterima lalu dipotong adalah potongan yang berbeda dari
+  // yang diketik, tanpa satu pun peringatan.
+  assert.equal(parseNilaiDiskon('nominal', '5000,50'), null);
+  assert.equal(parseNilaiDiskon('nominal', '5.000'), null);
+});
+
+test('masukan setengah jadi mengembalikan null, tidak melempar', async () => {
+  const { parseNilaiDiskon } = await import(MOD);
+  // Keadaan NORMAL saat orang sedang mengetik. Lemparan di sini akan
+  // menjatuhkan render dialog pada ketukan pertama.
+  for (const teks of ['', '  ', ',', 'abc', '-5', '1e2', '101']) {
+    assert.equal(parseNilaiDiskon('persen', teks), null, `"${teks}" tidak ditolak`);
+  }
+  // "12," adalah keadaan di TENGAH pengetikan "12,5", dan ia dibaca 12% —
+  // bukan ditolak. Layar yang menampilkan error pada koma yang baru diketik
+  // membuat kasir menghapus dan mengulang angka yang sebenarnya benar.
+  assert.equal(parseNilaiDiskon('persen', '12,'), 1200n);
+});
+
+test('format persen adalah kebalikan parse, tanpa nol desimal', async () => {
+  const { parseNilaiDiskon, formatPersenDiskon } = await import(MOD);
+  assert.equal(formatPersenDiskon(1500n), '15');
+  assert.equal(formatPersenDiskon(1250n), '12,5');
+  assert.equal(formatPersenDiskon(1255n), '12,55');
+  assert.equal(formatPersenDiskon(2000n), '20');
+  for (const teks of ['15', '12,5', '12,55', '0', '100']) {
+    const nilai = parseNilaiDiskon('persen', teks);
+    assert.equal(parseNilaiDiskon('persen', formatPersenDiskon(nilai)), nilai);
+  }
+});

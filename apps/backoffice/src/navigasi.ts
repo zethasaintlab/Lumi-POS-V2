@@ -118,19 +118,68 @@ export const NAVIGASI: readonly GrupNavigasi[] = [
         aksesMinimum: 'outlet_manager',
         operasi: 'report_exception',
       },
-      { id: 'B-22', label: 'Audit & Aktivitas', icon: 'book', aksesMinimum: 'outlet_manager' },
+      {
+        id: 'B-22',
+        label: 'Audit & Aktivitas',
+        icon: 'book',
+        aksesMinimum: 'outlet_manager',
+        // ⛔ `report_exception`, dan itu `[ASUMSI]` yang dinyatakan — lihat
+        // `reporting/index.ts`. Matriks `spec-f:38-53` tidak punya baris untuk
+        // audit trail; himpunan peran operasi ini sama persis dengan minimum
+        // `IA:201`, dan isi audit trail adalah SUPERSET dari X1 yang matriks
+        // sudah berikan kepada keempat peran itu. Menolak trail sambil
+        // memberikan X1 tidak melindungi apa pun.
+        operasi: 'report_exception',
+      },
     ],
   },
   {
     group: 'Pengaturan',
     items: [
       { id: 'B-23', label: 'Outlet', icon: 'map-pin', aksesMinimum: 'area_manager' },
-      { id: 'B-24', label: 'Profil vertikal', icon: 'settings', aksesMinimum: 'owner' },
+      {
+        id: 'B-24',
+        label: 'Profil vertikal',
+        icon: 'settings',
+        aksesMinimum: 'owner',
+        // ⛔ `outlet_manage` (owner saja), dipakai ulang alih-alih operasi
+        // baru: profil vertikal menentukan perilaku SELURUH outlet yang
+        // mewarisinya, dan himpunan perannya sama persis dengan membuat
+        // outlet. Operasi baru yang himpunannya identik hanya menambah baris
+        // ke matriks yang spec tidak nyatakan.
+        operasi: 'outlet_manage',
+      },
       { id: 'B-25', label: 'Pajak', icon: 'file', aksesMinimum: 'owner' },
-      { id: 'B-26', label: 'Ambang otorisasi', icon: 'lock', aksesMinimum: 'area_manager' },
+      {
+        id: 'B-26',
+        label: 'Ambang otorisasi',
+        icon: 'lock',
+        aksesMinimum: 'area_manager',
+        // ⛔ `threshold_settings` = {owner, area_manager}, diturunkan dari
+        // `IA:205`. Manajer Outlet sengaja di luar: ambang inilah yang
+        // memutuskan kapan persetujuan MANAJER OUTLET dituntut, dan yang dapat
+        // menaikkannya dapat menghapus kebutuhan atas persetujuannya sendiri.
+        operasi: 'threshold_settings',
+      },
       { id: 'B-27', label: 'Pengguna & Peran', icon: 'user', aksesMinimum: 'outlet_manager' },
       { id: 'B-28', label: 'Perangkat', icon: 'register', aksesMinimum: 'outlet_manager' },
       { id: 'B-29', label: 'Langganan & Batas', icon: 'star', aksesMinimum: 'owner' },
+      {
+        // F.5 — akses support. TIDAK di `IA:§3.3`, dan itu dinyatakan: peta
+        // layar berhenti di B-29, sementara `spec-f:391` menuntut fiturnya
+        // ada. Ia diberi nomor berikutnya alih-alih diselipkan ke layar lain.
+        //
+        // ⛔ `aksesMinimum: 'cashier'` — MEMBACA riwayat terbuka untuk semua
+        // peran. `spec-f:401` menuntut akses support "sangat terlihat", dan
+        // menyembunyikan menunya dari staf berarti orang yang sedang bekerja
+        // di layar itu tidak punya cara memeriksa siapa lagi yang melihatnya.
+        // Yang dijaga adalah MEMBERI-nya (`support_grant`, owner saja), dan
+        // itu ditegakkan server plus disembunyikan formulirnya di layar.
+        id: 'B-30',
+        label: 'Akses Support',
+        icon: 'shield',
+        aksesMinimum: 'cashier',
+      },
     ],
   },
 ];
@@ -163,11 +212,15 @@ export const LAYAR_SIAP: ReadonlySet<string> = new Set<string>([
   'B-19',
   'B-20',
   'B-21',
+  'B-22',
   'B-23',
+  'B-24',
   'B-25',
+  'B-26',
   'B-27',
   'B-28',
   'B-29',
+  'B-30',
 ]);
 
 export function cariItem(id: string): ItemNavigasi | undefined {
@@ -232,9 +285,15 @@ export function hanyaAkuntan(peran: readonly string[]): boolean {
  * dibuang — judul grup tanpa satu pun menu di bawahnya terbaca seperti menu
  * yang gagal dimuat.
  *
- * Penambahannya per ITEM, bukan per grup. Membuka grup Pengawasan borongan
- * akan menyeret B-22 (Audit & Aktivitas) ikut — layar yang tidak punya operasi
- * di matriks dan yang tidak seorang pun putuskan untuk Akuntan.
+ * Penambahannya per ITEM, bukan per grup — dan itu tetap benar meski kini
+ * kedua item Pengawasan menuntut operasi yang sama. Grup berikutnya yang lahir
+ * di luar `GRUP_AKUNTAN` akan punya item tanpa operasi, dan membukanya
+ * borongan berarti memberi Akuntan layar yang tidak seorang pun putuskan
+ * untuknya.
+ *
+ * ⛔ B-22 mendapat `report_exception` sejak 23 Agustus 2026, dan itu `[ASUMSI]`
+ * yang dinyatakan: matriks `spec-f` tidak punya baris untuk audit trail. Lihat
+ * catatan di entri navigasinya dan di `reporting/index.ts`.
  */
 export function navigasiUntuk(peran: readonly string[]): GrupNavigasi[] {
   const semua = NAVIGASI.map((g) => ({ ...g, items: [...g.items] }));

@@ -1,5 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import type { PoolClient } from '../../db.ts';
+import {
+  AMBANG_SKEW_DETIK,
+  hitungSkew,
+  layakDicatat,
+  uraikanJamPerangkat,
+  type Skew,
+} from '../../../../../packages/domain/src/jam-perangkat.ts';
+import type { PeristiwaAudit } from '../../../../../packages/domain/src/audit-peristiwa.ts';
 import { HttpError } from '../../http-error.ts';
+import { sesiSupportSekarang } from '../../konteks-permintaan.ts';
 
 /**
  * Permukaan publik modul `audit` — irisan minimal Modul F.
@@ -27,7 +37,17 @@ export interface AuditEventInput {
   actorUserId: string;
   /** `null` untuk operasi yang tidak butuh persetujuan (mis. void). */
   approverUserId: string | null;
-  eventType: string;
+  /**
+   * ⛔ Daftar TERTUTUP (`packages/domain/src/audit-peristiwa.ts`), bukan
+   * `string`.
+   *
+   * Sampai 23 Agustus 2026 ia `string`, dan delapan belas nama tersebar di dua
+   * belas berkas tanpa satu pun terdaftar. Ejaan yang menyimpang tidak
+   * menghasilkan error — ia menghasilkan baris audit yang tidak pernah cocok
+   * dengan saringan mana pun, dan laporan yang melewatkannya terlihat persis
+   * seperti laporan yang tidak menemukan apa pun.
+   */
+  eventType: PeristiwaAudit;
   entityType: string | null;
   entityId: string | null;
   reasonCode: string | null;
@@ -36,6 +56,17 @@ export interface AuditEventInput {
   after?: unknown;
   hlc: bigint;
   occurredAt?: string | null;
+  /**
+   * F.5 — PENANDA sesi support (`spec-f:412`: *"Setiap tindakan selama sesi
+   * support tercatat dengan penanda"*).
+   *
+   * ⛔ Kolom, bukan jenis peristiwa tersendiri. Tindakan yang dilakukan selama
+   * sesi support adalah tindakan yang SAMA — `item_updated` tetap
+   * `item_updated` — dan memberinya nama lain berarti setiap laporan yang
+   * menyaring per jenis diam-diam melewatkan yang dilakukan support. Yang
+   * berubah bukan APA yang terjadi, melainkan atas nama siapa.
+   */
+  supportSessionId?: string | null;
 }
 
 /**
@@ -74,11 +105,11 @@ export async function recordAuditEvent(client: PoolClient, event: AuditEventInpu
     `INSERT INTO audit_event (
        id, tenant_id, outlet_id, device_id, actor_user_id, approver_user_id,
        event_type, entity_type, entity_id, before, after, reason_code, reason_note,
-       occurred_at, hlc
+       occurred_at, hlc, support_session_id
      ) VALUES (
        $1, $2, $3, $4, $5, $6,
        $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13,
-       COALESCE($14::timestamptz, now()), $15
+       COALESCE($14::timestamptz, now()), $15, $16
      )`,
     [
       event.id,
@@ -96,6 +127,160 @@ export async function recordAuditEvent(client: PoolClient, event: AuditEventInpu
       event.reasonNote,
       event.occurredAt ?? null,
       event.hlc.toString(),
+      // ⛔ Konteks permintaan menang bila field-nya tidak diisi eksplisit.
+      // Itu yang membuat penanda mustahil terlupa oleh handler berikutnya.
+      event.supportSessionId ?? sesiSupportSekarang(),
     ]
   );
+}
+
+export interface PerubahanServer {
+  tenantId: string;
+  actorUserId: string;
+  eventType: PeristiwaAudit;
+  entityType: string;
+  entityId: string | null;
+  /** ⛔ WAJIB untuk perubahan; `undefined` hanya sah untuk pembuatan. */
+  before?: unknown;
+  after?: unknown;
+  /** Diisi hanya bila perubahannya memang milik satu outlet. */
+  outletId?: string | null;
+}
+
+/**
+ * Mencatat perubahan konfigurasi/katalog yang terjadi DI SERVER, lewat
+ * back-office. FR-F6 AC kedua: *"`before`/`after` terisi untuk semua perubahan
+ * konfigurasi dan harga."*
+ *
+ * ## ⛔ Kenapa satu pembungkus dan bukan `recordAuditEvent` langsung
+ *
+ * Empat belas endpoint mutasi katalog, harga, stok, dan pajak menulis peristiwa
+ * yang bentuknya identik: tanpa perangkat, tanpa penyetuju, tanpa alasan, dan
+ * tanpa HLC. Menyalin lima field tetap ke empat belas tempat berarti empat
+ * belas kesempatan salah menuliskan salah satunya — dan yang paling mudah
+ * salah adalah `hlc`, yang tipenya `bigint` dan yang nilai benarnya justru
+ * nol.
+ *
+ * ## ⛔ `hlc: 0n` adalah nilai yang JUJUR, bukan placeholder
+ *
+ * HLC menyatakan urutan kausal terhadap peristiwa perangkat. Perubahan yang
+ * terjadi di back-office tidak punya perangkat, jadi ia tidak berhak
+ * mengklaim posisi dalam urutan itu. Mengarang HLC dari jam server akan
+ * menempatkannya di antara dua peristiwa kasir yang tidak pernah melihatnya.
+ *
+ * ## ⛔ Tanpa penyetuju, dan itu bukan kelalaian
+ *
+ * Tidak satu pun operasi di sini menuntut otorisasi step-up: matriks
+ * `spec-f:38-53` memberi `catalog_edit`, `price_edit`, `stock_adjust`, dan
+ * `tax_settings` sebagai hak PERAN, bukan sebagai tindakan yang perlu
+ * disetujui orang kedua. Mengisi `approverUserId` dengan aktor akan ditolak
+ * `CHECK` di database — dan seharusnya begitu.
+ */
+export async function catatPerubahanServer(
+  client: PoolClient,
+  p: PerubahanServer
+): Promise<void> {
+  await recordAuditEvent(client, {
+    id: randomUUID(),
+    tenantId: p.tenantId,
+    outletId: p.outletId ?? null,
+    deviceId: null,
+    actorUserId: p.actorUserId,
+    approverUserId: null,
+    eventType: p.eventType,
+    entityType: p.entityType,
+    entityId: p.entityId,
+    reasonCode: null,
+    reasonNote: null,
+    before: p.before,
+    after: p.after,
+    hlc: 0n,
+  });
+}
+
+/**
+ * FR-F8 — mencatat jam perangkat yang menyimpang. `spec-f:354`.
+ *
+ * *"Saat perangkat tersinkron, sistem membandingkan jam perangkat dengan jam
+ * server. Selisih > 5 menit menghasilkan `audit_event` type
+ * `clock_drift_detected`."*
+ *
+ * ## ⛔ Ia TIDAK PERNAH menolak apa pun
+ *
+ * Jam yang meleset bukan alasan menolak penjualan — uangnya sudah diterima
+ * merchant, dan menolaknya berarti kehilangan penjualan karena baterai jam
+ * sebuah tablet habis. Aturan yang sama dengan selisih hitungan
+ * (`spec-h:95`): ditandai, tidak ditolak.
+ *
+ * ## ⛔ Ia juga tidak pernah MELEMPAR
+ *
+ * Pemanggilnya jalur penjualan. Deteksi fraud yang menjatuhkan penulisan
+ * penjualan adalah pertukaran yang tidak pernah benar — dan kegagalan
+ * menulisnya sudah cukup terlihat lewat ketiadaan barisnya.
+ *
+ * `null` bila header tidak ada, jamnya wajar, atau baru saja dicatat.
+ */
+export async function catatDriftJam(
+  client: PoolClient,
+  opsi: {
+    tenantId: string;
+    outletId: string | null;
+    deviceId: string;
+    actorUserId: string;
+    /** Isi header `X-Device-Time`, apa adanya. */
+    headerJam: unknown;
+    hlc: bigint;
+    idBaru: () => string;
+  }
+): Promise<Skew | null> {
+  const perangkatMs = uraikanJamPerangkat(opsi.headerJam);
+  if (perangkatMs === null) return null;
+
+  try {
+    // ⛔ Jam SERVER dibaca dari DATABASE, bukan `Date.now()` di Node. Dua
+    // mesin yang jamnya berselisih beberapa detik akan menandai armada yang
+    // sehat; aturan yang sama dengan resolusi harga (`CLAUDE.md`).
+    const { rows: jam } = await client.query<{ ms: string }>(
+      `SELECT (EXTRACT(epoch FROM now()) * 1000)::bigint AS ms`
+    );
+    const serverMs = Number(jam[0].ms);
+    const skew = hitungSkew(perangkatMs, serverMs);
+    if (!skew.menyimpang) return null;
+
+    // ⛔ Dibatasi satu per perangkat per jam, dan batasnya diturunkan dari
+    // `audit_event` yang sudah ada — bukan dari kolom hitungan di `device`.
+    // Pola yang sama dengan ambang no-sale: kolom hitungan adalah angka kedua
+    // yang harus dijaga sepakat dengan jejaknya.
+    const { rows: terakhir } = await client.query<{ ms: string }>(
+      `SELECT (EXTRACT(epoch FROM max(occurred_at)) * 1000)::bigint AS ms
+         FROM audit_event
+        WHERE event_type = 'clock_drift_detected' AND device_id = $1`,
+      [opsi.deviceId]
+    );
+    const terakhirMs = terakhir[0]?.ms == null ? null : Number(terakhir[0].ms);
+    if (!layakDicatat(terakhirMs, serverMs)) return skew;
+
+    await recordAuditEvent(client, {
+      id: opsi.idBaru(),
+      tenantId: opsi.tenantId,
+      outletId: opsi.outletId,
+      deviceId: opsi.deviceId,
+      actorUserId: opsi.actorUserId,
+      approverUserId: null,
+      eventType: 'clock_drift_detected',
+      entityType: 'device',
+      entityId: opsi.deviceId,
+      reasonCode: null,
+      reasonNote: null,
+      // ⛔ Angkanya masuk `after`, bukan ke pesan teks. Laporan X8 membacanya
+      // untuk mengurutkan; kalimat harus diurai ulang oleh siapa pun yang
+      // ingin membandingkan dua perangkat.
+      after: { skewDetik: skew.detik, ambangDetik: AMBANG_SKEW_DETIK },
+      hlc: opsi.hlc,
+    });
+    return skew;
+  } catch {
+    // Lihat catatan kepala: jalur penjualan tidak boleh jatuh karena deteksi.
+    return null;
+  }
 }

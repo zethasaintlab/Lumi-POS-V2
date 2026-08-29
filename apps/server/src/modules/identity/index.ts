@@ -7,6 +7,7 @@ import { createTokenHandlers, type KonfigToken } from './handlers/tokens.ts';
 import { createTelemetryHandlers } from './handlers/telemetry.ts';
 import { createUserHandlers } from './handlers/users.ts';
 import { createAuthHandlers } from './handlers/auth.ts';
+import { createSupportHandlers } from './handlers/support.ts';
 import { buatPinHasher } from './pin-hasher.ts';
 import { bolehkah } from '../../../../../packages/domain/src/rbac.ts';
 
@@ -307,6 +308,10 @@ export function createIdentityHandlers(
   const hasher = buatPinHasher();
   return {
     ...createDeviceHandlers(pool),
+    // F.5 — akses support. Ia di modul identity karena yang diberikan adalah
+    // KREDENSIAL, dan `support_session.token_hash` bersaudara dengan
+    // `user_session.token_hash` dan `device.token_hash`.
+    ...createSupportHandlers(pool, hlc),
     ...createTokenHandlers(pool, konfigToken),
     ...createTelemetryHandlers(pool),
     ...createUserHandlers(pool, hasher, hlc),

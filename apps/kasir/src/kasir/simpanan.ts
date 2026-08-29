@@ -8,18 +8,26 @@ import { keranjangKosong, type Keranjang } from './keranjang.ts';
  * K-03 dan K-06 adalah dua layar berbeda dengan router yang membongkar
  * komponennya. State React di K-03 hilang begitu kasir menekan Bayar.
  *
- * ## ⛔ BATAS YANG HARUS DINYATAKAN: keranjang ini hanya di MEMORI
+ * ## ⛔ Modul ini tetap MEMORI SAJA — yang durable ada di tempat lain
  *
- * Ia hilang bila aplikasi dimuat ulang atau perangkat mati sebelum penjualan
- * disimpan. Itu **bukan** kehilangan uang — penjualan baru ada setelah
- * `simpanPenjualan` menulisnya, dan sebelum itu tidak ada uang yang berpindah
- * — tapi kasir harus memasukkan ulang pesanannya.
+ * Sejak KEP-21 (24 Agustus 2026) keranjang juga ditulis ke `keranjang_lokal`
+ * lewat `keranjang-simpan.ts`, dan K-03 memulihkannya saat boot. Modul ini
+ * **tidak** ikut menuliskannya, dan itu keputusan: ia dipanggil dari render
+ * React dan harus tetap sinkron, sementara penulisan database asinkron.
+ * Menyembunyikan I/O di balik setter sinkron menghasilkan kegagalan tulis
+ * yang tidak dapat ditangani siapa pun.
  *
- * Skema sudah menyiapkan jalan keluarnya: `order.status = 'open'` dan
- * `owned_by_device_id` ada di ERD justru untuk keranjang yang bertahan
- * (KEP-21). Membangunnya berarti menulis order sebelum dibayar, dan itu
- * keputusan tersendiri — order `open` yang tidak pernah dibayar akan muncul
- * di laporan dan harus punya jalan penutupan. Dicatat, bukan didiamkan.
+ * Yang memutuskan KAPAN menulis karena itu layarnya (efek di `Kasir.tsx`),
+ * dan yang membersihkannya adalah transaksi penjualan — lihat
+ * `keranjang-simpan.ts` untuk kenapa pembersihan harus ada di dalamnya.
+ *
+ * ## Batas yang tetap berlaku
+ *
+ * Keranjang ini milik PERANGKAT INI. Berbagi order antar device saat offline
+ * adalah non-goal v1 yang dinyatakan (`PRD` § 4), dan `order.status = 'open'`
+ * + `owned_by_device_id` di ERD sengaja TIDAK dipakai — menulis baris `order`
+ * berarti mengirimkannya ke server, dan order `open` yang tidak pernah dibayar
+ * muncul di laporan tanpa punya jalan penutupan.
  */
 
 let kini: Keranjang = keranjangKosong();

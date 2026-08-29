@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppShell, EmptyState, Icon } from 'ds';
 import 'ds/styles.css';
 // SETELAH `ds/styles.css`. Ia memberi jangkar tinggi yang `base.css` design
 // system tidak sediakan — lihat komentar di berkasnya.
 import './backoffice.css';
+import { SupportLayar } from './support/Support.tsx';
+import { pesanBanner, type SesiSupport } from './support/banner.ts';
 import {
   LAYAR_SIAP,
   BERANDA_AKUNTAN,
@@ -12,7 +14,7 @@ import {
   hanyaAkuntan,
   navigasiUntuk,
 } from './navigasi.ts';
-import { PenyediaSesi, useSesi } from './sesi.tsx';
+import { PenyediaSesi, useSesi } from '../../../packages/klien-api/src/sesi.tsx';
 import { Masuk } from './Masuk.tsx';
 import { Daftar } from './daftar/Daftar.tsx';
 import { Tombol } from './Tombol.tsx';
@@ -28,6 +30,9 @@ import { KasirLaporanLayar } from './laporan/Kasir.tsx';
 import { PembayaranLayar } from './laporan/Pembayaran.tsx';
 import { EksporLayar } from './laporan/Ekspor.tsx';
 import { ExceptionLayar } from './pengawasan/Exception.tsx';
+import { AuditLayar } from './pengawasan/Audit.tsx';
+import { AmbangLayar } from './pengaturan/Ambang.tsx';
+import { VertikalLayar } from './pengaturan/Vertikal.tsx';
 import { RiwayatLayar } from './penjualan/Riwayat.tsx';
 import { StokLayar } from './inventori/Stok.tsx';
 import { ShiftLayar } from './penjualan/Shift.tsx';
@@ -136,7 +141,7 @@ function PintuPublik() {
 }
 
 function Terlindungi() {
-  const { sesi, keluar } = useSesi();
+  const { sesi, keluar, api } = useSesi();
   const [aktif, setAktif] = useState('B-01');
 
   if (!sesi) return <PintuPublik />;
@@ -166,6 +171,32 @@ function Terlindungi() {
   const item = cariItem(layar);
   const grup = grupUntuk(layar);
 
+  /* ⛔ F.5 — banner dibaca ULANG secara berkala, bukan sekali saat masuk.
+     Sesi support dapat diberikan dari perangkat lain (owner di ponselnya) dan
+     dapat berakhir sendiri saat `expires_at` lewat. Banner yang hanya dibaca
+     sekali menampilkan keadaan yang benar pada saat login dan berbohong
+     sesudahnya — ke dua arah.
+
+     ⛔ Kegagalannya DITELAN dan banner lama DIPERTAHANKAN. Respons yang tidak
+     sampai bukan "tidak ada akses support"; menghilangkan banner karena
+     jaringan putus adalah kebohongan yang persis berlawanan dengan gunanya. */
+  const [pesanSupport, setPesanSupport] = useState<string | null>(null);
+  const muatBanner = useCallback(async () => {
+    try {
+      const hasil = await api.minta<{ sessions: SesiSupport[] }>('/support-sessions');
+      const aktifSesi = hasil.sessions.find((s) => s.state === 'aktif') ?? null;
+      setPesanSupport(pesanBanner(aktifSesi));
+    } catch {
+      // Dipertahankan apa adanya. Lihat catatan di atas.
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void muatBanner();
+    const jam = setInterval(() => void muatBanner(), 60_000);
+    return () => clearInterval(jam);
+  }, [muatBanner]);
+
   return (
     <AppShell
       brand={{ name: 'Lumi POS', logo: <LogoLumi /> }}
@@ -186,6 +217,21 @@ function Terlindungi() {
       }}
     >
       <div className="stack" style={{ gap: 'var(--space-4)' }}>
+        {/* ⛔ F.5 — banner akses support, DI SINI dan bukan di tiap layar.
+            `spec-f:401`: "banner menonjol di SELURUH layar saat sesi aktif".
+            Dirender di atas `children` `AppShell`, jadi ia ada di setiap layar
+            tanpa satu pun dari mereka perlu mengingatnya — banner yang harus
+            dipasang per layar akan hilang di layar berikutnya.
+
+            ⛔ Tidak dijaga peran: setiap orang di merchant berhak tahu bahwa
+            pihak kami sedang punya akses ke datanya. */}
+        {pesanSupport && (
+          <div className="card" role="status">
+            <p className="t-body-md">
+              <strong>Akses support sedang aktif.</strong> {pesanSupport}
+            </p>
+          </div>
+        )}
         {/* B-01 adalah layar pertama yang merchant lihat — `aktif` bermula di
             sini, dan itu memang alamat berandanya. */}
         {layar === 'B-01' ? <DasborLayar onBuka={setAktif} /> : null}
@@ -209,10 +255,14 @@ function Terlindungi() {
         {layar === 'B-19' ? <PembayaranLayar /> : null}
         {layar === 'B-20' ? <EksporLayar /> : null}
         {layar === 'B-21' ? <ExceptionLayar /> : null}
+        {layar === 'B-22' ? <AuditLayar /> : null}
         {layar === 'B-23' ? <OutletLayar /> : null}
+        {layar === 'B-24' ? <VertikalLayar /> : null}
         {layar === 'B-25' ? <PajakLayar /> : null}
+        {layar === 'B-26' ? <AmbangLayar /> : null}
         {layar === 'B-27' ? <PenggunaLayar /> : null}
         {layar === 'B-28' ? <PerangkatLayar /> : null}
+        {layar === 'B-30' ? <SupportLayar onBerubah={() => void muatBanner()} /> : null}
 
         {item && !LAYAR_SIAP.has(item.id) ? (
           <EmptyState

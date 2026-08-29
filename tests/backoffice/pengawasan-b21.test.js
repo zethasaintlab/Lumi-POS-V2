@@ -1,6 +1,7 @@
 'use strict';
 
-// B-21 — Riwayat Void & Refund (FR-G5 X1), aturan tampilannya.
+// B-21 — aturan tampilan X1 (void & refund per pelaku). Daftar kedelapan
+// laporan dan aturan bersamanya diuji di `pengawasan-b21-daftar.test.js`.
 //
 // ⛔ Kenapa aturannya dipisahkan dari komponen: layar ini MENAMAI ORANG.
 // Ia satu-satunya layar back-office yang menempatkan nama pegawai di sebelah
@@ -19,6 +20,13 @@ const { join } = require('node:path');
 
 const AKAR = join(__dirname, '..', '..');
 const B21 = '../../apps/backoffice/src/pengawasan/b21.ts';
+const DAFTAR = '../../apps/backoffice/src/pengawasan/b21-daftar.ts';
+
+/** Keadaan layar dinilai lewat definisi laporannya — lihat `b21-daftar.ts`. */
+async function pesanX1(keadaan, namaOutlet) {
+  const { definisi, pesanLaporan } = await import(DAFTAR);
+  return pesanLaporan(definisi('x1'), keadaan, namaOutlet);
+}
 
 // ---------------------------------------------------------------------------
 // Label alasan
@@ -130,15 +138,13 @@ test('⛔ zona waktu DIBERIKAN, bukan diambil diam-diam dari perangkat', async (
 const KOSONG = { from: '2026-08-10', to: '2026-08-10', outletId: null, perAktor: [], peristiwa: [] };
 
 test('keadaan memuat punya pesannya sendiri', async () => {
-  const { pesanKeadaan } = await import(B21);
-  const p = pesanKeadaan({ jenis: 'memuat' }, () => 'Semua outlet');
+  const p = await pesanX1({ jenis: 'memuat' }, () => 'Semua outlet');
   assert.notEqual(p, null);
   assert.match(p.judul, /Menghitung/);
 });
 
 test('keadaan awal meminta rentang, bukan mengaku kosong', async () => {
-  const { pesanKeadaan } = await import(B21);
-  const p = pesanKeadaan({ jenis: 'awal' }, () => 'Semua outlet');
+  const p = await pesanX1({ jenis: 'awal' }, () => 'Semua outlet');
   assert.match(p.judul, /rentang/i);
 });
 
@@ -146,11 +152,10 @@ test('⛔ KOSONG dibedakan dari GAGAL, dan keduanya dari BELUM DIMUAT', async ()
   // Tiga keadaan yang tampak sama di layar dan berarti hal yang sangat berbeda.
   // "Tidak ada pembatalan" adalah kabar baik; "tidak dapat memuat" adalah
   // laporan yang tidak boleh dipercaya sebagai bukti tidak ada pembatalan.
-  const { pesanKeadaan } = await import(B21);
   const nama = () => 'Kopi Pagi Menteng';
 
-  const kosong = pesanKeadaan({ jenis: 'siap', hasil: KOSONG }, nama);
-  const galat = pesanKeadaan({ jenis: 'galat', pesan: 'Koneksi putus.' }, nama);
+  const kosong = await pesanX1({ jenis: 'siap', hasil: KOSONG }, nama);
+  const galat = await pesanX1({ jenis: 'galat', pesan: 'Koneksi putus.' }, nama);
 
   assert.notEqual(kosong.judul, galat.judul);
   assert.match(kosong.judul, /Tidak ada pembatalan/i);
@@ -163,19 +168,17 @@ test('⛔ keadaan kosong TIDAK berbunyi seperti pembebasan', async () => {
   // "Tidak ada pembatalan" pada rentang yang perangkatnya belum tersinkronisasi
   // bukan bukti apa pun. Layar harus menyebut kemungkinan itu — laporan ini
   // dipakai untuk menilai orang.
-  const { pesanKeadaan } = await import(B21);
-  const p = pesanKeadaan({ jenis: 'siap', hasil: KOSONG }, () => 'Semua outlet');
+  const p = await pesanX1({ jenis: 'siap', hasil: KOSONG }, () => 'Semua outlet');
   assert.match(p.badan, /sinkron/i);
 });
 
 test('ada data → tidak ada pesan, tabel yang dirender', async () => {
-  const { pesanKeadaan } = await import(B21);
   const hasil = {
     ...KOSONG,
     perAktor: [{ userId: 'u1', name: 'Ani', jumlahTotal: 1, rasio: '1.0' }],
     peristiwa: [{ auditId: 'a1' }],
   };
-  assert.equal(pesanKeadaan({ jenis: 'siap', hasil }, () => 'x'), null);
+  assert.equal(await pesanX1({ jenis: 'siap', hasil }, () => 'x'), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -189,7 +192,7 @@ test('⛔ tidak ada bahasa menuduh di seluruh layar B-21', async () => {
   const MENUDUH =
     /curiga|suspicious|fraud|penipuan|mencurigakan|pelanggar|nakal|abuse|kecurangan|maling/i;
 
-  for (const berkas of ['b21.ts', 'Exception.tsx']) {
+  for (const berkas of ['b21.ts', 'b21-daftar.ts', 'Exception.tsx']) {
     const isi = readFileSync(join(AKAR, 'apps', 'backoffice', 'src', 'pengawasan', berkas), 'utf8');
     // Baris komentar yang MENJELASKAN aturan ini boleh menyebut katanya;
     // yang dilarang adalah teks yang sampai ke layar. Yang dipindai karena itu
@@ -204,5 +207,5 @@ test('⛔ tidak ada bahasa menuduh di seluruh layar B-21', async () => {
 test('⛔ judul layar tidak menuduh', async () => {
   const { JUDUL_LAYAR } = await import(B21);
   assert.doesNotMatch(JUDUL_LAYAR, /curiga|pelanggar|nakal|penipuan/i);
-  assert.match(JUDUL_LAYAR, /void|refund|pembatalan/i);
+  assert.match(JUDUL_LAYAR, /exception/i);
 });

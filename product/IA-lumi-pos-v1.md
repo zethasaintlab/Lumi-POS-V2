@@ -206,6 +206,11 @@ Memakai `AppShell` dari design system: sidebar berkelompok + topbar breadcrumb +
 | B-27 | Pengguna & Peran | ❌ | Manajer Outlet (kasir saja) |
 | B-28 | **Perangkat** | ❌ | Manajer Outlet |
 | B-29 | Langganan & Batas | ❌ | Owner |
+| B-30 | Akses Support | ❌ | Kasir (baca) · Owner (memberi) |
+
+**B-30 lahir dari `spec-f` § F.5, bukan dari peta layar ini.** Tabel ini berhenti di B-29 sementara `spec-f:391` menuntut akses support menjadi *"fitur sistem, bukan akses database langsung"*, dan `spec-f:401` menuntut sesinya **terlihat di seluruh layar**. Fitur yang dituntut spec dan tidak punya tempat di peta layar akan dibangun sebagai tombol yang diselipkan ke layar lain, dan yang diselipkan tidak dapat ditemukan merchant yang mencarinya.
+
+⛔ **Akses minimumnya BUKAN Owner, dan itu disengaja.** Yang owner-only adalah *memberi* akses (`support_grant`). *Membaca* riwayatnya terbuka untuk setiap peran — banner yang hanya terlihat owner tidak memenuhi "terlihat di seluruh layar", dan menyembunyikannya dari staf berarti orang yang sedang bekerja di layar itu tidak punya cara memeriksa siapa lagi yang sedang melihatnya.
 
 **Seluruh back-office online-only.** Ini keputusan sadar: back-office diakses dari laptop dengan koneksi, dan membuatnya offline berarti mereplikasi seluruh data tenant ke browser — biaya besar tanpa kebutuhan nyata.
 
@@ -256,7 +261,7 @@ Ini tabel yang menentukan apa yang di-precache dan direplikasi.
 | Kelompok | Offline | Data yang direplikasi ke perangkat |
 |---|:---:|---|
 | Seluruh aplikasi Kasir (K-01…K-17) | ✅ | Katalog outlet · harga · modifier · kategori · `TaxRate` · pengguna + hash PIN outlet · `VerticalProfile` · ambang otorisasi · profil printer · riwayat transaksi dalam jendela (OQ-07) · movement stok agregat |
-| Seluruh Back-office (B-01…B-29) | ❌ | — |
+| Seluruh Back-office (B-01…B-30) | ❌ | — |
 | Seluruh Owner mobile (M-01…M-03) | ❌ | — |
 
 **Aturan empty state untuk layar online-only** (dari design system: kegagalan menjelaskan **alasan**, bukan spinner tanpa akhir):

@@ -175,3 +175,62 @@ test('PIN yang sah diterima', async () => {
   const { periksaPinBaru } = await import(MOD);
   assert.equal(periksaPinBaru('048291', {}).ok, true);
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Jalur UBAH peran memakai aturan yang SAMA
+// ---------------------------------------------------------------------------
+
+test('⛔ tambah dan ubah memakai SATU aturan cakupan, bukan dua salinan', async () => {
+  // Dua salinan aturan cakupan menyimpang tepat pada kasus yang paling jarang
+  // dicoba — dan yang menyimpang menghasilkan form tambah yang menolak apa
+  // yang form ubah terima, di layar yang sama.
+  //
+  // Dibuktikan dengan menjalankan keduanya atas masukan yang sama dan
+  // membandingkan hasilnya, bukan dengan membaca kodenya.
+  const { buatMuatanPengguna, buatMuatanPeran } = await import(MOD);
+
+  for (const kasus of [
+    { peran: 'cashier', outletIds: [OUTLET_A] },
+    { peran: 'cashier', outletIds: [OUTLET_A, OUTLET_B] },
+    { peran: 'area_manager', outletIds: [OUTLET_A, OUTLET_B] },
+    { peran: 'owner', outletIds: [OUTLET_A] },
+    { peran: 'accountant', outletIds: [OUTLET_A, OUTLET_B] },
+    { peran: 'outlet_manager', outletIds: [] },
+    { peran: 'peran_karangan', outletIds: [OUTLET_A] },
+  ]) {
+    const lewatTambah = buatMuatanPengguna({ ...FORM, ...kasus }, KONTEKS);
+    const lewatUbah = buatMuatanPeran(kasus.peran, kasus.outletIds, TENANT);
+
+    assert.equal(lewatTambah.ok, lewatUbah.ok, `beda putusan untuk ${JSON.stringify(kasus)}`);
+    if (lewatTambah.ok) {
+      assert.deepEqual(lewatTambah.muatan.roles, lewatUbah.muatan.roles, JSON.stringify(kasus));
+      assert.deepEqual(
+        lewatTambah.muatan.outletIds,
+        lewatUbah.muatan.outletIds,
+        JSON.stringify(kasus)
+      );
+    } else {
+      assert.equal(lewatTambah.pesan, lewatUbah.pesan, JSON.stringify(kasus));
+    }
+  }
+});
+
+test('muatan ubah peran TIDAK memuat nama, email, atau id', async () => {
+  // `PATCH /users/:id` mengganti apa yang dikirim. Menyertakan `name` yang
+  // dibaca dari daftar berarti menimpanya dengan nilai yang mungkin sudah
+  // basi — dan menimpa nama orang saat mengubah perannya adalah kegagalan yang
+  // tidak seorang pun hubungkan dengan tombol yang ia tekan.
+  const { buatMuatanPeran } = await import(MOD);
+  const hasil = buatMuatanPeran('cashier', [OUTLET_A], TENANT);
+  assert.ok(hasil.ok);
+  assert.deepEqual(Object.keys(hasil.muatan).sort(), ['outletIds', 'roles']);
+});
+
+test('duplikat outlet dibuang sebelum cakupan dihitung', async () => {
+  // `['o1','o1']` adalah SATU outlet. Penjaga yang menghitung panjang array
+  // mentah menolak permintaan yang sah.
+  const { buatMuatanPeran } = await import(MOD);
+  const hasil = buatMuatanPeran('cashier', [OUTLET_A, OUTLET_A], TENANT);
+  assert.ok(hasil.ok, hasil.ok ? '' : hasil.pesan);
+  assert.deepEqual(hasil.muatan.outletIds, [OUTLET_A]);
+});

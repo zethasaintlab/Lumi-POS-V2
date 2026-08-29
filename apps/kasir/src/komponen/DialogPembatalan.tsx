@@ -10,6 +10,7 @@ import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import type { Sesi } from '../identitas/login.ts';
 import { muatHlc } from '../lokal/hlc.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-10 — Batalkan transaksi (IA §2.2, FR-B7).
 
@@ -23,10 +24,6 @@ import { muatHlc } from '../lokal/hlc.ts';
    Judulnya menyebut operasinya karena kasir harus tahu konsekuensinya —
    "batalkan" yang mengembalikan uang dan "batalkan" yang hanya membuang
    keranjang adalah dua hal berbeda bagi orang di depan mesin. */
-
-function rupiah(n: number): string {
-  return `Rp ${n.toLocaleString('id-ID')}`;
-}
 
 interface Props {
   orderId: string;

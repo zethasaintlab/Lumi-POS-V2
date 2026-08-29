@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
 import { EditProduk } from './EditProduk.tsx';
-import {
-  buatMuatanProdukBaru,
-  rupiah,
-  kueriDaftarProduk,
-  TANPA_KATEGORI,
-  type FormVariation,
-  type Item,
-} from './produk.ts';
+import { buatMuatanProdukBaru, kueriDaftarProduk, TANPA_KATEGORI, type FormVariation, type Item } from './produk.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /** Nilai bawaan varian pertama. Sisanya disunting di B-07. */
 const VARIAN_PERTAMA: FormVariation = {

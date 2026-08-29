@@ -1,4 +1,4 @@
-import { bacaRupiah } from './produk.ts';
+import { bacaRupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /**
  * B-10 — muatan harga dan ringkasan riwayat. Murni.

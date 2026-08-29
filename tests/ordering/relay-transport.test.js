@@ -244,6 +244,61 @@ test('no-sale di BAWAH ambang mendarat tanpa penyetuju', async () => {
   sampai(hasil, 'no_sale');
 });
 
+test('kas masuk/keluar (cash_movement) mendarat lewat relay', async () => {
+  // FR-D5. Rincian arah, tanda `delta`, counterpart, idempotensi, dan
+  // klasifikasi kegagalannya diuji di `kas-manual-offline-relay.test.js`;
+  // yang ditegakkan DI SINI adalah bahwa jenisnya benar-benar pernah melewati
+  // transport asli — itulah yang dibaca penjaga `RUTE_DIDUKUNG` di bawah.
+  const fx = await perangkatDanShift();
+  await relaikan({
+    entity_type: 'shift',
+    entity_id: fx.shiftId,
+    payload: {
+      id: fx.shiftId, outletId: base.outlet.id, deviceId: fx.deviceId,
+      businessDate: TANGGAL, openingFloat: 100000,
+    },
+  });
+  const hasil = await relaikan({
+    entity_type: 'cash_movement',
+    entity_id: fx.shiftId,
+    payload: {
+      id: crypto.randomUUID(),
+      arah: 'keluar',
+      jumlah: '50000',
+      reasonCode: 'bayar_pemasok',
+      reasonNote: null,
+    },
+  });
+  sampai(hasil, 'cash_movement');
+});
+
+test('percobaan hitungan kas (count_attempt) mendarat lewat relay', async () => {
+  // FR-D2. Rincian jalur tulisnya diuji di `tests/server/shift-tutup.test.js`
+  // dan `tests/kasir/tutup-kas.test.js`; yang ditegakkan DI SINI adalah bahwa
+  // jenisnya benar-benar pernah melewati transport asli — itulah yang dibaca
+  // penjaga `RUTE_DIDUKUNG` di bawah.
+  const fx = await perangkatDanShift();
+  await relaikan({
+    entity_type: 'shift',
+    entity_id: fx.shiftId,
+    payload: {
+      id: fx.shiftId, outletId: base.outlet.id, deviceId: fx.deviceId,
+      businessDate: TANGGAL, openingFloat: 100000,
+    },
+  });
+  const hasil = await relaikan({
+    entity_type: 'count_attempt',
+    entity_id: fx.shiftId,
+    payload: {
+      id: crypto.randomUUID(),
+      countedAmount: '2450000',
+      attemptNumber: 1,
+      occurredAt: new Date().toISOString(),
+    },
+  });
+  sampai(hasil, 'count_attempt');
+});
+
 test('⛔ no-sale di ATAS ambang mendarat KARENA penyetuju ikut di baris outbox', async () => {
   const fx = await perangkatDanShift();
   await relaikan({
@@ -346,6 +401,35 @@ test('pembatalan (order_cancel) mendarat lewat relay', async () => {
     },
   });
   sampai(hasil, 'order_cancel');
+});
+
+test('konfigurasi peripheral (peripheral) mendarat lewat relay', async () => {
+  // K-15. Rincian jalurnya diuji di `tests/ordering/peripheral-offline-relay`
+  // dan `tests/server/peripheral.test.js`; yang ditegakkan DI SINI adalah
+  // bahwa jenisnya benar-benar pernah melewati transport asli — itulah yang
+  // dibaca penjaga `RUTE_DIDUKUNG` di bawah.
+  const fx = await perangkatDanShift();
+  const profilId = crypto.randomUUID();
+  // `printer_profile` DIKECUALIKAN dari RLS — ditulis lewat koneksi owner.
+  await owner.query(
+    `INSERT INTO printer_profile (id, name, paper_width_mm, chars_per_line)
+     VALUES ($1, 'Epson TM-T82', 80, 48)`,
+    [profilId]
+  );
+  const peripheralId = crypto.randomUUID();
+  const hasil = await relaikan({
+    entity_type: 'peripheral',
+    entity_id: peripheralId,
+    payload: {
+      id: peripheralId,
+      deviceId: fx.deviceId,
+      outletId: base.outlet.id,
+      type: 'printer',
+      connection: 'usb',
+      printerProfileId: profilId,
+    },
+  });
+  sampai(hasil, 'peripheral');
 });
 
 // ---------------------------------------------------------------------------

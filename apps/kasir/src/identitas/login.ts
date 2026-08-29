@@ -1,5 +1,6 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import type { PinHasher } from '../../../../packages/domain/src/pin.ts';
+import { periksaOperasiDestruktif } from '../../../../packages/domain/src/operasi-destruktif.ts';
 
 /**
  * Login PIN offline (FR-F3) dan penguncian (FR-F4).
@@ -296,20 +297,15 @@ export async function catatGagal(
  * pergantian kasir di atasnya membuat penjualan itu dinisbatkan ke orang yang
  * salah — atau, kalau perangkat di-reset, hilang tanpa jejak di mana pun.
  *
- * Pesannya menyebut JUMLAH. Kasir yang tidak tahu berapa banyak tidak dapat
- * menilai apakah menunggu sebentar cukup atau harus memanggil manajer.
+ * ⛔ Aturannya SATU sumber dengan tiga operasi destruktif lainnya
+ * (`packages/domain/src/operasi-destruktif.ts`). Sebelum ini pesannya ditulis
+ * di sini, dan operasi kedua yang lahir — ganti identitas perangkat — akan
+ * menyalinnya. Dua salinan menghasilkan dua kalimat berbeda untuk keadaan yang
+ * sama, dan yang satu akan lupa menyebut jumlahnya.
  */
 export function bolehLogout({ jumlahBelumTerkirim }: { jumlahBelumTerkirim: number }): {
   boleh: boolean;
   pesan: string;
 } {
-  if (jumlahBelumTerkirim > 0) {
-    return {
-      boleh: false,
-      pesan:
-        `${jumlahBelumTerkirim} transaksi belum terkirim ke server. ` +
-        'Tunggu sampai antrean kosong sebelum keluar — transaksi ini hanya ada di perangkat ini.',
-    };
-  }
-  return { boleh: true, pesan: '' };
+  return periksaOperasiDestruktif('logout', { jumlahBelumTerkirim });
 }

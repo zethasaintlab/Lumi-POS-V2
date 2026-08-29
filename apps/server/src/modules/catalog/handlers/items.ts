@@ -1,11 +1,12 @@
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import { HttpError } from '../../../http-error.ts';
 // ⛔ Konstanta yang SAMA dengan yang back-office kirim. Dua salinan yang
 // menyimpang menghasilkan saringan yang mengembalikan nol produk alih-alih
 // produk tanpa kategori — dan nol terlihat seperti "memang tidak ada".
 import { TANPA_KATEGORI } from '../../../../../../packages/domain/src/katalog-saringan.ts';
-import { getTenantId } from '../../../tenant-context.ts';
+import { getActorId, getTenantId } from '../../../tenant-context.ts';
 import { isPrimaryKeyViolation, isTenantForeignKeyViolation } from './pg-error.ts';
 import { toModifierList, fetchModifierListsByIds, fetchModifiersForLists } from './modifier-lists.ts';
 import { assertKuota } from '../../tenancy/index.ts';
@@ -434,6 +435,14 @@ export interface VariationSnapshotRow {
   categoryId: string | null;
   /** FR-E2 — `sale` hanya ditulis untuk variation yang stoknya dilacak. */
   trackStock: boolean;
+  /**
+   * FR-A2 AC keempat — berapa varian yang item ini punya SAAT PENJUALAN.
+   *
+   * Di-snapshot ke `order_line.variation_count_at_sale` supaya cetak ulang
+   * dapat memutuskan sendiri apakah nama varian disebut, tanpa menyentuh tabel
+   * katalog (`spec-b:145`).
+   */
+  variationCount: number;
 }
 
 // T5 (PLAN-ordering-fondasi.md §T5/T6) -- diekspor lewat catalog/index.ts
@@ -459,6 +468,7 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
   const { rows } = await client.query<{
     item_name: string; variation_name: string; cost: string;
     item_id: string; category_id: string | null; track_stock: boolean;
+    variation_count: string;
   }>(
     // ⛔ `item_id` dan `category_id` DISELEKSI. Versi sebelumnya
     // memetakannya ke hasil tanpa pernah memintanya, jadi keduanya
@@ -471,9 +481,22 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
     // `track_stock` untuk FR-E2 — `sale` hanya ditulis untuk variation yang
     // stoknya dilacak. Ia ikut di sini, bukan lewat SELECT kedua dari modul
     // ordering: invariant #4 melarang akses lintas modul ke tabel katalog.
+    //
+    // FR-A2 AC keempat — `variation_count` di-SNAPSHOT ke `order_line`, dan
+    // ia diambil DI SINI karena invariant #4: modul ordering tidak boleh
+    // menghitung baris `item_variation` sendiri.
+    //
+    // ⛔ Varian yang DIARSIPKAN ikut dihitung, dan itu disengaja. Yang
+    // pertanyaannya jawab adalah "apakah nama varian menambah informasi bagi
+    // pelanggan" — dan merchant yang mengarsipkan "Large" hari ini tetap
+    // punya pelanggan yang memegang struk "Regular" dari kemarin. Menghitung
+    // yang aktif saja membuat produk berubah menjadi "satu varian" begitu
+    // sisanya diarsipkan, lalu struk berikutnya berhenti menyebut ukurannya.
     `SELECT i.name AS item_name, iv.name AS variation_name, iv.cost AS cost,
             iv.item_id AS item_id, i.category_id AS category_id,
-            iv.track_stock AS track_stock
+            iv.track_stock AS track_stock,
+            (SELECT COUNT(*) FROM item_variation s WHERE s.item_id = iv.item_id)
+              AS variation_count
      FROM item_variation iv
      JOIN item i ON i.id = iv.item_id
      WHERE iv.id = $1`,
@@ -489,6 +512,11 @@ export async function getVariationSnapshot(client: PoolClient, variationId: stri
     itemId: rows[0].item_id,
     categoryId: rows[0].category_id,
     trackStock: rows[0].track_stock,
+    // ⛔ Minimal 1. `COUNT(*)` di atas selalu menghitung barisnya sendiri, jadi
+    // nol mustahil — tapi `CHECK (variation_count_at_sale >= 1)` menolak nol,
+    // dan galat constraint di tengah penjualan adalah kegagalan yang paling
+    // mahal di produk ini. Dijaga di sini juga.
+    variationCount: Math.max(1, Number(rows[0].variation_count ?? 1)),
   };
 }
 
@@ -558,10 +586,114 @@ async function assertCategoryVisible(client: PoolClient, categoryId: string): Pr
   }
 }
 
+/**
+ * Bentuk item untuk `before`/`after` audit.
+ *
+ * ⛔ Hanya field yang benar-benar dapat DIUBAH lewat endpoint ini, bukan baris
+ * mentah. Menyalin baris apa adanya menaruh `tenant_id` dan `created_at` di
+ * setiap peristiwa — dan `before`/`after` yang penuh field yang tidak pernah
+ * berubah membuat pembaca harus mencari sendiri apa yang sebenarnya berbeda,
+ * di layar yang dibaca saat sengketa.
+ */
+function ringkasItem(row: ItemRow, variations: readonly VariationRow[]) {
+  const dasar = {
+    name: row.name,
+    categoryId: row.category_id,
+    description: row.description,
+    sortOrder: row.sort_order,
+    archivedAt: row.archived_at === null ? null : String(row.archived_at),
+  };
+  return variations.length === 0
+    ? dasar
+    : { ...dasar, variations: variations.map((v) => ({ id: v.id, name: v.name, sku: v.sku })) };
+}
+
+/**
+ * Arsip dan pemulihan item — satu jalur, dua arah.
+ *
+ * ⛔ Keduanya memancarkan `item_archived`; yang membedakan `before`/`after`.
+ * `spec-f:294` hanya menyebut `item_archived`, dan memancarkan `item_restored`
+ * yang tidak ada di daftar berarti kosakata yang tidak dapat dibandingkan
+ * dengan spec-nya.
+ */
+async function setelArsipItem(pool: Pool, req: FastifyRequest, arsip: boolean) {
+  const tenantId = getTenantId(req);
+  const actorId = getActorId(req);
+  const { itemId } = req.params as { itemId: string };
+  const { item, variations, modifierLists } = await withTenantTransaction(
+    pool,
+    tenantId,
+    async (client) => {
+      const sebelum = await fetchItemOrThrow(client, itemId);
+      const { rows } = await client.query<ItemRow>(
+        `UPDATE item SET archived_at = ${arsip ? 'now()' : 'NULL'} WHERE id = $1 RETURNING *`,
+        [itemId]
+      );
+      await catatPerubahanServer(client, {
+        tenantId,
+        actorUserId: actorId,
+        eventType: 'item_archived',
+        entityType: 'item',
+        entityId: itemId,
+        before: ringkasItem(sebelum, []),
+        after: ringkasItem(rows[0], []),
+      });
+      return {
+        item: rows[0],
+        variations: await fetchVariations(client, itemId),
+        modifierLists: await fetchModifierListsForItem(client, itemId),
+      };
+    }
+  );
+  return toItem(item, variations, modifierLists);
+}
+
+/** Field varian yang benar-benar dapat diubah — lihat `ringkasItem`. */
+function ringkasVariasi(row: VariationRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    sku: row.sku,
+    barcode: row.barcode,
+    trackStock: row.track_stock,
+    stockingUnit: row.stocking_unit,
+    sellingUnit: row.selling_unit,
+    conversionFactor: String(row.conversion_factor),
+    archivedAt: row.archived_at === null ? null : String(row.archived_at),
+  };
+}
+
+/** Arsip/pemulihan varian — pasangan `setelArsipItem`, alasan yang sama. */
+async function setelArsipVariasi(pool: Pool, req: FastifyRequest, arsip: boolean) {
+  const tenantId = getTenantId(req);
+  const actorId = getActorId(req);
+  const { itemId, variationId } = req.params as { itemId: string; variationId: string };
+  const row = await withTenantTransaction(pool, tenantId, async (client) => {
+    const sebelum = await fetchVariationOrThrow(client, itemId, variationId);
+    const { rows } = await client.query<VariationRow>(
+      `UPDATE item_variation SET archived_at = ${arsip ? 'now()' : 'NULL'}
+        WHERE id = $1 AND item_id = $2 RETURNING *`,
+      [variationId, itemId]
+    );
+    await catatPerubahanServer(client, {
+      tenantId,
+      actorUserId: actorId,
+      eventType: 'item_archived',
+      entityType: 'item',
+      entityId: itemId,
+      before: { variation: ringkasVariasi(sebelum) },
+      after: { variation: ringkasVariasi(rows[0]) },
+    });
+    return rows[0];
+  });
+  return toVariation(row);
+}
+
 export function createItemHandlers(pool: Pool) {
   return {
     async createItem(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const body = req.body as {
         id: string;
         name: string;
@@ -630,6 +762,17 @@ export function createItemHandlers(pool: Pool) {
         for (const v of body.variations) {
           variations.push(await insertVariation(client, tenantId, body.id, v));
         }
+        // FR-F6. ⛔ Di dalam transaksi yang sama dengan INSERT-nya (AC ketiga):
+        // audit yang ditulis setelah commit akan hilang pada kegagalan yang
+        // justru paling perlu dijelaskan.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'item_created',
+          entityType: 'item',
+          entityId: item.id,
+          after: ringkasItem(item, variations),
+        });
         return { item, variations };
       });
       reply.code(201);
@@ -806,10 +949,15 @@ export function createItemHandlers(pool: Pool) {
 
     async updateItem(req: FastifyRequest) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const { itemId } = req.params as { itemId: string };
       const body = req.body as { name?: string; categoryId?: string | null; description?: string | null; sortOrder?: number };
       const { item, variations, modifierLists } = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchItemOrThrow(client, itemId);
+        // ⛔ Baris LAMA ditangkap sebelum UPDATE. FR-F6 AC kedua menuntut
+        // `before` terisi untuk setiap perubahan konfigurasi — dan "harganya
+        // diubah dari berapa" adalah pertanyaan yang audit trail ada untuk
+        // menjawab. Sesudah UPDATE, jawabannya tidak ada di mana pun.
+        const sebelum = await fetchItemOrThrow(client, itemId);
         // Sama seperti createItem: hanya divalidasi kalau body benar-benar
         // mengirim categoryId non-null (clearing ke null lewat `categoryId:
         // null` tidak perlu divalidasi -- tidak ada apa pun untuk dicek
@@ -836,6 +984,15 @@ export function createItemHandlers(pool: Pool) {
             body.sortOrder ?? null,
           ]
         );
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'item_updated',
+          entityType: 'item',
+          entityId: itemId,
+          before: ringkasItem(sebelum, []),
+          after: ringkasItem(rows[0], []),
+        });
         return {
           item: rows[0],
           variations: await fetchVariations(client, itemId),
@@ -846,48 +1003,40 @@ export function createItemHandlers(pool: Pool) {
     },
 
     async archiveItem(req: FastifyRequest) {
-      const tenantId = getTenantId(req);
-      const { itemId } = req.params as { itemId: string };
-      const { item, variations, modifierLists } = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchItemOrThrow(client, itemId);
-        const { rows } = await client.query<ItemRow>(
-          'UPDATE item SET archived_at = now() WHERE id = $1 RETURNING *',
-          [itemId]
-        );
-        return {
-          item: rows[0],
-          variations: await fetchVariations(client, itemId),
-          modifierLists: await fetchModifierListsForItem(client, itemId),
-        };
-      });
-      return toItem(item, variations, modifierLists);
+      return setelArsipItem(pool, req, true);
     },
 
     async restoreItem(req: FastifyRequest) {
-      const tenantId = getTenantId(req);
-      const { itemId } = req.params as { itemId: string };
-      const { item, variations, modifierLists } = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchItemOrThrow(client, itemId);
-        const { rows } = await client.query<ItemRow>(
-          'UPDATE item SET archived_at = NULL WHERE id = $1 RETURNING *',
-          [itemId]
-        );
-        return {
-          item: rows[0],
-          variations: await fetchVariations(client, itemId),
-          modifierLists: await fetchModifierListsForItem(client, itemId),
-        };
-      });
-      return toItem(item, variations, modifierLists);
+      // ⛔ Pemulihan memakai peristiwa yang SAMA, dibedakan oleh
+      // `before`/`after`. `spec-f:294` hanya menyebut `item_archived`, dan
+      // memancarkan `item_restored` yang tidak ada di daftar berarti kosakata
+      // yang tidak dapat dibandingkan dengan spec-nya. Yang membedakan
+      // keduanya adalah nilainya, dan nilainya tercatat.
+      return setelArsipItem(pool, req, false);
     },
 
     async createItemVariation(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const { itemId } = req.params as { itemId: string };
       const body = req.body as VariationInput;
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
         await fetchItemOrThrow(client, itemId);
-        return insertVariation(client, tenantId, itemId, body);
+        const baru = await insertVariation(client, tenantId, itemId, body);
+        // ⛔ `item_updated`, bukan `item_created`. Yang bertambah adalah
+        // varian pada item yang sudah ada; `spec-f:294` tidak punya peristiwa
+        // tingkat varian, dan mengarang satu berarti kosakata yang tidak dapat
+        // dibandingkan dengan spec-nya. `entityId` tetap menunjuk ITEM supaya
+        // menelusuri satu item mengembalikan seluruh riwayat variannya.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'item_updated',
+          entityType: 'item',
+          entityId: itemId,
+          after: { variationDitambah: ringkasVariasi(baru) },
+        });
+        return baru;
       });
       reply.code(201);
       return toVariation(row);
@@ -899,6 +1048,7 @@ export function createItemHandlers(pool: Pool) {
     // body). Extra field `price` yang dikirim client diam-diam diabaikan.
     async updateItemVariation(req: FastifyRequest) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const { itemId, variationId } = req.params as { itemId: string; variationId: string };
       const body = req.body as {
         name?: string;
@@ -913,7 +1063,7 @@ export function createItemHandlers(pool: Pool) {
       // create dan update untuk input yang sama adalah cacat (pelajaran Task 2).
       assertConversionFactorValid(body.conversionFactor);
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchVariationOrThrow(client, itemId, variationId);
+        const sebelum = await fetchVariationOrThrow(client, itemId, variationId);
         try {
           const { rows } = await client.query<VariationRow>(
             `UPDATE item_variation SET
@@ -940,6 +1090,15 @@ export function createItemHandlers(pool: Pool) {
               body.conversionFactor ?? null,
             ]
           );
+          await catatPerubahanServer(client, {
+            tenantId,
+            actorUserId: actorId,
+            eventType: 'item_updated',
+            entityType: 'item',
+            entityId: itemId,
+            before: { variation: ringkasVariasi(sebelum) },
+            after: { variation: ringkasVariasi(rows[0]) },
+          });
           return rows[0];
         } catch (err) {
           translateConstraintError(err);
@@ -949,31 +1108,11 @@ export function createItemHandlers(pool: Pool) {
     },
 
     async archiveItemVariation(req: FastifyRequest) {
-      const tenantId = getTenantId(req);
-      const { itemId, variationId } = req.params as { itemId: string; variationId: string };
-      const row = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchVariationOrThrow(client, itemId, variationId);
-        const { rows } = await client.query<VariationRow>(
-          'UPDATE item_variation SET archived_at = now() WHERE id = $1 AND item_id = $2 RETURNING *',
-          [variationId, itemId]
-        );
-        return rows[0];
-      });
-      return toVariation(row);
+      return setelArsipVariasi(pool, req, true);
     },
 
     async restoreItemVariation(req: FastifyRequest) {
-      const tenantId = getTenantId(req);
-      const { itemId, variationId } = req.params as { itemId: string; variationId: string };
-      const row = await withTenantTransaction(pool, tenantId, async (client) => {
-        await fetchVariationOrThrow(client, itemId, variationId);
-        const { rows } = await client.query<VariationRow>(
-          'UPDATE item_variation SET archived_at = NULL WHERE id = $1 AND item_id = $2 RETURNING *',
-          [variationId, itemId]
-        );
-        return rows[0];
-      });
-      return toVariation(row);
+      return setelArsipVariasi(pool, req, false);
     },
   };
 }

@@ -302,12 +302,26 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
  * namanya besok tidak boleh mengubah struk yang sudah tercetak hari ini.
  * Bentuk rusak dikembalikan sebagai daftar kosong: satu baris yang JSON-nya
  * cacat tidak boleh menjatuhkan seluruh layar detail.
+ *
+ * ⛔ DUA bentuk diterima, dan itu bukan kelonggaran. Sebelum FR-A3 isinya
+ * `["Es"]`; sejak FR-A3 ia `[{ nama, qtyMilli }]` supaya "Extra Shot ×2"
+ * terbaca di layar yang dipakai memutuskan refund. Baris lama ada di perangkat
+ * merchant dan tidak dapat ditulis ulang — `order_line` tidak pernah di-`UPDATE`
+ * (invariant #2). Menolak bentuk lama berarti seluruh riwayat sebelum hari ini
+ * kehilangan modifiernya.
  */
 function uraikanModifier(snapshot: string | null): string[] {
   if (!snapshot) return [];
   try {
     const nilai: unknown = JSON.parse(snapshot);
-    return Array.isArray(nilai) ? nilai.map(String) : [];
+    if (!Array.isArray(nilai)) return [];
+    return nilai.map((m) => {
+      if (typeof m !== 'object' || m === null) return String(m);
+      const { nama, qtyMilli } = m as { nama?: unknown; qtyMilli?: unknown };
+      const teks = typeof nama === 'string' ? nama : String(nama);
+      const qty = typeof qtyMilli === 'number' ? qtyMilli : 1000;
+      return qty === 1000 ? teks : `${teks} ×${qty / 1000}`;
+    });
   } catch {
     return [];
   }

@@ -31,6 +31,20 @@ interface Props {
   onTampilkan: () => void;
   /** Kalimat yang menjelaskan arti rentang di layar ini. */
   catatan: string;
+  /**
+   * Sumbu waktu yang rentang ini saring.
+   *
+   * ⛔ Bukan kosmetik. Seluruh laporan menyaring `business_date` — hari
+   * berakhir saat tutup shift, bukan tengah malam — tapi B-22 menyaring
+   * `occurred_at`: sebagian besar peristiwa audit tidak menempel pada order
+   * mana pun, dan yang menempel pun tidak boleh hilang dari trail karena
+   * ordernya bertanggal bisnis lain.
+   *
+   * Sebelum prop ini ada, pemilih ini menyatakan "tanggal bisnis" pada setiap
+   * layar yang memakainya. Kalimat itu benar sepuluh kali dan salah sekali,
+   * dan yang sekali itu ada di layar yang dibaca saat sengketa.
+   */
+  sumbu?: 'bisnis' | 'kejadian';
 }
 
 export function RentangTanggal({
@@ -42,6 +56,7 @@ export function RentangTanggal({
   sedangMuat,
   onTampilkan,
   catatan,
+  sumbu = 'bisnis',
 }: Props) {
   const aktif = outlet.filter((o) => o.archivedAt === null);
   const ubah = (sisi: 'dari' | 'sampai') => (nilai: string) =>
@@ -75,9 +90,19 @@ export function RentangTanggal({
           04:00), bukan tengah malam — penjualan dini hari milik tanggal bisnis
           sebelumnya, dan itu yang server hitung. */}
       <span className="t-caption">
-        Format <span className="num">YYYY-MM-DD</span>, keduanya termasuk. Yang dipakai adalah{' '}
-        <strong>tanggal bisnis</strong>: hari berakhir saat tutup shift, bukan tengah malam, jadi
-        penjualan dini hari masuk ke tanggal sebelumnya. {catatan}
+        Format <span className="num">YYYY-MM-DD</span>, keduanya termasuk.{' '}
+        {sumbu === 'bisnis' ? (
+          <>
+            Yang dipakai adalah <strong>tanggal bisnis</strong>: hari berakhir saat tutup shift,
+            bukan tengah malam, jadi penjualan dini hari masuk ke tanggal sebelumnya.
+          </>
+        ) : (
+          <>
+            Yang dipakai adalah <strong>waktu kejadian</strong> menurut jam kalender, bukan tanggal
+            bisnis — peristiwa dini hari tetap masuk ke tanggalnya sendiri.
+          </>
+        )}{' '}
+        {catatan}
       </span>
 
       {aktif.length > 1 ? (
@@ -97,10 +122,17 @@ export function RentangTanggal({
               </Tombol>
             ))}
           </div>
-          <span className="t-caption">
-            Lintas-outlet diagregasi menurut tanggal bisnis masing-masing outlet — outlet di zona
-            waktu berbeda tetap memakai batas harinya sendiri.
-          </span>
+          {sumbu === 'bisnis' ? (
+            <span className="t-caption">
+              Lintas-outlet diagregasi menurut tanggal bisnis masing-masing outlet — outlet di zona
+              waktu berbeda tetap memakai batas harinya sendiri.
+            </span>
+          ) : (
+            <span className="t-caption">
+              ⛔ Peristiwa yang tidak menempel pada outlet mana pun — pendaftaran pengguna,
+              perubahan langganan — tidak muncul saat satu outlet dipilih.
+            </span>
+          )}
         </div>
       ) : null}
     </div>

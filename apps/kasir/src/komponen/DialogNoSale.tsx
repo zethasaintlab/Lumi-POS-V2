@@ -4,7 +4,7 @@ import { DialogOtorisasi } from './DialogOtorisasi.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { muatHlc } from '../lokal/hlc.ts';
-import { ALASAN_NO_SALE, AMBANG_NO_SALE } from '../../../../packages/domain/src/no-sale.ts';
+import { ALASAN_NO_SALE } from '../../../../packages/domain/src/no-sale.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import type { Sesi } from '../identitas/login.ts';
 
@@ -47,6 +47,7 @@ export function DialogNoSale({ shiftId, konfig, sesi, onBatal, onSelesai }: Prop
   const [catatan, setCatatan] = useState('');
   const [urutan, setUrutan] = useState<number | null>(null);
   const [butuhPenyetuju, setButuhPenyetuju] = useState(false);
+  const [ambang, setAmbang] = useState<number | null>(null);
   const [mintaOtorisasi, setMintaOtorisasi] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
@@ -60,6 +61,7 @@ export function DialogNoSale({ shiftId, konfig, sesi, onBatal, onSelesai }: Prop
       if (!hidup) return;
       setUrutan(r.urutan);
       setButuhPenyetuju(r.butuhPenyetuju);
+      setAmbang(r.ambang);
     });
     return () => {
       hidup = false;
@@ -126,7 +128,12 @@ export function DialogNoSale({ shiftId, konfig, sesi, onBatal, onSelesai }: Prop
           {urutan === null
             ? 'Membaca riwayat shift…'
             : butuhPenyetuju
-              ? `Pembukaan ke-${urutan} dalam shift ini. Di atas ${AMBANG_NO_SALE}×, persetujuan manajer diperlukan.`
+              ? // ⛔ Ambang yang BERLAKU untuk outlet ini (B-26), bukan
+                // konstanta bawaan. Kalimat yang menyebut "3×" pada outlet
+                // berambang 6 memberi tahu kasir aturan yang tidak berlaku
+                // baginya — dan kasir yang aturannya salah disebutkan berhenti
+                // mempercayai kalimat berikutnya.
+                `Pembukaan ke-${urutan} dalam shift ini. Di atas ${ambang}×, persetujuan manajer diperlukan.`
               : `Pembukaan ke-${urutan} dalam shift ini. Tanpa transaksi — tercatat di audit.`}
         </p>
 

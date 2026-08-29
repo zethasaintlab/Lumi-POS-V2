@@ -82,6 +82,11 @@ export function jalankanSinkronisasi(deps: DepsSinkronisasi): SinkronisasiHidup 
       // alih-alih menebak nama orang.
       actorId: `device:${konfig.deviceCode}`,
       fetchFn,
+      // FR-F8 — jam perangkat ikut di setiap permintaan relay, supaya server
+      // dapat membandingkannya dengan jamnya sendiri. Ia sengaja `new Date()`
+      // DI SINI dan bukan di dalam adapter: yang jamnya tidak dapat dipalsukan
+      // test tidak dapat diuji sama sekali.
+      waktu: () => new Date(),
     }),
     setTimer: deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms)),
     clearTimer: deps.clearTimer ?? ((h) => clearTimeout(h as number)),

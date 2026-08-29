@@ -228,3 +228,101 @@ export function ringkasPerAktor(peristiwa: readonly Peristiwa[]): RingkasanAktor
     (a, b) => b.jumlahTotal - a.jumlahTotal || a.name.localeCompare(b.name, 'id')
   );
 }
+
+// ---------------------------------------------------------------------------
+// X8 — anomali waktu (FR-G5, `spec-g:164`)
+// ---------------------------------------------------------------------------
+
+export interface AnomaliWaktu {
+  auditId: string;
+  occurredAt: string;
+  deviceId: string;
+  deviceCode: string | null;
+  outletId: string | null;
+  aktorId: string;
+  aktorNama: string;
+  /** Positif = jam perangkat MAJU terhadap server. */
+  skewDetik: number;
+}
+
+interface BarisAnomali {
+  audit_id: string;
+  occurred_at: Date | string;
+  device_id: string | null;
+  device_code: string | null;
+  outlet_id: string | null;
+  actor_user_id: string;
+  aktor_nama: string | null;
+  after: { skewDetik?: unknown } | null;
+}
+
+/**
+ * X8 — perangkat yang jamnya menyimpang. FR-F8 + FR-G5.
+ *
+ * ## ⛔ Ia membaca `clock_drift_detected`, BUKAN `occurred_at` vs `recorded_at`
+ *
+ * `spec-g:164` menggambarkan X8 sebagai *"transaksi dengan selisih besar
+ * `occurred_at` vs `recorded_at` **di luar durasi offline yang wajar**"* — dan
+ * kalimat terakhir itu yang menentukan. Selisih keduanya adalah durasi
+ * offline pada hampir setiap penjualan yang produk ini ada untuk mendukung;
+ * melaporkannya apa adanya menghasilkan daftar yang seluruh isinya penjualan
+ * sehat, dan daftar semacam itu berhenti dibaca pada minggu pertama.
+ *
+ * Yang tidak dapat dijelaskan durasi offline adalah dua jam yang sama-sama
+ * mengaku "sekarang" tapi berbeda, dan itu persis yang FR-F8 catat.
+ *
+ * ## ⛔ Diurutkan berdasarkan BESAR selisih, bukan waktu
+ *
+ * `spec-g:166`: *"daftar terurut berdasarkan tingkat anomali... Baris teratas
+ * adalah yang paling layak diselidiki."* Urutan kronologis membuat yang paling
+ * layak diselidiki tenggelam di antara yang meleset dua menit.
+ *
+ * ## ⛔ Tanpa bahasa menuduh
+ *
+ * Tidak ada field skor maupun label. Jam yang meleset jauh lebih sering
+ * berarti baterai RTC tablet habis daripada berarti seseorang memanipulasinya.
+ */
+export async function ambilAnomaliWaktu(
+  client: PoolClient,
+  { from, to, outletId }: { from: string; to: string; outletId: string | null }
+): Promise<AnomaliWaktu[]> {
+  const { rows } = await client.query<BarisAnomali>(
+    `SELECT a.id            AS audit_id,
+            a.occurred_at,
+            a.device_id,
+            d.code          AS device_code,
+            a.outlet_id,
+            a.actor_user_id,
+            ua.name         AS aktor_nama,
+            a.after
+       FROM audit_event a
+       LEFT JOIN device d  ON d.id = a.device_id
+       LEFT JOIN "user" ua ON ua.id = a.actor_user_id
+      WHERE a.event_type = 'clock_drift_detected'
+        -- Rentangnya memakai occurred_at audit, BUKAN business_date sebuah
+        -- order: peristiwa ini tidak menempel pada order mana pun. Perangkat
+        -- yang jamnya salah justru yang business_date-nya tidak dapat
+        -- dipercaya, dan menyaring dengannya menyembunyikan tepat baris yang
+        -- dicari.
+        AND a.occurred_at >= $1::date
+        AND a.occurred_at < ($2::date + 1)
+        AND ($3::text IS NULL OR a.outlet_id = $3)
+      ORDER BY a.occurred_at DESC, a.id DESC`,
+    [from, to, outletId]
+  );
+
+  return rows
+    .map((r) => ({
+      auditId: r.audit_id,
+      occurredAt: keIso(r.occurred_at),
+      deviceId: r.device_id ?? '',
+      deviceCode: r.device_code,
+      outletId: r.outlet_id,
+      aktorId: r.actor_user_id,
+      aktorNama: r.aktor_nama ?? r.actor_user_id,
+      // `after` ditulis kode kami sendiri, tapi baris lama atau baris yang
+      // entah bagaimana cacat tidak boleh menjatuhkan laporannya.
+      skewDetik: typeof r.after?.skewDetik === 'number' ? r.after.skewDetik : 0,
+    }))
+    .sort((a, b) => Math.abs(b.skewDetik) - Math.abs(a.skewDetik));
+}

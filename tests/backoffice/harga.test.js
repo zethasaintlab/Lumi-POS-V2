@@ -89,7 +89,7 @@ test('harga memakai aturan rupiah yang SAMA dengan B-06/B-07', async () => {
   // `bacaRupiah` sudah ada di `produk.ts` dan sudah punya cacat yang
   // diperbaiki (`25.5` → 255). Salinan kedua di sini akan mengulanginya.
   const { buatMuatanHarga } = await import(MOD);
-  const { bacaRupiah } = await import('../../apps/backoffice/src/katalog/produk.ts');
+  const { bacaRupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
 
   for (const teks of ['30.000', '30000', '25.5', 'abc', '']) {
     const domain = bacaRupiah(teks);

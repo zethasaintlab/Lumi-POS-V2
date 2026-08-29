@@ -81,6 +81,22 @@ export const TABEL_LOKAL_SAJA = [
   // mengisi disk yang `outbox_local` butuhkan — telemetri dapat hilang,
   // penjualan tidak.
   'telemetry_local',
+  // F6 — feature flag. Murni lokal dan SENGAJA bukan raw table: menambah raw
+  // table mengubah sidik jari skema, dan itu menuntut unduh ulang katalog di
+  // setiap perangkat merchant untuk tiga boolean.
+  'fitur_lokal',
+  // KEP-21 — keranjang yang bertahan melewati muat ulang. Murni lokal dan
+  // SENGAJA bukan raw table (alasan yang sama dengan `fitur_lokal`), dan
+  // sengaja bukan `order` berstatus `open`: menulis baris `order` berarti
+  // mengirimkannya ke server, dan order `open` yang tidak pernah dibayar
+  // muncul di laporan tanpa punya jalan penutupan. Berbagi order antar device
+  // saat offline adalah non-goal v1 yang dinyatakan.
+  'keranjang_lokal',
+  // FR-C3/FR-C14 — draf QRIS dinamis yang menunggu konfirmasi gateway. Murni
+  // lokal dengan alasan yang sama; ia menjaga agar tab yang ter-refresh di
+  // tengah menunggu tidak menghilangkan jejak transaksi yang pelanggannya
+  // mungkin sudah bayar.
+  'draf_qris_lokal',
   'device_config',
   'skema_lokal',
   // Keduanya SENGAJA tidak didaftarkan: sesi kasir tidak punya padanan di
@@ -266,6 +282,19 @@ export const KOLOM_SENGAJA_TIDAK_TURUN = [
   'payment.hlc',
   'refund.tenant_id',
   'cash_movement.tenant_id',
+  // ⛔ F.5 — PENANDA sesi support (`audit_event.support_session_id`, migrasi
+  // `0034`) berhenti di server, dan itu keputusan.
+  //
+  // Sesi support adalah akses BACK-OFFICE: petugas support memakai token
+  // lewat REST, tidak pernah lewat aplikasi kasir. Baris audit yang perangkat
+  // TULIS tidak akan pernah punya penanda, jadi kolomnya akan turun kosong
+  // selamanya.
+  //
+  // Alasan menahannya sama dengan `tax_rate.tax_jurisdiction`: menambah kolom
+  // raw table mengubah SIDIK JARI skema lokal, dan itu menuntut
+  // `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant.
+  // Biaya nyata untuk kolom yang tidak satu pun layar kasir baca.
+  'audit_event.support_session_id',
   'item_variation.tenant_id',
   // ⛔ FR-F5 — HPP tidak pernah menyentuh perangkat kasir. Lihat catatan
   // panjang di `db/local/001-initial.sql`.

@@ -67,7 +67,7 @@ const BARIS = [{
 function args(over = {}) {
   return {
     konfig: KONFIG, sesi: SESI, shift: SHIFT,
-    keranjang: { baris: BARIS },
+    keranjang: { baris: BARIS, diskon: null },
     pembayaran: { metode: 'cash', tendered: 25000 },
     waktu: () => new Date('2026-08-13T07:00:00Z'),
     idBaru: (() => { let n = 0; return () => `id-${++n}`; })(),

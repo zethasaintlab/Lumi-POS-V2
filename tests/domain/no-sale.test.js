@@ -33,12 +33,28 @@ test('ambang dapat dikonfigurasi (AC FR-D7 kedua)', async () => {
   assert.equal(butuhPenyetujuNoSale(4, 99), false, 'ambang tinggi: tidak menuntut');
 });
 
-test('⛔ rencana membawa URUTANNYA, supaya layar dapat menyebutnya', async () => {
+test('⛔ rencana membawa URUTAN dan AMBANG, supaya layar dapat menyebut keduanya', async () => {
   // Kasir yang tiba-tiba dimintai PIN tanpa penjelasan menyimpulkan
   // aplikasinya rusak; kasir yang membaca "pembukaan ke-4" tahu persis kenapa.
-  const { rencanaNoSale } = await import(MOD);
-  assert.deepEqual(rencanaNoSale(0), { butuhPenyetuju: false, urutan: 1 });
-  assert.deepEqual(rencanaNoSale(3), { butuhPenyetuju: true, urutan: 4 });
+  //
+  // ⛔ `ambang` ikut sejak B-26 (24 Agustus 2026): merchant dapat menyetelnya
+  // per outlet, dan komponen yang membacanya dari konstanta bawaan akan
+  // menyebut "3×" pada outlet berambang 6 — memberi tahu kasir aturan yang
+  // tidak berlaku baginya.
+  const { rencanaNoSale, AMBANG_NO_SALE } = await import(MOD);
+  assert.deepEqual(rencanaNoSale(0), {
+    butuhPenyetuju: false,
+    urutan: 1,
+    ambang: AMBANG_NO_SALE,
+  });
+  assert.deepEqual(rencanaNoSale(3), {
+    butuhPenyetuju: true,
+    urutan: 4,
+    ambang: AMBANG_NO_SALE,
+  });
+  // Ambang outlet dipakai apa adanya, termasuk nol.
+  assert.deepEqual(rencanaNoSale(3, 6), { butuhPenyetuju: false, urutan: 4, ambang: 6 });
+  assert.deepEqual(rencanaNoSale(0, 0), { butuhPenyetuju: true, urutan: 1, ambang: 0 });
 });
 
 test('daftar alasan TERTUTUP, dan menolak nilai asing', async () => {

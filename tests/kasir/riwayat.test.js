@@ -169,3 +169,37 @@ test('pencarian nomor struk', async () => {
   assert.equal(cariRiwayat(daftar, '').length, 2);
   assert.equal(cariRiwayat(daftar, 'tidak ada').length, 0);
 });
+
+test('⛔ snapshot modifier: bentuk LAMA dan bentuk FR-A3 sama-sama terbaca', async () => {
+  const { bacaDetail } = await import(MOD);
+
+  const db = dbPalsu({
+    order: [ORDER],
+    order_line: [
+      // Bentuk lama — ada di perangkat merchant dan tidak dapat ditulis ulang:
+      // `order_line` tidak pernah di-UPDATE (invariant #2). Menolaknya berarti
+      // seluruh riwayat sebelum FR-A3 kehilangan modifiernya.
+      { id: 'l1', order_id: 'o1', item_name: 'Kopi', variation_name: 'Regular',
+        unit_price: 15000, quantity: 1000, line_total: 15000, tax_amount: 0,
+        modifier_snapshot: JSON.stringify(['Ekstra']) },
+      { id: 'l2', order_id: 'o1', item_name: 'Kopi', variation_name: 'Large',
+        unit_price: 20000, quantity: 1000, line_total: 20000, tax_amount: 0,
+        modifier_snapshot: JSON.stringify([
+          { nama: 'Extra shot', qtyMilli: 2000 },
+          { nama: 'Es sedikit', qtyMilli: 1000 },
+        ]) },
+      // JSON cacat tidak boleh menjatuhkan seluruh layar detail.
+      { id: 'l3', order_id: 'o1', item_name: 'Teh', variation_name: 'Regular',
+        unit_price: 10000, quantity: 1000, line_total: 10000, tax_amount: 0,
+        modifier_snapshot: '{bukan json' },
+    ],
+    payment: [],
+    refund: [],
+  });
+
+  const d = await bacaDetail(db, 'o1');
+  assert.deepEqual(d.baris[0].modifier, ['Ekstra']);
+  // Kuantitas TERLIHAT — ini layar yang dipakai memutuskan refund.
+  assert.deepEqual(d.baris[1].modifier, ['Extra shot ×2', 'Es sedikit']);
+  assert.deepEqual(d.baris[2].modifier, []);
+});

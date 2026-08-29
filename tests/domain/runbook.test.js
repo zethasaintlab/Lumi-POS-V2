@@ -96,6 +96,10 @@ const ENDPOINT = [
   '/inventory/movements',
   '/webhooks/midtrans',
   '/health',
+  // `ARCH:358` — kill switch. Runbook §13 menyuruh operator menjalankan
+  // alatnya; endpoint ini yang membawa hasilnya ke perangkat, dan jeda 15
+  // menitnya adalah angka yang operator butuhkan saat menunggu.
+  '/devices/{deviceId}/features',
 ];
 
 test('⛔ setiap endpoint yang runbook sebut terdaftar di OpenAPI', () => {

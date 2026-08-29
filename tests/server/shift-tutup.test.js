@@ -72,6 +72,19 @@ async function shift({ pemilik = null, saldoAwal = 100000, tanggal = '2026-08-10
   return id;
 }
 
+/** Baris audit bertipe tertentu pada satu shift. */
+async function auditRows(eventType, shiftId) {
+  await db.query('BEGIN');
+  await db.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const r = await db.query(
+    `SELECT actor_user_id, approver_user_id, reason_code, after
+       FROM audit_event WHERE event_type = $1 AND entity_id = $2`,
+    [eventType, shiftId]
+  );
+  await db.query('COMMIT');
+  return r.rows;
+}
+
 /** Satu baris `cash_movement` pada shift. */
 async function gerak(shiftId, { tipe = 'sale', delta = 50000, counterpart = 'sales_revenue' } = {}) {
   await db.query('BEGIN');
@@ -167,6 +180,39 @@ test('selisih besar dengan alasan dan penyetuju berhasil', async () => {
   assert.equal(b.difference, '-50000');
   assert.equal(b.butuhOtorisasi, true);
   assert.equal(b.approvedBy, base.user2.id);
+});
+
+test('⛔ selisih yang disetujui menulis cash_variance_approved TERSENDIRI', async () => {
+  // FR-F6 + `spec-f:293`. Peristiwa tersendiri, bukan `approver_user_id` yang
+  // kadang terisi pada `shift_closed`: laporan "siapa menyetujui selisih kas
+  // siapa" harus dapat dijawab dengan menyaring satu jenis peristiwa, tanpa
+  // pembacanya perlu tahu bahwa satu kolom bermakna berbeda tergantung jenis
+  // barisnya.
+  const id = await shift({ saldoAwal: 100000 });
+  const res = await tutup(
+    id,
+    { countedAmount: '50000', varianceReasonCode: 'kesalahan_hitung' },
+    { 'x-approver-id': base.user2.id }
+  );
+  assert.equal(res.statusCode, 200, res.body);
+
+  const rows = await auditRows('cash_variance_approved', id);
+  assert.equal(rows.length, 1);
+  // ⛔ DUA identitas, dan keduanya berbeda (FR-F7). CHECK di database
+  // menegakkannya juga.
+  assert.equal(rows[0].actor_user_id, base.user.id);
+  assert.equal(rows[0].approver_user_id, base.user2.id);
+  assert.notEqual(rows[0].actor_user_id, rows[0].approver_user_id);
+  assert.equal(rows[0].reason_code, 'kesalahan_hitung');
+  assert.equal(rows[0].after.difference, '-50000');
+});
+
+test('⛔ selisih DI BAWAH ambang tidak menulis cash_variance_approved', async () => {
+  // Peristiwa yang menyala untuk penutupan yang tidak menuntut siapa pun
+  // membuat laporan persetujuan penuh baris yang tidak ada persetujuannya.
+  const id = await shift({ saldoAwal: 100000 });
+  assert.equal((await tutup(id, { countedAmount: '100000' })).statusCode, 200);
+  assert.equal((await auditRows('cash_variance_approved', id)).length, 0);
 });
 
 test('⛔ penyetuju TIDAK boleh orang yang sama dengan yang menghitung', async () => {
@@ -426,4 +472,146 @@ test('⛔ ambang selisih SATU nilai, dibagi server dan perangkat', async () => {
   const { AMBANG_SELISIH: dariKasir } = await import('../../apps/kasir/src/kas/tutup.ts');
   assert.equal(dariKasir, AMBANG_SELISIH);
   assert.equal(AMBANG_SELISIH, 20000);
+});
+
+// ---------------------------------------------------------------------------
+// FR-D2 — percobaan hitungan kas, jalur tulis TERSENDIRI
+// ---------------------------------------------------------------------------
+
+async function kueri(sql, params) {
+  await db.query('BEGIN');
+  await db.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  try {
+    const { rows } = await db.query(sql, params);
+    await db.query('COMMIT');
+    return rows;
+  } catch (e) {
+    await db.query('ROLLBACK');
+    throw e;
+  }
+}
+
+const percobaan = (shiftId, payload = {}, ubah = {}) =>
+  app.inject({
+    method: 'POST',
+    url: `/shifts/${shiftId}/count-attempts`,
+    headers: hdr({ 'idempotency-key': crypto.randomUUID(), ...ubah }),
+    payload: {
+      id: crypto.randomUUID(),
+      countedAmount: '2450000',
+      attemptNumber: 1,
+      ...payload,
+    },
+  });
+
+test('⛔ percobaan hitungan tercatat di audit, dengan angka dan urutannya', async () => {
+  const id = await shift({ saldoAwal: 100000 });
+  const res = await percobaan(id, { countedAmount: '2450000', attemptNumber: 1 });
+  assert.equal(res.statusCode, 201, res.body);
+
+  // ⛔ Disaring per `event_type`, bukan menghitung SELURUH baris tabel.
+  const [row] = await kueri(
+    `SELECT actor_user_id, entity_type, entity_id, after FROM audit_event
+      WHERE event_type = 'shift_count_attempt' AND entity_id = $1`,
+    [id]
+  );
+  assert.ok(row, 'shift_count_attempt tidak dipancarkan');
+  assert.equal(row.entity_type, 'cash_drawer_shift');
+  assert.equal(row.after.countedAmount, '2450000');
+  assert.equal(row.after.attemptNumber, 1);
+});
+
+test('⛔ endpoint TIDAK menyentuh cash_drawer_shift sama sekali', async () => {
+  // Endpoint yang menulis percobaan DAN memperbarui shift akan menjadi jalan
+  // kedua menuju penutupan — tanpa pemeriksaan ambang, tanpa penyetuju, tanpa
+  // buku kas. Yang ditulis di sini hanya JEJAK.
+  const id = await shift({ saldoAwal: 100000 });
+  const [sebelum] = await kueri(
+    `SELECT status, counted_amount, expected_amount, closed_at FROM cash_drawer_shift WHERE id = $1`,
+    [id]
+  );
+  await percobaan(id, { countedAmount: '9999999' });
+  const [sesudah] = await kueri(
+    `SELECT status, counted_amount, expected_amount, closed_at FROM cash_drawer_shift WHERE id = $1`,
+    [id]
+  );
+  assert.deepEqual(sesudah, sebelum, 'shift tidak boleh berubah sama sekali');
+});
+
+test('⛔ percobaan BERTAHAN meski penutupan berikutnya DITOLAK', async () => {
+  // Inti FR-D2. Kasir mencoba Rp 2.450.000, melihat selisihnya melewati
+  // ambang, lalu mengetik angka yang cocok. Tanpa jalur tulis tersendiri,
+  // percobaan pertama tidak meninggalkan jejak apa pun — dan justru itulah
+  // yang `spec-d:127` ingin buktikan tidak dapat diulang diam-diam.
+  const id = await shift({ saldoAwal: 100000 });
+  await percobaan(id, { countedAmount: '50000', attemptNumber: 1 });
+
+  // Penutupan dengan selisih besar tanpa alasan → DITOLAK, transaksi rollback.
+  const tolak = await tutup(id, { countedAmount: '50000' });
+  assert.equal(tolak.statusCode, 400, tolak.body);
+
+  const jejak = await kueri(
+    `SELECT after FROM audit_event WHERE event_type = 'shift_count_attempt' AND entity_id = $1`,
+    [id]
+  );
+  assert.equal(jejak.length, 1, 'jejak percobaan hilang bersama rollback penutupan');
+  assert.equal(jejak[0].after.countedAmount, '50000');
+});
+
+test('percobaan KEDUA tercatat terpisah — riwayatnya utuh', async () => {
+  const id = await shift({ saldoAwal: 100000 });
+  await percobaan(id, { countedAmount: '2450000', attemptNumber: 1 });
+  await percobaan(id, { countedAmount: '2485000', attemptNumber: 2 });
+
+  const jejak = await kueri(
+    `SELECT after FROM audit_event WHERE event_type = 'shift_count_attempt' AND entity_id = $1
+      ORDER BY (after->>'attemptNumber')::int`,
+    [id]
+  );
+  assert.equal(jejak.length, 2);
+  assert.equal(jejak[0].after.countedAmount, '2450000');
+  assert.equal(jejak[1].after.countedAmount, '2485000');
+});
+
+test('⛔ shift yang SUDAH TERTUTUP tetap menerima percobaan', async () => {
+  // Yang dikirim terlambat — perangkat yang antreannya baru terkuras — adalah
+  // jejak dari SEBELUM penutupan. Menolaknya menghapus jejak justru pada
+  // perangkat yang paling lama offline.
+  const id = await shift({ saldoAwal: 100000 });
+  assert.equal((await tutup(id, { countedAmount: '100000' })).statusCode, 200);
+
+  const res = await percobaan(id, { countedAmount: '100000', attemptNumber: 1 });
+  assert.equal(res.statusCode, 201, res.body);
+});
+
+test('muatan cacat ditolak sebelum menulis apa pun', async () => {
+  // ⛔ `countedAmount: 2450000` (NUMBER) TIDAK ada di daftar ini, dan itu
+  // batas yang dinyatakan: koersi AJV mengubahnya menjadi string `"2450000"`
+  // sebelum handler melihatnya. Kontrak bertipe string tidak dapat menolak
+  // `number` di handler — kelas yang sama dengan temuan ambang otorisasi
+  // (`number` → `string`) dan telemetri (`null` → `0`).
+  //
+  // Yang MASIH dapat dijaga adalah nilainya: pecahan dan tanda negatif
+  // menghasilkan string yang gagal regex, dan itu yang diuji di bawah.
+  const id = await shift({ saldoAwal: 100000 });
+  for (const p of [
+    { countedAmount: '-100' },
+    { countedAmount: '24.5' },
+    { attemptNumber: 0 },
+    { attemptNumber: 'satu' },
+    { id: '' },
+  ]) {
+    const res = await percobaan(id, p);
+    assert.equal(res.statusCode, 400, `${JSON.stringify(p)}: ${res.body}`);
+  }
+  const jejak = await kueri(
+    `SELECT id FROM audit_event WHERE event_type = 'shift_count_attempt' AND entity_id = $1`,
+    [id]
+  );
+  assert.equal(jejak.length, 0);
+});
+
+test('shift milik tenant lain dijawab 404', async () => {
+  const res = await percobaan(crypto.randomUUID());
+  assert.equal(res.statusCode, 404, res.body);
 });

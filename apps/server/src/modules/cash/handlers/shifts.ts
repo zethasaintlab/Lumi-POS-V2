@@ -4,6 +4,7 @@ import { HttpError } from '../../../http-error.ts';
 import { getTenantId, getActorId } from '../../../tenant-context.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { assertUserVisible, assertDeviceVisible } from '../../identity/index.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import { randomUUID } from 'node:crypto';
 import {
@@ -153,7 +154,29 @@ export function createShiftHandlers(pool: Pool) {
         await assertOutletVisible(client, body.outletId);
         await assertDeviceVisible(client, body.deviceId);
         await assertUserVisible(client, actorId);
-        return insertShift(client, tenantId, actorId, body);
+        const row = await insertShift(client, tenantId, actorId, body);
+        // FR-F6 + `spec-f:291` (`shift_opened`). Sampai 23 Agustus 2026 setiap
+        // shift dibuka tanpa satu pun jejak — berkas ini tidak menyentuh
+        // `recordAuditEvent` sama sekali, sementara pasangannya (`shift_closed`)
+        // sudah punya sejak F3.
+        //
+        // ⛔ `openingFloat` sebagai STRING. Modal awal adalah uang, dan uang
+        // yang melewati `Number` di jalur audit adalah cacat yang sama dengan
+        // yang PR #32 perbaiki di payload pembatalan.
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'shift_opened',
+          entityType: 'cash_drawer_shift',
+          entityId: row.id,
+          outletId: body.outletId,
+          after: {
+            openingFloat: String(row.opening_float),
+            businessDate: String(row.business_date),
+            deviceId: body.deviceId,
+          },
+        });
+        return row;
       });
       reply.code(201);
       return toShift(row);

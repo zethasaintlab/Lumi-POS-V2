@@ -25,7 +25,7 @@ const ID = '018f2a10-0000-7000-8000-000000000001';
 test('rupiah diformat titik ribuan tanpa desimal', async () => {
   // `CLAUDE.md`: `Rp 1.847.000` — titik ribuan, tanpa desimal. Design system
   // menetapkan tanpa desimal, dan uang adalah bigint rupiah utuh.
-  const { rupiah } = await import(MOD);
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(rupiah(1847000), 'Rp 1.847.000');
   assert.equal(rupiah(0), 'Rp 0');
   assert.equal(rupiah(25000), 'Rp 25.000');
@@ -36,13 +36,13 @@ test('⛔ rupiah menerima bigint, number, DAN string', async () => {
   // bigint atau string tergantung driver (`CLAUDE.md` — temuan
   // `@powersync/web`). Guard yang hanya memeriksa `number` tidak pernah
   // mengambil cabangnya, dan itu hijau di test sambil salah di aplikasi.
-  const { rupiah } = await import(MOD);
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(rupiah(25000n), 'Rp 25.000');
   assert.equal(rupiah('25000'), 'Rp 25.000');
 });
 
 test('bacaRupiah menerima yang diketik manusia', async () => {
-  const { bacaRupiah } = await import(MOD);
+  const { bacaRupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(bacaRupiah('25000'), 25000);
   assert.equal(bacaRupiah('25.000'), 25000);
   assert.equal(bacaRupiah('Rp 25.000'), 25000);
@@ -53,14 +53,14 @@ test('⛔ bacaRupiah menolak yang bukan angka utuh, bukan mengembalikan NaN', as
   // `Number('')` adalah 0, dan `Number('abc')` adalah NaN — keduanya lolos
   // sebagai "harga" kalau tidak diperiksa. Harga 0 yang lahir dari field
   // kosong adalah produk yang dijual gratis.
-  const { bacaRupiah } = await import(MOD);
+  const { bacaRupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   for (const buruk of ['', '   ', 'abc', '25.5', '-100', '1e5']) {
     assert.equal(bacaRupiah(buruk), null, `"${buruk}" diterima`);
   }
 });
 
 test('bacaRupiah menerima nol yang DIKETIK, karena produk gratis itu sah', async () => {
-  const { bacaRupiah } = await import(MOD);
+  const { bacaRupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(bacaRupiah('0'), 0);
 });
 

@@ -1,7 +1,8 @@
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
-import { getTenantId } from '../../../tenant-context.ts';
+import { getActorId, getTenantId } from '../../../tenant-context.ts';
+import { catatPerubahanServer } from '../../audit/index.ts';
 import { isPrimaryKeyViolation } from './pg-error.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { findInvisibleItemIds, findInvisibleCategoryIds } from '../../catalog/index.ts';
@@ -190,10 +191,34 @@ export async function fetchEffectiveTaxRates(
   }));
 }
 
+/**
+ * Bentuk tarif untuk `before`/`after` audit.
+ *
+ * ⛔ `rate` dikirim sebagai STRING apa adanya dari kolom `numeric(6,4)`.
+ * Melewatkannya lewat `Number` adalah persis yang `packages/domain/src/numeric.ts`
+ * ada untuk mencegah — dan audit trail pajak yang angkanya bergeser adalah
+ * bukti yang lebih buruk daripada tidak ada bukti.
+ */
+function ringkasTarif(row: TaxRateRow) {
+  return {
+    name: row.name,
+    type: row.type,
+    rate: String(row.rate),
+    isInclusive: row.is_inclusive,
+    phase: row.phase,
+    channel: row.channel,
+    appliesTo: row.applies_to,
+    jurisdiction: row.jurisdiction,
+    effectiveFrom: row.effective_from === null ? null : String(row.effective_from),
+    effectiveTo: row.effective_to === null ? null : String(row.effective_to),
+  };
+}
+
 export function createTaxRateHandlers(pool: Pool) {
   return {
     async createTaxRate(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const body = req.body as TaxRateInput;
 
       assertEnum(body.type, VALID_TYPES, 'type');
@@ -235,6 +260,19 @@ export function createTaxRateHandlers(pool: Pool) {
             appliesToIds,
             body.effectiveFrom ?? null,
           ]);
+          // FR-F6 + `spec-f:297` (`tax_rate_changed`). ⛔ Invariant #7 tidak
+          // dilanggar: yang ditulis di sini SALINAN nilai yang `TaxCalculator`
+          // hitung, bukan aritmetika pajak. Tidak ada satu pun angka tarif
+          // yang dikarang di berkas audit.
+          await catatPerubahanServer(client, {
+            tenantId,
+            actorUserId: actorId,
+            eventType: 'tax_rate_changed',
+            entityType: 'tax_rate',
+            entityId: rows[0].id,
+            outletId: rows[0].outlet_id,
+            after: ringkasTarif(rows[0]),
+          });
           return rows[0];
         } catch (err) {
           if (isPrimaryKeyViolation(err)) {
@@ -261,8 +299,17 @@ export function createTaxRateHandlers(pool: Pool) {
     // data finansial tidak pernah di-DELETE.
     async endTaxRate(req: FastifyRequest) {
       const tenantId = getTenantId(req);
+      const actorId = getActorId(req);
       const { taxRateId } = req.params as { taxRateId: string };
       const row = await withTenantTransaction(pool, tenantId, async (client) => {
+        // ⛔ Baris LAMA lebih dulu. `COALESCE(effective_to, now())` membuat
+        // pengakhiran kedua tidak mengubah apa pun; tanpa `before`, audit
+        // tidak dapat membedakan tarif yang baru saja diakhiri dari tarif yang
+        // sudah lama berakhir dan diklik lagi.
+        const { rows: lama } = await client.query<TaxRateRow>(
+          'SELECT * FROM tax_rate WHERE id = $1',
+          [taxRateId]
+        );
         // now() dari jam database, sama seperti penyaringan di
         // fetchEffectiveTaxRates -- kalau keduanya memakai jam berbeda, tarif
         // bisa tampak masih berlaku sesaat setelah diakhiri.
@@ -274,6 +321,16 @@ export function createTaxRateHandlers(pool: Pool) {
         if (rows.length === 0) {
           throw new HttpError(404, 'NOT_FOUND', `Tarif pajak ${taxRateId} tidak ditemukan.`);
         }
+        await catatPerubahanServer(client, {
+          tenantId,
+          actorUserId: actorId,
+          eventType: 'tax_rate_changed',
+          entityType: 'tax_rate',
+          entityId: taxRateId,
+          outletId: rows[0].outlet_id,
+          before: lama.length === 0 ? null : ringkasTarif(lama[0]),
+          after: ringkasTarif(rows[0]),
+        });
         return rows[0];
       });
       return toTaxRate(row);

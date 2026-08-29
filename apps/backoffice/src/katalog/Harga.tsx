@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
-import { daftarPemilih, kueriDaftarProduk, rupiah, type Item } from './produk.ts';
+import { daftarPemilih, kueriDaftarProduk, type Item } from './produk.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* ⛔ Pemilih menampilkan paling banyak segini. Layar ini memilih SATU varian;
    daftar yang lebih panjang bukan bantuan melainkan dinding yang harus

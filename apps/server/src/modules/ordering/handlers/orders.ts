@@ -18,7 +18,7 @@ import { recordStockMovements, detectOversell } from '../../inventory/index.ts';
 import { getVariationSnapshot, resolvePrice, wasPriceEverEffective } from '../../catalog/index.ts';
 import type { VariationSnapshotRow } from '../../catalog/index.ts';
 import { assertShiftOpen } from '../../cash/index.ts';
-import { recordAuditEvent } from '../../audit/index.ts';
+import { catatDriftJam, recordAuditEvent } from '../../audit/index.ts';
 import { fetchEffectiveTaxRates } from '../../payment/index.ts';
 import { formatScaledRate } from '../../../../../../packages/domain/src/numeric.ts';
 import {
@@ -393,12 +393,13 @@ const INSERT_LINE_SQL = `
     id, tenant_id, outlet_id, device_id, order_id, check_id, variation_id,
     item_name, variation_name, unit_price, quantity, modifier_snapshot, discount_amount,
     tax_rate_id, tax_rate, tax_amount, is_tax_inclusive, cost_at_sale, line_total,
-    created_by, occurred_at, hlc, tax_rate_name, tax_jurisdiction
+    created_by, occurred_at, hlc, tax_rate_name, tax_jurisdiction,
+    variation_count_at_sale
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13,
     $14, $15::numeric, $16, $17, $18, $19,
-    $20, $21, $22, $23, $24
+    $20, $21, $22, $23, $24, $25
   )
   RETURNING *
 `;
@@ -533,6 +534,14 @@ async function insertOrderTree(
         // yang dipindah yurisdiksi setelah transaksi tidak boleh mengubah
         // rekapitulasi periode yang sudah dilaporkan.
         taxForLine?.jurisdiction ?? null,
+        // FR-A2 AC keempat — jumlah varian item ini SAAT PENJUALAN, dari
+        // `getVariationSnapshot` (invariant #4: ordering tidak menghitung
+        // baris `item_variation` sendiri).
+        //
+        // ⛔ Kolomnya `NOT NULL` TANPA default (migrasi `0035`): jalur tulis
+        // yang lupa mengirimnya GAGAL, alih-alih diam-diam mengaku "produk ini
+        // hanya punya satu varian" lalu menghilangkan nama varian dari struk.
+        calc.snapshot.variationCount,
       ]);
       const lineRow = lineRows[0];
 
@@ -1049,6 +1058,25 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
         const written = await insertOrderTree(
           client, tenantId, actorId, body, hlcValue, lineCalcs, totals, breakdown, variance, orderDiscount
         );
+
+        // ⛔ FR-F8 — jam perangkat dibandingkan dengan jam server SAAT
+        // TERSINKRON. Ia dipanggil SESUDAH ordernya ditulis, dan itu bukan
+        // urutan sembarang: deteksi jam tidak boleh berada di antara
+        // pemeriksaan dan penulisan penjualan, tempat kegagalannya dapat
+        // menahan uang yang sudah diterima merchant.
+        //
+        // ⛔ Yang dibandingkan `X-Device-Time` (jam perangkat SEKARANG), bukan
+        // `occurredAt`. Order yang antre offline berjam-jam memang lebih tua
+        // daripada `recorded_at`, dan `spec-f:346` menyebut itu WAJAR.
+        await catatDriftJam(client, {
+          tenantId,
+          outletId: body.outletId,
+          deviceId: body.deviceId,
+          actorUserId: actorId,
+          headerJam: req.headers['x-device-time'],
+          hlc: hlcValue,
+          idBaru: randomUUID,
+        });
 
         // ⛔ FR-B8 AC kedua: `audit_event` menyimpan DUA identitas terpisah.
         //

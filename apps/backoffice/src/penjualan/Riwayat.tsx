@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
-import { useSesi } from '../sesi.tsx';
-import { GalatHttp } from '../http.ts';
+import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
+import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
-import { rupiah } from '../katalog/produk.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { RentangTanggal, hariIni, type Outlet } from '../laporan/RentangTanggal.tsx';
 import { rentangSiap, type Rentang } from '../laporan/b16.ts';
 // Formatter waktu dipakai bersama B-21. Ia tinggal di sana karena di sanalah ia

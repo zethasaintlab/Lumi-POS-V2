@@ -13,6 +13,7 @@ import { createCashHandlers } from './modules/cash/index.ts';
 import { createOrderingHandlers } from './modules/ordering/index.ts';
 import { createPaymentHandlers } from './modules/payment/index.ts';
 import { createRilisHandlers } from './modules/rilis/index.ts';
+import { createPeripheralHandlers } from './modules/peripheral/index.ts';
 import { createTenancyHandlers } from './modules/tenancy/index.ts';
 import { createReportingHandlers } from './modules/reporting/index.ts';
 import { createInventoryHandlers } from './modules/inventory/index.ts';
@@ -193,6 +194,7 @@ async function buildAppInner(
     ...createOrderingHandlers(pool, hlc),
     ...createPaymentHandlers(pool, hlc, paymentProvider, webhookSecret),
     ...createRilisHandlers(pool),
+    ...createPeripheralHandlers(pool, hlc),
     ...createTenancyHandlers(pool, hlc, subscriptionProvider),
     // Agregator baca-saja; satu-satunya modul yang boleh membaca lintas domain.
     ...createReportingHandlers(pool),
