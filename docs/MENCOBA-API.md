@@ -1,5 +1,21 @@
 # Mencoba Lumi POS di browser
 
+> ⛔ **Berkas ini DISUSUL, dan kalimat pembukanya sudah tidak benar.**
+>
+> Ia ditulis 2 Agustus 2026, saat `apps/kasir/src/App.tsx` masih 12 baris dan
+> `apps/backoffice/` hanya berisi `README.md`. Sejak itu **tiga aplikasi
+> berdiri** — kasir (1420), back-office (1422), dan Owner mobile (1423) — dan
+> `tools/dev-seed.mjs` bukan lagi satu-satunya jalan mendapatkan data.
+>
+> **Untuk mencoba produknya, pakai [`UJI-COBA-V1.md`](UJI-COBA-V1.md)**:
+> instalasi bersih, `tools/seed-explore.mjs`, matriks kredensial per peran, dan
+> skenario uji coba v1.
+>
+> Yang di bawah tetap dipertahankan karena masih benar untuk satu hal yang
+> panduan baru tidak lakukan: menembak **API REST langsung** dari konsol
+> devtools, tanpa satu pun aplikasi. Anggap deskripsi tentang keadaan repo
+> ("belum ada X") sebagai catatan sejarah, bukan keadaan hari ini.
+
 **Belum ada antarmuka pengguna.** `apps/kasir/src/App.tsx` masih 12 baris berisi
 `AppShell` kosong; `apps/backoffice/` hanya berisi `README.md`. Yang sudah ada
 adalah **API REST** — dan itu yang bisa kamu coba.

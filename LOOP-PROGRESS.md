@@ -4184,3 +4184,92 @@ kosong dengan menjalankannya (FR-F6 tertutup).
 ⛔ **Perbedaan itu harus dijaga di kalimat mana pun tentang v1.** "Cakupan kode
 selesai" benar; "v1 terverifikasi di lapangan" tidak — dan yang kedua hanya
 dapat dikatakan setelah Acceptance Test yang keempat baris di atas tunggu.
+
+---
+
+## Task 51 — panduan uji coba clean install, dan satu cacat yang menghalanginya
+
+**29 Agustus 2026.** Permintaan user: panduan uji coba menyeluruh dari instalasi
+bersih. Menyiapkannya menemukan tiga hal yang membuat panduan itu tidak dapat
+ditulis dengan jujur sebelum diperbaiki.
+
+### ⛔ Cacat 1 — dua dari tiga aplikasi diblokir CORS
+
+`.env.example` memuat `1420,1422`; `apps/hp` lahir 25 Agustus sebagai aplikasi
+KETIGA dan **1423 tidak pernah ditambahkan**. `.env` mesin pengembangan lebih
+buruk: `1422,5173` — kasir DAN HP sama-sama diblokir.
+
+Gejalanya tidak menyebut CORS di layar mana pun: aplikasi memuat dengan
+sempurna, lalu login gagal seperti server mati atau kata sandi salah.
+Satu-satunya tempat kebenarannya tertulis adalah tab Network, dan orang yang
+mencoba produk ini pertama kali tidak membukanya.
+
+**Tidak ada satu pun test yang merah selama itu** — setiap test memanggil server
+lewat `buildApp` di dalam proses yang sama dan tidak pernah melewati preflight
+browser sama sekali.
+
+Penjaganya `tests/runtime/cors-origin-aplikasi.test.js`, dan aturannya
+**diturunkan dari `vite.config.ts` tiap aplikasi**, bukan ditulis ulang: daftar
+port yang diketik tangan adalah daftar KEDUA yang harus diingat, dan yang lupa
+memperbaruinya adalah orang yang sama yang lupa memperbarui `.env.example`.
+Port 1421 ikut ditolak — ia HMR Tauri, tetangga langsung 1420/1422, dan
+menuliskannya terasa benar.
+
+### ⛔ Cacat 2 — aplikasi kasir tidak dapat disiapkan dari keluaran seed
+
+K-15 menuntut enam nilai: alamat server, tenant, outlet, id perangkat, kode, dan
+**secret**. Lima yang pertama UUID yang hanya ada di dalam proses seed; yang
+keenam dikembalikan `POST /devices/{id}/credentials` **sekali saja** (FR-F12).
+
+`seed-explore.mjs` mencetak email dan PIN lalu berhenti — jadi satu-satunya
+jalan menyiapkan kasir adalah menggali UUID lewat `psql`. Seed kini menerbitkan
+kredensial dan mencetak blok K-15 lengkap.
+
+### ⛔ Cacat 3 — tidak ada jalan ke database BERSIH
+
+`db:bootstrap` idempoten dan `db:migrate` melewati migrasi yang sudah tercatat.
+Keduanya benar. Konsekuensinya: "uji coba dari instalasi bersih" di atas
+database lama **tidak pernah menjalankan migrasinya lagi**, jadi migrasi yang
+rusak tetap terlihat hijau. `db/reset.js` menutupnya, dengan penjaga localhost
+yang sama kerasnya dengan `pastikanLokal` di seed.
+
+### Yang dibangun
+
+`docs/UJI-COBA-V1.md` — sembilan bagian. Batas yang dinyatakan, bukan
+disembunyikan: **aplikasi kasir tidak dapat di-login tanpa PowerSync**, karena
+tabel `"user"` tempat PIN diverifikasi turun lewat jalur turun. Tanpa layanan
+itu, `waitForFirstSync()` selesai dalam 0 ms dan **melaporkan sukses** atas
+katalog kosong. Daemon Docker tidak tersedia di lingkungan verifikasi, jadi
+rangkaian PowerSync-nya **tidak dijalankan** — dan panduan mengatakan itu alih-alih
+berpura-pura sebaliknya.
+
+`docs/MENCOBA-API.md` diberi banner disusul: kalimat pembukanya ("belum ada
+antarmuka pengguna") sudah salah sejak tiga aplikasi berdiri.
+
+### Verifikasi — DIJALANKAN, bukan disusun dari ingatan
+
+Seluruh rangkaian panduan dieksekusi dari nol dua kali: `db:reset` →
+`db:bootstrap` → `db:migrate` (35 migrasi) → server → `seed:explore`. Login
+keempat peran back-office dijawab 200 dengan peran yang benar; `/reports/daily-summary`,
+`/reports/needs-attention`, `/reports/dashboard/summary`, `/reports/inventory/stocks`,
+`/reports/inventory/oversells`, `/reports/exceptions/voids`, `/reports/shifts`,
+dan `/audit-events` semuanya 200 atas data seed; `belumDipancarkan` kosong.
+Preflight CORS diperiksa per port: 1420/1422/1423 diizinkan, **1421 diblokir**.
+Ketiga aplikasi Vite melayani 200 secara bersamaan.
+
+### Sabotase
+
+Dua, keduanya merah di test yang benar: 1423 dihapus dari `.env.example`
+(penjaga kelengkapan merah, penjaga port-asing tetap hijau) · 1421 ditambahkan
+(penjaga port-asing merah, penjaga kelengkapan tetap hijau).
+
+### Verifikasi suite
+
+Seluruh 18 suite hijau, berurutan: `test:kasir` 521 · `test:domain` 506 ·
+`test:server` 502 · `test:backoffice` 439 · `test:isolation` 211 ·
+`test:ordering` 211 · `test:catalog` 177 · `test:identity` 156 ·
+`test:payment` 132 · `test:sync-client` 103 · `test:tenancy` 75 ·
+`test:hp` 49 · `test:schema` 14 · `test:dst` 14 ·
+`test:oxlint-ds-adherence` 12 · `test:dst-server` 10 · `test:sqlite-local` 8 ·
+`test:runtime` **6** (naik dari 3). `typecheck` dan `lint:ds` bersih; ketiga
+aplikasi ter-build.

@@ -21,6 +21,9 @@ Point-of-sale untuk kafe takeaway 2–20 outlet di Indonesia. Offline-first, mul
 
 ## Urutan baca
 
+### Kalau kamu ingin MENJALANKANNYA
+[`docs/UJI-COBA-V1.md`](docs/UJI-COBA-V1.md) — instalasi bersih sampai uji coba per peran: prasyarat, reset database, seed data eksplorasi (`The Cafe by ORIGEN`), menjalankan keempat proses, matriks kredensial, dan delapan skenario uji. Termasuk daftar tegas tentang apa yang **belum** dapat diuji dan kenapa.
+
 ### Kalau kamu punya 10 menit
 [`research/00-EXECUTIVE-BRIEF.md`](research/00-EXECUTIVE-BRIEF.md) — sintesis, arsitektur satu halaman, lima risiko terbesar, urutan build.
 
