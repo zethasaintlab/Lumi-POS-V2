@@ -203,3 +203,75 @@ test('⛔ snapshot modifier: bentuk LAMA dan bentuk FR-A3 sama-sama terbaca', as
   assert.deepEqual(d.baris[1].modifier, ['Extra shot ×2', 'Es sedikit']);
   assert.deepEqual(d.baris[2].modifier, []);
 });
+
+test('⛔ snapshot modifier bentuk SERVER terbaca — bukan kata "undefined"', async () => {
+  // Cacat yang DIRAMALKAN, dan 29 Agustus 2026 harinya.
+  //
+  // `CLAUDE.md` mencatat sejak FR-A3 bahwa snapshot klien "masih BERBEDA dari
+  // snapshot server (`[{id, modifierId, name, price, quantityMilli}]`); tidak
+  // berbahaya hari ini karena `order_line` tidak ada di sync rules jalur
+  // turun, DAN MENJADI BERBAHAYA PADA HARI IA MASUK."
+  //
+  // Stream `riwayat` memasukkannya. Server menulis `name`/`quantityMilli`;
+  // parser membaca `nama`/`qtyMilli`. Tanpa bentuk ketiga, setiap modifier
+  // pada setiap baris yang dipulihkan dari server tampil sebagai kata
+  // `"undefined"` — tanpa satu pun error, di layar yang dipakai memutuskan
+  // refund.
+  const { bacaDetail } = await import(MOD);
+
+  const db = dbPalsu({
+    order: [ORDER],
+    order_line: [
+      { id: 'l1', order_id: 'o1', item_name: 'Kopi', variation_name: 'Large',
+        unit_price: 20000, quantity: 1000, line_total: 20000, tax_amount: 0,
+        modifier_snapshot: JSON.stringify([
+          { id: 'olm1', modifierId: 'm1', name: 'Extra shot', price: 5000, quantityMilli: 2000 },
+          { id: 'olm2', modifierId: 'm2', name: 'Es sedikit', price: 0, quantityMilli: 1000 },
+        ]) },
+    ],
+    payment: [],
+    refund: [],
+  });
+
+  const d = await bacaDetail(db, 'o1');
+  assert.deepEqual(d.baris[0].modifier, ['Extra shot ×2', 'Es sedikit']);
+  // Dinyatakan terpisah: kata `undefined` tidak boleh muncul di mana pun.
+  // Assertion di atas sudah menutupnya, tapi yang gagal berikutnya harus
+  // menyebut GEJALANYA, bukan hanya nilai yang tidak cocok.
+  for (const m of d.baris[0].modifier) {
+    assert.equal(m.includes('undefined'), false, `nama modifier hilang: ${m}`);
+  }
+});
+
+test('⛔ ketiga bentuk snapshot hidup berdampingan dalam satu order', async () => {
+  // Perangkat yang dipulihkan memuat KEDUANYA: baris lama yang ia tulis
+  // sendiri (bentuk klien) dan baris yang turun dari server (bentuk server).
+  // Satu order dapat memuat keduanya, dan tidak ada apa pun di barisnya yang
+  // menyatakan bentuk mana yang dipakai.
+  const { bacaDetail } = await import(MOD);
+
+  const db = dbPalsu({
+    order: [ORDER],
+    order_line: [
+      { id: 'l1', order_id: 'o1', item_name: 'A', variation_name: 'R',
+        unit_price: 1000, quantity: 1000, line_total: 1000, tax_amount: 0,
+        modifier_snapshot: JSON.stringify(['Ekstra']) },
+      { id: 'l2', order_id: 'o1', item_name: 'B', variation_name: 'R',
+        unit_price: 1000, quantity: 1000, line_total: 1000, tax_amount: 0,
+        modifier_snapshot: JSON.stringify([{ nama: 'Sirup', qtyMilli: 3000 }]) },
+      { id: 'l3', order_id: 'o1', item_name: 'C', variation_name: 'R',
+        unit_price: 1000, quantity: 1000, line_total: 1000, tax_amount: 0,
+        modifier_snapshot: JSON.stringify([{ name: 'Sirup', quantityMilli: 3000 }]) },
+    ],
+    payment: [],
+    refund: [],
+  });
+
+  const d = await bacaDetail(db, 'o1');
+  assert.deepEqual(d.baris[0].modifier, ['Ekstra']);
+  // ⛔ Kedua bentuk berkuantitas sama HARUS menghasilkan teks yang sama.
+  // Baris yang sama yang dibaca berbeda tergantung asalnya adalah riwayat
+  // yang tidak dapat dipakai membandingkan apa pun.
+  assert.deepEqual(d.baris[1].modifier, d.baris[2].modifier);
+  assert.deepEqual(d.baris[2].modifier, ['Sirup ×3']);
+});

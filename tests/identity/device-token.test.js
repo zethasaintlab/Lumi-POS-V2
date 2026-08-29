@@ -13,6 +13,8 @@
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const { readFileSync } = require('node:fs');
+const { resolve } = require('node:path');
 const { connectAsOwner, connectAsApp } = require('../isolation/helpers/db');
 const { resetAll } = require('../isolation/helpers/reset');
 const { seedTenantBase } = require('../isolation/helpers/seed');
@@ -181,14 +183,51 @@ test('F12-3 secret yang benar ditukar jadi JWT berumur pendek', async () => {
 // Diukur di prototipe 05: `auth.parameter('x')` membaca `payload.x`. Salah
 // tempat berarti sync rules mencocokkan `tenant_id` dengan `undefined` --
 // dan yang turun bukan error, melainkan NOL BARIS.
-test('F12-4 token membawa tenant_id dan outlet_id sebagai klaim top-level', async () => {
+test('F12-4 token membawa tenant_id, outlet_id, dan device_id sebagai klaim top-level', async () => {
   const deviceId = await buatDevice();
   const { secret } = (await terbitkanKredensial(deviceId)).json();
   const p = payload((await mintaToken(deviceId, secret)).json().token);
 
   assert.equal(p.tenant_id, tenant.id);
   assert.equal(p.outlet_id, outlet.id);
+  // ⛔ `device_id` adalah BATAS REPLIKASI stream `riwayat` (29 Agustus 2026).
+  //
+  // Ia menyaring `order`/`order_line`/`payment` ke perangkat ini saja. Klaim
+  // yang hilang membuat `auth.parameter('device_id')` bernilai `undefined`,
+  // dan yang turun bukan error melainkan NOL BARIS — riwayat kosong permanen,
+  // gejala yang persis sama dengan pelajaran prototipe 05 tentang klaim yang
+  // salah tempat. Diuji di sini supaya klaimnya tidak dapat hilang diam-diam.
+  assert.equal(p.device_id, deviceId);
   assert.equal(p.parameters, undefined, 'klaim ditaruh di dalam `parameters` -- sync rules tidak membacanya di sana');
+});
+
+test('⛔ setiap parameter yang sync rules baca punya klaim di token', () => {
+  // Penjaga silang: `auth.parameter('x')` di sync rules HARUS punya `x` di
+  // payload token. Keduanya hidup di berkas berbeda yang tidak ada apa pun
+  // menyatukannya, dan yang tidak sepakat menghasilkan NOL BARIS — bukan
+  // error. Aturannya diturunkan dari sync rules, bukan didaftar tangan.
+  const KONFIG = resolve(
+    __dirname,
+    '../../prototypes/05-powersync-jalur-turun/powersync/sync-config.yaml'
+  );
+  const teks = readFileSync(KONFIG, 'utf8').replace(/\r\n?/g, '\n');
+  const dipakai = new Set(
+    [...teks.matchAll(/auth\.parameter\('(\w+)'\)/g)].map((m) => m[1])
+  );
+  assert.ok(dipakai.size >= 3, `hanya ${dipakai.size} parameter terbaca; pembaca rusak`);
+
+  const sumber = readFileSync(
+    resolve(__dirname, '../../apps/server/src/modules/identity/handlers/tokens.ts'),
+    'utf8'
+  );
+  for (const nama of dipakai) {
+    assert.match(
+      sumber,
+      new RegExp(`^\\s*${nama}:`, 'm'),
+      `sync rules membaca auth.parameter('${nama}') tapi token tidak pernah memuatnya — ` +
+        'yang turun akan NOL BARIS, tanpa satu pun error'
+    );
+  }
 });
 
 test('F12-3 secret salah, kosong, atau tanpa header ditolak 401', async () => {

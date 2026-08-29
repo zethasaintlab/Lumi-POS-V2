@@ -303,12 +303,32 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
  * Bentuk rusak dikembalikan sebagai daftar kosong: satu baris yang JSON-nya
  * cacat tidak boleh menjatuhkan seluruh layar detail.
  *
- * ⛔ DUA bentuk diterima, dan itu bukan kelonggaran. Sebelum FR-A3 isinya
- * `["Es"]`; sejak FR-A3 ia `[{ nama, qtyMilli }]` supaya "Extra Shot ×2"
- * terbaca di layar yang dipakai memutuskan refund. Baris lama ada di perangkat
- * merchant dan tidak dapat ditulis ulang — `order_line` tidak pernah di-`UPDATE`
- * (invariant #2). Menolak bentuk lama berarti seluruh riwayat sebelum hari ini
- * kehilangan modifiernya.
+ * ⛔ TIGA bentuk diterima, dan tidak satu pun adalah kelonggaran.
+ *
+ *   1. `["Es"]` — sebelum FR-A3.
+ *   2. `[{ nama, qtyMilli }]` — bentuk KLIEN sejak FR-A3, supaya "Extra Shot ×2"
+ *      terbaca di layar yang dipakai memutuskan refund.
+ *   3. `[{ name, quantityMilli }]` — bentuk SERVER.
+ *
+ * Baris lama ada di perangkat merchant dan tidak dapat ditulis ulang —
+ * `order_line` tidak pernah di-`UPDATE` (invariant #2). Menolak bentuk lama
+ * berarti seluruh riwayat sebelum hari ini kehilangan modifiernya.
+ *
+ * ⛔ BENTUK KETIGA ADALAH CACAT YANG DIRAMALKAN, DAN HARI INI HARINYA.
+ *
+ * `CLAUDE.md` mencatat sejak FR-A3 bahwa snapshot klien "masih BERBEDA dari
+ * snapshot server (`[{id, modifierId, name, price, quantityMilli}]`); tidak
+ * berbahaya hari ini karena `order_line` tidak ada di sync rules jalur turun,
+ * **dan menjadi berbahaya pada hari ia masuk**."
+ *
+ * 29 Agustus 2026 ia masuk. Tanpa bentuk ketiga, `nama` bernilai `undefined`
+ * pada setiap baris yang turun dari server, `String(undefined)` menghasilkan
+ * teks `"undefined"`, dan K-08 menampilkan kata itu sebagai nama modifier untuk
+ * SETIAP baris riwayat yang dipulihkan. Diverifikasi dengan menjalankannya
+ * sebelum diperbaiki: hasilnya `["undefined"]`.
+ *
+ * Tidak ada error di mana pun di jalur itu — hanya kata yang salah di layar
+ * yang dipakai memutuskan refund.
  */
 function uraikanModifier(snapshot: string | null): string[] {
   if (!snapshot) return [];
@@ -317,9 +337,23 @@ function uraikanModifier(snapshot: string | null): string[] {
     if (!Array.isArray(nilai)) return [];
     return nilai.map((m) => {
       if (typeof m !== 'object' || m === null) return String(m);
-      const { nama, qtyMilli } = m as { nama?: unknown; qtyMilli?: unknown };
-      const teks = typeof nama === 'string' ? nama : String(nama);
-      const qty = typeof qtyMilli === 'number' ? qtyMilli : 1000;
+      const {
+        nama,
+        qtyMilli,
+        name,
+        quantityMilli,
+      } = m as {
+        nama?: unknown;
+        qtyMilli?: unknown;
+        name?: unknown;
+        quantityMilli?: unknown;
+      };
+      // Bentuk klien menang bila keduanya ada — baris yang perangkat ini
+      // sendiri tulis tidak pernah membawa bentuk server.
+      const sumberNama = typeof nama === 'string' ? nama : name;
+      const teks = typeof sumberNama === 'string' ? sumberNama : String(sumberNama);
+      const sumberQty = typeof qtyMilli === 'number' ? qtyMilli : quantityMilli;
+      const qty = typeof sumberQty === 'number' ? sumberQty : 1000;
       return qty === 1000 ? teks : `${teks} ×${qty / 1000}`;
     });
   } catch {

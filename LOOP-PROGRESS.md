@@ -4273,3 +4273,145 @@ Seluruh 18 suite hijau, berurutan: `test:kasir` 521 · `test:domain` 506 ·
 `test:oxlint-ds-adherence` 12 · `test:dst-server` 10 · `test:sqlite-local` 8 ·
 `test:runtime` **6** (naik dari 3). `typecheck` dan `lint:ds` bersih; ketiga
 aplikasi ter-build.
+
+---
+
+# MILESTONE BARU — jalur turun untuk riwayat transaksi
+
+Dibuka 29 Agustus 2026, setelah PR #48 masuk `main` (40 commit).
+
+**Kenapa milestone ini ada.** Migrasi `0035` menambah kolom ke `order_line`, dan
+`order_line` adalah **raw table** — sidik jari skema lokal berubah, jadi setiap
+perangkat menjalankan `disconnectAndClear()` dan membangun ulang tabel raw-nya.
+**Riwayat penjualan LOKAL perangkat hilang karenanya**: K-08 (riwayat) dan K-09
+(cetak ulang) untuk penjualan lama berhenti bekerja di perangkat yang sudah
+terpasang.
+
+Datanya ada di server. Yang tidak ada adalah jalan pulang: `order_line` belum
+pernah masuk sync rules jalur turun, jadi ia tidak kembali sendiri.
+
+## Task 52 — tabel riwayat masuk sync rules
+
+Enam tabel yang K-08 dan K-09 baca: `order` · `check` · `order_line` ·
+`order_line_modifier` · `payment` · `refund`.
+
+### ⛔ Temuan sebelum satu baris pun ditulis: penjaga FR-F5 BUTA
+
+`tests/kasir/sync-rules.test.js` menjaga bahwa `cost` tidak pernah turun ke
+perangkat. Regexnya `/\bcost\b/`, dan ia **tidak cocok dengan `cost_at_sale`** —
+`_` adalah word character, jadi `\b` sesudah `cost` tidak pernah tercapai.
+Diverifikasi dengan menjalankannya, bukan dengan membacanya.
+
+Artinya: menambahkan `order_line` ke sync rules akan mengirim **HPP setiap
+produk ke setiap tablet di setiap outlet**, dan penjaga yang ada persis untuk
+mencegah itu tetap hijau. FR-F5 baru ditutup empat hari lalu; ia akan dibatalkan
+oleh task yang tidak menyebut FR-F5 sama sekali.
+
+### Keputusan: scope per PERANGKAT, bukan per outlet
+
+`order`, `order_line`, dan `payment` punya `device_id`; `check`,
+`order_line_modifier`, dan `refund` menempel lewat JOIN.
+
+- **Memulihkan tepat yang hilang, bukan lebih.** Scope per outlet akan membuat
+  K-08 menampilkan penjualan perangkat LAIN — perubahan perilaku yang tidak
+  seorang pun minta, diselundupkan lewat task pemulihan.
+- **Bucket-nya STABIL.** `device_id` tidak pernah berubah untuk satu perangkat.
+- ⛔ **Batas tanggal yang bergerak DITOLAK.** Cutoff yang dihitung dari jam
+  server berubah setiap kali token diterbitkan ulang, dan setiap nilai parameter
+  yang berbeda adalah bucket PowerSync yang berbeda — perangkat akan mengunduh
+  ulang seluruh riwayatnya setiap hari. Volume dibatasi oleh scope perangkat,
+  bukan oleh waktu.
+
+Menuntut klaim `device_id` di JWT sync — top-level, pelajaran yang sama dengan
+`tenant_id`/`outlet_id` (prototipe 05: salah tempat berarti NOL BARIS, bukan
+error).
+
+### Yang dibangun
+
+Stream `riwayat` di `sync-config.yaml`, enam query, kolom eksplisit seluruhnya.
+Klaim `device_id` ditambahkan ke JWT sync (`tokens.ts`).
+
+### ⛔ Tiga cacat ditemukan, dan dua di antaranya ada di PENJAGANYA sendiri
+
+**1. Penjaga FR-F5 buta terhadap `cost_at_sale`** (dijelaskan di atas). Diperbaiki
+menjadi pola SUBSTRING: tidak ada kolom sah di skema ini yang memuat kata `cost`
+dan boleh turun, dan penjaga yang menuntut ketepatan nama akan dilewati oleh nama
+berikutnya (`unit_cost`, `avg_cost`).
+
+**2. `tabelDari` tertipu kolom berakhiran `_from`, dan MELEWATKAN satu query.**
+
+Regexnya `/FROM\s+"?(\w+)"?/i` tanpa `\b` di depan. Query `price_history`
+menyeleksi `effective_from` sebagai kolom terakhir, jadi regexnya menemukan
+potongan `from` DI DALAM NAMA KOLOM itu, lalu menangkap kata `FROM` berikutnya
+sebagai nama tabel. `tabelDari` mengembalikan `"FROM"`, `"FROM"` tidak ada di
+daftar tabel ber-tenant, dan penjaga tenant **melewati query itu sepenuhnya**.
+
+`price_history` memang menyaring tenant hari ini, jadi tidak ada yang bocor. Yang
+tidak ada adalah penjaganya: klausanya dapat dihapus dan seluruh suite tetap
+hijau. Dibuktikan lewat sabotase — klausa tenant dilepas dari `price_history`
+saja, dan penjaga yang sudah diperbaiki merah.
+
+⛔ **Ditemukan dengan MENCETAK apa yang parser lihat**, bukan dengan memercayai
+bahwa suite hijau berarti suite memeriksa. Ia muncul sebagai satu baris ganjil
+(`- FROM | panjang 200`) di keluaran diagnostik yang dijalankan untuk alasan
+lain: memastikan parser benar-benar melihat enam query baru.
+
+**3. Snapshot modifier bentuk SERVER terbaca sebagai kata `"undefined"`.**
+
+Cacat yang `CLAUDE.md` **ramalkan** sejak FR-A3: *"tidak berbahaya hari ini
+karena `order_line` tidak ada di sync rules jalur turun, dan menjadi berbahaya
+pada hari ia masuk."* Hari ini harinya.
+
+Server menulis `[{id, modifierId, name, price, quantityMilli}]`; parser membaca
+`nama`/`qtyMilli`. `String(undefined)` menghasilkan teks `"undefined"`, dan K-08
+menampilkannya sebagai nama modifier untuk SETIAP baris yang dipulihkan — di
+layar yang dipakai memutuskan refund, tanpa satu pun error. Direproduksi dengan
+menjalankannya sebelum diperbaiki: hasilnya `["undefined"]`.
+
+`uraikanModifier` kini menerima TIGA bentuk. Bentuk klien menang bila keduanya
+ada — baris yang perangkat ini sendiri tulis tidak pernah membawa bentuk server.
+
+### Penjaga baru
+
+- `⛔ pengekstrak nama tabel tidak tertipu kolom berakhiran '_from'` — penjaga
+  untuk penjaga.
+- `⛔ setiap query di berkas menghasilkan nama tabel yang dikenal DDL` — nama
+  yang terbaca sebagai kata kunci SQL membuat penjaga tenant melewatinya diam-diam.
+- `⛔ setiap parameter yang sync rules baca punya klaim di token` — penjaga
+  SILANG antara `sync-config.yaml` dan `tokens.ts`, dua berkas yang tidak ada apa
+  pun menyatukannya. Klaim yang hilang menghasilkan NOL BARIS, bukan error.
+- `⛔ ketiga bentuk snapshot hidup berdampingan dalam satu order` — kedua bentuk
+  berkuantitas sama WAJIB menghasilkan teks yang sama.
+
+### Batas yang dinyatakan
+
+⛔ **Stream ini belum pernah dijalankan terhadap PowerSync sungguhan.** Daemon
+Docker tidak tersedia di lingkungan ini (batas yang sama dengan
+`docs/UJI-COBA-V1.md` §6.1). Yang terbukti: bentuk querynya, batas tenant dan
+perangkatnya, klaim tokennya, dan pembacaan ketiga bentuk snapshot. Yang BELUM:
+`order_line.modifier_snapshot` (`jsonb`→`TEXT`) dan `is_tax_inclusive`
+(`boolean`→`INTEGER`) ada di `KOLOM_BELUM_DIUKUR`, dan stream ini adalah yang
+pertama menjalankan keduanya menembus PowerSync. `jsonb` yang tiba sebagai objek
+alih-alih string belum pernah diukur mendarat di kolom TEXT.
+
+### Sabotase
+
+Empat, semuanya merah di test yang benar: `cost_at_sale` diselundupkan ke sync
+rules · klausa tenant dilepas dari `price_history` saja · parser modifier
+dikembalikan ke bentuk dua-saja (2 merah) · klaim `device_id` dihapus dari token
+(2 merah).
+
+### Verifikasi
+
+18 suite hijau: `test:kasir` 525 · `test:domain` 506 · `test:server` 502 ·
+`test:backoffice` 439 · `test:isolation` 211 · `test:ordering` 211 ·
+`test:catalog` 177 · `test:identity` 157 · `test:payment` 132 ·
+`test:sync-client` 103 · `test:tenancy` 75 · `test:hp` 49 · `test:schema` 14 ·
+`test:dst` 14 · `test:oxlint-ds-adherence` 12 · `test:dst-server` 10 ·
+`test:sqlite-local` 8 · `test:runtime` 6. `typecheck` dan `lint:ds` bersih.
+
+**Catatan lingkungan:** PostgreSQL mati di tengah run dan menghasilkan 513
+kegagalan di `test:server` yang tidak ada hubungannya dengan perubahan ini.
+Gejalanya menipu — test yang gagal termasuk "password < 10 karakter ditolak",
+yang tidak menyentuh satu pun berkas yang disunting. Yang membedakannya:
+kegagalannya SERAGAM dan mencakup test yang tidak mungkin terpengaruh.

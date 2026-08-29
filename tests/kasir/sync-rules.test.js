@@ -61,8 +61,30 @@ test('⛔ `cost` tidak pernah turun ke perangkat (FR-F5)', () => {
   // `spec-f:66`: "kolom dan field yang memuat cost/margin TIDAK ADA di
   // respons — bukan sekadar disembunyikan di UI." Sampai 14 Agustus 2026 ia
   // turun lewat `SELECT *`, dan tidak ada apa pun yang mengeluh.
+  //
+  // ⛔ POLANYA SUBSTRING, BUKAN `\bcost\b` — dan versi `\b` yang berdiri di
+  // sini sampai 29 Agustus 2026 adalah penjaga yang BUTA terhadap satu-satunya
+  // kolom cost yang tersisa di skema.
+  //
+  // `\bcost\b` TIDAK cocok dengan `cost_at_sale`: `_` adalah word character,
+  // jadi batas kata sesudah `cost` tidak pernah tercapai. Diverifikasi dengan
+  // menjalankannya, bukan dengan membacanya.
+  //
+  // Akibatnya, pada hari `order_line` masuk sync rules — hari ini — HPP setiap
+  // produk akan turun ke setiap tablet di setiap outlet sementara penjaga ini
+  // tetap hijau. FR-F5 ditutup 25 Agustus 2026 dan akan dibatalkan empat hari
+  // kemudian oleh task yang tidak menyebut FR-F5 sama sekali.
+  //
+  // Substring karena itu yang benar: tidak ada satu pun kolom sah di skema ini
+  // yang memuat kata `cost` dan boleh turun, dan penjaga yang menuntut
+  // ketepatan nama akan dilewati oleh nama berikutnya (`unit_cost`,
+  // `cost_method`, `avg_cost`).
   for (const q of kueri()) {
-    assert.equal(/\bcost\b/.test(q), false, `query membawa \`cost\`: ${q}`);
+    assert.equal(
+      /cost/i.test(q),
+      false,
+      `query membawa kolom ber-\`cost\` — INI kebocoran HPP ke perangkat: ${q}`
+    );
   }
 });
 
@@ -112,11 +134,60 @@ function tabelBerTenant() {
   return punya;
 }
 
-/** Nama tabel yang di-`FROM` sebuah query. */
+/**
+ * Nama tabel yang di-`FROM` sebuah query.
+ *
+ * ⛔ `\bFROM` — batas kata di DEPAN wajib, dan tanpanya penjaga tenant
+ * melewatkan satu query sepenuhnya.
+ *
+ * Versi tanpa `\b` mencocokkan potongan `from` di dalam **nama kolom**.
+ * `price_history` diseleksi dengan `effective_from` sebagai kolom terakhir,
+ * jadi regexnya menemukan `from` di ujung nama kolom itu, lalu menangkap kata
+ * `FROM` berikutnya sebagai nama tabel. `tabelDari` mengembalikan `"FROM"`,
+ * `"FROM"` tidak ada di daftar tabel ber-tenant, dan query itu **dilewati**
+ * oleh penjaga yang seharusnya memeriksanya.
+ *
+ * Hari ini `price_history` memang menyaring tenant, jadi tidak ada yang bocor.
+ * Yang tidak ada adalah penjaganya: klausa itu dapat dihapus dan seluruh suite
+ * tetap hijau — bentuk kegagalan yang sama persis dengan sabotase T5 prototipe
+ * 05, hanya saja kali ini penjaganya sendiri yang buta.
+ *
+ * Ditemukan 29 Agustus 2026 saat menambahkan stream `riwayat`, dengan mencetak
+ * apa yang parser LIHAT alih-alih memercayai bahwa suite hijau berarti suite
+ * memeriksa.
+ */
 function tabelDari(q) {
-  const m = /FROM\s+"?(\w+)"?/i.exec(q);
+  const m = /\bFROM\s+"?(\w+)"?/i.exec(q);
   return m ? m[1] : null;
 }
+
+test('⛔ pengekstrak nama tabel tidak tertipu kolom berakhiran `_from`', () => {
+  // Penjaga untuk penjaga. Kalau `\b` hilang lagi, yang gagal adalah test ini
+  // — dengan kalimat yang menyebut sebabnya — bukan penjaga tenant yang
+  // diam-diam berhenti memeriksa satu baris.
+  assert.equal(
+    tabelDari('SELECT id, effective_from FROM price_history WHERE x = 1'),
+    'price_history'
+  );
+  assert.equal(tabelDari('SELECT * FROM item WHERE x = 1'), 'item');
+  assert.equal(tabelDari('SELECT c.id FROM "check" c JOIN "order" o ON o.id = c.order_id'), 'check');
+});
+
+test('⛔ setiap query di berkas menghasilkan nama tabel yang dikenal DDL', () => {
+  // Nama tabel yang tidak dapat diekstrak menghasilkan `null` atau kata kunci
+  // SQL, dan keduanya membuat penjaga tenant di bawah melewatinya diam-diam.
+  // Yang dijaga di sini: setiap query benar-benar teridentifikasi.
+  const KATA_KUNCI = new Set(['from', 'select', 'where', 'join', 'on']);
+  for (const q of kueri()) {
+    const t = tabelDari(q);
+    assert.ok(t, `nama tabel tidak dapat diekstrak: ${q}`);
+    assert.equal(
+      KATA_KUNCI.has(t.toLowerCase()),
+      false,
+      `nama tabel terbaca sebagai kata kunci SQL "${t}" — penjaga tenant akan melewati query ini: ${q}`
+    );
+  }
+});
 
 test('pembaca DDL benar-benar menemukan tabel ber-tenant', () => {
   const t = tabelBerTenant();
