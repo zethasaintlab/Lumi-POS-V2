@@ -4489,3 +4489,48 @@ rowid, dan NULL di sana mustahil. Sabotase: satu `NOT NULL` dilepas → merah.
 `test:sync-client` 103 · `test:tenancy` 75 · `test:hp` 49 · `test:schema` 15 ·
 `test:dst` 14 · `test:oxlint-ds-adherence` 12 · `test:dst-server` 10 ·
 `test:sqlite-local` 8 · `test:runtime` 6. `typecheck` dan `lint:ds` bersih.
+
+---
+
+## Status backlog — siap Code Freeze
+
+Disurvei 29 Agustus 2026 dari `HANDOFF.md` dan pencarian penanda utang di kode
+(`TODO`/`FIXME`/`XXX`/`HACK`), bukan dari ingatan.
+
+### Environment-Blocked (Awaiting Staging) — status resmi user
+
+| Item | Yang menghalangi |
+|---|---|
+| `KOLOM_BELUM_DIUKUR`: `jsonb`→`TEXT`, `boolean`→`INTEGER` | Stack PowerSync/Docker. ⛔ **Jangan menebak konversinya tanpa stack yang menyala** |
+| Stream `riwayat` belum pernah dijalankan | Stack PowerSync/Docker |
+| `watch()` ~1.000 ms untuk raw table | Stack PowerSync |
+| Latensi tulis 3,8×, ~6–7 ms tidak terjelaskan | Stack PowerSync + tablet sungguhan |
+| Healthcheck PowerSync hijau saat replikasi gagal | Docker |
+| AC FR-B2 keempat — `kill -9` di tengah commit | Browser + OPFS |
+| Gate F4 bagian pertama | Printer fisik (Hardware-Blocked) |
+| AC FR-G6 kelima | Jaringan seluler (Environment-Blocked) |
+| Enkripsi at-rest | Shell Tauri |
+| OQ-14 | Perangkat Android |
+
+### Bukan kewenangan agent — keputusan user
+
+- `product/ERD-lumi-pos-v1.md` menyimpan bentuk LAMA `item_modifier_list`.
+  Kode dan migrasi `0018` sudah pindah; dokumennya belum. **ERD-lah yang salah.**
+- `voided_by_order_id` terbaca terbalik. Rename = migrasi expand-contract,
+  keputusan produk.
+- `LOG_LEVEL` produksi masih `silent`. Redaksi terpasang dan teruji; yang belum
+  diputuskan level dan tujuan log.
+- `research/00` dan `research/03` masih menulis "Node.js 22+" (lantainya 24.7).
+
+### Entri HANDOFF yang sudah BASI, diperiksa dengan menjalankannya
+
+- `HANDOFF`:107 — ~15 tabel lokal tanpa `NOT NULL`: **ke-31 sudah benar.**
+  Penjaganya ditambahkan Task 54.
+- `HANDOFF`:119 — FR-H4 "belum dibangun": **sudah**, di
+  `perangkat/simpan-identitas.ts` lewat `periksaOperasiDestruktif`.
+
+### Kesimpulan
+
+**Tidak ada lagi task murni kode yang tersisa.** Setiap item terbuka terhalang
+environment, hardware, atau merupakan keputusan/penyuntingan dokumen yang bukan
+kewenangan agent. Repo siap Code Freeze untuk deployment Staging.
