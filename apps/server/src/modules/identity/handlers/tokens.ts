@@ -109,6 +109,20 @@ export function createTokenHandlers(pool: Pool, konfig: KonfigToken): Record<str
           // katalog kosong permanen tanpa satu pun keluhan.
           tenant_id: device.tenant_id,
           outlet_id: device.outlet_id,
+          // ⛔ `device_id` DUPLIKAT dari `sub`, dan itu disengaja.
+          //
+          // Stream `riwayat` menyaring per PERANGKAT, bukan per outlet: ia
+          // memulihkan riwayat yang `disconnectAndClear()` hapus, dan
+          // memulihkan LEBIH dari itu berarti K-08 mulai menampilkan penjualan
+          // perangkat lain — perubahan perilaku yang tidak seorang pun minta.
+          //
+          // Sync rules dapat membaca `sub`, jadi klaim ini secara teknis tidak
+          // perlu. Ia ditulis eksplisit karena `sub` adalah slot serba-guna
+          // yang maknanya dapat bergeser (hari ini perangkat, besok pengguna),
+          // dan batas replikasi yang bergantung pada makna slot itu akan
+          // bergeser bersamanya — tanpa error, sebagai baris yang tiba-tiba
+          // turun ke perangkat yang salah.
+          device_id: device.id,
         },
         berlakuDetik: UMUR_TOKEN_DETIK,
         sekarangMs: konfig.sekarang(),

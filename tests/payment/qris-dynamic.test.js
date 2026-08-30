@@ -341,3 +341,94 @@ test('gateway gagal lalu retry: QR akhirnya didapat, TANPA transaksi gateway ked
   const rows = await query('SELECT provider_reference FROM payment');
   assert.ok(rows[0].provider_reference, 'referensi gateway akhirnya tersimpan');
 });
+
+
+// ============================================================
+// G8 -- BALAPAN: dua request bersamaan, dan apa yang SEBENARNYA melindungi
+// ============================================================
+
+// `HANDOFF.md`: "Idempotency key gateway pada balapan dua request bersamaan
+// belum diuji: pada jalur BERURUTAN, yang mencegah transaksi gateway kedua
+// adalah baris `idempotency_key` dan baris `payment` yang dipakai ulang. Key
+// yang diteruskan ke gateway penting untuk dua request yang BERBARENGAN, dan
+// untuk itu belum ada test."
+//
+// ⛔ YANG DIUKUR DI SINI BUKAN "gateway dipanggil sekali". Ia memang TIDAK.
+//
+// Diukur 29 Agustus 2026: sepuluh request bersamaan menghasilkan **sepuluh**
+// panggilan `initiate`. Itu bukan cacat, itu konsekuensi bentuk jalurnya —
+// QRIS dinamis memakai DUA transaksi (payment `pending_confirmation` di-commit
+// SEBELUM gateway dipanggil, supaya kegagalan gateway tidak me-rollback
+// satu-satunya jejak bahwa QR pernah diminta, FR-C14). Request yang tiba saat
+// payment sudah ada tapi `provider_reference` belum terisi akan memanggil
+// gateway lagi — dan itu jalur yang SAMA yang membuat retry setelah gateway
+// timeout akhirnya mendapat QR-nya (G7b).
+//
+// ⛔ Jadi yang melindungi uang di sini HANYA SATU HAL: setiap panggilan itu
+// membawa idempotency key yang SAMA, sehingga gateway men-dedupe-nya menjadi
+// satu transaksi. Kalau server menurunkan key per-percobaan, sepuluh request
+// menerbitkan SEPULUH QR untuk satu pesanan — pelanggan membayar salah
+// satunya, sembilan sisanya menagih uang yang tidak ada pesanannya, dan
+// merchant menemukannya saat rekonsiliasi.
+//
+// `gatewayTransactions()` adalah `byKey.size` di fake: ia menghitung KEY YANG
+// BERBEDA, meniru dedupe Midtrans. Itulah angka yang harus 1. `initiateCalls()`
+// dinyatakan terpisah supaya ketergantungan pada dedupe gateway TERTULIS,
+// bukan tersirat.
+
+test('⛔ sepuluh request QRIS bersamaan: gateway menerima SATU key, bukan sepuluh', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx);
+  const key = crypto.randomUUID();
+  const badan = { id: crypto.randomUUID(), amount: order.total };
+
+  const hasil = await Promise.all(
+    Array.from({ length: 10 }, () => bayarQris(order.id, badan, { 'idempotency-key': key }))
+  );
+
+  // INI yang menjaga uangnya.
+  assert.equal(
+    fake.gatewayTransactions(),
+    1,
+    'server mengirim key BERBEDA ke gateway — tiap key adalah QR baru untuk satu pesanan'
+  );
+  assert.equal((await query('SELECT id FROM payment')).length, 1, 'lebih dari satu baris payment');
+
+  // Dinyatakan, bukan disembunyikan: server MEMANG memanggil gateway berkali-kali
+  // di bawah konkurensi. Kalau angka ini kelak menjadi 1, jalurnya berubah dan
+  // komentar panjang di atas harus ikut berubah.
+  assert.ok(
+    fake.initiateCalls() >= 1,
+    'keamanan jalur ini bersandar pada dedupe gateway, dan itu harus tetap benar'
+  );
+
+  for (const r of hasil) {
+    assert.ok([201, 409].includes(r.statusCode), `status tak terduga: ${r.statusCode} ${r.body}`);
+  }
+});
+
+test('⛔ balapan tidak pernah menghasilkan DUA QR berbeda untuk satu order', async () => {
+  // Bentuk paling mahal dari cacat ini: kasir menunjukkan satu QR ke pelanggan
+  // sementara gateway menunggu pembayaran atas QR yang lain, dan pembayaran
+  // yang sah tidak pernah dicocokkan dengan pesanannya.
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx);
+  const key = crypto.randomUUID();
+  const badan = { id: crypto.randomUUID(), amount: order.total };
+
+  const hasil = await Promise.all(
+    Array.from({ length: 5 }, () => bayarQris(order.id, badan, { 'idempotency-key': key }))
+  );
+
+  const qr = hasil
+    .filter((r) => r.statusCode === 201)
+    .map((r) => JSON.parse(r.body).qrString)
+    .filter(Boolean);
+  assert.ok(qr.length >= 1, 'tidak satu pun request berhasil');
+  assert.equal(new Set(qr).size, 1, `QR BERBEDA terbit untuk satu order: ${[...new Set(qr)].join(' | ')}`);
+
+  // Dan yang tersimpan di database adalah QR yang sama itu.
+  const rows = await query('SELECT provider_reference FROM payment');
+  assert.equal(rows.length, 1);
+  assert.ok(qr[0].includes(rows[0].provider_reference), `QR di respons tidak cocok dengan yang tersimpan`);
+});

@@ -115,6 +115,109 @@ streams:
           FROM vertical_profile
          WHERE tenant_id = auth.parameter('tenant_id')
 
+  # Riwayat transaksi — jalan PULANG untuk K-08 (riwayat) dan K-09 (cetak
+  # ulang). Ditambahkan 29 Agustus 2026.
+  #
+  # ⛔ KENAPA STREAM INI ADA, dan kenapa ia BUKAN pembatalan keputusan lama.
+  #
+  # Komentar di stream `katalog` menulis bahwa tabel transaksi "tidak pernah
+  # turun di fase ini". Itu benar untuk jalur NAIK — penjualan tetap naik lewat
+  # `outbox_local` + REST idempoten, dan stream ini tidak mengubahnya sama
+  # sekali. Yang ia sediakan adalah pemulihan.
+  #
+  # Migrasi `0035` menambah kolom ke `order_line`, dan `order_line` adalah raw
+  # table: sidik jari skema lokal berubah, jadi setiap perangkat menjalankan
+  # `disconnectAndClear()` dan membangun ulang tabel raw-nya. Riwayat penjualan
+  # LOKAL perangkat hilang karenanya, dan tanpa stream ini ia tidak pernah
+  # kembali — K-08 dan cetak ulang K-09 untuk penjualan lama berhenti bekerja
+  # secara permanen di perangkat yang sudah terpasang.
+  #
+  # ⛔ DISARING PER PERANGKAT, bukan per outlet.
+  #
+  # Ia memulihkan TEPAT yang hilang. Menyaring per outlet akan membuat K-08
+  # menampilkan penjualan perangkat LAIN — perubahan perilaku yang tidak
+  # seorang pun minta, diselundupkan lewat task pemulihan. `spec-f:250`
+  # (perangkat curian) mengarah ke arah yang sama: makin sempit makin baik.
+  #
+  # ⛔ TANPA batas tanggal, dan itu keputusan, bukan kelalaian.
+  #
+  # Cutoff yang dihitung dari jam server berubah setiap kali token diterbitkan
+  # ulang, dan setiap nilai parameter yang berbeda adalah BUCKET PowerSync yang
+  # berbeda — perangkat akan mengunduh ulang seluruh riwayatnya setiap hari.
+  # Volumenya dibatasi oleh scope perangkat: yang turun adalah penjualan yang
+  # perangkat ini sendiri tulis, jadi tidak lebih banyak daripada yang dulu ada
+  # di sana.
+  riwayat:
+    auto_subscribe: true
+    queries:
+      # `order` membawa `outlet_id` dan `device_id` sendiri.
+      #
+      # `voided_by_order_id` WAJIB turun: order yang sudah di-void tetap
+      # berstatus `open` (AC FR-B7 pertama), jadi status dibaca dari
+      # ada/tidaknya pembatal. Tanpa kolom ini, order yang dibatalkan tampil
+      # NORMAL di K-08 dan dapat dicetak ulang sebagai struk yang sah.
+      - SELECT id, tenant_id, outlet_id, device_id, shift_id, receipt_number,
+               business_date, sequence, channel, status, subtotal,
+               order_discount, service_charge, tax_amount, total,
+               rounding_adjustment, voided_by_order_id, void_reason,
+               has_calculation_variance, variance_amount, occurred_at, hlc
+          FROM "order"
+         WHERE tenant_id = auth.parameter('tenant_id')
+           AND outlet_id = auth.parameter('outlet_id')
+           AND device_id = auth.parameter('device_id')
+      # `check` tidak punya `outlet_id` maupun `device_id` — ia menempel pada
+      # order-nya lewat JOIN.
+      - SELECT c.id, c.order_id, c.name, c.opened_at, c.closed_at
+          FROM "check" c
+          JOIN "order" o ON o.id = c.order_id
+         WHERE c.tenant_id = auth.parameter('tenant_id')
+           AND o.outlet_id = auth.parameter('outlet_id')
+           AND o.device_id = auth.parameter('device_id')
+      # ⛔ KOLOM EKSPLISIT, dan `cost_at_sale` sengaja TIDAK ada — FR-F5.
+      #
+      # `SELECT *` di sini mengirim HPP setiap produk yang pernah dijual ke
+      # setiap tablet, membatalkan FR-F5 yang ditutup 25 Agustus 2026. Server
+      # yang men-snapshot `cost_at_sale`; perangkat menulis nol ke kolom
+      # lokalnya dan tidak pernah membacanya.
+      #
+      # `variation_count_at_sale` (migrasi 0035) WAJIB turun — ia justru
+      # alasan seluruh stream ini ada. `tax_rate_name` juga: cetak ulang tidak
+      # boleh menyentuh tabel katalog (`spec-b:145`).
+      - SELECT id, order_id, check_id, variation_id, item_name, variation_name,
+               unit_price, quantity, modifier_snapshot, discount_amount,
+               tax_rate_id, tax_rate, tax_amount, tax_rate_name,
+               is_tax_inclusive, variation_count_at_sale, line_total
+          FROM order_line
+         WHERE tenant_id = auth.parameter('tenant_id')
+           AND outlet_id = auth.parameter('outlet_id')
+           AND device_id = auth.parameter('device_id')
+      # Menempel pada barisnya lewat JOIN — `order_line_modifier` hanya punya
+      # `tenant_id`.
+      - SELECT m.id, m.order_line_id, m.modifier_id, m.name, m.price, m.quantity
+          FROM order_line_modifier m
+          JOIN order_line ol ON ol.id = m.order_line_id
+         WHERE m.tenant_id = auth.parameter('tenant_id')
+           AND ol.outlet_id = auth.parameter('outlet_id')
+           AND ol.device_id = auth.parameter('device_id')
+      # `card_last4` TIDAK turun. Ia dipotong di titik masuknya di layar dan
+      # tidak dibaca layar mana pun sesudahnya; menurunkannya berarti membawa
+      # sisa data kartu ke tablet yang dapat hilang.
+      - SELECT id, order_id, method, amount, tendered_amount, change_amount,
+               status, reference, confirmed_manually, occurred_at
+          FROM payment
+         WHERE tenant_id = auth.parameter('tenant_id')
+           AND outlet_id = auth.parameter('outlet_id')
+           AND device_id = auth.parameter('device_id')
+      # `refund` menempel pada order-nya. `method` WAJIB turun — hanya refund
+      # tunai mengurangi laci, dan buku kas lokal memakainya.
+      - SELECT r.id, r.order_id, r.amount, r.reason, r.method, r.approved_by,
+               r.occurred_at
+          FROM refund r
+          JOIN "order" o ON o.id = r.order_id
+         WHERE r.tenant_id = auth.parameter('tenant_id')
+           AND o.outlet_id = auth.parameter('outlet_id')
+           AND o.device_id = auth.parameter('device_id')
+
   # Identitas — FR-F3 (login offline). Hash PIN harus ADA di perangkat, karena
   # verifikasinya lokal (`spec-f:124-125`).
   #
