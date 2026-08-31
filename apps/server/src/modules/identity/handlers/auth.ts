@@ -40,6 +40,7 @@ function tolakLogin(): never {
 
 interface BarisLogin {
   id: string;
+  name: string;
   password_hash: string | null;
 }
 
@@ -129,7 +130,7 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
         // eksplisit: `spec-f:184` menyatakan pengguna tanpa email memang tidak
         // boleh masuk, dan itu perilaku yang disengaja, bukan efek samping.
         const { rows } = await client.query<BarisLogin>(
-          `SELECT id, password_hash FROM "user"
+          `SELECT id, name, password_hash FROM "user"
             WHERE email = $1 AND email IS NOT NULL
               AND password_hash IS NOT NULL AND is_active = true`,
           [email]
@@ -185,6 +186,11 @@ export function createAuthHandlers(pool: Pool, hasher: PinHasher): Record<string
           token,
           expiresAt: sesi[0].expires_at,
           userId: pengguna.id,
+          // ⛔ NAMA, bukan hanya id. Tanpa ini back-office tidak punya apa pun
+          // untuk ditampilkan selain UUID, dan itulah yang merchant lihat di
+          // pojok setiap layar: "fee9f9b5-5b0a-40...". Ditemukan dengan
+          // membuka aplikasinya di browser, bukan lewat test.
+          nama: pengguna.name,
           // ⛔ Tenant yang DIPAKAI dikembalikan, bukan disimpan diam-diam.
           //
           // Klien yang tidak mengirim `X-Tenant-Id` tidak punya cara lain

@@ -16,6 +16,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client && tsc --noEmit --project apps/kasir && tsc --noEmit --project apps/backoffice && tsc --noEmit --project apps/hp",
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
+    "lint:react": "oxlint --react-plugin -A all -D react-hooks/rules-of-hooks --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
     "db:reset": "node --env-file=.env db/reset.js",

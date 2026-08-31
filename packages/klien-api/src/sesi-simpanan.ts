@@ -35,6 +35,20 @@ export interface Sesi {
   /** ISO-8601 dari server. Jam SERVER, bukan jam perangkat. */
   expiresAt: string;
   userId: string;
+  /**
+   * Nama pengguna, dari respons login.
+   *
+   * ⛔ Ia ada supaya layar tidak menampilkan `userId`. Sampai 31 Agustus 2026
+   * `/auth/login` tidak mengembalikan nama sama sekali, dan back-office
+   * menampilkan UUID mentah sebagai nama pengguna di pojok SETIAP layar —
+   * "fee9f9b5-5b0a-40...". Ditemukan dengan membuka aplikasinya di browser.
+   *
+   * OPSIONAL, dan itu disengaja: sesi yang sudah tersimpan di `sessionStorage`
+   * milik merchant yang sedang masuk TIDAK punya field ini. Menjadikannya
+   * wajib membuat `sesiValid` menolak sesi itu, dan setiap orang yang sedang
+   * bekerja terlempar ke layar login saat aplikasi diperbarui.
+   */
+  nama?: string;
   roles: string[];
   /**
    * Tenant yang dipakai sesi ini, **dari respons login**.
