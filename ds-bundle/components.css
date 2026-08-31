@@ -10,9 +10,17 @@
   min-height: var(--touch-min); padding: 0 var(--space-4);
   font-family: inherit; font-size: var(--text-body); font-weight: var(--weight-medium);
   border-radius: var(--radius-control); border: 1px solid transparent;
-  cursor: pointer; transition: background-color .12s, border-color .12s;
+  cursor: pointer; transition: background-color .12s, border-color .12s, transform .06s;
   white-space: nowrap;
 }
+/* ⛔ Umpan balik FISIK saat ditekan (§4.5 "tactile feedback").
+   Tombol kasir ditekan ribuan kali sehari, sering oleh orang yang tidak
+   menatap layarnya — ia sedang melihat pelanggan. Pergeseran 1px adalah
+   satu-satunya konfirmasi bahwa tekanan terbaca, dan ia gratis: `transform`
+   berjalan di compositor, tanpa reflow.
+
+   Dihormati `prefers-reduced-motion` di blok paling bawah berkas ini. */
+.btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 
@@ -172,6 +180,10 @@
 }
 .table td { padding: var(--space-3); border-bottom: 1px solid var(--border); font-size: var(--text-body); }
 .table tbody tr:nth-child(even) { background: var(--surface-alt); }
+/* Baris yang disorot saat kursor melewatinya. Tabel back-office punya 6-8
+   kolom; tanpa penanda baris, mata kehilangan jejaknya di tengah dan merchant
+   membaca angka dari baris yang salah. */
+.table tbody tr:hover { background: var(--accent-soft); }
 .table .right { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* --- Empty state --- */
@@ -195,3 +207,31 @@
 .dialog-danger { border-top: 4px solid var(--danger); }
 .dialog-pad { padding: var(--space-6); }
 .dialog-foot { display: flex; gap: var(--space-2); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border); }
+
+
+/* --- Chip kategori produk ---
+   Warnanya DITURUNKAN dari nama kategori (`packages/domain/src/warna-kategori.ts`)
+   dan disuntikkan sebagai `--chip` / `--chip-soft` lewat style inline.
+
+   ⛔ Chip WAJIB memuat nama kategorinya. Aturan DS #5 melarang status
+   berkode warna saja, dan di sini aturannya berlaku dua kali: warna
+   mempercepat pemindaian grid produk, ia tidak menggantikan satu kata pun. */
+.chip-kategori {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-control);
+  font-size: var(--text-caption); font-weight: var(--weight-medium);
+  background: var(--chip-soft, var(--surface-alt));
+  color: var(--chip, var(--ink-muted));
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+/* Pita warna kategori di tepi kartu produk — penanda yang terbaca dari jarak
+   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat. */
+.pita-kategori { box-shadow: inset 3px 0 0 var(--chip, var(--border-strong)); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Umpan balik tekan dibuang, bukan diperlambat: yang dihindari pengguna
+     dengan setelan ini adalah GERAKANNYA. */
+  .btn:active:not(:disabled) { transform: none; }
+}
