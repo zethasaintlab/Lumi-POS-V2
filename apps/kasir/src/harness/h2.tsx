@@ -106,6 +106,9 @@ async function jalankan() {
         <ShellKasir
           outlet="Outlet uji"
           device="K1"
+          // Harness H2 mengukur indikator ANTREAN; perangkat dianggap terdaftar
+          // supaya yang diukur tetap hitungan antrean, bukan keadaan provisioning.
+          perangkatTerdaftar
           pengguna="Harness"
           ruteAktif={null}
         >

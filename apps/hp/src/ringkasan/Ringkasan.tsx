@@ -211,7 +211,7 @@ export function Ringkasan({
             {ringkas !== null && perlu !== null && (
               <Card>
                 <div className="card-pad stack" style={{ gap: 'var(--space-2)' }}>
-                  <div className="t-body-md">⚠ {ringkas}</div>
+                  <div className="t-body-md"><strong>Perlu diperiksa:</strong> {ringkas}</div>
                   {perlu.temuan.slice(0, MAKS_TEMUAN_M01).map((t) => (
                     <div key={`${t.jenis}-${t.id}`} className="stack" style={{ gap: 0 }}>
                       <span className="t-caption">

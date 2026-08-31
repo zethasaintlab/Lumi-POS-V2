@@ -488,3 +488,51 @@ test('⛔ setiap jenis yang punya rute relay juga punya rute di alat pemulihan',
   const hilang = RUTE_DIDUKUNG.filter((jenis) => !new RegExp(`^\\s*${jenis}:`, 'm').test(alat));
   assert.deepEqual(hilang, [], `tools/pulihkan-antrean.mjs tidak punya rute untuk: ${hilang.join(', ')}`);
 });
+
+// ---------------------------------------------------------------------------
+// Perangkat belum terdaftar TIDAK PERNAH "Tersinkron"
+// ---------------------------------------------------------------------------
+
+test('⛔ perangkat belum terdaftar: antrean kosong BUKAN "Tersinkron"', async () => {
+  const { keadaanIndikator, teksIndikator } = await import(STATUS);
+  // Sampai 31 Agustus 2026 keadaan indikator diturunkan HANYA dari hitungan
+  // antrean. Pada perangkat yang belum didaftarkan antreannya kosong karena
+  // tidak pernah ada yang MASUK ke sana — bukan karena semuanya terkirim.
+  //
+  // Akibatnya aplikasi kasir yang baru dipasang menyatakan "Tersinkron"
+  // sambil tidak punya alamat server, tenant, maupun kredensial. Terlihat di
+  // browser sebagai dua kalimat bersebelahan yang saling membantah:
+  // "Perangkat belum terdaftar · Tersinkron".
+  //
+  // Indikator ini SATU-SATUNYA tempat kasir memeriksa apakah penjualannya
+  // sudah sampai ke server, jadi kebohongan di sini adalah kebohongan di
+  // tempat yang paling mahal.
+  const k = keadaanIndikator({ menunggu: 0, gagal: 0 }, { perangkatTerdaftar: false });
+  assert.equal(k.state, 'offline-only');
+  assert.notEqual(teksIndikator(k), 'Tersinkron');
+  assert.equal(teksIndikator(k), 'Hanya di perangkat ini');
+});
+
+test('⛔ perangkat belum terdaftar: antrean berisi tetap offline-only', async () => {
+  const { keadaanIndikator } = await import(STATUS);
+  // Yang mengantre di perangkat tanpa identitas tidak dapat dikirim ke mana
+  // pun. Menampilkannya sebagai "Offline · n menunggu" menyiratkan ia akan
+  // terkirim begitu jaringan kembali; ia tidak akan.
+  const k = keadaanIndikator({ menunggu: 3, gagal: 2 }, { perangkatTerdaftar: false });
+  assert.equal(k.state, 'offline-only');
+  assert.equal(k.count, 5, 'jumlahnya harus utuh — menunggu + gagal');
+});
+
+test('⛔ opsi DIHILANGKAN diperlakukan sebagai terdaftar — pemanggil lama tidak berubah', async () => {
+  const { keadaanIndikator } = await import(STATUS);
+  // K-14 dan harness memanggil tanpa opsi ini. Menganggap "tidak disebut"
+  // sebagai "belum terdaftar" akan membuat layar-layar itu melaporkan offline
+  // secara permanen — cacat yang lebih luas daripada yang diperbaiki.
+  assert.equal(keadaanIndikator({ menunggu: 0, gagal: 0 }).state, 'ok');
+  assert.equal(keadaanIndikator({ menunggu: 2, gagal: 0 }).state, 'queued');
+  assert.equal(keadaanIndikator({ menunggu: 0, gagal: 1 }).state, 'failed');
+  assert.equal(
+    keadaanIndikator({ menunggu: 0, gagal: 0 }, { perangkatTerdaftar: true }).state,
+    'ok'
+  );
+});

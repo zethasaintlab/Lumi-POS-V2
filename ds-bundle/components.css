@@ -101,8 +101,8 @@
 .shell-side { width: 248px; flex: none; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); }
 .shell-brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex: none; }
 .shell-nav { flex: 1; overflow-y: auto; padding: var(--space-2) var(--space-2) var(--space-4); }
-.shell-group { font-size: 11px; font-weight: var(--weight-medium); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); padding: var(--space-4) var(--space-3) var(--space-1); }
-.shell-link { display: flex; align-items: center; gap: var(--space-3); min-height: 40px; padding: 0 var(--space-3); border-radius: var(--radius-control); color: var(--ink-muted); cursor: pointer; font-size: var(--text-body); border: 0; background: none; width: 100%; text-align: left; font-family: inherit; }
+.shell-group { font-size: var(--text-caption); font-weight: var(--weight-medium); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-subtle); padding: var(--space-4) var(--space-3) var(--space-1); }
+.shell-link { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-3); border-radius: var(--radius-control); color: var(--ink-muted); cursor: pointer; font-size: var(--text-body); border: 0; background: none; width: 100%; text-align: left; font-family: inherit; }
 .shell-link:hover { background: var(--surface-alt); color: var(--ink); }
 .shell-link[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--weight-medium); }
 .shell-user { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); flex: none; }

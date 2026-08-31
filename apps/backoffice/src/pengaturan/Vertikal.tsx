@@ -47,6 +47,22 @@ interface Resp {
   outlets: OutletProfil[];
 }
 
+/**
+ * Nama profil yang dapat dibaca orang.
+ *
+ * ⛔ Layar ini menampilkan UUID sebagai identitas utama profil di TIGA tempat —
+ * baris tabel, kolom "profil yang berlaku", dan label tombol ("Pakai
+ * 010b13bb…"). Merchant tidak punya cara mengenali profilnya dari deretan hex,
+ * dan tombol yang berlabel potongan UUID tidak dapat dibaca sebelum ditekan.
+ *
+ * Kelas yang sama dengan `sesi.userId` di topbar back-office (31 Agustus
+ * 2026): id dipakai karena ia PASTI ada, sementara nama yang dapat dibaca
+ * justru yang dicari orang.
+ */
+function namaProfil(p: { name: string; isTenantDefault?: boolean }): string {
+  return p.name === 'fnb' ? 'F&B' : p.name;
+}
+
 export function VertikalLayar() {
   const { api } = useSesi();
   const [keadaan, setKeadaan] = useState<Keadaan>({ jenis: 'memuat' });
@@ -204,11 +220,14 @@ export function VertikalLayar() {
                     rows={data.profiles.map((p) => ({
                       profil: (
                         <div className="stack" style={{ gap: 'var(--space-1)' }}>
-                          <span className="num">{p.id}</span>
-                          <span className="t-caption">
-                            {p.name === 'fnb' ? 'F&B' : p.name}
+                          {/* Nama dulu, id sebagai baris kecil di bawahnya —
+                              id tetap ditampilkan karena dua profil boleh
+                              bernama sama, tapi ia bukan yang dibaca orang. */}
+                          <span className="t-body-md">
+                            {namaProfil(p)}
                             {p.isTenantDefault ? ' · bawaan tenant' : ''}
                           </span>
+                          <span className="num t-caption">{p.id}</span>
                         </div>
                       ),
                       // ⛔ Kalimat akibatnya, bukan nama kolom. Owner kafe
@@ -274,7 +293,7 @@ export function VertikalLayar() {
                     asal: (
                       <div className="stack" style={{ gap: 'var(--space-1)' }}>
                         <Badge tone="neutral">{labelAsal(asalProfil(o))}</Badge>
-                        <span className="num t-caption">{o.berlaku.id}</span>
+                        <span className="t-caption">{namaProfil(o.berlaku)}</span>
                       </div>
                     ),
                     stok: (
@@ -300,7 +319,7 @@ export function VertikalLayar() {
                               disabled={sedangKirim}
                               onClick={() => void setelOutlet(o, p.id)}
                             >
-                              Pakai {p.id.slice(0, 8)}…
+                              Pakai {namaProfil(p)}
                             </Tombol>
                           ))}
                       </div>
