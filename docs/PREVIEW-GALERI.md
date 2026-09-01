@@ -62,6 +62,33 @@ produksi, config galeri, dan isi `dist/` bila sudah pernah dibangun).
 | `rewrites` | `/` → `/harness-galeri.html` | entry-nya bukan `index.html`; tanpa ini root domain menjawab 404 |
 | `github.silent` | `true` | Vercel tidak mengomentari setiap commit di PR |
 
+## ⛔ Satu langkah yang HANYA kamu bisa lakukan
+
+Saya tidak punya akses ke dashboard Vercel-mu. Percobaan membuat project lewat
+integrasi memerlukan persetujuanmu dan saya hentikan di sana — sesuai pemicu
+eskalasi "apa pun yang butuh aku mengklik di dashboard".
+
+Konfigurasinya sudah lengkap dan ter-commit; yang tersisa satu kali klik:
+
+1. Buka <https://vercel.com/new> dan pilih team **AfterSchool**.
+2. **Import Git Repository** → `zethasaintlab/Lumi-POS-V2`.
+   Kalau repo tidak muncul, klik **Adjust GitHub App Permissions** dan beri
+   Vercel akses ke repo ini (ia privat).
+3. Jangan ubah satu pun setelan build. `vercel.json` di akar repo sudah
+   menetapkan `buildCommand`, `outputDirectory`, dan rewrite root — setelan di
+   dashboard yang diisi tangan akan MENGALAHKANNYA dan menyimpang diam-diam.
+4. **Deploy**.
+
+Sesudah itu setiap push ke branch mana pun menghasilkan preview URL sendiri,
+tanpa tindakan lagi dari kita berdua.
+
+⛔ **Deployment PRODUKSI dari `main` akan GAGAL sampai kerja ini ter-merge** —
+`main` belum punya skrip `build:galeri`. Itu bukan kerusakan; preview per-branch
+tetap jalan, dan produksi hijau begitu branch-nya masuk.
+
+⛔ **Plan-nya hobby (gratis).** Tidak ada layanan berbayar baru yang dibuat, dan
+saya tidak membuat satu pun resource di akunmu.
+
 ## Batas yang dinyatakan
 
 - **Hanya empat layar kasir** ada di galeri hari ini (K-03, K-08, K-12, K-15).
