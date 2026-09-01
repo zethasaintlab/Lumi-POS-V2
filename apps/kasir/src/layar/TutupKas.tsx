@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
+import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
 import {
@@ -16,6 +17,7 @@ import { muatHlc } from '../lokal/hlc.ts';
 import { DialogOtorisasi } from '../komponen/DialogOtorisasi.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
+import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
@@ -36,7 +38,24 @@ import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 const PECAHAN = [1000, 5000, 10000, 50000, 100000];
 
-const METODE: Record<string, string> = { cash: 'Tunai', qris_dynamic: 'QRIS', card: 'Kartu' };
+/* ⛔ Peta nama metode DIHAPUS dari sini, 1 September 2026.
+ *
+ * Yang berdiri di sini adalah salinan KEEMPAT, dan ia sudah menyimpang: ia
+ * memuat `card` — kode yang tidak ada di skema mana pun; kolomnya `card_edc` —
+ * sementara `qris_static` dan `card_edc` TIDAK ada di dalamnya sama sekali.
+ * Akibatnya kasir yang menutup shift dengan QRIS statis membaca baris berbunyi
+ * `qris_static` di layar hitungan laci — layar tempat selisih paling
+ * berbahaya, dan satu-satunya angka non-tunai yang ia punya untuk
+ * mencocokkannya.
+ *
+ * Ditemukan lewat galeri komponen, dengan data pembayaran campuran. Tidak satu
+ * pun dari 515 test kasir merah karenanya: semuanya memakai `cash`, dan `cash`
+ * adalah satu-satunya kunci yang keempat salinan sepakati.
+ *
+ * `labelMetode` dari `packages/domain` adalah peta LAYAR, dibagi dengan
+ * back-office dan HP. `cetak/metode.ts` tetap terpisah — nama struk
+ * dipendekkan untuk 32 kolom, dan alasannya dinyatakan di kedua berkas.
+ */
 
 export function TutupKas() {
   const { db, pemberitahu } = useDbLokal();
@@ -45,6 +64,7 @@ export function TutupKas() {
   const [shift, setShift] = useState<ShiftAktif | null>(null);
   const [ringkas, setRingkas] = useState<RingkasanAwal | null>(null);
   const [siap, setSiap] = useState(false);
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
 
   const [hitungan, setHitungan] = useState(0);
   const [review, setReview] = useState<{ selisih: number; saldoSeharusnya: number; percobaan: number } | null>(null);
@@ -66,13 +86,27 @@ export function TutupKas() {
       setShift(s);
       if (s) setRingkas(await ringkasanSebelumHitung(db, s.id));
       if (hidup) setSiap(true);
-    })();
+    })().catch((e: Error) => {
+      /* ⛔ Tanpa ini layar berhenti di "Menyiapkan tutup kas" selamanya, dan
+         kasir yang hendak pulang tidak punya satu pun cara mengetahui apakah
+         shiftnya tertutup. */
+      if (!hidup) return;
+      setGagalMuat(e.message);
+      setSiap(true);
+    });
     return () => {
       hidup = false;
     };
   }, [db]);
 
   if (!siap) return <EmptyState title="Menyiapkan tutup kas" body="Membaca data shift." />;
+
+  /* ⛔ Mendahului "Tidak ada shift yang dapat ditutup". Pesan itu menyuruh
+     kasir membuka shift; pada database yang tidak dapat dibaca, shiftnya
+     mungkin justru terbuka dan hanya tidak terbaca. */
+  if (gagalMuat) {
+    return <GagalBaca akibat="Shift tidak dapat ditutup dari perangkat ini sampai masalahnya selesai." pesan={gagalMuat} />;
+  }
 
   /* K-13 — laporan shift. Dari data LOKAL (AC FR-D8): laporan yang menuntut
      jaringan tidak berguna justru saat kasir menutup toko dengan internet
@@ -111,7 +145,7 @@ export function TutupKas() {
         <h2 className="t-body-md">Laci kas</h2>
         <Baris label="Saldo awal" nilai={laporan.saldoAwal} />
         {laporan.perMetode.map((m) => (
-          <Baris key={m.metode} label={METODE[m.metode] ?? m.metode} nilai={m.total} />
+          <Baris key={m.metode} label={labelMetode(m.metode)} nilai={m.total} />
         ))}
         <Baris label="Saldo seharusnya" nilai={laporan.saldoSeharusnya} />
         <Baris label="Hitungan fisik" nilai={laporan.hitunganFisik ?? 0} />
@@ -307,8 +341,8 @@ export function TutupKas() {
           .map((m) =>
             // Tunai: JUMLAH saja, tanpa total — lihat `RingkasanAwal.perMetode`.
             m.total === null
-              ? `${METODE[m.metode] ?? m.metode} ${m.jumlah}×`
-              : `${METODE[m.metode] ?? m.metode} ${rupiah(m.total)}`
+              ? `${labelMetode(m.metode)} ${m.jumlah}×`
+              : `${labelMetode(m.metode)} ${rupiah(m.total)}`
           )
           .join(' · ')}
       </p>

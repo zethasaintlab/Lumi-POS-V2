@@ -32,6 +32,7 @@ export function Login() {
   const [hasil, setHasil] = useState<HasilLogin | null>(null);
   const [memeriksa, setMemeriksa] = useState(false);
   const [detikTersisa, setDetikTersisa] = useState(0);
+  const [gagalTeknis, setGagalTeknis] = useState<string | null>(null);
 
   /* Hitung mundur penguncian (`spec-f:220` — "hitungan mundur ditampilkan").
 
@@ -67,6 +68,21 @@ export function Login() {
         }
         setPin('');
       })
+      .catch((e: Error) => {
+        /* ⛔ Sampai 1 September 2026 tidak ada `catch` di sini sama sekali.
+           Verifikasi yang MELEMPAR — database lokal yang tidak dapat dibaca,
+           WASM Argon2 yang gagal dimuat — hanya menjalankan `finally`: keypad
+           menyala kembali, `hasil` tetap `null`, dan layar tidak berubah
+           SEDIKIT PUN. Kasir mengetik enam digit, tidak terjadi apa-apa,
+           mengetik lagi, tidak terjadi apa-apa.
+
+           Ini bentuk "gagal auth tanpa pesan" yang paling mahal: ia tidak
+           dapat dibedakan dari PIN yang salah, jadi kasir menyalahkan
+           ingatannya sendiri lalu memanggil manajer untuk PIN yang sebenarnya
+           benar. */
+        setPin('');
+        setGagalTeknis(e.message);
+      })
       .finally(() => setMemeriksa(false));
   }, [pin, db, memeriksa]);
 
@@ -89,6 +105,19 @@ export function Login() {
       {hasil && hasil.status !== 'berhasil' && !terkunci && (
         <p className="t-body-md kasir-login-galat" role="alert">
           {hasil.pesan}
+        </p>
+      )}
+
+      {/* ⛔ TERPISAH dari pesan `hasil`, dan kalimatnya berbeda dengan sengaja.
+          "PIN salah" dan "aplikasi tidak dapat memeriksa PIN" menuntut tindakan
+          yang berlawanan: yang pertama diulangi, yang kedua tidak akan pernah
+          berhasil sebanyak apa pun ia diulang. Pesan `login.ts` NETRAL soal
+          ada tidaknya pengguna (`spec-f:161`); yang ini tidak menyentuh itu
+          sama sekali — ia tentang perangkatnya, bukan tentang siapa pun. */}
+      {gagalTeknis && !terkunci && (
+        <p className="t-body-md kasir-login-galat" role="alert">
+          PIN tidak dapat diperiksa di perangkat ini. Muat ulang aplikasi; bila tetap gagal,
+          hubungi dukungan. ({gagalTeknis})
         </p>
       )}
 

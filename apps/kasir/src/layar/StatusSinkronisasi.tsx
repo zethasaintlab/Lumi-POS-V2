@@ -44,6 +44,7 @@ export function StatusSinkronisasi() {
   const [pesan, setPesan] = useState<string | null>(null);
   const [terhubung, setTerhubung] = useState(false);
   const [mengirim, setMengirim] = useState(false);
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
 
   useEffect(() => {
     let hidup = true;
@@ -75,8 +76,22 @@ export function StatusSinkronisasi() {
   useEffect(() => {
     let hidup = true;
     daftarGagal(db, halaman).then(
-      (h) => hidup && setGagal(h),
-      () => hidup && setGagal(KOSONG)
+      (h) => {
+        if (!hidup) return;
+        setGagal(h);
+        setGagalMuat(null);
+      },
+      (e: Error) => {
+        /* ⛔ Sampai 1 September 2026 baris ini berbunyi `setGagal(KOSONG)`.
+           Pembacaan yang MENOLAK karena itu terlihat persis seperti "tidak ada
+           satu pun item gagal" — di layar yang seluruh tugasnya memberi tahu
+           merchant penjualan mana yang belum sampai ke server. Daftar kosong
+           yang sebenarnya kegagalan baca adalah kebohongan paling mahal yang
+           dapat ditampilkan produk ini. */
+        if (!hidup) return;
+        setGagal(KOSONG);
+        setGagalMuat(e.message);
+      }
     );
     return () => {
       hidup = false;
@@ -236,10 +251,23 @@ export function StatusSinkronisasi() {
           keyField="id"
           caption="Item yang gagal terkirim"
           empty={
-            <EmptyState
-              title="Tidak ada yang gagal"
-              body="Semua transaksi di perangkat ini terkirim atau masih dalam antrean."
-            />
+            /* ⛔ Dua kalimat untuk dua keadaan yang tabelnya tampilkan sama.
+               Tabel kosong karena tidak ada yang gagal, dan tabel kosong karena
+               daftarnya tidak dapat dibaca, adalah kabar yang berlawanan —
+               yang pertama menenangkan, yang kedua menuntut tindakan. Satu
+               kalimat untuk keduanya membuat kegagalan baca terbaca sebagai
+               jaminan. */
+            gagalMuat ? (
+              <EmptyState
+                title="Daftar item gagal tidak dapat dibaca"
+                body={`Ini BUKAN berarti semuanya terkirim — perangkat tidak dapat menjawab. Jangan tutup shift sebelum masalahnya selesai. (${gagalMuat})`}
+              />
+            ) : (
+              <EmptyState
+                title="Tidak ada yang gagal"
+                body="Semua transaksi di perangkat ini terkirim atau masih dalam antrean."
+              />
+            )
           }
         />
         {gagal.total > PER_HALAMAN && (

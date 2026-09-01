@@ -3,6 +3,7 @@ import { EmptyState } from 'ds';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { bukaShift, shiftAktif, validasiSaldoAwal, type ShiftAktif } from '../kas/shift.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { muatHlc } from '../lokal/hlc.ts';
 import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
 import { useSesi } from '../konteks/useSesi.ts';
@@ -37,6 +38,7 @@ export function BukaShift() {
   const [galat, setGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
   const [hlc, setHlc] = useState<Hlc | null>(null);
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
 
   useEffect(() => {
     let hidup = true;
@@ -52,6 +54,14 @@ export function BukaShift() {
       // ada di perangkat ini.
       setHlc(await muatHlc(db, () => Date.now()));
       setSiap(true);
+    }, (e) => {
+      /* ⛔ Tanpa penanganan ini K-02 berhenti di penanda memuat selamanya, dan
+         kasir tidak dapat membuka shift MAUPUN mengetahui kenapa — di layar
+         pertama pagi hari, yang seluruh nilai jual produk ini bergantung
+         padanya. */
+      if (!hidup) return;
+      setGagalMuat((e as Error).message);
+      setSiap(true);
     });
     return () => {
       hidup = false;
@@ -59,6 +69,10 @@ export function BukaShift() {
   }, [db]);
 
   if (!siap) return <EmptyState title="Menyiapkan shift" body="Membaca data perangkat." />;
+
+  if (gagalMuat) {
+    return <GagalBaca akibat="Shift tidak dapat dibuka di perangkat ini, jadi penjualan belum dapat dimulai." pesan={gagalMuat} />;
+  }
 
   if (!konfig) {
     return (

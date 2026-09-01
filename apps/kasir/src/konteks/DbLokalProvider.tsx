@@ -44,6 +44,33 @@ export type KeadaanLokal =
 
 const Konteks = createContext<KeadaanLokal>({ tahap: 'membuka', lokal: null });
 
+/**
+ * Penyedia yang menerima keadaan APA ADANYA, untuk galeri komponen.
+ *
+ * ⛔ BUKAN untuk aplikasi. `DbLokalProvider` di bawah membuka database
+ * SUNGGUHAN dan itu satu-satunya jalan yang dipakai `main.tsx`. Yang ini ada
+ * supaya `harness-galeri.html` dapat merender LAYAR ASLI dengan data terkendali
+ * — kosong, memuat, error, offline, 100+ produk, teks meluap.
+ *
+ * ⛔ Kenapa layar ASLI, bukan tiruan: cacat yang lolos ke tangan merchant
+ * (back-office menjadi halaman putih saat login) adalah cacat KEADAAN, bukan
+ * cacat komponen. Galeri yang me-render salinan komponen tidak akan pernah
+ * menangkapnya; galeri yang me-render layar aslinya akan.
+ *
+ * Ia tidak menambah permukaan risiko pada aplikasi: `harness-galeri.html`
+ * bukan entry build (Vite hanya mem-build `index.html`), jadi tidak satu byte
+ * pun dari galeri masuk ke bundel produksi.
+ */
+export function DbLokalPalsuProvider({
+  keadaan,
+  children,
+}: {
+  keadaan: KeadaanLokal;
+  children: React.ReactNode;
+}) {
+  return <Konteks.Provider value={keadaan}>{children}</Konteks.Provider>;
+}
+
 /* Dibuka SEKALI per proses, di luar React.
 
    `StrictMode` memasang lalu melepas lalu memasang ulang setiap efek di
@@ -148,6 +175,34 @@ export function sinkronisasiSekarang(): Promise<SinkronisasiHidup | null> {
  */
 export function lokalSekarang(): Promise<LokalTerpasang> {
   return buka();
+}
+
+/**
+ * Mengganti instance tunggal dengan yang palsu — HANYA untuk galeri komponen.
+ *
+ * ## ⛔ Kenapa ini perlu ada sama sekali
+ *
+ * `useSesi` tidak membaca konteks React; ia memanggil `lokalSekarang()`
+ * langsung, karena `sesi_lokal` bukan raw table dan `watch()` tidak akan
+ * pernah melihatnya. Konsekuensinya: galeri yang hanya memasang provider palsu
+ * tetap membuat `useSesi` MEMBUKA DATABASE OPFS SUNGGUHAN di perangkat yang
+ * sedang dipakai memeriksa tampilan — dan sejak itu galeri berbagi berkas
+ * dengan aplikasi, sementara prototipe 03 mengukur bahwa dua penulis atas satu
+ * berkas OPFS gagal keras.
+ *
+ * Diverifikasi di browser: tanpa ini, K-12 berhenti di "Tidak ada shift yang
+ * dapat ditutup" karena `sesi` selamanya `null`.
+ *
+ * ⛔ Ia menolak berjalan bila database sungguhan SUDAH terbuka. Galeri berjalan
+ * di dokumen tersendiri (`harness-galeri.html`), jadi keadaan itu hanya dapat
+ * terjadi bila seseorang memanggilnya dari aplikasi — dan itu akan menukar
+ * database penjualan merchant dengan data karangan.
+ */
+export function pasangLokalPalsu(lokal: LokalTerpasang): void {
+  if (pembukaan !== null) {
+    throw new Error('pasangLokalPalsu: database lokal sungguhan sudah terbuka di proses ini.');
+  }
+  pembukaan = Promise.resolve(lokal);
 }
 
 export function DbLokalProvider({ children }: { children: React.ReactNode }) {

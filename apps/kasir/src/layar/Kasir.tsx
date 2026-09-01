@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { EmptyState } from 'ds';
+import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import {
   bacaKatalog,
@@ -64,6 +65,7 @@ export function Kasir() {
   const [shift, setShift] = useState<ShiftAktif | null>(null);
   const [katalog, setKatalog] = useState<ItemKatalog[]>([]);
   const [siap, setSiap] = useState(false);
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
   /* Keranjang hidup di modul, bukan di state komponen: K-06 adalah layar
      lain, dan router membongkar K-03 saat kasir menekan Bayar.
@@ -162,7 +164,16 @@ export function Kasir() {
       }
       bolehSimpan.current = true;
       if (hidup) setSiap(true);
-    })();
+    })().catch((e: Error) => {
+      /* ⛔ Tanpa `catch` ini layar berhenti di "Menyiapkan kasir" SELAMANYA:
+         `setSiap(true)` ada di ujung rantai `await`, jadi satu pembacaan yang
+         menolak membuangnya. Yang kasir lihat tidak dapat dibedakan dari
+         memuat yang sedang berjalan — dan ia menunggu antrean pelanggan
+         berdiri di depan layar yang tidak akan pernah berubah. */
+      if (!hidup) return;
+      setGagalMuat(e.message);
+      setSiap(true);
+    });
     return () => {
       hidup = false;
     };
@@ -215,6 +226,14 @@ export function Kasir() {
   });
 
   if (!siap) return <EmptyState title="Menyiapkan kasir" body="Membaca katalog dari perangkat." />;
+
+  /* ⛔ SEBELUM gerbang shift. Perangkat yang databasenya tidak dapat dibaca
+     tidak dapat tahu apakah ada shift terbuka, dan mengirim kasir ke K-02
+     untuk membuka shift yang mungkin sudah terbuka membuatnya mengejar
+     kegagalan yang salah. */
+  if (gagalMuat) {
+    return <GagalBaca akibat="Penjualan tidak dapat dilakukan di perangkat ini sampai masalahnya selesai." pesan={gagalMuat} />;
+  }
 
   if (!konfig) {
     return (

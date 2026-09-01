@@ -9,6 +9,7 @@ import { Bidang } from '../Bidang.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { simpanIdentitasPerangkat } from '../perangkat/simpan-identitas.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 import { bacaProfilPrinter, dokumenUjiCetak } from '../cetak/profil.ts';
 import { pesanProfil, profilBerlaku } from '../cetak/berlaku.ts';
@@ -63,6 +64,7 @@ export function Perangkat() {
      jadi yang dijaga adalah keduanya tidak terlihat serupa. */
   const [pesanBlokir, setPesanBlokir] = useState(false);
   const [memuat, setMemuat] = useState(true);
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
   /* Profil dibaca dari DATABASE, bukan dari konstanta. `ERD:445`: menambah
      model printer = menambah baris. Baseline ikut di belakangnya supaya
      perangkat tanpa profil tersinkron tetap dapat mencetak. */
@@ -106,7 +108,17 @@ export function Perangkat() {
         void jumlahCetakTertunda(db).then((n) => hidup && setTertunda(n), () => {});
         setMemuat(false);
       },
-      () => hidup && setMemuat(false)
+      (e: Error) => {
+        /* ⛔ Kegagalan MEMBACA dibedakan dari perangkat yang memang belum
+           terhubung. Sebelum 1 September 2026 keduanya jatuh ke layar yang
+           sama, dan layar itu berbunyi "Perangkat belum terhubung" — kalimat
+           yang menyuruh merchant memasukkan ulang kredensial yang sebenarnya
+           sudah ada di perangkatnya, dan yang sekali tersimpan salah
+           mematikan sinkronisasi sungguhan. */
+        if (!hidup) return;
+        setGagalMuat(e.message);
+        setMemuat(false);
+      }
     );
     return () => {
       hidup = false;
@@ -212,6 +224,10 @@ export function Perangkat() {
 
   if (memuat) {
     return <EmptyState title="Membaca konfigurasi perangkat" />;
+  }
+
+  if (gagalMuat) {
+    return <GagalBaca akibat="Identitas perangkat tidak dapat dibaca, jadi layar ini tidak dapat menampilkan setelan yang sedang berlaku." pesan={gagalMuat} />;
   }
 
   return (
