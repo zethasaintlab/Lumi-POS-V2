@@ -11,6 +11,7 @@ import type { KonfigPerangkat } from '../../../../packages/sync-client/src/peran
 import type { Sesi } from '../identitas/login.ts';
 import { muatHlc } from '../lokal/hlc.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { LatarDialog } from './LatarDialog.tsx';
 
 /* K-10 — Batalkan transaksi (IA §2.2, FR-B7).
 
@@ -71,8 +72,7 @@ export function DialogPembatalan({
     rencana = rencanaPembatalan(statusOrder);
   } catch {
     return (
-      <div className="kasir-dialog-latar" role="dialog" aria-modal="true">
-        <div className="kasir-dialog">
+      <LatarDialog label="Dialog" onBatal={onBatal}>
           <h2 className="t-title">Tidak dapat dibatalkan</h2>
           <p className="t-body-md">Transaksi ini sudah dibatalkan sebelumnya.</p>
           <div className="kasir-dialog-aksi">
@@ -80,8 +80,7 @@ export function DialogPembatalan({
               Tutup
             </Tombol>
           </div>
-        </div>
-      </div>
+      </LatarDialog>
     );
   }
 
@@ -175,8 +174,7 @@ export function DialogPembatalan({
   }
 
   return (
-    <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label="Batalkan transaksi">
-      <div className="kasir-dialog">
+    <LatarDialog label="Batalkan transaksi" onBatal={onBatal}>
         <h2 className="t-title">
           {rencana.operasi === 'void' ? 'Batalkan transaksi' : 'Kembalikan dana'}
         </h2>
@@ -306,8 +304,7 @@ export function DialogPembatalan({
             {menyimpan ? 'Menyimpan…' : rencana.operasi === 'void' ? 'Batalkan' : 'Kembalikan dana'}
           </Tombol>
         </div>
-      </div>
-    </div>
+    </LatarDialog>
   );
 }
 

@@ -12,6 +12,7 @@ import {
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import type { Sesi } from '../identitas/login.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { LatarDialog } from './LatarDialog.tsx';
 
 /* FR-D5 — kas masuk & kas keluar. Dialog, bukan layar: pola yang sama dengan
    K-16 (`IA:66`), dan alasan yang sama — ia tidak punya keadaan sendiri untuk
@@ -109,8 +110,7 @@ export function DialogKasManual({ shiftId, konfig, sesi, onBatal, onSelesai }: P
   };
 
   return (
-    <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label="Kas masuk/keluar">
-      <div className="kasir-dialog">
+    <LatarDialog label="Kas masuk/keluar" onBatal={onBatal}>
         <h2 className="t-title">Kas masuk / keluar</h2>
         <p className="t-caption kasir-login-sub">
           Uang yang berpindah di luar penjualan. Tanpa dicatat di sini, selisihnya muncul saat tutup
@@ -213,8 +213,7 @@ export function DialogKasManual({ shiftId, konfig, sesi, onBatal, onSelesai }: P
             {menyimpan ? 'Mencatat…' : 'Catat'}
           </Tombol>
         </div>
-      </div>
-    </div>
+    </LatarDialog>
   );
 }
 

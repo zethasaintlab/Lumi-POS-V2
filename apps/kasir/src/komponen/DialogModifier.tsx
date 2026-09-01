@@ -15,6 +15,7 @@ import type { DaftarModifier, ItemKatalog, VariationKatalog } from '../katalog/b
 import type { ModifierTerpilih } from '../kasir/keranjang.ts';
 import { Tombol } from '../Tombol.tsx';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { LatarDialog } from './LatarDialog.tsx';
 
 /* K-04 (modifier) dan K-05 (variation) dalam SATU dialog.
 
@@ -95,8 +96,7 @@ export function DialogModifier({
   );
 
   return (
-    <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label={item.nama}>
-      <div className="kasir-dialog">
+    <LatarDialog label={item.nama} onBatal={onBatal}>
         <h2 className="t-title">{item.nama}</h2>
 
         {item.variations.length > 1 && (
@@ -215,7 +215,6 @@ export function DialogModifier({
             Tambahkan
           </Tombol>
         </div>
-      </div>
-    </div>
+    </LatarDialog>
   );
 }

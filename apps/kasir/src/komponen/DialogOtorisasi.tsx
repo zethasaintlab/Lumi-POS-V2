@@ -10,6 +10,7 @@ import {
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { Keypad } from './Keypad.tsx';
 import { Tombol } from '../Tombol.tsx';
+import { LatarDialog } from './LatarDialog.tsx';
 
 /* K-11 — Otorisasi step-up (IA §2.2, FR-B8/B9).
 
@@ -86,8 +87,7 @@ export function DialogOtorisasi({ aktorId, daftarAlasan, judul, onBatal, onSetuj
   };
 
   return (
-    <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label={judul}>
-      <div className="kasir-dialog">
+    <LatarDialog label={judul} onBatal={onBatal}>
         <h2 className="t-title">{judul}</h2>
 
         {mintaAlasan && (
@@ -157,7 +157,6 @@ export function DialogOtorisasi({ aktorId, daftarAlasan, judul, onBatal, onSetuj
             Batal
           </Tombol>
         </div>
-      </div>
-    </div>
+    </LatarDialog>
   );
 }
