@@ -62,6 +62,20 @@ function kumpulkanDefinisi() {
   // `ds-bundle/components.css` mendefinisikan beberapa token di dalam selektor.
   const komponen = readFileSync(join(AKAR, 'ds-bundle/components.css'), 'utf8');
   for (const m of tanpaKomentar(komponen).matchAll(/(--[a-z0-9-]+)\s*:/g)) def.add(m[1]);
+
+  /* ⛔ CSS aplikasi ikut menyumbang definisi, dan itu BUKAN pelonggaran.
+     Yang dijaga adalah "token dipakai tanpa pernah didefinisikan DI MANA PUN";
+     token lokal yang didefinisikan di berkas yang sama sah sepenuhnya —
+     `--skala` di `galeri.css` contohnya, disetel per breakpoint.
+
+     Versi pertama penjaga ini hanya membaca `packages/ds` dan bundle, jadi ia
+     menandai `--skala` sebagai hantu. Penjaga yang menandai kode benar akan
+     dimatikan orang berikutnya; ini kali ketiga pelajaran itu ditagih di sesi
+     yang sama. */
+  for (const f of berkasCss(join(AKAR, 'apps'))) {
+    const isi = tanpaKomentar(readFileSync(f, 'utf8'));
+    for (const m of isi.matchAll(/(--[a-z0-9-]+)\s*:/g)) def.add(m[1]);
+  }
   return def;
 }
 
