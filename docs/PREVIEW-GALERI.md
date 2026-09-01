@@ -62,32 +62,49 @@ produksi, config galeri, dan isi `dist/` bila sudah pernah dibangun).
 | `rewrites` | `/` → `/harness-galeri.html` | entry-nya bukan `index.html`; tanpa ini root domain menjawab 404 |
 | `github.silent` | `true` | Vercel tidak mengomentari setiap commit di PR |
 
-## ⛔ Satu langkah yang HANYA kamu bisa lakukan
+## URL yang dipakai sehari-hari
 
-Saya tidak punya akses ke dashboard Vercel-mu. Percobaan membuat project lewat
-integrasi memerlukan persetujuanmu dan saya hentikan di sana — sesuai pemicu
-eskalasi "apa pun yang butuh aku mengklik di dashboard".
+**Alias branch — inilah yang di-bookmark:**
 
-Konfigurasinya sudah lengkap dan ter-commit; yang tersisa satu kali klik:
+```
+https://lumi-pos-v2-git-<branch>-after-school-mpp.vercel.app/
+```
 
-1. Buka <https://vercel.com/new> dan pilih team **AfterSchool**.
-2. **Import Git Repository** → `zethasaintlab/Lumi-POS-V2`.
-   Kalau repo tidak muncul, klik **Adjust GitHub App Permissions** dan beri
-   Vercel akses ke repo ini (ia privat).
-3. Jangan ubah satu pun setelan build. `vercel.json` di akar repo sudah
-   menetapkan `buildCommand`, `outputDirectory`, dan rewrite root — setelan di
-   dashboard yang diisi tangan akan MENGALAHKANNYA dan menyimpang diam-diam.
-4. **Deploy**.
+Untuk branch kerja UI sekarang:
+<https://lumi-pos-v2-git-perbaikan-ui-pasca-uji-manual-after-school-mpp.vercel.app/>
 
-Sesudah itu setiap push ke branch mana pun menghasilkan preview URL sendiri,
-tanpa tindakan lagi dari kita berdua.
+⛔ **Alias ini STABIL dan menunjuk commit TERBARU di branch itu.** Setiap push
+memperbaruinya sendiri; tidak perlu merge ke `main` untuk melihat hasil satu
+iterasi. Ini yang menghapus "satu merge per perubahan visual".
 
-⛔ **Deployment PRODUKSI dari `main` akan GAGAL sampai kerja ini ter-merge** —
-`main` belum punya skrip `build:galeri`. Itu bukan kerusakan; preview per-branch
-tetap jalan, dan produksi hijau begitu branch-nya masuk.
+**Produksi** (`lumi-pos-v2.vercel.app`) menyajikan `main`, dan itu benar: ia
+yang dilihat orang yang tidak mengikuti pekerjaan harian.
 
-⛔ **Plan-nya hobby (gratis).** Tidak ada layanan berbayar baru yang dibuat, dan
-saya tidak membuat satu pun resource di akunmu.
+## Proteksi deployment: TIDAK ADA, dan itu disengaja
+
+`passwordProtection`, `ssoProtection`, dan `trustedIps` semuanya `false`.
+Diperiksa lewat API, bukan diasumsikan.
+
+Aman untuk galeri: yang di-deploy nol rahasia, nol data merchant, seluruhnya
+karangan. Kalau kelak ada deployment yang memuat data sungguhan, proteksi harus
+dinyalakan LEBIH DULU — dan galeri bukan tempat yang benar untuk data
+sungguhan.
+
+## ⛔ Yang tidak dapat saya verifikasi sendiri, dan yang dapat
+
+Proxy egress sandbox menolak CONNECT ke `*.vercel.app` dan `vercel.com` (403,
+kebijakan organisasi). Terukur: `api.github.com` dan `registry.npmjs.org`
+menjawab 200; `vercel.com` dan `example.com` ditolak. Playwright lewat proxy
+yang sama.
+
+| Hal | Saya | Kamu |
+|---|---|---|
+| Status build, log kegagalan, daftar deployment | ✅ lewat MCP | ✅ |
+| MEMBUKA halaman preview | ❌ 403 di lapisan jaringan | ✅ |
+| Build statis lokal + 64 tangkapan layar | ✅ | ✅ lewat GitHub |
+
+Jadi setiap kata "terverifikasi" dari saya berarti **build statis lokal**, bukan
+deployment. Lapisan terakhir tetap matamu.
 
 ## Batas yang dinyatakan
 
