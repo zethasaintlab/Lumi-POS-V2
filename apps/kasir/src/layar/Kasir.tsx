@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { EmptyState } from 'ds';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
+import { gayaKategori } from '../../../../packages/domain/src/warna-kategori.ts';
+import { TANPA_KATEGORI } from '../../../../packages/domain/src/katalog-saringan.ts';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import {
   bacaKatalog,
+  bacaKategori,
   bacaModifier,
   cariBarcode,
   cariItem,
   type DaftarModifier,
   type ItemKatalog,
+  type KategoriKatalog,
   type VariationKatalog,
 } from '../katalog/baca.ts';
 import {
@@ -66,6 +70,11 @@ export function Kasir() {
   const [katalog, setKatalog] = useState<ItemKatalog[]>([]);
   const [siap, setSiap] = useState(false);
   const [gagalMuat, setGagalMuat] = useState<string | null>(null);
+  /* FR-A1 — saringan kategori. `kueri` dan kategori berdiri SENDIRI-SENDIRI dan
+     berlaku bersamaan: kasir yang mengetik "kopi" di dalam kategori Makanan
+     harus mendapat nol hasil, bukan diam-diam dilepas dari kategorinya. */
+  const [kategori, setKategori] = useState<KategoriKatalog[]>([]);
+  const [kategoriAktif, setKategoriAktif] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
   /* Keranjang hidup di modul, bukan di state komponen: K-06 adalah layar
      lain, dan router membongkar K-03 saat kasir menekan Bayar.
@@ -135,6 +144,8 @@ export function Kasir() {
       const daftar = await bacaKatalog(db, { outletId: k?.outletId ?? null, pada: new Date() });
       if (!hidup) return;
       setKatalog(daftar);
+      setKategori(await bacaKategori(db));
+      if (!hidup) return;
       setFitur(await bacaFitur(db));
       if (!hidup) return;
 
@@ -179,7 +190,34 @@ export function Kasir() {
     };
   }, [db]);
 
-  const terlihat = useMemo(() => cariItem(katalog, kueri), [katalog, kueri]);
+  const terlihat = useMemo(() => {
+    const cocok = cariItem(katalog, kueri);
+    if (kategoriAktif === null) return cocok;
+    /* ⛔ Cabang `TANPA_KATEGORI` ada di sini karena `category_id` boleh `null`,
+       dan menyaringnya dengan kesetaraan biasa mengembalikan NOL produk alih-
+       alih produk tanpa kategori — nol yang terlihat persis seperti "memang
+       tidak ada". Bentuk cacat yang sama sudah pernah dibayar di B-06. */
+    if (kategoriAktif === TANPA_KATEGORI) return cocok.filter((i) => i.categoryId === null);
+    return cocok.filter((i) => i.categoryId === kategoriAktif);
+  }, [katalog, kueri, kategoriAktif]);
+
+  /* Nama kategori dalam urutan tampil — dasar warna slot. `gayaKategori`
+     memakai POSISI di daftar ini, bukan hash: empat kategori ke enam slot
+     bertabrakan sekitar 70% kali, terukur di browser. */
+  const namaKategori = useMemo(() => kategori.map((k) => k.nama), [kategori]);
+  const petaKategori = useMemo(
+    () => new Map(kategori.map((k) => [k.id, k.nama])),
+    [kategori]
+  );
+  /* Kategori yang BENAR-BENAR punya produk, plus "Tanpa kategori" hanya bila
+     ada produknya. Chip yang selalu mengembalikan nol hasil adalah tombol yang
+     kasir tekan sekali lalu berhenti percaya pada barisnya. */
+  const kategoriTerpakai = useMemo(() => {
+    const ada = new Set(katalog.map((i) => i.categoryId ?? TANPA_KATEGORI));
+    const hasil = kategori.filter((k) => ada.has(k.id)).map((k) => ({ id: k.id, nama: k.nama }));
+    if (ada.has(TANPA_KATEGORI)) hasil.push({ id: TANPA_KATEGORI, nama: 'Tanpa kategori' });
+    return hasil;
+  }, [kategori, katalog]);
   const subtotal = subtotalKeranjang(keranjang);
   /* ⛔ Dihitung ulang pada SETIAP render, terhadap subtotal sekarang — bukan
      dibekukan saat diskon dipasang. Keranjang yang bertambah setelah manajer
@@ -379,20 +417,98 @@ export function Kasir() {
           placeholder="Nama produk atau barcode"
         />
 
-        {terlihat.length === 0 ? (
-          <EmptyState title="Tidak ada produk yang cocok" body={`Tidak ada hasil untuk "${kueri}".`} />
-        ) : (
-          <div className="kasir-grid">
-            {terlihat.map((item) => (
-              <button key={item.id} type="button" className="kasir-kartu" onClick={() => void ketuk(item)}>
-                <span className="t-body-md">{item.nama}</span>
-                <span className="t-caption num">
-                  {item.variations.length > 1
-                    ? `dari ${rupiah(Math.min(...item.variations.map((v) => v.harga)))}`
-                    : rupiah(item.variations[0].harga)}
-                </span>
+        {/* ⛔ Saringan kategori, dan alasannya BUKAN estetika.
+            Pada 120 varian — jumlah yang merchant sungguhan punya, diuji di
+            galeri — grid tanpa saringan adalah tiga puluh baris kartu putih
+            yang identik, dan satu-satunya jalan menemukan produk adalah
+            mengetik namanya. Kasir yang harus mengetik untuk setiap item
+            berjalan lebih lambat daripada kasir dengan buku menu.
+
+            Chip disembunyikan bila hanya ada SATU kategori: baris saringan
+            yang tidak menyaring apa pun hanya memakan ruang grid. */}
+        {kategoriTerpakai.length > 1 && (
+          <div className="kasir-saring" role="group" aria-label="Saring kategori">
+            <button
+              type="button"
+              className={`kasir-chip${kategoriAktif === null ? ' kasir-chip-aktif' : ''}`}
+              aria-pressed={kategoriAktif === null}
+              onClick={() => setKategoriAktif(null)}
+            >
+              Semua
+            </button>
+            {kategoriTerpakai.map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                className={`kasir-chip${kategoriAktif === k.id ? ' kasir-chip-aktif' : ''}`}
+                aria-pressed={kategoriAktif === k.id}
+                style={gayaKategori(k.nama, namaKategori) as React.CSSProperties}
+                onClick={() => setKategoriAktif(k.id)}
+              >
+                {k.nama}
               </button>
             ))}
+          </div>
+        )}
+
+        {terlihat.length === 0 ? (
+          /* ⛔ Kalimatnya menyebut SELURUH saringan yang sedang aktif, bukan
+             hanya kueri. Kasir yang lupa satu chip masih menyala membaca
+             "tidak ada hasil untuk kopi" dan menyimpulkan produknya hilang
+             dari katalog. */
+          <EmptyState
+            title="Tidak ada produk yang cocok"
+            body={[
+              kueri ? `pencarian "${kueri}"` : null,
+              kategoriAktif ? `kategori ${petaKategori.get(kategoriAktif) ?? 'Tanpa kategori'}` : null,
+            ]
+              .filter(Boolean)
+              .join(' dan ')
+              .replace(/^./, (c) => `Tidak ada hasil untuk ${c}`)}
+          />
+        ) : (
+          <div className="kasir-grid">
+            {terlihat.map((item) => {
+              const nama = item.categoryId === null ? '' : petaKategori.get(item.categoryId) ?? '';
+              const hargaTerendah = Math.min(...item.variations.map((v) => v.harga));
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="kasir-kartu pita-kategori"
+                  /* Nama penuh untuk yang terpotong. BUKAN tooltip rancangan
+                     (aturan DS #9 melarangnya) — ia atribut bawaan browser,
+                     dan satu-satunya jalan membaca nama panjang di mini-PC
+                     tanpa mengetik ulang di kolom cari. Di perangkat sentuh ia
+                     tidak muncul, dan itu batas yang dinyatakan. */
+                  title={item.nama}
+                  style={gayaKategori(nama, namaKategori) as React.CSSProperties}
+                  onClick={() => void ketuk(item)}
+                >
+                  {/* Nama dipotong DUA baris. Sebelumnya tanpa batas, dan nama
+                      60 karakter (biasa di kafe) menjadi lima baris yang
+                      menarik tinggi SELURUH barisnya — tiga kartu di
+                      sebelahnya menjadi kotak tinggi yang hampir kosong.
+                      Terlihat di galeri, skenario "Teks meluap". */}
+                  <span className="kasir-kartu-nama t-body-md">{item.nama}</span>
+                  <span className="kasir-kartu-harga t-body-md num">
+                    {item.variations.length > 1
+                      ? `dari ${rupiah(hargaTerendah)}`
+                      : rupiah(item.variations[0].harga)}
+                  </span>
+                  {/* ⛔ Jumlah varian DISEBUTKAN. Tanpa itu "dari Rp 24.000"
+                      adalah satu-satunya petunjuk bahwa mengetuk kartu ini
+                      membuka dialog alih-alih menambahkan ke keranjang, dan
+                      kasir yang mengharapkan yang kedua kehilangan ritmenya
+                      pada setiap produk ber-varian. */}
+                  {item.variations.length > 1 && (
+                    <span className="kasir-kartu-varian t-caption">
+                      {item.variations.length} pilihan
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -534,6 +650,18 @@ export function Kasir() {
           Bayar
         </Tombol>
 
+        {/* ⛔ Ketiga aksi sekunder DIKELOMPOKKAN, 1 September 2026.
+            Sebelumnya ketiganya berdiri sendiri-sendiri di aliran panel dan
+            mewarisi jarak antar-bagiannya — tiga kata melayang di tengah kolom
+            kosong, tanpa tepi, tanpa satu pun tanda bahwa mereka dapat
+            ditekan. `ghost` memang harus tenang (aturan DS #2: satu aksi utama
+            per layar, dan itu Bayar), tapi tenang bukan berarti tidak terlihat
+            sebagai kontrol.
+
+            Kelompoknya diberi garis pemisah di atas: ia menyatakan bahwa
+            ketiganya BUKAN bagian dari alur menagih, dan itu tepat perbedaan
+            yang membuat kasir tidak menekan "Buka laci" saat mencari Bayar. */}
+        <div className="kasir-aksi-sekunder">
         {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
             uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
             setiap penjualan. */}
@@ -590,6 +718,7 @@ export function Kasir() {
             {pesanKas}
           </p>
         )}
+        </div>
       </aside>
 
       {dialogKas && konfig && sesi && (

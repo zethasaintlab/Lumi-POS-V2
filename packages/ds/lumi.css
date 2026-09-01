@@ -55,6 +55,19 @@
   --kat-6-soft:   #E7EFF6;
 }
 
+/* --- Latar gelap dialog ----------------------------------------------------
+ *
+ * ⛔ `--overlay` dipakai `apps/kasir/src/kasir.css` sejak F2 dan TIDAK PERNAH
+ * terdefinisi di mana pun. `background: var(--overlay)` karena itu dibuang
+ * seluruhnya: dialog kasir — otorisasi manajer, konfirmasi void, alasan
+ * selisih kas — melayang di atas layar yang masih terlihat penuh, tanpa satu
+ * pun tanda bahwa sisa layar sedang tidak dapat disentuh.
+ *
+ * Nilainya mengikuti `.overlay` bundle (`#14110f73`), ditulis sebagai token
+ * supaya keduanya tidak menyimpang.
+ */
+:root { --overlay: rgba(20, 17, 15, .45); }
+
 /* --- Target sentuh: aturan DS #3 (≥ 44px) ----------------------------------
  *
  * `/ds-bundle` mengirim `.shell-link` pada 40px dan tombol tutup dialog pada

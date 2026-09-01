@@ -1,3 +1,31 @@
+/* ⛔ DELAPAN token yang dipakai berkas ini TIDAK PERNAH ADA, 1 September 2026.
+ *
+ * `var(--x)` untuk nama yang tidak terdefinisi dan tanpa fallback membuat
+ * SELURUH deklarasinya dibuang — diam-diam, tanpa satu pun peringatan di
+ * konsol, tanpa satu pun test merah. Yang hilang karenanya:
+ *
+ *   --touch-target   → aturan DS #3 (≥44px) TIDAK ditegakkan di lima selektor,
+ *                      termasuk kartu produk dan baris riwayat
+ *   --overlay        → latar gelap dialog TRANSPARAN SEPENUHNYA; dialog kasir
+ *                      melayang di atas layar yang masih terlihat penuh
+ *   --radius-md/-lg  → kartu produk, dialog, dan kolom catatan bersudut SIKU
+ *                      sementara setiap komponen bundle membulat
+ *   --text-muted     → teks sekunder TIDAK diredam; ia terlihat sama persis
+ *                      dengan teks utama, dan hierarki yang dimaksudkan hilang
+ *   --space-5        → `min-height` pesan tetap dibuang, jadi tata letak
+ *                      MELOMPAT setiap kali pesan muncul
+ *   --text           → warna teks kartu dan baris tidak pernah disetel
+ *   --weight-medium→ (baru, milik saya) berat harga tidak berlaku
+ *
+ * Inilah dasar paling nyata dari "UI kasir jauh di bawah standar": bukan
+ * pilihan desain yang salah, melainkan selusin deklarasi yang tidak pernah
+ * sampai ke layar. Nama-nama itu tampak masuk akal — mereka konvensi sistem
+ * desain LAIN.
+ *
+ * `tests/runtime/token-css-ada.test.js` menjaganya: setiap `var(--x)` tanpa
+ * fallback wajib punya definisinya di `ds-bundle/tokens/` atau
+ * `packages/ds/lumi.css`.
+ */
 /* Kerangka aplikasi kasir.
 
    Ada di sini, bukan sebagai `style={{...}}` di komponen, karena aturan design
@@ -38,10 +66,18 @@
    diklik -- tapi ia tetap harus TERLIHAT seperti indikator, bukan tombol.
    Pembungkusnya karena itu telanjang, dan hanya fokus keyboard yang
    memunculkan bingkai. */
+/* ⛔ Target sentuh 44px (aturan DS #3). Pil `.sync` bundle tingginya 26px, dan
+   pembungkusnya di sini adalah TOMBOL — satu-satunya jalan kasir menuju K-14,
+   layar yang menjelaskan penjualan mana yang belum sampai ke server. Padding
+   ditaruh di pembungkusnya, bukan di pil: mengubah pil akan mengubah setiap
+   indikator di back-office dan HP juga. */
 .kasir-indikator {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-1);
   background: none;
   border: 0;
-  padding: 0;
   cursor: pointer;
   font: inherit;
   color: inherit;
@@ -75,7 +111,7 @@
 }
 
 .kasir-login-sub {
-  color: var(--text-muted);
+  color: var(--ink-muted);
 }
 
 .kasir-login-galat {
@@ -130,9 +166,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5);
+  padding: var(--space-6);
   background: var(--surface);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-card);
   max-width: 28rem;
   width: 100%;
   max-height: 100%;
@@ -151,16 +187,16 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--touch-target);
+  min-height: var(--touch-min);
 }
 
 .kasir-catatan {
   font: inherit;
   padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .kasir-dialog-aksi {
@@ -211,23 +247,102 @@
    jumlah kolom tetap: tablet 1024 dan mini-PC 1280 harus keduanya muat. */
 .kasir-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
   gap: var(--space-3);
 }
 
+/* ⛔ Kartu produk — dirapatkan 1 September 2026, setelah galeri komponen.
+ *
+ * Yang diubah KEPADATAN dan HIERARKI BERAT HURUF, bukan palet. Riset referensi
+ * user menyimpulkan pembeda visual Kasir Pintar bukan warnanya (teal `#00796b`
+ * dan `#0D5C63` satu keluarga) melainkan kepadatan, tinggi baris, dan hierarki
+ * berat huruf. Aksen teal tetap satu-satunya warna AKSI.
+ *
+ * Tiga hal yang berubah, dan masing-masing terlihat di galeri:
+ *
+ * 1. Harga naik dari `--text-caption` abu-abu (12px) ke ukuran teks isi dengan
+ *    berat semibold. Ia sebelumnya teks TERKECIL di kartu — di layar yang
+ *    seluruh tugasnya menagih uang.
+ * 2. Nama dipotong dua baris. Nama 60 karakter menarik tinggi seluruh barisnya
+ *    dan membuat tiga kartu tetangganya menjadi kotak tinggi hampir kosong.
+ * 3. Padding turun satu tangga dan kolom minimum dari 9rem ke 8rem: pada
+ *    1024×768 (panggung galeri, `PRD:428`) yang lama memuat 12 kartu pas-pasan,
+ *    dan `IA:62` menuntut ≥12 TANPA scroll — bukan tepat 12.
+ */
 .kasir-kartu {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  min-height: var(--touch-target);
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--touch-min);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
+  transition: border-color .12s, transform .06s;
+}
+
+/* Umpan balik tekan. Kartu ini diketuk ribuan kali sehari oleh orang yang
+   sering TIDAK menatap layarnya — ia sedang melihat pelanggan. Aturan yang
+   sama sudah dipasang untuk `.btn` di `packages/ds/lumi.css`; kartu produk
+   bukan `.btn` dan karena itu tidak ikut mendapatkannya. */
+.kasir-kartu:active { transform: translateY(1px); }
+.kasir-kartu:hover { border-color: var(--border-strong); }
+
+.kasir-kartu-nama {
+  font-weight: var(--weight-regular);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.25;
+}
+
+/* ⛔ Berat, bukan warna. Menaikkan harga dengan warna akan menambah warna
+   kedua yang bersaing dengan aksen teal; berat huruf tidak. */
+.kasir-kartu-harga { font-weight: var(--weight-medium); }
+
+.kasir-kartu-varian { color: var(--ink-muted); }
+
+/* --- Saringan kategori ----------------------------------------------------
+ *
+ * ⛔ Warna TIDAK PERNAH berdiri sendiri (aturan DS #5): chip selalu memuat nama
+ * kategorinya, dan yang sedang aktif dinyatakan `aria-pressed` DAN tepi tebal —
+ * bukan hanya latar yang lebih pekat.
+ */
+.kasir-saring {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.kasir-chip {
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--chip, var(--border));
+  background: var(--surface);
+  color: var(--chip, var(--ink-muted));
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.kasir-chip-aktif {
+  background: var(--chip-soft, var(--accent-soft));
+  border-width: 2px;
+  font-weight: var(--weight-medium);
+}
+
+.kasir-chip:active { transform: translateY(1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .kasir-kartu:active,
+  .kasir-chip:active { transform: none; }
 }
 
 .kasir-keranjang {
@@ -260,6 +375,29 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Kelompok aksi sekunder di panel keranjang.
+ *
+ * ⛔ Tepi diberikan di sini, pada `.kasir-aksi-sekunder .btn`, BUKAN pada
+ * `.btn-ghost` global: `ghost` dipakai back-office dan HP juga, dan tombol
+ * yang tiba-tiba bertepi di seluruh produk adalah perubahan yang tidak
+ * seorang pun minta. */
+.kasir-aksi-sekunder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* ⛔ TANPA `margin-top: auto`. Dicoba, dan di panggung 1024×768 ia mendorong
+     ketiga tombol ke tepi bawah panel yang dapat di-scroll — di luar pandangan
+     pada setiap keranjang yang isinya sedikit. Kelompok ini menempel pada blok
+     subtotal, tempat kasir sudah melihat. */
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.kasir-aksi-sekunder .btn {
+  justify-content: flex-start;
+  border-color: var(--border);
+}
+
 .kasir-subtotal {
   display: flex;
   align-items: baseline;
@@ -275,12 +413,12 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  min-height: var(--touch-target);
+  min-height: var(--touch-min);
   padding: var(--space-3);
   border: none;
   border-bottom: 1px solid var(--border);
   background: transparent;
-  color: var(--text);
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
 }
@@ -288,7 +426,7 @@
 /* Baris pesan yang ruangnya dicadangkan — lihat komentar di DialogOtorisasi.
    Tanpa ini, pesan yang muncul/hilang menggeser keypad di tengah pengetikan. */
 .kasir-pesan-tetap {
-  min-height: var(--space-5);
+  min-height: var(--space-6);
   margin: 0;
 }
 

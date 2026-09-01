@@ -127,17 +127,37 @@ const MENU: readonly [string, string, number][] = [
   ['Banana Bread', 'Slice', 24000],
 ];
 
-function baris(
-  itemId: string,
-  nama: string,
-  varian: string,
-  harga: number,
-  i: number
-): BarisItem {
+/* ⛔ `item_id` diturunkan dari NAMA, bukan dari indeks baris.
+ *
+ * Grid K-03 merender ITEM, bukan variasi: dua varian satu produk adalah SATU
+ * kartu berbunyi "dari Rp 24.000". Versi pertama fixture ini memberi setiap
+ * baris `item-${i}`, jadi "Kopi Susu Gula Aren" Regular dan Large muncul
+ * sebagai DUA kartu yang namanya sama persis — dan saya sempat mencatatnya
+ * sebagai cacat produk. Ia cacat FIXTURE.
+ *
+ * Galeri yang datanya berbentuk salah menghasilkan temuan yang salah, dan
+ * temuan yang salah lebih mahal daripada tidak ada galeri: ia menuntun
+ * perbaikan pada kode yang tidak rusak.
+ */
+function hashNama(s: string): number {
+  let h = 0;
+  for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return h;
+}
+
+function idDariNama(nama: string): string {
+  return 'item-' + nama.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+function baris(itemId: string, nama: string, varian: string, harga: number): BarisItem {
   return {
     item_id: itemId,
     item_name: nama,
-    category_id: KATEGORI[i % KATEGORI.length] ?? null,
+    /* ⛔ Kategori diturunkan dari ITEM, bukan dari indeks baris. Kategori
+       adalah sifat item; `i % 4` menempatkan dua varian satu produk di
+       kategori BERBEDA — keadaan yang tidak dapat ada, dan yang membuat
+       pengelompokan apa pun di layar terlihat rusak tanpa sebab. */
+    category_id: KATEGORI[Math.abs(hashNama(itemId)) % KATEGORI.length] ?? null,
     variation_id: `${itemId}-v${varian}`,
     variation_name: varian,
     harga_dasar: harga,
@@ -156,29 +176,30 @@ export function itemUntuk(skenario: NamaSkenario): BarisItem[] {
     const hasil: BarisItem[] = [];
     for (let i = 0; i < 120; i += 1) {
       const [nama, varian, harga] = MENU[i % MENU.length]!;
-      hasil.push(baris(`item-${i}`, `${nama} ${Math.floor(i / MENU.length) + 1}`, varian, harga, i));
+      const n = `${nama} ${Math.floor(i / MENU.length) + 1}`;
+      hasil.push(baris(idDariNama(n), n, varian, harga));
     }
     return hasil;
   }
 
   if (skenario === 'meluap') {
     return [
-      baris('item-panjang', NAMA_PANJANG, 'Ukuran Paling Besar Sekali', 24000, 0),
-      ...MENU.slice(0, 5).map(([n, v, h], i) => baris(`item-${i}`, n, v, h, i + 1)),
+      baris('item-panjang', NAMA_PANJANG, 'Ukuran Paling Besar Sekali', 24000),
+      ...MENU.slice(0, 5).map(([n, v, h]) => baris(idDariNama(n), n, v, h)),
     ];
   }
 
   if (skenario === 'angka-besar') {
     return [
-      baris('item-katering', 'Paket Katering 100 Orang', 'Porsi', 12_500_000, 0),
-      baris('item-borongan', 'Pesanan Borongan Kantor', 'Dus', 2_750_000, 1),
-      ...MENU.slice(0, 4).map(([n, v, h], i) => baris(`item-${i}`, n, v, h, i + 2)),
+      baris('item-katering', 'Paket Katering 100 Orang', 'Porsi', 12_500_000),
+      baris('item-borongan', 'Pesanan Borongan Kantor', 'Dus', 2_750_000),
+      ...MENU.slice(0, 4).map(([n, v, h]) => baris(idDariNama(n), n, v, h)),
     ];
   }
 
   // normal · memuat · error · offline memakai katalog yang sama; yang berbeda
   // adalah PERILAKU db-nya, bukan isinya.
-  return MENU.map(([n, v, h], i) => baris(`item-${i}`, n, v, h, i));
+  return MENU.map(([n, v, h]) => baris(idDariNama(n), n, v, h));
 }
 
 /** Ringkasan antrean outbox untuk indikator sinkronisasi. */

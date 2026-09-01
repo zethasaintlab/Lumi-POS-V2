@@ -31,6 +31,16 @@ function tabelDari(sql: string): string {
 
 const TAK_PERNAH_SELESAI = new Promise<never>(() => {});
 
+/* Empat kategori, urutan tetap — warna slot diturunkan dari POSISI di daftar
+   ini, jadi urutan yang berubah antar skenario akan mengubah warna "Kopi"
+   di antara dua tangkapan layar yang seharusnya sebanding. */
+const KATEGORI_PALSU = [
+  { id: 'kat-kopi', name: 'Kopi', sort_order: 1, archived_at: null },
+  { id: 'kat-nonkopi', name: 'Non-kopi', sort_order: 2, archived_at: null },
+  { id: 'kat-makanan', name: 'Makanan', sort_order: 3, archived_at: null },
+  { id: 'kat-pastry', name: 'Pastry', sort_order: 4, archived_at: null },
+];
+
 /**
  * Jawaban untuk query agregat, dihitung dari baris yang sama.
  *
@@ -79,6 +89,7 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
 
   const perTabel: Record<string, unknown[]> = {
     item,
+    category: KATEGORI_PALSU,
     price_history: [],
     modifier_list: [],
     modifier: [],
