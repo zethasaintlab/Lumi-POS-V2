@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build:galeri",
+  "outputDirectory": "dist-galeri",
+  "framework": null,
+  "rewrites": [{ "source": "/", "destination": "/harness-galeri.html" }],
+  "github": { "silent": true }
+}

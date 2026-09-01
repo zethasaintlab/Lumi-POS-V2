@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- ⛔ `data:,` mematikan permintaan favicon, bukan menyediakan ikon.
+         Tanpa baris ini setiap muat halaman menghasilkan `GET /favicon.ico 404`
+         di konsol — dan konsol galeri adalah tempat saya membaca apakah sebuah
+         sel benar-benar sehat. Satu galat tetap yang tidak berarti apa-apa
+         membuat galat yang BERARTI lebih sulit terlihat.
+
+         Ditemukan lewat access log server statis. `page.route('**')` Playwright
+         TIDAK melihat permintaan favicon sama sekali dan melaporkan "tidak ada
+         permintaan yang gagal" — pengukuran itu salah, bukan sebuah bukti. -->
+    <link rel="icon" href="data:," />
     <title>Galeri komponen — Lumi POS Kasir</title>
   </head>
   <body>

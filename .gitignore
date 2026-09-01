@@ -24,3 +24,6 @@ __pycache__/
 .seed-dev.mjs
 .dev-outlet.txt
 .dev-device.txt
+
+# Build galeri komponen (situs statis preview). Sumbernya di apps/kasir/src/galeri.
+dist-galeri/

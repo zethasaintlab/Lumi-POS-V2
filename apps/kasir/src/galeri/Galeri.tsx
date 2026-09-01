@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import 'ds/styles.css';
 import '../kasir.css';
 import './galeri.css';
@@ -79,9 +79,55 @@ const LAYAR = [
   { id: 'K-15', nama: 'Perangkat', render: () => <Perangkat /> },
 ] as const;
 
+/**
+ * Keadaan galeri hidup di URL: `?layar=K-03&keadaan=offline`.
+ *
+ * ⛔ Kenapa di URL, dan kenapa ini BERBEDA dari keputusan "rute di state" untuk
+ * aplikasi kasir sungguhnya.
+ *
+ * Kasir tidak pernah mem-bookmark layar penjualan (`IA:§7`), jadi rutenya hidup
+ * di state. Galeri punya satu pengguna dan satu tujuan: **menerima tautan ke
+ * sel yang salah**. "Coba lihat K-03 keadaan offline" adalah deskripsi yang
+ * harus diikuti; `?layar=K-03&keadaan=offline` adalah bukti yang dapat dibuka.
+ * Tanpa ini, satu-satunya cara menunjuk sel adalah menyuruh orang mengklik dua
+ * tombol dengan urutan yang benar.
+ *
+ * ⛔ Nilai yang TIDAK dikenal jatuh ke bawaan, tidak menghasilkan layar kosong.
+ * URL diketik tangan dan disalin ke chat; salah ketik adalah keadaan normal,
+ * dan galeri yang menjawabnya dengan halaman kosong tidak dapat dibedakan dari
+ * galeri yang rusak.
+ */
+function bacaUrl(): { layarId: string; skenario: NamaSkenario } {
+  const q = new URLSearchParams(window.location.search);
+  const l = q.get('layar');
+  const k = q.get('keadaan');
+  return {
+    layarId: LAYAR.some((x) => x.id === l) ? l! : LAYAR[0].id,
+    skenario: SKENARIO.some((s) => s.nama === k) ? (k as NamaSkenario) : 'normal',
+  };
+}
+
+/* `replaceState`, bukan `pushState`: memindai delapan keadaan berturut-turut
+   akan menumpuk delapan entri riwayat, dan tombol Kembali browser lalu menjadi
+   perjalanan mundur lewat keadaan alih-alih jalan keluar. */
+function tulisUrl(layarId: string, skenario: NamaSkenario): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set('layar', layarId);
+  url.searchParams.set('keadaan', skenario);
+  window.history.replaceState(null, '', url);
+}
+
 export function Galeri() {
-  const [layarId, setLayarId] = useState<string>('K-03');
-  const [skenario, setSkenario] = useState<NamaSkenario>('normal');
+  /* Dibaca SEKALI saat mount, bukan disinkronkan dua arah. Sinkronisasi dua
+     arah menuntut `popstate` dan pengurutan yang benar antara URL dan state;
+     galeri tidak membutuhkannya, dan yang tidak dibutuhkan tetap dapat rusak. */
+  const awal = useMemo(() => bacaUrl(), []);
+  const [layarId, setLayarId] = useState<string>(awal.layarId);
+  const [skenario, setSkenario] = useState<NamaSkenario>(awal.skenario);
+
+  useEffect(() => {
+    tulisUrl(layarId, skenario);
+  }, [layarId, skenario]);
 
   const layar = LAYAR.find((l) => l.id === layarId) ?? LAYAR[0];
   const info = SKENARIO.find((s) => s.nama === skenario) ?? SKENARIO[0];
