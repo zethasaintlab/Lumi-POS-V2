@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { gayaKategori } from '../../../../packages/domain/src/warna-kategori.ts';
 import { Badge, Card, EmptyState, Icon, Table } from 'ds';
 import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
 import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
@@ -222,6 +223,10 @@ const BATAS_HALAMAN = 50;
   const adaSaringan = cariDikirim.trim() !== '' || kategoriId !== null;
   const namaKategori = (id: string | null) =>
     id === null ? '—' : (kategori.find((k) => k.id === id)?.name ?? id);
+  // ⛔ Daftar LENGKAP diteruskan supaya warnanya diambil dari posisi, bukan
+  // hash: empat kategori ke enam slot bertabrakan ~70% kali, dan dua kategori
+  // sewarna membatalkan gunanya warna kategori. Terukur di browser.
+  const namaSemuaKategori = kategori.map((k) => k.name);
 
   return (
     <div className="stack" style={{ gap: 'var(--space-4)', maxWidth: '96ch' }}>
@@ -401,7 +406,24 @@ const BATAS_HALAMAN = 50;
 
                 return {
                   nama: item.name,
-                  kategori: namaKategori(item.categoryId),
+                  // Chip berwarna, bukan teks polos. Grid produk adalah tabel
+                  // terpanjang di back-office; warna kategori membuat mata
+                  // menemukan kelompoknya tanpa membaca setiap baris.
+                  //
+                  // ⛔ Namanya TETAP tercetak di dalam chip (aturan DS #5).
+                  // Produk tanpa kategori tidak diberi chip sama sekali —
+                  // "—" berwarna akan terbaca sebagai kategori bernama "—".
+                  kategori:
+                    item.categoryId === null ? (
+                      '—'
+                    ) : (
+                      <span
+                        className="chip-kategori"
+                        style={gayaKategori(namaKategori(item.categoryId), namaSemuaKategori) as React.CSSProperties}
+                      >
+                        {namaKategori(item.categoryId)}
+                      </span>
+                    ),
                   varian: <span className="num">{aktif.length}</span>,
                   harga: <span className="num">{rentang}</span>,
                   status: item.archivedAt ? (

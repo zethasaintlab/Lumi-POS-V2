@@ -38,7 +38,19 @@ const generated = {
   },
   overrides: [
     {
-      files: ['**/index.js', 'packages/ds/index.ts'],
+      // ⛔ PERUBAHAN ATURAN, 31 Agustus 2026: cakupannya diperluas dari
+      // `packages/ds/index.ts` menjadi SELURUH `packages/ds/`.
+      //
+      // Maksud aturannya adalah "kode APLIKASI mengimpor dari pintu depan
+      // design system, bukan menjangkau internal bundle". Paket `ds` sendiri
+      // adalah pintu depan itu — ia HARUS menjangkau internal untuk
+      // membungkusnya, dan `packages/ds/overlay.tsx` (pembungkus dialog yang
+      // menambahkan Escape-menutup) tidak dapat ada tanpa itu.
+      //
+      // Yang TIDAK dilonggarkan: `apps/**` tetap tunduk penuh. Aturan ini
+      // masih menangkap layar mana pun yang mengimpor langsung dari
+      // `ds-bundle/`, dan itulah pelanggaran yang benar-benar berbahaya.
+      files: ['**/index.js', 'packages/ds/**'],
       rules: { 'ds-adherence/no-restricted-imports': 'off' },
     },
   ],

@@ -360,7 +360,7 @@ export function ModifierLayar() {
               <div className="stack" style={{ gap: 'var(--space-1)' }}>
                 {peringatan.map((p) => (
                   <span key={p} className="t-caption" role="status">
-                    ⚠ {p}
+                    {p}
                   </span>
                 ))}
               </div>

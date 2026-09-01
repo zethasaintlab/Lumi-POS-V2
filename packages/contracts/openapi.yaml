@@ -2306,11 +2306,20 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [token, expiresAt, userId, tenantId, roles]
+                required: [token, expiresAt, userId, nama, tenantId, roles]
                 properties:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
                   userId: { type: string }
+                  # ⛔ WAJIB ada di sini, bukan hanya di handler. Skema respons
+                  # OpenAPI MEMBUANG properti yang tidak terdaftar — persis
+                  # cacat yang membuat `margin` tiba `undefined` di B-17. Tanpa
+                  # baris ini, `nama` dikirim server dan hilang di kabel.
+                  #
+                  # Tanpa `nama`, back-office menampilkan UUID mentah sebagai
+                  # nama pengguna di pojok layar ("fee9f9b5-5b0a-40..."), di
+                  # setiap layar, sepanjang hari.
+                  nama: { type: string }
                   tenantId:
                     type: string
                     description: >-

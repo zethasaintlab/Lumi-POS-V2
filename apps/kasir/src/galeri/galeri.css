@@ -1,0 +1,99 @@
+/* Chrome galeri. Sengaja netral dan tidak memakai token produk secara semena-mena:
+   yang sedang dinilai adalah LAYARNYA, dan bingkai yang ramai akan ikut
+   mewarnai penilaian itu. */
+.galeri { display: flex; flex-direction: column; height: 100dvh; background: var(--surface-sunk); }
+.galeri-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.galeri-grup { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.galeri-tanya {
+  margin: 0; padding: var(--space-2) var(--space-4);
+  background: var(--accent-soft); border-bottom: 1px solid var(--accent-border);
+  flex: none;
+}
+/* Panggung dibatasi 1024x768 — viewport kasir yang WAJIB menurut PRD:428.
+   Menilai layar kasir di jendela 1440px adalah menilai layar yang bukan
+   layarnya. */
+.galeri-panggung {
+  flex: 1; overflow: auto; padding: var(--space-4);
+  display: flex; justify-content: center; align-items: flex-start;
+}
+.galeri-panggung > * {
+  width: 1024px; height: 768px; flex: none;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-card);
+  overflow: hidden; background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* --- Muat di layar sempit, TANPA mengubah komposisinya -----------------------
+ *
+ * ⛔ Terukur 1 September 2026: pada 390px hanya 38% panggung yang terlihat,
+ * sisanya menuntut scroll horizontal. Galeri ini dibuat justru supaya dapat
+ * dinilai dari HP; panggung yang kepotong 62% membuat tujuannya gagal.
+ *
+ * ⛔ Yang dilakukan MENYKALAKAN, bukan mengalirkan ulang. Membiarkan layar
+ * kasir reflow ke lebar HP menampilkan tata letak yang TIDAK PERNAH ADA di
+ * perangkat mana pun, dan menilai tata letak karangan lebih buruk daripada
+ * tidak menilai sama sekali. Komposisinya tetap 1024×768 persis seperti di
+ * tablet kasir; hanya ukurannya mengecil, dan HP dapat di-pinch.
+ *
+ * ⛔ TANGGA breakpoint, bukan satu rumus — dan itu bukan kemalasan.
+ * Percobaan pertama memakai `--skala: calc((100vw - 16px) / 1024)` lalu
+ * `transform: scale(var(--skala))`. Ia TIDAK BERLAKU sama sekali: membagi
+ * panjang dengan angka menghasilkan PANJANG, dan `scale()` menuntut angka
+ * tanpa satuan. `scale(374px)` tidak sah, jadi CSS MEMBUANG deklarasinya —
+ * diam, tanpa peringatan konsol, `transform` terbaca `none`.
+ *
+ * Kelas cacat yang sama persis dengan delapan token hantu di `kasir.css`:
+ * yang salah tidak menghasilkan kegagalan, ia menghasilkan KETIADAAN. CSS
+ * tidak punya cara portabel menurunkan rasio tanpa satuan dari lebar viewport,
+ * jadi angkanya diketik.
+ *
+ * Margin negatif mengambil kembali ruang yang `transform` tidak lepaskan:
+ * `scale` tidak mengubah kotak tata letak, jadi tanpa itu ada ruang kosong
+ * setinggi 768px di bawah panggung yang sudah mengecil.
+ */
+@media (max-width: 1088px) {
+  .galeri-panggung {
+    display: block;
+    overflow-x: hidden;
+    padding: var(--space-2);
+  }
+  .galeri-panggung > * {
+    transform: scale(var(--skala));
+    transform-origin: top left;
+    margin-right: calc(1024px * (var(--skala) - 1));
+    margin-bottom: calc(768px * (var(--skala) - 1));
+  }
+}
+
+/* Tiap anak tangga menyisakan margin: lebar hasil skala harus MUAT di
+   viewport terkecil yang memakainya, bukan pas-pasan di yang terbesar. */
+@media (max-width: 1088px) { .galeri-panggung > * { --skala: .72; } }
+@media (max-width: 800px)  { .galeri-panggung > * { --skala: .60; } }
+@media (max-width: 640px)  { .galeri-panggung > * { --skala: .48; } }
+@media (max-width: 520px)  { .galeri-panggung > * { --skala: .38; } }
+@media (max-width: 420px)  { .galeri-panggung > * { --skala: .33; } }
+@media (max-width: 360px)  { .galeri-panggung > * { --skala: .28; } }
+
+/* Chrome galeri dirapatkan di layar sempit.
+ *
+ * ⛔ Terukur: pada 390px, bar tombol memakan 425px dari 844px — separuh layar
+ * habis SEBELUM panggung muncul, dan yang dinilai adalah panggungnya. Tombol
+ * galeri bukan target sentuh produk; aturan DS #3 (≥44px) menjaga tombol yang
+ * kasir tekan saat berjualan, bukan penyeleksi alat bantu internal yang hanya
+ * saya dan kamu pakai.
+ */
+@media (max-width: 640px) {
+  .galeri-bar { gap: var(--space-2); padding: var(--space-2); }
+  .galeri-grup { gap: 4px; }
+  .galeri-bar .btn {
+    min-height: 32px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-caption);
+  }
+  .galeri-tanya { padding: var(--space-2); }
+}

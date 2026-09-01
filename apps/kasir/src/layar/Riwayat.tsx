@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from 'ds';
 import { bacaRiwayat, cariRiwayat, type RingkasOrder } from '../riwayat/baca.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { Bidang } from '../Bidang.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
@@ -36,15 +37,27 @@ export function Riwayat() {
   const { db } = useDbLokal();
   const [daftar, setDaftar] = useState<RingkasOrder[]>([]);
   const [siap, setSiap] = useState(false);
+  const [gagal, setGagal] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
 
   useEffect(() => {
     let hidup = true;
-    void bacaRiwayat(db, { batas: BATAS }).then((d) => {
-      if (!hidup) return;
-      setDaftar(d);
-      setSiap(true);
-    });
+    /* ⛔ `catch` WAJIB, dan ketiadaannya bukan gaya. Tanpa ia, pembacaan yang
+       menolak meninggalkan layar di "Membaca riwayat" selamanya — dan kasir
+       yang mencari struk pelanggan yang sedang berdiri di depannya menunggu
+       sesuatu yang tidak akan pernah datang. */
+    void bacaRiwayat(db, { batas: BATAS }).then(
+      (d) => {
+        if (!hidup) return;
+        setDaftar(d);
+        setSiap(true);
+      },
+      (e: Error) => {
+        if (!hidup) return;
+        setGagal(e.message);
+        setSiap(true);
+      }
+    );
     return () => {
       hidup = false;
     };
@@ -53,6 +66,10 @@ export function Riwayat() {
   const terlihat = useMemo(() => cariRiwayat(daftar, kueri), [daftar, kueri]);
 
   if (!siap) return <EmptyState title="Membaca riwayat" body="Mengambil transaksi dari perangkat." />;
+
+  if (gagal) {
+    return <GagalBaca akibat="Riwayat penjualan perangkat ini tidak dapat ditampilkan, dan struk lama tidak dapat dicetak ulang." pesan={gagal} />;
+  }
 
   if (daftar.length === 0) {
     return (

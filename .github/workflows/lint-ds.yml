@@ -15,4 +15,10 @@ jobs:
           node-version: '24'
       - run: npm ci
       - run: npm run lint:ds
+      # ⛔ Kelas cacat yang paling mahal di produk ini lolos justru karena rule
+      # ini tidak pernah dinyalakan: hook yang dipanggil sesudah early return
+      # membuat back-office menjadi HALAMAN PUTIH pada detik merchant menekan
+      # "Masuk", dan 439 test backoffice tetap hijau. oxlint sudah ada di repo
+      # sejak commit pertama; yang tidak ada hanyalah baris ini.
+      - run: npm run lint:react
       - run: cd apps/server && npx tsc --noEmit

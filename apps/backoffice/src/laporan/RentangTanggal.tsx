@@ -129,7 +129,10 @@ export function RentangTanggal({
             </span>
           ) : (
             <span className="t-caption">
-              ⛔ Peristiwa yang tidak menempel pada outlet mana pun — pendaftaran pengguna,
+              {/* ⛔ Tanpa simbol ⛔ di teks yang DIRENDER — aturan DS #8
+                  melarang emoji, dan simbol itu hanya konvensi komentar di
+                  repo ini, bukan bahasa antarmuka. */}
+              <strong>Catatan:</strong> peristiwa yang tidak menempel pada outlet mana pun — pendaftaran pengguna,
               perubahan langganan — tidak muncul saat satu outlet dipilih.
             </span>
           )}

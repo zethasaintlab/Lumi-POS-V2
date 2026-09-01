@@ -11,6 +11,7 @@ import { peripheralAktif } from '../cetak/aktif.ts';
 import type { PrinterProfile } from '../cetak/escpos.ts';
 import { DialogPembatalan } from '../komponen/DialogPembatalan.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
+import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 import { Tombol } from '../Tombol.tsx';
 import { rencanaPembatalan } from '../kasir/pembatalan.ts';
@@ -50,6 +51,7 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
   const [detail, setDetail] = useState<DetailOrder | null>(null);
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [siap, setSiap] = useState(false);
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
   const [membatalkan, setMembatalkan] = useState(false);
   const [muatUlang, setMuatUlang] = useState(0);
   const [profil, setProfil] = useState<PrinterProfile | null>(null);
@@ -122,13 +124,21 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
       // pertama, tepat yang `spec-b:145` larang.
       setProfil(profilBerlaku(p, dipilih).profil);
       if (hidup) setSiap(true);
-    })();
+    })().catch((e: Error) => {
+      if (!hidup) return;
+      setGagalMuat(e.message);
+      setSiap(true);
+    });
     return () => {
       hidup = false;
     };
   }, [db, orderId, muatUlang]);
 
   if (!siap) return <EmptyState title="Membaca transaksi" body="Mengambil detail dari perangkat." />;
+
+  if (gagalMuat) {
+    return <GagalBaca akibat="Detail transaksi ini tidak dapat dibaca, jadi struknya tidak dapat dicetak ulang dan refund tidak dapat diproses dari layar ini." pesan={gagalMuat} />;
+  }
 
   if (!detail) {
     return (

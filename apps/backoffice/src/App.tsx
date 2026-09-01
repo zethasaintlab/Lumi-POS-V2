@@ -144,6 +144,51 @@ function Terlindungi() {
   const { sesi, keluar, api } = useSesi();
   const [aktif, setAktif] = useState('B-01');
 
+  /* ⛔ SELURUH hook dipanggil SEBELUM `if (!sesi)` di bawah, tanpa kecuali.
+     Ini bukan gaya — ia satu-satunya yang membuat layar ini dapat dibuka.
+
+     Sampai 31 Agustus 2026, `useState(pesanSupport)` + `useCallback` +
+     `useEffect` berdiri SESUDAH `return <PintuPublik />`. Akibatnya jumlah
+     hook berubah tepat pada saat login: dua hook saat belum masuk, lima
+     sesudahnya. React menjawabnya dengan `Rendered more hooks than during the
+     previous render`, MEMBONGKAR seluruh pohon, dan back-office menjadi
+     HALAMAN PUTIH KOSONG pada detik merchant menekan "Masuk".
+
+     ⛔ Tidak ada satu pun test yang merah karenanya. `test:backoffice` (439)
+     menguji modul — `navigasiUntuk`, `pesanBanner`, tiap layar sebagai fungsi
+     — dan tidak satu pun me-render `Terlindungi` melewati transisi
+     belum-masuk → sudah-masuk. Cacatnya hanya ada di urutan hook antar dua
+     render, dan satu-satunya yang melihatnya adalah React yang benar-benar
+     berjalan di browser.
+
+     Aturannya sekarang: di komponen ini, hook baru ditambahkan DI ATAS
+     penjaga `!sesi`, dan efeknya yang menahan diri — bukan pemanggilannya. */
+  const [pesanSupport, setPesanSupport] = useState<string | null>(null);
+  const muatBanner = useCallback(async () => {
+    try {
+      const hasil = await api.minta<{ sessions: SesiSupport[] }>('/support-sessions');
+      const aktifSesi = hasil.sessions.find((s) => s.state === 'aktif') ?? null;
+      setPesanSupport(pesanBanner(aktifSesi));
+    } catch {
+      // Dipertahankan apa adanya. Lihat catatan di bawah.
+    }
+  }, [api]);
+
+  useEffect(() => {
+    /* ⛔ Yang menahan diri adalah ISI efeknya, bukan pemanggilan `useEffect`.
+       Tanpa sesi tidak ada yang dapat ditanyakan — `/support-sessions` akan
+       dijawab 401 sekali per menit — dan banner lama wajib DIBUANG, kalau
+       tidak ia bertahan melewati logout dan pengguna berikutnya di perangkat
+       yang sama melihat kabar akses support milik orang sebelumnya. */
+    if (!sesi) {
+      setPesanSupport(null);
+      return;
+    }
+    void muatBanner();
+    const jam = setInterval(() => void muatBanner(), 60_000);
+    return () => clearInterval(jam);
+  }, [muatBanner, sesi]);
+
   if (!sesi) return <PintuPublik />;
 
   // ⛔ Penyempitan menu adalah penjaga UX, BUKAN batas keamanan. Yang menahan
@@ -180,23 +225,6 @@ function Terlindungi() {
      ⛔ Kegagalannya DITELAN dan banner lama DIPERTAHANKAN. Respons yang tidak
      sampai bukan "tidak ada akses support"; menghilangkan banner karena
      jaringan putus adalah kebohongan yang persis berlawanan dengan gunanya. */
-  const [pesanSupport, setPesanSupport] = useState<string | null>(null);
-  const muatBanner = useCallback(async () => {
-    try {
-      const hasil = await api.minta<{ sessions: SesiSupport[] }>('/support-sessions');
-      const aktifSesi = hasil.sessions.find((s) => s.state === 'aktif') ?? null;
-      setPesanSupport(pesanBanner(aktifSesi));
-    } catch {
-      // Dipertahankan apa adanya. Lihat catatan di atas.
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void muatBanner();
-    const jam = setInterval(() => void muatBanner(), 60_000);
-    return () => clearInterval(jam);
-  }, [muatBanner]);
-
   return (
     <AppShell
       brand={{ name: 'Lumi POS', logo: <LogoLumi /> }}
@@ -209,7 +237,18 @@ function Terlindungi() {
       onNavigate={setAktif}
       breadcrumb={grup && item ? [grup, item.label] : undefined}
       user={{
-        name: sesi.userId,
+        // ⛔ NAMA, dengan `userId` sebagai cadangan — bukan sebaliknya.
+        //
+        // Sampai 31 Agustus 2026 baris ini berbunyi `sesi.userId`, dan yang
+        // merchant lihat di pojok setiap layar adalah UUID mentah
+        // ("fee9f9b5-5b0a-40..."). Tidak ada satu pun test yang merah
+        // karenanya; yang melihatnya hanya orang yang membuka aplikasinya.
+        //
+        // Cadangannya tetap ada karena sesi yang SUDAH tersimpan di
+        // `sessionStorage` tidak punya `nama` — ia lahir sebelum field itu
+        // ada. Mereka melihat UUID sampai login berikutnya, dan itu jauh lebih
+        // baik daripada nama kosong.
+        name: sesi.nama ?? sesi.userId,
         // ⛔ Peran ditampilkan APA ADANYA dari server, bukan diterjemahkan di
         // sini. Terjemahan di klien adalah salinan kedua dari daftar peran,
         // dan ia akan menyimpang dari `packages/domain/src/rbac.ts`.

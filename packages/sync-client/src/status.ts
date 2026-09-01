@@ -74,7 +74,38 @@ export interface KeadaanIndikator {
  * `offline-only` TIDAK diproduksi di sini. Ia untuk data yang memang tidak
  * pernah naik, dan di jalur ini tidak ada yang seperti itu.
  */
-export function keadaanIndikator(r: { menunggu: number; gagal: number }): KeadaanIndikator {
+export function keadaanIndikator(
+  r: { menunggu: number; gagal: number },
+  opsi?: { perangkatTerdaftar?: boolean }
+): KeadaanIndikator {
+  /* ⛔ PERANGKAT YANG BELUM TERDAFTAR TIDAK PERNAH "Tersinkron".
+   *
+   * Sampai 31 Agustus 2026 keadaan indikator diturunkan HANYA dari hitungan
+   * antrean, dan antrean kosong menghasilkan `ok` → teks "Tersinkron".
+   *
+   * Pada perangkat yang belum didaftarkan, antreannya kosong karena tidak
+   * pernah ada yang MASUK ke sana — bukan karena semuanya sudah terkirim.
+   * Aplikasi kasir yang baru dipasang karena itu menyatakan "Tersinkron"
+   * sambil tidak punya alamat server, tenant, maupun kredensial. Diverifikasi
+   * di browser: topbar berbunyi "Perangkat belum terdaftar · Tersinkron",
+   * dua kalimat bersebelahan yang saling membantah.
+   *
+   * Ini kelas cacat yang sama dengan yang F3 temukan pada saldo laci: angka
+   * yang benar menurut query yang tidak dapat menyatakan keadaan sebenarnya.
+   * Dan ia paling berbahaya justru di sini — indikator ini SATU-SATUNYA
+   * tempat kasir memeriksa apakah penjualannya sudah sampai ke server.
+   *
+   * `offline-only` ("Hanya di perangkat ini") adalah jawaban yang jujur, dan
+   * ia sudah ada di kosakata: apa pun yang tertulis di database lokal memang
+   * hanya ada di perangkat ini sampai perangkatnya didaftarkan.
+   *
+   * `undefined` DIPERLAKUKAN SEBAGAI TERDAFTAR — pemanggil lama (K-14, harness)
+   * tidak meneruskan opsi ini, dan mengubah artinya diam-diam akan membuat
+   * setiap layar yang belum disesuaikan melaporkan offline secara permanen.
+   */
+  if (opsi?.perangkatTerdaftar === false) {
+    return { state: 'offline-only', count: r.menunggu + r.gagal };
+  }
   if (r.gagal > 0) return { state: 'failed', count: r.gagal };
   if (r.menunggu > 0) return { state: 'queued', count: r.menunggu };
   return { state: 'ok', count: 0 };

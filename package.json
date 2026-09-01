@@ -16,6 +16,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit --project apps/server && tsc --noEmit --project packages/sync-client && tsc --noEmit --project apps/kasir && tsc --noEmit --project apps/backoffice && tsc --noEmit --project apps/hp",
     "lint:ds": "node tools/generate-oxlint-config.mjs && oxlint --config .oxlintrc.generated.json --deny-warnings apps packages",
+    "lint:react": "oxlint --react-plugin -A all -D react-hooks/rules-of-hooks --deny-warnings apps packages",
     "db:bootstrap": "node --env-file=.env db/bootstrap.js",
     "db:migrate": "node --env-file=.env db/migrate.js",
     "db:reset": "node --env-file=.env db/reset.js",
@@ -38,13 +39,16 @@
     "test:identity": "node --env-file=.env --test --test-concurrency=1 \"tests/identity/*.test.js\"",
     "test:tenancy": "node --env-file=.env --test --test-concurrency=1 \"tests/tenancy/*.test.js\"",
     "test:backoffice": "node --experimental-strip-types --test \"tests/backoffice/*.test.js\"",
-    "test:hp": "node --experimental-strip-types --test \"tests/hp/*.test.js\""
+    "test:hp": "node --experimental-strip-types --test \"tests/hp/*.test.js\"",
+    "build:galeri": "vite build --config apps/kasir/vite.galeri.config.ts",
+    "verifikasi:galeri": "node tools/tangkap-galeri.mjs"
   },
   "dependencies": {
     "hash-wasm": "^4.12.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
-    "oxlint": "1.76.0"
+    "oxlint": "1.76.0",
+    "playwright": "^1.62.1"
   }
 }

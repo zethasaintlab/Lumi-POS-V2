@@ -23,14 +23,23 @@ interface Props {
   outlet: string;
   device: string;
   pengguna: string;
+  /**
+   * Apakah perangkat ini sudah didaftarkan (K-15).
+   *
+   * ⛔ Indikator sinkronisasi MEMBUTUHKANNYA. Tanpa ini ia menurunkan
+   * keadaannya hanya dari hitungan antrean, dan antrean kosong pada perangkat
+   * yang belum terdaftar terbaca "Tersinkron" — bersebelahan dengan tulisan
+   * "Perangkat belum terdaftar" di topbar yang sama.
+   */
+  perangkatTerdaftar: boolean;
   ruteAktif: Rute | null;
   children: React.ReactNode;
 }
 
-export function ShellKasir({ outlet, device, pengguna, ruteAktif, children }: Props) {
+export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteAktif, children }: Props) {
   const [menuTerbuka, setMenuTerbuka] = useState(false);
   const { ringkasan, siap } = useAntrean();
-  const indikator = keadaanIndikator(ringkasan);
+  const indikator = keadaanIndikator(ringkasan, { perangkatTerdaftar });
 
   return (
     <div className="kasir-shell">

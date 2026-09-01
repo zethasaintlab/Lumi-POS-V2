@@ -123,6 +123,38 @@ export function cariItem(katalog: readonly ItemKatalog[], kueri: string): ItemKa
   );
 }
 
+export interface KategoriKatalog {
+  id: string;
+  nama: string;
+}
+
+/**
+ * Kategori yang perangkat punya, untuk saringan grid K-03.
+ *
+ * ⛔ `color_hint` SENGAJA tidak dibaca. Kolomnya ada di skema dan merchant
+ * dapat mengisinya, tapi aturan design system #6 melarang nilai warna di luar
+ * token — warna sembarang dari back-office akan berdiri berdampingan dengan
+ * aksen teal, dan yang kebetulan hijau atau merah membawa arti yang sudah
+ * dipakai produk ini (stok aman, stok minus, selisih kas). Warna kategori
+ * karena itu diturunkan dari POSISI di daftar
+ * (`packages/domain/src/warna-kategori.ts`), bukan dari data merchant.
+ * Batas yang dinyatakan.
+ *
+ * ⛔ Diurutkan di JS, bukan hanya di SQL: fake `DbLokal` tidak menegakkan
+ * `ORDER BY` sama sekali, dan urutan inilah yang memutuskan warna mana jatuh
+ * ke kategori mana. Urutan yang berbeda antara test dan aplikasi berarti
+ * "Kopi" berwarna berbeda di keduanya.
+ */
+export async function bacaKategori(db: DbLokal): Promise<KategoriKatalog[]> {
+  const baris = await db.getAll<{ id: string; name: string; sort_order: number | null }>(
+    `SELECT id, name, sort_order FROM category WHERE archived_at IS NULL
+      ORDER BY sort_order, name`
+  );
+  return [...baris]
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name, 'id'))
+    .map((b) => ({ id: b.id, nama: b.name }));
+}
+
 export interface ModifierPilihan {
   id: string;
   nama: string;

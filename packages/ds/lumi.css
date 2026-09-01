@@ -1,0 +1,188 @@
+/* Override Lumi POS di atas `/ds-bundle`.
+ *
+ * ⛔ `ds-bundle/` ADALAH ARTEFAK VENDOR DAN TIDAK PERNAH DISUNTING LANGSUNG.
+ *
+ * Berkas ini lahir 31 Agustus 2026 karena saya melanggar aturan itu: empat
+ * berkas di `ds-bundle/` saya sunting di tempat (`components.css`,
+ * `tokens/colors.css`, dan dua komponen overlay). Keputusan user
+ * mengembalikannya, dan seluruh perubahan pindah ke sini.
+ *
+ * Alasan aturannya bukan kerapian: `ds-bundle` diperbarui dari luar repo ini.
+ * Suntingan di tempat akan hilang tanpa jejak pada pembaruan berikutnya, dan
+ * yang hilang adalah perbaikan aksesibilitas — target sentuh, Escape yang
+ * menutup dialog. Cacat yang kembali diam-diam adalah cacat yang paling mahal
+ * ditemukan dua kali.
+ *
+ * Diimpor PALING AKHIR di `styles.css` supaya kekhususan yang sama menang.
+ *
+ * Ada TEPAT SATU `!important` di berkas ini, dan alasannya dinyatakan di
+ * tempatnya: bundle menyetel ukuran tombol tutup dialog lewat style INLINE,
+ * dan style inline mengalahkan stylesheet mana pun. Tidak ada tuas lain yang
+ * tidak menuntut menyalin seluruh markup dialognya.
+ */
+
+/* --- Skala teks final: LIMA token, bukan tujuh ------------------------------
+ *
+ * Keputusan user 31 Agustus 2026 ("Opsi A"): empat token inti yang bebas
+ * dipakai di mana saja, plus token KHUSUS yang hanya sah di konteks yang
+ * disebut namanya. Rencananya dua token khusus; yang bertahan SATU, karena
+ * yang kedua tidak punya kasus pakai nyata di layar yang sudah ada dan
+ * instruksinya jelas: *"Jangan mengarang kebutuhan untuk mengisi slot."*
+ *
+ * Tabel pemetaan lengkap tujuh token bundle → lima ada di `CLAUDE.md`.
+ *
+ * ⛔ `ds-bundle/tokens/typography.css` TIDAK disunting — ia artefak vendor.
+ * Token bundle yang tidak punya tujuan setelah pemetaan karena itu tidak dapat
+ * DIHAPUS; ia dilarang lewat lint, dan statusnya tercatat sebagai "orphan,
+ * dilarang" supaya orang berikutnya tahu itu disengaja, bukan terlewat.
+ */
+
+/* ⛔ Empat token INTI sengaja TIDAK didefinisikan ulang di sini.
+ *
+ * Nilainya (32/20/15/12) sudah benar di bundle, dan menyalinnya ke berkas ini
+ * menciptakan tempat KEDUA yang memutuskan ukuran teks — dua angka untuk satu
+ * pertanyaan, yang akan menyimpang pada pembaruan bundle berikutnya tanpa satu
+ * pun error. Yang berkas ini tambahkan hanya yang bundle tidak punya.
+ */
+
+:root {
+  /* Angka metrik besar di kartu dasbor B-01. HANYA angka, bukan labelnya.
+   *
+   * Ia bukan token karangan: `StatCard` bundle sudah merender nilainya pada
+   * 24px lewat kelas `t-title-lg`, dan B-01 memakai tiga di antaranya. Jadi
+   * ukuran kelima ini SUDAH ada di layar sejak dasbor lahir — yang belum ada
+   * adalah namanya dan batas tempat ia boleh muncul.
+   *
+   * ⛔ Nilainya `var(--text-title-lg)`, bukan `24px` yang diketik ulang.
+   * Angka yang disalin akan menyimpang dari bundle diam-diam; alias tidak
+   * dapat.
+   */
+  --t-metric: var(--text-title-lg);
+}
+
+/* ⛔ Batasnya DITEGAKKAN di sini, bukan diserahkan pada disiplin.
+ *
+ * `--t-metric` hanya berlaku di dalam `.stat` — kartu KPI dasbor. Kelas
+ * `t-title-lg` yang ditulis di luar sana tetap mendapat nilai bundle, dan
+ * lint (`ds-adherence`) menolaknya di seluruh `apps/` dan `packages/`.
+ *
+ * Layar KASIR tidak boleh memakainya sama sekali, dan itu benar menurut
+ * KONSTRUKSI: tidak ada satu pun `.stat` di `apps/kasir`.
+ */
+.stat .t-title-lg { font-size: var(--t-metric); }
+
+/* --- Warna kategori produk -------------------------------------------------
+ *
+ * ⛔ INI PENGKODEAN DATA, BUKAN STATUS. Enam slot punya token sendiri alih-alih
+ * memakai ulang `--success`/`--warning`/`--danger`: hijau dan merah SUDAH punya
+ * arti di produk ini (stok aman, stok minus, selisih kas). Kategori "Makanan"
+ * yang mendarat di hijau akan terbaca sebagai penilaian, bukan sebagai
+ * kelompok.
+ *
+ * ⛔ Warna tidak pernah berdiri sendiri (aturan DS #5) — chip selalu memuat
+ * nama kategorinya. Warna mempercepat pemindaian; ia tidak menggantikan kata.
+ *
+ * Pemetaan nama → slot ada di `packages/domain/src/warna-kategori.ts`, dan ia
+ * memakai POSISI di daftar, bukan hash: empat kategori ke enam slot
+ * bertabrakan ~70% kali, terukur di browser.
+ *
+ * Nadanya teredam agar tidak melawan aksen teal, yang tetap satu-satunya
+ * warna AKSI. Palet TIDAK disentuh — riset referensi menyimpulkan pembeda
+ * Kasir Pintar adalah kepadatan dan tipografi, bukan warna.
+ */
+:root {
+  --kat-1:        #0F766E;  /* teal tua   */
+  --kat-1-soft:   #E4F1F0;
+  --kat-2:        #9A3412;  /* terakota   */
+  --kat-2-soft:   #FBEDE6;
+  --kat-3:        #3730A3;  /* indigo     */
+  --kat-3-soft:   #ECEBF7;
+  --kat-4:        #7C2D5E;  /* plum       */
+  --kat-4-soft:   #F8EAF2;
+  --kat-5:        #4D5B16;  /* olive      */
+  --kat-5-soft:   #F0F3E2;
+  --kat-6:        #1E4E79;  /* biru laut  */
+  --kat-6-soft:   #E7EFF6;
+}
+
+/* --- Latar gelap dialog ----------------------------------------------------
+ *
+ * ⛔ `--overlay` dipakai `apps/kasir/src/kasir.css` sejak F2 dan TIDAK PERNAH
+ * terdefinisi di mana pun. `background: var(--overlay)` karena itu dibuang
+ * seluruhnya: dialog kasir — otorisasi manajer, konfirmasi void, alasan
+ * selisih kas — melayang di atas layar yang masih terlihat penuh, tanpa satu
+ * pun tanda bahwa sisa layar sedang tidak dapat disentuh.
+ *
+ * Nilainya mengikuti `.overlay` bundle (`#14110f73`), ditulis sebagai token
+ * supaya keduanya tidak menyimpang.
+ */
+:root { --overlay: rgba(20, 17, 15, .45); }
+
+/* --- Target sentuh: aturan DS #3 (≥ 44px) ----------------------------------
+ *
+ * `/ds-bundle` mengirim `.shell-link` pada 40px dan tombol tutup dialog pada
+ * 36px. Diukur di browser: 27 target di bawah 44px pada SETIAP layar
+ * back-office. Aturannya ada di `CLAUDE.md`; yang tidak menegakkannya adalah
+ * bundle-nya sendiri.
+ */
+.shell-link { min-height: 44px; }
+
+/* ⛔ SATU-SATUNYA `!important` di berkas ini.
+   Bundle menyetel `style={{ minHeight: 36, minWidth: 36 }}` INLINE pada tombol
+   tutup dialog. Style inline mengalahkan stylesheet apa pun, jadi alternatifnya
+   hanya menyalin seluruh markup dialog ke pembungkus kita — dan salinan markup
+   akan menyimpang dari bundle pada pembaruan berikutnya.
+
+   Tombol ini satu-satunya jalan keluar dialog di perangkat sentuh; target
+   terkecil di layar seharusnya bukan ia. */
+.dialog .btn-ghost[aria-label="Tutup"] {
+  min-height: 44px !important;
+  min-width: 44px !important;
+}
+
+/* 11px bukan token mana pun di sistem ini. Dikembalikan ke `--text-caption`. */
+.shell-group { font-size: var(--text-caption); }
+
+/* --- Umpan balik fisik saat ditekan ----------------------------------------
+ *
+ * Tombol kasir ditekan ribuan kali sehari, sering oleh orang yang TIDAK
+ * menatap layarnya — ia sedang melihat pelanggan. Pergeseran 1px adalah
+ * satu-satunya konfirmasi bahwa tekanannya terbaca, dan ia gratis:
+ * `transform` berjalan di compositor, tanpa reflow.
+ */
+.btn { transition: background-color .12s, border-color .12s, transform .06s; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+/* --- Baris tabel yang dapat dilacak mata -----------------------------------
+ *
+ * Tabel back-office punya 6-8 kolom. Tanpa penanda baris, mata kehilangan
+ * jejaknya di tengah dan merchant membaca angka dari baris yang salah.
+ */
+.table tbody tr:hover { background: var(--accent-soft); }
+
+/* --- Chip kategori ---------------------------------------------------------
+ *
+ * `--chip` / `--chip-soft` disuntikkan lewat style inline oleh `gayaKategori`.
+ * Nilai bawaannya netral supaya chip tanpa kategori tetap terbaca alih-alih
+ * mewarisi warna yang kebetulan tersisa.
+ */
+.chip-kategori {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-control);
+  font-size: var(--text-caption); font-weight: var(--weight-medium);
+  background: var(--chip-soft, var(--surface-alt));
+  color: var(--chip, var(--ink-muted));
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+/* Pita warna kategori di tepi kartu produk — penanda yang terbaca dari jarak
+   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat. */
+.pita-kategori { box-shadow: inset 3px 0 0 var(--chip, var(--border-strong)); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Umpan balik tekan DIBUANG, bukan diperlambat: yang dihindari pengguna
+     dengan setelan ini adalah gerakannya. */
+  .btn:active:not(:disabled) { transform: none; }
+}

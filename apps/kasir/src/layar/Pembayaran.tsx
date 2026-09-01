@@ -11,6 +11,7 @@ import {
 } from '../kasir/qris-dinamis.ts';
 import type { DrafTerkirim } from '../kasir/penjualan.ts';
 import { EmptyState } from 'ds';
+import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
 import { muatHlc } from '../lokal/hlc.ts';
@@ -92,6 +93,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const [shift, setShift] = useState<ShiftAktif | null>(null);
   const [hlc, setHlc] = useState<Hlc | null>(null);
   const [siap, setSiap] = useState(false);
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
   const [tendered, setTendered] = useState(0);
   /* FR-C1 — metode pembayaran. Ketiganya BERFUNGSI OFFLINE, dan itu yang
      membuat daftarnya berhenti di sini: QRIS dinamis menuntut gateway
@@ -209,13 +211,24 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         setTotal(hitung.totals.total);
       }
       setSiap(true);
-    })();
+    })().catch((e: Error) => {
+      /* ⛔ Layar ini berdiri di depan pelanggan yang sedang menunggu membayar.
+         Penanda memuat yang tidak pernah berubah membuat kasir menutup
+         aplikasi — dan keranjang yang sudah dihitung ikut hilang bersamanya. */
+      if (!hidup) return;
+      setGagalMuat(e.message);
+      setSiap(true);
+    });
     return () => {
       hidup = false;
     };
   }, [db]);
 
   if (!siap) return <EmptyState title="Menyiapkan pembayaran" body="Membaca data perangkat." />;
+
+  if (gagalMuat) {
+    return <GagalBaca akibat="Pembayaran tidak dapat diselesaikan di perangkat ini; jangan terima uang sebelum masalahnya selesai." pesan={gagalMuat} />;
+  }
 
   /* K-07 — konfirmasi & kembalian.
 
