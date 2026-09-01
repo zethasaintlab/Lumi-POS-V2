@@ -269,28 +269,29 @@
  *    1024×768 (panggung galeri, `PRD:428`) yang lama memuat 12 kartu pas-pasan,
  *    dan `IA:62` menuntut ≥12 TANPA scroll — bukan tepat 12.
  */
+/* ⛔ `.kasir-kartu` kini MODIFIER di atas `.product-card` bundle, bukan kartu
+ * tersendiri. Yang tersisa di sini hanya yang bundle tidak punya: kepadatan
+ * yang lebih rapat untuk grid kasir, dan pemotongan nama dua baris.
+ *
+ * Yang DIHAPUS dari sini karena bundle sudah melakukannya lebih baik:
+ * border, radius, background, cursor, transition, dan umpan balik tekan.
+ * Versi saya memberi border abu-abu yang tidak berubah; versi bundle menyala
+ * teal saat hover DAN saat ditekan, lengkap dengan focus ring.
+ */
 .kasir-kartu {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
   gap: 2px;
   padding: var(--space-2) var(--space-3);
   min-height: var(--touch-min);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color .12s, transform .06s;
+  /* Elevasi. `--shadow-card` sudah ada di bundle sejak awal dan `kasir.css`
+     tidak pernah memakainya sekali pun — nol shadow di seluruh berkas. Kartu
+     tanpa elevasi di atas permukaan yang juga putih adalah definisi "datar". */
+  box-shadow: var(--shadow-card);
 }
 
-/* Umpan balik tekan. Kartu ini diketuk ribuan kali sehari oleh orang yang
-   sering TIDAK menatap layarnya — ia sedang melihat pelanggan. Aturan yang
-   sama sudah dipasang untuk `.btn` di `packages/ds/lumi.css`; kartu produk
-   bukan `.btn` dan karena itu tidak ikut mendapatkannya. */
+/* Bundle sudah menggeser warna; pergeseran 1px menambah rasa FISIK yang
+   warna tidak berikan. Kasir menekan ini ribuan kali sehari, sering tanpa
+   menatap layarnya. */
 .kasir-kartu:active { transform: translateY(1px); }
-.kasir-kartu:hover { border-color: var(--border-strong); }
 
 .kasir-kartu-nama {
   font-weight: var(--weight-regular);
@@ -319,30 +320,28 @@
   gap: var(--space-2);
 }
 
-.kasir-chip {
-  min-height: var(--touch-min);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-control);
-  border: 1px solid var(--chip, var(--border));
-  background: var(--surface);
+/* ⛔ `.kasir-chip` kini MODIFIER di atas `.chip` bundle. Kesalahan yang SAMA
+ * dengan kartu produk, dibuat dua jam sebelumnya: bundle sudah mengirim chip
+ * dengan keadaan tertekan yang PENUH teal (`aria-pressed="true"` →
+ * `background: var(--accent)`), dan saya menulis versi sendiri yang hanya
+ * menebalkan tepi. Yang tersisa di sini cuma warna kategori untuk chip yang
+ * TIDAK aktif.
+ *
+ * Pembagian maknanya jadi bersih: teal = "ini yang sedang aktif" (warna AKSI),
+ * warna kategori = "ini kelompok apa". Chip aktif kehilangan warna
+ * kategorinya, dan itu benar — dua pesan berbeda tidak boleh berebut satu
+ * tempat.
+ */
+.kasir-chip:not([aria-pressed='true']) {
+  border-color: var(--chip, var(--border));
   color: var(--chip, var(--ink-muted));
-  font-size: var(--text-caption);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-  white-space: nowrap;
 }
 
-.kasir-chip-aktif {
-  background: var(--chip-soft, var(--accent-soft));
-  border-width: 2px;
-  font-weight: var(--weight-medium);
-}
-
-.kasir-chip:active { transform: translateY(1px); }
+.chip:active { transform: translateY(1px); }
 
 @media (prefers-reduced-motion: reduce) {
   .kasir-kartu:active,
-  .kasir-chip:active { transform: none; }
+  .chip:active { transform: none; }
 }
 
 .kasir-keranjang {
@@ -459,3 +458,17 @@
   background: var(--danger-soft);
   border-bottom-color: var(--danger-border);
 }
+
+/* Keadaan kosong keranjang — panel ini menempati sepertiga layar, dan satu
+   baris abu-abu di ujung atasnya membuat dua pertiga sisanya terbaca sebagai
+   ruang yang rusak alih-alih ruang yang menunggu. */
+.kasir-keranjang-kosong {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--ink-subtle);
+}
+.kasir-keranjang-kosong p { margin: 0; }

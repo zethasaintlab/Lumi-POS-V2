@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { EmptyState } from 'ds';
+import { EmptyState, Icon } from 'ds';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { gayaKategori } from '../../../../packages/domain/src/warna-kategori.ts';
 import { TANPA_KATEGORI } from '../../../../packages/domain/src/katalog-saringan.ts';
@@ -430,7 +430,7 @@ export function Kasir() {
           <div className="kasir-saring" role="group" aria-label="Saring kategori">
             <button
               type="button"
-              className={`kasir-chip${kategoriAktif === null ? ' kasir-chip-aktif' : ''}`}
+              className="chip kasir-chip"
               aria-pressed={kategoriAktif === null}
               onClick={() => setKategoriAktif(null)}
             >
@@ -440,7 +440,7 @@ export function Kasir() {
               <button
                 key={k.id}
                 type="button"
-                className={`kasir-chip${kategoriAktif === k.id ? ' kasir-chip-aktif' : ''}`}
+                className="chip kasir-chip"
                 aria-pressed={kategoriAktif === k.id}
                 style={gayaKategori(k.nama, namaKategori) as React.CSSProperties}
                 onClick={() => setKategoriAktif(k.id)}
@@ -475,7 +475,21 @@ export function Kasir() {
                 <button
                   key={item.id}
                   type="button"
-                  className="kasir-kartu pita-kategori"
+                  /* ⛔ `product-card` dari `/ds-bundle`, bukan kartu buatan
+                     sendiri. Sampai 1 September 2026 layar ini memakai
+                     `.kasir-kartu` — border abu-abu 1px yang tidak melakukan
+                     apa-apa saat disentuh. Bundle sudah mengirim kartu yang
+                     MENYALA teal saat hover dan saat ditekan, punya focus ring,
+                     dan punya keadaan habis lewat `data-out`. Semuanya ada dan
+                     tidak pernah dipakai; itu sebab utama layar ini terasa
+                     mati, bukan keputusan desain. */
+                  className="product-card kasir-kartu pita-kategori"
+                  /* FR-E5 — penandaan habis MANUAL. `data-out` meredupkan
+                     kartunya (bundle), dan itu BUKAN satu-satunya penanda:
+                     mengetuknya tetap menjelaskan dengan kalimat. Aturan DS #5
+                     melarang status yang hanya warna — di sini "hanya opacity"
+                     adalah bentuk yang sama. */
+                  data-out={item.variations.every((v) => habis.has(v.id))}
                   /* Nama penuh untuk yang terpotong. BUKAN tooltip rancangan
                      (aturan DS #9 melarangnya) — ia atribut bawaan browser,
                      dan satu-satunya jalan membaca nama panjang di mini-PC
@@ -563,7 +577,14 @@ export function Kasir() {
         )}
 
         {keranjang.baris.length === 0 ? (
-          <p className="t-caption kasir-login-sub">Belum ada item. Ketuk produk untuk menambahkan.</p>
+          <div className="kasir-keranjang-kosong">
+            {/* Ikon di keadaan kosong, bukan hiasan: panel yang isinya satu
+                baris abu-abu terbaca seperti panel yang GAGAL memuat, dan itu
+                keadaan yang berbeda dan punya kalimatnya sendiri. */}
+            <Icon name="receipt" size={28} />
+            <p className="t-body">Belum ada item</p>
+            <p className="t-caption">Ketuk produk di sebelah kiri untuk menambahkan.</p>
+          </div>
         ) : (
           <ul className="kasir-baris-daftar">
             {keranjang.baris.map((b) => (
@@ -677,6 +698,7 @@ export function Kasir() {
             disabled={keranjang.baris.length === 0 || sesi === null}
             onClick={() => setDialogDiskon(true)}
           >
+            <Icon name="tag" size={16} />
             {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
           </Tombol>
         )}
@@ -693,6 +715,7 @@ export function Kasir() {
             terlihat seperti langkah biasa. */}
         {fiturAktif(fitur, 'buka_laci_no_sale') && (
           <Tombol varian="ghost" disabled={sesi === null} onClick={() => setBukaLaci(true)}>
+            <Icon name="register" size={16} />
             Buka laci
           </Tombol>
         )}
@@ -710,6 +733,7 @@ export function Kasir() {
             mematikan pencatatan kas berarti uang yang tetap keluar tanpa
             jejak, lalu muncul sebagai selisih yang menuduh kasirnya. */}
         <Tombol varian="ghost" disabled={sesi === null} onClick={() => setDialogKas(true)}>
+          <Icon name="swap" size={16} />
           Kas masuk / keluar
         </Tombol>
 

@@ -67,7 +67,7 @@ Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan meng
 5. Status **tidak pernah warna saja** — selalu ada teks.
 6. Semua styling lewat token; **tidak ada nilai warna/ukuran hardcoded** di komponen.
 7. Bahasa Indonesia. Setiap komponen punya keadaan **kosong** dan **error**.
-8. Tanpa emoji, tanpa gambar/gradien/tekstur, tanpa dark mode.
+8. Tanpa emoji, tanpa gambar, tanpa dark mode. **Gradien dan tekstur halus DIIZINKAN sejak 1 September 2026** — lihat § Pelonggaran DS #8.
 9. Tanpa onboarding in-app, tanpa wizard, tanpa tooltip.
 
 `_adherence.oxlintrc.json` dari `/ds-bundle` **wajib masuk CI sejak commit pertama**.
@@ -97,6 +97,36 @@ Keputusan user 31 Agustus 2026 ("Opsi A"). Rencananya enam; yang bertahan **lima
 - `packages/ds/lumi.css` mendefinisikan `--t-metric` dan mengikat cakupannya lewat selektor `.stat .t-title-lg`. Keempat token inti **sengaja tidak** didefinisikan ulang — menyalinnya menciptakan tempat kedua yang memutuskan ukuran teks.
 - `tools/oxlint-plugins/ds-adherence.mjs` menolak `t-hero`, `t-heading`, dan `t-title-lg` yang **ditulis sendiri** di `apps/` dan `packages/`. Larangannya LOKAL, bukan di `_adherence.oxlintrc.json` — berkas itu ada di `ds-bundle/`.
 - `tests/runtime/token-css-ada.test.js` menutup separuh yang lint tidak dapat lihat: **oxlint tidak membaca berkas CSS sama sekali**.
+
+### Pelonggaran DS #8 — gradien dan tekstur, 1 September 2026
+
+Keputusan user setelah membuka galeri di HP: *"sangat flat, tidak hidup, dan sangat jauh dari kasirpintar"*. Yang dicabut dari aturan #8 **hanya gradien dan tekstur**.
+
+**Yang TETAP berlaku, dan tidak dicabut oleh apa pun:**
+
+- tanpa emoji · tanpa gambar · tanpa dark mode
+- ⛔ **PALET tidak disentuh.** Tidak ada satu pun nilai warna baru. Setiap gradien disusun dari token yang sudah ada (`--surface`, `--surface-sunk`, `--surface-alt`, `--accent-soft`). Yang berubah **kedalaman**, bukan warnanya
+- aksen teal `#0D5C63` tetap satu-satunya warna AKSI, tetap < 5% area, tetap satu aksi utama per layar
+
+⛔ **Gradiennya sengaja nyaris tidak terlihat sebagai gradien.** Yang dicari adalah permukaan yang tidak rata sempurna — itu yang membuat mata membaca "benda" alih-alih "kotak putih". Gradien yang terlihat sebagai gradien akan bersaing dengan aksen, dan aksen adalah satu-satunya hal yang boleh menarik mata di layar kasir.
+
+Seluruhnya di `packages/ds/lumi.css`; `ds-bundle/` tidak mengirim satu pun gradien dan tidak disentuh.
+
+### ⛔ Datar BUKAN karena design system-nya austere — `apps/kasir` tidak memakainya
+
+Diukur 1 September 2026, dan ini sebab utamanya:
+
+| Komponen yang `/ds-bundle` kirim | Dipakai kasir sebelumnya |
+|---|---|
+| `.product-card` — hover & tekan jadi teal, focus ring, `data-out` untuk habis | **0×**, diganti `.kasir-kartu` buatan sendiri |
+| `.chip` — `aria-pressed="true"` → latar teal penuh | **0×**, diganti `.kasir-chip` yang hanya menebalkan tepi |
+| `.cart-row` · `.badge` | **0×** |
+| `<Icon>` (37 ikon) | **2×** — back-office memakai **56×** |
+| `--shadow-card` | **0×** — nol shadow di seluruh `kasir.css` |
+
+Kesalahan yang sama dibuat **dua kali dalam dua jam** oleh agent yang sama: menulis `.kasir-kartu:hover` dan `.kasir-chip-aktif` sendiri tanpa memeriksa bahwa bundle sudah mengirim versi yang jauh lebih baik. **Periksa `ds-bundle/components.css` sebelum menulis satu pun kelas baru** — yang ditulis sendiri akan selalu lebih miskin daripada yang sudah dirancang, dan ia tidak menghasilkan satu pun error.
+
+Keduanya kini MODIFIER di atas komponen bundle, bukan pengganti.
 
 Format Indonesia: `Rp 1.847.000` (titik ribuan, tanpa desimal) · `− Rp 8.000` · `11%` · `14:32` · `26 Jul 2026` · `2×`
 
