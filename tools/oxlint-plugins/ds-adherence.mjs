@@ -38,9 +38,54 @@ function loadAdherenceConfig() {
   return { syntaxRules, importPatterns };
 }
 
+/**
+ * Larangan LOKAL — bukan dari `_adherence.oxlintrc.json`.
+ *
+ * ⛔ Kenapa di sini dan bukan di berkas adherence: berkas itu ada di
+ * `ds-bundle/`, dan `ds-bundle/` adalah artefak vendor yang tidak pernah
+ * disunting (keputusan user, 31 Agustus 2026). Menambahkan aturan ke sana akan
+ * hilang tanpa jejak pada pembaruan bundle berikutnya — dan yang hilang adalah
+ * penjaga skala teks.
+ *
+ * Yang dilarang: tiga ukuran teks bundle yang TIDAK punya tempat di skala
+ * final lima token (lihat tabel pemetaan di `CLAUDE.md`). Ketiganya tidak
+ * dapat DIHAPUS dari bundle — vendor — jadi larangan adalah satu-satunya
+ * bentuk penegakan yang tersedia.
+ *
+ * `t-title-lg` dilarang DITULIS, bukan dilarang ADA: `StatCard` bundle
+ * memakainya untuk angka metrik B-01, dan `packages/ds/lumi.css`
+ * mengikatnya ke `--t-metric` di dalam `.stat`. Yang ditolak adalah kode
+ * aplikasi yang menuliskan kelasnya sendiri — di sanalah ukuran kelima bocor
+ * ke layar yang tidak berhak.
+ *
+ * ⛔ Batas yang dinyatakan: oxlint TIDAK membaca berkas CSS. Pemakaian
+ * `var(--text-hero)` di dalam `.css` ditangkap
+ * `tests/runtime/token-css-ada.test.js`, bukan di sini.
+ */
+const BAN_LOKAL = [
+  {
+    regex: /\bt-hero\b|var\(\s*--text-hero\s*\)/,
+    message:
+      "Ukuran teks `--text-hero` (40px) tidak ada di skala final. Skala: 32/20/15/12 " +
+      "plus `--t-metric` (hanya angka kartu dasbor). Lihat tabel pemetaan di CLAUDE.md.",
+  },
+  {
+    regex: /\bt-heading\b|var\(\s*--text-heading\s*\)/,
+    message:
+      "Ukuran teks `--text-heading` (28px) tidak ada di skala final. Skala: 32/20/15/12 " +
+      "plus `--t-metric` (hanya angka kartu dasbor). Lihat tabel pemetaan di CLAUDE.md.",
+  },
+  {
+    regex: /\bt-title-lg\b|var\(\s*--text-title-lg\s*\)/,
+    message:
+      "`t-title-lg` (24px) hanya sah lewat <StatCard> di kartu dasbor B-01, tempat ia " +
+      "terikat ke `--t-metric`. Jangan menuliskan kelasnya sendiri. Lihat CLAUDE.md.",
+  },
+];
+
 const { syntaxRules, importPatterns } = loadAdherenceConfig();
 
-const literalBans = syntaxRules.filter((r) => r.kind === 'literalBan');
+const literalBans = [...syntaxRules.filter((r) => r.kind === 'literalBan'), ...BAN_LOKAL];
 const propWhitelists = new Map(
   syntaxRules.filter((r) => r.kind === 'propWhitelist').map((r) => [r.component, r])
 );

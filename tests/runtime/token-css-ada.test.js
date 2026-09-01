@@ -100,3 +100,65 @@ test('setiap var(--token) tanpa fallback punya definisinya', () => {
       [...new Set(hilang)].join('\n  ')
   );
 });
+
+/**
+ * Penjaga KEDUA: token skala teks yatim tidak dipakai di CSS.
+ *
+ * ⛔ Ia ada karena oxlint TIDAK MEMBACA BERKAS CSS. Larangan skala teks di
+ * `tools/oxlint-plugins/ds-adherence.mjs` menangkap `className="t-hero"` dan
+ * `var(--text-hero)` di dalam string TypeScript; ia tidak melihat satu pun
+ * baris `.css`. Separuh permukaan yang dijaga tanpa penjaga adalah separuh
+ * yang cacat berikutnya akan lewati.
+ *
+ * Ketiganya tidak dapat DIHAPUS dari `ds-bundle/tokens/typography.css` —
+ * artefak vendor. Statusnya "orphan, dilarang"; tabel pemetaan di `CLAUDE.md`
+ * mencatat itu sebagai keputusan, bukan kelalaian.
+ */
+const SKALA_YATIM = ['--text-hero', '--text-heading'];
+
+test('token skala teks yatim tidak dipakai di CSS aplikasi', () => {
+  const berkas = [...berkasCss(join(AKAR, 'apps')), join(AKAR, 'packages/ds/lumi.css')];
+  const pakai = [];
+  for (const f of berkas) {
+    const isi = tanpaKomentar(readFileSync(f, 'utf8'));
+    for (const t of SKALA_YATIM) {
+      if (isi.includes(`var(${t})`)) pakai.push(`${f.slice(AKAR.length)}: ${t}`);
+    }
+  }
+  assert.deepEqual(
+    pakai,
+    [],
+    'Skala teks final adalah 32/20/15/12 plus `--t-metric` (hanya angka kartu ' +
+      'dasbor B-01). Token berikut yatim dan dilarang:\n  ' + pakai.join('\n  ')
+  );
+});
+
+/**
+ * ⛔ `--t-metric` tidak boleh bocor ke luar kartu dasbor.
+ *
+ * Yang menegakkan batasnya adalah SELEKTOR (`.stat .t-title-lg`), dan selektor
+ * dapat dilonggarkan oleh siapa pun yang menganggapnya kelewat ketat. Test ini
+ * membuat pelonggaran itu terlihat alih-alih diam — terutama untuk
+ * `apps/kasir`, yang instruksinya eksplisit: layar kasir tidak boleh memakai
+ * token khusus sama sekali.
+ */
+test('`--t-metric` hanya dipakai di dalam .stat, dan tidak pernah di kasir', () => {
+  const isiLumi = tanpaKomentar(readFileSync(join(AKAR, 'packages/ds/lumi.css'), 'utf8'));
+  for (const m of isiLumi.matchAll(/([^{}]*)\{[^{}]*var\(--t-metric\)/g)) {
+    const selektor = m[1].trim().split('\n').pop().trim();
+    assert.ok(
+      selektor === ':root' || selektor.includes('.stat'),
+      `\`--t-metric\` dipakai di selektor "${selektor}", di luar \`.stat\`. ` +
+        'Ia token KHUSUS: hanya angka metrik kartu dasbor B-01.'
+    );
+  }
+
+  for (const f of berkasCss(join(AKAR, 'apps/kasir'))) {
+    const isi = tanpaKomentar(readFileSync(f, 'utf8'));
+    assert.ok(
+      !isi.includes('--t-metric'),
+      `${f.slice(AKAR.length)} memakai \`--t-metric\`. Layar kasir tidak boleh ` +
+        'memakai token khusus sama sekali.'
+    );
+  }
+});

@@ -60,7 +60,7 @@ Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan meng
 
 ## Aturan design system — `/ds-bundle` final, jangan diubah
 
-1. Tepat **4 ukuran teks**: 32/20/15/12. KDS membesar lewat `--scale`, bukan token baru.
+1. Tepat **4 ukuran teks inti**: 32/20/15/12, bebas dipakai di mana saja. KDS membesar lewat `--scale`, bukan token baru. Satu token **khusus** (`--t-metric`) ada di luar keempatnya, dan hanya sah di konteks yang disebut namanya — lihat § Skala teks final.
 2. Satu aksen teal `#0D5C63`, < 5% area, **satu aksi utama per layar**.
 3. Target sentuh ≥ **44px**; aksi menyangkut uang **56px**.
 4. Angka uang selalu `tabular-nums` (kelas `.num`).
@@ -71,6 +71,32 @@ Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan meng
 9. Tanpa onboarding in-app, tanpa wizard, tanpa tooltip.
 
 `_adherence.oxlintrc.json` dari `/ds-bundle` **wajib masuk CI sejak commit pertama**.
+
+⛔ **`ds-bundle/` adalah artefak VENDOR dan tidak pernah disunting langsung** (keputusan user, 31 Agustus 2026). Seluruh perubahan lewat override di `packages/ds`. Suntingan di tempat hilang tanpa jejak pada pembaruan bundle berikutnya, dan yang hilang adalah perbaikan aksesibilitas. Dijaga `tests/runtime/ds-bundle-vendor.test.js`. **Tidak boleh disentuh sama sekali:** logo, nama "Lumi POS", aksen teal `#0D5C63`.
+
+### Skala teks final — LIMA token, dipetakan dari tujuh milik bundle
+
+Keputusan user 31 Agustus 2026 ("Opsi A"). Rencananya enam; yang bertahan **lima**, karena token khusus kedua (`--t-data`, nilai sel tabel padat) **tidak punya kasus pakai nyata**: `.table td` bundle memakai `--text-body`, dan tidak ada satu pun berkas CSS di `apps/` yang menyetel ukuran sel tabel. Instruksinya eksplisit — *"Jangan mengarang kebutuhan untuk mengisi slot."*
+
+| Token bundle | px | Status di skala final | Boleh dipakai di |
+|---|---|---|---|
+| `--text-display` | 32 | **inti** | mana saja |
+| `--text-title` | 20 | **inti** | mana saja |
+| `--text-body` | 15 | **inti** | mana saja |
+| `--text-caption` | 12 | **inti** | mana saja |
+| `--text-title-lg` | 24 | **khusus** → `--t-metric` | HANYA angka kartu KPI dasbor B-01, lewat `<StatCard>`. Bukan labelnya. **Layar kasir: tidak sama sekali** |
+| `--text-hero` | 40 | **orphan, dilarang** | — |
+| `--text-heading` | 28 | **orphan, dilarang** | — |
+
+⛔ **Yang orphan TIDAK DIHAPUS, dan itu disengaja, bukan terlewat.** Ketiganya hidup di `ds-bundle/tokens/typography.css` — vendor, tidak dapat disunting. Larangan adalah satu-satunya penegakan yang tersedia, dan baris ini ada supaya orang berikutnya tahu bedanya.
+
+⛔ **`--t-metric` bukan token karangan.** `StatCard` bundle sudah merender nilainya pada 24px lewat kelas `t-title-lg`, dan B-01 memakai tiga di antaranya — ukuran kelima itu **sudah ada di layar sejak dasbor lahir**. Yang belum ada adalah namanya dan batas tempat ia boleh muncul. Nilainya `var(--text-title-lg)`, bukan `24px` yang diketik ulang: angka yang disalin menyimpang dari bundle diam-diam, alias tidak dapat.
+
+**Penegakannya di tiga tempat, dan pembagiannya bukan selera:**
+
+- `packages/ds/lumi.css` mendefinisikan `--t-metric` dan mengikat cakupannya lewat selektor `.stat .t-title-lg`. Keempat token inti **sengaja tidak** didefinisikan ulang — menyalinnya menciptakan tempat kedua yang memutuskan ukuran teks.
+- `tools/oxlint-plugins/ds-adherence.mjs` menolak `t-hero`, `t-heading`, dan `t-title-lg` yang **ditulis sendiri** di `apps/` dan `packages/`. Larangannya LOKAL, bukan di `_adherence.oxlintrc.json` — berkas itu ada di `ds-bundle/`.
+- `tests/runtime/token-css-ada.test.js` menutup separuh yang lint tidak dapat lihat: **oxlint tidak membaca berkas CSS sama sekali**.
 
 Format Indonesia: `Rp 1.847.000` (titik ribuan, tanpa desimal) · `− Rp 8.000` · `11%` · `14:32` · `26 Jul 2026` · `2×`
 

@@ -21,6 +21,56 @@
  * tidak menuntut menyalin seluruh markup dialognya.
  */
 
+/* --- Skala teks final: LIMA token, bukan tujuh ------------------------------
+ *
+ * Keputusan user 31 Agustus 2026 ("Opsi A"): empat token inti yang bebas
+ * dipakai di mana saja, plus token KHUSUS yang hanya sah di konteks yang
+ * disebut namanya. Rencananya dua token khusus; yang bertahan SATU, karena
+ * yang kedua tidak punya kasus pakai nyata di layar yang sudah ada dan
+ * instruksinya jelas: *"Jangan mengarang kebutuhan untuk mengisi slot."*
+ *
+ * Tabel pemetaan lengkap tujuh token bundle → lima ada di `CLAUDE.md`.
+ *
+ * ⛔ `ds-bundle/tokens/typography.css` TIDAK disunting — ia artefak vendor.
+ * Token bundle yang tidak punya tujuan setelah pemetaan karena itu tidak dapat
+ * DIHAPUS; ia dilarang lewat lint, dan statusnya tercatat sebagai "orphan,
+ * dilarang" supaya orang berikutnya tahu itu disengaja, bukan terlewat.
+ */
+
+/* ⛔ Empat token INTI sengaja TIDAK didefinisikan ulang di sini.
+ *
+ * Nilainya (32/20/15/12) sudah benar di bundle, dan menyalinnya ke berkas ini
+ * menciptakan tempat KEDUA yang memutuskan ukuran teks — dua angka untuk satu
+ * pertanyaan, yang akan menyimpang pada pembaruan bundle berikutnya tanpa satu
+ * pun error. Yang berkas ini tambahkan hanya yang bundle tidak punya.
+ */
+
+:root {
+  /* Angka metrik besar di kartu dasbor B-01. HANYA angka, bukan labelnya.
+   *
+   * Ia bukan token karangan: `StatCard` bundle sudah merender nilainya pada
+   * 24px lewat kelas `t-title-lg`, dan B-01 memakai tiga di antaranya. Jadi
+   * ukuran kelima ini SUDAH ada di layar sejak dasbor lahir — yang belum ada
+   * adalah namanya dan batas tempat ia boleh muncul.
+   *
+   * ⛔ Nilainya `var(--text-title-lg)`, bukan `24px` yang diketik ulang.
+   * Angka yang disalin akan menyimpang dari bundle diam-diam; alias tidak
+   * dapat.
+   */
+  --t-metric: var(--text-title-lg);
+}
+
+/* ⛔ Batasnya DITEGAKKAN di sini, bukan diserahkan pada disiplin.
+ *
+ * `--t-metric` hanya berlaku di dalam `.stat` — kartu KPI dasbor. Kelas
+ * `t-title-lg` yang ditulis di luar sana tetap mendapat nilai bundle, dan
+ * lint (`ds-adherence`) menolaknya di seluruh `apps/` dan `packages/`.
+ *
+ * Layar KASIR tidak boleh memakainya sama sekali, dan itu benar menurut
+ * KONSTRUKSI: tidak ada satu pun `.stat` di `apps/kasir`.
+ */
+.stat .t-title-lg { font-size: var(--t-metric); }
+
 /* --- Warna kategori produk -------------------------------------------------
  *
  * ⛔ INI PENGKODEAN DATA, BUKAN STATUS. Enam slot punya token sendiri alih-alih
