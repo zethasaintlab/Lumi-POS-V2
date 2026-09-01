@@ -35,39 +35,6 @@
   --violet-soft:   #EFEDFB;
   --violet-border: #CFC8F2;
 
-  /* --- WARNA KATEGORI PRODUK (31 Agustus 2026) ---
-
-     ⛔ INI PENGKODEAN DATA, BUKAN STATUS. Enam slot kategori sengaja punya
-     token sendiri alih-alih memakai ulang `--success`/`--warning`/`--danger`:
-     hijau dan merah SUDAH punya arti di produk ini (stok aman, stok minus,
-     selisih kas). Kategori "Makanan" yang kebetulan mendarat di hijau akan
-     terbaca sebagai penilaian, bukan sebagai kelompok.
-
-     ⛔ Warna TIDAK PERNAH berdiri sendiri (aturan DS #5). Chip kategori selalu
-     memuat nama kategorinya; warnanya mempercepat pemindaian, bukan
-     menggantikan teks. Kasir yang buta warna tetap membaca "Kopi".
-
-     Slot-nya enam karena kategori merchant TIDAK DAPAT dipetakan di muka —
-     "Kopi", "Non-Kopi", "Makanan", "Pastry" adalah pilihan merchant, bukan
-     kosakata kami. Pemetaannya diturunkan dari nama lewat hash yang stabil
-     (`packages/domain/src/warna-kategori.ts`), jadi satu kategori selalu
-     mendapat warna yang sama di kasir dan di back-office.
-
-     Nada dijaga tetap teredam agar tidak melawan aksen teal, yang tetap
-     satu-satunya warna AKSI. */
-  --kat-1:        #0F766E;  /* teal tua   */
-  --kat-1-soft:   #E4F1F0;
-  --kat-2:        #9A3412;  /* terakota   */
-  --kat-2-soft:   #FBEDE6;
-  --kat-3:        #3730A3;  /* indigo     */
-  --kat-3-soft:   #ECEBF7;
-  --kat-4:        #7C2D5E;  /* plum       */
-  --kat-4-soft:   #F8EAF2;
-  --kat-5:        #4D5B16;  /* olive      */
-  --kat-5-soft:   #F0F3E2;
-  --kat-6:        #1E4E79;  /* biru laut  */
-  --kat-6-soft:   #E7EFF6;
-
   /* --- NETRAL HANGAT ---
      Abu netral murni terasa dingin & klinis untuk kafe; sedikit
      kehangatan agar layar tidak terasa seperti software rumah sakit. */

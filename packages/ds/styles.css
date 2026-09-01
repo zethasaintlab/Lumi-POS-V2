@@ -11,3 +11,6 @@
 @import '../../ds-bundle/tokens/effects.css';
 @import '../../ds-bundle/base.css';
 @import '../../ds-bundle/components.css';
+/* ⛔ PALING AKHIR — override Lumi menang atas bundle tanpa satu pun
+   `!important`. `ds-bundle/` sendiri tidak pernah disunting; lihat lumi.css. */
+@import './lumi.css';

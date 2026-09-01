@@ -26,25 +26,6 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }) {
-  /* ⛔ Escape membatalkan — dan hooknya DI ATAS `if (!open)`.
-     Alasan urutan itu ada di `Modal.jsx`: early return sebelum hook mengubah
-     jumlah hook antar render dan membongkar pohon React.
-
-     ⛔ Escape di sini memanggil `onCancel`, TIDAK PERNAH `onConfirm`. Dialog
-     ini menjaga aksi merusak (void, refund, tutup kas); tombol keluar darurat
-     tidak boleh punya jalan menuju "ya". */
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onCancel?.();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onCancel]);
-
   if (!open) return null;
   const needsNote = reason === 'Lainnya';
   const ready = pin && pin.length >= 4 && reason && (!needsNote || (note && note.trim()));
