@@ -122,11 +122,52 @@ disentuh.
 sejak F0 dan **tidak pernah dibaca, tidak pernah ditulis, tidak ada di sync
 rules**; server tidak punya satu pun jalur unggah berkas. Seluruhnya dari nol.
 
-**Penyimpanan: PostgreSQL `bytea`, turun lewat PowerSync** (keputusan user).
+**Penyimpanan: TEKS base64 di PostgreSQL, turun lewat PowerSync.**
 Alternatif object storage ditolak karena dua hal: ia layanan berbayar baru, dan
 gambar yang tidak ikut PowerSync menuntut mekanisme cache KEDUA supaya kartu
 tidak jadi kotak kosong tepat saat internet mati — keadaan yang seluruh
 arsitektur ini ada untuk mendukungnya.
+
+### ⛔ `bytea` DICABUT 2 September 2026 — dan ia dicabut karena DIUKUR
+
+Keputusan awal user (1 September) adalah `bytea` PostgreSQL. **User menariknya
+sendiri 2 September**, setelah pengukuran, dan alasannya ditulis di sini supaya
+orang berikutnya tahu ia ditolak karena diuji — bukan karena tidak terpikir.
+
+Kalimat user, dan ia yang mengikat:
+
+> Yang menentukan bukan base64 lebih aman, melainkan bahwa jalur salah
+> menghasilkan **15 byte jadi 4 tanpa error**, dan satu-satunya pembeda rusak
+> dari utuh adalah angka yang perangkat tidak punya. Base64 menghapus kelasnya.
+
+Terukur (`docs/verifikasi/GAMBAR-ANGGARAN.md` § 5), muatan uji memuat `0x00`,
+`0xFF`, dan tiga bentuk urutan bukan-UTF-8:
+
+| Jalur | `typeof()` | `length()` | Hasil |
+|---|---|---:|---|
+| bind `Uint8Array` — benar | `blob` | 15 | IDENTIK |
+| bind string UTF-8 — salah | `text` | **4** | **BERBEDA** |
+| heks Postgres apa adanya | `text` | 33 | **BERBEDA** |
+
+⛔ Yang membuatnya kelas "nol baris, bukan error": `length()` mengembalikan 4,
+jadi pemeriksaan "ada isinya" bernilai BENAR, dan kartu tanpa gambar **tidak
+dapat dibedakan** dari item yang memang belum difoto.
+
+⛔ **Jangan mengembalikan `bytea` sebagai "optimasi ukuran".** Ongkos base64
+(+33%) sudah dibayar di anggaran: batas turun 32 KB → **30 KB mentah / 40 KB
+melintas**, dan **500 item = 19,5 MB** per perangkat — tetap di bawah ambang
+~20 MB. Setiap 1 KB tambahan pada batas adalah ~0,65 MB per perangkat.
+
+⛔ **`byte` + `checksum` menempel di baris yang sama**, diverifikasi perangkat
+saat membaca. Base64 menghapus kerusakan BINER; ia tidak menghapus kerusakan
+TRANSPORT. ~40 byte per baris untuk menukar kekosongan diam dengan keadaan
+bernama: **"gambar gagal dimuat"**, yang WAJIB berbeda dari "belum punya
+gambar".
+
+⛔ **Kartu tanpa gambar BUKAN keadaan menunggu** (keputusan user). Layar kasir
+harus dapat dipakai penuh selagi gambar menyusul — 19,5 MB di jaringan warung
+butuh waktu, dan kasir tidak boleh menunggunya. Kartu tanpa gambar berfungsi
+penuh dan tidak menampilkan penanda memuat apa pun.
 
 - ⛔ **Tabel TERPISAH (`item_image`), bukan kolom di `item`.** Blob di `item`
   ikut terseret setiap query katalog, dan `bacaKatalog` berjalan pada setiap
@@ -134,7 +175,9 @@ arsitektur ini ada untuk mendukungnya.
 - ⛔ **Kompresi di KLIEN back-office, bukan di server.** Canvas API mengecilkan
   ke ~400×400 WebP sebelum unggah — nol dependensi native baru di server, dan
   CPU-nya di mesin yang tidak melayani penjualan. Server memvalidasi ukuran dan
-  mime, tidak mengolah.
+  mime, tidak mengolah — dan **tidak pernah men-decode base64-nya**: panjang
+  byte dihitung dari panjang teks (aritmetika). Makin sedikit titik tempat
+  biner dan teks bertukar, makin sedikit tempat 15 byte dapat menjadi 4.
 - ⛔ **Menambah raw table mengubah sidik jari skema lokal**, jadi setiap
   perangkat membangun ulang tabel rawnya (`disconnectAndClear()`). Pelajaran
   migrasi `0035` berlaku lagi — bedanya sekarang stream `riwayat` sudah ada
@@ -1057,6 +1100,21 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 |---|---|---|
 | OQ-14 | Prototipe Tauri Android — printer Bluetooth + scanner HID | Rencana mobile |
 
+
+### ⛔ Docker: daemon BISA menyala, tarik image DIBLOKIR
+
+Diukur 2 September 2026, dan ini mengoreksi catatan lama yang menyatakan Docker
+tidak tersedia — **klaim keadaan yang sudah basi**.
+
+- `docker` ADA (29.3.1) dan `dockerd` **berhasil dinyalakan** lewat `sudo`.
+- Tarik image **gagal**: `production.cloudfront.docker.com` menjawab
+  **403 Forbidden** lewat proxy egress, juga sesudah daemon dikonfigurasi
+  memakai proxy itu.
+
+⛔ Konsekuensinya untuk stack PowerSync di `prototypes/05`: ia tetap **tidak
+dapat dijalankan di sini**, tapi sebabnya berbeda dari yang tercatat
+sebelumnya. Yang dibutuhkan bukan Docker — melainkan allowlist untuk registry
+Docker, atau image yang sudah ditarik lebih dulu.
 
 ### ⛔ "Nol baris, bukan error" — kelas kegagalan, bukan insiden
 

@@ -1034,12 +1034,13 @@ paths:
                   type: string
                   description: >-
                     WebP hasil kompresi klien, base64. Klien menurunkan kualitas
-                    bertahap sampai <= 32768 byte; server menolak yang melebihi.
-                  # ~33% pembengkakan base64 atas 32768 byte, dibulatkan naik.
-                  # Batas ini menahan muatan yang JELAS terlalu besar sebelum
-                  # handler mengalokasikan Buffer-nya; batas byte sebenarnya
-                  # ditegakkan setelah decode, dan itu yang mengikat.
-                  maxLength: 44000
+                    bertahap sampai hasil decode-nya <= 30720 byte.
+                  # 40960 = BATAS_BASE64 = 4*ceil(30720/3). ⛔ Server TIDAK
+                  # men-decode: panjang byte dihitung dari panjang teksnya,
+                  # aritmetika. Itu maksud pencabutan `bytea` — makin sedikit
+                  # titik tempat biner dan teks bertukar, makin sedikit tempat
+                  # 15 byte dapat menjadi 4 tanpa error.
+                  maxLength: 40960
                 width:
                   type: integer
                   description: Diisi klien; server memeriksanya bila ada, tidak men-decode gambar.
@@ -1123,11 +1124,12 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [itemId, byte, width, height, updatedAt]
+                      required: [itemId, byte, checksum, width, height, updatedAt]
                       additionalProperties: false
                       properties:
                         itemId: { type: string }
                         byte: { type: integer }
+                        checksum: { type: string }
                         width: { type: integer }
                         height: { type: integer }
                         updatedAt: { type: string }
@@ -6705,19 +6707,26 @@ components:
   schemas:
     HasilGambarProduk:
       type: object
-      required: [itemId, byte, batasByte]
+      required: [itemId, byte, batasByte, batasBase64]
       additionalProperties: false
       properties:
         itemId: { type: string }
         byte:
           type: integer
-          description: Ukuran gambar yang tersimpan.
+          description: Ukuran gambar setelah decode.
         batasByte:
           type: integer
           description: >-
-            Batas per gambar. ⛔ Dikembalikan supaya layar tidak menyalin
-            angkanya — salinan di klien akan menyimpang pada hari batasnya
-            berubah, dan merchant melihat sisa kuota yang salah.
+            Batas per gambar SEBELUM base64. ⛔ Dikembalikan supaya layar tidak
+            menyalin angkanya — salinan di klien akan menyimpang pada hari
+            batasnya berubah, dan merchant melihat sisa kuota yang salah.
+        batasBase64:
+          type: integer
+          description: >-
+            Batas panjang teks yang MELINTAS jaringan. Anggaran armada dihitung
+            dari angka ini, bukan dari `batasByte`: yang diunduh perangkat
+            adalah teksnya, dan memakai `batasByte` melaporkan 25% lebih kecil
+            daripada kenyataan.
     HasilTutupShift:
       type: object
       required:

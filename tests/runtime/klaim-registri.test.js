@@ -164,6 +164,21 @@ const KLAIM = [
       ).length,
   },
   {
+    id: 'docker-daemon-vs-tarik-image',
+    berkas: 'CLAUDE.md',
+    frasa: '### ⛔ Docker: daemon BISA menyala, tarik image DIBLOKIR',
+    harap: true,
+    // ⛔ Klaim KEADAAN tentang lingkungan, bukan tentang kode — dan justru
+    // karena itu ia paling mudah membusuk: lingkungan berubah tanpa satu pun
+    // commit. Catatan lama ("Docker tidak tersedia") basi persis begitu.
+    //
+    // Yang dapat diukur murah hanyalah keberadaan binernya; status proxy
+    // registry tidak dapat diperiksa tanpa menarik image, dan menariknya di
+    // setiap test run adalah ongkos yang tidak sepadan. Jadi yang terdaftar
+    // adalah separuh yang kokoh, dan separuh itu dinyatakan.
+    ukur: () => fs.existsSync('/usr/bin/dockerd') || fs.existsSync('/usr/local/bin/dockerd'),
+  },
+  {
     id: 'empty-state-tanpa-antrean',
     berkas: 'docs/verifikasi/KELAS-GAGAL.md',
     frasa: '**Ukuran: 27 dari 42 berkas ber-`<EmptyState>`**',

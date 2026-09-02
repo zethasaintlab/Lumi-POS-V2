@@ -86,7 +86,8 @@ streams:
       # ⛔ Item TANPA gambar tidak menghasilkan baris sama sekali, jadi merchant
       # yang belum memfoto apa pun mengunduh NOL byte. Itu yang membuat fitur
       # ini tidak membebani merchant yang tidak memakainya.
-      - SELECT item_id, tenant_id, bytes, mime, width, height, updated_at
+      - SELECT id, tenant_id, data_base64, byte, checksum, mime,
+               width, height, updated_at
           FROM item_image
          WHERE tenant_id = auth.parameter('tenant_id')
       # FR-A7. Kolom audit (`changed_by`, `reason`) tidak turun — tidak ada

@@ -35,22 +35,26 @@ CREATE TABLE item_variation (
   track_stock INTEGER NOT NULL DEFAULT 1, sort_order INTEGER DEFAULT 0, archived_at TEXT
 );
 -- Gambar produk (migrasi 0036). RAW TABLE — sidik jari skema lokal berubah,
--- dan setiap perangkat membangun ulang tabel rawnya sekali karenanya.
+-- dan setiap perangkat membangun ulang tabel rawnya SEKALI karenanya.
 --
--- ⛔ `bytes` adalah BLOB di sini dan `bytea` di PostgreSQL. Transport
--- PowerSync membawa JSON, jadi nilainya TIDAK sampai sebagai byte mentah — ia
--- sampai sebagai teks (heks `\x…` atau base64, tergantung konektor). Itu
--- membuat kolom ini masuk kelas yang `CLAUDE.md` sudah catat pada
--- `tax_rate.rate`: kolom yang tipenya berbeda WAJIB punya `put` yang ditulis
--- sendiri, karena `put` yang disimpulkan menyalin nilainya apa adanya.
+-- ⛔ `data_base64` adalah TEXT di kedua sisi, dan itu seluruh maksudnya.
 --
--- ⛔ Bentuk teks yang benar BELUM DIUKUR terhadap PowerSync sungguhan (Docker
--- tidak tersedia). Ia terdaftar di `KOLOM_BELUM_DIUKUR`, dan itu bukan
--- formalitas: `tax_rate.rate` mendarat 10.000× terlalu kecil DAN bertipe salah
--- tanpa satu pun error, dan yang menemukannya adalah pengukuran.
+-- Versi pertama memakai `bytea` → `BLOB`, dan itu ditarik user 2 September
+-- 2026 setelah diukur: byte biner yang melintas jalur teks dengan salah
+-- membuat 15 byte menjadi 4, tersimpan sebagai `text` di kolom `BLOB`, TANPA
+-- satu pun error. Tidak ada divergensi tipe di sini karena tidak ada biner.
+--
+-- `byte` dan `checksum` menempel supaya kerusakan transport tidak DIAM:
+-- perangkat memverifikasi keduanya saat membaca, dan yang tidak cocok
+-- menghasilkan keadaan "gambar gagal dimuat" — BUKAN "belum punya gambar".
 CREATE TABLE item_image (
-  item_id TEXT PRIMARY KEY,
-  bytes BLOB NOT NULL,
+  -- ⛔ `id`, bukan `item_id`: PowerSync menolak raw table tanpa kolom `id`
+  -- saat boot. Nilainya id ITEM-nya — satu gambar per item, jadi tidak ada
+  -- identitas kedua untuk disimpan.
+  id TEXT PRIMARY KEY,
+  data_base64 TEXT NOT NULL,
+  byte INTEGER NOT NULL,
+  checksum TEXT NOT NULL,
   mime TEXT NOT NULL,
   width INTEGER NOT NULL, height INTEGER NOT NULL,
   updated_at TEXT NOT NULL

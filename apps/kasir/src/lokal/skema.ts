@@ -212,12 +212,7 @@ export const KOLOM_BELUM_DIUKUR = [
   'order.has_calculation_variance',
   'order_line.is_tax_inclusive',
   'order_line.modifier_snapshot',
-  // ⛔ `bytea` (PostgreSQL) → `BLOB` (SQLite). Transport PowerSync membawa
-  // JSON; byte mentah tidak dapat melintasinya, jadi nilainya sampai sebagai
-  // TEKS dan bentuk teks itu belum pernah diukur di sini. Kelas yang sama
-  // dengan `tax_rate.rate`, yang mendarat 10.000× terlalu kecil dan bertipe
-  // `real` di kolom `INTEGER` tanpa satu pun error.
-  'item_image.bytes',
+
   'payment.confirmed_manually',
   'cash_drawer_shift.count_attempts',
   'audit_event.before',
@@ -271,6 +266,14 @@ export const KOLOM_BELUM_DIUKUR = [
  *   - kolom audit dan kolom yang tidak dipakai layar kasir mana pun.
  */
 export const KOLOM_SENGAJA_TIDAK_TURUN = [
+  // Gambar produk (0036). `tenant_id` disaring sync rules dan tidak pernah
+  // dibaca layar kasir — pola yang sama dengan `check.tenant_id`.
+  'item_image.tenant_id',
+  // ⛔ `updated_by` adalah id staf BACK-OFFICE. Tidak ada layar kasir yang
+  // memakainya, dan menurunkannya berarti membawa identitas orang yang tidak
+  // bekerja di outlet itu ke tablet yang dapat hilang. Aturan yang sama dengan
+  // `price_history.changed_by`.
+  'item_image.updated_by',
   // `modules_enabled` (jsonb) menentukan modul mana yang aktif di back-office.
   // Tidak ada layar kasir yang membacanya, dan menurunkannya berarti membawa
   // konfigurasi produk ke perangkat yang tidak dapat berbuat apa-apa dengannya.

@@ -156,3 +156,42 @@ melakukan apa pun. Ketiganya menghasilkan hasil yang berbeda, dan dua di
 antaranya rusak diam-diam.
 
 Tanpa jawaban itu, fitur gambar akan dibangun di atas tebakan.
+
+
+---
+
+## 6. Anggaran SESUDAH `bytea` dicabut (2 September 2026)
+
+User menarik `bytea`; penyimpanannya kini **TEKS base64**. Angka anggaran
+berubah, dan angka barunya inilah yang berlaku.
+
+| | Sebelum (`bytea`) | Sesudah (base64) |
+|---|---:|---:|
+| Batas per gambar, mentah | 32 KB | **30 KB** |
+| Yang MELINTAS jaringan | 32 KB | **40 KB** |
+| 500 item | 15,6 MB | **19,5 MB** |
+| Ambang user | ~20 MB | ~20 MB |
+
+⛔ **Yang dianggarkan sekarang adalah panjang BASE64, bukan byte mentah.**
+Memakai byte mentah melaporkan anggaran 25% lebih kecil daripada yang merchant
+benar-benar unduh — dan angka yang terlalu kecil adalah yang membuat seseorang
+menyetujui fitur yang tidak akan ia setujui. `anggaranByte()` memakai
+`BATAS_BASE64`, dan testnya mengunci `19,5 MB`.
+
+Batas mentah turun hanya 2 KB karena itu memang ongkos base64 (+33%), bukan
+ongkos keamanan. Ia masih ~45% di atas sampel foto-mirip tertinggi yang terukur
+(20,7 KB), jadi foto sah tetap tidak tertolak.
+
+⛔ **Setiap 1 KB tambahan pada batas kini ~0,65 MB per perangkat** pada 500
+item — lebih mahal daripada sebelumnya, karena yang melintas base64-nya.
+
+### Round-trip: DIUKUR, dan sekarang murah
+
+`tests/kasir/gambar-round-trip.test.js`. Muatan uji memuat `0x00`, `0xFF`, dan
+tiga bentuk urutan bukan-UTF-8; hasilnya **identik byte per byte**, panjang
+sama, dan keenam bentuk kerusakan yang disengaja **terdeteksi**.
+
+⛔ **Itulah keuntungan sebenarnya dari pencabutan `bytea`** — bukan "lebih
+aman", melainkan **dapat diuji tanpa menjalankan seluruh stack**. Versi `bytea`
+menuntut PowerSync sungguhan; versi base64 menuntut SQLite, yang sudah ada di
+setiap test run.

@@ -8,7 +8,10 @@ import { getActorId, getTenantId } from '../../../tenant-context.ts';
 // yang server terima — dan merchant yang fotonya ditolak setelah menunggu
 // kompresi tidak punya cara tahu berapa yang sebenarnya boleh.
 import {
+  BATAS_BASE64,
   BATAS_BYTE,
+  byteDariBase64,
+  checksumGambar,
   MIME_SIMPAN,
   periksaGambar,
   SISI_PIKSEL,
@@ -37,12 +40,13 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
  */
 
 interface BarisGambar {
-  item_id: string;
+  id: string;
   mime: string;
   width: number;
   height: number;
   updated_at: string;
   byte: number;
+  checksum: string;
 }
 
 /**
@@ -62,6 +66,17 @@ async function assertItemVisible(client: PoolClient, itemId: string): Promise<vo
 }
 
 /**
+ * ⛔ Server MENYIMPAN TEKS base64-nya, tidak pernah men-decode-nya.
+ *
+ * Itu bukan kemalasan — itu seluruh maksud pencabutan `bytea` (2 September
+ * 2026). Byte biner yang melintas jalur teks dengan salah membuat 15 byte
+ * menjadi 4, tanpa satu pun error. Server yang men-decode lalu menyandikan
+ * ulang menambahkan DUA titik tempat itu dapat terjadi, dan tidak membeli apa
+ * pun: yang perangkat butuhkan adalah teksnya.
+ *
+ * Panjang byte dihitung dari panjang teksnya (`byteDariBase64`) — aritmetika,
+ * bukan decode.
+ *
  * ⛔ Base64, bukan `multipart/form-data`.
  *
  * Seluruh permukaan REST repo ini JSON ber-OpenAPI, dan validator AJV berdiri
@@ -73,7 +88,7 @@ async function assertItemVisible(client: PoolClient, itemId: string): Promise<vo
  * 32 KB adalah ~43 KB. Itu satu kali saat unggah, bukan per perangkat per
  * sinkronisasi — dan yang dibatasi anggaran armada adalah yang kedua.
  */
-function bacaBase64(nilai: unknown): Buffer {
+function bacaBase64(nilai: unknown): string {
   if (typeof nilai !== 'string' || nilai.length === 0) {
     throw new HttpError(400, 'VALIDATION_ERROR', 'Field `data` wajib berisi base64 gambar.');
   }
@@ -82,10 +97,7 @@ function bacaBase64(nilai: unknown): Buffer {
   // error. Buffer pendek itu lolos batas atas dengan mudah dan tersimpan
   // sebagai gambar yang tidak dapat dirender — kartu yang gagal muat, tanpa
   // satu pun error. Karena itu bentuknya diperiksa LEBIH DULU.
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(nilai)) {
-    throw new HttpError(400, 'VALIDATION_ERROR', 'Field `data` bukan base64 yang sah.');
-  }
-  return Buffer.from(nilai, 'base64');
+  return nilai;
 }
 
 export async function putItemImage(
@@ -98,16 +110,11 @@ export async function putItemImage(
   const { itemId } = req.params as { itemId: string };
   const body = (req.body ?? {}) as { data?: unknown; width?: unknown; height?: unknown };
 
-  const bytes = bacaBase64(body.data);
+  const base64 = bacaBase64(body.data);
   const lebar = typeof body.width === 'number' ? body.width : undefined;
   const tinggi = typeof body.height === 'number' ? body.height : undefined;
 
-  const periksa = periksaGambar({
-    mime: MIME_SIMPAN,
-    byte: bytes.byteLength,
-    lebar,
-    tinggi,
-  });
+  const periksa = periksaGambar({ mime: MIME_SIMPAN, base64, lebar, tinggi });
   if (!periksa.ok) {
     // ⛔ Kode galatnya DIBEDAKAN, bukan diseragamkan jadi VALIDATION_ERROR.
     // `TERLALU_BESAR` menuntut merchant memotong fotonya; `KOSONG` menuntut ia
@@ -120,8 +127,8 @@ export async function putItemImage(
     await assertItemVisible(client, itemId);
 
     const { rows: sebelum } = await client.query<BarisGambar>(
-      `SELECT item_id, mime, width, height, updated_at, octet_length(bytes) AS byte
-         FROM item_image WHERE item_id = $1`,
+      `SELECT id, mime, width, height, updated_at, byte, checksum
+         FROM item_image WHERE id = $1`,
       [itemId]
     );
 
@@ -135,14 +142,27 @@ export async function putItemImage(
        Ini pengecualian yang DINYATAKAN terhadap invariant #2: gambar bukan
        transaksi dan bukan katalog — ia setelan tampilan, sejajar `peripheral`.
        Riwayat perubahannya ada di `audit_event`. */
+    /* ⛔ `checksum` dan `byte` dihitung DI SINI, dari teks yang benar-benar
+       akan disimpan — bukan diterima dari klien.
+
+       Klien yang mengirim checksumnya sendiri membuat verifikasi perangkat
+       memeriksa klaim klien terhadap dirinya sendiri: muatan yang rusak DI
+       KLIEN akan datang dengan checksum yang cocok dengan kerusakannya, dan
+       perangkat menyebutnya utuh. Yang harus dilindungi adalah perjalanan dari
+       SINI ke perangkat, dan titik awalnya harus di sini. */
     await client.query(
-      `INSERT INTO item_image (item_id, tenant_id, bytes, mime, width, height, updated_at, updated_by)
-            VALUES ($1, $2, $3, $4, $5, $6, now(), $7)
-       ON CONFLICT (item_id) DO UPDATE
-              SET bytes = EXCLUDED.bytes, mime = EXCLUDED.mime,
+      `INSERT INTO item_image (id, tenant_id, data_base64, byte, checksum,
+                               mime, width, height, updated_at, updated_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9)
+       ON CONFLICT (id) DO UPDATE
+              SET data_base64 = EXCLUDED.data_base64, byte = EXCLUDED.byte,
+                  checksum = EXCLUDED.checksum, mime = EXCLUDED.mime,
                   width = EXCLUDED.width, height = EXCLUDED.height,
                   updated_at = now(), updated_by = EXCLUDED.updated_by`,
-      [itemId, tenantId, bytes, MIME_SIMPAN, lebar ?? SISI_PIKSEL, tinggi ?? SISI_PIKSEL, actorId]
+      [
+        itemId, tenantId, base64, byteDariBase64(base64), checksumGambar(base64),
+        MIME_SIMPAN, lebar ?? SISI_PIKSEL, tinggi ?? SISI_PIKSEL, actorId,
+      ]
     );
 
     /* ⛔ `item_updated`, BUKAN nama peristiwa baru.
@@ -163,7 +183,11 @@ export async function putItemImage(
       before: sebelum[0]
         ? { byte: Number(sebelum[0].byte), width: sebelum[0].width, height: sebelum[0].height }
         : { gambar: null },
-      after: { byte: bytes.byteLength, width: lebar ?? SISI_PIKSEL, tinggi: tinggi ?? SISI_PIKSEL },
+      after: {
+        byte: byteDariBase64(base64),
+        width: lebar ?? SISI_PIKSEL,
+        tinggi: tinggi ?? SISI_PIKSEL,
+      },
     });
 
     return { baru: sebelum.length === 0 };
@@ -171,8 +195,11 @@ export async function putItemImage(
 
   await reply.code(hasil.baru ? 201 : 200).send({
     itemId,
-    byte: bytes.byteLength,
+    byte: byteDariBase64(base64),
     batasByte: BATAS_BYTE,
+    // Yang MELINTAS jaringan adalah teksnya; layar yang menghitung anggaran
+    // dari `batasByte` saja akan melaporkan 25% lebih kecil dari kenyataan.
+    batasBase64: BATAS_BASE64,
   });
 }
 
@@ -187,8 +214,8 @@ export async function deleteItemImage(
 
   await withTenantTransaction(pool, tenantId, async (client) => {
     const { rows } = await client.query<BarisGambar>(
-      `DELETE FROM item_image WHERE item_id = $1
-         RETURNING item_id, mime, width, height, updated_at, octet_length(bytes) AS byte`,
+      `DELETE FROM item_image WHERE id = $1
+         RETURNING id, mime, width, height, updated_at, byte, checksum`,
       [itemId]
     );
     /* ⛔ 404 saat tidak ada barisnya, bukan 204 diam-diam.
@@ -231,16 +258,17 @@ export async function listItemImageMeta(
   const tenantId = getTenantId(req);
   const baris = await withTenantTransaction(pool, tenantId, async (client) => {
     const { rows } = await client.query<BarisGambar>(
-      `SELECT item_id, mime, width, height, updated_at, octet_length(bytes) AS byte
-         FROM item_image ORDER BY item_id`
+      `SELECT id, mime, width, height, updated_at, byte, checksum
+         FROM item_image ORDER BY id`
     );
     return rows;
   });
 
   await reply.send({
     gambar: baris.map((b) => ({
-      itemId: b.item_id,
+      itemId: b.id,
       byte: Number(b.byte),
+      checksum: b.checksum,
       width: b.width,
       height: b.height,
       updatedAt: b.updated_at,
@@ -258,8 +286,8 @@ export async function getItemImage(
   const { itemId } = req.params as { itemId: string };
 
   const baris = await withTenantTransaction(pool, tenantId, async (client) => {
-    const { rows } = await client.query<{ bytes: Buffer; mime: string }>(
-      'SELECT bytes, mime FROM item_image WHERE item_id = $1',
+    const { rows } = await client.query<{ data_base64: string; mime: string }>(
+      'SELECT data_base64, mime FROM item_image WHERE id = $1',
       [itemId]
     );
     return rows[0] ?? null;
@@ -273,10 +301,15 @@ export async function getItemImage(
      menggantinya — dan ia akan mengunggah ulang, mengira unggahannya gagal.
      Jalur yang benar-benar butuh cache adalah perangkat kasir, dan ia tidak
      memakai endpoint ini sama sekali: gambarnya turun lewat PowerSync. */
+  /* ⛔ Decode terjadi HANYA di sini, di titik kirim ke browser back-office —
+     satu-satunya pembaca yang membutuhkan byte mentah. Perangkat kasir tidak
+     memakai endpoint ini sama sekali; gambarnya turun sebagai TEKS lewat
+     PowerSync, dan itu yang membuat jalur perangkat bebas dari kelas kerusakan
+     biner sepenuhnya. */
   await reply
     .header('content-type', baris.mime)
     .header('cache-control', 'no-store')
-    .send(baris.bytes);
+    .send(Buffer.from(baris.data_base64, 'base64'));
 }
 
 /** Sepola dengan `createItemHandlers` — pool di-inject di batas modul. */
