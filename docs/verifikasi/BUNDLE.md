@@ -89,9 +89,17 @@ uang.
 
 Konvensi repo ini: **uang `bigint` rupiah utuh, tidak pernah float**. Kedua
 komponen itu dirancang untuk basis kode yang memakai `number` untuk uang, dan
-masing-masing membawa salinan pemformat rupiahnya sendiri — `CLAUDE.md` sudah
-mencatat bahwa `apps/kasir` punya delapan salinan; ini calon kesembilan dan
-kesepuluh.
+masing-masing membawa salinan pemformat rupiahnya sendiri.
+
+⛔ **Koreksi terhadap versi pertama dokumen ini, 2 September 2026.** Ia menulis
+"`CLAUDE.md` sudah mencatat bahwa `apps/kasir` punya delapan salinan; ini calon
+kesembilan dan kesepuluh". Itu **mengutip catatan, bukan mengukur** — dan
+catatan yang dikutip sudah basi. Dihitung: `apps/kasir` punya **nol** salinan
+(14 berkasnya mengimpor pemformat kanonik), `apps/backoffice` punya satu
+(dihapus hari itu), dan `apps/kasir/src/cetak/dokumen.ts` punya format LAIN
+yang bukan salinan. Kesimpulan tentang `CartRow`/`ProductCard` tidak berubah —
+keduanya tetap membawa pemformat sendiri — tapi angkanya berubah, dan angka
+yang dikutip dari catatan bukan angka.
 
 **Aturan yang benar, dan ia lebih tajam daripada "pakai bundle":**
 

@@ -181,6 +181,39 @@ Kesalahan yang sama dibuat **dua kali dalam dua jam** oleh agent yang sama: menu
 
 Keduanya kini MODIFIER di atas komponen bundle, bukan pengganti.
 
+### ⛔ Aturan memakai `/ds-bundle` — dan ia BUKAN "pakai saja komponen bundle"
+
+Inventaris lengkap: `docs/verifikasi/BUNDLE.md` (sepuluh dari 21 komponen belum pernah dirender sekali pun). Aturannya tiga baris, dan baris ketiga yang menyelamatkan uang:
+
+| Yang dipakai | Aturan |
+|---|---|
+| **Kelas CSS** bundle | bebas, selalu — kelas tidak menghitung apa pun |
+| **Komponen React** bundle | bebas, di mana pun ia **tidak menyentuh angka uang** |
+| Komponen yang **menyentuh uang** | ⛔ pakai **KELAS**-nya di atas markup kita, yang memformat lewat `packages/domain/src/uang-tampilan.ts` |
+
+⛔ **Dua komponen ada di baris ketiga, dan keduanya justru yang paling menggoda dipakai di layar kasir:**
+
+| Komponen | Apa yang ia lakukan pada uang |
+|---|---|
+| `CartRow` | `unitPrice * qty` — **perkalian float di jalur uang** |
+| `ProductCard` | `'Rp ' + n.toLocaleString('id-ID')` — pemformat sendiri, **tanpa `−` untuk negatif** |
+
+Keduanya dirancang untuk basis kode yang memakai `number` untuk uang. Repo ini `bigint` rupiah utuh (§ Konvensi data), dan pemformatnya **satu**.
+
+**Penegakannya membuat kesalahannya mustahil, bukan sekadar terdeteksi:** `packages/ds/index.ts` **tidak mengekspor keduanya**, dan itu disengaja — yang tidak dapat diimpor tidak dapat dipakai keliru. `tests/runtime/komponen-bundle-uang.test.js` menjaga agar ekspor itu tidak dikembalikan oleh orang yang membaca ketiadaannya sebagai kelalaian, dan test ketiganya membuktikan larangan itu **berhenti pada dua nama** — penjaga yang melarang seluruh bundle akan dimatikan, dan yang mematikannya benar.
+
+⛔ **`CartRow` tetap layak DICONTEK pada satu hal, dan sudah dicontek:** qty turun ke 0 memanggil `onRemove`. Itu meniadakan tombol "Hapus" terpisah — sekaligus meniadakan risiko salah tekan, bukan dengan menjauhkan tombolnya melainkan dengan menghapusnya.
+
+### ⛔ Pemformat rupiah: SATU, dan penjaganya melarang yang kesembilan
+
+`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 34 berkas mengimpornya; ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
+
+Salinan terakhir dihapus 2 September 2026: `apps/backoffice/src/langganan/upgrade.ts` — B-29, satu-satunya layar yang angkanya berakhir di tagihan yang merchant bayar.
+
+⛔ **Satu pengecualian, dan ia bukan salinan melainkan format LAIN:** `apps/kasir/src/cetak/dokumen.ts` mencetak `50.000`, bukan `Rp 50.000` (`spec-c:378`). Struk 58 mm hanya 32 kolom; awalan `Rp` di setiap baris memakan tiga karakter dari nama produk, dan nama produk yang terpotong membuat struk tidak dapat dicocokkan dengan pesanan.
+
+Dijaga `tests/runtime/pemformat-uang-tunggal.test.js`: deklarasi `rupiah`/`uang`/`formatRupiah`/`formatUang` di luar kedua berkas itu, dan string `Rp` yang **dirakit** (`` `Rp ${x}` ``, `'Rp ' + x`). Literal `'Rp 20.000'` di kalimat sengaja **tidak** ditandai — ia teks, bukan pemformat.
+
 Format Indonesia: `Rp 1.847.000` (titik ribuan, tanpa desimal) · `− Rp 8.000` · `11%` · `14:32` · `26 Jul 2026` · `2×`
 
 ---

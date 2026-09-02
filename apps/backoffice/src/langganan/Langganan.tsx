@@ -5,6 +5,7 @@ import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { DIMENSI_KUOTA } from '../../../../packages/domain/src/kuota.ts';
 import { KATEGORI_MERCHANT } from '../../../../packages/domain/src/mdr.ts';
+import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import {
   susunBaris,
   labelPaket,
@@ -15,7 +16,6 @@ import {
 import {
   labelKategoriMerchant,
   labelStatusTagihan,
-  rupiah,
   susunPilihan,
   tagihanTerbuka,
   toneStatusTagihan,

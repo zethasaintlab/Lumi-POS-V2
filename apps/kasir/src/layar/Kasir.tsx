@@ -16,7 +16,6 @@ import {
   type VariationKatalog,
 } from '../katalog/baca.ts';
 import {
-  hapusBaris,
   qtyDiKeranjang,
   satuanKeranjang,
   setelDiskon,
@@ -620,14 +619,30 @@ export function Kasir() {
                       harus kembali ke grid dan mengetuk produknya lagi.
 
                       `.stepper` sudah ada di bundle dan belum pernah dipakai
-                      satu layar pun; tombolnya sudah 44px (`--touch-min`). */}
+                      satu layar pun; tombolnya sudah 44px (`--touch-min`).
+
+                      ⛔ **Tombol "Hapus" terpisah DIHAPUS, 2 September 2026** —
+                      perilaku `CartRow` bundle diadopsi: kuantitas yang turun
+                      ke nol MENGHAPUS barisnya. `ubahQty` sudah melakukannya
+                      sejak awal (`qtyMilli <= 0` → `hapusBaris`); yang belum
+                      ada adalah layar yang memanfaatkannya.
+
+                      Ini menyelesaikan A8 lebih baik daripada menjauhkan
+                      tombolnya: aksi merusak yang duduk di sebelah aksi biasa
+                      tetap dapat tertekan tidak sengaja berapa pun jaraknya —
+                      yang dihapus di sini adalah tombolnya, bukan jaraknya.
+                      Pada qty 1, `−` berubah menjadi `×` dan labelnya berbunyi
+                      "Hapus": ⛔ tombol yang perilakunya berubah tanpa
+                      tampilannya berubah adalah cacat, bukan kehalusan. */}
                   <div className="stepper">
                     <button
                       type="button"
-                      aria-label={`Kurangi ${b.itemName}`}
+                      aria-label={
+                        b.quantityMilli <= 1000 ? `Hapus ${b.itemName}` : `Kurangi ${b.itemName}`
+                      }
                       onClick={() => setKeranjang((k) => ubahQty(k, b.id, b.quantityMilli - 1000))}
                     >
-                      −
+                      {b.quantityMilli <= 1000 ? <Icon name="x" /> : '−'}
                     </button>
                     <span className="num">{b.quantityMilli / 1000}</span>
                     <button
@@ -647,13 +662,6 @@ export function Kasir() {
                   <span className="kasir-baris-harga t-body-md num">
                     {rupiah((satuanKeranjang(b) * BigInt(b.quantityMilli)) / 1000n)}
                   </span>
-
-                  {/* Dipisahkan dari stepper oleh harga, bukan hanya oleh
-                      jarak: yang memisahkan aksi merusak dari aksi biasa
-                      sebaiknya sesuatu yang harus dibaca. */}
-                  <Tombol varian="ghost" onClick={() => setKeranjang((k) => hapusBaris(k, b.id))}>
-                    Hapus
-                  </Tombol>
                 </div>
               </li>
             ))}

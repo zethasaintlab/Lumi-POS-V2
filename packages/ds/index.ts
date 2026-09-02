@@ -24,6 +24,25 @@ export { Tabs } from '../../ds-bundle/components/navigation/Tabs.jsx';
 // Pembungkusnya menambahkan Escape-menutup-dialog, yang bundle tidak punya.
 // Mengimpor langsung dari `ds-bundle` mengembalikan cacatnya; lihat overlay.tsx.
 export { Modal, ConfirmDialog } from './overlay.tsx';
-export { CartRow } from '../../ds-bundle/components/pos/CartRow.jsx';
-export { ProductCard } from '../../ds-bundle/components/pos/ProductCard.jsx';
+// ⛔ `CartRow` dan `ProductCard` SENGAJA TIDAK diekspor. Bukan terlewat.
+//
+// Keduanya menyentuh angka uang, dan keduanya dirancang untuk basis kode yang
+// memakai `number` untuk uang:
+//
+//   CartRow      `unitPrice * qty` — perkalian float di jalur uang
+//   ProductCard  `'Rp ' + n.toLocaleString('id-ID')` — salinan pemformat, dan
+//                ia tidak menghasilkan `−` untuk nilai negatif
+//
+// Repo ini memakai `bigint` rupiah utuh (`CLAUDE.md` § Konvensi data), dan
+// pemformatnya satu: `packages/domain/src/uang-tampilan.ts`. Masing-masing
+// komponen di atas membawa salinan pemformat sendiri.
+//
+// Yang dipakai sebagai gantinya adalah KELAS-nya — `.cart-row`, `.product-card`
+// — di atas markup kita. Kelas CSS tidak menghitung apa pun; hanya komponen
+// yang melakukannya. Aturan lengkapnya di `CLAUDE.md` § Aturan memakai
+// `/ds-bundle`, dijaga `tests/runtime/komponen-bundle-uang.test.js`.
+//
+// ⛔ `CartRow` tetap layak DICONTEK pada satu hal, dan sudah dicontek: qty
+// turun ke 0 memanggil `onRemove`, sehingga tombol "Hapus" terpisah tidak
+// perlu ada sama sekali.
 export { Ticket } from '../../ds-bundle/components/pos/Ticket.jsx';

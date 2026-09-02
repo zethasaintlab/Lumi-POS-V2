@@ -421,8 +421,10 @@
   gap: var(--space-2);
 }
 
-/* Harga mendorong Hapus ke ujung, dan sekaligus MEMISAHKAN stepper dari
-   tombol yang membuang baris. */
+/* Harga didorong ke ujung kanan, sejajar dengan subtotal di bawahnya —
+   satu kolom angka yang dapat dipindai mata dari atas ke bawah.
+   (Sebelum 2 September 2026 ia memisahkan stepper dari tombol "Hapus";
+   tombol itu sudah tidak ada — qty turun ke nol yang menghapus.) */
 .kasir-baris-harga { margin-left: auto; }
 
 /* Kelompok aksi sekunder di panel keranjang.
