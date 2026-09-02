@@ -606,23 +606,55 @@ export function Kasir() {
                     </span>
                   )}
                 </div>
-                <span className="t-caption num">{b.quantityMilli / 1000}×</span>
-                {/* ⛔ `satuanKeranjang`, bukan penjumlahan kedua di sini.
-                    Salinan yang ada sebelumnya mengabaikan kuantitas modifier,
-                    jadi baris menagih satu shot sementara subtotal di bawahnya
-                    menagih dua — dua angka di layar yang sama, tanpa error. */}
-                <span className="t-body-md num">
-                  {rupiah((satuanKeranjang(b) * BigInt(b.quantityMilli)) / 1000n)}
-                </span>
-                <Tombol
-                  varian="ghost"
-                  onClick={() => setKeranjang((k) => ubahQty(k, b.id, b.quantityMilli - 1000))}
-                >
-                  −
-                </Tombol>
-                <Tombol varian="ghost" onClick={() => setKeranjang((k) => hapusBaris(k, b.id))}>
-                  Hapus
-                </Tombol>
+                {/* ⛔ Baris KEDUA, bukan satu baris berisi enam hal.
+                    Sebelumnya nama, kuantitas, harga, `−`, dan Hapus berbagi
+                    satu baris rapat — dan tombol Hapus duduk tepat di sebelah
+                    tombol kurang. Salah tekan di sana membuang seluruh baris
+                    pesanan alih-alih mengurangi satu, di depan pelanggan yang
+                    sedang menunggu. */}
+                <div className="kasir-baris-aksi">
+                  {/* ⛔ `.stepper` dari `/ds-bundle`, dan ⛔ tombol `+` BARU.
+                      Sampai 1 September 2026 keranjang hanya punya `−` dan
+                      Hapus — tidak ada satu pun cara menambah kuantitas dari
+                      keranjang. Kasir yang pelanggannya berkata "dua saja"
+                      harus kembali ke grid dan mengetuk produknya lagi.
+
+                      `.stepper` sudah ada di bundle dan belum pernah dipakai
+                      satu layar pun; tombolnya sudah 44px (`--touch-min`). */}
+                  <div className="stepper">
+                    <button
+                      type="button"
+                      aria-label={`Kurangi ${b.itemName}`}
+                      onClick={() => setKeranjang((k) => ubahQty(k, b.id, b.quantityMilli - 1000))}
+                    >
+                      −
+                    </button>
+                    <span className="num">{b.quantityMilli / 1000}</span>
+                    <button
+                      type="button"
+                      aria-label={`Tambah ${b.itemName}`}
+                      onClick={() => setKeranjang((k) => ubahQty(k, b.id, b.quantityMilli + 1000))}
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  {/* ⛔ `satuanKeranjang`, bukan penjumlahan kedua di sini.
+                      Salinan yang ada sebelumnya mengabaikan kuantitas
+                      modifier, jadi baris menagih satu shot sementara subtotal
+                      di bawahnya menagih dua — dua angka di layar yang sama,
+                      tanpa error. */}
+                  <span className="kasir-baris-harga t-body-md num">
+                    {rupiah((satuanKeranjang(b) * BigInt(b.quantityMilli)) / 1000n)}
+                  </span>
+
+                  {/* Dipisahkan dari stepper oleh harga, bukan hanya oleh
+                      jarak: yang memisahkan aksi merusak dari aksi biasa
+                      sebaiknya sesuatu yang harus dibaca. */}
+                  <Tombol varian="ghost" onClick={() => setKeranjang((k) => hapusBaris(k, b.id))}>
+                    Hapus
+                  </Tombol>
+                </div>
               </li>
             ))}
           </ul>

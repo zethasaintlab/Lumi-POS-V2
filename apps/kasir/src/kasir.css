@@ -88,7 +88,29 @@
   border-radius: var(--radius-control);
 }
 
+/* ⛔ `display: flex` DITAMBAHKAN 1 September 2026, dan ketiadaannya adalah
+ * akar cacat "Bayar terdorong ke bawah layar".
+ *
+ * Blok ini punya `overflow: auto` tapi BUKAN flex container. Jadi
+ * `.kasir-utama { flex: 1; min-height: 0 }` di dalamnya tidak menempel pada
+ * apa pun: tanpa induk flex, `flex: 1` diabaikan diam-diam dan `.kasir-utama`
+ * tumbuh mengikuti kontennya. Keranjang panjang mendorong subtotal dan tombol
+ * Bayar keluar layar, lalu SELURUH halaman yang bergulir.
+ *
+ * Terukur sebelum perbaikan: 11 baris keranjang → tepi bawah Bayar di 1457px
+ * pada layar 800px. Kasir harus menggulir halaman untuk menagih, di depan
+ * pelanggan, pada setiap pesanan besar.
+ *
+ * Kelas cacat yang sama dengan token CSS hantu: `flex: 1` tanpa induk flex
+ * tidak menghasilkan error, ia menghasilkan KETIADAAN.
+ *
+ * `overflow: auto` DIPERTAHANKAN — layar lain (K-15, form panjang) memang
+ * menggulir sebagai halaman, dan mereka bukan anak `flex: 1` jadi tetap
+ * berukuran konten.
+ */
 .kasir-konten {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -344,6 +366,17 @@
   .chip:active { transform: none; }
 }
 
+/* ⛔ Panel keranjang TIDAK ter-scroll sebagai satu kesatuan, 1 September 2026.
+ *
+ * Sebelumnya `overflow-y: auto` ada di sini, jadi keranjang yang panjang
+ * mendorong subtotal DAN tombol Bayar ke bawah lipatan — dan kasir harus
+ * menggulir halaman utama untuk menagih. Di depan pelanggan, pada setiap
+ * pesanan besar.
+ *
+ * Sekarang hanya DAFTAR ITEM yang bergulir; subtotal, Bayar, dan aksi sekunder
+ * menempel permanen di bawah. Tombol yang menerima uang tidak boleh punya
+ * posisi yang bergantung pada panjang pesanan.
+ */
 .kasir-keranjang {
   display: flex;
   flex-direction: column;
@@ -353,7 +386,8 @@
   flex: none;
   border-left: 1px solid var(--border);
   background: var(--surface);
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .kasir-baris-daftar {
@@ -363,16 +397,33 @@
   list-style: none;
   padding: 0;
   margin: 0;
+  /* `min-height: 0` WAJIB di sini. Tanpanya anak flex menolak mengecil di
+     bawah tinggi kontennya, `overflow-y` tidak pernah menyala, dan daftar
+     tetap mendorong subtotal keluar layar — persis cacat yang blok ini
+     perbaiki. Ia tidak menghasilkan error; ia hanya tidak bekerja. */
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
+/* Baris keranjang: dua tingkat, bukan satu baris berisi enam hal. */
 .kasir-baris {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
 }
+
+.kasir-baris-aksi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Harga mendorong Hapus ke ujung, dan sekaligus MEMISAHKAN stepper dari
+   tombol yang membuang baris. */
+.kasir-baris-harga { margin-left: auto; }
 
 /* Kelompok aksi sekunder di panel keranjang.
  *
@@ -472,3 +523,8 @@
   color: var(--ink-subtle);
 }
 .kasir-keranjang-kosong p { margin: 0; }
+
+/* Subtotal, Bayar, dan aksi sekunder menempel di bawah — tidak ikut bergulir
+   bersama daftar item. */
+.kasir-subtotal,
+.kasir-aksi-sekunder { flex: none; }

@@ -67,7 +67,7 @@ Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan meng
 5. Status **tidak pernah warna saja** — selalu ada teks.
 6. Semua styling lewat token; **tidak ada nilai warna/ukuran hardcoded** di komponen.
 7. Bahasa Indonesia. Setiap komponen punya keadaan **kosong** dan **error**.
-8. Tanpa emoji, tanpa gambar, tanpa dark mode. **Gradien dan tekstur halus DIIZINKAN sejak 1 September 2026** — lihat § Pelonggaran DS #8.
+8. Tanpa emoji, tanpa dark mode. **Gradien dan tekstur DIIZINKAN sejak 1 September 2026; GAMBAR PRODUK diizinkan sejak 1 September 2026** — lihat § Pelonggaran DS #8 dan § Gambar produk.
 9. Tanpa onboarding in-app, tanpa wizard, tanpa tooltip.
 
 `_adherence.oxlintrc.json` dari `/ds-bundle` **wajib masuk CI sejak commit pertama**.
@@ -111,6 +111,59 @@ Keputusan user setelah membuka galeri di HP: *"sangat flat, tidak hidup, dan san
 ⛔ **Gradiennya sengaja nyaris tidak terlihat sebagai gradien.** Yang dicari adalah permukaan yang tidak rata sempurna — itu yang membuat mata membaca "benda" alih-alih "kotak putih". Gradien yang terlihat sebagai gradien akan bersaing dengan aksen, dan aksen adalah satu-satunya hal yang boleh menarik mata di layar kasir.
 
 Seluruhnya di `packages/ds/lumi.css`; `ds-bundle/` tidak mengirim satu pun gradien dan tidak disentuh.
+
+### Gambar produk — DS #8 dicabut lebih jauh, 1 September 2026
+
+Keputusan user setelah meninjau galeri: *"Card harusnya bergambar"*. Larangan
+"tanpa gambar" DICABUT. Yang tetap: tanpa emoji, tanpa dark mode, palet tidak
+disentuh.
+
+⛔ **Ini FITUR, bukan perubahan tampilan.** `item.image_url` sudah ada di skema
+sejak F0 dan **tidak pernah dibaca, tidak pernah ditulis, tidak ada di sync
+rules**; server tidak punya satu pun jalur unggah berkas. Seluruhnya dari nol.
+
+**Penyimpanan: PostgreSQL `bytea`, turun lewat PowerSync** (keputusan user).
+Alternatif object storage ditolak karena dua hal: ia layanan berbayar baru, dan
+gambar yang tidak ikut PowerSync menuntut mekanisme cache KEDUA supaya kartu
+tidak jadi kotak kosong tepat saat internet mati — keadaan yang seluruh
+arsitektur ini ada untuk mendukungnya.
+
+- ⛔ **Tabel TERPISAH (`item_image`), bukan kolom di `item`.** Blob di `item`
+  ikut terseret setiap query katalog, dan `bacaKatalog` berjalan pada setiap
+  pembukaan K-03.
+- ⛔ **Kompresi di KLIEN back-office, bukan di server.** Canvas API mengecilkan
+  ke ~400×400 WebP sebelum unggah — nol dependensi native baru di server, dan
+  CPU-nya di mesin yang tidak melayani penjualan. Server memvalidasi ukuran dan
+  mime, tidak mengolah.
+- ⛔ **Menambah raw table mengubah sidik jari skema lokal**, jadi setiap
+  perangkat membangun ulang tabel rawnya (`disconnectAndClear()`). Pelajaran
+  migrasi `0035` berlaku lagi — bedanya sekarang stream `riwayat` sudah ada
+  sebagai jalan pulang, jadi riwayat lokal kembali sendiri.
+- **Kartu tanpa gambar wajib punya bentuknya sendiri.** Merchant baru dan
+  produk yang belum difoto adalah keadaan normal, bukan pengecualian.
+
+### ⛔ Kontrol urutan input K-12 DICABUT, 1 September 2026
+
+Keputusan user, diambil setelah konsekuensinya dinyatakan.
+
+`spec-d:96` berbunyi — dan menyebut dirinya sendiri sebagai kontrol:
+
+> Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan angka
+> terhitung. **Ini kontrol, bukan preferensi UX** — kasir yang melihat angka
+> target akan menghitung mundur ke angka itu.
+
+Aturan itu **tidak lagi berlaku**. K-12 menampilkan saldo seharusnya sejak
+tahap pertama.
+
+⛔ **Konsekuensi yang dinyatakan, bukan disembunyikan:** selisih kas berhenti
+menjadi angka yang dapat dipercaya, dan laporan exception **FR-G5 X7 (selisih
+kas per kasir)** kehilangan sebagian besar artinya — ia mengukur selisih dari
+hitungan yang kini dilakukan sambil melihat targetnya.
+
+⛔ **`spec-d:96` masih berbunyi sebaliknya, dan itu disengaja.** Menyunting
+dokumen spec bukan kewenangan agent (aturan yang sama dengan `research/00` dan
+`research/03` yang masih menulis "Node.js 22+"). Baris ini ada supaya orang
+berikutnya tahu kode dan spec sengaja berbeda di titik ini, bukan terlewat.
 
 ### ⛔ Datar BUKAN karena design system-nya austere — `apps/kasir` tidak memakainya
 
