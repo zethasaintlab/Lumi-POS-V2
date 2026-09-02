@@ -35,7 +35,7 @@ besar daripada yang ada, dan lubang yang dibesar-besarkan akan diabaikan.
 | `card_edc` | 4 | 4 |
 | `other` | 0 | 0 |
 
-**4 dari 47 berkas test kasir** pernah menyentuh metode non-tunai:
+**4 dari 48 berkas test kasir** pernah menyentuh metode non-tunai:
 `penjualan` · `tutup-kas` · `tutup-kas-refund` · `laporan-harian`.
 
 ⛔ **Keempatnya adalah jalur yang paling penting** — penulisan penjualan,

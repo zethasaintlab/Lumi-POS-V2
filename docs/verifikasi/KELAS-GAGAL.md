@@ -140,3 +140,53 @@ anggotanya bukan cacat sama sekali. Angka di kolom "ukuran" adalah **batas
 atas populasi yang perlu dipilah**, bukan jumlah cacat. Membacanya sebagai
 jumlah cacat akan mengulangi kesalahan yang audit klaim berangka baru saja
 tunjukkan.
+
+
+---
+
+## 4. Registri klaim — penjaga untuk kelas "catatan yang membusuk"
+
+`tests/runtime/klaim-registri.test.js`, dibuat 2 September 2026.
+
+Kelas ini adalah saudara dekat "nol baris, bukan error": catatan berangka yang
+benar saat ditulis, lalu membusuk diam-diam, lalu **dikutip sebagai
+pengukuran**. Itu terjadi — "delapan salinan pemformat rupiah" dikutip dari
+catatan 24 Agustus yang utangnya sudah lunas.
+
+Registri menyimpan, per klaim: berkas tempat kalimatnya hidup, **frasa
+persisnya**, nilai yang ditulis, dan **fungsi yang mengukur ulang**. Ia
+memeriksa DUA arah:
+
+| Arah | Yang ditangkap |
+|---|---|
+| `ukur() == harap` | kode menjauh dari klaimnya |
+| `frasa` masih ada di `berkas` | kalimatnya disunting tanpa registrinya ikut — entri yang menjaga hantu |
+
+Arah kedua yang mudah dilupakan, dan tanpanya penjaganya hijau selamanya
+setelah kalimat pertama disunting.
+
+### ⛔ Aturan masuk, dan ia SEMPIT
+
+Hanya klaim yang pengukurnya **murah dan kokoh**. Klaim yang menuntut
+penghitung rapuh **tidak masuk registri — dan karena itu tidak boleh punya
+angka sama sekali** di prosa mana pun. "52 layar" dan "414 acceptance criteria"
+adalah contohnya: regex atas dokumen produk menjawab 53 dan 415, dan selisih
+satu itu jauh lebih mungkin salah pola daripada salah dokumen.
+
+### Yang registri temukan pada menit pertamanya
+
+Tiga, dan **dua di antaranya cacat pengukurnya sendiri** — diperbaiki sebelum
+satu pun dilaporkan sebagai temuan:
+
+1. `35 berkas mengimpornya` → terukur 36. **Pengukurnya yang salah:** ia
+   memakai `includes('uang-tampilan')`, dan yang ke-36 adalah
+   `packages/ds/index.ts` yang MENYEBUTNYA di komentar tanpa mengimpor apa pun.
+   Klaimnya berbunyi "mengimpornya", jadi pengukurnya harus mengukur impor.
+2. `ppn` nol → terukur 1. **Yang satu itu ada di dalam pengukurnya sendiri.**
+   Penjaga yang mengukur dirinya sendiri melaporkan dunia yang ia ciptakan.
+3. `4 dari 47 berkas test kasir` → terukur 4/48. **Drift NYATA**, dari berkas
+   test yang ditambahkan hari itu juga. Dokumennya diperbaiki.
+
+Dua dari tiga temuan pertama adalah penjaganya sendiri yang salah. Itu bukan
+kebetulan: penghitung selalu lebih rapuh daripada yang menulisnya kira, dan
+itulah kenapa aturan masuknya sempit.
