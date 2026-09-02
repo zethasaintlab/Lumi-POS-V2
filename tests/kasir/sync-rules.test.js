@@ -248,3 +248,134 @@ test('data yang di-scope per outlet benar-benar disaring per outlet', () => {
     }
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⛔ Setiap kolom yang di-SELECT harus BENAR-BENAR ADA di skema PostgreSQL
+//
+// Ditambahkan 2 September 2026 setelah menemukan TUJUH kolom karangan di
+// stream `riwayat` — stream yang lahir 29 Agustus dan tidak pernah dijalankan
+// terhadap PowerSync sungguhan (Docker tidak tersedia):
+//
+//   order.service_charge   → kolomnya `service_charge_amount`
+//   order.void_reason      → tidak ada kolomnya sama sekali
+//   check.name             → kolomnya `label`
+//   check.opened_at        → tidak ada
+//   check.closed_at        → tidak ada
+//   payment.reference      → `provider_reference` / `terminal_reference`
+//   refund.reason          → `reason_code` / `reason_note`
+//
+// ⛔ Kegagalannya tidak akan terlihat sebagai kesalahan mengeja. Sync rules
+// yang menyebut kolom tak ada membuat stream-nya GAGAL, dan yang mendarat di
+// perangkat adalah **nol baris** — bentuk yang sama persis dengan klaim JWT
+// yang salah tempat. K-08 dan cetak ulang K-09 untuk penjualan lama, yang
+// seluruh stream ini ada untuk memulihkannya, tidak akan pernah bekerja.
+//
+// Sembilan test sync-rules yang sudah ada hijau di atasnya selama empat hari:
+// semuanya memeriksa penyaringan tenant, kosakata klaim, dan `cost` — tidak
+// satu pun bertanya apakah kolomnya ada.
+//
+// ⛔ `ALTER TABLE … ADD COLUMN` WAJIB ikut dibaca, dan versi pertama pemindai
+// ini melewatkannya lalu melaporkan 17 kolom hilang — sepuluh di antaranya
+// SALAH (`refund.method` 0021, `variation_count_at_sale` 0035,
+// `discount_threshold_*` 0031, `no_sale_threshold` 0033, `is_tenant_default`
+// 0015). Angka yang digelembungkan penjaga membuat penjaganya dimatikan.
+
+function kolomPerTabel() {
+  const dir = join(__dirname, '..', '..', 'db', 'migrations');
+  const peta = new Map();
+  const tambah = (t, k) => {
+    if (!peta.has(t)) peta.set(t, new Set());
+    peta.get(t).add(k);
+  };
+  for (const berkas of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+    const sql = readFileSync(join(dir, berkas), 'utf8').replace(/\r\n?/g, '\n');
+    for (const m of sql.matchAll(/CREATE TABLE\s+"?(\w+)"?\s*\(([^]*?)\n\)/g)) {
+      for (const k of m[2].matchAll(/^\s{2}"?([a-z_]+)"?\s+[a-z]/gim)) tambah(m[1], k[1]);
+    }
+    // ⛔ SATU pernyataan `ALTER TABLE` dapat menambah BEBERAPA kolom, dipisah
+    // koma — bentuk yang dipakai 0031 (`discount_threshold_percent` +
+    // `discount_threshold_amount`) dan 0033 (`cash_variance_threshold` +
+    // `no_sale_threshold`).
+    //
+    // Versi pertama penjaga ini memakai satu regex `ALTER TABLE … ADD COLUMN`
+    // dengan flag `g`, yang hanya menangkap ADD COLUMN **pertama** tiap
+    // pernyataan lalu melanjutkan dari sana. Akibatnya ia melaporkan
+    // `outlet.discount_threshold_amount` dan `outlet.no_sale_threshold`
+    // sebagai kolom yang tidak ada — dua tuduhan terhadap kode yang benar,
+    // pada penjaga yang lahir untuk mencegah tuduhan semacam itu.
+    //
+    // Bentuknya sekarang dua langkah: potong per pernyataan, lalu cari SETIAP
+    // `ADD COLUMN` di dalamnya.
+    for (const m of sql.matchAll(/ALTER TABLE\s+"?(\w+)"?([^]*?);/g)) {
+      for (const k of m[2].matchAll(/ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?/gi)) {
+        tambah(m[1], k[1]);
+      }
+    }
+  }
+  return peta;
+}
+
+/** Kolom yang sebuah query minta, alias tabel dibuang. */
+function kolomDiminta(q) {
+  const m = /^SELECT\s+([^]*?)\s+FROM\b/i.exec(q);
+  if (!m) return [];
+  return m[1]
+    .split(',')
+    .map((x) => x.trim().replace(/^[a-z]+\./i, ''))
+    .filter((x) => /^[a-z_]+$/.test(x) && x !== '*');
+}
+
+test('pembaca kolom melihat CREATE TABLE **dan** ALTER TABLE ADD COLUMN', () => {
+  const peta = kolomPerTabel();
+  // Dari CREATE TABLE.
+  assert.ok(peta.get('order')?.has('service_charge_amount'), 'kolom CREATE TABLE tidak terbaca');
+  // Dari ALTER TABLE multi-baris — inilah yang versi pertama lewatkan.
+  assert.ok(peta.get('refund')?.has('method'), 'ALTER TABLE ADD COLUMN tidak terbaca (0021)');
+  assert.ok(
+    peta.get('outlet')?.has('no_sale_threshold'),
+    'ALTER TABLE multi-baris tidak terbaca (0033)'
+  );
+  assert.ok(
+    peta.get('order_line')?.has('variation_count_at_sale'),
+    'ALTER TABLE ADD COLUMN tidak terbaca (0035)'
+  );
+  // ⛔ Kolom KEDUA dari satu pernyataan ALTER. Inilah yang versi pertama
+  // penjaga ini lewatkan, dan ia melewatkannya dengan cara yang paling buruk:
+  // menuduh kode yang benar.
+  assert.ok(
+    peta.get('outlet')?.has('discount_threshold_amount'),
+    'ADD COLUMN kedua dalam satu ALTER tidak terbaca (0031)'
+  );
+  assert.ok(
+    peta.get('outlet')?.has('no_sale_threshold'),
+    'ADD COLUMN kedua dalam satu ALTER tidak terbaca (0033)'
+  );
+});
+
+test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
+  const peta = kolomPerTabel();
+  const hilang = [];
+  let diperiksa = 0;
+
+  for (const q of kueri()) {
+    const tabel = tabelDari(q);
+    const kol = tabel && peta.get(tabel);
+    // Tabel yang tidak dikenal DDL sudah dijaga test tersendiri di atas;
+    // di sini ia dilewati alih-alih dilaporkan dua kali.
+    if (!kol) continue;
+    for (const c of kolomDiminta(q)) {
+      diperiksa += 1;
+      if (!kol.has(c)) hilang.push(`${tabel}.${c}`);
+    }
+  }
+
+  // ⛔ Penjaga yang memeriksa nol kolom hijau selamanya.
+  assert.ok(diperiksa > 100, `hanya ${diperiksa} kolom diperiksa — parser tidak melihat query`);
+  assert.deepEqual(
+    hilang,
+    [],
+    'Sync rules menyebut kolom yang tidak ada di PostgreSQL. Stream-nya akan ' +
+      'GAGAL, dan yang mendarat di perangkat adalah NOL BARIS, bukan error:\n  ' +
+      hilang.join('\n  ')
+  );
+});

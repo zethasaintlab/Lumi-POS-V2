@@ -158,8 +158,8 @@ streams:
       # NORMAL di K-08 dan dapat dicetak ulang sebagai struk yang sah.
       - SELECT id, tenant_id, outlet_id, device_id, shift_id, receipt_number,
                business_date, sequence, channel, status, subtotal,
-               order_discount, service_charge, tax_amount, total,
-               rounding_adjustment, voided_by_order_id, void_reason,
+               order_discount, service_charge_amount, tax_amount, total,
+               amount_due, rounding_adjustment, voided_by_order_id,
                has_calculation_variance, variance_amount, occurred_at, hlc
           FROM "order"
          WHERE tenant_id = auth.parameter('tenant_id')
@@ -167,7 +167,7 @@ streams:
            AND device_id = auth.parameter('device_id')
       # `check` tidak punya `outlet_id` maupun `device_id` — ia menempel pada
       # order-nya lewat JOIN.
-      - SELECT c.id, c.order_id, c.name, c.opened_at, c.closed_at
+      - SELECT c.id, c.order_id, c.label, c.subtotal, c.total
           FROM "check" c
           JOIN "order" o ON o.id = c.order_id
          WHERE c.tenant_id = auth.parameter('tenant_id')
@@ -203,15 +203,16 @@ streams:
       # tidak dibaca layar mana pun sesudahnya; menurunkannya berarti membawa
       # sisa data kartu ke tablet yang dapat hilang.
       - SELECT id, order_id, method, amount, tendered_amount, change_amount,
-               status, reference, confirmed_manually, occurred_at
+               status, provider, provider_reference, terminal_reference,
+               approval_code, confirmed_manually, tendered_at, occurred_at
           FROM payment
          WHERE tenant_id = auth.parameter('tenant_id')
            AND outlet_id = auth.parameter('outlet_id')
            AND device_id = auth.parameter('device_id')
       # `refund` menempel pada order-nya. `method` WAJIB turun — hanya refund
       # tunai mengurangi laci, dan buku kas lokal memakainya.
-      - SELECT r.id, r.order_id, r.amount, r.reason, r.method, r.approved_by,
-               r.occurred_at
+      - SELECT r.id, r.order_id, r.amount, r.reason_code, r.reason_note,
+               r.method, r.created_by, r.approved_by, r.occurred_at
           FROM refund r
           JOIN "order" o ON o.id = r.order_id
          WHERE r.tenant_id = auth.parameter('tenant_id')
