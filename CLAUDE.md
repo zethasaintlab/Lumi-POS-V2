@@ -1058,6 +1058,18 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 | OQ-14 | Prototipe Tauri Android — printer Bluetooth + scanner HID | Rencana mobile |
 
 
+### ⛔ "Nol baris, bukan error" — kelas kegagalan, bukan insiden
+
+Lima kejadian dalam satu minggu, mekanismenya identik: sesuatu gagal dan yang muncul adalah **kekosongan yang terlihat sah**, bukan galat. Katalog kosong, antrean sehat, daftar exception bersih — nol adalah jawaban SAH untuk ketiga pertanyaan itu, jadi tidak ada assertion wajar yang menolaknya.
+
+Daftar lengkap beserta mekanisme dan penjaganya: `docs/verifikasi/KELAS-GAGAL.md`. Survei kandidat berikutnya ada di sana juga — **angkanya batas atas populasi yang perlu dipilah, bukan jumlah cacat.**
+
+⛔ **Bentuk penjaga yang bekerja, dan ia bukan "assert lebih banyak":** bandingkan **dua sumber yang tidak ada apa pun menyatukannya** — sync rules ↔ DDL, sync rules ↔ `tokens.ts`, `var(--x)` ↔ definisi token. Ditambah satu syarat yang mudah terlupa: penjaga wajib membuktikan ia **memindai sesuatu**, karena penjaga yang memeriksa nol berkas hijau selamanya dan hijaunya adalah bentuk kekosongan yang sama.
+
+Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
+
+---
+
 **Sudah diputuskan 25 Agustus 2026 — FR-F5:** `cost` **TIDAK** turun ke perangkat (data leak prevention untuk margin modal owner); server men-snapshot-nya ke `order_line.cost_at_sale` saat order masuk. Jangan tanyakan ulang.
 
 **Sudah diputuskan 1 Agustus 2026 — jangan tanyakan ulang, jangan perlakukan sebagai asumsi:**
