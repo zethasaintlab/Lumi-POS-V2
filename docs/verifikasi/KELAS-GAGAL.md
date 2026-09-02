@@ -1,6 +1,6 @@
 # ⛔ "Nol baris, bukan error" — satu kelas kegagalan, bukan lima insiden
 
-Ditulis 2 September 2026, setelah kemunculan **kelima** dalam satu minggu.
+Ditulis 2 September 2026, setelah kemunculan **kelima** dalam satu minggu — dan diperbarui hari itu juga dengan yang **keenam**, yang saya lakukan sendiri.
 
 Bentuknya selalu sama: sesuatu gagal, dan yang muncul bukan pesan galat
 melainkan **kekosongan yang terlihat sah**. Nol produk terlihat persis seperti
@@ -21,6 +21,32 @@ ini bertahan berhari-hari di kode yang sudah lolos review dan lolos gate.
 | 3 | **Delapan token CSS hantu** (31 Agu) | `var(--x)` tanpa definisi. CSS membuang deklarasinya diam-diam — tanpa warning konsol, tanpa fallback | `tests/runtime/token-css-ada.test.js`. **Tidak ada** sampai hari itu; oxlint tidak membaca berkas CSS sama sekali |
 | 4 | **Delapan layar menggantung di "memuat"** (31 Agu) | `useDbLokal()` melempar saat render; React membongkar pohonnya. Layar putih, konsol bersih | Galeri komponen dengan keadaan `error` sebagai sel tersendiri. **Ada sekarang** |
 | 5 | **K-14 daftar gagal** (1 Sep) | Query agregat lewat `DbLokal` palsu yang tidak mengenal `SUM(CASE …)` → nol, dan indikator melaporkan antrean SEHAT saat ia tidak sehat | Fake yang gagal keras pada SQL yang tidak dikenalnya, alih-alih menjawab nol. **Belum ada** |
+| 6 | **Migrasi yang saya laporkan JALAN padahal tidak** (2 Sep) | `npm run db:reset` dijalankan dengan keluaran dibuang; exit code 0 dibaca sebagai sukses. Skripnya sebenarnya berkata *"Database lumi tidak ada — tidak ada yang dibuang"* dan tidak melakukan apa pun | Membaca keluarannya. **Tidak ada penjaga yang mungkin** — ini disiplin, bukan kode |
+
+### ⛔ Kejadian keenam adalah KEJADIAN SAYA SENDIRI, dan bentuknya sedikit berbeda
+
+Kelima yang pertama adalah kekosongan yang dihasilkan MESIN. Yang keenam
+dihasilkan **pembacaan**: sebuah perintah selesai tanpa error, keluarannya
+tidak dibaca, dan ketiadaan error dikutip sebagai bukti keberhasilan.
+
+Ia sekelas karena mekanismenya identik — **sukses yang diasumsikan dari
+ketiadaan error** — dan karena akibatnya sama: laporan yang terdengar
+meyakinkan tentang sesuatu yang tidak terjadi. Saya menulis "Migrasi jalan"
+di dalam sesi yang seluruhnya tentang mengaudit klaim yang tidak terukur.
+
+### Aturan yang lahir darinya
+
+> **Exit code 0 dengan keluaran dibuang bukan bukti.**
+>
+> Perintah yang hasilnya akan dikutip wajib dibaca keluarannya, atau
+> hasilnya diverifikasi lewat sumber KEDUA — dan yang kedua itulah yang
+> dipercaya. Untuk migrasi: bukan "skripnya berhasil", melainkan "tabelnya
+> ada di `information_schema`".
+
+Ia bersaudara dengan aturan sabotase yang sudah berlaku sejak 2 September:
+**sabotase yang hijau harus dibuktikan benar-benar teraplikasi sebelum
+hijaunya dipercaya.** Keduanya satu kalimat: *ketiadaan sinyal bukan
+sinyal.*
 
 ### Dua sifat yang membuat kelima-limanya sama
 

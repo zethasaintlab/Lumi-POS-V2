@@ -100,3 +100,59 @@ terulang dalam bentuk yang sama.
 Skrip pengukurnya ada di riwayat sesi, bukan di repo: ia menuntut Chromium dan
 tidak dipakai CI. Yang masuk repo adalah **batasnya** (`packages/domain`), dan
 batas itulah yang diuji.
+
+
+---
+
+## 5. ⛔ Round-trip `bytea` → PowerSync → BLOB: **TIDAK DAPAT DIUKUR** di sesi ini
+
+Diminta user 2 September 2026 sebagai syarat sebelum UI apa pun, dengan alasan
+yang tepat: kalau byte-nya rusak di perangkat, yang muncul adalah kartu tanpa
+gambar — **tidak dapat dibedakan dari item yang memang belum punya gambar**.
+Kekosongan yang menyamar, lagi.
+
+### Yang berubah, dan yang tetap menghalangi
+
+Docker **ADA** di sesi ini (29.3.1) dan daemonnya berhasil dinyalakan — itu
+berubah dari catatan lama. Yang menghalangi sekarang satu lapis lebih dalam:
+**lapisan image tidak dapat ditarik.** `production.cloudfront.docker.com`
+menjawab `403 Forbidden` lewat proxy egress, juga sesudah daemon dikonfigurasi
+memakai proxy itu.
+
+Jadi `postgres:18` dan `journeyapps/powersync-service` tidak dapat dijalankan,
+dan langkah 2 (bawa lewat PowerSync sungguhan) mustahil di sini.
+
+### Yang DAPAT diukur, dan hasilnya penting
+
+Separuh risiko yang hilir dari transport dapat diputuskan tanpa PowerSync:
+**apa yang SQLite lakukan saat nilai teks mendarat di kolom `BLOB`.**
+
+Muatan uji memuat persis byte yang user minta — `0x00`, `0xFF`, dan urutan
+yang BUKAN UTF-8 valid (`0xED 0xA0 0x80`, surrogate; `0xC3 0x28`, lanjutan
+cacat):
+
+| Jalur | `typeof()` | `length()` | Hasil |
+|---|---|---:|---|
+| bind `Uint8Array` — jalur benar | `blob` | 15 | **IDENTIK** |
+| bind string UTF-8 — jalur salah | `text` | **4** | **BERBEDA** |
+| bind heks Postgres apa adanya | `text` | 33 | **BERBEDA** |
+| heks di-decode di `put` | `blob` | 15 | **IDENTIK** |
+| base64 di-decode di `put` | `blob` | 15 | **IDENTIK** |
+
+⛔ **Baris kedua adalah cacatnya, dan ia lebih buruk dari dugaan:** 15 byte
+menjadi **4**, tersimpan sebagai `text` di kolom `BLOB` (affinity SQLite
+mengizinkannya), **tanpa satu pun error**. Bentuk yang sama persis dengan
+`tax_rate.rate` yang mendarat `real` di kolom `INTEGER`.
+
+Dan pemeriksaan naif tidak menangkapnya: `length()` mengembalikan 4, jadi
+"ada isinya" bernilai benar. Yang membedakannya hanya perbandingan terhadap
+panjang ASLI — angka yang perangkat tidak punya.
+
+### Yang masih tidak diketahui
+
+**Representasi mana yang PowerSync benar-benar kirim untuk `bytea`.** Itu
+menentukan apakah `put` harus men-decode heks, men-decode base64, atau tidak
+melakukan apa pun. Ketiganya menghasilkan hasil yang berbeda, dan dua di
+antaranya rusak diam-diam.
+
+Tanpa jawaban itu, fitur gambar akan dibangun di atas tebakan.
