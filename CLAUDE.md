@@ -1066,6 +1066,22 @@ Daftar lengkap beserta mekanisme dan penjaganya: `docs/verifikasi/KELAS-GAGAL.md
 
 ⛔ **Bentuk penjaga yang bekerja, dan ia bukan "assert lebih banyak":** bandingkan **dua sumber yang tidak ada apa pun menyatukannya** — sync rules ↔ DDL, sync rules ↔ `tokens.ts`, `var(--x)` ↔ definisi token. Ditambah satu syarat yang mudah terlupa: penjaga wajib membuktikan ia **memindai sesuatu**, karena penjaga yang memeriksa nol berkas hijau selamanya dan hijaunya adalah bentuk kekosongan yang sama.
 
+### ⛔ K-06/K-07 tidak boleh dinyatakan selesai tanpa tiga fixture ini
+
+Keputusan user 2 September 2026, diambil setelah audit monokultur. Ketiganya
+**mengikat**, dan ditulis di sini alih-alih diingat saat sampai ke sana.
+
+| # | Fixture yang WAJIB ada | Kenapa |
+|---|---|---|
+| 1 | `tax_rate.type = 'ppn'` **11%** | `TaxCalculator` belum pernah dijalankan dengan jenis pajak yang paling banyak dipakai merchant Indonesia. Fixture memakai `pbjt` saja — `ppn` **nol di seluruh repo**. ⛔ Kalau ternyata ia tidak menanganinya, itu **bug uang: laporkan, jangan tambal diam** |
+| 2 | `service_charge_amount != 0` **dan** `channel = 'dine_in'` | 3 berkas lawan 48 di produk F&B — yang paling khas LumiPOS justru yang paling sedikit diuji. Kanal memutuskan tarif pajak di sebagian yurisdiksi (`spec-c`) |
+| 3 | `qris_static` + `card_edc` di jalur **TAMPILAN** | Keduanya sudah teruji di jalur DATA (4 berkas: penjualan, tutup-kas, tutup-kas-refund, laporan-harian) dan TIDAK di jalur tampilan — persis lubang yang meloloskan peta metode keempat yang memuat `card` dan tidak memuat `qris_static` |
+
+⛔ **K1 (27 dari 42 empty state) dan K2 (~19 endpoint tanpa penyebut) SENGAJA
+tidak dipilah sekarang** (keputusan user). Keduanya batas atas populasi, bukan
+cacat; apakah nol di suatu layar sah atau tidak hanya dapat diputuskan **saat
+menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
+
 Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
 
 ---

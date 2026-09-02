@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { EmptyState, Icon } from 'ds';
+import { Badge, EmptyState, Icon, SegmentedControl } from 'ds';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { gayaKategori } from '../../../../packages/domain/src/warna-kategori.ts';
 import { TANPA_KATEGORI } from '../../../../packages/domain/src/katalog-saringan.ts';
@@ -10,9 +10,12 @@ import {
   bacaModifier,
   cariBarcode,
   cariItem,
+  LABEL_URUTAN,
+  urutkanItem,
   type DaftarModifier,
   type ItemKatalog,
   type KategoriKatalog,
+  type UrutanKatalog,
   type VariationKatalog,
 } from '../katalog/baca.ts';
 import {
@@ -75,6 +78,7 @@ export function Kasir() {
   const [kategori, setKategori] = useState<KategoriKatalog[]>([]);
   const [kategoriAktif, setKategoriAktif] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
+  const [urutan, setUrutan] = useState<UrutanKatalog>('nama');
   /* Keranjang hidup di modul, bukan di state komponen: K-06 adalah layar
      lain, dan router membongkar K-03 saat kasir menekan Bayar.
      `useSyncExternalStore` dipakai dengan alasan yang sama seperti untuk
@@ -190,7 +194,7 @@ export function Kasir() {
   }, [db]);
 
   const terlihat = useMemo(() => {
-    const cocok = cariItem(katalog, kueri);
+    const cocok = urutkanItem(cariItem(katalog, kueri), urutan);
     if (kategoriAktif === null) return cocok;
     /* ⛔ Cabang `TANPA_KATEGORI` ada di sini karena `category_id` boleh `null`,
        dan menyaringnya dengan kesetaraan biasa mengembalikan NOL produk alih-
@@ -198,7 +202,7 @@ export function Kasir() {
        tidak ada". Bentuk cacat yang sama sudah pernah dibayar di B-06. */
     if (kategoriAktif === TANPA_KATEGORI) return cocok.filter((i) => i.categoryId === null);
     return cocok.filter((i) => i.categoryId === kategoriAktif);
-  }, [katalog, kueri, kategoriAktif]);
+  }, [katalog, kueri, kategoriAktif, urutan]);
 
   /* Nama kategori dalam urutan tampil — dasar warna slot. `gayaKategori`
      memakai POSISI di daftar ini, bukan hash: empat kategori ke enam slot
@@ -404,17 +408,94 @@ export function Kasir() {
     setPilihan({ item, daftar });
   };
 
-  if (membayar) return <Pembayaran onKembali={() => setMembayar(false)} />;
+  /* ⛔ K-06 dirender sebagai OVERLAY di atas K-03, 2 September 2026 — bukan
+     lagi `return <Pembayaran/>` yang mengganti seluruh layar.
+     `TEMUAN.md` A6.
+
+     Keranjang tetap terlihat di belakangnya, dan itu bukan estetika: kasir
+     yang menagih sambil pelanggan menambah satu item terakhir tidak lagi
+     kehilangan konteks pesanannya. Halaman penuh membuat "kembali" terasa
+     seperti membatalkan.
+
+     ⛔ Overlaynya BESAR (`kasir-overlay-lebar`), bukan kotak dialog.
+     Pertimbangan yang dinyatakan di `TEMUAN.md`: K-06 memuat pembayaran
+     CAMPURAN beberapa metode, QRIS dinamis menampilkan QR + polling sampai 5
+     menit, dan K-07 menampilkan kembalian pada 32px — angka terbesar di
+     seluruh aplikasi, dibaca kasir DAN pelanggan bersamaan. Kotak 420px
+     menyempitkan ketiganya.
+
+     ⛔ KELAS `.overlay`/`.dialog` bundle, BUKAN komponen `<Modal>`-nya. Modal
+     bundle memasang `onClick={onClose}` pada latarnya — ketukan meleset di
+     tepi tablet MEMBUANG pembayaran yang sedang diketik. Itu persis alasan
+     `LatarDialog` menolak tutup-saat-latar-diklik, dan alasannya berlaku
+     lebih kuat di sini: yang hilang bukan pilihan modifier melainkan nominal
+     tunai yang sudah diserahkan pelanggan.
+
+     Bentuk yang sama dengan aturan `CartRow`/`ProductCard`: pakai kelasnya,
+     jangan pakai komponennya. Bedanya di sini bukan uang melainkan
+     PERILAKU — dan keduanya sama-sama tidak menghasilkan error.
+
+     ⛔ Batas yang DINYATAKAN: K-03 tetap di-unmount di baliknya, jadi
+     keranjang TIDAK terlihat menembus latar. Membiarkannya hidup berarti
+     `usePemindaiGlobal` tetap mendengarkan — dan scan yang masuk saat kasir
+     sedang mengetik nominal tunai akan menambah barang ke pesanan yang
+     angkanya sudah disebutkan ke pelanggan. Itu perubahan perilaku, bukan
+     perubahan tampilan, dan ia tidak dikerjakan di dalam sapuan UI. */
+  if (membayar) {
+    return (
+      <div className="overlay kasir-overlay-bayar" role="dialog" aria-modal="true" aria-label="Pembayaran">
+        <div className="dialog kasir-overlay-lebar">
+          <Pembayaran onKembali={() => setMembayar(false)} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="kasir-utama">
       <div className="kasir-grid-panel">
-        <Bidang
-          label="Cari produk"
-          value={kueri}
-          onChange={setKueri}
-          placeholder="Nama produk atau barcode"
-        />
+        {/* ⛔ Pencarian dan urutan berbagi SATU baris kontrol, 2 September 2026.
+            Sebelumnya kolom cari berdiri sendiri selebar panel dan urutan
+            tidak ada sama sekali — kasir yang mencari "produk termurah untuk
+            pelanggan yang bertanya" tidak punya jalan selain memindai grid.
+
+            Keduanya kontrol PENYARING, dan menempatkannya berdampingan
+            menyatakan itu. `<SegmentedControl>` bundle dipakai apa adanya: ia
+            netral (bukan aksen), dan itu benar — aksi utama layar ini Bayar,
+            bukan mengubah urutan. */}
+        <div className="kasir-kontrol-grid">
+          <Bidang
+            label="Cari produk"
+            value={kueri}
+            onChange={setKueri}
+            placeholder="Nama produk atau barcode"
+          />
+          <div className="kasir-urutan">
+            <span className="label" id="lbl-urutan">
+              Urutkan
+            </span>
+            <SegmentedControl
+              ariaLabel="Urutkan produk"
+              value={urutan}
+              onChange={(v: string) => setUrutan(v as UrutanKatalog)}
+              options={(Object.keys(LABEL_URUTAN) as UrutanKatalog[]).map((u) => ({
+                value: u,
+                label: LABEL_URUTAN[u],
+              }))}
+            />
+          </div>
+        </div>
+
+        {/* ⛔ Jumlah hasil DISEBUTKAN saat saringan aktif. Grid yang menyusut
+            tanpa angka membuat kasir tidak dapat membedakan "saringannya
+            sempit" dari "katalognya memang sedikit" — bentuk kekosongan yang
+            sama dengan yang `KELAS-GAGAL.md` catat, satu tingkat lebih halus:
+            di sini isinya tidak nol, hanya lebih sedikit dari yang diharapkan. */}
+        {(kueri !== '' || kategoriAktif !== null) && terlihat.length > 0 && (
+          <p className="t-caption kasir-login-sub" role="status">
+            {terlihat.length} dari {katalog.length} produk
+          </p>
+        )}
 
         {/* ⛔ Saringan kategori, dan alasannya BUKAN estetika.
             Pada 120 varian — jumlah yang merchant sungguhan punya, diuji di
@@ -518,6 +599,20 @@ export function Kasir() {
                     <span className="kasir-kartu-varian t-caption">
                       {item.variations.length} pilihan
                     </span>
+                  )}
+                  {/* ⛔ Kata "Habis", bukan hanya kartu yang meredup.
+                      `data-out` bundle menurunkan opacity — dan opacity adalah
+                      bentuk "status warna saja" yang aturan DS #5 larang, hanya
+                      dalam sumbu yang berbeda. Kasir yang melihat kartu pudar
+                      di bawah lampu kafe yang silau tidak dapat memastikan
+                      apakah ia pudar atau ia sedang salah lihat.
+
+                      `<Badge tone="danger">` bundle, yang kontraknya sendiri
+                      menuntut teks: "Status TIDAK PERNAH warna saja". */}
+                  {item.variations.every((v) => habis.has(v.id)) && (
+                    <Badge tone="danger" className="kasir-kartu-habis">
+                      Habis
+                    </Badge>
                   )}
                 </button>
               );

@@ -196,6 +196,28 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
         ))}
       </ul>
 
+      {/* ⛔ Subtotal dan Diskon DIRENDER, 2 September 2026.
+          Sampai hari itu layar ini melompat dari baris produk langsung ke
+          Pajak, dan `order_discount` tidak pernah dibaca sama sekali — jadi
+          pada setiap transaksi berdiskon, jumlah baris di atas TIDAK SAMA
+          dengan Total di bawah, tanpa satu baris pun yang menjelaskannya.
+
+          Layar ini yang dipakai memutuskan refund. Angka yang tidak menjumlah
+          di sana membuat kasir menebak mana yang benar. */}
+      <div className="kasir-subtotal">
+        <span className="t-body-md">Subtotal</span>
+        <span className="t-body-md num">{rupiah(order.subtotal)}</span>
+      </div>
+      {order.orderDiscount !== 0 && (
+        <div className="kasir-subtotal">
+          <span className="t-body-md">Diskon</span>
+          {/* Tanda minus ADA DI DEPAN dan nilainya mutlak — `rupiah()`
+              menghasilkan `− Rp 5.000` untuk nilai negatif, dan diskon
+              disimpan POSITIF. Merender `rupiah(-x)` dan menambah tanda lagi
+              menghasilkan dua tanda minus. */}
+          <span className="t-body-md num">− {rupiah(order.orderDiscount)}</span>
+        </div>
+      )}
       <div className="kasir-subtotal">
         <span className="t-body-md">Pajak</span>
         <span className="t-body-md num">{rupiah(order.taxAmount)}</span>

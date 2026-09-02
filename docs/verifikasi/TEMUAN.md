@@ -11,22 +11,22 @@ Status: **⬜ belum · 🔧 dikerjakan · ✅ selesai · ⛔ menunggu keputusan*
 
 | # | Temuan | Jenis | Status |
 |---|---|---|---|
-| U1 | Design system keseluruhan, terutama background/warna elemen | JELEK | 🔧 |
-| U2 | Tambah lebih banyak elemen dan ikon di tiap halaman | JELEK | 🔧 |
-| U3 | Layout diperbaiki secara keseluruhan | JELEK | 🔧 |
+| U1 | Design system keseluruhan, terutama background/warna elemen | JELEK | ✅ 2 Sep — permukaan tenggelam untuk grid, gradien, elevasi kartu |
+| U2 | Tambah lebih banyak elemen dan ikon di tiap halaman | JELEK | ✅ 2 Sep — `<Badge>`, `<SegmentedControl>`, `<Tabs>`, `<Card>` |
+| U3 | Layout diperbaiki secara keseluruhan | JELEK | ✅ 2 Sep — nav persisten, baris kontrol, pengelompokan kartu |
 
 ## A. K-03 Normal
 
 | # | Temuan | Jenis | Status |
 |---|---|---|---|
 | A1 | **Kartu harusnya bergambar** | JELEK | ⛔ tabrakan DS #8 |
-| A2 | Elemen dan border bisa lebih bagus | JELEK | ⬜ |
-| A3 | Pencarian lebih aesthetic + fungsional, tambah **"sort by"** | JELEK | ⬜ |
-| A4 | Menu "…" jelek — buat mirip navbar back-office | JELEK | ⬜ |
-| A5 | Kartu extend pemilihan variasi sangat plain | JELEK | ⬜ |
-| A6 | **Pembayaran jadi overlay card, bukan 1 halaman penuh** | JELEK | ⛔ tabrakan IA |
-| A7 | Keranjang memanjang sampai bawah, memaksa scroll halaman utama — **scroll khusus di keranjang** | KIKUK | ⬜ |
-| A8 | Baris keranjang perlu opsi **menambah kuantitas**, dan pembagian antar elemen diperjelas agar tidak salah tekan | KIKUK | ⬜ |
+| A2 | Elemen dan border bisa lebih bagus | JELEK | ✅ `--shadow-card`, `--surface-sunk`, badge habis |
+| A3 | Pencarian lebih aesthetic + fungsional, tambah **"sort by"** | JELEK | ✅ baris kontrol + `<SegmentedControl>` A–Z/termurah/termahal + hitungan hasil |
+| A4 | Menu "…" jelek — buat mirip navbar back-office | JELEK | ✅ `<Tabs variant="underline">` persisten; gerbang tidak jadi tab |
+| A5 | Kartu extend pemilihan variasi sangat plain | JELEK | ✅ `<SegmentedControl>` bernama+berharga |
+| A6 | **Pembayaran jadi overlay card, bukan 1 halaman penuh** | JELEK | ✅ overlay 56rem lewat KELAS `.overlay`/`.dialog` — bukan `<Modal>`, yang menutup saat latar diklik |
+| A7 | Keranjang memanjang sampai bawah, memaksa scroll halaman utama — **scroll khusus di keranjang** | KIKUK | ✅ 1 Sep |
+| A8 | Baris keranjang perlu opsi **menambah kuantitas**, dan pembagian antar elemen diperjelas agar tidak salah tekan | KIKUK | ✅ `.stepper`; qty→0 menghapus, tombol Hapus dibuang |
 
 ## B. K-03 Memuat
 
@@ -44,8 +44,8 @@ Status: **⬜ belum · 🔧 dikerjakan · ✅ selesai · ⛔ menunggu keputusan*
 
 | # | Temuan | Jenis | Status |
 |---|---|---|---|
-| D1 | Flat. Waktu, status, dll harus lebih jelas. Harus bisa melihat **detail transaksi keseluruhan** | JELEK | ⬜ |
-| D2 | Pencarian lebih aesthetic + **sort by** (jam / tanggal) | JELEK | ⬜ |
+| D1 | Flat. Waktu, status, dll harus lebih jelas. Harus bisa melihat **detail transaksi keseluruhan** | JELEK | ✅ `<Badge>` status; ⛔ **Subtotal + Diskon dirender** — `order_discount` tidak pernah dibaca sebelumnya |
+| D2 | Pencarian lebih aesthetic + **sort by** (jam / tanggal) | JELEK | ✅ terbaru/terlama/nilai tertinggi |
 | D3 | Daftar panjang perlu **pagination** | KIKUK | ⬜ |
 
 ## F. K-12 Tutup kas
@@ -54,11 +54,23 @@ Status: **⬜ belum · 🔧 dikerjakan · ✅ selesai · ⛔ menunggu keputusan*
 |---|---|---|---|
 | F1 | Flat dan lifeless — **jauh lebih visual, banyak data, grafik** | KIKUK/JELEK | ⛔ tabrakan spec-d:96 |
 
+## E. K-06/K-07 Pembayaran — GERBANG FIXTURE
+
+⛔ Bukan temuan visual. Ini prasyarat yang mengikat sebelum kedua layar
+pembayaran boleh dinyatakan selesai (keputusan user 2 September 2026, dari
+`MONOKULTUR-FIXTURE.md`).
+
+| # | Butir | Status |
+|---|---|---|
+| E1 | Fixture `tax_rate.type='ppn'` 11%. ⛔ Bila `TaxCalculator` tidak menanganinya: **bug uang, laporkan, jangan tambal diam** | ⬜ |
+| E2 | Fixture `service_charge_amount != 0` **dan** `channel='dine_in'` | ⬜ |
+| E3 | Fixture `qris_static` + `card_edc` di jalur **TAMPILAN**, bukan hanya data | ⬜ |
+
 ## G. K-15 Perangkat
 
 | # | Temuan | Jenis | Status |
 |---|---|---|---|
-| G1 | Dipakai orang awam — harus rapi, aesthetic, mudah, jelas | KIKUK/JELEK | ⬜ |
+| G1 | Dipakai orang awam — harus rapi, aesthetic, mudah, jelas | KIKUK/JELEK | ✅ kolom dikelompokkan `<Card>`, status `<Badge>`, profil printer `<SegmentedControl>` |
 
 ---
 
@@ -147,3 +159,40 @@ masalah yang sama dengan nol ketukan tambahan untuk produk yang sering dijual.
 Rekomendasi: **pagination untuk K-08** (D3 — daftar yang DIBACA, bukan ditekan
 cepat), dan untuk K-03 perbaiki kepadatan + saringan alih-alih memecah halaman.
 Bukan penolakan; ini trade-off yang perlu kamu putuskan.
+
+
+---
+
+# Sapuan sembilan butir — selesai 2 September 2026
+
+Sembilan butir "ongkos turun" ditutup dalam satu sapuan. **Tiga yang harus
+DIBANGUN belum dikerjakan** dan tetap berstatus ⬜: B1 penanda memuat, C1
+paginasi katalog, D3 paginasi riwayat.
+
+⛔ **Yang ditemukan saat menyapu, dan ia bukan perbaikan tampilan:**
+
+1. **`order_discount` tidak pernah dibaca K-08.** Query detailnya bahkan tidak
+   menyeleksi kolomnya, jadi baris + pajak tidak menjumlah ke Total pada setiap
+   transaksi berdiskon — di layar yang dipakai memutuskan refund. Bentuk yang
+   sama dengan cacat struk yang sudah dibayar 22 Agustus, bertahan sebelas hari
+   lebih lama karena tidak ada test yang menjumlahkan angka di layar.
+
+2. **`<Modal>` bundle tidak aman untuk K-06.** Ia memasang `onClick={onClose}`
+   pada latarnya — ketukan meleset di tepi tablet membuang nominal tunai yang
+   sedang diketik. Yang dipakai KELASnya (`.overlay`/`.dialog`), pola yang sama
+   dengan `CartRow`/`ProductCard`. Bedanya di sini bukan uang melainkan
+   PERILAKU, dan keduanya sama-sama tidak menghasilkan error.
+
+3. **`--space-5` tidak ada**, dan saya memakainya lagi satu jam setelah menulis
+   catatan tentang delapan token hantu. `tests/runtime/token-css-ada.test.js`
+   yang menemukannya, bukan mata.
+
+⛔ **Batas yang dinyatakan pada A6:** K-03 tetap di-unmount di balik overlay,
+jadi keranjang tidak terlihat menembus latar. Membiarkannya hidup berarti
+listener pemindai tetap mendengarkan, dan scan yang masuk saat kasir mengetik
+nominal akan menambah barang ke pesanan yang angkanya sudah disebutkan.
+Perubahan perilaku, bukan tampilan — tidak dikerjakan di dalam sapuan UI.
+
+⛔ **`<Switch>` TIDAK dipakai di K-15** meski `BUNDLE.md` mengusulkannya: layar
+itu tidak punya satu pun setelan boolean. Mengarang satu untuk mengisi slot
+adalah persis yang aturan token melarang.

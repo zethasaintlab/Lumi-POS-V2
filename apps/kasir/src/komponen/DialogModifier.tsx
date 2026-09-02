@@ -1,3 +1,4 @@
+import { SegmentedControl } from 'ds';
 import { useState } from 'react';
 import {
   bolehTambah,
@@ -99,21 +100,40 @@ export function DialogModifier({
     <LatarDialog label={item.nama} onBatal={onBatal}>
         <h2 className="t-title">{item.nama}</h2>
 
+        {/* ⛔ `<SegmentedControl>` bundle menggantikan daftar radio,
+            2 September 2026.
+
+            Radio bertumpuk vertikal adalah bentuk yang benar untuk daftar
+            panjang dan salah untuk pilihan yang saling eksklusif dan sedikit —
+            "Regular / Large" adalah SATU keputusan, bukan dua pertanyaan. Ia
+            juga memberi target sentuh sebesar lingkaran radionya sendiri,
+            sementara segmented control memberi seluruh segmen.
+
+            ⛔ Harga tetap dirender markup KITA lewat `rupiah()`. `<Chip>` dan
+            `<SegmentedControl>` tidak menyentuh uang sama sekali — keduanya
+            hanya menerima label — jadi keduanya ada di baris KEDUA aturan
+            bundle (`CLAUDE.md` § Aturan memakai /ds-bundle), bukan baris
+            ketiga. Yang ada di baris ketiga adalah `CartRow`/`ProductCard`,
+            dan keduanya tidak dapat diimpor. */}
         {item.variations.length > 1 && (
-          <fieldset className="kasir-alasan">
-            <legend className="t-body-md">Ukuran</legend>
-            {item.variations.map((v) => (
-              <label key={v.id} className="kasir-alasan-opsi t-body-md">
-                <input
-                  type="radio"
-                  name="variation"
-                  checked={variation.id === v.id}
-                  onChange={() => setVariation(v)}
-                />
-                {v.nama} · <span className="num">{rupiah(v.harga)}</span>
-              </label>
-            ))}
-          </fieldset>
+          <div className="kasir-pilih-varian">
+            <span className="label">Ukuran</span>
+            <SegmentedControl
+              ariaLabel="Ukuran"
+              value={variation.id}
+              onChange={(id: string) => {
+                const v = item.variations.find((x) => x.id === id);
+                if (v) setVariation(v);
+              }}
+              options={item.variations.map((v) => ({
+                value: v.id,
+                /* Nama DAN harga di dalam segmennya: varian tanpa harga
+                   menuntut kasir mengingat selisihnya, dan selisih itulah
+                   yang pelanggan tanyakan. */
+                label: `${v.nama} · ${rupiah(v.harga)}`,
+              }))}
+            />
+          </div>
         )}
 
         {daftar.map((d) => {

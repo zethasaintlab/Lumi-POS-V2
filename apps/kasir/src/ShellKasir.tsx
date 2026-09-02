@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { Icon, SyncIndicator } from 'ds';
+import { SyncIndicator, Tabs } from 'ds';
 import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
-import { TABEL_RUTE, type Rute } from './rute/tabel.ts';
+import { ruteNav, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
 import { useAntrean } from './konteks/useAntrean.ts';
 import { PitaAntrean } from './PitaAntrean.tsx';
@@ -37,7 +36,7 @@ interface Props {
 }
 
 export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteAktif, children }: Props) {
-  const [menuTerbuka, setMenuTerbuka] = useState(false);
+  const nav = ruteNav();
   const { ringkasan, siap } = useAntrean();
   const indikator = keadaanIndikator(ringkasan, { perangkatTerdaftar });
 
@@ -91,35 +90,31 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
           )}
         </span>
 
-        <button
-          type="button"
-          className="btn"
-          aria-expanded={menuTerbuka}
-          aria-label="Menu"
-          onClick={() => setMenuTerbuka((t) => !t)}
-        >
-          <Icon name="more" size={18} />
-        </button>
       </header>
 
-      {menuTerbuka && (
-        <nav className="kasir-menu">
-          {TABEL_RUTE.map((r) => (
-            <button
-              key={r.layar}
-              type="button"
-              className="btn"
-              aria-current={ruteAktif?.layar === r.layar ? 'page' : undefined}
-              onClick={() => {
-                setMenuTerbuka(false);
-                navigasi(r.jalur.includes(':') ? '/riwayat' : r.jalur);
-              }}
-            >
-              <span className="truncate">{r.nama}</span>
-            </button>
-          ))}
-        </nav>
-      )}
+      {/* ⛔ Bilah nav PERSISTEN menggantikan menu "…", 2 September 2026.
+          Menu ⋮ menuntut DUA ketukan untuk setiap perpindahan, dan yang
+          pertama tidak memberi informasi apa pun — kasir menekan tombol
+          bertanda titik-titik untuk mencari tahu apa yang ada di baliknya.
+          Ia juga menyembunyikan layar mana yang sedang aktif, tepat pada
+          aplikasi yang dipakai berdiri sambil melayani orang.
+
+          `<Tabs variant="underline">` dari `/ds-bundle` — komponen yang sudah
+          dipakai back-office dan belum pernah dipakai kasir. Ia menandai tab
+          aktif dengan aksen DAN `aria-selected`, jadi keadaannya tidak pernah
+          warna saja (aturan DS #5).
+
+          ⛔ `/login` dan `/shift/buka` sengaja TIDAK ada di bilah ini — lihat
+          `Rute.nav` di `rute/tabel.ts`. Keduanya gerbang, dan tab menuju
+          gerbang yang sudah dilewati mengundang kasir keluar dari shift yang
+          sedang berjalan. */}
+      <Tabs
+        variant="underline"
+        ariaLabel="Navigasi kasir"
+        value={ruteAktif?.jalur ?? ''}
+        onChange={(jalur) => navigasi(jalur)}
+        tabs={nav.map((r) => ({ value: r.jalur, label: r.nav?.label ?? r.nama }))}
+      />
 
       {/* FR-H8. DI LUAR `kasir-konten`, jadi ia mendorong isi alih-alih
           melayang di atasnya — "banner, bukan dialog" (AC FR-H8 kedua) juga

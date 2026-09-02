@@ -53,13 +53,29 @@
   flex: none;
 }
 
-.kasir-menu {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--border);
+/* Bilah navigasi kasir — `.tabs-underline` bundle, ditempatkan.
+ *
+ * ⛔ MODIFIER, bukan pengganti. Yang diberikan di sini hanya penempatan:
+ * padding sejajar topbar, latar permukaan, dan `flex: none` supaya ia tidak
+ * ikut mengecil saat `.kasir-konten` menuntut ruang. Tinggi 44px, warna aksen
+ * pada tab aktif, dan garis bawahnya datang dari bundle — menuliskannya lagi
+ * di sini akan menyimpang dari back-office yang memakai komponen yang sama.
+ *
+ * `.kasir-menu` yang lama (dropdown ⋮) dihapus bersama menunya.
+ */
+.kasir-shell > .tabs-underline {
+  flex: none;
+  padding: 0 var(--space-4);
+  /* ⛔ `--space-6`, bukan `--space-5`. Yang kedua TIDAK ADA — ia salah satu
+     dari delapan token hantu yang kepala berkas ini catat, dan saya
+     memakainya lagi satu jam setelah menuliskan catatannya. Penjaga
+     `token-css-ada` yang menemukannya, bukan mata. */
+  gap: var(--space-6);
   background: var(--surface);
+  /* Bilah nav pada layar sempit tetap dapat dijangkau: ia menggulung
+     mendatar alih-alih membungkus ke baris kedua, yang akan memindahkan
+     seluruh isi layar ke bawah setiap kali satu tab ditambahkan. */
+  overflow-x: auto;
 }
 
 /* `SyncIndicator` adalah entry point ke K-14 (IA §2.4), jadi ia harus dapat
@@ -263,6 +279,10 @@
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  /* Panel grid duduk di permukaan yang TENGGELAM, keranjang di permukaan biasa.
+     Itu yang memisahkan "tempat memilih" dari "tempat menagih" tanpa satu pun
+     garis tambahan — dan tanpa warna baru: `--surface-sunk` sudah ada di palet. */
+  background: var(--surface-sunk);
 }
 
 /* >=12 kartu tanpa scroll (IA:62). `auto-fill` dengan lebar minimum, bukan
@@ -308,6 +328,9 @@
      tidak pernah memakainya sekali pun — nol shadow di seluruh berkas. Kartu
      tanpa elevasi di atas permukaan yang juga putih adalah definisi "datar". */
   box-shadow: var(--shadow-card);
+  /* Jangkar posisi untuk `.kasir-kartu-habis`. Tanpa ini badge-nya
+     memposisikan diri terhadap viewport, bukan terhadap kartunya. */
+  position: relative;
 }
 
 /* Bundle sudah menggeser warna; pergeseran 1px menambah rasa FISIK yang
@@ -329,6 +352,77 @@
 .kasir-kartu-harga { font-weight: var(--weight-medium); }
 
 .kasir-kartu-varian { color: var(--ink-muted); }
+
+/* Penanda habis. `position: absolute` supaya ia tidak mengubah tinggi kartu —
+ * grid `auto-fill` menyamakan tinggi baris, jadi satu badge di satu kartu akan
+ * menaikkan tiga kartu di sebelahnya yang tidak punya apa-apa untuk mengisinya. */
+.kasir-kartu-habis {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+/* --- K-06/K-07 sebagai overlay besar ------------------------------------- */
+
+/* ⛔ Kelas `.overlay` dan `.dialog` datang dari bundle; yang di bawah hanya
+ * MELEBARKAN dan memberi tinggi. `max-width: 420px` bawaan bundle benar untuk
+ * "New Customer" dan salah untuk layar yang memuat pembayaran campuran, QR
+ * yang di-polling lima menit, dan kembalian pada 32px.
+ *
+ * `min(...)` menahan dua hal sekaligus: cukup lebar di 1024px, dan tidak
+ * pernah melebihi layar pada tablet 800px yang diputar.
+ */
+.kasir-overlay-bayar {
+  padding: var(--space-4);
+}
+
+.kasir-overlay-lebar {
+  max-width: min(56rem, 100%);
+  /* Isi K-06 dapat lebih tinggi dari layar (pembayaran campuran + rincian).
+     Ia menggulir DI DALAM kartunya; halaman di belakangnya tidak ikut
+     bergulir, jadi latar gelapnya tetap menutup penuh. */
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Pemilih varian di dialog modifier. `.segmented` bundle menggulung mendatar:
+   item dengan lima varian pada dialog 28rem akan meluap, dan segmen yang
+   terpotong di tepi adalah harga yang tidak dapat dibaca. */
+.kasir-pilih-varian {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.kasir-pilih-varian .segmented {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* --- Baris kontrol grid: cari + urutkan ---------------------------------- */
+.kasir-kontrol-grid {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Kolom cari mengambil sisa ruang; urutan memakai lebar isinya sendiri.
+   `min-width` menahan kolom cari agar tidak menyusut menjadi kotak yang tidak
+   dapat dibaca saat panel menyempit — pada titik itu keduanya membungkus. */
+.kasir-kontrol-grid > *:first-child {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.kasir-urutan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: none;
+}
 
 /* --- Saringan kategori ----------------------------------------------------
  *
