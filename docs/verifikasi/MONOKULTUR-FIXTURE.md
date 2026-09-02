@@ -35,8 +35,15 @@ besar daripada yang ada, dan lubang yang dibesar-besarkan akan diabaikan.
 | `card_edc` | 4 | 4 |
 | `other` | 0 | 0 |
 
-**4 dari 48 berkas test kasir** pernah menyentuh metode non-tunai:
+**Hanya EMPAT berkas test kasir** pernah menyentuh metode non-tunai:
 `penjualan` · `tutup-kas` · `tutup-kas-refund` · `laporan-harian`.
+
+⛔ **Penyebutnya sengaja dibuang.** Versi pertama menulis "4 dari 47", lalu
+"4 dari 48", lalu basi lagi dalam hitungan jam — jumlah berkas test kasir
+bergeser setiap kali berkas test APA PUN ditambahkan, termasuk yang tidak ada
+hubungannya dengan pembayaran. Angka yang menuntut pembaruan setiap commit akan
+basi lagi minggu depan; yang bermakna di sini adalah **empat**, dan keempat
+namanya disebut.
 
 ⛔ **Keempatnya adalah jalur yang paling penting** — penulisan penjualan,
 penutupan kas, dan laporan harian. Jadi monokulturnya BUKAN "tidak pernah

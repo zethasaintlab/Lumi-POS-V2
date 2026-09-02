@@ -150,15 +150,18 @@ const KLAIM = [
   {
     id: 'kasir-non-tunai',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
-    frasa: '**4 dari 48 berkas test kasir**',
-    harap: '4/48',
-    ukur: () => {
-      const semua = berkasSumber('tests/kasir', /\.test\.js$/);
-      const nonTunai = semua.filter((f) =>
+    frasa: '**Hanya EMPAT berkas test kasir**',
+    harap: 4,
+    // ⛔ Hanya PEMBILANGNYA yang terdaftar. Penyebut ("dari 48") bergeser
+    // setiap kali berkas test apa pun ditambahkan — termasuk yang tidak ada
+    // hubungannya dengan pembayaran — dan ia sudah basi dua kali dalam satu
+    // hari. Aturan registri berlaku untuk registri sendiri: yang menuntut
+    // pembaruan setiap commit tidak layak dijaga, dan karena itu tidak boleh
+    // punya angka.
+    ukur: () =>
+      berkasSumber('tests/kasir', /\.test\.js$/).filter((f) =>
         /qris_static|card_edc|qris_dynamic/.test(fs.readFileSync(f, 'utf8'))
-      );
-      return `${nonTunai.length}/${semua.length}`;
-    },
+      ).length,
   },
   {
     id: 'empty-state-tanpa-antrean',
