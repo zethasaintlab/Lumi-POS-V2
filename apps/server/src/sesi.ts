@@ -514,7 +514,8 @@ export function pasangPenjagaSesi(app: FastifyInstance, pool: Pool): void {
       };
       // ⛔ Penanda dipasang SEKALI di sini, bukan diteruskan ke setiap
       // pemanggil `recordAuditEvent`. Lihat `konteks-permintaan.ts`: penanda
-      // yang harus diingat 20 kali akan terlupa yang ke-21, dan yang terlupa
+      // yang harus diingat di setiap pemanggil (25 hari ini) akan terlupa di yang
+      // berikutnya, dan yang terlupa
       // menisbatkan tindakan support kepada owner merchant secara pribadi.
       setelSesiSupport(support.id);
     } else {

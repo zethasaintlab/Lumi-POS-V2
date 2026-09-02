@@ -49,7 +49,7 @@ const PECAHAN = [1000, 5000, 10000, 50000, 100000];
  * mencocokkannya.
  *
  * Ditemukan lewat galeri komponen, dengan data pembayaran campuran. Tidak satu
- * pun dari 515 test kasir merah karenanya: semuanya memakai `cash`, dan `cash`
+ * pun dari seluruh test kasir merah karenanya: semuanya memakai `cash`, dan `cash`
  * adalah satu-satunya kunci yang keempat salinan sepakati.
  *
  * `labelMetode` dari `packages/domain` adalah peta LAYAR, dibagi dengan

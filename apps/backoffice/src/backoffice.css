@@ -8,8 +8,9 @@
  * `overflow-y: auto` pada `.shell-nav` tidak pernah menyala. Sidebar-lah yang
  * mendorong halaman, bukan sebaliknya.
  *
- * `AppShell` tidak pernah dipakai siapa pun sejak F0, jadi tidak ada yang
- * menabraknya sampai sekarang. Ditemukan dengan menjalankannya di browser,
+ * `AppShell` belum pernah dirender oleh siapa pun sampai back-office memakainya
+ * (`App.tsx`), jadi tidak ada yang menabrak cacat ini lebih dulu. Ia DIPAKAI
+ * sekarang — kalimat ini menceritakan sejarah, bukan keadaan. Ditemukan dengan menjalankannya di browser,
  * bukan dengan membacanya — DOM-nya benar dan tidak ada satu pun error di
  * konsol.
  *

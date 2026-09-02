@@ -20,7 +20,7 @@ Angka = **berapa berkas sumber** yang merender komponen itu.
 |---|---:|---:|---:|---|
 | `EmptyState` | 12 | 30 | 0 | dipakai luas |
 | `Card` | 2 | 29 | 4 | dipakai luas |
-| `Icon` | **3** | **30** | **0** | ⛔ timpang: 37 ikon tersedia |
+| `Icon` | **3** | **30** | **0** | ⛔ timpang: **42** ikon tersedia |
 | `Badge` | **1** | 28 | 0 | ⛔ kasir hampir tidak memakainya |
 | `Table` | **1** | 27 | 0 | |
 | `Modal` | **0** | 3 | 0 | ⛔ kasir menulis 7 dialog sendiri |
@@ -34,13 +34,21 @@ Angka = **berapa berkas sumber** yang merender komponen itu.
 | **`Switch`** | **0** | **0** | **0** | ⛔ tidak pernah dipakai |
 | **`SegmentedControl`** | **0** | **0** | **0** | ⛔ tidak pernah dipakai |
 | **`Chip`** | **0** | **0** | **0** | ⛔ tidak pernah dipakai |
-| **`CartRow`** | **0** | **0** | **0** | ⛔ tidak pernah dipakai — lihat §3 |
-| **`ProductCard`** | **0** | **0** | **0** | ⛔ tidak pernah dipakai — lihat §3 |
+| ~~`CartRow`~~ | — | — | — | ⛔ **dicabut dari ekspor** 2 Sep — lihat §3 |
+| ~~`ProductCard`~~ | — | — | — | ⛔ **dicabut dari ekspor** 2 Sep — lihat §3 |
 | **`ConfirmDialog`** | **0** | **0** | **0** | ⛔ tidak pernah dipakai |
 | **`Avatar`** | **0** | **0** | **0** | tidak pernah dipakai |
 | `Ticket` | 0 | 0 | 0 | KDS — non-goal v1, wajar nol |
 
-**Sepuluh dari 21 komponen tidak pernah dirender satu kali pun.**
+**Tujuh dari 19 komponen tidak pernah dirender satu kali pun** — TERVERIFIKASI
+2 September 2026: `Stepper` · `Switch` · `SegmentedControl` · `Chip` ·
+`ConfirmDialog` · `Avatar` · `Ticket`.
+
+⛔ Angkanya turun dari "sepuluh dari 21" karena DUA sebab yang berbeda, dan
+menyamakannya menyesatkan: `CartRow` dan `ProductCard` **dicabut dari
+permukaan publik** (lihat §3 — mereka menyentuh uang), sementara `Modal`
+mulai dirender. Angka di tabel ini adalah **potret bertanggal**, bukan
+konstanta; ia berubah setiap kali sebuah komponen mulai dipakai.
 
 ## 2. Kelas CSS yang ditulis langsung oleh kode aplikasi
 
@@ -85,7 +93,7 @@ uang.
 |---|---|
 | `CartRow` | ⛔ **TIDAK** — `unitPrice * qty` dengan `number` |
 | `ProductCard` | ⛔ **TIDAK** — `rupiah()` sendiri atas `number` |
-| 19 komponen lainnya | ✅ ya — tidak menyentuh angka uang |
+| 17 komponen lainnya | ✅ ya — tidak menyentuh angka uang |
 
 Konvensi repo ini: **uang `bigint` rupiah utuh, tidak pernah float**. Kedua
 komponen itu dirancang untuk basis kode yang memakai `number` untuk uang, dan

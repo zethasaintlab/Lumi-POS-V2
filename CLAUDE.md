@@ -174,7 +174,7 @@ Diukur 1 September 2026, dan ini sebab utamanya:
 | `.product-card` — hover & tekan jadi teal, focus ring, `data-out` untuk habis | **0×**, diganti `.kasir-kartu` buatan sendiri |
 | `.chip` — `aria-pressed="true"` → latar teal penuh | **0×**, diganti `.kasir-chip` yang hanya menebalkan tepi |
 | `.cart-row` · `.badge` | **0×** |
-| `<Icon>` (37 ikon) | **2×** — back-office memakai **56×** |
+| `<Icon>` (42 ikon) | **2×** — back-office memakai **56×** |
 | `--shadow-card` | **0×** — nol shadow di seluruh `kasir.css` |
 
 Kesalahan yang sama dibuat **dua kali dalam dua jam** oleh agent yang sama: menulis `.kasir-kartu:hover` dan `.kasir-chip-aktif` sendiri tanpa memeriksa bahwa bundle sudah mengirim versi yang jauh lebih baik. **Periksa `ds-bundle/components.css` sebelum menulis satu pun kelas baru** — yang ditulis sendiri akan selalu lebih miskin daripada yang sudah dirancang, dan ia tidak menghasilkan satu pun error.
@@ -183,7 +183,7 @@ Keduanya kini MODIFIER di atas komponen bundle, bukan pengganti.
 
 ### ⛔ Aturan memakai `/ds-bundle` — dan ia BUKAN "pakai saja komponen bundle"
 
-Inventaris lengkap: `docs/verifikasi/BUNDLE.md` (sepuluh dari 21 komponen belum pernah dirender sekali pun). Aturannya tiga baris, dan baris ketiga yang menyelamatkan uang:
+Inventaris lengkap: `docs/verifikasi/BUNDLE.md` (**tujuh dari 19 komponen belum pernah dirender sekali pun — TERVERIFIKASI 2 September 2026**; angkanya berubah setiap kali komponen baru dipakai, jadi perlakukan sebagai potret bertanggal, bukan konstanta). Aturannya tiga baris, dan baris ketiga yang menyelamatkan uang:
 
 | Yang dipakai | Aturan |
 |---|---|
@@ -206,7 +206,7 @@ Keduanya dirancang untuk basis kode yang memakai `number` untuk uang. Repo ini `
 
 ### ⛔ Pemformat rupiah: SATU, dan penjaganya melarang yang kesembilan
 
-`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 34 berkas mengimpornya; ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
+`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 35 berkas mengimpornya (TERVERIFIKASI 2 September 2026); ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
 
 Salinan terakhir dihapus 2 September 2026: `apps/backoffice/src/langganan/upgrade.ts` — B-29, satu-satunya layar yang angkanya berakhir di tagihan yang merchant bayar.
 
@@ -365,7 +365,7 @@ menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk negatif.
 Merchant yang menjual "Kopi Susu Regular" dan "Kopi Susu Large" mencetak dua
 baris struk yang **tidak dapat dibedakan** — dan struk adalah satu-satunya
 bukti yang pelanggan pegang. Bidangnya dibawa sepanjang jalur cetak lalu
-dijatuhkan di titik render; 515 test kasir hijau di atasnya.
+dijatuhkan di titik render; seluruh test kasir hijau di atasnya.
 
 - ⛔ **`order_line.variation_count_at_sale` adalah SNAPSHOT, dan itu yang
   membuat ACnya dapat ditegakkan sama sekali.** Cetak ulang membangun
@@ -617,7 +617,7 @@ Sisa Modul B: tidak ada yang belum digarap. **FR-B11 ditutup** bersama antrean `
 - ⛔ **Angka kepala rekapitulasi dari `posisiPenjualan`**, lewat `rekapPenjualan` di berkas yang sama. AC FR-C13 kedua menuntut totalnya cocok dengan laporan penjualan; memakai fungsi yang sama membuat itu benar menurut **konstruksi**, dan testnya `assert.deepEqual` terhadap respons `GET /reports/sales`.
 - ⛔ **Pajak dipisah dari kolom SNAPSHOT** `order_line.tax_rate_name` (`0022`) dan `order_line.tax_jurisdiction` (`0028`), bukan JOIN ke `tax_rate`. Tarif yang di-rename setelah pelaporan tidak boleh mengubah rekapitulasi periode yang sudah dilaporkan.
 - **`tax_jurisdiction` sengaja TIDAK turun ke perangkat.** Menambah kolom raw table mengubah sidik jari skema lokal, dan itu menuntut `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant — biaya nyata untuk kolom yang tidak satu pun layar kasir baca.
-- **`totalDiskonOrder` dan `totalServiceCharge` masih selalu NOL**: `POST /orders` menulis nol ke kolomnya. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya. ⛔ Test integrasi untuk keduanya akan hijau karena **hampa**; aturannya diuji di `tests/domain/posisi-penjualan.test.js`.
+- **`totalServiceCharge` masih selalu NOL**: `POST /orders` menulis literal `0` ke `service_charge_amount` (TERVERIFIKASI 2 September 2026). ⛔ **`totalDiskonOrder` TIDAK lagi nol sejak FR-B8/B9 (22 Agustus 2026)** — kalimat ini menyebut keduanya sampai 2 September dan sudah salah selama sebelas hari. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya. ⛔ Test integrasi untuk keduanya akan hijau karena **hampa**; aturannya diuji di `tests/domain/posisi-penjualan.test.js`.
 - **XLSX tidak dibuat.** `spec-c:444` menulis "CSV + XLSX"; XLSX menuntut dependensi baru dan CSV terbuka apa adanya di Excel dan Google Sheets. Batas yang dinyatakan.
 
 **K-06 menerima QRIS statis dan EDC, 22 Agustus 2026.** Server menerima keempat metode sejak sub-project 2; yang tidak ada adalah jalan bagi KASIR memakainya — `MetodeBayar` di klien secara harfiah `'cash'`, jadi merchant yang pelanggannya membayar QRIS mencatatnya sebagai tunai dan saldo laci berbohong sebesar seluruh omzet QRIS.
@@ -672,7 +672,7 @@ cadangkan nomor struk (lokal) → POST /orders (draf, `open`)
 
 **Tiga aplikasi kini ada**: `apps/kasir` (offline-first, PowerSync), `apps/backoffice` (online-only), `apps/hp` (Owner mobile, online-only). Sesi dan pintu HTTP keduanya yang terakhir dibagi lewat `packages/klien-api`.
 
-**Sembilan modul kini punya kode**: `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`, `peripheral`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
+**Dua belas modul kini punya kode** (TERVERIFIKASI 2 September 2026): `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`, `peripheral`, `payment`, `reporting`, `rilis`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
 
 **Keputusan yang mengikat kode ordering:**
 
