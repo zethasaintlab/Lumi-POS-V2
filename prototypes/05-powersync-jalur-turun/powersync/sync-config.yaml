@@ -75,6 +75,20 @@ streams:
       - SELECT * FROM modifier_list WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM modifier WHERE tenant_id = auth.parameter('tenant_id')
       - SELECT * FROM item_modifier_list WHERE tenant_id = auth.parameter('tenant_id')
+      # Gambar produk (migrasi 0036). ⛔ TIDAK disaring per outlet: katalog
+      # tidak disaring per outlet, dan gambar yang turun untuk sebagian item
+      # saja menghasilkan grid campuran foto dan kotak kosong yang sebabnya
+      # tidak dapat dijelaskan siapa pun.
+      #
+      # ⛔ `updated_by` TIDAK turun — id staf back-office, dan tidak ada layar
+      # kasir yang memakainya. Aturan yang sama dengan `price_history.changed_by`.
+      #
+      # ⛔ Item TANPA gambar tidak menghasilkan baris sama sekali, jadi merchant
+      # yang belum memfoto apa pun mengunduh NOL byte. Itu yang membuat fitur
+      # ini tidak membebani merchant yang tidak memakainya.
+      - SELECT item_id, tenant_id, bytes, mime, width, height, updated_at
+          FROM item_image
+         WHERE tenant_id = auth.parameter('tenant_id')
       # FR-A7. Kolom audit (`changed_by`, `reason`) tidak turun — tidak ada
       # layar kasir yang memakainya, dan `changed_by` adalah id pengguna yang
       # bisa saja bukan staf outlet ini.

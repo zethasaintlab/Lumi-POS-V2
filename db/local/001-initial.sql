@@ -34,6 +34,27 @@ CREATE TABLE item_variation (
   conversion_factor INTEGER DEFAULT 1000,
   track_stock INTEGER NOT NULL DEFAULT 1, sort_order INTEGER DEFAULT 0, archived_at TEXT
 );
+-- Gambar produk (migrasi 0036). RAW TABLE — sidik jari skema lokal berubah,
+-- dan setiap perangkat membangun ulang tabel rawnya sekali karenanya.
+--
+-- ⛔ `bytes` adalah BLOB di sini dan `bytea` di PostgreSQL. Transport
+-- PowerSync membawa JSON, jadi nilainya TIDAK sampai sebagai byte mentah — ia
+-- sampai sebagai teks (heks `\x…` atau base64, tergantung konektor). Itu
+-- membuat kolom ini masuk kelas yang `CLAUDE.md` sudah catat pada
+-- `tax_rate.rate`: kolom yang tipenya berbeda WAJIB punya `put` yang ditulis
+-- sendiri, karena `put` yang disimpulkan menyalin nilainya apa adanya.
+--
+-- ⛔ Bentuk teks yang benar BELUM DIUKUR terhadap PowerSync sungguhan (Docker
+-- tidak tersedia). Ia terdaftar di `KOLOM_BELUM_DIUKUR`, dan itu bukan
+-- formalitas: `tax_rate.rate` mendarat 10.000× terlalu kecil DAN bertipe salah
+-- tanpa satu pun error, dan yang menemukannya adalah pengukuran.
+CREATE TABLE item_image (
+  item_id TEXT PRIMARY KEY,
+  bytes BLOB NOT NULL,
+  mime TEXT NOT NULL,
+  width INTEGER NOT NULL, height INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE modifier_list (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
   selection_type TEXT NOT NULL CHECK(selection_type IN ('single','multi')),

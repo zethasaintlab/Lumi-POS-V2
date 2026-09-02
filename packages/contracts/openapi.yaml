@@ -1005,6 +1005,133 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /items/{itemId}/image:
+    # Gambar produk (migrasi 0036).
+    #
+    # ⛔ Base64 di dalam JSON, BUKAN multipart. Seluruh permukaan REST ini
+    # JSON ber-OpenAPI dengan validator AJV di depan setiap rute; satu jalur
+    # multipart adalah satu jalur yang melewati validator itu. Ongkosnya
+    # dinyatakan: base64 membengkak ~33%, jadi gambar 32 KB menjadi muatan
+    # ~43 KB — satu kali saat unggah, bukan per perangkat per sinkronisasi.
+    put:
+      operationId: putItemImage
+      summary: Pasang atau ganti gambar produk
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              additionalProperties: false
+              properties:
+                data:
+                  type: string
+                  description: >-
+                    WebP hasil kompresi klien, base64. Klien menurunkan kualitas
+                    bertahap sampai <= 32768 byte; server menolak yang melebihi.
+                  # ~33% pembengkakan base64 atas 32768 byte, dibulatkan naik.
+                  # Batas ini menahan muatan yang JELAS terlalu besar sebelum
+                  # handler mengalokasikan Buffer-nya; batas byte sebenarnya
+                  # ditegakkan setelah decode, dan itu yang mengikat.
+                  maxLength: 44000
+                width:
+                  type: integer
+                  description: Diisi klien; server memeriksanya bila ada, tidak men-decode gambar.
+                height:
+                  type: integer
+      responses:
+        '200':
+          description: Gambar diganti
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HasilGambarProduk' }
+        '201':
+          description: Gambar dipasang pertama kali
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HasilGambarProduk' }
+        '400':
+          description: >-
+            Gambar ditolak. Kode dibedakan: TERLALU_BESAR menuntut merchant
+            memotong fotonya, KOSONG menuntut ia mengulang unggahannya.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Item tidak ditemukan atau bukan milik tenant pemanggil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      operationId: getItemImage
+      summary: Byte gambar produk
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Byte WebP
+          content:
+            image/webp:
+              schema: { type: string, format: binary }
+        '404':
+          description: Item ini tidak punya gambar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: deleteItemImage
+      summary: Hapus gambar produk
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Terhapus
+        '404':
+          description: >-
+            Item ini tidak punya gambar. ⛔ Bukan 204: merchant yang menekan
+            Hapus dua kali harus tahu bahwa yang kedua tidak melakukan apa-apa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /item-images:
+    get:
+      operationId: listItemImageMeta
+      summary: Metadata gambar seluruh katalog (tanpa byte-nya)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [gambar, batasByte]
+                additionalProperties: false
+                properties:
+                  gambar:
+                    type: array
+                    items:
+                      type: object
+                      required: [itemId, byte, width, height, updatedAt]
+                      additionalProperties: false
+                      properties:
+                        itemId: { type: string }
+                        byte: { type: integer }
+                        width: { type: integer }
+                        height: { type: integer }
+                        updatedAt: { type: string }
+                  batasByte: { type: integer }
   /items/{itemId}/archive:
     post:
       operationId: archiveItem
@@ -6576,6 +6703,21 @@ paths:
 
 components:
   schemas:
+    HasilGambarProduk:
+      type: object
+      required: [itemId, byte, batasByte]
+      additionalProperties: false
+      properties:
+        itemId: { type: string }
+        byte:
+          type: integer
+          description: Ukuran gambar yang tersimpan.
+        batasByte:
+          type: integer
+          description: >-
+            Batas per gambar. ⛔ Dikembalikan supaya layar tidak menyalin
+            angkanya — salinan di klien akan menyimpang pada hari batasnya
+            berubah, dan merchant melihat sisa kuota yang salah.
     HasilTutupShift:
       type: object
       required:

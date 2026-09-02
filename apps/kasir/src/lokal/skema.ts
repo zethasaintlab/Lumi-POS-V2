@@ -28,6 +28,11 @@ export const TABEL_RAW = [
   'modifier_list',
   'modifier',
   'item_modifier_list',
+  // Gambar produk (migrasi 0036). ⛔ Tabel TERPISAH dari `item`: blob di
+  // `item` akan dipancarkan ulang ke seluruh armada pada setiap perubahan
+  // harga, karena jalur turun mereplikasi BARIS, bukan kolom yang layar
+  // seleksi.
+  'item_image',
   // FR-A7 — tanpa ini perangkat hanya melihat anak tangga harga paling bawah.
   'price_history',
   'tax_rate',
@@ -207,6 +212,12 @@ export const KOLOM_BELUM_DIUKUR = [
   'order.has_calculation_variance',
   'order_line.is_tax_inclusive',
   'order_line.modifier_snapshot',
+  // ⛔ `bytea` (PostgreSQL) → `BLOB` (SQLite). Transport PowerSync membawa
+  // JSON; byte mentah tidak dapat melintasinya, jadi nilainya sampai sebagai
+  // TEKS dan bentuk teks itu belum pernah diukur di sini. Kelas yang sama
+  // dengan `tax_rate.rate`, yang mendarat 10.000× terlalu kecil dan bertipe
+  // `real` di kolom `INTEGER` tanpa satu pun error.
+  'item_image.bytes',
   'payment.confirmed_manually',
   'cash_drawer_shift.count_attempts',
   'audit_event.before',
