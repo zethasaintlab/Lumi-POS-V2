@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { EmptyState } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
 import { PIN_LENGTH } from '../../../../packages/domain/src/pin.ts';
 import { masuk, type HasilLogin } from '../identitas/login.ts';
 import { buatPinHasherWasm } from '../identitas/pin-hasher-wasm.ts';
@@ -149,5 +149,5 @@ export function ButuhSesi({
 }
 
 export function SesiBelumSiap() {
-  return <EmptyState title="Menyiapkan sesi" body="Membaca data pengguna dari perangkat." />;
+  return <Memuat judul="Menyiapkan sesi…" bentuk="blok" jumlah={2} />;
 }

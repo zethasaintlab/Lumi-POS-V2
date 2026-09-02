@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Badge, EmptyState, Icon, SegmentedControl } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
+import { PER_MUAT_KATALOG } from '../komponen/halaman.ts';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { gayaKategori } from '../../../../packages/domain/src/warna-kategori.ts';
 import { TANPA_KATEGORI } from '../../../../packages/domain/src/katalog-saringan.ts';
@@ -79,6 +81,11 @@ export function Kasir() {
   const [kategoriAktif, setKategoriAktif] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
   const [urutan, setUrutan] = useState<UrutanKatalog>('nama');
+  /* TEMUAN C1 — katalog besar dipotong. ⛔ "Muat lebih banyak", BUKAN halaman
+     bernomor; alasannya di `komponen/halaman.ts`, dan ia trade-off yang
+     dinyatakan: halaman bernomor menambah ketukan pada SETIAP penjualan
+     produk yang ada di halaman 2. */
+  const [tampil, setTampil] = useState(PER_MUAT_KATALOG);
   /* Keranjang hidup di modul, bukan di state komponen: K-06 adalah layar
      lain, dan router membongkar K-03 saat kasir menekan Bayar.
      `useSyncExternalStore` dipakai dengan alasan yang sama seperti untuk
@@ -131,6 +138,15 @@ export function Kasir() {
      jadi ia tetap berlaku offline; fitur yang belum pernah disegarkan
      mengikuti bawaan kode dan tetap menyala. */
   const [fitur, setFitur] = useState<PetaFitur>(() => ({}));
+
+  /* ⛔ Kembali ke potongan pertama saat saringan berubah. Kasir yang sudah
+     menekan "Muat lebih banyak" tiga kali lalu mengetik pencarian tidak boleh
+     tetap merender 192 kartu untuk 4 hasil — dan yang lebih penting, potongan
+     yang tertinggal besar membuat grid terasa lambat tepat setelah kasir
+     mempersempitnya. */
+  useEffect(() => {
+    setTampil(PER_MUAT_KATALOG);
+  }, [kueri, kategoriAktif, urutan]);
 
   useEffect(() => {
     let hidup = true;
@@ -266,7 +282,7 @@ export function Kasir() {
     aktif: pilihan === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas,
   });
 
-  if (!siap) return <EmptyState title="Menyiapkan kasir" body="Membaca katalog dari perangkat." />;
+  if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
 
   /* ⛔ SEBELUM gerbang shift. Perangkat yang databasenya tidak dapat dibaca
      tidak dapat tahu apakah ada shift terbuka, dan mengirim kasir ke K-02
@@ -548,7 +564,7 @@ export function Kasir() {
           />
         ) : (
           <div className="kasir-grid">
-            {terlihat.map((item) => {
+            {terlihat.slice(0, tampil).map((item) => {
               const nama = item.categoryId === null ? '' : petaKategori.get(item.categoryId) ?? '';
               const hargaTerendah = Math.min(...item.variations.map((v) => v.harga));
               return (
@@ -618,6 +634,26 @@ export function Kasir() {
               );
             })}
           </div>
+        )}
+
+        {/* ⛔ Tombolnya HANYA muncul saat ada yang belum tampil, dan kalimatnya
+            membawa ANGKANYA. "Muat lebih banyak" tanpa angka membuat kasir
+            tidak tahu apakah ia satu ketukan lagi dari selesai atau sepuluh —
+            dan katalog yang tidak menyebut sisanya terbaca seperti katalog
+            yang tidak punya ujung.
+
+            ⛔ Merchant dengan katalog di bawah 48 produk tidak pernah melihat
+            tombol ini sama sekali. Batasnya menahan ONGKOS RENDER pada katalog
+            besar; ia bukan pemecah menu. */}
+        {terlihat.length > tampil && (
+          <Tombol
+            varian="ghost"
+            onClick={() => setTampil((t) => t + PER_MUAT_KATALOG)}
+          >
+            Muat {Math.min(PER_MUAT_KATALOG, terlihat.length - tampil)} produk lagi
+            {' · '}
+            <span className="num">{terlihat.length - tampil}</span> belum tampil
+          </Tombol>
         )}
       </div>
 

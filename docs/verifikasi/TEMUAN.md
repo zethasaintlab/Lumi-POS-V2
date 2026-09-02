@@ -32,13 +32,13 @@ Status: **⬜ belum · 🔧 dikerjakan · ✅ selesai · ⛔ menunggu keputusan*
 
 | # | Temuan | Jenis | Status |
 |---|---|---|---|
-| B1 | Perlu **loading screen**, jangan kosong | KIKUK | ⬜ |
+| B1 | Perlu **loading screen**, jangan kosong | KIKUK | ✅ 2 Sep — `<Memuat>` kerangka di 7 layar; bundle tidak punya skeleton |
 
 ## C. K-03 Daftar panjang
 
 | # | Temuan | Jenis | Status |
 |---|---|---|---|
-| C1 | Katalog perlu **pagination** | KIKUK | ⛔ tabrakan IA:53 |
+| C1 | Katalog perlu **pagination** | KIKUK | ✅ 2 Sep — **"muat lebih banyak", bukan halaman bernomor**; alasannya di bawah |
 
 ## D. K-08 Riwayat
 
@@ -46,7 +46,7 @@ Status: **⬜ belum · 🔧 dikerjakan · ✅ selesai · ⛔ menunggu keputusan*
 |---|---|---|---|
 | D1 | Flat. Waktu, status, dll harus lebih jelas. Harus bisa melihat **detail transaksi keseluruhan** | JELEK | ✅ `<Badge>` status; ⛔ **Subtotal + Diskon dirender** — `order_discount` tidak pernah dibaca sebelumnya |
 | D2 | Pencarian lebih aesthetic + **sort by** (jam / tanggal) | JELEK | ✅ terbaru/terlama/nilai tertinggi |
-| D3 | Daftar panjang perlu **pagination** | KIKUK | ⬜ |
+| D3 | Daftar panjang perlu **pagination** | KIKUK | ✅ 2 Sep — halaman bernomor + elipsis, 25/halaman |
 
 ## F. K-12 Tutup kas
 
@@ -196,3 +196,56 @@ Perubahan perilaku, bukan tampilan — tidak dikerjakan di dalam sapuan UI.
 ⛔ **`<Switch>` TIDAK dipakai di K-15** meski `BUNDLE.md` mengusulkannya: layar
 itu tidak punya satu pun setelan boolean. Mengarang satu untuk mengisi slot
 adalah persis yang aturan token melarang.
+
+
+---
+
+# Tiga yang harus DIBANGUN — selesai 2 September 2026
+
+`/ds-bundle` tidak mengirim satu pun dari ketiganya; diperiksa di sumbernya.
+
+## B1 — `<Memuat>`, kerangka bukan spinner
+
+Tujuh layar memakai `<EmptyState title="Membaca …">`. `EmptyState` dirancang
+untuk keadaan **KOSONG**, dan bentuknya menyatakan itu: ikon besar, ruang
+lapang, kalimat yang terdengar final. Keadaan MEMUAT berarti kebalikannya —
+"ada sesuatu, tunggu". Kasir pada perangkat lambat menyimpulkan katalognya
+hilang, setiap pagi.
+
+- Kerangka menempati ruang yang akan diisi, jadi kedatangan isi tidak
+  memindahkan satu pun elemen. Kolom kerangka grid disamakan PERSIS dengan
+  `.kasir-grid` (8rem) — kolom yang berbeda membuat kartu melompat, dan
+  lompatan itu justru yang kerangka ada untuk mencegahnya.
+- `prefers-reduced-motion` menghentikan denyutnya. Bentuknya tetap
+  menyampaikan "sedang datang".
+- `role="status"` + `aria-live`: pembaca layar tidak melihat kerangka sama
+  sekali, dan senyap tidak dapat dibedakan dari layar yang tidak merespons.
+
+## D3 — halaman bernomor untuk K-08
+
+25 baris per halaman, elipsis di atas 7 halaman, `aria-current` pada halaman
+aktif. **Rentang ("1–25 dari 137") selalu tampil**, juga saat hanya ada satu
+halaman: daftar yang tidak menyebut totalnya membuat kasir tidak dapat
+membedakan "riwayat memang pendek" dari "saringannya menyisakan sedikit".
+
+## C1 — ⛔ K-03 memakai bentuk yang BERBEDA, dan itu keputusan
+
+**"Muat lebih banyak", bukan halaman bernomor.**
+
+`IA:53` menuntut ≥12 kartu tanpa scroll, dan paginasi bernomor tidak
+melanggarnya. Yang jadi soal **ketukan per penjualan**: kasir yang produknya
+di halaman 3 menekan dua kali sebelum menemukannya, pada setiap penjualan
+produk itu, sepanjang hari. Saringan kategori dan pencarian sudah
+menyelesaikan masalah yang sama dengan nol ketukan tambahan untuk produk yang
+sering dijual.
+
+- Batasnya **48**, empat kali lipat yang `IA:53` tuntut. Ia menahan ONGKOS
+  RENDER pada katalog besar, bukan memecah menu — merchant di bawah 48 produk
+  tidak pernah melihat tombolnya sama sekali.
+- Kalimat tombolnya membawa **angkanya**: "muat lebih banyak" tanpa angka
+  membuat katalog terbaca seperti tidak punya ujung.
+- Potongan kembali ke awal saat saringan berubah.
+
+⛔ **Ini trade-off yang dinyatakan, bukan penolakan.** `potongHalaman` sudah
+mendukung halaman bernomor; yang berubah hanya komponen yang memanggilnya.
+Kalau kamu ingin K-03 bernomor juga, ongkosnya satu berkas.

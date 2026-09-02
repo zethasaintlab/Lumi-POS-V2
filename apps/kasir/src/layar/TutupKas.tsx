@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
@@ -99,7 +100,7 @@ export function TutupKas() {
     };
   }, [db]);
 
-  if (!siap) return <EmptyState title="Menyiapkan tutup kas" body="Membaca data shift." />;
+  if (!siap) return <Memuat judul="Menyiapkan tutup kas…" bentuk="blok" jumlah={4} />;
 
   /* ⛔ Mendahului "Tidak ada shift yang dapat ditutup". Pesan itu menyuruh
      kasir membuka shift; pada database yang tidak dapat dibaca, shiftnya

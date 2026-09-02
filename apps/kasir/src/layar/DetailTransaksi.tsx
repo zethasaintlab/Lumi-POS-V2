@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
 import { bacaDetail, type DetailOrder } from '../riwayat/baca.ts';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { bacaProfilPrinter } from '../cetak/profil.ts';
@@ -134,7 +135,7 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
     };
   }, [db, orderId, muatUlang]);
 
-  if (!siap) return <EmptyState title="Membaca transaksi" body="Mengambil detail dari perangkat." />;
+  if (!siap) return <Memuat judul="Membaca detail transaksi…" bentuk="baris" jumlah={5} />;
 
   if (gagalMuat) {
     return <GagalBaca akibat="Detail transaksi ini tidak dapat dibaca, jadi struknya tidak dapat dicetak ulang dan refund tidak dapat diproses dari layar ini." pesan={gagalMuat} />;

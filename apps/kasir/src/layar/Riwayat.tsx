@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, EmptyState, SegmentedControl } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
+import { Paginasi } from '../komponen/Paginasi.tsx';
+import { potongHalaman, PER_HALAMAN_RIWAYAT } from '../komponen/halaman.ts';
 import {
   bacaRiwayat,
   cariRiwayat,
@@ -47,6 +50,7 @@ export function Riwayat() {
   const [gagal, setGagal] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
   const [urutan, setUrutan] = useState<UrutanRiwayat>('terbaru');
+  const [halamanKe, setHalamanKe] = useState(1);
 
   useEffect(() => {
     let hidup = true;
@@ -75,8 +79,18 @@ export function Riwayat() {
     () => urutkanRiwayat(cariRiwayat(daftar, kueri), urutan),
     [daftar, kueri, urutan]
   );
+  const halaman = potongHalaman(terlihat, halamanKe, PER_HALAMAN_RIWAYAT);
 
-  if (!siap) return <EmptyState title="Membaca riwayat" body="Mengambil transaksi dari perangkat." />;
+  /* ⛔ Kembali ke halaman 1 saat saringan atau urutan berubah.
+     Tanpa ini, kasir di halaman 4 yang mengetik pencarian menyisakan 8 baris
+     akan melihat daftar KOSONG — dan kosong di sana tidak dapat dibedakan dari
+     "tidak ada struk yang cocok". `potongHalaman` men-clamp nomornya sebagai
+     jaring kedua, tapi jaring kedua bukan pengganti yang pertama. */
+  useEffect(() => {
+    setHalamanKe(1);
+  }, [kueri, urutan]);
+
+  if (!siap) return <Memuat judul="Membaca riwayat penjualan perangkat ini…" bentuk="baris" jumlah={8} />;
 
   if (gagal) {
     return <GagalBaca akibat="Riwayat penjualan perangkat ini tidak dapat ditampilkan, dan struk lama tidak dapat dicetak ulang." pesan={gagal} />;
@@ -116,7 +130,7 @@ export function Riwayat() {
         <EmptyState title="Tidak ada struk yang cocok" body={`Tidak ada hasil untuk "${kueri}".`} />
       ) : (
         <ul className="kasir-baris-daftar">
-          {terlihat.map((o) => (
+          {halaman.baris.map((o) => (
             <li key={o.id}>
               <button
                 type="button"
@@ -159,6 +173,8 @@ export function Riwayat() {
           ))}
         </ul>
       )}
+
+      {terlihat.length > 0 && <Paginasi halaman={halaman} onPindah={setHalamanKe} />}
     </div>
   );
 }

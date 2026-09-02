@@ -624,3 +624,100 @@
    bersama daftar item. */
 .kasir-subtotal,
 .kasir-aksi-sekunder { flex: none; }
+
+/* --- Penanda memuat (TEMUAN B1) -------------------------------------------
+ *
+ * ⛔ `/ds-bundle` tidak mengirim skeleton maupun spinner — diperiksa di
+ * sumbernya. Ini salah satu dari tiga butir yang memang harus dibangun.
+ *
+ * Warnanya dari token yang SUDAH ADA (`--surface-alt`, `--surface-sunk`);
+ * pelonggaran DS #8 mengizinkan gradien, dan palet tidak disentuh.
+ */
+.kasir-memuat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.kasir-rangka {
+  border-radius: var(--radius-card);
+  /* Gradien bergerak menyampaikan "sedang berjalan" tanpa spinner yang
+     berputar di tempat. Ketiga hentinya dari token yang sama — yang berubah
+     kedalaman, bukan warnanya (§ Pelonggaran DS #8). */
+  background: linear-gradient(
+    90deg,
+    var(--surface-alt) 25%,
+    var(--surface-sunk) 37%,
+    var(--surface-alt) 63%
+  );
+  background-size: 400% 100%;
+  animation: kasir-denyut 1.4s ease infinite;
+}
+
+@keyframes kasir-denyut {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ⛔ Gerak DIHENTIKAN, bukan dikurangi, bagi yang memintanya. Denyut yang
+   berjalan sepanjang shift adalah beban; bentuk kerangkanya sendiri sudah
+   menyampaikan "sedang datang". */
+@media (prefers-reduced-motion: reduce) {
+  .kasir-rangka {
+    animation: none;
+    background: var(--surface-alt);
+  }
+}
+
+/* Kerangka grid meniru `.kasir-grid` PERSIS — kolom yang berbeda membuat
+   kartu melompat ke posisi lain saat isinya tiba, dan lompatan itu justru
+   yang kerangka ada untuk mencegahnya. */
+.kasir-memuat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: var(--space-3);
+}
+.kasir-memuat-grid .kasir-rangka { height: 5.5rem; }
+
+.kasir-memuat-baris {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kasir-memuat-baris .kasir-rangka { height: var(--touch-min); }
+
+.kasir-memuat-blok {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.kasir-memuat-blok .kasir-rangka { height: 3rem; }
+
+/* --- Paginasi K-08 (TEMUAN D3) ------------------------------------------- */
+.kasir-paginasi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+.kasir-paginasi-nomor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* ⛔ Halaman yang sedang dibuka ditandai LATAR aksen lembut DAN `aria-current`
+   — bukan warna teks saja. Dua nomor bersebelahan yang hanya berbeda ketebalan
+   tidak dapat dibedakan pada layar kasir di bawah lampu terang. */
+.kasir-paginasi-nomor .btn[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}

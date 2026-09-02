@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { bukaShift, shiftAktif, validasiSaldoAwal, type ShiftAktif } from '../kas/shift.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
@@ -68,7 +69,7 @@ export function BukaShift() {
     };
   }, [db]);
 
-  if (!siap) return <EmptyState title="Menyiapkan shift" body="Membaca data perangkat." />;
+  if (!siap) return <Memuat judul="Menyiapkan shift…" bentuk="blok" jumlah={3} />;
 
   if (gagalMuat) {
     return <GagalBaca akibat="Shift tidak dapat dibuka di perangkat ini, jadi penjualan belum dapat dimulai." pesan={gagalMuat} />;

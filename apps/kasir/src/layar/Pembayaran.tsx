@@ -11,6 +11,7 @@ import {
 } from '../kasir/qris-dinamis.ts';
 import type { DrafTerkirim } from '../kasir/penjualan.ts';
 import { EmptyState } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
@@ -224,7 +225,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     };
   }, [db]);
 
-  if (!siap) return <EmptyState title="Menyiapkan pembayaran" body="Membaca data perangkat." />;
+  if (!siap) return <Memuat judul="Menyiapkan pembayaran…" bentuk="blok" jumlah={4} />;
 
   if (gagalMuat) {
     return <GagalBaca akibat="Pembayaran tidak dapat diselesaikan di perangkat ini; jangan terima uang sebelum masalahnya selesai." pesan={gagalMuat} />;
