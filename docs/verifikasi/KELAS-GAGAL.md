@@ -216,3 +216,38 @@ satu pun dilaporkan sebagai temuan:
 Dua dari tiga temuan pertama adalah penjaganya sendiri yang salah. Itu bukan
 kebetulan: penghitung selalu lebih rapuh daripada yang menulisnya kira, dan
 itulah kenapa aturan masuknya sempit.
+
+---
+
+## Kejadian KETUJUH — 3 September 2026: `aspect-ratio` yang tidak pernah berlaku
+
+Bukan "nol baris", tapi keluarga yang sama: **kegagalan yang tidak menghasilkan
+apa pun untuk dilihat.**
+
+Gambar produk di kartu K-03 diberi `width: 100%` + `aspect-ratio: 1 / 1`. Yang
+dirender **125×400** — bukan 125×125. Tinggi kartu menjadi 486px alih-alih
+~200px, dan hanya **4** kartu muat di layar; `IA:62` menuntut ≥12.
+
+Sebabnya: atribut `height="400"` pada `<img>` adalah *presentational hint* yang
+menyetel `height: 400px`, dan `aspect-ratio` hanya berlaku bila salah satu
+dimensi bernilai `auto`. Atributnya sendiri BENAR — ia yang memesan ruang
+sebelum gambar di-decode.
+
+| Yang biasanya menandai kesalahan | Yang terjadi |
+|---|---|
+| error runtime | tidak ada |
+| peringatan konsol | tidak ada |
+| CSS yang salah tulis | tidak ada — kedua propertinya sah dan terpasang |
+| tangkapan layar | **terlihat wajar** — kartunya besar dan rapi |
+
+⛔ **Tangkapan layar adalah pemeriksa yang buta untuk kelas ini.** Kartu yang
+terlalu besar tidak terlihat salah; ia terlihat seperti keputusan desain.
+Yang menemukannya `getBoundingClientRect()` — mengukur, bukan melihat.
+
+**Penjaganya** ada di `tools/tangkap-galeri.mjs`: setiap penangkapan K-03
+keadaan `gambar` MENGHITUNG kartu yang tepi bawahnya masih di dalam panel yang
+menggulir, dan gagal di bawah 12. Sabotase membuktikannya menyala: `1 / 1`
+dikembalikan, penjaga melaporkan 8.
+
+**Aturan yang lahir darinya:** *aturan tata letak yang punya ANGKA di dokumen
+produk diuji dengan mengukur angka itu, bukan dengan memotretnya.*

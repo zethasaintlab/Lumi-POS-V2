@@ -1035,12 +1035,33 @@ paths:
                   description: >-
                     WebP hasil kompresi klien, base64. Klien menurunkan kualitas
                     bertahap sampai hasil decode-nya <= 30720 byte.
-                  # 40960 = BATAS_BASE64 = 4*ceil(30720/3). ⛔ Server TIDAK
-                  # men-decode: panjang byte dihitung dari panjang teksnya,
-                  # aritmetika. Itu maksud pencabutan `bytea` — makin sedikit
-                  # titik tempat biner dan teks bertukar, makin sedikit tempat
-                  # 15 byte dapat menjadi 4 tanpa error.
-                  maxLength: 40960
+                  # ⛔ TANPA `maxLength`, dan itu keputusan — bukan kelalaian.
+                  #
+                  # Versi pertama menuliskan `maxLength: 40960` di sini. Dua
+                  # akibatnya, keduanya nyata:
+                  #
+                  # 1. Batas yang KETIGA. Ia sudah hidup di
+                  #    `packages/domain/src/gambar-produk.ts` dan sebagai CHECK
+                  #    di migrasi `0036`, dan pasangan itu dijaga test yang
+                  #    membaca kedua berkas. Salinan di sini tidak dijaga apa
+                  #    pun, dan yang menyimpang membuat server menolak muatan
+                  #    yang sebenarnya sah — atau menerima yang tidak.
+                  # 2. AJV menolak LEBIH DULU, dengan `VALIDATION_ERROR`. Kode
+                  #    itu tidak dapat dibedakan dari kesalahan bentuk, dan
+                  #    pesannya tidak menyebut apa yang merchant harus lakukan.
+                  #    Handler menjawab `TERLALU_BESAR` beserta ukurannya dan
+                  #    saran yang dapat dikerjakan ("latar lebih polos, potong
+                  #    lebih rapat") — dan `maxLength` di sini membuat cabang
+                  #    itu TIDAK PERNAH tercapai.
+                  #
+                  # Batas atas kasarnya tetap ada: `bodyLimit` bawaan Fastify
+                  # (1 MiB) menahan muatan yang tidak masuk akal jauh sebelum
+                  # handler melihatnya. Yang memutuskan angkanya satu tempat.
+                  #
+                  # ⛔ Server TIDAK men-decode: panjang byte dihitung dari
+                  # panjang teksnya, aritmetika. Itu maksud pencabutan `bytea` —
+                  # makin sedikit titik tempat biner dan teks bertukar, makin
+                  # sedikit tempat 15 byte dapat menjadi 4 tanpa error.
                 width:
                   type: integer
                   description: Diisi klien; server memeriksanya bila ada, tidak men-decode gambar.

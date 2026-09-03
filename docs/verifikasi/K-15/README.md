@@ -14,5 +14,6 @@ Buka sel mana pun langsung: `?layar=K-15&keadaan=<keadaan>`
 | `panjang` | 120 varian. Grid harus tetap dapat dipindai — saringan kategori terlihat. | ![panjang](tablet-1280x800-panjang.png) |
 | `meluap` | Nama 60 karakter. Harus terpotong rapi TANPA menarik tinggi kartu tetangganya. | ![meluap](tablet-1280x800-meluap.png) |
 | `angka-besar` | Rp 12.500.000. Harus muat, tetap tabular-nums, tidak mendorong kolom sebelahnya. | ![angka-besar](tablet-1280x800-angka-besar.png) |
+| `gambar` | Campuran: bergambar, belum difoto, dan gagal verifikasi. Ketiganya harus dapat dibedakan mata. | ![gambar](tablet-1280x800-gambar.png) |
 
 Berkas `backoffice-1440x900-*.png` ada di direktori yang sama.

@@ -185,6 +185,42 @@ penuh dan tidak menampilkan penanda memuat apa pun.
 - **Kartu tanpa gambar wajib punya bentuknya sendiri.** Merchant baru dan
   produk yang belum difoto adalah keadaan normal, bukan pengecualian.
 
+**Unggah + render selesai 3 September 2026.** Rantainya: `GambarProduk.tsx`
+(B-07, kanvas → tangga kualitas) → `PUT /items/{id}/image` → `item_image` →
+PowerSync → `apps/kasir/src/katalog/gambar.ts` (verifikasi) → kartu K-03.
+
+- ⛔ **TIGA keadaan kartu, dan yang pertama adalah KETIADAAN kunci di peta:**
+  belum difoto (kartu NORMAL, nol penanda) · gagal verifikasi (keadaan bernama,
+  terlihat berbeda) · utuh. Peta memakai `Map` tanpa entri untuk yang pertama —
+  memetakannya ke `null` membuat "belum difoto" dan "rusak" dapat tertukar oleh
+  satu pemanggil yang lupa membedakannya. `data-gambar` di kartu membawa ketiga
+  nilainya, dan `tests/kasir/gambar-kartu.test.js` menolak setiap aturan CSS
+  dekoratif untuk `tanpa` — placeholder abu-abu mengubah katalog merchant baru,
+  yang seluruhnya belum difoto, menjadi grid yang terlihat rusak di hari
+  pertama.
+- ⛔ **`aspect-ratio: 16 / 9` di kartu, meski yang disimpan 1:1** — diukur, dan
+  tiga rasio yang lebih tinggi gugur. `IA:62` menuntut ≥12 kartu tanpa scroll;
+  1:1 → 8, 4:3 → 8, 3:2 → 8, 16:9 → 12. Penjaganya di `tools/tangkap-galeri.mjs`,
+  yang MENGHITUNG kartu terlihat, bukan hanya memotretnya. Angkanya di
+  `docs/verifikasi/GAMBAR-ANGGARAN.md` § 7.
+- ⛔ **`height: auto` WAJIB pada `<img>` kartu.** Atribut `height="400"` adalah
+  presentational hint yang menyetel `height: 400px`, dan `aspect-ratio` hanya
+  berlaku bila satu dimensi `auto`. Tanpanya gambar dirender 125×400 di kartu
+  151px, tinggi kartu 486px, **4** kartu muat — nol error, nol peringatan
+  konsol, CSS terbaca benar. Ditemukan lewat pengukuran DOM.
+- ⛔ **Kontrak OpenAPI TIDAK menyalin batasnya sebagai `maxLength`.** Ia salinan
+  ketiga yang tidak dijaga apa pun, DAN ia membuat AJV menolak lebih dulu dengan
+  `VALIDATION_ERROR` — sehingga `TERLALU_BESAR` beserta sarannya tidak pernah
+  tercapai. `bodyLimit` bawaan Fastify menahan muatan tak masuk akal; angkanya
+  diputuskan satu tempat. Dijaga `tests/domain/gambar-produk.test.js`.
+- ⛔ **`byte` dan `checksum` dihitung SERVER**, dan nilai dari klien diabaikan
+  sepenuhnya. Checksum kiriman klien membuat verifikasi perangkat memeriksa
+  klaim klien terhadap dirinya sendiri: muatan yang rusak DI KLIEN datang dengan
+  checksum yang cocok dengan kerusakannya.
+- **`BATAS_BYTE` terikat anggaran lewat test.** `BATAS_BASE64 × 500 > 20 MB`
+  MERAH. Sisa anggaran **2,5%**, dan maksimum yang masih muat ~40,9 KB base64
+  (~30,7 KB mentah) — kurang dari satu kilobyte di atas nilai sekarang.
+
 ### ⛔ Kontrol urutan input K-12 DICABUT, 1 September 2026
 
 Keputusan user, diambil setelah konsekuensinya dinyatakan.
@@ -1166,5 +1202,12 @@ Daftar lengkap: `research/12-OPEN-QUESTIONS.md`.
 - **Baca spec modul sebelum menulis kode modul itu.** Acceptance criteria di sana adalah kontrak.
 - **Jangan memperluas scope.** Kalau sesuatu terasa perlu tapi ada di daftar "jangan bangun", angkat sebagai pertanyaan, jangan bangun.
 - **Angka hasil pengukuran mengalahkan estimasi.** Kalau `prototypes/*/FINDINGS.md` bertentangan dengan dokumen lain, FINDINGS yang benar.
+- ⛔ **Saat dua representasi sama-sama benar, PILIH YANG DAPAT DIUJI DI CI** — bukan yang menuntut infrastruktur penuh untuk membuktikan dirinya.
+
+  Ini bukan catatan tentang gambar; ia yang paling kuat di antara alasan pencabutan `bytea` dan berlaku jauh di luarnya. Versi `bytea` hanya dapat dibuktikan dengan menjalankan PostgreSQL + PowerSync sungguhan — dan di repo ini itu berarti **tidak pernah dibuktikan sama sekali** (`Docker: daemon BISA menyala, tarik image DIBLOKIR`). Versi base64 dibuktikan `node --test` di atas SQLite yang sudah ada di setiap run: byte per byte, termasuk `0x00`, `0xFF`, dan urutan bukan-UTF-8.
+
+  Yang menentukan bukan seberapa aman jalurnya di atas kertas, melainkan **seberapa sering kebenarannya diperiksa ulang**. Jalur yang lebih aman tetapi hanya dapat diuji di lingkungan yang tidak ada berhenti diperiksa setelah hari ia ditulis, dan sejak itu ia dipercaya berdasarkan ingatan. Representasi yang sedikit lebih mahal tetapi diperiksa pada setiap commit menang atas keduanya.
+
+  Ia juga menjelaskan kenapa `KOLOM_BELUM_DIUKUR` boleh ada: kolom yang tipenya menyimpang dan tidak dapat diuji di sini **dinyatakan belum diukur**, bukan dianggap benar.
 - **Tandai asumsi.** Pakai `[ASUMSI]` seperti di dokumen riset, jangan selundupkan sebagai fakta.
 - **Lapisan sync ditulis dengan waktu, keacakan, dan I/O di-inject** sebagai dependensi — prasyarat DST, dan retrofitnya mahal. Harness referensi ada di `prototypes/02-dst-sinkronisasi/sim.py`.

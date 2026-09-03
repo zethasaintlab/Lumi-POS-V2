@@ -195,3 +195,58 @@ sama, dan keenam bentuk kerusakan yang disengaja **terdeteksi**.
 aman", melainkan **dapat diuji tanpa menjalankan seluruh stack**. Versi `bytea`
 menuntut PowerSync sungguhan; versi base64 menuntut SQLite, yang sudah ada di
 setiap test run.
+
+---
+
+## 7. Jalur unggah DIJALANKAN, 3 September 2026 — bukan hanya diuji
+
+Ditembak lewat browser sungguhan (Chromium, back-office di `localhost:1422`,
+server Fastify + PostgreSQL sungguhan). Bukan fake, bukan `app.inject`.
+
+| | |
+|---|---:|
+| Berkas sumber | PNG 1200×900, **1.434.180 byte** |
+| Hasil kanvas klien | WebP 400×400, **13.954 byte** |
+| Kualitas yang dipakai | **85%** — anak tangga PERTAMA |
+| Panjang base64 tersimpan | 18.608 |
+| Batas | 30.720 byte / 40.960 base64 |
+
+⛔ **Anak tangga pertama sudah muat, dan itu memberi tahu sesuatu:** tangga
+`KUALITAS_TURUN_PERSEN` ada untuk foto yang sulit dikompresi, dan foto yang
+sulit tidak dihasilkan gradien sintetis. Yang dibuktikan pengukuran ini adalah
+jalurnya bekerja end-to-end; ia **tidak** membuktikan tangganya pernah turun
+lebih dari satu langkah pada foto sungguhan. Itu diuji lewat encoder yang
+di-inject (`tests/backoffice/gambar-kompres.test.js`), bukan di sini.
+
+Tujuh item diberi gambar dan sisanya tidak — katalog campuran, keadaan yang
+paling sering nyata. `byte` dan `checksum` di ketujuh barisnya identik karena
+sumbernya berkas yang sama; itu justru yang membuktikan keduanya dihitung dari
+ISI, bukan dari waktu atau id barisnya.
+
+### ⛔ `aspect-ratio` kartu: 16:9, dan angkanya diukur
+
+Diukur di galeri (build statis, viewport 1280×800, katalog yang sama, menghitung
+kartu yang tepi bawahnya masih di dalam panel yang menggulir):
+
+| Rasio gambar di kartu | Kartu terlihat tanpa scroll | Tinggi kartu bergambar |
+|---|---:|---:|
+| tanpa gambar | 15 | 81px |
+| 1:1 | 8 ⛔ | 231px |
+| 4:3 | 8 ⛔ | 199px |
+| 3:2 | 8 ⛔ | 189px |
+| **16:9** | **12** ✓ | 176px |
+
+`IA:62` menuntut ≥12 kartu tanpa scroll. Tiga rasio pertama melanggarnya, dan
+selisih di antara ketiganya belasan piksel — tidak cukup memindahkan satu baris.
+
+⛔ **Cacat yang ditemukan pengukuran, bukan pembacaan:** atribut `height="400"`
+pada `<img>` adalah presentational hint yang menyetel `height: 400px`, dan
+`aspect-ratio` hanya berlaku bila salah satu dimensi `auto`. Tanpa `height:
+auto` di CSS, gambar dirender **125×400** di kartu selebar 151px — tinggi kartu
+486px, dan hanya **4** kartu muat. Nol error, nol peringatan konsol, dan
+CSS-nya terbaca benar.
+
+Penjaganya kini di `tools/tangkap-galeri.mjs`: setiap penangkapan K-03 keadaan
+`gambar` MENGHITUNG kartu yang terlihat dan gagal di bawah 12. Tangkapan layar
+membuktikan tampilannya; ia tidak membuktikan angkanya — dan kartu yang terlalu
+besar tetap terlihat rapi di foto.

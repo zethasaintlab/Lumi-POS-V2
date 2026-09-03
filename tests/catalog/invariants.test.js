@@ -137,14 +137,56 @@ test('property: setiap Item yang berhasil dibuat selalu punya >= 1 variation', a
 });
 
 // spec-a-katalog.md § A.8 / FR-A6: "Tidak ada DELETE pada tabel katalog di
-// seluruh kode modul". Satu pengecualian yang disetujui: item_modifier_list
-// (bridge N:M tanpa kolom archived_at -- lihat detachModifierList di
-// handlers/item-modifier-lists.ts dan task-5-report.md). Setiap tabel
-// katalog lain (item, item_variation, category, modifier_list, modifier)
-// hanya boleh archived_at, tidak pernah DELETE.
-test('tidak ada DELETE SQL pada tabel katalog di modules/catalog, kecuali item_modifier_list', async () => {
+// seluruh kode modul". item/item_variation/category/modifier_list/modifier
+// hanya boleh `archived_at`, tidak pernah DELETE.
+//
+// ⛔ ATURANNYA DITURUNKAN DARI DDL, bukan dari daftar nama yang ditulis tangan.
+//
+// Versi pertama guard ini memaku satu pengecualian: `item_modifier_list`
+// (bridge N:M tanpa `archived_at` — `detachModifierList`). Ia benar, dan ia
+// runtuh persis seperti yang dapat diduga: `item_image` lahir 3 September 2026
+// dengan `deleteItemImage` yang SAH — merchant menekan "Hapus gambar", dan
+// gambar tidak punya `archived_at` karena satu gambar per item membuat baris
+// terarsip menempati PK-nya selamanya.
+//
+// Jawaban yang salah adalah menambahkan nama kedua ke daftar. Daftar
+// pengecualian bertambah panjang sampai penjaganya tidak menjaga apa pun, dan
+// setiap penambahan adalah keputusan yang tidak diperiksa siapa pun.
+//
+// Yang benar: aturannya memang selalu **"tabel yang punya `archived_at` tidak
+// boleh di-DELETE"** — arsip adalah bentuk penghapusannya. Tabel yang tidak
+// punya kolom itu memang dihapus, dan DDL-lah yang tahu mana yang mana.
+// Bentuk penjaga yang sama dengan sync-rules ↔ DDL: dua sumber yang tidak ada
+// apa pun menyatukannya.
+test('tidak ada DELETE SQL pada tabel katalog ber-`archived_at` di modules/catalog', async () => {
   const files = await collectTsFiles(CATALOG_MODULE_DIR);
   assert.ok(files.length > 0, 'collectTsFiles tidak menemukan file .ts -- cek path CATALOG_MODULE_DIR');
+
+  // Tabel yang punya `archived_at`, dibaca dari migrasinya sendiri.
+  const migrasiDir = path.join(__dirname, '../../db/migrations');
+  const sql = (await readdir(migrasiDir))
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  const punyaArsip = new Set();
+  for (const f of sql) {
+    const src = await readFile(path.join(migrasiDir, f), 'utf8');
+    // CREATE TABLE x ( ... archived_at ... )
+    for (const m of src.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?\s*\(([\s\S]*?)\n\);/gi)) {
+      if (/\barchived_at\b/.test(m[2])) punyaArsip.add(m[1].toLowerCase());
+    }
+    // ALTER TABLE x ADD COLUMN archived_at ...
+    for (const m of src.matchAll(/ALTER\s+TABLE\s+"?(\w+)"?[\s\S]{0,200}?ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?archived_at/gi)) {
+      punyaArsip.add(m[1].toLowerCase());
+    }
+  }
+  // Penjaga wajib membuktikan ia MEMBACA sesuatu: himpunan kosong akan
+  // meloloskan setiap DELETE, dan hijaunya adalah bentuk kekosongan yang sama
+  // dengan yang `docs/verifikasi/KELAS-GAGAL.md` catat.
+  assert.ok(
+    punyaArsip.has('item') && punyaArsip.has('category') && punyaArsip.size >= 4,
+    `pembacaan DDL gagal — hanya menemukan ${punyaArsip.size} tabel ber-archived_at: ${[...punyaArsip]}`
+  );
+
   let deleteStatementsSeen = 0;
   for (const file of files) {
     const src = await readFile(file, 'utf8');
@@ -156,9 +198,10 @@ test('tidak ada DELETE SQL pada tabel katalog di modules/catalog, kecuali item_m
       deleteStatementsSeen += 1;
       const table = stmt.trim().split(/\s+/)[2].toLowerCase();
       assert.equal(
-        table,
-        'item_modifier_list',
-        `DELETE FROM ${table} di ${file} melanggar FR-A6 -- tabel katalog hanya diarsipkan, tidak dihapus`
+        punyaArsip.has(table),
+        false,
+        `DELETE FROM ${table} di ${file} melanggar FR-A6 -- tabel ini punya ` +
+          '`archived_at`, jadi penghapusannya adalah pengarsipan'
       );
     }
   }

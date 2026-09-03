@@ -6,6 +6,7 @@ import { Tombol } from '../Tombol.tsx';
 import { Bidang } from '../Bidang.tsx';
 import { buatMuatanItem, buatMuatanVariationBaru, buatMuatanVariationUbah, type FormItem, type FormVariation, type Item, type ItemVariation } from './produk.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { GambarProduk } from './GambarProduk.tsx';
 
 /**
  * B-07 — Edit Produk + Variation (`IA:§3.3`). Layar DETAIL, dicapai dari B-06.
@@ -344,6 +345,15 @@ export function EditProduk({ item, kategori, onKembali, onBerubah }: Props) {
           </div>
         </div>
       </Card>
+
+      {/* ⛔ Kartu TERSENDIRI, bukan bidang di dalam form produk.
+          Unggah gambar TIDAK ikut "Simpan produk": ia endpoint tersendiri yang
+          menulis tabelnya sendiri, dan menggabungkannya berarti merchant yang
+          hanya mengganti foto harus menekan tombol yang juga mengirim nama,
+          kategori, dan deskripsi. Lebih dari itu, kegagalan salah satunya akan
+          menggagalkan keduanya di layar sementara satu di antaranya sudah
+          tersimpan di server. */}
+      <GambarProduk itemId={item.id} namaItem={item.name} />
 
       {/* --- varian --------------------------------------------------------- */}
       <Card>

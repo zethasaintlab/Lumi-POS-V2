@@ -1,5 +1,5 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
-import { antreanUntuk, itemUntuk, orderUntuk, type NamaSkenario } from './skenario.ts';
+import { antreanUntuk, gambarUntuk, itemUntuk, orderUntuk, type NamaSkenario } from './skenario.ts';
 
 /**
  * `DbLokal` palsu untuk galeri — mendispatch per NAMA TABEL, bukan per query.
@@ -232,7 +232,15 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
     print_job: [],
     fitur_lokal: [],
     telemetry_local: [],
+    // Diisi di `getAll` — WebP-nya di-encode kanvas, dan itu async.
+    item_image: [],
   };
+
+  /* ⛔ Gambar dibuat SEKALI, dan promise-nya yang dibagikan — bukan hasilnya.
+     `bacaGambarKatalog` dapat dipanggil ulang saat layar remount, dan
+     meng-encode ulang 14 WebP setiap kali membuat galeri terasa lambat pada
+     skenario yang justru ada untuk dinilai matanya. */
+  let gambar: Promise<unknown[]> | null = null;
 
   const db: DbLokal = {
     async getAll<T>(sql: string): Promise<T[]> {
@@ -245,6 +253,10 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         throw new Error('database lokal tidak dapat dibaca (galeri: skenario error)');
       }
       const tabel = tabelDari(sql);
+      if (tabel === 'item_image') {
+        gambar ??= gambarUntuk(skenario, item);
+        return (await gambar) as T[];
+      }
       const baris = perTabel[tabel] ?? [];
 
       /* ⛔ Query AGREGAT tidak dapat dijawab dengan mengembalikan barisnya.

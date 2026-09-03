@@ -55,10 +55,39 @@ export const SISI_PIKSEL = 400;
  * di atas sampel foto-mirip tertinggi yang terukur (20,7 KB), jadi foto sah
  * tidak tertolak.
  *
- * Setiap 1 KB tambahan di sini adalah ~0,65 MB per perangkat pada 500 item —
- * lebih mahal daripada sebelumnya, karena yang melintas adalah base64-nya.
+ * ⛔ SISA ANGGARANNYA 2,5%, BUKAN 22%. Menaikkan angka ini menembus anggaran
+ * hampir seketika:
+ *
+ *     40.960 base64 × 500 = 19,53 MB   ← sekarang
+ *     41.943 base64 × 500 = 20,00 MB   ← batas mutlak
+ *
+ * Maksimum yang MASIH MUAT: **~40,9 KB base64 ≈ 30,7 KB mentah** — kurang dari
+ * satu kilobyte di atas nilai sekarang. Praktis: angka ini sudah di ujungnya.
+ *
+ * Setiap 1 KB tambahan di sini adalah ~0,65 MB per perangkat pada 500 item.
+ * Menaikkannya ke 32 KB (nilai lama, sebelum `bytea` dicabut) menghasilkan
+ * 20,8 MB — MELEWATI anggaran, dan itulah kenapa batasnya turun saat
+ * penyimpanannya berubah.
+ *
+ * Yang menegakkannya bukan komentar ini melainkan test; komentar ini ada
+ * supaya orang yang membacanya tahu berapa ruang yang tersisa sebelum ia
+ * mencoba.
  */
 export const BATAS_BYTE = 30 * 1024;
+
+/**
+ * Anggaran unduhan per perangkat yang user tetapkan, dan jumlah item yang
+ * dipakai menghitungnya.
+ *
+ * ⛔ Keduanya ada di kode, bukan hanya di dokumen, supaya `BATAS_BYTE` TIDAK
+ * DAPAT dinaikkan diam-diam. `tests/domain/gambar-produk.test.js` menghitung
+ * `BATAS_BASE64 × ITEM_ANGGARAN` dan MERAH bila melewati `ANGGARAN_MAKS_BYTE`.
+ *
+ * Orang berikutnya yang menaikkan batas karena "gambar terlihat pecah" akan
+ * menabrak test, bukan menemukannya di lapangan sebagai tagihan data merchant.
+ */
+export const ANGGARAN_MAKS_BYTE = 20 * 1024 * 1024;
+export const ITEM_ANGGARAN = 500;
 
 /**
  * Panjang string base64 untuk `BATAS_BYTE`.

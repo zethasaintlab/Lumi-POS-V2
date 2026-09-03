@@ -20,6 +20,7 @@ import {
   type UrutanKatalog,
   type VariationKatalog,
 } from '../katalog/baca.ts';
+import { bacaGambarKatalog, PESAN_GAMBAR_RUSAK, type GambarItem } from '../katalog/gambar.ts';
 import {
   qtyDiKeranjang,
   satuanKeranjang,
@@ -72,6 +73,10 @@ export function Kasir() {
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [shift, setShift] = useState<ShiftAktif | null>(null);
   const [katalog, setKatalog] = useState<ItemKatalog[]>([]);
+  /* ⛔ Peta TERPISAH dari `katalog`, bukan bidang di dalam `ItemKatalog`.
+     Teks base64 yang ikut ke dalam state katalog akan disalin ulang oleh
+     setiap `useMemo` penyaringan dan pengurutan di layar ini. */
+  const [gambar, setGambar] = useState<Map<string, GambarItem>>(() => new Map());
   const [siap, setSiap] = useState(false);
   const [gagalMuat, setGagalMuat] = useState<string | null>(null);
   /* FR-A1 — saringan kategori. `kueri` dan kategori berdiri SENDIRI-SENDIRI dan
@@ -163,6 +168,14 @@ export function Kasir() {
       const daftar = await bacaKatalog(db, { outletId: k?.outletId ?? null, pada: new Date() });
       if (!hidup) return;
       setKatalog(daftar);
+      /* ⛔ Gambar dibaca TERPISAH, dan kegagalannya tidak menjatuhkan katalog.
+         `item_image` adalah raw table baru: perangkat yang migrasi lokalnya
+         belum jalan menjawab `no such table`, dan layar kasir yang mati karena
+         gambar adalah harga yang tidak sepadan untuk fitur tampilan. Peta
+         kosong berarti seluruh kartu tampil sebagai kartu tanpa gambar —
+         keadaan yang memang NORMAL. */
+      setGambar(await bacaGambarKatalog(db).catch(() => new Map()));
+      if (!hidup) return;
       setKategori(await bacaKategori(db));
       if (!hidup) return;
       setFitur(await bacaFitur(db));
@@ -567,6 +580,12 @@ export function Kasir() {
             {terlihat.slice(0, tampil).map((item) => {
               const nama = item.categoryId === null ? '' : petaKategori.get(item.categoryId) ?? '';
               const hargaTerendah = Math.min(...item.variations.map((v) => v.harga));
+              /* ⛔ TIGA keadaan, dan yang PERTAMA adalah ketiadaan kunci.
+                 `undefined` = belum difoto = kartu NORMAL. Yang ada tetapi
+                 `rusak` = keadaan bernama. Menyamakan keduanya menghapus
+                 satu-satunya sinyal bahwa foto yang merchant unggah tidak
+                 sampai — dan ia akan mengunggahnya lagi, lalu lagi. */
+              const gbr = gambar.get(item.id);
               return (
                 <button
                   key={item.id}
@@ -592,9 +611,54 @@ export function Kasir() {
                      tanpa mengetik ulang di kolom cari. Di perangkat sentuh ia
                      tidak muncul, dan itu batas yang dinyatakan. */
                   title={item.nama}
+                  /* ⛔ Tiga nilai, bukan boolean. `tanpa` adalah keadaan NORMAL
+                     dan tidak boleh berbagi tampilan dengan `rusak`; CSS yang
+                     menurunkannya dari ada/tidaknya elemen gambar akan
+                     menyamakan keduanya pada hari elemen rusak dihapus. */
+                  data-gambar={gbr ? gbr.keadaan : 'tanpa'}
                   style={gayaKategori(nama, namaKategori) as React.CSSProperties}
                   onClick={() => void ketuk(item)}
                 >
+                  {/* ⛔ Kartu TANPA gambar tidak merender apa pun di sini —
+                      bukan kotak abu-abu, bukan ikon, bukan penanda memuat.
+                      Keputusan user 2 September 2026: kartu tanpa gambar BUKAN
+                      keadaan menunggu. 19,5 MB di jaringan warung butuh waktu,
+                      dan layar kasir harus dapat dipakai penuh selama itu.
+                      Placeholder abu-abu mengubah katalog merchant baru — yang
+                      seluruhnya belum difoto — menjadi grid yang terlihat
+                      rusak. */}
+                  {gbr?.keadaan === 'utuh' && gbr.src !== null && (
+                    <img
+                      className="kasir-kartu-gambar"
+                      src={gbr.src}
+                      /* ⛔ `alt=""` DISENGAJA. Gambarnya dekoratif: nama dan
+                          harga produk sudah ada sebagai teks tepat di
+                          bawahnya, dan alt berisi nama yang sama membuat
+                          pembaca layar menyebut produk dua kali per kartu. */
+                      alt=""
+                      width={400}
+                      height={400}
+                      /* Dari `data:` URL — tidak ada permintaan jaringan, jadi
+                         `loading="lazy"` tidak membeli apa pun. Yang mahal di
+                         sini decode, dan `async` melepasnya dari thread yang
+                         menangani ketukan kasir. */
+                      decoding="async"
+                    />
+                  )}
+                  {/* ⛔ Keadaan KEDUA: baris gambar ADA dan tidak lolos
+                      verifikasi (`byte`/`checksum` tidak cocok, atau teksnya
+                      bukan base64 sah). Ia wajib terlihat BERBEDA dari kartu
+                      tanpa gambar — itu seluruh alasan kedua kolom itu ada.
+                      Merchant yang fotonya rusak di transport harus dapat tahu
+                      bahwa unggahannya sampai; tanpa keadaan ini ia mengunggah
+                      ulang selamanya, dan tidak ada satu pun error di mana
+                      pun. Kartunya TETAP dapat diketuk dan dijual. */}
+                  {gbr?.keadaan === 'rusak' && (
+                    <span className="kasir-kartu-gambar-rusak t-caption">
+                      <Icon name="alert" />
+                      {PESAN_GAMBAR_RUSAK}
+                    </span>
+                  )}
                   {/* Nama dipotong DUA baris. Sebelumnya tanpa batas, dan nama
                       60 karakter (biasa di kafe) menjadi lima baris yang
                       menarik tinggi SELURUH barisnya — tiga kartu di

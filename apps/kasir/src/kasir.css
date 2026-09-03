@@ -353,6 +353,110 @@
 
 .kasir-kartu-varian { color: var(--ink-muted); }
 
+/* --- Gambar produk (DS #8 dicabut lebih jauh, 1 September 2026) ----------- */
+
+/* ⛔ TIGA keadaan kartu, dan `data-gambar` menyatakan ketiganya:
+ *
+ *   utuh   → gambarnya
+ *   rusak  → keadaan bernama, terlihat BERBEDA dari `tanpa`
+ *   tanpa  → kartu NORMAL, tanpa satu pun penanda
+ *
+ * ⛔ `tanpa` tidak punya aturan tampilan sama sekali di bawah, dan itu
+ * DISENGAJA: keputusan user 2 September 2026 menyatakan kartu tanpa gambar
+ * BUKAN keadaan menunggu. Placeholder abu-abu akan mengubah katalog merchant
+ * baru — yang seluruhnya belum difoto — menjadi grid yang terlihat rusak, dan
+ * itu keadaan yang paling sering terjadi di hari pertama.
+ *
+ * Yang `tanpa` dapat: memusatkan isinya. Grid `auto-fill` menyamakan tinggi
+ * baris, jadi kartu tanpa gambar yang bersebelahan dengan kartu bergambar
+ * MENDAPAT tinggi yang sama. Isi yang menempel ke atas meninggalkan ruang
+ * kosong berbentuk gambar di bawahnya — persis placeholder yang tidak ingin
+ * kita punya, hanya tanpa warnanya. Dipusatkan, ia terbaca sebagai kartu teks.
+ */
+.kasir-kartu[data-gambar='tanpa'] { justify-content: center; }
+
+.kasir-kartu-gambar {
+  width: 100%;
+  /* ⛔ `height: auto` WAJIB, dan ketiadaannya membuat `aspect-ratio` di bawah
+   * TIDAK BERLAKU SAMA SEKALI.
+   *
+   * Atribut `height="400"` pada `<img>` adalah presentational hint — ia
+   * menyetel `height: 400px`, dan `aspect-ratio` hanya berlaku bila salah satu
+   * dimensi `auto`. Terukur di browser: kartu 151px lebar dengan gambar
+   * 125×400, tinggi kartu 486px alih-alih ~200px. Empat kartu muat di layar
+   * alih-alih 15, dan `IA:62` menuntut ≥12 tanpa scroll.
+   *
+   * Nol error, nol peringatan konsol, dan CSS-nya terbaca benar. Yang
+   * menemukannya pengukuran DOM, bukan membaca berkasnya.
+   *
+   * Atributnya tetap ada: ia yang memesan ruang sebelum gambar di-decode. */
+  height: auto;
+  /* ⛔ 16:9 DI KARTU, meski yang tersimpan 1:1 — dan angkanya DIUKUR, bukan
+   * dipilih karena terlihat enak.
+   *
+   * `IA:62` menuntut ≥12 kartu tanpa scroll. Diukur di galeri (build statis,
+   * viewport 1280×800, katalog yang sama persis, menghitung kartu yang tepi
+   * bawahnya masih di dalam panel yang menggulir):
+   *
+   *     tanpa gambar  → 15 kartu   (tinggi kartu  81px)
+   *     gambar 1:1    →  8 kartu   (kartu bergambar 231px)  ⛔ MELANGGAR IA:62
+   *     gambar 4:3    →  8 kartu   (kartu bergambar 199px)  ⛔ MELANGGAR IA:62
+   *     gambar 3:2    →  8 kartu   (kartu bergambar 189px)  ⛔ MELANGGAR IA:62
+   *     gambar 16:9   → 12 kartu   (kartu bergambar 176px)  ✓
+   *
+   * ⛔ 4:3 DAN 3:2 SUDAH DICOBA dan keduanya gagal — selisihnya belasan piksel,
+   * dan belasan piksel tidak memindahkan satu baris pun. Baris ini ada supaya
+   * orang berikutnya yang merasa 16:9 terlalu sempit tahu bahwa anak tangga di
+   * atasnya sudah diukur dan gugur, bukan dilewati.
+   *
+   * Yang hilang saat kartu membesar bukan kenyamanan: menu yang menuntut
+   * scroll pada setiap pesanan adalah beban yang dibayar ribuan kali sehari.
+   *
+   * Yang DISIMPAN tetap 1:1 (`SISI_PIKSEL`), dan `object-fit: cover` memotong
+   * atas-bawah dari tengahnya — merchant sudah memotong tengah saat mengunggah,
+   * jadi subjeknya ada di sana. Menyimpan 16:9 akan mengunci gambar merchant
+   * pada keputusan tata letak hari ini, dan gambar tidak dapat ditulis ulang.
+   *
+   * Menyatakan rasionya di CSS juga menahan tata letak sebelum gambar
+   * di-decode, jadi grid tidak melompat saat gambar mendarat. */
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-control);
+  /* Permukaan di belakang gambar transparan: WebP boleh punya alpha, dan yang
+     tembus di atas kartu putih tetap terbaca. */
+  background: var(--surface-sunk);
+  margin-bottom: var(--space-1);
+  display: block;
+}
+
+/* ⛔ Keadaan "gagal dimuat" — dan ia BUKAN kotak abu-abu.
+ *
+ * Kotak abu-abu adalah persis yang `tanpa` tidak boleh punya, jadi memakainya
+ * di sini membuat kedua keadaan terlihat sama pada layar yang silau. Yang
+ * membedakannya KATA, sesuai aturan DS #5: status tidak pernah warna saja.
+ *
+ * Tingginya sengaja TIDAK 1:1. Ruang gambar yang kosong menuntut kasir menebak
+ * apa yang seharusnya ada di sana; baris setinggi teks menyatakan "gambar
+ * hilang" tanpa mengambil tempat menu.
+ */
+.kasir-kartu-gambar-rusak {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ink-muted);
+  background: var(--surface-sunk);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.kasir-kartu-gambar-rusak svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
 /* Penanda habis. `position: absolute` supaya ia tidak mengubah tinggi kartu —
  * grid `auto-fill` menyamakan tinggi baris, jadi satu badge di satu kartu akan
  * menaikkan tiga kartu di sebelahnya yang tidak punya apa-apa untuk mengisinya. */

@@ -31,3 +31,40 @@ body,
 body {
   margin: 0;
 }
+
+/* --- B-07 gambar produk (DS #8 dicabut lebih jauh, 1 September 2026) ------ */
+
+/* ⛔ Kotak pratinjau berukuran TETAP, dan itu bukan hiasan: tanpa ukuran yang
+ * dipesan, tata letak melompat setiap kali gambar selesai dimuat atau merchant
+ * mengganti fotonya. Layar ini dipakai berulang kali saat merchant memfoto
+ * seluruh katalognya — lompatan yang terjadi 500 kali adalah lompatan yang
+ * membuat orang salah tekan.
+ *
+ * ⛔ Kotak kosong SAH di sini, dan tidak sah di layar kasir. Bedanya bukan
+ * selera: di sini merchant sedang MEMUTUSKAN apakah akan memfoto, jadi ruang
+ * untuk foto adalah informasi. Di kasir, kotak yang sama berarti "sesuatu
+ * seharusnya ada di sini dan tidak ada" — dan untuk katalog yang belum difoto
+ * itu adalah kebohongan yang membuat grid sehat terlihat rusak.
+ */
+.bo-gambar-kotak {
+  flex: none;
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-2);
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.bo-gambar-pratinjau {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-control);
+  display: block;
+}

@@ -39,6 +39,23 @@ test('⛔ batas byte domain SAMA dengan CHECK di migrasi 0036', async () => {
   );
 });
 
+test('⛔ kontrak OpenAPI TIDAK menyalin batasnya sebagai `maxLength`', () => {
+  // Salinan KETIGA yang tidak dijaga apa pun — dan lebih buruk: AJV menolak
+  // sebelum handler, jadi `TERLALU_BESAR` beserta saran yang dapat dikerjakan
+  // merchant tidak pernah tercapai; yang sampai `VALIDATION_ERROR` yang hampa.
+  // Ia sempat ada, dan test endpoint yang menemukannya.
+  const yaml = fs.readFileSync(path.join(AKAR, 'packages/contracts/openapi.yaml'), 'utf8');
+  const mulai = yaml.indexOf('operationId: putItemImage');
+  assert.ok(mulai > 0, 'operasi putItemImage tidak ditemukan — penjaga tidak memindai apa pun');
+  const blok = yaml.slice(mulai, yaml.indexOf('operationId: getItemImage'));
+  assert.ok(blok.length > 200, 'blok operasi terpotong');
+  assert.ok(
+    !/^\s*maxLength:/m.test(blok),
+    'kontrak menyalin batas gambar sebagai `maxLength` — hapus; batasnya milik ' +
+      '`packages/domain/src/gambar-produk.ts` dan CHECK migrasi 0036 saja.'
+  );
+});
+
 test('⛔ mime yang database terima SAMA dengan yang domain simpan', async () => {
   const { MIME_SIMPAN } = await modul();
   const sql = fs.readFileSync(path.join(AKAR, 'db/migrations/0036_item_image.sql'), 'utf8');
@@ -152,5 +169,45 @@ test('tangga kualitas menurun dan berhenti sebelum artefak blok', async () => {
     'di bawah 0,5 WebP menghasilkan artefak blok yang terlihat sebagai KOTOR ' +
       'pada foto makanan — dan gambar yang membuat produk terlihat buruk lebih ' +
       'merugikan daripada kartu tanpa gambar'
+  );
+});
+
+test('⛔ BATAS_BASE64 × 500 item TIDAK melewati anggaran 20 MB', async () => {
+  const { BATAS_BASE64, ANGGARAN_MAKS_BYTE, ITEM_ANGGARAN, anggaranByte } = await modul();
+
+  const dipakai = BATAS_BASE64 * ITEM_ANGGARAN;
+  const mb = (n) => (n / (1024 * 1024)).toFixed(2);
+
+  assert.ok(
+    dipakai <= ANGGARAN_MAKS_BYTE,
+    `Anggaran TEMBUS: ${mb(dipakai)} MB > ${mb(ANGGARAN_MAKS_BYTE)} MB.\n` +
+      'Menaikkan `BATAS_BYTE` menaikkan tagihan data SETIAP perangkat di armada, ' +
+      'dan tidak ada satu pun error yang muncul saat itu terjadi — yang muncul ' +
+      'adalah tagihan merchant.\n' +
+      `Maksimum yang masih muat: ${Math.floor(ANGGARAN_MAKS_BYTE / ITEM_ANGGARAN)} byte base64 ` +
+      `(~${Math.floor((ANGGARAN_MAKS_BYTE / ITEM_ANGGARAN / 4) * 3 / 1024)} KB mentah).`
+  );
+
+  // ⛔ Dan sisanya DIUKUR, bukan diasumsikan longgar. Sisa 2,5% berarti
+  // kenaikan sekecil 1 KB pun menembus — angka itu harus terlihat di sini,
+  // bukan hanya di komentar yang orang lewati.
+  const sisa = (ANGGARAN_MAKS_BYTE - dipakai) / ANGGARAN_MAKS_BYTE;
+  assert.ok(sisa < 0.05, `sisa anggaran ${(sisa * 100).toFixed(1)}% — apakah batasnya turun?`);
+  assert.ok(sisa >= 0, 'sisa anggaran negatif');
+
+  // Dan `anggaranByte` sepakat dengan aritmetika di atas — dua tempat yang
+  // menghitung hal yang sama akan menyimpang.
+  assert.equal(anggaranByte(ITEM_ANGGARAN), dipakai);
+});
+
+test('⛔ nilai LAMA (32 KB, sebelum bytea dicabut) memang menembus anggaran', async () => {
+  const { ANGGARAN_MAKS_BYTE, ITEM_ANGGARAN } = await modul();
+  // Bukan test dekoratif: ia membuktikan penjaga di atas BEKERJA, dan
+  // menjelaskan kenapa batasnya turun 32 → 30 KB saat penyimpanannya berubah.
+  // Tanpa ini, penurunan itu terlihat seperti kehati-hatian sewenang-wenang.
+  const lama = 4 * Math.ceil((32 * 1024) / 3);
+  assert.ok(
+    lama * ITEM_ANGGARAN > ANGGARAN_MAKS_BYTE,
+    'penjaga anggaran tidak akan menolak nilai lama — ia tidak menjaga apa pun'
   );
 });
