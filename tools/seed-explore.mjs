@@ -184,14 +184,31 @@ async function main() {
   // Email BERSIH secara default: `owner@lumipos.test`, `cashier@lumipos.test`,
   // dan seterusnya — itu yang dapat diketik dari ingatan.
   //
-  // Konsekuensinya run kedua menabrak `EMAIL_TAKEN`, karena email unik lintas
-  // tenant. `--unik` menyisipkan akhiran acak untuk run berdampingan; ia ada
-  // supaya jalan keluarnya jelas saat tabrakan itu terjadi, bukan supaya
-  // dipakai setiap hari.
+  // ⛔ CATATAN LAMA DI SINI SALAH, dan salahnya memakan satu sesi penuh.
+  //
+  // Ia berbunyi: *"run kedua menabrak `EMAIL_TAKEN`, karena email unik lintas
+  // tenant"*. Keduanya tidak benar, dan tidak pernah benar:
+  //
+  //  - Tidak ada `EMAIL_TAKEN` di seluruh `apps/server/src`.
+  //  - Tidak ada index unik pada `"user".email`, dan **tidak dapat ada** tanpa
+  //    melanggar isolasi tenant (migrasi `0023`). Satu orang yang bekerja di
+  //    dua merchant adalah keadaan sah.
+  //
+  // Yang benar-benar terjadi pada run kedua: tenant kedua BERHASIL dibuat
+  // dengan email owner yang sama, dan sejak itu `resolve_login_tenant`
+  // mengembalikan `NULL` — sesuai rancangan, karena menebak salah satunya
+  // berarti memasukkan orang ke tenant yang SALAH dengan password yang BENAR.
+  //
+  // `--unik` tetap ada untuk run berdampingan yang benar-benar terpisah.
   const cap = Math.floor(Math.random() * 9000 + 1000);
   const suffix = process.argv.includes('--unik') ? `+${cap}` : '';
   const email = (peran) => `${peran}${suffix}@lumipos.test`;
 
+  // ⛔ DI-HOIST, dan itu bukan kerapian: tanpa variabel ini langkah 2 tidak
+  // punya apa pun untuk dikirim sebagai `x-tenant-id`, dan satu-satunya jalan
+  // yang tersisa baginya adalah meminta server MENEBAK tenant dari email —
+  // tebakan yang gagal tepat pada run kedua.
+  const tenantId = id();
   const outletUtamaId = id();
   const outletKeduaId = id();
   const ownerId = id();
@@ -201,7 +218,7 @@ async function main() {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      tenant: { id: id(), name: 'The Cafe by ORIGEN' },
+      tenant: { id: tenantId, name: 'The Cafe by ORIGEN' },
       outlet: { id: outletUtamaId, name: 'ORIGEN Menteng', timezone: 'Asia/Jakarta' },
       owner: {
         id: ownerId,
@@ -217,9 +234,24 @@ async function main() {
   console.log('tenant + outlet + owner : 201');
 
   // --- 2. login owner --------------------------------------------------------
+  //
+  // ⛔ `x-tenant-id` DIKIRIM, dan ketiadaannya adalah sebab seluruh kegagalan
+  // run kedua. Skrip ini BARU SAJA membuat tenantnya dan memegang idnya di
+  // `tenantId`; meminta server meresolusinya kembali dari email adalah tebakan
+  // yang tidak perlu ia lakukan — dan tebakan itu mengembalikan `NULL` begitu
+  // email yang sama ada di dua tenant, keadaan yang run kedua ciptakan sendiri.
+  //
+  // Gejalanya `401 INVALID_CREDENTIALS` berpesan "Email atau password salah."
+  // Pesan itu SATU untuk setiap sebab kegagalan (`spec-f:148`), jadi ia
+  // terbaca sebagai password yang salah — dan memang pernah dicatat begitu,
+  // sebagai cacat kedua yang sebenarnya tidak ada.
+  //
+  // Header ini DIHORMATI bila dikirim (`handlers/auth.ts`), jadi jalur
+  // resolusi tidak berubah untuk siapa pun; yang berubah hanya skrip ini
+  // berhenti bertanya tentang hal yang sudah diketahuinya.
   r = await fetch(`${API}/auth/login`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-tenant-id': tenantId },
     body: JSON.stringify({ email: email('owner'), password: PASSWORD_BOOTSTRAP }),
   });
   const sesi = await j(r);
