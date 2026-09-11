@@ -251,3 +251,90 @@ dikembalikan, penjaga melaporkan 8.
 
 **Aturan yang lahir darinya:** *aturan tata letak yang punya ANGKA di dokumen
 produk diuji dengan mengukur angka itu, bukan dengan memotretnya.*
+
+---
+
+## ⛔ Kelas KEDUA — "kegagalan yang menyamar jadi kegagalan LAIN"
+
+Ditemukan 11 September 2026. Ia bukan varian dari "nol baris, bukan error":
+di sana yang menyamar adalah **kekosongan**; di sini yang menyamar adalah
+**sebabnya**. Dan yang membuatnya menyamar bukan cacat — melainkan **kontrol
+keamanan yang bekerja persis seperti seharusnya.**
+
+### Kejadiannya
+
+`npm run seed:explore` mati di run kedua:
+
+```
+tenant + outlet + owner : 201
+Error: login gagal: 401 {"code":"INVALID_CREDENTIALS",
+                         "message":"Email atau password salah."}
+```
+
+Rantainya, dan **tidak satu pun mata rantainya adalah bug**:
+
+1. Seed memakai email tetap, jadi run kedua membuat tenant KEDUA dengan email
+   owner yang sama. Sah — tidak ada UNIQUE global pada `"user".email`, dan
+   tidak dapat ada tanpa melanggar isolasi (migrasi `0023`).
+2. `resolve_login_tenant` karena itu mengembalikan `NULL`. **Sesuai
+   rancangan:** menebak salah satunya berarti memasukkan orang ke tenant yang
+   SALAH dengan password yang BENAR, tanpa satu pun error.
+3. Login menjawab `401` dengan pesan yang **SATU untuk setiap sebab
+   kegagalan** — `spec-f:148`, supaya login tidak menjadi oracle enumerasi.
+
+Yang salah hanya bahwa seed **meminta database menebak tenant yang ia sendiri
+baru saja buat dan sedang ia pegang**.
+
+### Yang membuatnya mahal
+
+Pesan seragam itu bekerja terlalu baik. "Email atau password salah." dibaca
+sebagai *password* yang salah, lalu dicatat sebagai **cacat KEDUA yang tidak
+pernah ada**: *"password seed `password123` tidak terverifikasi meski
+`password_hash` sudah terisi."*
+
+Sejak itu dua jam dihabiskan pada modul hashing yang sehat — dan `password_hash`
+owner ditulis ulang dengan tangan, yang **menghapus buktinya**. Satu sebab,
+dua gejala, salah satunya dikejar ke arah yang salah.
+
+| Yang biasanya menandai sebab | Yang terjadi |
+|---|---|
+| kode galat | `INVALID_CREDENTIALS` — sama untuk ketiga sebab |
+| pesan | satu kalimat, disengaja (`spec-f:148`) |
+| status | `401` untuk ketiganya |
+| log server | tidak menyebut sebab mana yang menyala |
+
+⛔ **Diagnosis dengan mengubah SATU variabel adalah satu-satunya yang bekerja
+di sini.** Yang akhirnya menjawabnya: login dengan `x-tenant-id` eksplisit →
+`200`. Satu header, dan kedua dugaan terpisah seketika.
+
+### Penjaganya
+
+1. `tests/runtime/alat-login-tenant.test.js` — setiap `/auth/login` di
+   `tools/` wajib menyertakan `x-tenant-id`. **Aturan diturunkan, bukan daftar
+   nama:** alat berikutnya yang lahir diperiksa tanpa siapa pun mengingat
+   penjaga ini ada.
+2. `tests/identity/hash-langsung-login.test.js` — hash yang ditulis langsung
+   ke kolom wajib dapat dipakai masuk. Dugaan "hash seed rusak" tidak lagi
+   dapat dijawab dengan menatap kode.
+3. `seed:explore` **menyebut** keadaan ambigu di ringkasannya, menamai id
+   tenant yang harus diketik. Pemeriksanya memanggil `resolve_login_tenant`
+   itu sendiri — satu oracle, dua pemanggil, jadi ia tidak dapat berkata
+   "aman" untuk email yang layar masuknya tolak.
+
+### Aturan yang lahir darinya
+
+> ⛔ **Pesan galat yang SENGAJA seragam memindahkan ongkos diagnosisnya ke
+> test.** Setiap sebab yang mendarat di satu pesan yang sama wajib punya test
+> yang membedakannya — kalau tidak, yang membedakannya adalah tebakan orang
+> yang sedang lelah.
+
+> ⛔ **Jangan minta sistem menebak apa yang kamu sudah pegang.** Nilai yang
+> diresolusi ulang dari heuristik adalah nilai yang dapat menjawab berbeda
+> besok. Seed memegang id tenantnya; ia tidak perlu bertanya.
+
+### ⛔ Dan satu catatan yang tidak pernah benar
+
+Komentar di `seed-explore.mjs` menyatakan run kedua menabrak `EMAIL_TAKEN`.
+Tidak ada `EMAIL_TAKEN` di seluruh `apps/server/src`, dan tidak ada index unik
+pada `"user".email`. Ia bukan catatan yang membusuk — ia **salah sejak
+ditulis**, dan ia mengarahkan pembacanya menjauh dari sebab yang sebenarnya.

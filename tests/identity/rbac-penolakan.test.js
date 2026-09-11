@@ -139,6 +139,23 @@ function kasus() {
     ['POST', `/items/${itemId}/variations/${varId}/archive`, {}],
     ['POST', `/items/${itemId}/variations/${varId}/restore`, {}],
 
+    // ⛔ Gambar produk (migrasi `0036`). Keduanya lahir 3 September 2026 dengan
+    // aturan peran di `PETA_PERAN` dan TANPA kasus penolakan di sini — penjaga
+    // cakupan di bawah menangkapnya, dan komit itu ter-push MERAH karena sesi
+    // yang menulisnya tidak pernah menjalankan `tests/identity/`.
+    //
+    // Penjaga cakupan menjamin rutenya PUNYA aturan; yang membuktikan
+    // aturannya BEKERJA adalah dua baris ini. Tanpa keduanya, kasir dapat
+    // mengganti foto produk seluruh merchant — dan foto itu turun ke SETIAP
+    // perangkat di armadanya.
+    //
+    // Muatannya sengaja SAH (base64 sah, dimensi benar): yang diuji adalah
+    // penolakan PERAN, dan muatan cacat akan dijawab 400 oleh validator
+    // sebelum RBAC sempat menolaknya — 400 yang terbaca seperti 403 yang
+    // berhasil.
+    ['PUT', `/items/${itemId}/image`, { data: 'QUFBQQ==', width: 400, height: 400 }],
+    ['DELETE', `/items/${itemId}/image`, undefined],
+
     ['POST', '/modifier-lists', { id: crypto.randomUUID(), name: 'Topping', selectionType: 'single' }],
     ['PATCH', `/modifier-lists/${mlId}`, { name: 'Topping Kasir' }],
     ['POST', `/modifier-lists/${mlId}/archive`, {}],
