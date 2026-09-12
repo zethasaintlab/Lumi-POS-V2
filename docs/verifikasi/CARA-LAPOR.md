@@ -127,9 +127,9 @@ memperbaiki hal yang tidak kamu keluhkan.
 
 ---
 
-## 5. Daftar periksa cepat — 10 menit, 8 tautan
+## 5. Daftar periksa cepat — 10 menit, 9 tautan
 
-Kalau tidak sempat menyapu semuanya, buka delapan ini. Dipilih karena
+Kalau tidak sempat menyapu semuanya, buka sembilan ini. Dipilih karena
 masing-masing menjawab satu pertanyaan berbeda.
 
 | # | Tautan | Pertanyaan |
@@ -142,6 +142,7 @@ masing-masing menjawab satu pertanyaan berbeda.
 | 6 | `?layar=K-08&keadaan=offline` | Indikator antrean beda dari "Tersinkron"? |
 | 7 | `?layar=K-12&keadaan=normal` | Layar uang. Angkanya kebaca? |
 | 8 | `?layar=K-15&keadaan=normal` | Form panjang. Melelahkan? |
+| 9 | `?layar=K-03&keadaan=gambar` | Bergambar, belum difoto, gagal muat — ketiganya bisa dibedakan? |
 
 Sambil di K-03: **ketuk satu produk** (masuk keranjang), **ketuk produk
 ber-varian** (dialog terbuka), lalu **tekan Escape** (harus menutup).
