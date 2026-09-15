@@ -25,7 +25,8 @@ export type NamaSkenario =
   | 'panjang'
   | 'meluap'
   | 'angka-besar'
-  | 'gambar';
+  | 'gambar'
+  | 'keranjang-penuh';
 
 export interface Skenario {
   nama: NamaSkenario;
@@ -100,7 +101,44 @@ export const SKENARIO: readonly Skenario[] = [
       'BERBEDA darinya? Dua keadaan itu yang terlihat sama adalah kekosongan ' +
       'menyamar yang membuat `bytea` dicabut.',
   },
+  {
+    nama: 'keranjang-penuh',
+    judul: 'Keranjang penuh (20 baris)',
+    tanya:
+      'Dua puluh baris di keranjang. Apakah Subtotal dan tombol Bayar berada di ' +
+      'posisi yang SAMA seperti saat keranjang berisi tiga baris — atau kasir ' +
+      'harus menggulir untuk menagih, di depan pelanggan, pada setiap pesanan ' +
+      'besar? Tiga baris tidak pernah dapat menjawab ini.',
+  },
 ];
+
+/**
+ * Baris keranjang untuk skenario `keranjang-penuh`.
+ *
+ * ⛔ DUA PULUH, bukan tiga. Panel keranjang yang isinya sedikit terlihat benar
+ * apa pun aturan flex-nya — daftar yang lebih pendek dari panelnya tidak pernah
+ * mendorong apa pun. Yang membuktikan blok bawah benar-benar menempel hanya
+ * daftar yang LEBIH PANJANG dari ruang yang tersedia.
+ *
+ * ⛔ Uang ditulis sebagai `number` di sini karena `BarisKeranjang.unitPrice`
+ * memang `number` (rupiah utuh, bukan pecahan). Nilai `bigint` di keranjang
+ * hanya ada pada diskon, dan skenario ini sengaja tanpa diskon: yang diukur
+ * posisi blok bawah, dan baris diskon menambah tinggi yang bukan bagian
+ * pertanyaannya.
+ */
+export function keranjangDuaPuluh(): string {
+  const baris = Array.from({ length: 20 }, (_, i) => ({
+    id: `baris-${i}`,
+    variationId: `var-${i}`,
+    itemName: `Item Keranjang ${i + 1}`,
+    variationName: i % 3 === 0 ? 'Large' : 'Regular',
+    variationCount: i % 3 === 0 ? 2 : 1,
+    unitPrice: 18000 + i * 500,
+    quantityMilli: 1000,
+    modifier: [],
+  }));
+  return JSON.stringify({ baris, diskon: null });
+}
 
 /** Nama menu 60 karakter — bukan karangan, ia bentuk nama yang kafe benar-benar pakai. */
 export const NAMA_PANJANG = 'Kopi Susu Gula Aren Kelapa Pandan Spesial Racikan Barista Kami';

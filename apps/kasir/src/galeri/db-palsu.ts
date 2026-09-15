@@ -1,5 +1,12 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
-import { antreanUntuk, gambarUntuk, itemUntuk, orderUntuk, type NamaSkenario } from './skenario.ts';
+import {
+  antreanUntuk,
+  gambarUntuk,
+  itemUntuk,
+  keranjangDuaPuluh,
+  orderUntuk,
+  type NamaSkenario,
+} from './skenario.ts';
 
 /**
  * `DbLokal` palsu untuk galeri — mendispatch per NAMA TABEL, bukan per query.
@@ -228,7 +235,13 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         created_at: new Date().toISOString(),
       })),
     ],
-    keranjang_lokal: [],
+    // ⛔ Keranjang berisi HANYA untuk skenario yang menanyakannya. Setiap
+    // skenario lain menilai grid dan keadaan kosong; keranjang penuh yang
+    // selalu ada akan menutupi keadaan kosong yang aturan DS #7 tuntut.
+    keranjang_lokal:
+      skenario === 'keranjang-penuh'
+        ? [{ id: 'kini', shift_id: 'shift-galeri', isi: keranjangDuaPuluh(), diperbarui_pada: '2026-09-01T02:00:00.000Z' }]
+        : [],
     print_job: [],
     fitur_lokal: [],
     telemetry_local: [],
