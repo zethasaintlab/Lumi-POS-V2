@@ -488,13 +488,78 @@ export function ekspresiNilai(tabel: string, kolom: string): string {
  * tanpa API asinkron.
  */
 export function sidikJariRawTable(kolom: Record<string, string[]>): string {
-  const kanonik = TABEL_RAW.map((t) => `${t}(${(kolom[t] ?? []).join(',')})`).join(';');
+  return fnv1a(TABEL_RAW.map((t) => `${t}(${(kolom[t] ?? []).join(',')})`).join(';'));
+}
+
+function fnv1a(kanonik: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < kanonik.length; i += 1) {
     h ^= kanonik.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
   return `fnv1a-${h.toString(16).padStart(8, '0')}-${kanonik.length}`;
+}
+
+/**
+ * Kolom raw table yang ditulis `NOT NULL`, berurutan, per tabel.
+ *
+ * ⛔ Ini BUKAN detail kerapian, dan ketiadaannya adalah cacat yang sudah
+ * terjadi. `item_image.id` ditulis `TEXT PRIMARY KEY` tanpa `NOT NULL`, dan
+ * SQLite MENERIMA NULL di kolom PRIMARY KEY pada tabel rowid — bug lama yang
+ * dipertahankan demi kompatibilitas. PostgreSQL menolaknya, jadi selisihnya
+ * baru terlihat saat sync, jauh dari sebabnya.
+ *
+ * ⛔ Kenapa ia harus masuk sidik jari, dan bukan sekadar diperbaiki di DDL:
+ * SQLite TIDAK DAPAT menambahkan `NOT NULL` ke kolom yang sudah ada. Perangkat
+ * yang sudah membangun tabelnya tetap memegang bentuk lama selamanya, dan
+ * sidik jari berbasis NAMA kolom saja tidak melihat perbedaannya — `NOT NULL`
+ * tidak mengubah satu nama pun. Jadi perbaikan DDL tanpa ini hanya berlaku
+ * untuk pemasangan BARU, dan armada yang sudah terpasang tidak pernah tahu.
+ *
+ * Yang dicatat hanya kolom yang MEMBATASI (`NOT NULL`). Menyalin seluruh teks
+ * DDL akan membuat setiap penyuntingan komentar membangun ulang seluruh
+ * armada; yang dicari perubahan BENTUK, bukan perubahan berkas.
+ */
+export function batasanNotNull(sqlText: string): Record<string, string[]> {
+  const hasil: Record<string, string[]> = {};
+  for (const p of pecahPernyataan(sqlText)) {
+    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s*\(/i.exec(p);
+    if (!m) continue;
+
+    const buka = p.indexOf('(');
+    const tutup = p.lastIndexOf(')');
+    const wajib: string[] = [];
+    for (const bagian of bagiKolom(p.slice(buka + 1, tutup))) {
+      const t = bagian.trim();
+      if (t.length === 0 || AWALAN_BATASAN.test(t)) continue;
+      if (!/\bNOT\s+NULL\b/i.test(t)) continue;
+      const nama = /^"?([a-z_]+)"?/i.exec(t);
+      if (nama) wajib.push(nama[1]);
+    }
+    hasil[m[1]] = wajib;
+  }
+  return hasil;
+}
+
+/**
+ * Sidik jari skema lokal yang BENAR-BENAR dipakai memutuskan migrasi.
+ *
+ * ⛔ Ia menggabungkan dua hal yang tidak ada apa pun menyatukannya: nama dan
+ * urutan kolom raw table (`sidikJariRawTable`) DAN kolom mana yang `NOT NULL`
+ * (`batasanNotNull`). Yang pertama sendirian buta terhadap perubahan batasan,
+ * dan perubahan batasan adalah perubahan bentuk yang SQLite tidak dapat
+ * terapkan lewat `ALTER TABLE`.
+ *
+ * ⛔ `migrasi.ts` wajib memanggil INI, bukan `sidikJariRawTable` langsung.
+ * Dijaga `tests/kasir/migrasi-lokal.test.js`; pemanggil yang memakai yang
+ * sempit akan berjalan tanpa satu pun error sambil melewatkan tepat kelas
+ * perubahan yang fungsi ini ada untuk melihatnya.
+ */
+export function sidikJariSkemaLokal(sqlText: string): string {
+  const kolom = sidikJariRawTable(kolomPerTabel(sqlText));
+  const wajib = batasanNotNull(sqlText);
+  const batasan = TABEL_RAW.map((t) => `${t}!(${(wajib[t] ?? []).join(',')})`).join(';');
+  return `${kolom}+${fnv1a(batasan)}`;
 }
 
 /**

@@ -51,7 +51,12 @@ CREATE TABLE item_image (
   -- ⛔ `id`, bukan `item_id`: PowerSync menolak raw table tanpa kolom `id`
   -- saat boot. Nilainya id ITEM-nya — satu gambar per item, jadi tidak ada
   -- identitas kedua untuk disimpan.
-  id TEXT PRIMARY KEY,
+  --
+  -- ⛔ `NOT NULL` DITULIS SENDIRI. SQLite menerima NULL di kolom PRIMARY KEY
+  -- pada tabel rowid — bug lama yang dipertahankan demi kompatibilitas — dan
+  -- PostgreSQL menolaknya. Baris ber-id NULL karena itu diterima di perangkat
+  -- dan baru terlihat saat sync, jauh dari tempat dan waktu penyebabnya.
+  id TEXT NOT NULL PRIMARY KEY,
   data_base64 TEXT NOT NULL,
   byte INTEGER NOT NULL,
   checksum TEXT NOT NULL,
