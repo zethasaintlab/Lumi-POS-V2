@@ -643,9 +643,43 @@
   border-top: 1px solid var(--border);
 }
 
-.kasir-aksi-sekunder .btn {
-  justify-content: flex-start;
+/* --- Toolbar aksi: SATU BARIS, semua terlihat sekaligus -------------------
+ *
+ * Sebelumnya ketiga aksi ini adalah kolom tombol selebar panel, dan kolom itu
+ * memakan tinggi yang diambil dari daftar item — ruang yang paling langka di
+ * panel ini. Tiga tombol bertumpuk = ~150px; satu baris ikon = 56px.
+ *
+ * ⛔ IKON TIDAK PERNAH SENDIRIAN, dan itu bukan kehati-hatian berlebihan.
+ * `IA:66` menempatkan "Buka laci" satu ketukan dari layar ini, dan membuka
+ * laci adalah pola fraud paling dasar (`spec-d:229`). Ikon tanpa kata menuntut
+ * kasir menghafal tiga glyph yang mirip; yang salah tekan membuka laci di
+ * depan pelanggan. Labelnya karena itu ikut, pada `--text-caption`.
+ *
+ * ⛔ Target sentuh tetap `--touch-min`. Tombol yang mengecil karena ikonnya
+ * kecil melanggar aturan design system #3 tanpa satu pun error.
+ *
+ * Nol nilai baru: seluruhnya token yang sudah ada.
+ */
+.kasir-toolbar {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.kasir-toolbar .btn {
+  /* Lebar dibagi rata, jadi baris ini tidak berubah bentuk saat satu tombol
+     hilang karena kill switch — `flex: 1` pada yang tersisa. */
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
   border-color: var(--border);
+  font-size: var(--text-caption);
+  line-height: var(--leading-tight);
+  /* `.btn` bundle memakai `nowrap`; label dua kata di kolom sempit butuh
+     pembungkusan, kalau tidak ia meluap keluar tepinya. */
+  white-space: normal;
+  text-align: center;
 }
 
 .kasir-subtotal {

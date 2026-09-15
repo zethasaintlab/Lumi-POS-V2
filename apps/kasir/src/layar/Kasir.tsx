@@ -918,6 +918,15 @@ export function Kasir() {
             ketiganya BUKAN bagian dari alur menagih, dan itu tepat perbedaan
             yang membuat kasir tidak menekan "Buka laci" saat mencari Bayar. */}
         <div className="kasir-aksi-sekunder">
+        {/* ⛔ SATU BARIS, semua terlihat sekaligus — bukan menu bertingkat.
+            Aksi yang disembunyikan di balik ⋮ menuntut dua ketukan dan satu
+            ingatan; kasir yang sedang menagih punya keduanya paling sedikit.
+
+            ⛔ Yang ada di baris ini HANYA yang benar-benar terpasang. Tombol
+            yang membuka dialog kosong, atau yang hanya menandai fitur yang
+            belum ada, adalah janji kepada kasir yang produk ini tidak dapat
+            tepati — dan ia menelepon merchant support untuk menanyakannya. */}
+        <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
         {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
             uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
             setiap penjualan. */}
@@ -933,7 +942,7 @@ export function Kasir() {
             disabled={keranjang.baris.length === 0 || sesi === null}
             onClick={() => setDialogDiskon(true)}
           >
-            <Icon name="tag" size={16} />
+            <Icon name="tag" size={20} />
             {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
           </Tombol>
         )}
@@ -950,15 +959,9 @@ export function Kasir() {
             terlihat seperti langkah biasa. */}
         {fiturAktif(fitur, 'buka_laci_no_sale') && (
           <Tombol varian="ghost" disabled={sesi === null} onClick={() => setBukaLaci(true)}>
-            <Icon name="register" size={16} />
+            <Icon name="register" size={20} />
             Buka laci
           </Tombol>
-        )}
-
-        {pesanLaci && (
-          <p className="t-caption" role="status">
-            {pesanLaci}
-          </p>
         )}
 
         {/* FR-D5 — kas masuk/keluar. `ghost` dengan alasan yang sama dengan
@@ -968,9 +971,20 @@ export function Kasir() {
             mematikan pencatatan kas berarti uang yang tetap keluar tanpa
             jejak, lalu muncul sebagai selisih yang menuduh kasirnya. */}
         <Tombol varian="ghost" disabled={sesi === null} onClick={() => setDialogKas(true)}>
-          <Icon name="swap" size={16} />
+          <Icon name="swap" size={20} />
           Kas masuk / keluar
         </Tombol>
+        </div>
+
+        {/* ⛔ Pesan hasil ada DI LUAR baris tombol, bukan di antaranya.
+            Sebagai anak `.kasir-toolbar` ia menjadi kolom keempat dan
+            memampatkan ketiga tombol setiap kali laci dibuka — tata letak yang
+            berubah tepat saat kasir sedang membaca hasilnya. */}
+        {pesanLaci && (
+          <p className="t-caption" role="status">
+            {pesanLaci}
+          </p>
+        )}
 
         {pesanKas && (
           <p className="t-caption" role="status">
