@@ -163,10 +163,31 @@ function Akar() {
     },
   } as unknown as KeadaanLokal;
 
+  /* ⛔ Pembungkus overlay DISALIN dari `Kasir.tsx:511-513`, kata demi kata, dan
+     ia bukan hiasan.
+
+     Sampai 16 September 2026 harness ini memasang `<Pembayaran>` TELANJANG ke
+     `#k06`. Ia cukup untuk penjaga yang membaca teks dan keberadaan tombol —
+     dan diam-diam salah untuk apa pun yang mengukur TATA LETAK: seluruh batas
+     tinggi K-06 datang dari `.kasir-overlay-lebar` (`max-height: 100%` di
+     dalam `.overlay` yang `position: fixed; inset: 0`). Tanpa pembungkus itu
+     layarnya tumbuh setinggi isinya, tidak pernah menggulir, dan blok aksi
+     yang menempel di aplikasi terukur BERGESER di sini.
+
+     Terukur sebelum diperbaiki: blok aksi bergeser 177,0 px antara isi pendek
+     dan isi panjang, dan `.kasir-bayar-isi` melaporkan `scrollHeight ===
+     clientHeight` — penggulungnya tidak pernah menyala.
+
+     Harness yang berbeda bentuk dari aplikasinya adalah salinan, dan penjaga
+     yang menjaga salinan tidak menjaga apa pun. */
   return (
     <DbLokalPalsuProvider keadaan={keadaan}>
       <IsiSiap>
-        <Pembayaran onKembali={() => undefined} />
+        <div className="overlay kasir-overlay-bayar" role="dialog" aria-modal="true" aria-label="Pembayaran">
+          <div className="dialog kasir-overlay-lebar">
+            <Pembayaran onKembali={() => undefined} />
+          </div>
+        </div>
       </IsiSiap>
     </DbLokalPalsuProvider>
   );

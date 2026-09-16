@@ -254,6 +254,62 @@
   flex: 1;
 }
 
+/* --- K-06: isi yang menggulir + blok aksi yang menempel -------------------
+ *
+ * ⛔ MODIFIER di atas `.kasir-shift`, bukan kelas pengganti. `.kasir-shift`
+ * memusatkan isinya (`align-items: center; justify-content: center`) karena
+ * K-02 memang satu blok pendek di tengah layar; K-06 bukan itu. Menyalin
+ * seluruh aturannya ke kelas baru berarti dua tempat yang memutuskan padding
+ * dan jarak layar bayar.
+ *
+ * ⛔ Polanya SAMA PERSIS dengan keranjang K-03, dan itu disengaja: penggulung
+ * di dalam, bukan `position: sticky`. Sticky menuntut latar sendiri supaya isi
+ * yang lewat di belakangnya tidak tembus, dan latar yang ditulis di sini
+ * adalah tempat kedua yang memutuskan warna permukaan kartu. Flex tidak punya
+ * masalah itu — blok aksinya memang tidak pernah berada di aliran gulir.
+ *
+ * ⛔ `min-height: 0` WAJIB di kedua tingkat. Tanpanya anak flex menolak
+ * mengecil di bawah tinggi kontennya, `overflow-y` tidak pernah menyala, dan
+ * isi yang panjang MENDORONG blok aksi keluar layar — persis cacat yang blok
+ * ini perbaiki. Ia tidak menghasilkan error; ia hanya tidak bekerja. Pelajaran
+ * yang sama sudah ditulis di `.kasir-baris-daftar`, dan ia berlaku lagi di
+ * sini karena alasan yang sama.
+ */
+.kasir-bayar {
+  align-items: stretch;
+  justify-content: flex-start;
+  min-height: 0;
+}
+
+.kasir-bayar-isi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ⛔ Pembatas di ATAS blok aksi, satu garis, sejajar dengan
+ * `.kasir-subtotal:first-of-type` di keranjang K-03. Ia menyatakan satu hal:
+ * blok ini LAPISAN yang terpisah dari isi yang menggulir di atasnya. Bayangan
+ * atau permukaan yang berbeda akan menyatakan hal yang sama dengan lebih
+ * keras, dan layar kasir hanya boleh punya satu hal yang menarik mata —
+ * aksennya.
+ *
+ * `flex: none` supaya ia tidak ikut MENGECIL saat isi memenuhi kartunya.
+ * Tombol Bayar yang tingginya menyusut tidak menghasilkan error; ia hanya
+ * berhenti memenuhi target sentuh 56px tepat pada transaksi paling panjang.
+ */
+.kasir-bayar-aksi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: none;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
 .kasir-pecahan {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
