@@ -110,6 +110,69 @@ jobs:
       # test:backoffice, tanpa database dan tanpa DOM.
       - run: npm run test:hp
 
+      # ⛔ PENJAGA DOM K-06 — enam penjaga atas layar yang memindahkan uang.
+      #
+      # Ia terpasang 16 September 2026 dan sempat TIDAK ada di daftar ini.
+      # Penjaga yang tidak dijalankan CI memberi rasa aman palsu, dan itu lebih
+      # buruk daripada tidak punya penjaga sama sekali — bentuk yang sama
+      # dengan `test:tenancy`, yang nyaris tertinggal dari daftar ini, dan
+      # dengan guard RBAC di `tests/identity/` yang sempat merah berhari-hari
+      # tanpa ketahuan.
+      #
+      # Tiga langkah, dan urutannya bukan selera:
+      #
+      #   1. Versi Playwright dibaca dari LOCKFILE, bukan dari `package.json`.
+      #      `^1.62.1` di `package.json` cocok dengan banyak versi; yang
+      #      benar-benar terpasang `npm ci` hanya satu, dan itu yang menentukan
+      #      revisi Chromium mana yang dibutuhkan. Kunci cache yang diturunkan
+      #      dari rentang akan menyajikan Chromium versi LAMA kepada Playwright
+      #      versi baru.
+      #
+      #   2. Cache di-key PER VERSI, bukan per `hashFiles(package-lock.json)`.
+      #      Hash seluruh lockfile gugur pada SETIAP perubahan dependensi —
+      #      termasuk yang tidak ada hubungannya dengan peramban — dan setiap
+      #      kegugurannya membayar ulang unduhan ~170 MB.
+      #
+      #   3. `npx playwright install` tetap dijalankan pada cache HIT. Ia
+      #      memverifikasi lalu melewati unduhan, jadi yang dihemat cache
+      #      adalah unduhannya; yang TIDAK boleh dilewati adalah pemeriksaan
+      #      bahwa peramban benar-benar ada. Cache yang rusak sebagian akan
+      #      muncul sebagai "Executable doesn't exist" di tengah test, bukan
+      #      sebagai langkah yang gagal dengan jelas.
+      - name: Versi Playwright dari lockfile
+        id: pw
+        run: |
+          echo "versi=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache peramban Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.versi }}
+
+      # ⛔ TANPA `PLAYWRIGHT_BROWSERS_PATH`, dan itu disengaja.
+      #
+      # `tests/kasir-dom/k06-penjaga.test.js` menurunkan jalur peramban lewat
+      # `chromePath()`: `PLAYWRIGHT_CHROMIUM` → isi `PLAYWRIGHT_BROWSERS_PATH`
+      # → `undefined`, yang berarti "biarkan Playwright memilih sendiri".
+      # Runner ini mengambil cabang KETIGA, dan itu cabang yang sama yang
+      # setiap mesin tanpa konfigurasi khusus ambil.
+      #
+      # Memaku `PLAYWRIGHT_BROWSERS_PATH` di sini akan memaksa cabang kedua,
+      # yang mencari `chromium-<rev>/chrome-linux/chrome` — tata letak build
+      # LAMA. Build Chrome for Testing yang Playwright 1.62 unduh memakai tata
+      # letak berbeda, jadi cabang kedua akan gagal menemukannya lalu jatuh ke
+      # cabang ketiga juga: satu variabel lingkungan yang tidak mengubah apa
+      # pun kecuali membuat orang mengira ia mengubah sesuatu.
+      - run: npx playwright install --with-deps chromium
+
+      # Harness DOM dibangun terpisah dari `index.html` produksi — config dan
+      # direktori keluarannya sendiri (`apps/kasir/vite.k06.config.ts`).
+      # Suitenya MENOLAK berjalan tanpa build ini, jadi langkah yang hilang
+      # muncul sebagai kegagalan bernama, bukan sebagai nol test yang lewat.
+      - run: npm run build:harness-k06
+      - run: npm run test:kasir-dom
+
       - run: npm run db:bootstrap
       - run: npm run db:migrate
 
