@@ -408,10 +408,33 @@ export function pecahPernyataan(sqlText: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-const AWALAN_BATASAN = /^(PRIMARY|UNIQUE|CHECK|FOREIGN|CONSTRAINT)\b/i;
+/**
+ * Awalan yang menandai batasan TINGKAT TABEL, bukan definisi kolom.
+ *
+ * ⛔ Diekspor bersama `bagiKolom` dan untuk alasan yang sama: penjaga PK
+ * harus memakai definisi "apa itu kolom" yang SAMA PERSIS dengan yang
+ * `batasanNotNull` pakai. Dua definisi yang menyimpang menghasilkan penjaga
+ * yang menilai `PRIMARY KEY (tenant_id, outlet_id)` sebagai kolom bernama
+ * "PRIMARY" — dan yang menyimpang diam-diam adalah yang paling mahal.
+ */
+export const AWALAN_BATASAN = /^(PRIMARY|UNIQUE|CHECK|FOREIGN|CONSTRAINT)\b/i;
 
-/** Memecah isi `CREATE TABLE (...)` pada koma di kedalaman nol. */
-function bagiKolom(isi: string): string[] {
+/**
+ * Memecah isi `CREATE TABLE (...)` pada koma di kedalaman nol.
+ *
+ * ⛔ DIEKSPOR supaya penjaga tidak menulis pemecah KEDUA. `tests/schema/
+ * item-modifier-list.test.js` sempat memakai predikat per-BARIS atas sintaks
+ * yang per-KOLOM: `if (/NOT NULL/.test(baris)) continue` memaafkan seluruh
+ * baris bila ada `NOT NULL` di mana pun padanya, dan
+ * `id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL` menulis keduanya sebaris.
+ * Akibatnya penjaga membaca `NOT NULL` milik `tenant_id` sebagai milik `id`,
+ * melaporkan NOL pelanggar, dan memaafkan 17 tabel.
+ *
+ * Bentuk yang benar sudah ada di berkas ini sejak awal — `batasanNotNull`
+ * memakai fungsi ini — dan penjaganya tidak dapat memakainya karena ia
+ * private. Yang diperbaiki visibilitasnya, bukan logikanya.
+ */
+export function bagiKolom(isi: string): string[] {
   const hasil: string[] = [];
   let dalam = 0;
   let buf = '';
