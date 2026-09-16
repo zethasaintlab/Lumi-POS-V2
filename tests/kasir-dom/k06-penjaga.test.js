@@ -144,19 +144,12 @@ const metodeTerlihat = (hal) =>
 const teks = (hal) => hal.locator('body').innerText();
 
 /**
- * Input yang label-nya cocok — dicari lewat INDUK, bukan `getByLabel`.
+ * Input yang label-nya cocok.
  *
- * ⛔ TEMUAN, dilaporkan bukan diperbaiki: `apps/kasir/src/Bidang.tsx` merender
- * `<label className="label">` TANPA `htmlFor`, dengan `<input>` sebagai
- * SAUDARA — bukan anak. Labelnya karena itu tidak terhubung secara programatik
- * ke inputnya: `getByLabel` tidak menemukannya, dan pembaca layar juga tidak.
- * Memperbaikinya berarti menyunting kode produksi, yang task ini larang.
+ * Hubungan label–input dijaga terpisah di `bidang-label.test.js`; di sini ia
+ * dipakai apa adanya.
  */
-function bidang(hal, pola) {
-  return hal
-    .locator('.stack', { has: hal.locator('.label', { hasText: pola }) })
-    .locator('.field');
-}
+const bidang = (hal, pola) => hal.getByLabel(pola);
 
 // ---------------------------------------------------------------------------
 // PENJAGA 1 — panel QRIS mengganti SELURUH layar
