@@ -122,8 +122,8 @@ after(async () => {
  * yang bergantung pada apakah `localhost:3000` kebetulan hidup akan hijau di
  * mesin pengembang dan merah di CI — atau sebaliknya, yang lebih buruk.
  */
-async function buka(kueri, { terjangkau = true, rute = {} } = {}) {
-  const hal = await peramban.newPage({ viewport: { width: 1024, height: 1000 } });
+async function buka(kueri, { terjangkau = true, rute = {}, tinggi = 1000 } = {}) {
+  const hal = await peramban.newPage({ viewport: { width: 1024, height: tinggi } });
   if (terjangkau) {
     await hal.route('**/health', (r) => r.fulfill({ status: 200, body: 'ok' }));
   } else {
@@ -150,6 +150,41 @@ const teks = (hal) => hal.locator('body').innerText();
  * dipakai apa adanya.
  */
 const bidang = (hal, pola) => hal.getByLabel(pola);
+
+/** `Rp 44.400` → `44400n`. `−` (U+2212) diperlakukan sebagai tanda negatif. */
+function bacaRupiah(teksAngka) {
+  const bersih = teksAngka.replace(/\s/g, '');
+  const negatif = bersih.startsWith('−') || bersih.startsWith('-');
+  const digit = bersih.replace(/[^\d]/g, '');
+  if (digit === '') return null;
+  return negatif ? -BigInt(digit) : BigInt(digit);
+}
+
+/** Nilai baris ringkasan yang labelnya cocok — `.kasir-subtotal`/`.kasir-total`. */
+async function nilaiBaris(hal, label) {
+  const baris = await hal.$$eval('.kasir-bayar-aksi .kasir-subtotal, .kasir-bayar-aksi .kasir-total', (n) =>
+    n.map((e) => ({
+      label: e.firstElementChild?.textContent.trim() ?? '',
+      nilai: e.querySelector('.num')?.textContent.trim() ?? '',
+    }))
+  );
+  const cocok = baris.find((b) => b.label === label);
+  return cocok === undefined ? null : bacaRupiah(cocok.nilai);
+}
+
+/** Menambah satu bagian QRIS statis bernilai `nominal` rupiah. */
+async function tambahBagianQris(hal, nominal, referensi) {
+  await hal.getByRole('button', { name: 'QRIS statis' }).click();
+  await bidang(hal, /Nominal bagian ini/).fill(String(nominal));
+  await bidang(hal, /Referensi pembayaran/).fill(referensi);
+  await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
+}
+
+const kotak = (hal, sel) =>
+  hal.$eval(sel, (e) => {
+    const r = e.getBoundingClientRect();
+    return { top: +r.top.toFixed(1), bottom: +r.bottom.toFixed(1), height: +r.height.toFixed(1) };
+  });
 
 // ---------------------------------------------------------------------------
 // PENJAGA 1 — panel QRIS mengganti SELURUH layar
@@ -424,6 +459,187 @@ test('⛔ P7: dua bagian metode berbeda tampil sebagai daftar ber-Hapus, diserta
        dihitung alih-alih sekadar didaftar. 40.000 + PPN 11% = 44.400;
        dikurangi 10.000 + 5.000 menyisakan 29.400. */
     assert.match(isi, /Rp 29\.400/, `sisa tagihan tidak berkurang sebesar kedua bagian: ${isi}`);
+  } finally {
+    await hal.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PENJAGA 8 — blok aksi MENEMPEL, tidak ikut bergulir
+// ---------------------------------------------------------------------------
+
+test('⛔ P8: blok aksi tidak bergeser antara isi pendek dan isi panjang', async () => {
+  /* Sebelum blok ini ada, K-06 adalah satu kolom yang menggulung utuh —
+     `.kasir-shift`, nol `flex: none` dan nol pembatas di jalurnya. Pembayaran
+     campuran berisi beberapa bagian membuat layar lebih tinggi daripada
+     kartunya, dan tombol Bayar terdorong keluar layar tepat pada transaksi
+     yang paling rumit: yang nominalnya sudah disebutkan ke pelanggan.
+
+     ⛔ Diuji dengan isi yang PANJANG, bukan dengan keadaan bawaan. Layar bawaan
+     muat di kartunya, jadi penjaga yang berhenti di sana hijau pada satu-satunya
+     keadaan yang tidak pernah bermasalah. */
+  /* ⛔ Viewport 600, bukan 1000 bawaan. Pada 1000 isi ujinya hanya melampaui
+     kartunya beberapa puluh piksel — terukur 652,4 lawan ruang 968 saat
+     penggulungnya dilepas, yaitu TIDAK melampaui sama sekali. Penjaga yang
+     marginnya setipis itu hijau karena kebetulan, dan yang berikutnya menambah
+     satu baris ringkasan akan membalikkannya tanpa ada yang tahu kenapa.
+
+     600 bukan angka karangan: tablet 1024×600 adalah perangkat yang produk ini
+     sebut (`PRD:428` memakai 1024×768 sebagai panggung, dan yang lebih pendek
+     ada di lapangan). */
+  const hal = await buka('render=k06&baris=2', { tinggi: 600 });
+  try {
+    const pendek = await kotak(hal, '.kasir-bayar-aksi');
+
+    for (const [nominal, ref] of [
+      [10000, '10000-1111'],
+      [5000, '5000-2222'],
+      [5000, '5000-3333'],
+    ]) {
+      await tambahBagianQris(hal, nominal, ref);
+    }
+    // Kembali ke tunai supaya bidang non-tunai hilang: yang diuji adalah isi
+    // yang panjang karena DAFTAR BAGIANNYA, bukan karena form yang terbuka.
+    await hal.getByRole('button', { name: 'Tunai', exact: true }).click();
+
+    const jumlahBagian = await hal.$$eval('.kasir-baris-daftar .kasir-subtotal', (n) => n.length);
+    assert.equal(jumlahBagian, 3, `daftar bagian tidak terisi: ${jumlahBagian} baris`);
+
+    const panjang = await kotak(hal, '.kasir-bayar-aksi');
+
+    /* ⛔ Assertion utama BICARA DULU, sentinel menutup di belakang — dan
+       urutan itu dipilih setelah sabotase pertama menunjukkan kenapa.
+
+       Sentinel di posisi pertama gugur pada sabotase yang merusak tata letak,
+       lalu MENYEMBUNYIKAN assertion pergeseran: penjaga merah, tapi merah
+       karena kalimat yang salah, dan pergeseran itu sendiri tidak pernah
+       terbukti pernah menyala. Dua bentuk sentinel dicoba di posisi pertama
+       dan keduanya punya cacat yang sama; yang ketiga — menjumlah tinggi anak
+       `.kasir-bayar-isi` — bahkan TERBALIK, karena flex sudah memampatkan
+       daftar bagian sebelum ia diukur, jadi ia hanya lolos ketika tata
+       letaknya rusak.
+
+       Di posisi ini keduanya utuh: tata letak yang rusak dijawab pergeseran,
+       isi uji yang terlalu pendek dijawab sentinel.
+
+       Nol toleransi, dan itu disengaja: keduanya diukur pada viewport yang
+       sama dan di-`toFixed(1)`. Toleransi beberapa piksel akan meloloskan blok
+       yang bergeser karena satu baris ringkasan muncul — dan baris yang muncul
+       lalu menggeser tombol Bayar adalah tombol yang ditekan salah. */
+    assert.equal(
+      panjang.top,
+      pendek.top,
+      `tepi ATAS blok aksi bergeser ${(panjang.top - pendek.top).toFixed(1)} px ` +
+        `(${pendek.top} → ${panjang.top}) — ia ikut bergulir bersama isinya`
+    );
+    assert.equal(
+      panjang.bottom,
+      pendek.bottom,
+      `tepi BAWAH blok aksi bergeser ${(panjang.bottom - pendek.bottom).toFixed(1)} px ` +
+        `(${pendek.bottom} → ${panjang.bottom})`
+    );
+
+    /* ⛔ Dan tombol Bayar benar-benar TERLIHAT, bukan sekadar tidak bergeser.
+       Blok yang tingginya menyusut jadi nol juga tidak bergeser. */
+    const bayar = await kotak(hal, '.kasir-bayar-aksi .btn-primary');
+    const tinggiLayar = await hal.evaluate(() => window.innerHeight);
+    assert.ok(
+      bayar.bottom <= tinggiLayar && bayar.height >= 44,
+      `tombol Bayar di luar layar atau terlalu pendek: bottom ${bayar.bottom}, ` +
+        `tinggi ${bayar.height}, layar ${tinggiLayar}`
+    );
+
+    /* ⛔ SENTINEL. Blok aksi yang tidak bergeser pada isi yang MUAT di kartunya
+       tidak membuktikan apa pun — tidak ada yang mendorongnya. Yang diperiksa:
+       penggulungnya benar-benar menyala pada isi uji ini. */
+    const isi = await hal.$eval('.kasir-bayar-isi', (e) => ({
+      scrollHeight: e.scrollHeight,
+      clientHeight: e.clientHeight,
+    }));
+    assert.ok(
+      isi.scrollHeight > isi.clientHeight,
+      `isi ujinya tidak melampaui ruangnya (scrollHeight ${isi.scrollHeight}, ` +
+        `clientHeight ${isi.clientHeight}); tidak ada yang mendorong blok aksi, ` +
+        'jadi penjaga ini tidak menguji apa pun. Perbesar isi ujinya.'
+    );
+  } finally {
+    await hal.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PENJAGA 9 — TOTAL tampil, dan ia angka yang jalur pembayaran pakai
+// ---------------------------------------------------------------------------
+
+test('⛔ P9: Total tampil di K-06, dan nilainya total yang jalur pembayaran hitung', async () => {
+  /* K-06 menampilkan "Subtotal" dan "Sisa tagihan" dan TIDAK PERNAH
+     menampilkan Total — kasir menagih angka ketiga yang tidak ada di manapun
+     di hadapannya.
+
+     ⛔ Yang dijaga bukan keberadaan kata "Total", melainkan bahwa angkanya
+     angka yang SAMA yang jalur pembayaran pakai. Baris Total yang dihitung
+     ulang di layar akan lolos pemeriksaan keberadaan dan salah tepat pada
+     pajak inklusif. */
+  const hal = await buka('render=k06&baris=2');
+  try {
+    const total = await nilaiBaris(hal, 'Total');
+    assert.notEqual(total, null, 'baris Total tidak dirender di blok aksi K-06');
+
+    /* ⛔ Ikatan ke jalur pembayaran, dan ia yang membuat penjaga ini bukan
+       sekadar pemeriksaan teks. `sisaTagihan(total, [])` adalah `total` itu
+       sendiri, dan `sisa` dihitung dari state `total` yang `bayar()` pakai —
+       state yang BERBEDA dari `hitungan` yang merender baris Total. Keduanya
+       sama hanya bila keduanya benar-benar berasal dari `hitungKeranjang`. */
+    const sisaAwal = await nilaiBaris(hal, 'Sisa tagihan');
+    assert.equal(
+      sisaAwal,
+      total,
+      `tanpa satu pun bagian, Sisa tagihan (${sisaAwal}) harus sama dengan Total (${total})`
+    );
+
+    /* ⛔ Subtotal BERBEDA dari Total, dan ini yang menolak "Total" yang
+       diam-diam merender subtotal. Fixture galeri memakai PPN 11% eksklusif
+       (`tax-ppn`), jadi keduanya tidak mungkin sama. */
+    const subtotal = await hal.$eval('.kasir-bayar-isi', (e) => {
+      const p = [...e.querySelectorAll('p')].find((x) => x.textContent.startsWith('Subtotal'));
+      return p?.querySelector('.num')?.textContent.trim() ?? '';
+    });
+    const nilaiSubtotal = bacaRupiah(subtotal);
+    assert.notEqual(nilaiSubtotal, null, 'baris Subtotal hilang dari isi K-06');
+    assert.notEqual(
+      total,
+      nilaiSubtotal,
+      `Total (${total}) sama persis dengan Subtotal (${nilaiSubtotal}) — pajak tidak masuk hitungan`
+    );
+
+    /* ⛔ Baris pajak memakai NAMA TARIF, bukan kata "Pajak" (`spec-c:404`).
+       Layar yang menyebutnya berbeda dari struk membuat kasir yang mencocokkan
+       keduanya menyimpulkan salah satunya salah. */
+    const labelPajak = await hal.$$eval('.kasir-bayar-aksi .kasir-subtotal', (n) =>
+      n.map((e) => e.firstElementChild?.textContent.trim() ?? '')
+    );
+    assert.ok(
+      labelPajak.includes('PPN 11%'),
+      `baris pajak tidak memakai nama tarif: ${JSON.stringify(labelPajak)}`
+    );
+    assert.ok(
+      !labelPajak.includes('Pajak'),
+      `baris pajak memakai kata generik "Pajak", yang \`spec-c:404\` larang: ${JSON.stringify(labelPajak)}`
+    );
+
+    /* ⛔ Dan Total tetap Total saat bagian masuk: yang berkurang SISA, bukan
+       Total. Total yang ikut menyusut adalah total yang dihitung dari sisa —
+       arah kebergantungan yang terbalik, dan struk yang menyebut angka lebih
+       kecil daripada yang pelanggan bayar. */
+    await tambahBagianQris(hal, 10000, '10000-4321');
+    const totalSesudah = await nilaiBaris(hal, 'Total');
+    const sisaSesudah = await nilaiBaris(hal, 'Sisa tagihan');
+    assert.equal(totalSesudah, total, `Total berubah setelah satu bagian masuk: ${total} → ${totalSesudah}`);
+    assert.equal(
+      sisaSesudah,
+      total - 10000n,
+      `Sisa tagihan tidak berkurang tepat sebesar bagiannya: ${sisaSesudah}, harusnya ${total - 10000n}`
+    );
   } finally {
     await hal.close();
   }
