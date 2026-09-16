@@ -27,3 +27,7 @@ __pycache__/
 
 # Build galeri komponen (situs statis preview). Sumbernya di apps/kasir/src/galeri.
 dist-galeri/
+
+# Build harness DOM K-06 (hanya untuk `npm run test:kasir-dom`).
+# Sumbernya di apps/kasir/src/harness/k06.tsx.
+dist-harness-k06/

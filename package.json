@@ -41,7 +41,9 @@
     "test:backoffice": "node --experimental-strip-types --test \"tests/backoffice/*.test.js\"",
     "test:hp": "node --experimental-strip-types --test \"tests/hp/*.test.js\"",
     "build:galeri": "vite build --config apps/kasir/vite.galeri.config.ts",
-    "verifikasi:galeri": "node tools/tangkap-galeri.mjs"
+    "verifikasi:galeri": "node tools/tangkap-galeri.mjs",
+    "build:harness-k06": "vite build --config apps/kasir/vite.k06.config.ts",
+    "test:kasir-dom": "node --test \"tests/kasir-dom/*.test.js\""
   },
   "dependencies": {
     "hash-wasm": "^4.12.0",
