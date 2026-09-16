@@ -682,11 +682,36 @@
   text-align: center;
 }
 
+/* ⛔ Pembatas hanya pada baris PERTAMA blok ringkasan.
+ *
+ * Blok ini kini beberapa baris — Subtotal, Diskon, satu baris per tarif pajak,
+ * lalu Total. Garis di atas SETIAP baris membuat daftar berkotak-kotak yang
+ * terbaca sebagai tabel, dan yang dicari hanya satu hal: menyatakan bahwa blok
+ * bawah adalah LAPISAN yang terpisah dari daftar item yang menggulir di
+ * atasnya. Satu garis menyatakan itu; lima garis menyembunyikannya.
+ */
 .kasir-subtotal {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+}
+
+.kasir-subtotal:first-of-type {
   padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* Total: garisnya sendiri, karena ia yang ditagih.
+ *
+ * ⛔ `--text-title` pada angkanya saja, bukan pada labelnya — hierarki dibuat
+ * oleh angka yang lebih besar, bukan oleh dua hal besar yang bersaing. Token
+ * inti, bebas dipakai di mana saja; bukan `--t-metric`, yang hanya sah di
+ * kartu KPI dasbor B-01. */
+.kasir-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
 
@@ -758,9 +783,15 @@
 }
 .kasir-keranjang-kosong p { margin: 0; }
 
-/* Subtotal, Bayar, dan aksi sekunder menempel di bawah — tidak ikut bergulir
-   bersama daftar item. */
+/* Subtotal, pajak, Total, Bayar, dan aksi sekunder menempel di bawah — tidak
+   ikut bergulir bersama daftar item.
+
+   ⛔ `flex: none` WAJIB di setiap baris blok bawah. Yang terlewat akan
+   MENGECIL saat daftar item memenuhi panelnya — baris pajak yang tingginya
+   menyusut jadi nol tidak menghasilkan error, ia hanya hilang dari layar
+   tepat pada keranjang yang paling panjang. */
 .kasir-subtotal,
+.kasir-total,
 .kasir-aksi-sekunder { flex: none; }
 
 /* --- Penanda memuat (TEMUAN B1) -------------------------------------------

@@ -176,6 +176,31 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         archived_at: null,
       },
     ],
+    /* ⛔ PPN 11% — jenis pajak yang paling banyak dipakai merchant Indonesia,
+       dan sampai sekarang NOL di seluruh fixture repo ini
+       (`docs/verifikasi/MONOKULTUR-FIXTURE.md`). Blok ringkasan K-03 merender
+       satu baris per tarif; tanpa satu pun tarif di sini, barisnya tidak
+       pernah dirender dan galeri tidak dapat menjawab apakah ia benar.
+
+       `rate` berskala ×10000 seperti kolom lokalnya (11% → 1100), eksklusif,
+       berlaku untuk seluruh item dan seluruh kanal. */
+    tax_rate: [
+      {
+        id: 'tax-ppn',
+        tenant_id: 'ten-galeri',
+        outlet_id: null,
+        name: 'PPN 11%',
+        type: 'ppn',
+        rate: 1100,
+        is_inclusive: 0,
+        jurisdiction: 'ID',
+        channel: 'all',
+        applies_to: 'all_items',
+        applies_to_ids: null,
+        effective_from: '2026-01-01T00:00:00.000Z',
+        effective_to: null,
+      },
+    ],
     vertical_profile: [
       {
         id: 'vp-1',

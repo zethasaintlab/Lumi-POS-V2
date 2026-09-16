@@ -31,6 +31,7 @@ import {
   type ModifierTerpilih,
 } from '../kasir/keranjang.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
+import { hitungKeranjang, type HitunganKeranjang } from '../kasir/penjualan.ts';
 import {
   AMBANG_DISKON_BAWAAN,
   type AmbangDiskon,
@@ -275,6 +276,41 @@ export function Kasir() {
     if (!bolehSimpan.current || !shift) return;
     void simpanKeranjang(db, shift.id, keranjang, () => new Date()).catch(() => {});
   }, [db, shift, keranjang]);
+
+  /* ⛔ Pajak dan TOTAL di blok ringkasan — dari `hitungKeranjang`, fungsi yang
+     SAMA yang `simpanPenjualan` dan K-06 pakai.
+     Menghitungnya sendiri di layar ini akan menjadi aritmetika KEDUA untuk
+     pertanyaan yang sama, dan yang menyimpang di jalur uang tidak menghasilkan
+     error — hanya angka di layar yang berbeda dari angka yang tersimpan.
+
+     ⛔ `null` selama belum dihitung, dan barisnya TIDAK dirender selama itu.
+     Total yang muncul sebagai Rp 0 lalu berubah adalah angka yang kasir sempat
+     baca dan sempat sebutkan kepada pelanggan.
+
+     ⛔ Balapan ditutup `urutan`: pembacaan database tidak dijamin selesai
+     dalam urutan ia dimulai, dan hasil ketukan LAMA yang mendarat belakangan
+     akan menimpa total ketukan baru — total yang lebih kecil daripada isi
+     keranjang, tanpa satu pun error. */
+  const [hitungan, setHitungan] = useState<HitunganKeranjang | null>(null);
+  const urutanHitung = useRef(0);
+  useEffect(() => {
+    if (!konfig || !shift || keranjang.baris.length === 0) {
+      setHitungan(null);
+      return;
+    }
+    const milik = (urutanHitung.current += 1);
+    void hitungKeranjang({ db, konfig, keranjang, shift, waktu: () => new Date() })
+      .then((h) => {
+        if (urutanHitung.current === milik) setHitungan(h);
+      })
+      /* ⛔ Ditelan, dan blok ringkasan kembali menampilkan Subtotal saja.
+         Pajak adalah informasi tambahan; tarif yang tidak dapat dibaca tidak
+         boleh menghentikan penjualan, dan K-06 tetap menghitungnya sendiri
+         sebelum menagih. */
+      .catch(() => {
+        if (urutanHitung.current === milik) setHitungan(null);
+      });
+  }, [db, konfig, shift, keranjang]);
 
   const pindai = useRef<(kode: string) => void>(() => {});
   /* Penanda awal pengukuran latensi keranjang. `null` = tidak ada ketukan
@@ -865,7 +901,7 @@ export function Kasir() {
 
         <div className="kasir-subtotal">
           <span className="t-body-md">Subtotal</span>
-          <span className="t-title num">{rupiah(subtotal)}</span>
+          <span className="t-body-md num">{rupiah(subtotal)}</span>
         </div>
 
         {/* FR-B8 — baris diskon. Alasannya ikut ditampilkan: potongan tanpa
@@ -884,6 +920,40 @@ export function Kasir() {
           </div>
         )}
 
+        {/* ⛔ Baris pajak memakai NAMA TARIF, bukan kata "Pajak".
+            `spec-c:404` melarang string generik itu di struk, dan layar yang
+            menyebutnya berbeda dari struk membuat kasir yang mencocokkan
+            keduanya menyimpulkan salah satunya salah. Satu baris per tarif,
+            urutan dan tanda `+` sama persis dengan `cetak/dokumen.ts`.
+
+            ⛔ Baris bernilai NOL tetap tampil (`spec-c:405`): pajak 0% adalah
+            keputusan merchant yang auditor perlu lihat, bukan ketiadaan. */}
+        {hitungan?.pajak.lines.map((t) => (
+          <div className="kasir-subtotal" key={t.taxRateId}>
+            <span className="t-body-md">{t.name}</span>
+            <span className="t-body-md num">+ {rupiah(t.amount)}</span>
+          </div>
+        ))}
+
+        {/* ⛔ TOTAL, dan ia datang dari `hitungKeranjang` — bukan dari
+            penjumlahan baris di atas. Kolom yang dijumlah layar adalah
+            aritmetika KEDUA, dan pajak INKLUSIF membuatnya tidak sama dengan
+            total yang tersimpan: ia sudah ada di dalam harga, jadi
+            `Subtotal − Diskon + Pajak` melebihi `Total` tepat sebesar bagian
+            inklusifnya. Yang benar selalu angka yang jalur penulisan pakai.
+
+            ⛔ PEMBULATAN TUNAI TIDAK ADA DI SINI, dan itu batas yang
+            dinyatakan. FR-C9 membulatkan `amount_due`, bukan `total`, dan
+            hanya saat ada bagian tunai — keputusan yang baru diambil di K-06.
+            Membulatkannya di sini berarti menebak metode bayar sebelum kasir
+            memilihnya. */}
+        {hitungan !== null && (
+          <div className="kasir-total">
+            <span className="t-body-md">Total</span>
+            <span className="t-title num">{rupiah(hitungan.totals.total)}</span>
+          </div>
+        )}
+
         {/* ⛔ Peringatan persetujuan-ulang. Aturan design system #5: status
             tidak pernah warna saja — teksnya menyebut angkanya, karena yang
             berubah justru angka itu. */}
@@ -895,8 +965,8 @@ export function Kasir() {
         )}
 
         {/* Satu aksi utama per layar (aturan #2), 56px karena menyangkut uang.
-            Pajak dan pembulatan ditambahkan di K-06 — subtotal di atas
-            sengaja TIDAK menyebut dirinya total. */}
+            Pembulatan tunai ditambahkan di K-06 (FR-C9) — Total di atas adalah
+            total transaksi, bukan nominal tunai yang ditagih. */}
         <Tombol
           varian="primary"
           kritis
