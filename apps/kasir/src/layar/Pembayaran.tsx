@@ -241,10 +241,6 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      untuk nominal yang sudah dikirim ke gateway. */
   if (panelQris && konfig && sesi) {
     return (
-      <>
-      <Tombol varian="ghost" onClick={() => setPanelQris(null)}>
-        Kembali
-      </Tombol>
       <PanelQris
         kirim={buatPemanggilApi(konfig, sesi.userId)}
         qrString={panelQris.qrString}
@@ -273,7 +269,6 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           );
         }}
       />
-      </>
     );
   }
 
