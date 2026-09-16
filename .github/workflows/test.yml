@@ -40,6 +40,30 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # ⛔ `origin/main` disediakan DI SINI, dan `tests/runtime/ds-bundle-vendor.test.js`
+      # menuntutnya.
+      #
+      # `actions/checkout@v7` memakai `--depth=1`. Pada event `push` ke `main`
+      # ref yang diambilnya mendarat sebagai `refs/remotes/origin/main`, jadi
+      # penjaga menemukannya; pada event `pull_request` yang diambil hanya
+      # `refs/remotes/pull/<n>/merge`, dan `origin/main` tidak pernah ada.
+      # Asimetri antara kedua event itu membuat penjaga vendor `ds-bundle/`
+      # MERAH di setiap PR dan hijau di setiap push ke main — terukur pada dua
+      # commit berbeda di dua PR berbeda (run #126 dan #128).
+      #
+      # ⛔ Yang diperbaiki RUNNER-nya, bukan penjaganya. Penjaga itu benar:
+      # ia menolak hijau tanpa benar-benar membandingkan. Membuatnya melewatkan
+      # diri sendiri saat ref hilang berarti ia berhenti menjaga di lingkungan
+      # mana pun yang kebetulan tidak menyediakan ref itu, tanpa seorang pun
+      # menyadarinya.
+      #
+      # `--depth=1` cukup: yang dibandingkan `git diff` adalah isi pohon pada
+      # kedua ujung, bukan riwayat di antaranya. `fetch-depth: 0` akan
+      # mengambil seluruh riwayat repo untuk pertanyaan yang hanya butuh satu
+      # commit.
+      - name: Sediakan origin/main untuk penjaga vendor
+        run: git fetch --depth=1 origin main:refs/remotes/origin/main
+
       - uses: actions/setup-node@v7
         with:
           # ⛔ 24, bukan 22 — dan itu lantai yang ditegakkan `engines.node`.
