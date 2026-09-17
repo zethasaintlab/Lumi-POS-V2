@@ -201,7 +201,6 @@ jobs:
       - run: npm run db:migrate
 
       - run: npm run test:isolation
-      - run: npm run test:schema
       - run: npm run test:server
       - run: npm run test:identity
       # F5 -- pendaftaran merchant, penegakan kuota, batas laju. Suite ini
@@ -219,3 +218,29 @@ jobs:
 
       - run: npm run test:sqlite-local
       - run: npm run test:oxlint-ds-adherence
+
+      # ⛔ PALING AKHIR, dan itu keputusan yang biayanya diukur.
+      #
+      # `test:schema` memuat penjaga PK NOT NULL, yang MERAH sampai keputusan
+      # produk atas lima tabel tersisa diambil. Di posisi lamanya — langkah 23
+      # dari 32, tepat sesudah `test:isolation` — merahnya melewati SEMBILAN
+      # suite ber-database sesudahnya: `server`, `identity`, `tenancy`,
+      # `catalog`, `ordering`, `dst-server`, `payment`, `sqlite-local`, dan
+      # `oxlint-ds-adherence`. Terukur di run #134 dan #136, keduanya berhenti
+      # di langkah yang sama dengan sembilan langkah berstatus `skipped`.
+      #
+      # Menahan sembilan suite sandera demi satu penjaga yang sedang menunggu
+      # keputusan adalah pertukaran yang salah arah. Di posisi ini merahnya
+      # tetap merah dan tidak lagi membutakan apa pun.
+      #
+      # ⛔ INI BUKAN MELEMAHKAN PENJAGANYA. Ia tetap gagal, jobnya tetap gagal,
+      # dan PR tetap merah. Yang berubah hanya urutan, dan urutan tidak
+      # memaafkan apa pun.
+      #
+      # ⛔ Dan justru KARENA ia akan merah untuk waktu yang lama, penjaganya
+      # wajib membedakan "merah yang sudah diketahui" dari "merah yang baru" —
+      # lihat `PELANGGAR_DIKETAHUI` di `tests/schema/item-modifier-list.test.js`.
+      # Merah yang selalu berbunyi sama adalah merah yang orang berhenti baca,
+      # dan pada hari tabel ke-38 ditambahkan tanpa `NOT NULL`, tidak seorang
+      # pun akan melihat bedanya.
+      - run: npm run test:schema

@@ -217,6 +217,45 @@ async function pelanggarPk(sqlText) {
 const SKEMA = () =>
   readFileSync(resolve(__dirname, '../../db/local/001-initial.sql'), 'utf8').replace(/\r\n?/g, '\n');
 
+/**
+ * Garis dasar: pelanggar yang SUDAH DIKETAHUI dan sedang menunggu keputusan.
+ *
+ * ⛔ INI BUKAN DAFTAR PENGECUALIAN, dan bedanya bukan istilah. Daftar
+ * pengecualian MEMAAFKAN — test hijau meski pelanggarnya ada. Daftar ini tidak
+ * memaafkan apa pun: testnya tetap MERAH untuk kelima nama di bawah. Yang
+ * diputuskan daftar ini hanya KALIMAT MANA yang dicetak.
+ *
+ * ⛔ Kenapa pembedaan itu perlu ada sama sekali: `test:schema` akan merah
+ * selama keputusan produk atas kelima tabel ini belum diambil, dan itu bisa
+ * lama. Merah yang selalu berbunyi sama adalah merah yang orang berhenti baca
+ * — dan pada hari tabel ke-38 ditambahkan tanpa `NOT NULL`, tidak seorang pun
+ * akan melihat bedanya. Pelanggar baru karena itu menghasilkan kalimat yang
+ * BERBEDA, yang menyebut namanya, dan yang melarang namanya ditambahkan ke
+ * sini.
+ *
+ * ⛔ Jangan menambah nama ke daftar ini untuk membuat pesan jadi tenang.
+ * Kelima ini ada di sini karena ongkos perbaikannya sudah dipetakan dan
+ * ditolak untuk sementara, bukan karena ia merepotkan:
+ *
+ *   - `stock_movement`, `cash_drawer_shift`, `cash_movement`, `audit_event`
+ *     raw table yang TIDAK ada di sync rules jalur turun. Rebuild membuangnya
+ *     tanpa jalan pulang.
+ *   - `outbox_local` murni lokal, memegang antrean penjualan yang belum
+ *     terkirim, dan `rencanaDdl` sengaja tidak punya jalur untuk men-drop
+ *     tabel semacam itu.
+ *
+ * Nama yang SUDAH diperbaiki juga wajib dihapus dari sini, dan testnya
+ * mengatakannya: garis dasar yang lebih panjang daripada kenyataan diam-diam
+ * memaafkan tabel yang kelak memakai nama itu lagi.
+ */
+const PELANGGAR_DIKETAHUI = [
+  'stock_movement',
+  'cash_drawer_shift',
+  'cash_movement',
+  'audit_event',
+  'outbox_local',
+];
+
 // ---------------------------------------------------------------------------
 
 test('⛔ penjaga PK membedakan NOT NULL milik PK dari milik kolom TETANGGA', async () => {
@@ -295,12 +334,45 @@ test('⛔ setiap PRIMARY KEY tekstual lokal ditulis NOT NULL', async () => {
   // menandai test ini skip: ketiganya mengembalikan keadaan yang baru saja
   // selesai diperbaiki, dengan biaya yang sama dan tanpa satu pun error.
   const pelanggar = await pelanggarPk(SKEMA());
+  const nama = pelanggar.map((p) => p.tabel).sort();
+  const dasar = [...PELANGGAR_DIKETAHUI].sort();
 
-  assert.deepEqual(
-    pelanggar,
-    [],
-    'kolom PRIMARY KEY tekstual tanpa NOT NULL — SQLite akan menerima id NULL di perangkat.\n' +
-      `${pelanggar.length} tabel:\n` +
-      pelanggar.map((p) => `  L${p.baris}  ${p.tabel}.${p.kolom}  ${p.definisi}`).join('\n')
-  );
+  const baru = nama.filter((t) => !PELANGGAR_DIKETAHUI.includes(t));
+  const hilang = dasar.filter((t) => !nama.includes(t));
+  const daftar = pelanggar
+    .map((p) => `  L${p.baris}  ${p.tabel}.${p.kolom}  ${p.definisi}`)
+    .join('\n');
+
+  /* ⛔ DUA MERAH YANG BERBEDA, dan membedakannya adalah seluruh gunanya.
+     Pesan yang selalu berbunyi sama adalah pesan yang orang berhenti baca. */
+  const pesan =
+    baru.length > 0
+      ? '⛔ PELANGGAR BARU — tabel ini TIDAK ada di garis dasar:\n' +
+        baru.map((t) => `  ${t}`).join('\n') +
+        '\n\nSebuah tabel ditambahkan atau diubah dengan PRIMARY KEY tekstual tanpa ' +
+        '`NOT NULL`. SQLite menerima id NULL di sana; PostgreSQL menolaknya, jadi ' +
+        'selisihnya baru terlihat saat sync, jauh dari sebabnya.\n\n' +
+        'Perbaiki tabel BARU-nya — jangan menambahkannya ke `PELANGGAR_DIKETAHUI`. ' +
+        'Daftar itu garis dasar yang menunggu keputusan produk, bukan tempat ' +
+        'menampung pelanggaran berikutnya.\n\n' +
+        `Seluruh ${pelanggar.length} pelanggar:\n${daftar}`
+      : hilang.length > 0
+        ? '✔ Sebagian garis dasar SUDAH DIPERBAIKI: ' +
+          hilang.join(', ') +
+          '\n\nHapus nama itu dari `PELANGGAR_DIKETAHUI` supaya daftarnya tetap ' +
+          'menggambarkan keadaan sebenarnya. Garis dasar yang lebih panjang daripada ' +
+          'kenyataan diam-diam memaafkan tabel yang kelak memakai nama itu lagi.\n\n' +
+          `Sisa ${pelanggar.length} pelanggar:\n${daftar}`
+        : 'Kelima pelanggar ini DIHARAPKAN dan sedang MENUNGGU KEPUTUSAN produk — ' +
+          'bukan regresi, bukan pelanggar baru.\n\n' +
+          `${daftar}\n\n` +
+          'Empat pertama raw table yang TIDAK ada di sync rules jalur turun: rebuild ' +
+          'membuangnya tanpa jalan pulang. `outbox_local` murni lokal dan memegang ' +
+          'antrean penjualan yang belum terkirim; `rencanaDdl` sengaja tidak punya ' +
+          'jalur untuk men-drop tabel semacam itu.\n\n' +
+          'Test ini tetap MERAH, dan itu disengaja. Yang membuatnya tetap berguna ' +
+          'adalah bahwa pelanggar BARU menghasilkan pesan yang berbeda — bukan bahwa ' +
+          'merahnya hilang.';
+
+  assert.deepEqual(pelanggar, [], pesan);
 });
