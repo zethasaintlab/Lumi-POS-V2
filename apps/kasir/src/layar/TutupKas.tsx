@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
@@ -49,7 +50,7 @@ const PECAHAN = [1000, 5000, 10000, 50000, 100000];
  * mencocokkannya.
  *
  * Ditemukan lewat galeri komponen, dengan data pembayaran campuran. Tidak satu
- * pun dari 515 test kasir merah karenanya: semuanya memakai `cash`, dan `cash`
+ * pun dari seluruh test kasir merah karenanya: semuanya memakai `cash`, dan `cash`
  * adalah satu-satunya kunci yang keempat salinan sepakati.
  *
  * `labelMetode` dari `packages/domain` adalah peta LAYAR, dibagi dengan
@@ -99,7 +100,7 @@ export function TutupKas() {
     };
   }, [db]);
 
-  if (!siap) return <EmptyState title="Menyiapkan tutup kas" body="Membaca data shift." />;
+  if (!siap) return <Memuat judul="Menyiapkan tutup kas…" bentuk="blok" jumlah={4} />;
 
   /* ⛔ Mendahului "Tidak ada shift yang dapat ditutup". Pesan itu menyuruh
      kasir membuka shift; pada database yang tidak dapat dibaca, shiftnya

@@ -16,7 +16,7 @@ import {
   TABEL_RAW,
   kolomPerTabel,
   pecahPernyataan,
-  sidikJariRawTable,
+  sidikJariSkemaLokal,
 } from './skema.ts';
 
 export interface RencanaDdl {
@@ -238,7 +238,11 @@ export interface DepsMigrasi {
  *      di atas skema setengah jadi -- dan itu tidak akan pernah pulih sendiri.
  */
 export async function jalankanMigrasi(deps: DepsMigrasi): Promise<KeputusanMigrasi> {
-  const sidikSekarang = sidikJariRawTable(kolomPerTabel(deps.sqlSkema));
+  // ⛔ `sidikJariSkemaLokal`, BUKAN `sidikJariRawTable`. Yang kedua hanya
+  // melihat nama dan urutan kolom, dan `NOT NULL` tidak mengubah satu nama pun
+  // — perbaikan batasan karena itu tidak pernah sampai ke perangkat yang sudah
+  // terpasang, tanpa satu pun error. Lihat catatan di `sidikJariSkemaLokal`.
+  const sidikSekarang = sidikJariSkemaLokal(deps.sqlSkema);
   const sidikTersimpan = await deps.bacaSidik();
   const keputusan = putuskanMigrasi({ sidikTersimpan, sidikSekarang });
 

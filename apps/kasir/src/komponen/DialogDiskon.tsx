@@ -15,6 +15,7 @@ import { DialogOtorisasi } from './DialogOtorisasi.tsx';
 import { Bidang } from '../Bidang.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { LatarDialog } from './LatarDialog.tsx';
 
 /* K-03 — diskon tingkat order (FR-B8, `spec-b:267`).
 
@@ -96,8 +97,7 @@ export function DialogDiskon({ subtotal, ambang, aktorId, awal, onBatal, onSimpa
   }
 
   return (
-    <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label="Diskon">
-      <div className="kasir-dialog">
+    <LatarDialog label="Diskon" onBatal={onBatal}>
         <h2 className="t-title">Diskon</h2>
         <p className="t-caption kasir-login-sub">
           Subtotal <span className="num">{rupiah(subtotal)}</span>. Di atas{' '}
@@ -218,7 +218,6 @@ export function DialogDiskon({ subtotal, ambang, aktorId, awal, onBatal, onSimpa
             Terapkan
           </Tombol>
         </div>
-      </div>
-    </div>
+    </LatarDialog>
   );
 }

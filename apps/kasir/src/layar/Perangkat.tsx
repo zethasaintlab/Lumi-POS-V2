@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, EmptyState } from 'ds';
+import { Badge, Card, EmptyState, SegmentedControl } from 'ds';
 import {
   bacaKonfigPerangkat,
   siapKirim,
@@ -235,39 +235,63 @@ export function Perangkat() {
       <span className="t-title">Perangkat</span>
 
       <Card>
-        <div className="t-body-md">
-          {siapKirim(tersimpan) ? 'Perangkat terhubung' : 'Perangkat belum terhubung'}
-        </div>
-        <div className="t-caption">
-          {siapKirim(tersimpan)
-            ? `${tersimpan?.deviceCode} · outlet ${tersimpan?.outletId}`
-            : 'Sinkronisasi mati sampai identitas dan kredensial lengkap.'}
+        {/* ⛔ `<Badge>`, bukan kalimat biasa. Layar ini dibaca orang yang tidak
+            memasang POS setiap hari, dan keadaan sambungan adalah satu-satunya
+            hal di halaman ini yang harus terbaca dalam sekali lihat. */}
+        <div className="row" style={{ gap: 'var(--space-3)', alignItems: 'center' }}>
+          <Badge tone={siapKirim(tersimpan) ? 'success' : 'warning'}>
+            {siapKirim(tersimpan) ? 'Terhubung' : 'Belum terhubung'}
+          </Badge>
+          <span className="t-caption">
+            {siapKirim(tersimpan)
+              ? `${tersimpan?.deviceCode} · outlet ${tersimpan?.outletId}`
+              : 'Sinkronisasi mati sampai identitas dan kredensial lengkap.'}
+          </span>
         </div>
       </Card>
 
-      <Bidang label="Alamat server" value={nilai.baseUrl} onChange={ubah('baseUrl')} placeholder="http://localhost:3000" />
-      <Bidang label="Tenant" value={nilai.tenantId} onChange={ubah('tenantId')} />
-      <Bidang label="Outlet" value={nilai.outletId} onChange={ubah('outletId')} />
-      <Bidang label="ID perangkat" value={nilai.deviceId} onChange={ubah('deviceId')} />
-      <Bidang
-        label="Kode perangkat"
-        hint="Muncul di nomor struk, misalnya K1"
-        value={nilai.deviceCode}
-        onChange={ubah('deviceCode')}
-      />
-      <Bidang
-        label="Kredensial perangkat"
-        hint="Diterbitkan sekali oleh server dan tidak dapat dibaca ulang di sana"
-        type="password"
-        value={nilai.tokenSecret ?? ''}
-        onChange={ubah('tokenSecret')}
-      />
+      {/* ⛔ Keenam kolom DIKELOMPOKKAN dalam satu kartu, 2 September 2026.
+          Sebelumnya keenamnya melayang di aliran halaman dengan jarak yang
+          sama seperti jarak antar-BAGIAN — jadi tidak ada apa pun yang
+          menyatakan bahwa keenamnya satu formulir, dan tombol Simpan di
+          bawahnya terbaca seperti menyimpan seluruh halaman.
 
-      <div className="row" style={{ gap: 'var(--space-3)' }}>
-        <Tombol varian="primary" disabled={!siapKirim(nilai)} onClick={simpan}>
-          Simpan
-        </Tombol>
-      </div>
+          `<Card>` bundle, dan judul bagiannya di dalam kartu: itu yang
+          mengikat tombol Simpan ke kolom-kolom yang ia simpan. */}
+      <Card>
+        <div className="stack" style={{ gap: 'var(--space-4)' }}>
+          <div>
+            <div className="t-body-md">Identitas perangkat</div>
+            <div className="t-caption">
+              Diberikan oleh pemilik saat perangkat didaftarkan. Salin apa adanya.
+            </div>
+          </div>
+
+          <Bidang label="Alamat server" value={nilai.baseUrl} onChange={ubah('baseUrl')} placeholder="http://localhost:3000" />
+          <Bidang label="Tenant" value={nilai.tenantId} onChange={ubah('tenantId')} />
+          <Bidang label="Outlet" value={nilai.outletId} onChange={ubah('outletId')} />
+          <Bidang label="ID perangkat" value={nilai.deviceId} onChange={ubah('deviceId')} />
+          <Bidang
+            label="Kode perangkat"
+            hint="Muncul di nomor struk, misalnya K1"
+            value={nilai.deviceCode}
+            onChange={ubah('deviceCode')}
+          />
+          <Bidang
+            label="Kredensial perangkat"
+            hint="Diterbitkan sekali oleh server dan tidak dapat dibaca ulang di sana"
+            type="password"
+            value={nilai.tokenSecret ?? ''}
+            onChange={ubah('tokenSecret')}
+          />
+
+          <div className="row" style={{ gap: 'var(--space-3)' }}>
+            <Tombol varian="primary" disabled={!siapKirim(nilai)} onClick={simpan}>
+              Simpan
+            </Tombol>
+          </div>
+        </div>
+      </Card>
       {pesan && (
         <p
           className={pesanBlokir ? 't-body-md kasir-login-galat' : 't-caption'}
@@ -295,16 +319,22 @@ export function Perangkat() {
             return pesanProfil(b.sebab, b.profil?.nama ?? null);
           })()}
         </div>
-        <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-          {profil.map((p) => (
-            <Tombol
-              key={p.id}
-              varian={p.id === profilId ? 'primary' : 'secondary'}
-              onClick={() => setProfilId(p.id)}
-            >
-              {p.nama}
-            </Tombol>
-          ))}
+        {/* ⛔ `<SegmentedControl>`, bukan barisan tombol. Deretan tombol
+            `primary`/`secondary` membuat setiap profil terlihat seperti AKSI —
+            orang awam yang menekan "Epson TM-T82" wajar mengira ia baru saja
+            menyuruh sesuatu dicetak. Ini pilihan MODE, dan segmented control
+            adalah bentuk yang menyatakannya.
+
+            Sekaligus mengembalikan aturan DS #2: sebelumnya ada dua tombol
+            `primary` di layar yang sama (Simpan dan profil terpilih), dan
+            "satu aksi utama per layar" berhenti berlaku. */}
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          <SegmentedControl
+            ariaLabel="Profil printer"
+            value={profilId ?? ''}
+            onChange={(id: string) => setProfilId(id)}
+            options={profil.map((p) => ({ value: p.id, label: p.nama }))}
+          />
         </div>
       </Card>
 

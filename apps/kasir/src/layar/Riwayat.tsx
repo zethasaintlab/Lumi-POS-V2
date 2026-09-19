@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { EmptyState } from 'ds';
-import { bacaRiwayat, cariRiwayat, type RingkasOrder } from '../riwayat/baca.ts';
+import { Badge, EmptyState, SegmentedControl } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
+import { Paginasi } from '../komponen/Paginasi.tsx';
+import { potongHalaman, PER_HALAMAN_RIWAYAT } from '../komponen/halaman.ts';
+import {
+  bacaRiwayat,
+  cariRiwayat,
+  LABEL_URUTAN_RIWAYAT,
+  urutkanRiwayat,
+  type RingkasOrder,
+  type UrutanRiwayat,
+} from '../riwayat/baca.ts';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { Bidang } from '../Bidang.tsx';
@@ -39,6 +49,8 @@ export function Riwayat() {
   const [siap, setSiap] = useState(false);
   const [gagal, setGagal] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
+  const [urutan, setUrutan] = useState<UrutanRiwayat>('terbaru');
+  const [halamanKe, setHalamanKe] = useState(1);
 
   useEffect(() => {
     let hidup = true;
@@ -63,9 +75,22 @@ export function Riwayat() {
     };
   }, [db]);
 
-  const terlihat = useMemo(() => cariRiwayat(daftar, kueri), [daftar, kueri]);
+  const terlihat = useMemo(
+    () => urutkanRiwayat(cariRiwayat(daftar, kueri), urutan),
+    [daftar, kueri, urutan]
+  );
+  const halaman = potongHalaman(terlihat, halamanKe, PER_HALAMAN_RIWAYAT);
 
-  if (!siap) return <EmptyState title="Membaca riwayat" body="Mengambil transaksi dari perangkat." />;
+  /* ⛔ Kembali ke halaman 1 saat saringan atau urutan berubah.
+     Tanpa ini, kasir di halaman 4 yang mengetik pencarian menyisakan 8 baris
+     akan melihat daftar KOSONG — dan kosong di sana tidak dapat dibedakan dari
+     "tidak ada struk yang cocok". `potongHalaman` men-clamp nomornya sebagai
+     jaring kedua, tapi jaring kedua bukan pengganti yang pertama. */
+  useEffect(() => {
+    setHalamanKe(1);
+  }, [kueri, urutan]);
+
+  if (!siap) return <Memuat judul="Membaca riwayat penjualan perangkat ini…" bentuk="baris" jumlah={8} />;
 
   if (gagal) {
     return <GagalBaca akibat="Riwayat penjualan perangkat ini tidak dapat ditampilkan, dan struk lama tidak dapat dicetak ulang." pesan={gagal} />;
@@ -82,13 +107,30 @@ export function Riwayat() {
 
   return (
     <div className="kasir-grid-panel">
-      <Bidang label="Cari nomor struk" value={kueri} onChange={setKueri} placeholder="K1-20260813-0001" />
+      {/* Baris kontrol yang sama bentuknya dengan K-03: cari di kiri, urutan
+          di kanan. Dua layar daftar yang kontrolnya diletakkan berbeda menuntut
+          kasir belajar dua kali. */}
+      <div className="kasir-kontrol-grid">
+        <Bidang label="Cari nomor struk" value={kueri} onChange={setKueri} placeholder="K1-20260813-0001" />
+        <div className="kasir-urutan">
+          <span className="label">Urutkan</span>
+          <SegmentedControl
+            ariaLabel="Urutkan riwayat"
+            value={urutan}
+            onChange={(v: string) => setUrutan(v as UrutanRiwayat)}
+            options={(Object.keys(LABEL_URUTAN_RIWAYAT) as UrutanRiwayat[]).map((u) => ({
+              value: u,
+              label: LABEL_URUTAN_RIWAYAT[u],
+            }))}
+          />
+        </div>
+      </div>
 
       {terlihat.length === 0 ? (
         <EmptyState title="Tidak ada struk yang cocok" body={`Tidak ada hasil untuk "${kueri}".`} />
       ) : (
         <ul className="kasir-baris-daftar">
-          {terlihat.map((o) => (
+          {halaman.baris.map((o) => (
             <li key={o.id}>
               <button
                 type="button"
@@ -103,18 +145,36 @@ export function Riwayat() {
                     `status`. Order yang sudah di-void tetap berstatus `open`
                     (`CLAUDE.md`), jadi tanpa ini kasir melihat transaksi yang
                     terlihat normal padahal sudah dibatalkan. */}
-                {o.dibatalkan && <span className="t-caption kasir-login-galat">Dibatalkan</span>}
-                {o.membatalkan && <span className="t-caption kasir-login-sub">Pembatalan</span>}
+                {/* ⛔ `<Badge>` bundle menggantikan `<span>` berwarna,
+                    2 September 2026. Teks merah di antara teks abu-abu adalah
+                    "status warna saja" dalam bentuk yang paling mudah luput:
+                    katanya ada, tapi ia tidak terbaca sebagai LABEL — ia
+                    terbaca sebagai kalimat yang kebetulan berwarna, dan pada
+                    baris padat mata melewatinya.
+
+                    Badge bundle memberi bentuk (pil bertepi) selain warna, dan
+                    kontraknya sendiri menuntut teks. `tone` menyatakan artinya:
+                    `danger` untuk order yang dibatalkan, `neutral` untuk order
+                    yang MEMBATALKAN — yang kedua bukan kabar buruk, ia catatan
+                    koreksi. */}
+                {o.dibatalkan && <Badge tone="danger">Dibatalkan</Badge>}
+                {o.membatalkan && <Badge tone="neutral">Pembatalan</Badge>}
 
                 <span className="t-body-md num">{rupiah(o.total)}</span>
-                <span className={o.statusSync === 'failed' ? 't-caption kasir-login-galat' : 't-caption kasir-login-sub'}>
+                {/* Status sinkronisasi: `warning` untuk gagal, bukan `danger`.
+                    Penjualannya TERSIMPAN — yang belum terjadi adalah
+                    pengirimannya, dan merah di sini terbaca seperti uang yang
+                    hilang. `spec-h` memakai perbedaan itu. */}
+                <Badge tone={o.statusSync === 'failed' ? 'warning' : 'neutral'}>
                   {TEKS_SYNC[o.statusSync]}
-                </span>
+                </Badge>
               </button>
             </li>
           ))}
         </ul>
       )}
+
+      {terlihat.length > 0 && <Paginasi halaman={halaman} onPindah={setHalamanKe} />}
     </div>
   );
 }

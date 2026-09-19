@@ -117,8 +117,17 @@ test('⛔ perkiraanTagihan mengembalikan null alih-alih MELEMPAR', async () => {
   assert.equal(typeof perkiraanTagihan('standard', 1), 'bigint');
 });
 
+// ⛔ Menguji pemformat DOMAIN, bukan salinan lokal B-29.
+//
+// `upgrade.ts` sempat membawa `rupiah` sendiri — bentuk yang sama dengan
+// `packages/domain/src/uang-tampilan.ts` untuk `bigint`, dan berbeda untuk
+// segalanya yang lain: salinan itu tidak mengenal `string` (yang endpoint
+// laporan kirim justru untuk menjaga presisi di atas 2⁵³) dan tidak
+// membedakan nilai HILANG dari nol. Dihapus 2 September 2026; testnya tetap
+// di sini karena B-29 adalah satu-satunya layar yang angkanya berakhir di
+// tagihan yang merchant bayar.
 test('format rupiah mengikuti CLAUDE.md: titik ribuan, tanpa desimal', async () => {
-  const { rupiah } = await modul();
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   assert.equal(rupiah(0n), 'Rp 0');
   assert.equal(rupiah(1_000n), 'Rp 1.000');
   assert.equal(rupiah(349_000n), 'Rp 349.000');

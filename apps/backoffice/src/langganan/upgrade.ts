@@ -109,20 +109,6 @@ export function susunPilihan(paketSaatIni: string, jumlahOutlet: number): Piliha
 }
 
 /**
- * Format rupiah `CLAUDE.md`: `Rp 1.847.000` — titik ribuan, TANPA desimal.
- *
- * ⛔ `bigint`, bukan `number`. Nilainya datang dari jalur uang, dan aturan
- * "jalur uang tidak menyentuh float" tidak punya pengecualian untuk lapisan
- * tampilan — pengecualian di sini adalah yang disalin ke kolom berikutnya.
- */
-export function rupiah(nilai: bigint): string {
-  const negatif = nilai < 0n;
-  const angka = (negatif ? -nilai : nilai).toString();
-  const berTitik = angka.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `${negatif ? '− ' : ''}Rp ${berTitik}`;
-}
-
-/**
  * Label status tagihan yang dibaca merchant.
  *
  * ⛔ `expired` DIBEDAKAN dari `failed`, dan itu bukan kehalusan bahasa: yang

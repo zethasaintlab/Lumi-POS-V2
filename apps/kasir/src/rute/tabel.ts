@@ -19,6 +19,20 @@ export interface Rute {
   layar: string;
   /** Judul yang dipakai topbar dan layar `BelumDibangun`. */
   nama: string;
+  /**
+   * Muncul di bilah navigasi shell?
+   *
+   * ⛔ Keputusannya hidup DI SINI, bukan sebagai saringan di `ShellKasir`.
+   * Sampai 2 September 2026 shell menyaring dengan `!r.jalur.includes(':')` —
+   * aturan yang kebetulan benar hari itu dan berhenti benar pada rute berikutnya
+   * yang tidak berparameter tapi juga tidak layak jadi tab. `/login` dan
+   * `/shift/buka` sudah termasuk: keduanya GERBANG, dan tab menuju gerbang yang
+   * sudah dilewati mengundang kasir keluar dari shift yang sedang berjalan.
+   *
+   * Nama pendek karena ia dibaca sebagai tab, bukan sebagai judul halaman:
+   * "Perangkat & Uji Cetak" memakan separuh bilah pada 1024px.
+   */
+  nav?: { urutan: number; label: string };
 }
 
 /**
@@ -33,13 +47,42 @@ export interface Rute {
 export const TABEL_RUTE: Rute[] = [
   { jalur: '/login', layar: 'K-01', nama: 'Login' },
   { jalur: '/shift/buka', layar: 'K-02', nama: 'Buka Shift' },
-  { jalur: '/', layar: 'K-03', nama: 'Kasir' },
-  { jalur: '/riwayat', layar: 'K-08', nama: 'Riwayat Transaksi' },
+  { jalur: '/', layar: 'K-03', nama: 'Kasir', nav: { urutan: 1, label: 'Kasir' } },
+  {
+    jalur: '/riwayat',
+    layar: 'K-08',
+    nama: 'Riwayat Transaksi',
+    nav: { urutan: 2, label: 'Riwayat' },
+  },
   { jalur: '/riwayat/:orderId', layar: 'K-09', nama: 'Detail Transaksi' },
-  { jalur: '/shift/tutup', layar: 'K-12', nama: 'Tutup Kas' },
-  { jalur: '/sync', layar: 'K-14', nama: 'Status Sinkronisasi' },
-  { jalur: '/perangkat', layar: 'K-15', nama: 'Perangkat & Uji Cetak' },
+  {
+    jalur: '/shift/tutup',
+    layar: 'K-12',
+    nama: 'Tutup Kas',
+    nav: { urutan: 3, label: 'Tutup Kas' },
+  },
+  { jalur: '/sync', layar: 'K-14', nama: 'Status Sinkronisasi', nav: { urutan: 4, label: 'Sinkron' } },
+  {
+    jalur: '/perangkat',
+    layar: 'K-15',
+    nama: 'Perangkat & Uji Cetak',
+    nav: { urutan: 5, label: 'Perangkat' },
+  },
 ];
+
+/**
+ * Rute yang muncul di bilah navigasi, terurut.
+ *
+ * ⛔ Diturunkan dari `TABEL_RUTE`, bukan daftar kedua. Daftar kedua akan
+ * menyimpang pada rute berikutnya yang ditambahkan, dan yang menyimpang
+ * menghasilkan tab yang menuju layar yang tidak ada — atau layar yang tidak
+ * dapat dicapai sama sekali.
+ */
+export function ruteNav(): Rute[] {
+  return TABEL_RUTE.filter((r) => r.nav !== undefined).sort(
+    (a, b) => (a.nav?.urutan ?? 0) - (b.nav?.urutan ?? 0)
+  );
+}
 
 /** Layar untuk jalur yang tidak dikenal. Bukan salah satu rute di atas. */
 export const LAYAR_TIDAK_DITEMUKAN = 'TIDAK-DITEMUKAN';

@@ -8,7 +8,7 @@
  *
  * ## ⛔ Yang TIDAK dibangun, dan kenapa
  *
- * Back-office punya sembilan layar laporan (B-16…B-21). Menyalin semuanya ke
+ * Back-office punya enam layar laporan (B-16…B-21, `IA:195-200`). Menyalin semuanya ke
  * 390px menghasilkan tabel yang tidak dapat dibaca dan navigasi yang `IA:229`
  * justru menolak. Yang dipilih: **omzet per rentang**, angka yang sama dengan
  * B-16, dengan tiga rentang siap pakai. Ekspor, saringan, dan rincian per

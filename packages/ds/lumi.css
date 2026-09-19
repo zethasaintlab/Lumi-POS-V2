@@ -186,3 +186,56 @@
      dengan setelan ini adalah gerakannya. */
   .btn:active:not(:disabled) { transform: none; }
 }
+
+/* --- Kedalaman: gradien halus dan pelapisan permukaan -----------------------
+ *
+ * ⛔ ATURAN DS #8 DILONGGARKAN — keputusan user, 1 September 2026, setelah
+ * melihat galeri di HP: *"sangat flat, tidak hidup, dan sangat jauh dari
+ * kasirpintar"*. Bunyi aturan lamanya: "tanpa emoji, tanpa gambar/gradien/
+ * tekstur, tanpa dark mode". Yang dicabut HANYA gradien dan tekstur.
+ *
+ * Yang TETAP berlaku, dan tidak dicabut oleh apa pun di berkas ini:
+ *
+ *   - tanpa emoji, tanpa gambar, tanpa dark mode
+ *   - PALET tidak disentuh: tidak ada satu pun nilai warna baru di bawah ini.
+ *     Setiap gradien disusun dari token yang sudah ada (`--surface`,
+ *     `--surface-sunk`, `--surface-alt`, `--accent-soft`). Yang berubah
+ *     kedalaman, bukan warnanya.
+ *   - aksen teal tetap satu-satunya warna AKSI
+ *
+ * ⛔ Gradiennya SENGAJA nyaris tak terlihat sebagai gradien. Yang dicari
+ * adalah permukaan yang tidak rata sempurna — itu yang membuat mata membaca
+ * "benda" alih-alih "kotak putih". Gradien yang terlihat sebagai gradien akan
+ * bersaing dengan aksen, dan aksen adalah satu-satunya hal yang boleh menarik
+ * mata di layar kasir.
+ */
+
+/* Latar kerja: sedikit lebih gelap di bawah, seperti permukaan meja yang
+   menerima cahaya dari atas. Dua token yang sudah ada, nol warna baru. */
+.kasir-grid-panel {
+  background: linear-gradient(180deg, var(--surface-sunk) 0%, var(--surface-alt) 100%);
+}
+
+/* Panel keranjang DIANGKAT dari latar kerja — ia tempat uang dihitung, dan
+   pemisahannya sebelumnya cuma garis 1px. */
+.kasir-keranjang {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-sunk) 100%);
+  box-shadow: -1px 0 0 var(--border), var(--shadow-card);
+}
+
+/* Topbar: tepi bawah yang punya berat, bukan garis rambut. */
+.kasir-topbar {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-sunk) 100%);
+  box-shadow: var(--shadow-card);
+}
+
+/* Kartu produk: cahaya dari atas, sangat tipis. Ia hilang sepenuhnya saat
+   kartu ditekan — bundle menggantinya dengan `--accent-soft`, dan dua lapis
+   yang bertumpuk akan membuat keadaan tekan terlihat kotor. */
+.product-card.kasir-kartu {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-sunk) 140%);
+}
+.product-card.kasir-kartu:hover,
+.product-card.kasir-kartu:active {
+  background: var(--accent-soft);
+}

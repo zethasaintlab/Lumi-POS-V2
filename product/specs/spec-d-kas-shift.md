@@ -93,9 +93,24 @@ THEN login berhasil tanpa koneksi
 
 ### FR-D2 [P0] — Urutan input wajib
 
-**Deskripsi.** Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan angka terhitung. Ini kontrol, bukan preferensi UX — kasir yang melihat angka target akan menghitung mundur ke angka itu.
+**Deskripsi.** ⛔ **DICABUT 1 September 2026 atas keputusan user.** Aturan ini
+sebelumnya berbunyi: *"Kasir memasukkan hitungan fisik sebelum sistem
+menampilkan angka terhitung. Ini kontrol, bukan preferensi UX — kasir yang
+melihat angka target akan menghitung mundur ke angka itu."*
 
-Design system sudah menetapkan copy-nya: *"Hitung dulu, baru sistem menampilkan angkanya."*
+K-12 kini menampilkan saldo seharusnya sejak tahap pertama.
+
+⛔ **Konsekuensi yang dinyatakan, bukan disembunyikan:** selisih kas berhenti
+menjadi angka yang dapat dipercaya, dan laporan exception **FR-G5 X7 (selisih
+kas per kasir)** kehilangan sebagian besar artinya — ia kini mengukur selisih
+dari hitungan yang dilakukan sambil melihat targetnya. Alasan pencabutan:
+layar tahap pertama yang sengaja kosong dinilai "flat dan sangat lifeless"
+dalam peninjauan visual 1 September 2026.
+
+⛔ Copy design system *"Hitung dulu, baru sistem menampilkan angkanya"* ikut
+DICABUT bersama aturannya — kalimat itu menjanjikan urutan yang tidak lagi
+ditegakkan, dan janji yang tidak ditepati di layar uang lebih buruk daripada
+tidak ada janji.
 
 **Behavior.**
 

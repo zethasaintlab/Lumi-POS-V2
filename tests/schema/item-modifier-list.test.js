@@ -148,7 +148,170 @@ test('INSERT pasangan ganda ditolak database, bukan hanya oleh aplikasi', async 
 // Penjaga: setiap PRIMARY KEY tekstual di skema lokal wajib NOT NULL
 // ---------------------------------------------------------------------------
 
-test('⛔ setiap `id TEXT PRIMARY KEY` lokal ditulis NOT NULL', () => {
+/* ⛔ Predikat per-KOLOM, bukan per-baris.
+ *
+ * Versi pertama penjaga ini memakai predikat per-BARIS:
+ *
+ *     if (!/\bTEXT\s+PRIMARY\s+KEY/i.test(bersih)) continue;
+ *     if (/\bNOT\s+NULL\b/i.test(bersih)) continue;   // ← celahnya
+ *
+ * Baris kedua memaafkan SELURUH BARIS bila ada `NOT NULL` di mana pun padanya,
+ * dan 16 dari 17 tabel menulis primary key-nya sebaris dengan kolom lain:
+ *
+ *     id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
+ *
+ * `NOT NULL` di sana milik `tenant_id` dan `name`. Penjaga membacanya sebagai
+ * milik `id`, melaporkan NOL pelanggar, dan memaafkan 17 tabel. `item_image`
+ * tertangkap hanya karena `id`-nya kebetulan berdiri sendiri di barisnya —
+ * bukan karena penjaganya lebih teliti untuk tabel itu.
+ *
+ * ⛔ Pemecah kolomnya DIIMPOR, tidak ditulis ulang. `bagiKolom` dan
+ * `AWALAN_BATASAN` di `apps/kasir/src/lokal/skema.ts` adalah fungsi yang SAMA
+ * yang `batasanNotNull` pakai, dan `batasanNotNull` sudah akurat per kolom
+ * sejak lahir. Pemecah kedua akan menyimpang dari yang pertama, dan yang
+ * menyimpang menghasilkan penjaga yang tidak sepakat dengan sidik jari skema
+ * tentang kolom mana yang `NOT NULL`.
+ *
+ * Node 24.7 melucuti tipe secara bawaan, jadi `.ts` dapat diimpor dari berkas
+ * CJS ini tanpa flag apa pun dan tanpa mengubah `test:schema`.
+ */
+async function pelanggarPk(sqlText) {
+  const { pecahPernyataan, bagiKolom, batasanNotNull, AWALAN_BATASAN } = await import(
+    '../../apps/kasir/src/lokal/skema.ts'
+  );
+
+  const baris = sqlText.replace(/\r\n?/g, '\n').split('\n');
+  const wajib = batasanNotNull(sqlText);
+  const hasil = [];
+
+  for (const p of pecahPernyataan(sqlText)) {
+    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s*\(/i.exec(p);
+    if (!m) continue;
+    const tabel = m[1];
+
+    for (const bagian of bagiKolom(p.slice(p.indexOf('(') + 1, p.lastIndexOf(')')))) {
+      const d = bagian.trim();
+      // Batasan tingkat tabel — `PRIMARY KEY (a, b)` — bukan kolom.
+      if (d.length === 0 || AWALAN_BATASAN.test(d)) continue;
+      if (!/\bPRIMARY\s+KEY\b/i.test(d)) continue;
+      // ⛔ `INTEGER PRIMARY KEY` dikecualikan dan itu BUKAN kelonggaran: ia
+      // alias rowid, dan SQLite mengisinya otomatis — NULL di sana mustahil.
+      if (/\bINTEGER\s+PRIMARY\s+KEY\b/i.test(d)) continue;
+
+      const nama = /^"?([a-z_]+)"?/i.exec(d);
+      if (!nama) continue;
+      if ((wajib[tabel] ?? []).includes(nama[1])) continue;
+
+      // Nomor baris untuk daftar kerja: baris pertama tabel ini yang menyebut
+      // PRIMARY KEY. Ia keperluan LAPORAN, bukan bagian dari penilaian.
+      const mulai = baris.findIndex((b) =>
+        new RegExp(`CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?"?${tabel}"?\\s*\\(`, 'i').test(b)
+      );
+      const pkBaris = baris.findIndex((b, i) => i >= mulai && /\bPRIMARY\s+KEY\b/i.test(b.replace(/--.*$/, '')));
+      hasil.push({ tabel, baris: pkBaris + 1, kolom: nama[1], definisi: d.replace(/\s+/g, ' ') });
+    }
+  }
+  return hasil;
+}
+
+const SKEMA = () =>
+  readFileSync(resolve(__dirname, '../../db/local/001-initial.sql'), 'utf8').replace(/\r\n?/g, '\n');
+
+/**
+ * Garis dasar: pelanggar yang SUDAH DIKETAHUI dan sedang menunggu keputusan.
+ *
+ * ⛔ INI BUKAN DAFTAR PENGECUALIAN, dan bedanya bukan istilah. Daftar
+ * pengecualian MEMAAFKAN — test hijau meski pelanggarnya ada. Daftar ini tidak
+ * memaafkan apa pun: testnya tetap MERAH untuk kelima nama di bawah. Yang
+ * diputuskan daftar ini hanya KALIMAT MANA yang dicetak.
+ *
+ * ⛔ Kenapa pembedaan itu perlu ada sama sekali: `test:schema` akan merah
+ * selama keputusan produk atas kelima tabel ini belum diambil, dan itu bisa
+ * lama. Merah yang selalu berbunyi sama adalah merah yang orang berhenti baca
+ * — dan pada hari tabel ke-38 ditambahkan tanpa `NOT NULL`, tidak seorang pun
+ * akan melihat bedanya. Pelanggar baru karena itu menghasilkan kalimat yang
+ * BERBEDA, yang menyebut namanya, dan yang melarang namanya ditambahkan ke
+ * sini.
+ *
+ * ⛔ Jangan menambah nama ke daftar ini untuk membuat pesan jadi tenang.
+ * Kelima ini ada di sini karena ongkos perbaikannya sudah dipetakan dan
+ * ditolak untuk sementara, bukan karena ia merepotkan:
+ *
+ *   - `stock_movement`, `cash_drawer_shift`, `cash_movement`, `audit_event`
+ *     raw table yang TIDAK ada di sync rules jalur turun. Rebuild membuangnya
+ *     tanpa jalan pulang.
+ *   - `outbox_local` murni lokal, memegang antrean penjualan yang belum
+ *     terkirim, dan `rencanaDdl` sengaja tidak punya jalur untuk men-drop
+ *     tabel semacam itu.
+ *
+ * Nama yang SUDAH diperbaiki juga wajib dihapus dari sini, dan testnya
+ * mengatakannya: garis dasar yang lebih panjang daripada kenyataan diam-diam
+ * memaafkan tabel yang kelak memakai nama itu lagi.
+ */
+const PELANGGAR_DIKETAHUI = [
+  'stock_movement',
+  'cash_drawer_shift',
+  'cash_movement',
+  'audit_event',
+  'outbox_local',
+];
+
+// ---------------------------------------------------------------------------
+
+test('⛔ penjaga PK membedakan NOT NULL milik PK dari milik kolom TETANGGA', async () => {
+  /* ⛔ SENTINEL, dan bentuknya dipilih setelah sentinel lama terbukti tidak
+     menguji apa pun. Yang lama menghitung baris yang cocok `TEXT PRIMARY KEY`
+     dan menuntut `>= 25`. Ia membuktikan penjaga MEMINDAI sesuatu; ia tidak
+     membuktikan penjaga dapat MEMBEDAKAN — dan justru ketidakmampuan
+     membedakan itulah cacatnya. Ia hijau sepanjang 17 tabel dimaafkan.
+
+     Yang diuji sekarang kemampuannya: dua definisi buatan dengan bentuk yang
+     SAMA PERSIS kecuali pada satu hal yang menentukan. Penjaga yang per-baris
+     menilai keduanya bersih; penjaga yang per-kolom memisahkannya. */
+  const AMAN = `CREATE TABLE uji_aman (
+  id TEXT NOT NULL PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL
+);`;
+  const CACAT = `CREATE TABLE uji_tetangga (
+  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL
+);`;
+
+  assert.deepEqual(
+    await pelanggarPk(AMAN),
+    [],
+    '`id TEXT NOT NULL PRIMARY KEY` ditandai pelanggar — penjaga menuduh kolom yang benar'
+  );
+
+  const cacat = await pelanggarPk(CACAT);
+  assert.equal(
+    cacat.length,
+    1,
+    '`id TEXT PRIMARY KEY` dengan NOT NULL milik tetangga TIDAK ditandai — ' +
+      'penjaga membaca per baris, bukan per kolom, dan itu tepat celah yang ' +
+      `memaafkan 17 tabel. Hasil: ${JSON.stringify(cacat)}`
+  );
+  assert.equal(cacat[0].tabel, 'uji_tetangga');
+  assert.equal(cacat[0].kolom, 'id');
+
+  /* ⛔ Batasan tingkat tabel bukan kolom, dan penjaga yang menghitungnya akan
+     menandai `stock_snapshot` sebagai kolom bernama "PRIMARY". */
+  assert.deepEqual(
+    await pelanggarPk(`CREATE TABLE uji_komposit (
+  tenant_id TEXT NOT NULL, outlet_id TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, outlet_id)
+);`),
+    [],
+    'PRIMARY KEY tingkat tabel dibaca sebagai kolom'
+  );
+
+  /* ⛔ `INTEGER PRIMARY KEY` adalah alias rowid — SQLite mengisinya sendiri. */
+  assert.deepEqual(
+    await pelanggarPk('CREATE TABLE uji_rowid (id INTEGER PRIMARY KEY CHECK (id = 1), nilai TEXT);'),
+    [],
+    'INTEGER PRIMARY KEY ditandai pelanggar — ia alias rowid, NULL mustahil di sana'
+  );
+});
+
+test('⛔ setiap PRIMARY KEY tekstual lokal ditulis NOT NULL', async () => {
   // ⛔ SQLite MENERIMA NULL di kolom PRIMARY KEY pada tabel rowid — bug lama
   // yang dipertahankan demi kompatibilitas, dan satu-satunya penawarnya adalah
   // menulis `NOT NULL` sendiri.
@@ -158,36 +321,58 @@ test('⛔ setiap `id TEXT PRIMARY KEY` lokal ditulis NOT NULL', () => {
   // tempat dan waktu penyebabnya. PowerSync menuntut kolom `id` pada setiap
   // raw table justru karena identitas baris adalah fondasi replikasinya.
   //
-  // `HANDOFF.md` mencatat ini sebagai utang atas ~15 tabel. Saat penjaga ini
-  // ditulis (29 Agustus 2026), ke-31 tabelnya SUDAH benar — utangnya lunas
-  // tanpa tercatat lunas. Yang tidak ada adalah penjaganya: tabel ke-32 dapat
-  // ditambahkan tanpa `NOT NULL` dan tidak ada satu pun test yang merah.
+  // ⛔ TEST INI MEMANG MERAH, dan itu hasil yang benar. Penjaganya baru saja
+  // berhenti memaafkan 17 tabel; tabelnya sendiri belum diperbaiki, dan
+  // memperbaikinya bukan keputusan teknis — SQLite tidak dapat menambahkan
+  // `NOT NULL` ke kolom yang sudah ada, jadi setiap perbaikan menuntut rebuild,
+  // dan rebuild pada tabel yang memegang data belum tersinkron adalah
+  // keputusan produk.
   //
-  // `INTEGER PRIMARY KEY` dikecualikan dan itu BUKAN kelonggaran: ia alias
-  // rowid, dan SQLite mengisinya otomatis — NULL di sana mustahil.
-  const sql = readFileSync(
-    resolve(__dirname, '../../db/local/001-initial.sql'),
-    'utf8'
-  ).replace(/\r\n?/g, '\n');
+  // Daftar pelanggarnya dicetak lengkap dengan nama tabel dan nomor baris
+  // supaya ia menjadi DAFTAR KERJA, bukan sekadar kabar buruk. Jangan
+  // menambahkan daftar pengecualian, jangan melonggarkan assertion, dan jangan
+  // menandai test ini skip: ketiganya mengembalikan keadaan yang baru saja
+  // selesai diperbaiki, dengan biaya yang sama dan tanpa satu pun error.
+  const pelanggar = await pelanggarPk(SKEMA());
+  const nama = pelanggar.map((p) => p.tabel).sort();
+  const dasar = [...PELANGGAR_DIKETAHUI].sort();
 
-  const pelanggar = [];
-  for (const baris of sql.split('\n')) {
-    const bersih = baris.replace(/--.*$/, '');
-    if (!/\bTEXT\s+PRIMARY\s+KEY/i.test(bersih)) continue;
-    if (/\bNOT\s+NULL\b/i.test(bersih)) continue;
-    pelanggar.push(baris.trim());
-  }
+  const baru = nama.filter((t) => !PELANGGAR_DIKETAHUI.includes(t));
+  const hilang = dasar.filter((t) => !nama.includes(t));
+  const daftar = pelanggar
+    .map((p) => `  L${p.baris}  ${p.tabel}.${p.kolom}  ${p.definisi}`)
+    .join('\n');
 
-  assert.deepEqual(
-    pelanggar,
-    [],
-    'kolom PRIMARY KEY tekstual tanpa NOT NULL — SQLite akan menerima id NULL di perangkat:\n' +
-      pelanggar.join('\n')
-  );
+  /* ⛔ DUA MERAH YANG BERBEDA, dan membedakannya adalah seluruh gunanya.
+     Pesan yang selalu berbunyi sama adalah pesan yang orang berhenti baca. */
+  const pesan =
+    baru.length > 0
+      ? '⛔ PELANGGAR BARU — tabel ini TIDAK ada di garis dasar:\n' +
+        baru.map((t) => `  ${t}`).join('\n') +
+        '\n\nSebuah tabel ditambahkan atau diubah dengan PRIMARY KEY tekstual tanpa ' +
+        '`NOT NULL`. SQLite menerima id NULL di sana; PostgreSQL menolaknya, jadi ' +
+        'selisihnya baru terlihat saat sync, jauh dari sebabnya.\n\n' +
+        'Perbaiki tabel BARU-nya — jangan menambahkannya ke `PELANGGAR_DIKETAHUI`. ' +
+        'Daftar itu garis dasar yang menunggu keputusan produk, bukan tempat ' +
+        'menampung pelanggaran berikutnya.\n\n' +
+        `Seluruh ${pelanggar.length} pelanggar:\n${daftar}`
+      : hilang.length > 0
+        ? '✔ Sebagian garis dasar SUDAH DIPERBAIKI: ' +
+          hilang.join(', ') +
+          '\n\nHapus nama itu dari `PELANGGAR_DIKETAHUI` supaya daftarnya tetap ' +
+          'menggambarkan keadaan sebenarnya. Garis dasar yang lebih panjang daripada ' +
+          'kenyataan diam-diam memaafkan tabel yang kelak memakai nama itu lagi.\n\n' +
+          `Sisa ${pelanggar.length} pelanggar:\n${daftar}`
+        : 'Kelima pelanggar ini DIHARAPKAN dan sedang MENUNGGU KEPUTUSAN produk — ' +
+          'bukan regresi, bukan pelanggar baru.\n\n' +
+          `${daftar}\n\n` +
+          'Empat pertama raw table yang TIDAK ada di sync rules jalur turun: rebuild ' +
+          'membuangnya tanpa jalan pulang. `outbox_local` murni lokal dan memegang ' +
+          'antrean penjualan yang belum terkirim; `rencanaDdl` sengaja tidak punya ' +
+          'jalur untuk men-drop tabel semacam itu.\n\n' +
+          'Test ini tetap MERAH, dan itu disengaja. Yang membuatnya tetap berguna ' +
+          'adalah bahwa pelanggar BARU menghasilkan pesan yang berbeda — bukan bahwa ' +
+          'merahnya hilang.';
 
-  // Penjaga untuk penjaga: kalau polanya berhenti cocok dengan apa pun, test
-  // di atas hijau karena HAMPA. Angka pastinya tidak dipaku — yang dijaga
-  // adalah bahwa ia benar-benar melihat tabel.
-  const jumlah = sql.split('\n').filter((b) => /\bTEXT\s+PRIMARY\s+KEY/i.test(b.replace(/--.*$/, ''))).length;
-  assert.ok(jumlah >= 25, `hanya ${jumlah} kolom PRIMARY KEY tekstual terbaca; pola penjaga rusak`);
+  assert.deepEqual(pelanggar, [], pesan);
 });

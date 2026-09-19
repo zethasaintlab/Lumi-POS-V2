@@ -178,20 +178,60 @@ const PENJUALAN = [
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Apakah layar masuk back-office dapat meresolusi tenant dari email ini?
+ *
+ * ⛔ Ia memanggil `resolve_login_tenant` — **fungsi yang sama persis** yang
+ * `POST /auth/login` pakai. Menghitung sendiri (`SELECT count(*) FROM "user"
+ * WHERE email = …`) akan menjadi sumber KEDUA yang memutuskan hal yang sama,
+ * dan yang menyimpang di antara keduanya menghasilkan skrip yang berkata
+ * "aman" untuk email yang layar masuknya tolak. Satu oracle, dua pemanggil.
+ *
+ * Skrip ini baru saja membuat pengguna ber-email itu, jadi "nol baris"
+ * mustahil di sini — `NULL` hanya dapat berarti AMBIGU.
+ */
+async function emailDapatDiresolusi(alamat) {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query('SELECT resolve_login_tenant($1) AS tenant', [alamat]);
+    return rows[0]?.tenant != null;
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
   pastikanLokal(process.env.DATABASE_URL);
 
   // Email BERSIH secara default: `owner@lumipos.test`, `cashier@lumipos.test`,
   // dan seterusnya — itu yang dapat diketik dari ingatan.
   //
-  // Konsekuensinya run kedua menabrak `EMAIL_TAKEN`, karena email unik lintas
-  // tenant. `--unik` menyisipkan akhiran acak untuk run berdampingan; ia ada
-  // supaya jalan keluarnya jelas saat tabrakan itu terjadi, bukan supaya
-  // dipakai setiap hari.
+  // ⛔ CATATAN LAMA DI SINI SALAH, dan salahnya memakan satu sesi penuh.
+  //
+  // Ia berbunyi: *"run kedua menabrak `EMAIL_TAKEN`, karena email unik lintas
+  // tenant"*. Keduanya tidak benar, dan tidak pernah benar:
+  //
+  //  - Tidak ada `EMAIL_TAKEN` di seluruh `apps/server/src`.
+  //  - Tidak ada index unik pada `"user".email`, dan **tidak dapat ada** tanpa
+  //    melanggar isolasi tenant (migrasi `0023`). Satu orang yang bekerja di
+  //    dua merchant adalah keadaan sah.
+  //
+  // Yang benar-benar terjadi pada run kedua: tenant kedua BERHASIL dibuat
+  // dengan email owner yang sama, dan sejak itu `resolve_login_tenant`
+  // mengembalikan `NULL` — sesuai rancangan, karena menebak salah satunya
+  // berarti memasukkan orang ke tenant yang SALAH dengan password yang BENAR.
+  //
+  // `--unik` tetap ada untuk run berdampingan yang benar-benar terpisah.
   const cap = Math.floor(Math.random() * 9000 + 1000);
   const suffix = process.argv.includes('--unik') ? `+${cap}` : '';
   const email = (peran) => `${peran}${suffix}@lumipos.test`;
 
+  // ⛔ DI-HOIST, dan itu bukan kerapian: tanpa variabel ini langkah 2 tidak
+  // punya apa pun untuk dikirim sebagai `x-tenant-id`, dan satu-satunya jalan
+  // yang tersisa baginya adalah meminta server MENEBAK tenant dari email —
+  // tebakan yang gagal tepat pada run kedua.
+  const tenantId = id();
   const outletUtamaId = id();
   const outletKeduaId = id();
   const ownerId = id();
@@ -201,7 +241,7 @@ async function main() {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      tenant: { id: id(), name: 'The Cafe by ORIGEN' },
+      tenant: { id: tenantId, name: 'The Cafe by ORIGEN' },
       outlet: { id: outletUtamaId, name: 'ORIGEN Menteng', timezone: 'Asia/Jakarta' },
       owner: {
         id: ownerId,
@@ -217,9 +257,24 @@ async function main() {
   console.log('tenant + outlet + owner : 201');
 
   // --- 2. login owner --------------------------------------------------------
+  //
+  // ⛔ `x-tenant-id` DIKIRIM, dan ketiadaannya adalah sebab seluruh kegagalan
+  // run kedua. Skrip ini BARU SAJA membuat tenantnya dan memegang idnya di
+  // `tenantId`; meminta server meresolusinya kembali dari email adalah tebakan
+  // yang tidak perlu ia lakukan — dan tebakan itu mengembalikan `NULL` begitu
+  // email yang sama ada di dua tenant, keadaan yang run kedua ciptakan sendiri.
+  //
+  // Gejalanya `401 INVALID_CREDENTIALS` berpesan "Email atau password salah."
+  // Pesan itu SATU untuk setiap sebab kegagalan (`spec-f:148`), jadi ia
+  // terbaca sebagai password yang salah — dan memang pernah dicatat begitu,
+  // sebagai cacat kedua yang sebenarnya tidak ada.
+  //
+  // Header ini DIHORMATI bila dikirim (`handlers/auth.ts`), jadi jalur
+  // resolusi tidak berubah untuk siapa pun; yang berubah hanya skrip ini
+  // berhenti bertanya tentang hal yang sudah diketahuinya.
   r = await fetch(`${API}/auth/login`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-tenant-id': tenantId },
     body: JSON.stringify({ email: email('owner'), password: PASSWORD_BOOTSTRAP }),
   });
   const sesi = await j(r);
@@ -504,6 +559,37 @@ async function main() {
   console.log('');
   for (const a of akun) {
     console.log(`  ${(LABEL[a.peran] ?? a.peran).padEnd(16)} ${a.email}`);
+  }
+
+  // ⛔ Layar masuk back-office meresolusi tenant DARI EMAIL, dan resolusi itu
+  // mengembalikan NULL begitu email yang sama ada di lebih dari satu tenant
+  // (migrasi `0023` — menebak berarti memasukkan orang ke tenant yang SALAH
+  // dengan password yang BENAR). Skrip ini memakai email tetap, jadi run kedua
+  // MEMBUAT keadaan itu sendiri.
+  //
+  // Skrip ini sudah kebal terhadapnya — ia mengirim id tenant yang ia pegang.
+  // Yang TIDAK kebal adalah orang yang membaca daftar email di atas lalu
+  // mengetikkannya ke layar masuk: ia menerima 401 berpesan "Email atau
+  // password salah.", dan pesan itu SATU untuk setiap sebab kegagalan
+  // (`spec-f:148`). Ia akan menyalahkan passwordnya — dan itu persis salah
+  // baca yang memakan satu sesi penuh pada 2 September 2026.
+  //
+  // Jadi keadaan itu DISEBUTKAN di sini, dengan jalan keluarnya, bukan
+  // dibiarkan ditemukan di layar masuk.
+  if (!(await emailDapatDiresolusi(email('owner')))) {
+    console.log('');
+    console.log('  ⛔ Email di atas kini ada di LEBIH DARI SATU tenant.');
+    console.log('     Layar masuk back-office TIDAK dapat meresolusinya dari email');
+    console.log('     dan akan menjawab "Email atau password salah." — itu BUKAN');
+    console.log('     password yang salah, melainkan tenant yang ambigu.');
+    console.log('');
+    console.log('     Dua jalan keluar:');
+    console.log(`       1. Isi "ID Tenant" di layar masuk dengan: ${tenantId}`);
+    console.log('       2. `npm run db:reset && npm run db:bootstrap && npm run db:migrate`');
+    console.log('          lalu seed ulang — database eksplorasi kembali bersih.');
+    console.log('');
+    console.log('     `--unik` memberi setiap run email tersendiri bila kamu memang');
+    console.log('     ingin beberapa merchant berdampingan.');
   }
 
   // Blok K-15. Dicetak sebagai daftar berlabel, bukan JSON: yang membacanya

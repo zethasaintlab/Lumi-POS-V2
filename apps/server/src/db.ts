@@ -6,11 +6,62 @@ export type { Pool, PoolClient } from 'pg';
 
 const activeTransaction = new AsyncLocalStorage<true>();
 
+/**
+ * ⛔ SATU-SATUNYA tempat `new Pool()` dipanggil di repo ini, dan itu dijaga
+ * `tests/runtime/pool-punya-penangan-error.test.js`. Pool yang dibuat di
+ * tempat lain melewati penangan di bawah, dan ketiadaannya MEMATIKAN PROSES.
+ */
 export function createPool(): InstanceType<typeof Pool> {
-  return new Pool({
+  const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     connectionTimeoutMillis: 5000,
   });
+
+  /* ⛔ TANPA baris ini, satu koneksi IDLE yang mati MEMBUNUH SELURUH SERVER.
+   *
+   * `pg-pool` memancarkan `'error'` pada POOL saat klien yang sedang menganggur
+   * gagal (`pg-pool/index.js`, `idleListener`). `'error'` adalah nama peristiwa
+   * istimewa di Node: `EventEmitter` yang tidak punya pendengar untuknya
+   * MELEMPAR, dan lemparan dari dalam callback soket tidak dapat ditangkap
+   * `try/catch` siapa pun. Prosesnya mati dengan `Unhandled 'error' event`.
+   *
+   * Terukur 12 September 2026: `npm run db:reset` dijalankan sementara server
+   * hidup menjalankan `pg_terminate_backend` atas setiap koneksi ke database
+   * itu — memang itu tugasnya — dan server mati seketika. Bukan restart, bukan
+   * hang: proses hilang, dan `curl /health` menjawab 000.
+   *
+   * ⛔ INI BUKAN `try/catch` YANG MENELAN ERROR, dan bedanya ada di urutan
+   * `pg-pool` sendiri:
+   *
+   *     pool._remove(client)      ← pemulihan SUDAH selesai di sini
+   *     pool.emit('error', …)     ← baru kemudian ia memberi tahu
+   *
+   * Komentar `pg-pool` menyatakannya: *"once the pool emits an error the client
+   * has already been closed & purged and is unusable"*. Jadi yang hilang bukan
+   * penanganannya — pool sudah membuang klien matinya sendiri — melainkan
+   * PENGAKUANNYA. Koneksi berikutnya dibuat baru oleh `pool.connect()`, dan
+   * itulah kenapa tidak ada strategi reconnect yang perlu ditulis di sini.
+   *
+   * ⛔ Ia TIDAK melempar ulang dan TIDAK memanggil `process.exit`. Keduanya
+   * mengembalikan persis cacat yang baris ini hapus.
+   *
+   * Yang memicunya di lapangan bukan hanya `db:reset`: PostgreSQL yang
+   * di-restart, failover, proxy yang memutus koneksi menganggur, dan gangguan
+   * jaringan sesaat semuanya berbentuk sama. Di produksi ia berarti seluruh
+   * outlet kehilangan servernya karena satu koneksi menganggur — sementara
+   * yang sebenarnya dibutuhkan hanya membuang koneksi itu.
+   *
+   * DICATAT, tidak didiamkan: koneksi menganggur yang mati adalah peristiwa
+   * nyata, dan yang hilang tanpa jejak akan dicari di tempat yang salah.
+   */
+  pool.on('error', (err: Error) => {
+    console.error(
+      '[db] koneksi idle di pool gagal dan sudah dibuang pool; server tetap jalan:',
+      err.message
+    );
+  });
+
+  return pool;
 }
 
 export async function withTenantTransaction<T>(

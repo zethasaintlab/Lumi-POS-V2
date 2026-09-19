@@ -10,11 +10,20 @@
  * Pindah dari `apps/backoffice/src/katalog/produk.ts` pada 24 Agustus 2026,
  * saat `apps/hp` (Owner mobile) menjadi aplikasi KETIGA yang membutuhkannya.
  *
- * ⛔ **Utang yang dinyatakan:** `apps/kasir` masih punya delapan salinan
- * pemformat sendiri (`Rp ${n.toLocaleString('id-ID')}`, satu per layar). Ia
- * menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk
- * negatif. Menyatukannya menyentuh setiap layar uang di aplikasi kasir dan
- * karena itu task tersendiri, bukan efek samping task ini.
+ * ⛔ **Utang itu LUNAS, 2 September 2026 — dan catatan lamanya sempat menjadi
+ * sumber angka yang salah.** Berkas ini pernah menulis "`apps/kasir` masih
+ * punya delapan salinan pemformat sendiri". Itu benar saat ditulis; ia berhenti
+ * benar saat layar-layar kasir dikonsolidasikan, dan tidak pernah disunting.
+ * Yang dihitung ulang: NOL salinan di `apps/kasir` (14 berkasnya mengimpor
+ * fungsi ini), satu di `apps/backoffice/src/langganan/upgrade.ts` — dihapus
+ * hari itu — dan satu format LAIN di `apps/kasir/src/cetak/dokumen.ts`, yang
+ * bukan salinan (struk 32 kolom membuang awalan `Rp`, `spec-c:378`).
+ *
+ * Pelajarannya bukan tentang uang: **catatan utang yang tidak disunting saat
+ * utangnya dibayar akan dikutip sebagai pengukuran.** Ia dikutip, sekali.
+ *
+ * Yang sekarang menjaganya angka, bukan kalimat:
+ * `tests/runtime/pemformat-uang-tunggal.test.js`.
  *
  * Murni: tanpa I/O, tanpa jam.
  */

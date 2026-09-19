@@ -123,6 +123,45 @@ export function cariItem(katalog: readonly ItemKatalog[], kueri: string): ItemKa
   );
 }
 
+/** Urutan grid K-03. Nilai disimpan di URL galeri dan di state, bukan di DB. */
+export type UrutanKatalog = 'nama' | 'termurah' | 'termahal';
+
+export const LABEL_URUTAN: Record<UrutanKatalog, string> = {
+  nama: 'A–Z',
+  termurah: 'Termurah',
+  termahal: 'Termahal',
+};
+
+/**
+ * Urutan grid K-03.
+ *
+ * ⛔ Menyalin dulu, baru `sort`. `Array.prototype.sort` mengurutkan DI TEMPAT,
+ * dan daftar yang diurutkan di sini datang dari `useMemo` atas `katalog` —
+ * mengurutkannya di tempat mengubah state React yang dipegang komponen lain,
+ * dan React tidak akan melaporkannya sebagai perubahan.
+ *
+ * ⛔ Harga dibandingkan lewat harga TERENDAH tiap item, bukan harga varian
+ * pertama. Kartu menampilkan "dari Rp 24.000" untuk item ber-varian, dan
+ * mengurutkan dengan angka yang berbeda dari yang tertulis di kartu
+ * menghasilkan grid yang terlihat acak — tanpa satu pun error.
+ *
+ * Pengurutan nama memakai `localeCompare('id')`: `sort()` bawaan
+ * membandingkan UTF-16, jadi "Éclair" mendarat sesudah "Zuppa".
+ */
+export function urutkanItem(
+  daftar: readonly ItemKatalog[],
+  urutan: UrutanKatalog
+): ItemKatalog[] {
+  const salinan = [...daftar];
+  if (urutan === 'nama') {
+    return salinan.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+  }
+  const terendah = (i: ItemKatalog) => Math.min(...i.variations.map((v) => v.harga));
+  return salinan.sort((a, b) =>
+    urutan === 'termurah' ? terendah(a) - terendah(b) : terendah(b) - terendah(a)
+  );
+}
+
 export interface KategoriKatalog {
   id: string;
   nama: string;

@@ -53,13 +53,29 @@
   flex: none;
 }
 
-.kasir-menu {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--border);
+/* Bilah navigasi kasir — `.tabs-underline` bundle, ditempatkan.
+ *
+ * ⛔ MODIFIER, bukan pengganti. Yang diberikan di sini hanya penempatan:
+ * padding sejajar topbar, latar permukaan, dan `flex: none` supaya ia tidak
+ * ikut mengecil saat `.kasir-konten` menuntut ruang. Tinggi 44px, warna aksen
+ * pada tab aktif, dan garis bawahnya datang dari bundle — menuliskannya lagi
+ * di sini akan menyimpang dari back-office yang memakai komponen yang sama.
+ *
+ * `.kasir-menu` yang lama (dropdown ⋮) dihapus bersama menunya.
+ */
+.kasir-shell > .tabs-underline {
+  flex: none;
+  padding: 0 var(--space-4);
+  /* ⛔ `--space-6`, bukan `--space-5`. Yang kedua TIDAK ADA — ia salah satu
+     dari delapan token hantu yang kepala berkas ini catat, dan saya
+     memakainya lagi satu jam setelah menuliskan catatannya. Penjaga
+     `token-css-ada` yang menemukannya, bukan mata. */
+  gap: var(--space-6);
   background: var(--surface);
+  /* Bilah nav pada layar sempit tetap dapat dijangkau: ia menggulung
+     mendatar alih-alih membungkus ke baris kedua, yang akan memindahkan
+     seluruh isi layar ke bawah setiap kali satu tab ditambahkan. */
+  overflow-x: auto;
 }
 
 /* `SyncIndicator` adalah entry point ke K-14 (IA §2.4), jadi ia harus dapat
@@ -88,7 +104,29 @@
   border-radius: var(--radius-control);
 }
 
+/* ⛔ `display: flex` DITAMBAHKAN 1 September 2026, dan ketiadaannya adalah
+ * akar cacat "Bayar terdorong ke bawah layar".
+ *
+ * Blok ini punya `overflow: auto` tapi BUKAN flex container. Jadi
+ * `.kasir-utama { flex: 1; min-height: 0 }` di dalamnya tidak menempel pada
+ * apa pun: tanpa induk flex, `flex: 1` diabaikan diam-diam dan `.kasir-utama`
+ * tumbuh mengikuti kontennya. Keranjang panjang mendorong subtotal dan tombol
+ * Bayar keluar layar, lalu SELURUH halaman yang bergulir.
+ *
+ * Terukur sebelum perbaikan: 11 baris keranjang → tepi bawah Bayar di 1457px
+ * pada layar 800px. Kasir harus menggulir halaman untuk menagih, di depan
+ * pelanggan, pada setiap pesanan besar.
+ *
+ * Kelas cacat yang sama dengan token CSS hantu: `flex: 1` tanpa induk flex
+ * tidak menghasilkan error, ia menghasilkan KETIADAAN.
+ *
+ * `overflow: auto` DIPERTAHANKAN — layar lain (K-15, form panjang) memang
+ * menggulir sebagai halaman, dan mereka bukan anak `flex: 1` jadi tetap
+ * berukuran konten.
+ */
 .kasir-konten {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -216,6 +254,62 @@
   flex: 1;
 }
 
+/* --- K-06: isi yang menggulir + blok aksi yang menempel -------------------
+ *
+ * ⛔ MODIFIER di atas `.kasir-shift`, bukan kelas pengganti. `.kasir-shift`
+ * memusatkan isinya (`align-items: center; justify-content: center`) karena
+ * K-02 memang satu blok pendek di tengah layar; K-06 bukan itu. Menyalin
+ * seluruh aturannya ke kelas baru berarti dua tempat yang memutuskan padding
+ * dan jarak layar bayar.
+ *
+ * ⛔ Polanya SAMA PERSIS dengan keranjang K-03, dan itu disengaja: penggulung
+ * di dalam, bukan `position: sticky`. Sticky menuntut latar sendiri supaya isi
+ * yang lewat di belakangnya tidak tembus, dan latar yang ditulis di sini
+ * adalah tempat kedua yang memutuskan warna permukaan kartu. Flex tidak punya
+ * masalah itu — blok aksinya memang tidak pernah berada di aliran gulir.
+ *
+ * ⛔ `min-height: 0` WAJIB di kedua tingkat. Tanpanya anak flex menolak
+ * mengecil di bawah tinggi kontennya, `overflow-y` tidak pernah menyala, dan
+ * isi yang panjang MENDORONG blok aksi keluar layar — persis cacat yang blok
+ * ini perbaiki. Ia tidak menghasilkan error; ia hanya tidak bekerja. Pelajaran
+ * yang sama sudah ditulis di `.kasir-baris-daftar`, dan ia berlaku lagi di
+ * sini karena alasan yang sama.
+ */
+.kasir-bayar {
+  align-items: stretch;
+  justify-content: flex-start;
+  min-height: 0;
+}
+
+.kasir-bayar-isi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ⛔ Pembatas di ATAS blok aksi, satu garis, sejajar dengan
+ * `.kasir-subtotal:first-of-type` di keranjang K-03. Ia menyatakan satu hal:
+ * blok ini LAPISAN yang terpisah dari isi yang menggulir di atasnya. Bayangan
+ * atau permukaan yang berbeda akan menyatakan hal yang sama dengan lebih
+ * keras, dan layar kasir hanya boleh punya satu hal yang menarik mata —
+ * aksennya.
+ *
+ * `flex: none` supaya ia tidak ikut MENGECIL saat isi memenuhi kartunya.
+ * Tombol Bayar yang tingginya menyusut tidak menghasilkan error; ia hanya
+ * berhenti memenuhi target sentuh 56px tepat pada transaksi paling panjang.
+ */
+.kasir-bayar-aksi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: none;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
 .kasir-pecahan {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -241,6 +335,10 @@
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  /* Panel grid duduk di permukaan yang TENGGELAM, keranjang di permukaan biasa.
+     Itu yang memisahkan "tempat memilih" dari "tempat menagih" tanpa satu pun
+     garis tambahan — dan tanpa warna baru: `--surface-sunk` sudah ada di palet. */
+  background: var(--surface-sunk);
 }
 
 /* >=12 kartu tanpa scroll (IA:62). `auto-fill` dengan lebar minimum, bukan
@@ -269,28 +367,32 @@
  *    1024×768 (panggung galeri, `PRD:428`) yang lama memuat 12 kartu pas-pasan,
  *    dan `IA:62` menuntut ≥12 TANPA scroll — bukan tepat 12.
  */
+/* ⛔ `.kasir-kartu` kini MODIFIER di atas `.product-card` bundle, bukan kartu
+ * tersendiri. Yang tersisa di sini hanya yang bundle tidak punya: kepadatan
+ * yang lebih rapat untuk grid kasir, dan pemotongan nama dua baris.
+ *
+ * Yang DIHAPUS dari sini karena bundle sudah melakukannya lebih baik:
+ * border, radius, background, cursor, transition, dan umpan balik tekan.
+ * Versi saya memberi border abu-abu yang tidak berubah; versi bundle menyala
+ * teal saat hover DAN saat ditekan, lengkap dengan focus ring.
+ */
 .kasir-kartu {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
   gap: 2px;
   padding: var(--space-2) var(--space-3);
   min-height: var(--touch-min);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color .12s, transform .06s;
+  /* Elevasi. `--shadow-card` sudah ada di bundle sejak awal dan `kasir.css`
+     tidak pernah memakainya sekali pun — nol shadow di seluruh berkas. Kartu
+     tanpa elevasi di atas permukaan yang juga putih adalah definisi "datar". */
+  box-shadow: var(--shadow-card);
+  /* Jangkar posisi untuk `.kasir-kartu-habis`. Tanpa ini badge-nya
+     memposisikan diri terhadap viewport, bukan terhadap kartunya. */
+  position: relative;
 }
 
-/* Umpan balik tekan. Kartu ini diketuk ribuan kali sehari oleh orang yang
-   sering TIDAK menatap layarnya — ia sedang melihat pelanggan. Aturan yang
-   sama sudah dipasang untuk `.btn` di `packages/ds/lumi.css`; kartu produk
-   bukan `.btn` dan karena itu tidak ikut mendapatkannya. */
+/* Bundle sudah menggeser warna; pergeseran 1px menambah rasa FISIK yang
+   warna tidak berikan. Kasir menekan ini ribuan kali sehari, sering tanpa
+   menatap layarnya. */
 .kasir-kartu:active { transform: translateY(1px); }
-.kasir-kartu:hover { border-color: var(--border-strong); }
 
 .kasir-kartu-nama {
   font-weight: var(--weight-regular);
@@ -307,6 +409,181 @@
 
 .kasir-kartu-varian { color: var(--ink-muted); }
 
+/* --- Gambar produk (DS #8 dicabut lebih jauh, 1 September 2026) ----------- */
+
+/* ⛔ TIGA keadaan kartu, dan `data-gambar` menyatakan ketiganya:
+ *
+ *   utuh   → gambarnya
+ *   rusak  → keadaan bernama, terlihat BERBEDA dari `tanpa`
+ *   tanpa  → kartu NORMAL, tanpa satu pun penanda
+ *
+ * ⛔ `tanpa` tidak punya aturan tampilan sama sekali di bawah, dan itu
+ * DISENGAJA: keputusan user 2 September 2026 menyatakan kartu tanpa gambar
+ * BUKAN keadaan menunggu. Placeholder abu-abu akan mengubah katalog merchant
+ * baru — yang seluruhnya belum difoto — menjadi grid yang terlihat rusak, dan
+ * itu keadaan yang paling sering terjadi di hari pertama.
+ *
+ * Yang `tanpa` dapat: memusatkan isinya. Grid `auto-fill` menyamakan tinggi
+ * baris, jadi kartu tanpa gambar yang bersebelahan dengan kartu bergambar
+ * MENDAPAT tinggi yang sama. Isi yang menempel ke atas meninggalkan ruang
+ * kosong berbentuk gambar di bawahnya — persis placeholder yang tidak ingin
+ * kita punya, hanya tanpa warnanya. Dipusatkan, ia terbaca sebagai kartu teks.
+ */
+.kasir-kartu[data-gambar='tanpa'] { justify-content: center; }
+
+.kasir-kartu-gambar {
+  width: 100%;
+  /* ⛔ `height: auto` WAJIB, dan ketiadaannya membuat `aspect-ratio` di bawah
+   * TIDAK BERLAKU SAMA SEKALI.
+   *
+   * Atribut `height="400"` pada `<img>` adalah presentational hint — ia
+   * menyetel `height: 400px`, dan `aspect-ratio` hanya berlaku bila salah satu
+   * dimensi `auto`. Terukur di browser: kartu 151px lebar dengan gambar
+   * 125×400, tinggi kartu 486px alih-alih ~200px. Empat kartu muat di layar
+   * alih-alih 15, dan `IA:62` menuntut ≥12 tanpa scroll.
+   *
+   * Nol error, nol peringatan konsol, dan CSS-nya terbaca benar. Yang
+   * menemukannya pengukuran DOM, bukan membaca berkasnya.
+   *
+   * Atributnya tetap ada: ia yang memesan ruang sebelum gambar di-decode. */
+  height: auto;
+  /* ⛔ 16:9 DI KARTU, meski yang tersimpan 1:1 — dan angkanya DIUKUR, bukan
+   * dipilih karena terlihat enak.
+   *
+   * `IA:62` menuntut ≥12 kartu tanpa scroll. Diukur di galeri (build statis,
+   * viewport 1280×800, katalog yang sama persis, menghitung kartu yang tepi
+   * bawahnya masih di dalam panel yang menggulir):
+   *
+   *     tanpa gambar  → 15 kartu   (tinggi kartu  81px)
+   *     gambar 1:1    →  8 kartu   (kartu bergambar 231px)  ⛔ MELANGGAR IA:62
+   *     gambar 4:3    →  8 kartu   (kartu bergambar 199px)  ⛔ MELANGGAR IA:62
+   *     gambar 3:2    →  8 kartu   (kartu bergambar 189px)  ⛔ MELANGGAR IA:62
+   *     gambar 16:9   → 12 kartu   (kartu bergambar 176px)  ✓
+   *
+   * ⛔ 4:3 DAN 3:2 SUDAH DICOBA dan keduanya gagal — selisihnya belasan piksel,
+   * dan belasan piksel tidak memindahkan satu baris pun. Baris ini ada supaya
+   * orang berikutnya yang merasa 16:9 terlalu sempit tahu bahwa anak tangga di
+   * atasnya sudah diukur dan gugur, bukan dilewati.
+   *
+   * Yang hilang saat kartu membesar bukan kenyamanan: menu yang menuntut
+   * scroll pada setiap pesanan adalah beban yang dibayar ribuan kali sehari.
+   *
+   * Yang DISIMPAN tetap 1:1 (`SISI_PIKSEL`), dan `object-fit: cover` memotong
+   * atas-bawah dari tengahnya — merchant sudah memotong tengah saat mengunggah,
+   * jadi subjeknya ada di sana. Menyimpan 16:9 akan mengunci gambar merchant
+   * pada keputusan tata letak hari ini, dan gambar tidak dapat ditulis ulang.
+   *
+   * Menyatakan rasionya di CSS juga menahan tata letak sebelum gambar
+   * di-decode, jadi grid tidak melompat saat gambar mendarat. */
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-control);
+  /* Permukaan di belakang gambar transparan: WebP boleh punya alpha, dan yang
+     tembus di atas kartu putih tetap terbaca. */
+  background: var(--surface-sunk);
+  margin-bottom: var(--space-1);
+  display: block;
+}
+
+/* ⛔ Keadaan "gagal dimuat" — dan ia BUKAN kotak abu-abu.
+ *
+ * Kotak abu-abu adalah persis yang `tanpa` tidak boleh punya, jadi memakainya
+ * di sini membuat kedua keadaan terlihat sama pada layar yang silau. Yang
+ * membedakannya KATA, sesuai aturan DS #5: status tidak pernah warna saja.
+ *
+ * Tingginya sengaja TIDAK 1:1. Ruang gambar yang kosong menuntut kasir menebak
+ * apa yang seharusnya ada di sana; baris setinggi teks menyatakan "gambar
+ * hilang" tanpa mengambil tempat menu.
+ */
+.kasir-kartu-gambar-rusak {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ink-muted);
+  background: var(--surface-sunk);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.kasir-kartu-gambar-rusak svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* Penanda habis. `position: absolute` supaya ia tidak mengubah tinggi kartu —
+ * grid `auto-fill` menyamakan tinggi baris, jadi satu badge di satu kartu akan
+ * menaikkan tiga kartu di sebelahnya yang tidak punya apa-apa untuk mengisinya. */
+.kasir-kartu-habis {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+/* --- K-06/K-07 sebagai overlay besar ------------------------------------- */
+
+/* ⛔ Kelas `.overlay` dan `.dialog` datang dari bundle; yang di bawah hanya
+ * MELEBARKAN dan memberi tinggi. `max-width: 420px` bawaan bundle benar untuk
+ * "New Customer" dan salah untuk layar yang memuat pembayaran campuran, QR
+ * yang di-polling lima menit, dan kembalian pada 32px.
+ *
+ * `min(...)` menahan dua hal sekaligus: cukup lebar di 1024px, dan tidak
+ * pernah melebihi layar pada tablet 800px yang diputar.
+ */
+.kasir-overlay-bayar {
+  padding: var(--space-4);
+}
+
+.kasir-overlay-lebar {
+  max-width: min(56rem, 100%);
+  /* Isi K-06 dapat lebih tinggi dari layar (pembayaran campuran + rincian).
+     Ia menggulir DI DALAM kartunya; halaman di belakangnya tidak ikut
+     bergulir, jadi latar gelapnya tetap menutup penuh. */
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Pemilih varian di dialog modifier. `.segmented` bundle menggulung mendatar:
+   item dengan lima varian pada dialog 28rem akan meluap, dan segmen yang
+   terpotong di tepi adalah harga yang tidak dapat dibaca. */
+.kasir-pilih-varian {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.kasir-pilih-varian .segmented {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* --- Baris kontrol grid: cari + urutkan ---------------------------------- */
+.kasir-kontrol-grid {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Kolom cari mengambil sisa ruang; urutan memakai lebar isinya sendiri.
+   `min-width` menahan kolom cari agar tidak menyusut menjadi kotak yang tidak
+   dapat dibaca saat panel menyempit — pada titik itu keduanya membungkus. */
+.kasir-kontrol-grid > *:first-child {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.kasir-urutan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: none;
+}
+
 /* --- Saringan kategori ----------------------------------------------------
  *
  * ⛔ Warna TIDAK PERNAH berdiri sendiri (aturan DS #5): chip selalu memuat nama
@@ -319,32 +596,41 @@
   gap: var(--space-2);
 }
 
-.kasir-chip {
-  min-height: var(--touch-min);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-control);
-  border: 1px solid var(--chip, var(--border));
-  background: var(--surface);
+/* ⛔ `.kasir-chip` kini MODIFIER di atas `.chip` bundle. Kesalahan yang SAMA
+ * dengan kartu produk, dibuat dua jam sebelumnya: bundle sudah mengirim chip
+ * dengan keadaan tertekan yang PENUH teal (`aria-pressed="true"` →
+ * `background: var(--accent)`), dan saya menulis versi sendiri yang hanya
+ * menebalkan tepi. Yang tersisa di sini cuma warna kategori untuk chip yang
+ * TIDAK aktif.
+ *
+ * Pembagian maknanya jadi bersih: teal = "ini yang sedang aktif" (warna AKSI),
+ * warna kategori = "ini kelompok apa". Chip aktif kehilangan warna
+ * kategorinya, dan itu benar — dua pesan berbeda tidak boleh berebut satu
+ * tempat.
+ */
+.kasir-chip:not([aria-pressed='true']) {
+  border-color: var(--chip, var(--border));
   color: var(--chip, var(--ink-muted));
-  font-size: var(--text-caption);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-  white-space: nowrap;
 }
 
-.kasir-chip-aktif {
-  background: var(--chip-soft, var(--accent-soft));
-  border-width: 2px;
-  font-weight: var(--weight-medium);
-}
-
-.kasir-chip:active { transform: translateY(1px); }
+.chip:active { transform: translateY(1px); }
 
 @media (prefers-reduced-motion: reduce) {
   .kasir-kartu:active,
-  .kasir-chip:active { transform: none; }
+  .chip:active { transform: none; }
 }
 
+/* ⛔ Panel keranjang TIDAK ter-scroll sebagai satu kesatuan, 1 September 2026.
+ *
+ * Sebelumnya `overflow-y: auto` ada di sini, jadi keranjang yang panjang
+ * mendorong subtotal DAN tombol Bayar ke bawah lipatan — dan kasir harus
+ * menggulir halaman utama untuk menagih. Di depan pelanggan, pada setiap
+ * pesanan besar.
+ *
+ * Sekarang hanya DAFTAR ITEM yang bergulir; subtotal, Bayar, dan aksi sekunder
+ * menempel permanen di bawah. Tombol yang menerima uang tidak boleh punya
+ * posisi yang bergantung pada panjang pesanan.
+ */
 .kasir-keranjang {
   display: flex;
   flex-direction: column;
@@ -354,7 +640,8 @@
   flex: none;
   border-left: 1px solid var(--border);
   background: var(--surface);
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .kasir-baris-daftar {
@@ -364,16 +651,35 @@
   list-style: none;
   padding: 0;
   margin: 0;
+  /* `min-height: 0` WAJIB di sini. Tanpanya anak flex menolak mengecil di
+     bawah tinggi kontennya, `overflow-y` tidak pernah menyala, dan daftar
+     tetap mendorong subtotal keluar layar — persis cacat yang blok ini
+     perbaiki. Ia tidak menghasilkan error; ia hanya tidak bekerja. */
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
+/* Baris keranjang: dua tingkat, bukan satu baris berisi enam hal. */
 .kasir-baris {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
 }
+
+.kasir-baris-aksi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Harga didorong ke ujung kanan, sejajar dengan subtotal di bawahnya —
+   satu kolom angka yang dapat dipindai mata dari atas ke bawah.
+   (Sebelum 2 September 2026 ia memisahkan stepper dari tombol "Hapus";
+   tombol itu sudah tidak ada — qty turun ke nol yang menghapus.) */
+.kasir-baris-harga { margin-left: auto; }
 
 /* Kelompok aksi sekunder di panel keranjang.
  *
@@ -393,16 +699,75 @@
   border-top: 1px solid var(--border);
 }
 
-.kasir-aksi-sekunder .btn {
-  justify-content: flex-start;
-  border-color: var(--border);
+/* --- Toolbar aksi: SATU BARIS, semua terlihat sekaligus -------------------
+ *
+ * Sebelumnya ketiga aksi ini adalah kolom tombol selebar panel, dan kolom itu
+ * memakan tinggi yang diambil dari daftar item — ruang yang paling langka di
+ * panel ini. Tiga tombol bertumpuk = ~150px; satu baris ikon = 56px.
+ *
+ * ⛔ IKON TIDAK PERNAH SENDIRIAN, dan itu bukan kehati-hatian berlebihan.
+ * `IA:66` menempatkan "Buka laci" satu ketukan dari layar ini, dan membuka
+ * laci adalah pola fraud paling dasar (`spec-d:229`). Ikon tanpa kata menuntut
+ * kasir menghafal tiga glyph yang mirip; yang salah tekan membuka laci di
+ * depan pelanggan. Labelnya karena itu ikut, pada `--text-caption`.
+ *
+ * ⛔ Target sentuh tetap `--touch-min`. Tombol yang mengecil karena ikonnya
+ * kecil melanggar aturan design system #3 tanpa satu pun error.
+ *
+ * Nol nilai baru: seluruhnya token yang sudah ada.
+ */
+.kasir-toolbar {
+  display: flex;
+  gap: var(--space-2);
 }
 
+.kasir-toolbar .btn {
+  /* Lebar dibagi rata, jadi baris ini tidak berubah bentuk saat satu tombol
+     hilang karena kill switch — `flex: 1` pada yang tersisa. */
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+  border-color: var(--border);
+  font-size: var(--text-caption);
+  line-height: var(--leading-tight);
+  /* `.btn` bundle memakai `nowrap`; label dua kata di kolom sempit butuh
+     pembungkusan, kalau tidak ia meluap keluar tepinya. */
+  white-space: normal;
+  text-align: center;
+}
+
+/* ⛔ Pembatas hanya pada baris PERTAMA blok ringkasan.
+ *
+ * Blok ini kini beberapa baris — Subtotal, Diskon, satu baris per tarif pajak,
+ * lalu Total. Garis di atas SETIAP baris membuat daftar berkotak-kotak yang
+ * terbaca sebagai tabel, dan yang dicari hanya satu hal: menyatakan bahwa blok
+ * bawah adalah LAPISAN yang terpisah dari daftar item yang menggulir di
+ * atasnya. Satu garis menyatakan itu; lima garis menyembunyikannya.
+ */
 .kasir-subtotal {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+}
+
+.kasir-subtotal:first-of-type {
   padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* Total: garisnya sendiri, karena ia yang ditagih.
+ *
+ * ⛔ `--text-title` pada angkanya saja, bukan pada labelnya — hierarki dibuat
+ * oleh angka yang lebih besar, bukan oleh dua hal besar yang bersaing. Token
+ * inti, bebas dipakai di mana saja; bukan `--t-metric`, yang hanya sah di
+ * kartu KPI dasbor B-01. */
+.kasir-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
 
@@ -458,4 +823,126 @@
 .kasir-pita-darurat {
   background: var(--danger-soft);
   border-bottom-color: var(--danger-border);
+}
+
+/* Keadaan kosong keranjang — panel ini menempati sepertiga layar, dan satu
+   baris abu-abu di ujung atasnya membuat dua pertiga sisanya terbaca sebagai
+   ruang yang rusak alih-alih ruang yang menunggu. */
+.kasir-keranjang-kosong {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--ink-subtle);
+}
+.kasir-keranjang-kosong p { margin: 0; }
+
+/* Subtotal, pajak, Total, Bayar, dan aksi sekunder menempel di bawah — tidak
+   ikut bergulir bersama daftar item.
+
+   ⛔ `flex: none` WAJIB di setiap baris blok bawah. Yang terlewat akan
+   MENGECIL saat daftar item memenuhi panelnya — baris pajak yang tingginya
+   menyusut jadi nol tidak menghasilkan error, ia hanya hilang dari layar
+   tepat pada keranjang yang paling panjang. */
+.kasir-subtotal,
+.kasir-total,
+.kasir-aksi-sekunder { flex: none; }
+
+/* --- Penanda memuat (TEMUAN B1) -------------------------------------------
+ *
+ * ⛔ `/ds-bundle` tidak mengirim skeleton maupun spinner — diperiksa di
+ * sumbernya. Ini salah satu dari tiga butir yang memang harus dibangun.
+ *
+ * Warnanya dari token yang SUDAH ADA (`--surface-alt`, `--surface-sunk`);
+ * pelonggaran DS #8 mengizinkan gradien, dan palet tidak disentuh.
+ */
+.kasir-memuat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.kasir-rangka {
+  border-radius: var(--radius-card);
+  /* Gradien bergerak menyampaikan "sedang berjalan" tanpa spinner yang
+     berputar di tempat. Ketiga hentinya dari token yang sama — yang berubah
+     kedalaman, bukan warnanya (§ Pelonggaran DS #8). */
+  background: linear-gradient(
+    90deg,
+    var(--surface-alt) 25%,
+    var(--surface-sunk) 37%,
+    var(--surface-alt) 63%
+  );
+  background-size: 400% 100%;
+  animation: kasir-denyut 1.4s ease infinite;
+}
+
+@keyframes kasir-denyut {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ⛔ Gerak DIHENTIKAN, bukan dikurangi, bagi yang memintanya. Denyut yang
+   berjalan sepanjang shift adalah beban; bentuk kerangkanya sendiri sudah
+   menyampaikan "sedang datang". */
+@media (prefers-reduced-motion: reduce) {
+  .kasir-rangka {
+    animation: none;
+    background: var(--surface-alt);
+  }
+}
+
+/* Kerangka grid meniru `.kasir-grid` PERSIS — kolom yang berbeda membuat
+   kartu melompat ke posisi lain saat isinya tiba, dan lompatan itu justru
+   yang kerangka ada untuk mencegahnya. */
+.kasir-memuat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: var(--space-3);
+}
+.kasir-memuat-grid .kasir-rangka { height: 5.5rem; }
+
+.kasir-memuat-baris {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kasir-memuat-baris .kasir-rangka { height: var(--touch-min); }
+
+.kasir-memuat-blok {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.kasir-memuat-blok .kasir-rangka { height: 3rem; }
+
+/* --- Paginasi K-08 (TEMUAN D3) ------------------------------------------- */
+.kasir-paginasi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+.kasir-paginasi-nomor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* ⛔ Halaman yang sedang dibuka ditandai LATAR aksen lembut DAN `aria-current`
+   — bukan warna teks saja. Dua nomor bersebelahan yang hanya berbeda ketebalan
+   tidak dapat dibedakan pada layar kasir di bawah lampu terang. */
+.kasir-paginasi-nomor .btn[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
 }
