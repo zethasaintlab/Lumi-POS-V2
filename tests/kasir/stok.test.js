@@ -216,21 +216,53 @@ function snapshotYatim(db, { tenantId, outletId }) {
     .all(tenantId, outletId);
 }
 
-function snapshotOutletLain(db) {
+// ⛔ DUA baris tetangga, bukan satu, dan keduanya perlu.
+//
+// Penghapusan ber-scope punya DUA predikat, jadi ia dapat melebar ke dua arah
+// yang berbeda — dan satu baris tetangga hanya melihat salah satunya. Terukur:
+// dengan hanya baris outlet-lain (tenant SAMA), melepas predikat `tenant_id`
+// sendirian membuat SELURUH test hijau. Penjaganya hampa untuk arah itu sampai
+// baris tenant-lain ditambahkan.
+//
+// Keduanya sengaja berbagi satu koordinat dengan scope yang diuji: yang pertama
+// tenant sama / outlet beda, yang kedua outlet sama / tenant beda. Baris yang
+// berbeda di KEDUA koordinat tidak membuktikan apa pun — ia selamat dari
+// pelebaran satu predikat mana pun.
+function snapshotTetangga(db) {
   db.sqlite.exec(`
     INSERT INTO stock_snapshot (tenant_id, outlet_id, variation_id, balance, checkpoint_hlc)
     VALUES ('${TENANT}','outlet-lain','v-cabang',77000,9)
   `);
+  db.sqlite.exec(`
+    INSERT INTO stock_snapshot (tenant_id, outlet_id, variation_id, balance, checkpoint_hlc)
+    VALUES ('tenant-lain','${OUTLET}','v-merchant-lain',88000,9)
+  `);
 }
 
-function balanceOutletLain(db) {
+function balanceTetangga(db, { tenantId, outletId, variationId }) {
   const baris = db.sqlite
     .prepare(
       `SELECT balance FROM stock_snapshot
-        WHERE tenant_id = ? AND outlet_id = 'outlet-lain' AND variation_id = 'v-cabang'`
+        WHERE tenant_id = ? AND outlet_id = ? AND variation_id = ?`
     )
-    .all(TENANT);
+    .all(tenantId, outletId, variationId);
   return baris.length === 1 ? Number(baris[0].balance) : null;
+}
+
+const OUTLET_LAIN = { tenantId: TENANT, outletId: 'outlet-lain', variationId: 'v-cabang' };
+const TENANT_LAIN = { tenantId: 'tenant-lain', outletId: OUTLET, variationId: 'v-merchant-lain' };
+
+function assertTetanggaUtuh(db) {
+  assert.equal(
+    balanceTetangga(db, OUTLET_LAIN),
+    77000,
+    'penghapusan melebar melewati outlet: snapshot outlet lain ikut terhapus'
+  );
+  assert.equal(
+    balanceTetangga(db, TENANT_LAIN),
+    88000,
+    'penghapusan melebar melewati tenant: snapshot merchant lain ikut terhapus'
+  );
 }
 
 test('⛔ rebuild MENGHAPUS snapshot yang ledgernya kosong — ledger kosong SEBAGIAN', async () => {
@@ -245,7 +277,7 @@ test('⛔ rebuild MENGHAPUS snapshot yang ledgernya kosong — ledger kosong SEB
   snapshot(db, { variationId: 'varA', balance: 100000, checkpointHlc: 4 });
   // `varB`: punya movement, jadi rebuild tetap punya pekerjaan yang sah.
   gerak(db, { variationId: 'varB', delta: 3000, hlc: 7, type: 'receipt' });
-  snapshotOutletLain(db);
+  snapshotTetangga(db);
 
   assert.equal(await bacaStok(db, KONFIG, 'varA'), 100000, 'prasyarat: snapshot basi memang terbaca');
 
@@ -258,11 +290,7 @@ test('⛔ rebuild MENGHAPUS snapshot yang ledgernya kosong — ledger kosong SEB
   );
   assert.equal(await bacaStok(db, KONFIG, 'varA'), 0, 'varA tanpa ledger harus nol, bukan angka basi');
   assert.equal(await bacaStok(db, KONFIG, 'varB'), 3000, 'varB yang sah ikut terhapus');
-  assert.equal(
-    balanceOutletLain(db),
-    77000,
-    'penghapusan melampaui cakupan: snapshot outlet lain ikut terhapus'
-  );
+  assertTetanggaUtuh(db);
 });
 
 test('⛔ rebuild MENGHAPUS snapshot yang ledgernya kosong — ledger kosong SELURUHNYA', async () => {
@@ -275,7 +303,7 @@ test('⛔ rebuild MENGHAPUS snapshot yang ledgernya kosong — ledger kosong SEL
 
   snapshot(db, { variationId: 'varA', balance: 100000, checkpointHlc: 4 });
   snapshot(db, { variationId: 'varB', balance: 25000, checkpointHlc: 6 });
-  snapshotOutletLain(db);
+  snapshotTetangga(db);
 
   assert.equal(await bacaStok(db, KONFIG, 'varA'), 100000, 'prasyarat: snapshot basi memang terbaca');
 
@@ -288,11 +316,7 @@ test('⛔ rebuild MENGHAPUS snapshot yang ledgernya kosong — ledger kosong SEL
   );
   assert.equal(await bacaStok(db, KONFIG, 'varA'), 0);
   assert.equal(await bacaStok(db, KONFIG, 'varB'), 0);
-  assert.equal(
-    balanceOutletLain(db),
-    77000,
-    'penghapusan melampaui cakupan: snapshot outlet lain ikut terhapus'
-  );
+  assertTetanggaUtuh(db);
 });
 
 test('⛔ movement baru TIDAK menumpuk di atas saldo basi', async () => {
