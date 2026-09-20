@@ -39,6 +39,37 @@ Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan meng
 
 **Lantai Node adalah 24.7, bukan 22** (dinaikkan 14 Agustus 2026). `crypto.argon2` — hash PIN Modul F, dan alasan repo ini tidak punya dependency Argon2 sama sekali — baru ada sejak Node 24.7.0. `engines.node`, `node-version` di kedua workflow, dan runtime pengembang dijaga tetap sepakat oleh `tests/runtime/versi-node.test.js`, yang berjalan **paling dulu** di CI. Tanpa itu, runtime yang terlalu tua muncul sebagai test PIN merah yang tidak menyebut kata "Node" sama sekali. `research/00` dan `research/03` masih menulis "Node.js 22+" — itu penyuntingan dokumen riset, bukan kewenangan agent.
 
+### ⛔ Container baru: `bash tools/siapkan-dev.sh` SEBELUM apa pun
+
+Container diganti di tengah pekerjaan (19 September 2026) dan yang baru tidak
+punya satu pun dari tujuh prasyarat: `node_modules` kosong · Node 22.22.2
+sementara repo mengunci `>=24.7` · `origin/main` tidak ada · PostgreSQL mati ·
+`.env` tidak ada · role `lumi_owner`/`lumi_app` belum dibuat · nol migrasi.
+
+⛔ **Yang mahal bukan tujuh langkahnya melainkan BENTUK kegagalannya.**
+`node --env-file=.env` pada berkas yang tidak ada mencetak satu baris
+`node: .env: not found` lalu keluar tenang, jadi sembilan suite ber-database
+tercetak sebagai **baris kosong** di ringkasan — terbaca seperti "belum
+selesai", bukan seperti "tidak pernah jalan". Kelas cacat "nol baris, bukan
+error", kali ini pada perkakasnya sendiri.
+
+Skripnya idempoten, **gagal keras dengan menyebut langkah mana**, dan diakhiri
+dengan menjalankan `test:isolation` — penyiapan yang berakhir "selesai" tanpa
+menjalankan apa pun hanyalah klaim.
+
+- ⛔ **Ia mencetak baris `export PATH=…` dan menulisnya ke `CLAUDE_ENV_FILE`.**
+  Skrip tidak dapat mengubah PATH induknya; tanpa baris itu perintah berikutnya
+  kembali ke Node yang terlalu tua, dan gejalanya muncul jauh dari sebabnya.
+- ⛔ **`.claude/hooks/session-start.sh` MEMANGGILNYA, tidak menyalinnya.** Yang
+  berbeda kebijakannya, bukan langkahnya: skrip gagal keras (dipanggil orang
+  yang ingin tahu langkah mana), hook menurunkannya jadi peringatan (sesi yang
+  menolak dimulai karena PostgreSQL mati lebih buruk daripada sesi yang dimulai
+  dengan catatan).
+- ⛔ **BUKAN untuk CI.** `.github/workflows/test.yml` menyiapkan dirinya sendiri.
+  Dua penyiapan yang saling menyalin akan menyimpang, dan yang menyimpang
+  membuat "hijau di lokal, merah di CI" tidak dapat dijelaskan. Yang dibagi
+  keduanya `db/bootstrap.js` dan `db/migrate.js`.
+
 ---
 
 ## Konvensi data
