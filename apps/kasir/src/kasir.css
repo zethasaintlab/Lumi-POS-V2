@@ -760,6 +760,37 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+
+  /* --- Penanda bahwa daftar ini masih ada lanjutannya ---------------------
+   *
+   * Kartu paling atas terpotong di tengah tanpa satu pun tanda bahwa ada
+   * baris di atasnya. Tepi yang memotong konten tanpa penanda tidak terbaca
+   * sebagai tepi — ia terbaca sebagai baris yang rusak, dan kasir yang tidak
+   * tahu daftarnya dapat digulir menagih pesanan yang ia kira sudah lengkap.
+   *
+   * ⛔ `background-attachment: local` vs `scroll`, BUKAN bayangan yang selalu
+   * menyala. Dua lapis pertama menempel pada KONTEN (ikut bergulir) dan
+   * berwarna `--surface`; dua lapis terakhir menempel pada KOTAKNYA (diam).
+   * Saat daftar berada di ujung, lapis `--surface` menutupi bayangannya; saat
+   * digulir, penutupnya ikut pergi dan bayangannya muncul. Jadi penandanya
+   * SADAR OVERFLOW dengan sendirinya: daftar tiga baris yang tidak dapat
+   * digulir tidak menampilkan apa pun, dan tidak ada JavaScript yang perlu
+   * mengukur `scrollHeight` — yang diukur dari JS akan tertinggal satu frame
+   * setiap kali baris ditambah.
+   *
+   * ⛔ Tata letak TIDAK tersentuh: `background` tidak memengaruhi tinggi,
+   * tidak memengaruhi `flex`, dan tidak memengaruhi pola menempel blok
+   * Subtotal/Total/Bayar di bawahnya.
+   *
+   * Nol warna baru: `--surface` dan `--border` sudah ada di palet, dan
+   * `transparent` adalah kata kunci, bukan nilai warna. Pelonggaran DS #8
+   * (1 September 2026) mengizinkan gradien; paletnya tidak disentuh.
+   */
+  background:
+    linear-gradient(var(--surface) 30%, transparent) top / 100% var(--space-4) no-repeat local,
+    linear-gradient(transparent, var(--surface) 70%) bottom / 100% var(--space-4) no-repeat local,
+    linear-gradient(var(--border), transparent) top / 100% var(--space-2) no-repeat scroll,
+    linear-gradient(transparent, var(--border)) bottom / 100% var(--space-2) no-repeat scroll;
 }
 
 /* Baris keranjang: dua tingkat, bukan satu baris berisi enam hal. */
