@@ -783,24 +783,6 @@
    tombol itu sudah tidak ada — qty turun ke nol yang menghapus.) */
 .kasir-baris-harga { margin-left: auto; }
 
-/* Kelompok aksi sekunder di panel keranjang.
- *
- * ⛔ Tepi diberikan di sini, pada `.kasir-aksi-sekunder .btn`, BUKAN pada
- * `.btn-ghost` global: `ghost` dipakai back-office dan HP juga, dan tombol
- * yang tiba-tiba bertepi di seluruh produk adalah perubahan yang tidak
- * seorang pun minta. */
-.kasir-aksi-sekunder {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  /* ⛔ TANPA `margin-top: auto`. Dicoba, dan di panggung 1024×768 ia mendorong
-     ketiga tombol ke tepi bawah panel yang dapat di-scroll — di luar pandangan
-     pada setiap keranjang yang isinya sedikit. Kelompok ini menempel pada blok
-     subtotal, tempat kasir sudah melihat. */
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
 /* --- Toolbar aksi: SATU BARIS, semua terlihat sekaligus -------------------
  *
  * Sebelumnya ketiga aksi ini adalah kolom tombol selebar panel, dan kolom itu
@@ -824,20 +806,17 @@
 }
 
 .kasir-toolbar .btn {
-  /* Lebar dibagi rata, jadi baris ini tidak berubah bentuk saat satu tombol
-     hilang karena kill switch — `flex: 1` pada yang tersisa. */
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-1);
+  /* ⛔ MENDATAR dan selebar isinya, bukan kolom `flex: 1`.
+     Bentuk kolom dirancang saat baris ini selebar panel keranjang; di bilah nav
+     ia duduk di samping tab yang tingginya 46px, dan kolom ikon-di-atas-label
+     akan menaikkan seluruh bilah — tinggi yang diambil dari grid. */
+  flex: none;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
   border-color: var(--border);
   font-size: var(--text-caption);
   line-height: var(--leading-tight);
-  /* `.btn` bundle memakai `nowrap`; label dua kata di kolom sempit butuh
-     pembungkusan, kalau tidak ia meluap keluar tepinya. */
-  white-space: normal;
-  text-align: center;
+  white-space: nowrap;
 }
 
 /* ⛔ Pembatas hanya pada baris PERTAMA blok ringkasan.
@@ -949,8 +928,7 @@
    menyusut jadi nol tidak menghasilkan error, ia hanya hilang dari layar
    tepat pada keranjang yang paling panjang. */
 .kasir-subtotal,
-.kasir-total,
-.kasir-aksi-sekunder { flex: none; }
+.kasir-total { flex: none; }
 
 /* --- Penanda memuat (TEMUAN B1) -------------------------------------------
  *

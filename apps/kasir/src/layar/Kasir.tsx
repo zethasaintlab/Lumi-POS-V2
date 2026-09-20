@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Badge, EmptyState, Icon, SegmentedControl } from 'ds';
+import { PortalAksi } from '../komponen/PortalAksi.tsx';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { PER_MUAT_KATALOG } from '../komponen/halaman.ts';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
@@ -518,6 +519,85 @@ export function Kasir() {
 
   return (
     <div className="kasir-utama">
+      {/* ⛔ Ketiga aksi PINDAH ke bilah nav, 20 September 2026.
+
+          Sebelumnya mereka duduk di dasar panel keranjang, dan di sana mereka
+          bersaing dengan satu blok yang tidak boleh diganggu: Subtotal, Total,
+          dan Bayar. Tinggi yang mereka pakai diambil dari daftar item — ruang
+          paling langka di panel itu — dan pada setiap pesanan panjang kasir
+          menggulir melewati mereka untuk menagih.
+
+          ⛔ BUKAN baris melintang tersendiri di bawah nav, meski itu yang
+          mockup gambar. Bentuk itu dicoba dan DIUKUR: 57px, dan grid turun dari
+          12 kartu terlihat menjadi 8 — menembus `IA:62`. Tinggi tombol dikunci
+          `--touch-min` 44px jadi tidak ada bentuk baris yang muat; ikon di
+          samping label hanya menghemat 4px; memangkas gap panel maupun gap grid
+          nol efek karena barisnya ragged dan defisit 39px harus datang utuh.
+          Satu-satunya yang mengembalikannya adalah membuang baris cari/urut,
+          dan itu bukan pertukaran yang layak. Keputusan user: grid menang.
+
+          ⛔ Portal, bukan prop. Layar ini anak `ShellKasir` dan tidak dapat
+          mengoper ke atas; memindahkan aksinya ke shell akan memindahkan shift,
+          konfig, dan sesi ke sana juga — ke komponen yang dipakai enam layar
+          yang tidak memerlukannya.
+
+          ⛔ TIGA aksi, dan hanya tiga. Mockup menampilkan delapan; lima sisanya
+          nol kode di repo ini dan tiga di antaranya ada di daftar "jangan
+          bangun" v1.1. Tombol yang tidak melakukan apa-apa adalah janji kepada
+          kasir yang produk ini tidak dapat tepati. */}
+      <PortalAksi>
+        {/* ⛔ SATU BARIS, semua terlihat sekaligus — bukan menu bertingkat.
+            Aksi yang disembunyikan di balik ⋮ menuntut dua ketukan dan satu
+            ingatan; kasir yang sedang menagih punya keduanya paling sedikit. */}
+        <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
+          {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
+              uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
+              setiap penjualan.
+
+              ⛔ Tombolnya HILANG saat fitur dimatikan, bukan dinonaktifkan.
+              Tombol mati yang tetap terlihat mengundang kasir menekannya
+              berulang lalu menelepon merchant support. Yang menegakkannya tetap
+              `statusDiskon` di jalur penulisan — layar tidak pernah jadi
+              satu-satunya penjaga. */}
+          {fiturAktif(fitur, 'diskon_kasir') && (
+            <Tombol
+              varian="ghost"
+              disabled={keranjang.baris.length === 0 || sesi === null}
+              onClick={() => setDialogDiskon(true)}
+            >
+              <Icon name="tag" size={20} />
+              {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
+            </Tombol>
+          )}
+
+          {/* K-16 — Buka laci (no-sale). `IA:102` menempatkannya di menu ⋮, tapi
+              menu itu diturunkan dari `TABEL_RUTE` dan K-16 BUKAN rute
+              (`IA:66`: "Dialog, bukan layar"). Ia di sini karena layar ini yang
+              memegang shift, konfig, dan sesi — dan "maksimal 2 tap dari K-03"
+              (`IA:104`) terpenuhi dengan satu.
+
+              ⛔ `ghost`, bukan `primary`: membuka laci adalah pola fraud paling
+              dasar (`spec-d:229`); ia tidak boleh terlihat seperti langkah
+              biasa. */}
+          {fiturAktif(fitur, 'buka_laci_no_sale') && (
+            <Tombol varian="ghost" disabled={sesi === null} onClick={() => setBukaLaci(true)}>
+              <Icon name="register" size={20} />
+              Buka laci
+            </Tombol>
+          )}
+
+          {/* FR-D5 — kas masuk/keluar. Ia TIDAK di balik kill switch: kill
+              switch tidak boleh menyentuh audit maupun menghentikan penjualan
+              (`spec-f:369`), dan mematikan pencatatan kas berarti uang yang
+              tetap keluar tanpa jejak, lalu muncul sebagai selisih yang menuduh
+              kasirnya. */}
+          <Tombol varian="ghost" disabled={sesi === null} onClick={() => setDialogKas(true)}>
+            <Icon name="swap" size={20} />
+            Kas masuk / keluar
+          </Tombol>
+        </div>
+      </PortalAksi>
+
       <div className="kasir-grid-panel">
         {/* ⛔ Pencarian dan urutan berbagi SATU baris kontrol, 2 September 2026.
             Sebelumnya kolom cari berdiri sendiri selebar panel dan urutan
@@ -976,80 +1056,10 @@ export function Kasir() {
           Bayar
         </Tombol>
 
-        {/* ⛔ Ketiga aksi sekunder DIKELOMPOKKAN, 1 September 2026.
-            Sebelumnya ketiganya berdiri sendiri-sendiri di aliran panel dan
-            mewarisi jarak antar-bagiannya — tiga kata melayang di tengah kolom
-            kosong, tanpa tepi, tanpa satu pun tanda bahwa mereka dapat
-            ditekan. `ghost` memang harus tenang (aturan DS #2: satu aksi utama
-            per layar, dan itu Bayar), tapi tenang bukan berarti tidak terlihat
-            sebagai kontrol.
-
-            Kelompoknya diberi garis pemisah di atas: ia menyatakan bahwa
-            ketiganya BUKAN bagian dari alur menagih, dan itu tepat perbedaan
-            yang membuat kasir tidak menekan "Buka laci" saat mencari Bayar. */}
-        <div className="kasir-aksi-sekunder">
-        {/* ⛔ SATU BARIS, semua terlihat sekaligus — bukan menu bertingkat.
-            Aksi yang disembunyikan di balik ⋮ menuntut dua ketukan dan satu
-            ingatan; kasir yang sedang menagih punya keduanya paling sedikit.
-
-            ⛔ Yang ada di baris ini HANYA yang benar-benar terpasang. Tombol
-            yang membuka dialog kosong, atau yang hanya menandai fitur yang
-            belum ada, adalah janji kepada kasir yang produk ini tidak dapat
-            tepati — dan ia menelepon merchant support untuk menanyakannya. */}
-        <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
-        {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
-            uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
-            setiap penjualan. */}
-        {/* ⛔ Tombolnya HILANG saat fitur dimatikan, bukan dinonaktifkan.
-            Tombol mati yang tetap terlihat mengundang kasir menekannya
-            berulang lalu menelepon merchant support; fitur yang dimatikan
-            operator memang tidak ada untuk merchant itu. Yang menegakkannya
-            tetap `statusDiskon` di jalur penulisan — layar tidak pernah jadi
-            satu-satunya penjaga. */}
-        {fiturAktif(fitur, 'diskon_kasir') && (
-          <Tombol
-            varian="ghost"
-            disabled={keranjang.baris.length === 0 || sesi === null}
-            onClick={() => setDialogDiskon(true)}
-          >
-            <Icon name="tag" size={20} />
-            {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
-          </Tombol>
-        )}
-
-        {/* K-16 — Buka laci (no-sale). `IA:102` menempatkannya di menu ⋮,
-            tapi menu itu diturunkan dari `TABEL_RUTE` dan K-16 BUKAN rute
-            (`IA:66`: "Dialog, bukan layar"). Ia diletakkan di sini karena
-            layar ini yang memegang shift, konfig, dan sesi — dan karena
-            "maksimal 2 tap dari K-03" (`IA:104`) terpenuhi dengan satu.
-
-            ⛔ `ghost`, bukan `primary`: satu aksi utama per layar (aturan
-            design system #2), dan aksi utama K-03 adalah Bayar. Membuka laci
-            adalah pola fraud paling dasar (`spec-d:229`); ia tidak boleh
-            terlihat seperti langkah biasa. */}
-        {fiturAktif(fitur, 'buka_laci_no_sale') && (
-          <Tombol varian="ghost" disabled={sesi === null} onClick={() => setBukaLaci(true)}>
-            <Icon name="register" size={20} />
-            Buka laci
-          </Tombol>
-        )}
-
-        {/* FR-D5 — kas masuk/keluar. `ghost` dengan alasan yang sama dengan
-            "Buka laci": satu aksi utama per layar, dan aksi utama K-03 adalah
-            Bayar. Ia TIDAK di balik kill switch — kill switch tidak boleh
-            menyentuh audit maupun menghentikan penjualan (`spec-f:369`), dan
-            mematikan pencatatan kas berarti uang yang tetap keluar tanpa
-            jejak, lalu muncul sebagai selisih yang menuduh kasirnya. */}
-        <Tombol varian="ghost" disabled={sesi === null} onClick={() => setDialogKas(true)}>
-          <Icon name="swap" size={20} />
-          Kas masuk / keluar
-        </Tombol>
-        </div>
-
-        {/* ⛔ Pesan hasil ada DI LUAR baris tombol, bukan di antaranya.
-            Sebagai anak `.kasir-toolbar` ia menjadi kolom keempat dan
-            memampatkan ketiga tombol setiap kali laci dibuka — tata letak yang
-            berubah tepat saat kasir sedang membaca hasilnya. */}
+        {/* ⛔ Pesan hasil TETAP di panel keranjang, tidak ikut ke bilah nav.
+            Di bilah itu ia akan mendorong tab-tab ke samping setiap kali laci
+            dibuka — tata letak navigasi yang bergerak tepat saat kasir sedang
+            membaca hasilnya. */}
         {pesanLaci && (
           <p className="t-caption" role="status">
             {pesanLaci}
@@ -1061,7 +1071,6 @@ export function Kasir() {
             {pesanKas}
           </p>
         )}
-        </div>
       </aside>
 
       {dialogKas && konfig && sesi && (
