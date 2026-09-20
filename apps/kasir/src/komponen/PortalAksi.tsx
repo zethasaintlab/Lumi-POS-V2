@@ -12,16 +12,19 @@ import { SLOT_AKSI } from '../ShellKasir.tsx';
  * fitur ke sana juga — ke komponen yang dipakai enam layar yang tidak
  * memerlukan satu pun di antaranya.
  *
- * ## ⛔ Kenapa `useState` + `useEffect`, bukan `getElementById` saat render
+ * ## Kenapa `useState` + `useEffect`, bukan `getElementById` saat render
  *
- * Slotnya dirender oleh shell dalam commit yang SAMA dengan layar ini. Pada
- * render pertama ia belum ada di DOM, jadi pembacaan langsung saat render
- * mengembalikan `null` — dan `createPortal(anak, null)` melempar. Yang dibaca
- * saat render juga tidak pernah diperbarui saat slotnya muncul belakangan:
- * tombolnya hilang permanen tanpa satu pun error, bentuk cacat "nol baris,
- * bukan error" yang sama.
+ * ⛔ Bukan karena pembacaan saat render TERBUKTI gagal — itu dicoba, dan di
+ * urutan mount aplikasi ini ia justru bekerja: shell merender slotnya sebelum
+ * layar ini merender isinya, jadi `getElementById` menemukannya. Penjaga
+ * `tests/kasir-dom/k03-chrome.test.js` tetap hijau dengan bentuk itu.
  *
- * Efek berjalan SESUDAH DOM terpasang, jadi di sanalah slotnya pasti ada.
+ * Yang membuat bentuk efek tetap dipilih adalah bahwa ia tidak BERGANTUNG pada
+ * urutan itu. Pembacaan saat render benar selama slot kebetulan sudah ada, dan
+ * ia berhenti benar tanpa satu pun error pada hari urutannya berubah — shell
+ * yang menunda bilah navnya, layar yang dipasang lebih dulu, atau `Suspense`
+ * di antara keduanya. Efek berjalan sesudah DOM terpasang, jadi ia benar untuk
+ * ketiga urutan itu.
  *
  * ## ⛔ Kenapa ia mengembalikan `null` diam-diam saat slot tidak ada
  *
