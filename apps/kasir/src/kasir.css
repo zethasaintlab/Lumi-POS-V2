@@ -47,9 +47,60 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  /* ⛔ Padding vertikal `--space-2`, bukan `--space-3`. Tinggi topbar TIDAK
+     ditentukan teksnya melainkan `min-height: var(--touch-min)` pada pembungkus
+     indikator sinkron — jadi padding yang lebih besar hanya menambah ruang
+     kosong di sekeliling pil 44px itu, dan ruang itu diambil dari grid.
+     Terukur: 69px -> 61px, dan 8px itu bagian dari yang mengembalikan grid ke
+     12 kartu sesudah bilah nav berikon menaikkannya. */
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  flex: none;
+}
+
+/* Merek di kiri topbar — kotak aksen berisi huruf pertama.
+ *
+ * ⛔ Nilainya DISALIN dari `AppShell` bundle (28px, radius 8, `--accent` di
+ * atas `--on-accent`), bukan dipilih ulang. Dua merek yang ukurannya berbeda
+ * antara kasir dan back-office terbaca sebagai dua produk, dan merchant yang
+ * sama membuka keduanya. Nol nilai warna baru: kedua token sudah ada.
+ *
+ * `border-radius` 8px ditulis apa adanya karena `--radius-control` bernilai
+ * lain dan yang dibutuhkan kotak merek, bukan kontrol. Itu satu-satunya angka
+ * di blok ini yang bukan token, dan ia datang dari bundle.
+ */
+.kasir-merek {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: var(--weight-medium);
+  flex: none;
+}
+
+/* Wordmark dan identitas outlet · perangkat — SATU BARIS, bukan bertingkat.
+ * Alasannya diukur, lihat komentar padding topbar di atas.
+ */
+.kasir-wordmark {
+  flex: none;
+  white-space: nowrap;
+}
+
+.kasir-wordmark-sub {
+  color: var(--ink-muted);
+  min-width: 0;
+}
+
+/* Identitas staf di kanan topbar: avatar inisial PLUS nama. */
+.kasir-staf {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
   flex: none;
 }
 
@@ -63,7 +114,58 @@
  *
  * `.kasir-menu` yang lama (dropdown ⋮) dihapus bersama menunya.
  */
-.kasir-shell > .tabs-underline {
+/* Bilah nav DAN slot aksi berbagi satu baris.
+ *
+ * ⛔ Baris aksi tersendiri selebar layar sudah dicoba dan diukur: 57px, dan
+ * grid turun dari 12 kartu menjadi 8 — menembus `IA:62`. Ruang kosong di kanan
+ * bilah ini gratis; baris kedua tidak.
+ */
+.kasir-bilah {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.kasir-bilah > .tabs-underline {
+  /* Garis bawah pindah ke `.kasir-bilah` supaya ia melintang penuh; tanpa ini
+     garisnya berhenti di ujung tab terakhir dan slot aksi menggantung. */
+  border-bottom: 0;
+  min-width: 0;
+}
+
+/* Slot aksi: diisi layar lewat portal, kosong di layar lain. */
+.kasir-slot-aksi {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding-right: var(--space-4);
+  flex: none;
+}
+
+/* Ikon DI ATAS label di dalam tab.
+ *
+ * ⛔ MODIFIER di atas `.tabs-underline` bundle, bukan bilah tab kedua yang
+ * ditulis sendiri. Warna tab aktif, garis bawah aksen, dan `aria-selected`
+ * tetap milik bundle — alasan yang sama yang membuat `.kasir-kartu` dan
+ * `.kasir-chip` menjadi modifier setelah keduanya sempat ditulis dari nol.
+ *
+ * ⛔ Padding atas TIDAK ditambahkan. Bundle sudah memberi `padding: 0 0
+ * var(--space-2)`; setiap piksel yang ditambahkan di sini diambil dari grid.
+ * Terukur: +17px pada bilah ini memangkas grid dari 12 kartu menjadi 8.
+ */
+.kasir-bilah .tabs-underline button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  line-height: var(--leading-tight);
+}
+
+.kasir-shell > .tabs-underline,
+.kasir-bilah > .tabs-underline {
   flex: none;
   padding: 0 var(--space-4);
   /* ⛔ `--space-6`, bukan `--space-5`. Yang kedua TIDAK ADA — ia salah satu

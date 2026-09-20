@@ -31,8 +31,17 @@ export interface Rute {
    *
    * Nama pendek karena ia dibaca sebagai tab, bukan sebagai judul halaman:
    * "Perangkat & Uji Cetak" memakan separuh bilah pada 1024px.
+   *
+   * `ikon` adalah NAMA ikon `/ds-bundle`, bukan komponen — berkas ini sengaja
+   * tidak mengimpor React (lihat kepala berkas), dan satu impor saja akan
+   * mematikan seluruh `test:kasir` untuknya. Shell yang menerjemahkan nama itu
+   * menjadi `<Icon>`.
+   *
+   * ⛔ Ikon TIDAK menggantikan label, ia menemaninya. Bilah yang hanya berikon
+   * menuntut kasir menghafal lima glyph, dan "Tutup Kas" yang salah tekan
+   * mengakhiri shift di tengah antrean pelanggan.
    */
-  nav?: { urutan: number; label: string };
+  nav?: { urutan: number; label: string; ikon: string };
 }
 
 /**
@@ -47,26 +56,26 @@ export interface Rute {
 export const TABEL_RUTE: Rute[] = [
   { jalur: '/login', layar: 'K-01', nama: 'Login' },
   { jalur: '/shift/buka', layar: 'K-02', nama: 'Buka Shift' },
-  { jalur: '/', layar: 'K-03', nama: 'Kasir', nav: { urutan: 1, label: 'Kasir' } },
+  { jalur: '/', layar: 'K-03', nama: 'Kasir', nav: { urutan: 1, label: 'Kasir', ikon: 'register' } },
   {
     jalur: '/riwayat',
     layar: 'K-08',
     nama: 'Riwayat Transaksi',
-    nav: { urutan: 2, label: 'Riwayat' },
+    nav: { urutan: 2, label: 'Riwayat', ikon: 'receipt' },
   },
   { jalur: '/riwayat/:orderId', layar: 'K-09', nama: 'Detail Transaksi' },
   {
     jalur: '/shift/tutup',
     layar: 'K-12',
     nama: 'Tutup Kas',
-    nav: { urutan: 3, label: 'Tutup Kas' },
+    nav: { urutan: 3, label: 'Tutup Kas', ikon: 'lock' },
   },
-  { jalur: '/sync', layar: 'K-14', nama: 'Status Sinkronisasi', nav: { urutan: 4, label: 'Sinkron' } },
+  { jalur: '/sync', layar: 'K-14', nama: 'Status Sinkronisasi', nav: { urutan: 4, label: 'Sinkron', ikon: 'refresh' } },
   {
     jalur: '/perangkat',
     layar: 'K-15',
     nama: 'Perangkat & Uji Cetak',
-    nav: { urutan: 5, label: 'Perangkat' },
+    nav: { urutan: 5, label: 'Perangkat', ikon: 'printer' },
   },
 ];
 
