@@ -97,9 +97,13 @@ for (const layar of LAYAR) {
        * lebih tinggi memangkas 15 kartu menjadi 8, dan tangkapan layarnya
        * tetap terlihat wajar — kartunya besar dan rapi.
        *
-       * Diukur pada `gambar` saja: keadaan lain tidak punya gambar, dan
-       * keadaan `panjang`/`memuat`/`error`/`kosong` mengukur hal lain. */
-      if (layar.id === 'K-03' && keadaan === 'gambar') {
+       * ⛔ Diukur pada SETIAP keadaan yang punya gambar, bukan pada `gambar`
+       * saja. Sejak `normal` ikut bergambar, penjaga yang hanya melihat satu
+       * nama akan melewatkan sel yang paling sering dibaca orang — dan
+       * tangkapan layarnya tetap terlihat wajar, persis cacat yang catatan di
+       * atas peringatkan. Keadaan `panjang`/`memuat`/`error`/`kosong` mengukur
+       * hal lain dan tetap di luar. */
+      if (layar.id === 'K-03' && (keadaan === 'gambar' || keadaan === 'normal')) {
         const terlihat = await p.evaluate(() => {
           const grid = document.querySelector('.kasir-grid');
           if (!grid) return -1;

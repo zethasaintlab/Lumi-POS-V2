@@ -276,12 +276,29 @@ export interface BarisGambarPalsu {
  * berbeda: satu checksum yang tidak cocok (isi berubah, panjang tetap), satu
  * teks yang dipotong (panjang berubah). Keduanya harus mendarat di keadaan
  * yang sama dan terlihat.
+ *
+ * ## ⛔ `normal` ikut bergambar, dan itu memperbaiki pembanding yang bohong
+ *
+ * Sampai sekarang hanya skenario `gambar` yang punya foto, jadi `normal` —
+ * satu-satunya sel yang dibaca sebagai "beginilah layar kasir sehari-hari" —
+ * menampilkan grid yang seluruh kartunya tanpa foto. Itu bukan keadaan
+ * sehari-hari merchant mana pun setelah katalognya difoto; ia keadaan hari
+ * pertama, dan ia membuat grid terasa jenis yang berbeda dari yang dirancang.
+ *
+ * Keduanya memakai campuran yang SAMA, dan itu disengaja: dua fixture gambar
+ * yang berbeda menjadi dua jawaban untuk satu pertanyaan, dan yang menyimpang
+ * membuat perbandingan antar-sel berhenti berarti. Yang membedakan keduanya
+ * bukan datanya melainkan PERTANYAANNYA — `gambar` menanyakan apakah ketiga
+ * keadaan dapat dibedakan mata; `normal` menanyakan apakah layarnya terbaca
+ * wajar saat sebagian besar kartunya memang bergambar.
  */
+const BERGAMBAR: readonly NamaSkenario[] = ['gambar', 'normal'];
+
 export async function gambarUntuk(
   skenario: NamaSkenario,
   item: readonly BarisItem[]
 ): Promise<BarisGambarPalsu[]> {
-  if (skenario !== 'gambar') return [];
+  if (!BERGAMBAR.includes(skenario)) return [];
 
   // Item unik, dalam urutan grid.
   const idItem = [...new Set(item.map((b) => b.item_id))];
