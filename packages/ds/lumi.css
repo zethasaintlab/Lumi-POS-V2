@@ -239,3 +239,34 @@
 .product-card.kasir-kartu:active {
   background: var(--accent-soft);
 }
+
+/* --- Margin bawaan peramban pada `<p>` -------------------------------------
+ *
+ * ⛔ Lubang di RESET bundle, bukan pilihan desain siapa pun.
+ *
+ * `ds-bundle/base.css` me-reset margin `body` dan berhenti di situ; `p` tidak
+ * pernah disebut. Jadi setiap paragraf membawa `margin: 1em 0` bawaan UA — 30
+ * px per paragraf pada `--text-body` 15px — dan jarak itu tidak pernah
+ * diputuskan siapa pun. Ia hanya warisan stylesheet peramban.
+ *
+ * ⛔ Kenapa ia tidak terlihat selama berbulan-bulan: selama layar menggulir
+ * seluruhnya, 30 px tambahan tidak mengubah apa pun yang dapat diperhatikan.
+ * Ia baru menjadi mahal saat tinggi sebuah layar DIBATASI — di K-14, ketiga
+ * paragrafnya memakan 90 px yang seharusnya menjadi milik tabel item gagal.
+ * Terukur, bukan diperkirakan.
+ *
+ * Jaraknya sendiri tidak hilang: setiap layar kasir menyusun bloknya dengan
+ * `gap` pada flex container, dan `gap` itu yang memang diputuskan seseorang.
+ * Yang dihapus di sini adalah lapis KEDUA yang menumpuk di atasnya.
+ *
+ * ⛔ Cakupannya GLOBAL, dan itu disengaja: lubangnya ada di lapis reset, jadi
+ * penutupnya harus di lapis yang sama. Reset yang ditulis per-layar menjadi
+ * daftar yang harus diingat setiap kali layar baru lahir, dan yang terlupa
+ * menghasilkan satu layar yang jaraknya berbeda tanpa seorang pun memilihnya.
+ *
+ * Jangkauannya diukur sebelum ditulis: 84 `<p>` di `apps/kasir`, 8 di
+ * `apps/backoffice`, 0 di `apps/hp`.
+ */
+p {
+  margin: 0;
+}
