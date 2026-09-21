@@ -256,6 +256,31 @@ const PELANGGAR_DIKETAHUI = [
   'outbox_local',
 ];
 
+/**
+ * Batas atas garis dasar — daftar yang hanya boleh MENYUSUT.
+ *
+ * ⛔ Salinan kedua, dan duplikasinya disengaja. Tanpa ia, `PELANGGAR_DIKETAHUI`
+ * adalah daftar pengecualian biasa: siapa pun yang menambahkan tabel ke-38
+ * tanpa `NOT NULL` dapat menenangkan testnya dengan menambahkan satu baris ke
+ * sana, dan diff-nya terbaca seperti pemeliharaan rutin.
+ *
+ * Dengan ia, menambah nama menuntut penyuntingan DUA daftar di berkas test ini,
+ * dan yang kedua ini berjudul "tidak boleh bertambah". Penjaga tidak dapat
+ * mencegah orang mengetik; yang dapat ia lakukan adalah membuat penambahannya
+ * mustahil terjadi tanpa disengaja, dan mustahil terbaca sebagai hal lain oleh
+ * peninjau.
+ *
+ * Menyusut tidak menuntut apa pun: nama yang dihapus dari `PELANGGAR_DIKETAHUI`
+ * boleh tetap tinggal di sini sebagai catatan bahwa ia pernah ada.
+ */
+const GARIS_DASAR_TERKUNCI = Object.freeze([
+  'stock_movement',
+  'cash_drawer_shift',
+  'cash_movement',
+  'audit_event',
+  'outbox_local',
+]);
+
 // ---------------------------------------------------------------------------
 
 test('⛔ penjaga PK membedakan NOT NULL milik PK dari milik kolom TETANGGA', async () => {
@@ -311,7 +336,31 @@ test('⛔ penjaga PK membedakan NOT NULL milik PK dari milik kolom TETANGGA', as
   );
 });
 
-test('⛔ setiap PRIMARY KEY tekstual lokal ditulis NOT NULL', async () => {
+test('⛔ garis dasar PK hanya boleh MENYUSUT, tidak pernah bertambah', () => {
+  /* ⛔ Penjaga atas penjaga. Yang ia jaga bukan skema melainkan DAFTARNYA.
+     Ratchet yang daftarnya boleh tumbuh bukan ratchet — ia daftar pengecualian
+     dengan nama yang lebih baik, dan daftar pengecualian yang tumbuh adalah
+     persis bentuk yang membuat 17 tabel dimaafkan selama berminggu-minggu. */
+  const asing = PELANGGAR_DIKETAHUI.filter((t) => !GARIS_DASAR_TERKUNCI.includes(t));
+  assert.deepEqual(
+    asing,
+    [],
+    '⛔ Nama ini ditambahkan ke `PELANGGAR_DIKETAHUI` dan TIDAK ada di garis dasar ' +
+      `terkunci: ${asing.join(', ')}.\n\n` +
+      'Garis dasar hanya boleh menyusut. Tabel baru yang PRIMARY KEY tekstualnya ' +
+      'tanpa `NOT NULL` diperbaiki di skemanya, bukan didaftarkan di sini — ' +
+      'mendaftarkannya mengubah ratchet menjadi daftar pengecualian, dan test ' +
+      'yang memaafkan pelanggaran berikutnya tidak menjaga apa pun.'
+  );
+
+  assert.ok(
+    PELANGGAR_DIKETAHUI.length <= GARIS_DASAR_TERKUNCI.length,
+    `⛔ Garis dasar berisi ${PELANGGAR_DIKETAHUI.length} nama, lebih banyak daripada ` +
+      `${GARIS_DASAR_TERKUNCI.length} yang terkunci. Ia hanya boleh menyusut.`
+  );
+});
+
+test('⛔ pelanggar PK skema lokal tepat sama dengan garis dasar, tidak lebih dan tidak kurang', async (t) => {
   // ⛔ SQLite MENERIMA NULL di kolom PRIMARY KEY pada tabel rowid — bug lama
   // yang dipertahankan demi kompatibilitas, dan satu-satunya penawarnya adalah
   // menulis `NOT NULL` sendiri.
@@ -321,18 +370,30 @@ test('⛔ setiap PRIMARY KEY tekstual lokal ditulis NOT NULL', async () => {
   // tempat dan waktu penyebabnya. PowerSync menuntut kolom `id` pada setiap
   // raw table justru karena identitas baris adalah fondasi replikasinya.
   //
-  // ⛔ TEST INI MEMANG MERAH, dan itu hasil yang benar. Penjaganya baru saja
-  // berhenti memaafkan 17 tabel; tabelnya sendiri belum diperbaiki, dan
-  // memperbaikinya bukan keputusan teknis — SQLite tidak dapat menambahkan
-  // `NOT NULL` ke kolom yang sudah ada, jadi setiap perbaikan menuntut rebuild,
-  // dan rebuild pada tabel yang memegang data belum tersinkron adalah
-  // keputusan produk.
-  //
-  // Daftar pelanggarnya dicetak lengkap dengan nama tabel dan nomor baris
-  // supaya ia menjadi DAFTAR KERJA, bukan sekadar kabar buruk. Jangan
-  // menambahkan daftar pengecualian, jangan melonggarkan assertion, dan jangan
-  // menandai test ini skip: ketiganya mengembalikan keadaan yang baru saja
-  // selesai diperbaiki, dengan biaya yang sama dan tanpa satu pun error.
+  /* ⛔ RATCHET, dan sampai 21 September 2026 ia assertion mutlak yang MERAH
+     permanen.
+
+     Perubahannya bukan pelonggaran, dan bedanya perlu dinyatakan. Yang lama
+     menuntut NOL pelanggar; karena kelima tabel itu menunggu keputusan produk
+     yang bisa lama, `test:schema` merah di setiap run, selamanya. Merah
+     permanen punya satu akibat yang dapat diramalkan: orang berhenti membacanya,
+     lalu berhenti melihatnya, dan pada hari tabel ke-38 ditambahkan tanpa
+     `NOT NULL` merahnya tidak membawa informasi apa pun. PR juga tidak dapat
+     di-merge, dan merge paksa memindahkan merah permanen itu ke `main`.
+
+     Yang dituntut sekarang KESAMAAN PERSIS dengan garis dasar — dan itu lebih
+     ketat daripada "nol pelanggar baru" di satu arah yang penting: garis dasar
+     yang tertinggal lebih panjang daripada kenyataan juga MERAH. Tanpa arah
+     itu, nama yang sudah diperbaiki tetap tinggal di daftar dan diam-diam
+     memaafkan tabel berikutnya yang memakai nama itu lagi.
+
+     ⛔ Hijau di sini TIDAK berarti selesai, dan pesannya mengatakan itu lewat
+     `t.diagnostic` — hijau yang diam tidak dapat dibedakan dari hijau yang
+     benar-benar bersih. Kelima nama tetap tercetak di setiap run.
+
+     Jangan menambahkan daftar pengecualian, jangan melonggarkan assertion, dan
+     jangan menandai test ini skip: ketiganya mengembalikan keadaan yang sudah
+     selesai diperbaiki, dengan biaya yang sama dan tanpa satu pun error. */
   const pelanggar = await pelanggarPk(SKEMA());
   const nama = pelanggar.map((p) => p.tabel).sort();
   const dasar = [...PELANGGAR_DIKETAHUI].sort();
@@ -345,34 +406,49 @@ test('⛔ setiap PRIMARY KEY tekstual lokal ditulis NOT NULL', async () => {
 
   /* ⛔ DUA MERAH YANG BERBEDA, dan membedakannya adalah seluruh gunanya.
      Pesan yang selalu berbunyi sama adalah pesan yang orang berhenti baca. */
-  const pesan =
-    baru.length > 0
-      ? '⛔ PELANGGAR BARU — tabel ini TIDAK ada di garis dasar:\n' +
-        baru.map((t) => `  ${t}`).join('\n') +
-        '\n\nSebuah tabel ditambahkan atau diubah dengan PRIMARY KEY tekstual tanpa ' +
-        '`NOT NULL`. SQLite menerima id NULL di sana; PostgreSQL menolaknya, jadi ' +
-        'selisihnya baru terlihat saat sync, jauh dari sebabnya.\n\n' +
-        'Perbaiki tabel BARU-nya — jangan menambahkannya ke `PELANGGAR_DIKETAHUI`. ' +
-        'Daftar itu garis dasar yang menunggu keputusan produk, bukan tempat ' +
-        'menampung pelanggaran berikutnya.\n\n' +
-        `Seluruh ${pelanggar.length} pelanggar:\n${daftar}`
-      : hilang.length > 0
-        ? '✔ Sebagian garis dasar SUDAH DIPERBAIKI: ' +
-          hilang.join(', ') +
-          '\n\nHapus nama itu dari `PELANGGAR_DIKETAHUI` supaya daftarnya tetap ' +
-          'menggambarkan keadaan sebenarnya. Garis dasar yang lebih panjang daripada ' +
-          'kenyataan diam-diam memaafkan tabel yang kelak memakai nama itu lagi.\n\n' +
-          `Sisa ${pelanggar.length} pelanggar:\n${daftar}`
-        : 'Kelima pelanggar ini DIHARAPKAN dan sedang MENUNGGU KEPUTUSAN produk — ' +
-          'bukan regresi, bukan pelanggar baru.\n\n' +
-          `${daftar}\n\n` +
-          'Empat pertama raw table yang TIDAK ada di sync rules jalur turun: rebuild ' +
-          'membuangnya tanpa jalan pulang. `outbox_local` murni lokal dan memegang ' +
-          'antrean penjualan yang belum terkirim; `rencanaDdl` sengaja tidak punya ' +
-          'jalur untuk men-drop tabel semacam itu.\n\n' +
-          'Test ini tetap MERAH, dan itu disengaja. Yang membuatnya tetap berguna ' +
-          'adalah bahwa pelanggar BARU menghasilkan pesan yang berbeda — bukan bahwa ' +
-          'merahnya hilang.';
+  assert.deepEqual(
+    baru,
+    [],
+    '⛔ PELANGGAR BARU — tabel ini TIDAK ada di garis dasar:\n' +
+      baru.map((t) => `  ${t}`).join('\n') +
+      '\n\nSebuah tabel ditambahkan atau diubah dengan PRIMARY KEY tekstual tanpa ' +
+      '`NOT NULL`. SQLite menerima id NULL di sana; PostgreSQL menolaknya, jadi ' +
+      'selisihnya baru terlihat saat sync, jauh dari sebabnya.\n\n' +
+      'Perbaiki tabel BARU-nya — jangan menambahkannya ke `PELANGGAR_DIKETAHUI`. ' +
+      'Daftar itu garis dasar yang hanya boleh MENYUSUT, bukan tempat menampung ' +
+      'pelanggaran berikutnya, dan penjaga di atas menolak nama yang tidak ada di ' +
+      'garis dasar terkunci.\n\n' +
+      `Seluruh ${pelanggar.length} pelanggar:\n${daftar}`
+  );
 
-  assert.deepEqual(pelanggar, [], pesan);
+  assert.deepEqual(
+    hilang,
+    [],
+    '✔ Sebagian garis dasar SUDAH DIPERBAIKI: ' +
+      hilang.join(', ') +
+      '\n\nIni kabar baik yang tetap merah, dan merahnya disengaja: hapus nama itu ' +
+      'dari `PELANGGAR_DIKETAHUI` supaya daftarnya tetap menggambarkan keadaan ' +
+      'sebenarnya. Garis dasar yang lebih panjang daripada kenyataan diam-diam ' +
+      'memaafkan tabel yang kelak memakai nama itu lagi — dan ratchet yang tidak ' +
+      'pernah menyusut berhenti menjadi ratchet.\n\n' +
+      `Sisa ${pelanggar.length} pelanggar:\n${daftar}`
+  );
+
+  /* ⛔ HIJAU YANG TETAP BICARA. `assert` yang lolos tidak mencetak apa pun, dan
+     hijau yang diam di sini tidak dapat dibedakan dari hijau yang benar-benar
+     bersih — padahal kelima tabel itu masih melanggar dan masih menunggu
+     keputusan. `t.diagnostic` mencetaknya di setiap run, termasuk di CI. */
+  t.diagnostic(
+    `garis dasar utuh: ${pelanggar.length} pelanggar PK, semuanya DIHARAPKAN dan ` +
+      'sedang MENUNGGU KEPUTUSAN produk — bukan regresi, bukan pelanggar baru.'
+  );
+  for (const p of pelanggar) {
+    t.diagnostic(`  L${p.baris}  ${p.tabel}.${p.kolom}  ${p.definisi}`);
+  }
+  t.diagnostic(
+    'HIJAU DI SINI BUKAN BERARTI SELESAI. Empat pertama raw table yang TIDAK ada di ' +
+      'sync rules jalur turun: rebuild membuangnya tanpa jalan pulang. `outbox_local` ' +
+      'murni lokal dan memegang antrean penjualan yang belum terkirim; `rencanaDdl` ' +
+      'sengaja tidak punya jalur untuk men-drop tabel semacam itu.'
+  );
 });
