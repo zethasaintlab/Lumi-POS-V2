@@ -753,10 +753,24 @@
   list-style: none;
   padding: 0;
   margin: 0;
-  /* `min-height: 0` WAJIB di sini. Tanpanya anak flex menolak mengecil di
-     bawah tinggi kontennya, `overflow-y` tidak pernah menyala, dan daftar
-     tetap mendorong subtotal keluar layar — persis cacat yang blok ini
-     perbaiki. Ia tidak menghasilkan error; ia hanya tidak bekerja. */
+  /* ⛔ `min-height: 0` di SINI tidak menahan beban apa pun, dan itu DIUKUR —
+     21 September 2026, lewat sabotase, bukan disimpulkan dari bentuknya.
+
+     Komentar ini sebelumnya berbunyi "WAJIB di sini: tanpanya anak flex
+     menolak mengecil di bawah tinggi kontennya". Klaim itu keliru. Melepas
+     deklarasi ini membuat KESEPULUH penjaga K-03 dan K-06 tetap hijau,
+     termasuk anggaran chrome `IA:62` dan P8.
+
+     Sebabnya spesifikasi flexbox: ukuran minimum otomatis (`min-height: auto`)
+     hanya berlaku bila `overflow` bernilai `visible`, dan blok ini `overflow-y:
+     auto` — minimumnya sudah nol dengan sendirinya. Yang menahan beban adalah
+     `min-height: 0` pada leluhurnya yang `overflow: visible`.
+
+     Deklarasinya DIPERTAHANKAN, bukan dihapus: ia benar sebagai pernyataan
+     niat, dan menghapusnya menuntut pembuktian bahwa tidak ada leluhur yang
+     kelak berubah `overflow`-nya. Yang diperbaiki komentarnya, supaya orang
+     berikutnya tidak mengira baris ini yang bekerja lalu menghapus yang benar.
+     Bentuk yang sama sudah dicatat di `.kasir-sync-daftar` untuk K-14. */
   flex: 1;
   min-height: 0;
   overflow-y: auto;

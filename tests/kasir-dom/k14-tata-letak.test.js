@@ -20,18 +20,27 @@
 //    memakan isi K-14 tanpa satu pun penjaga menyala. Diukur di KELIMA layar,
 //    karena slotnya milik layar dan setiap layar dapat merusaknya sendiri.
 //
-// 2. BLOK AKSI DAN KARTU PENYIMPANAN TIDAK BERGESER. Bentuk yang sama dengan
-//    P8 di K-06, dengan satu perbedaan yang menentukan: di K-06 isi panjangnya
-//    dibuat lewat interaksi, di sini lewat FIXTURE. `antrean-panjang` memuat
-//    tepat 50 item gagal — `PER_HALAMAN` — yaitu isi maksimum yang K-14 dapat
-//    tampilkan sekaligus.
+// 2. KEDUA KARTU ANGKA TIDAK BERGESER. Bentuk yang sama dengan P8 di K-06,
+//    dengan satu perbedaan yang menentukan: di K-06 isi panjangnya dibuat lewat
+//    interaksi, di sini lewat FIXTURE. `antrean-panjang` memuat tepat 50 item
+//    gagal — `PER_HALAMAN` — yaitu isi maksimum yang K-14 dapat tampilkan
+//    sekaligus.
 //
 //    ⛔ Diukur SESUDAH digulirkan sampai mentok, bukan pada posisi awal. Pada
-//    `scrollTop = 0` blok aksi dan kartu penyimpanan berada di posisi yang sama
-//    apa pun panjang tabelnya — keduanya berdiri DI ATAS tabel. Gejalanya baru
-//    muncul saat kasir menggulir untuk membaca tabelnya, dan penjaga yang
-//    berhenti di posisi awal hijau pada satu-satunya keadaan yang tidak pernah
-//    bermasalah.
+//    `scrollTop = 0` kartu angka berada di posisi yang sama apa pun panjang
+//    tabelnya — keduanya berdiri DI ATAS tabel. Gejalanya baru muncul saat
+//    kasir menggulir untuk membaca tabelnya, dan penjaga yang berhenti di
+//    posisi awal hijau pada satu-satunya keadaan yang tidak pernah bermasalah.
+//
+//    ⛔ Tuntutannya menyempit 21 September 2026: semula blok aksi DAN kartu
+//    penyimpanan. Itu berlebihan — aksi utamanya kini dilindungi slot bilah
+//    nav, dan kartu penyimpanan justru DIPINDAH ke dalam wilayah gulir karena
+//    ia diagnostik. Alasan lengkapnya ada di komentar testnya.
+//
+// 2b. WILAYAH TABEL MEMUAT MINIMAL TIGA BARIS UTUH. Angka yang dikunci, sejajar
+//    dengan ">= 12 kartu" di K-03: tanpa angka, daftar ini menyusut diam-diam
+//    setiap kali seseorang menambahkan satu blok di atasnya, dan tangkapan
+//    layarnya tetap terlihat wajar.
 //
 // 3. SATU WILAYAH YANG MENGGULIR, DAN IA TABELNYA.
 //
@@ -229,13 +238,10 @@ async function posisiSesudahGulir(keadaan) {
     for (const p of penggulir) p.scrollTop = p.scrollHeight;
 
     const teks = (e) => (e?.innerText ?? '').replace(/\s+/g, ' ');
-    const kartu = [...document.querySelectorAll('.kasir-konten .card')].find((c) =>
-      teks(c).startsWith('Penyimpanan perangkat')
-    );
-    const tombolEkspor = [...document.querySelectorAll('.kasir-konten button')].find((b) =>
-      teks(b).startsWith('Ekspor pemulihan')
-    );
-    const blokAksi = tombolEkspor?.closest('.row');
+    const kartuAngka = [...document.querySelectorAll('.kasir-sync-angka .card')].map((c) => ({
+      nama: teks(c).slice(0, 24),
+      el: c,
+    }));
     /* ⛔ Diukur RELATIF terhadap `.kasir-konten`, bukan terhadap viewport, dan
        itu bukan kerapian: bar galeri di atas panggung memuat kalimat `tanya`
        milik skenario, dan kalimat `antrean-panjang` lebih panjang sehingga ia
@@ -255,12 +261,20 @@ async function posisiSesudahGulir(keadaan) {
         bottomLayar: +r.bottom.toFixed(1),
       };
     };
+    const daftar = document.querySelector('.kasir-sync-daftar');
+    const kepala = document.querySelector('.kasir-sync-daftar thead');
+    const rd = daftar?.getBoundingClientRect();
     return {
-      kartuPenyimpanan: kotak(kartu),
-      blokAksi: kotak(blokAksi),
+      kartuAngka: kartuAngka.map((k) => ({ nama: k.nama, ...kotak(k.el) })),
       barisTabel: document.querySelectorAll('.kasir-konten table tbody tr').length,
       tinggiLayar: window.innerHeight,
       jumlahPenggulir: penggulir.length,
+      daftarTinggi: rd ? Math.round(rd.height) : 0,
+      kepalaTinggi: kepala ? Math.round(kepala.getBoundingClientRect().height) : 0,
+      barisTinggi: (() => {
+        const tr = document.querySelector('.kasir-sync-daftar tbody tr');
+        return tr ? Math.round(tr.getBoundingClientRect().height) : 0;
+      })(),
     };
   });
   await hal.close();
@@ -268,60 +282,103 @@ async function posisiSesudahGulir(keadaan) {
   return hasil;
 }
 
-test('⛔ blok aksi dan kartu penyimpanan tidak bergeser antara 3 dan 50 baris gagal', async () => {
+/** `IA:62` sejajar: angka yang dikunci, bukan perasaan bahwa "cukup". */
+const MINIMAL_BARIS_TERLIHAT = 3;
+
+test('⛔ kedua kartu angka tidak bergeser antara 3 dan 50 baris gagal', async () => {
+  /* ⛔ TUNTUTANNYA BERUBAH, dan ini bukan pelemahan supaya lolos.
+  
+     Versi 21 September menuntut blok aksi DAN kartu penyimpanan tidak
+     bergeser. Tuntutan itu berlebihan: tujuan sebenarnya adalah aksi tidak
+     tergulir keluar, dan aksi utamanya sekarang hidup di slot bilah nav —
+     dilindungi penjaga pertama di berkas ini, bukan oleh posisinya di badan
+     layar.
+  
+     Kartu penyimpanan justru DIPINDAH ke dalam wilayah gulir 21 September
+     2026, bersama baris skema lokal, "Muat ulang angka", dan "Ekspor pemulihan
+     (JSON)". Keempatnya diagnostik atau untuk petugas dukungan; tidak satu pun
+     dibaca kasir saat melayani pelanggan. Memakunya di atas tabel menyisakan
+     102 px untuk daftar — dengan kepala tabel 43 px di antaranya, NOL baris
+     utuh yang terlihat. Kasir membuka layar ini untuk membaca item yang gagal.
+  
+     Yang tetap dipaku hanya dua kartu angka: "Menunggu terkirim" dan "Gagal
+     terkirim" adalah jawaban langsung atas pertanyaan yang kasir bawa ke sini. */
   const pendek = await posisiSesudahGulir('offline');
   const panjang = await posisiSesudahGulir('antrean-panjang');
 
-  /* ⛔ SENTINEL DI DEPAN, bukan di belakang — dan urutannya dipilih dengan
-     sengaja, berbeda dari P8 di K-06. Di sana sentinel di belakang karena isi
-     ujinya dibangun lewat interaksi yang dapat gagal separuh jalan; di sini
-     isinya datang dari FIXTURE, jadi fixture yang salah adalah satu-satunya
-     cara test ini dapat hijau karena hampa. Tiga lawan lima puluh diperiksa
-     sebelum apa pun diukur. */
-  assert.equal(pendek.barisTabel, 3, `fixture \`offline\` seharusnya 3 baris gagal.`);
+  /* ⛔ SENTINEL DI DEPAN, berbeda dari P8 di K-06. Di sana sentinel di belakang
+     karena isi ujinya dibangun lewat interaksi yang dapat gagal separuh jalan;
+     di sini isinya datang dari FIXTURE, jadi fixture yang salah adalah
+     satu-satunya cara test ini dapat hijau karena hampa. */
+  assert.equal(pendek.barisTabel, 3, 'fixture `offline` seharusnya 3 baris gagal.');
   assert.equal(
     panjang.barisTabel,
     50,
     'fixture `antrean-panjang` seharusnya 50 baris gagal — satu halaman penuh ' +
-      '(`PER_HALAMAN`). Tanpa itu tidak ada yang mendorong blok aksi, dan penjaga ' +
+      '(`PER_HALAMAN`). Tanpa itu tidak ada yang mendorong apa pun, dan penjaga ' +
       'ini tidak menguji apa pun.'
   );
 
-  assert.ok(pendek.blokAksi && panjang.blokAksi, 'blok aksi tidak ditemukan di DOM.');
-  assert.ok(
-    pendek.kartuPenyimpanan && panjang.kartuPenyimpanan,
-    'kartu "Penyimpanan perangkat" tidak ditemukan di DOM.'
-  );
-
   assert.equal(
-    panjang.blokAksi.top,
-    pendek.blokAksi.top,
-    `blok aksi bergeser ${(panjang.blokAksi.top - pendek.blokAksi.top).toFixed(1)} px ` +
-      `(${pendek.blokAksi.top} → ${panjang.blokAksi.top}) setelah tabel digulirkan ` +
-      'sampai mentok.\n  Tabel 50 baris menggulirkan SELURUH layar, bukan dirinya ' +
-      'sendiri, jadi aksi dan kartu di atasnya ikut terbawa keluar viewport.'
+    pendek.kartuAngka.length,
+    2,
+    `kedua kartu angka tidak ditemukan di \`.kasir-sync-angka\`; ditemukan ` +
+      `${pendek.kartuAngka.length}.`
   );
 
-  assert.equal(
-    panjang.kartuPenyimpanan.top,
-    pendek.kartuPenyimpanan.top,
-    'kartu "Penyimpanan perangkat" bergeser ' +
-      `${(panjang.kartuPenyimpanan.top - pendek.kartuPenyimpanan.top).toFixed(1)} px ` +
-      `(${pendek.kartuPenyimpanan.top} → ${panjang.kartuPenyimpanan.top}).`
-  );
+  for (let i = 0; i < pendek.kartuAngka.length; i += 1) {
+    const a = pendek.kartuAngka[i];
+    const b = panjang.kartuAngka[i];
+    assert.equal(
+      b.top,
+      a.top,
+      `kartu angka "${a.nama}" bergeser ${(b.top - a.top).toFixed(1)} px ` +
+        `(${a.top} → ${b.top}) setelah tabel digulirkan sampai mentok.\n` +
+        '  Tabel 50 baris menggulirkan SELURUH layar, bukan dirinya sendiri, jadi ' +
+        'kartu di atasnya ikut terbawa keluar viewport.'
+    );
 
-  /* ⛔ Dan keduanya benar-benar TERLIHAT, bukan sekadar tidak bergeser. Blok
-     yang sama-sama berada di luar layar pada kedua fixture juga tidak bergeser. */
-  for (const [nama, k] of [
-    ['blok aksi', panjang.blokAksi],
-    ['kartu penyimpanan', panjang.kartuPenyimpanan],
-  ]) {
+    /* ⛔ Dan ia benar-benar TERLIHAT, bukan sekadar tidak bergeser. Kartu yang
+       sama-sama berada di luar layar pada kedua fixture juga tidak bergeser. */
     assert.ok(
-      k.topLayar >= 0 && k.bottomLayar <= panjang.tinggiLayar,
-      `${nama} berada di luar viewport pada 50 baris: top ${k.topLayar}, ` +
-        `bottom ${k.bottomLayar}, layar ${panjang.tinggiLayar}.`
+      b.topLayar >= 0 && b.bottomLayar <= panjang.tinggiLayar,
+      `kartu angka "${a.nama}" berada di luar viewport pada 50 baris: ` +
+        `top ${b.topLayar}, bottom ${b.bottomLayar}, layar ${panjang.tinggiLayar}.`
     );
   }
+});
+
+test('⛔ wilayah tabel memuat minimal tiga baris utuh pada 1280x800', async () => {
+  /* ⛔ ANGKA YANG DIKUNCI, bukan perasaan bahwa ruangnya "cukup".
+  
+     Tanpa angka, tabel ini dapat menyusut lagi diam-diam: siapa pun yang
+     menambahkan satu kartu di atasnya memakan ruang daftar, dan tangkapan
+     layarnya tetap terlihat wajar — persis bentuk kegagalan yang membuat
+     anggaran chrome K-03 perlu dijaga angka (`IA:62`).
+  
+     Tiga adalah hasil PENGUKURAN sesudah keempat blok diagnostik pindah ke
+     dalam wilayah gulir: daftar 312 px, kepala tabel 43 px, baris 70 px →
+     (312 − 43) / 70 = 3,8. Sebelum pemindahan: 102 px, dan kepala tabel
+     sendirian sudah 43 px — NOL baris utuh.
+  
+     ⛔ Kepala tabel dihitung sebagai beban, bukan diabaikan. Ia tidak sticky,
+     jadi ia memakan ruang daftar pada posisi awal — dan posisi awal adalah apa
+     yang kasir lihat saat membuka layar. */
+  const r = await posisiSesudahGulir('antrean-panjang');
+
+  assert.equal(r.barisTabel, 50, 'fixture `antrean-panjang` seharusnya 50 baris gagal.');
+  assert.ok(r.barisTinggi > 0, 'tinggi baris tabel terukur nol — tabelnya tidak dirender.');
+
+  const muat = Math.floor((r.daftarTinggi - r.kepalaTinggi) / r.barisTinggi);
+  assert.ok(
+    muat >= MINIMAL_BARIS_TERLIHAT,
+    `hanya ${muat} baris utuh yang muat di wilayah tabel — dituntut minimal ` +
+      `${MINIMAL_BARIS_TERLIHAT}.\n` +
+      `  daftar ${r.daftarTinggi}px · kepala tabel ${r.kepalaTinggi}px · ` +
+      `baris ${r.barisTinggi}px\n` +
+      '  Yang paling sering menyebabkannya: satu blok baru dipaku di atas tabel. ' +
+      'Kartu angka yang dipaku ada DUA dan itu disengaja; sisanya milik wilayah gulir.'
+  );
 });
 
 test('⛔ K-14 punya TEPAT SATU wilayah yang menggulir, dan ia tabel item gagal', async () => {
