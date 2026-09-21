@@ -26,7 +26,8 @@ export type NamaSkenario =
   | 'meluap'
   | 'angka-besar'
   | 'gambar'
-  | 'keranjang-penuh';
+  | 'keranjang-penuh'
+  | 'antrean-panjang';
 
 export interface Skenario {
   nama: NamaSkenario;
@@ -109,6 +110,16 @@ export const SKENARIO: readonly Skenario[] = [
       'posisi yang SAMA seperti saat keranjang berisi tiga baris — atau kasir ' +
       'harus menggulir untuk menagih, di depan pelanggan, pada setiap pesanan ' +
       'besar? Tiga baris tidak pernah dapat menjawab ini.',
+  },
+  {
+    nama: 'antrean-panjang',
+    judul: 'Antrean panjang (50 gagal)',
+    tanya:
+      'Satu halaman penuh item gagal — `PER_HALAMAN` tepat 50. Apakah "Coba kirim ' +
+      'sekarang" dan kartu Penyimpanan berada di posisi yang SAMA seperti saat ' +
+      'hanya tiga yang gagal, atau keduanya terdorong ribuan piksel ke bawah oleh ' +
+      'tabelnya sendiri? Tiga baris tidak pernah dapat menjawab ini — alasan yang ' +
+      'sama persis dengan `keranjang-penuh` di K-03.',
   },
 ];
 
@@ -372,6 +383,12 @@ async function webpPalsu(i: number): Promise<string> {
 /** Ringkasan antrean outbox untuk indikator sinkronisasi. */
 export function antreanUntuk(skenario: NamaSkenario): { menunggu: number; gagal: number } {
   if (skenario === 'offline') return { menunggu: 12, gagal: 3 };
+  /* ⛔ TEPAT 50, dan angkanya bukan karangan: `PER_HALAMAN` di
+     `packages/sync-client/src/status.ts` adalah 50, jadi ini satu halaman penuh
+     — isi maksimum yang K-14 dapat tampilkan sekaligus, dan karena itu tekanan
+     terbesar yang tata letaknya harus tahan. `menunggu` dibuat lebih banyak
+     supaya kartu di atasnya tetap menampilkan angka yang berbeda. */
+  if (skenario === 'antrean-panjang') return { menunggu: 63, gagal: 50 };
   return { menunggu: 0, gagal: 0 };
 }
 

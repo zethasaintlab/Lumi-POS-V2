@@ -304,7 +304,19 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
        berbunyi "baru saja" untuk lima belas baris sekaligus sementara baris
        "Tertua" di kartu berbunyi sama — dua angka yang seluruh gunanya adalah
        BERBEDA. Antrean yang tertahan berjam-jam adalah keadaan yang K-14 ada
-       untuk menampilkannya, dan galeri tidak pernah menunjukkannya sekali pun. */
+       untuk menampilkannya, dan galeri tidak pernah menunjukkannya sekali pun.
+
+       ⛔ Umurnya BERPUTAR (`i % n`), tidak tumbuh mengikuti jumlah baris, dan
+       alasannya bukan kerapian. `offline` (3 gagal) dan `antrean-panjang` (50)
+       dipakai BERPASANGAN oleh penjaga tata letak, dan pasangan pembanding
+       harus berbeda SATU variabel saja. Saat umurnya tumbuh, baris tertua di
+       `antrean-panjang` berusia 28 jam sementara di `offline` 4 jam — pita
+       FR-H8 di atas layar memakai ambang umur (`spec-h:302`), kalimatnya jadi
+       lebih panjang, ia membungkus menjadi dua baris, dan SELURUH K-14
+       terdorong 18 px ke bawah. Penjaga membacanya sebagai blok aksi yang
+       bergeser; yang bergeser sebenarnya banner milik shell. Dengan umur yang
+       berputar, kedua fixture berbagi rentang umur yang sama persis dan hanya
+       JUMLAH barisnya yang berbeda. */
     outbox_local: [
       ...Array.from({ length: antre.menunggu }, (_, i) => ({
         id: `q${i}`,
@@ -313,7 +325,7 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         status: 'pending',
         percobaan: 0,
         last_error: null,
-        created_at: umurAntrean(i * 7 + 3),
+        created_at: umurAntrean((i % 12) * 7 + 3),
       })),
       ...Array.from({ length: antre.gagal }, (_, i) => ({
         id: `f${i}`,
@@ -324,7 +336,7 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         last_error: ALASAN_GAGAL[i % ALASAN_GAGAL.length],
         // Yang gagal selalu LEBIH TUA daripada yang mengantre: ia sudah
         // melewati seluruh tangga backoff sebelum menyerah.
-        created_at: umurAntrean(180 + i * 31),
+        created_at: umurAntrean(180 + (i % 3) * 31),
       })),
     ],
     // ⛔ Keranjang berisi HANYA untuk skenario yang menanyakannya. Setiap
