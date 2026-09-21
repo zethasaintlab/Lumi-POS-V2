@@ -38,6 +38,54 @@ function tabelDari(sql: string): string {
 
 const TAK_PERNAH_SELESAI = new Promise<never>(() => {});
 
+/**
+ * Apakah perangkat galeri sudah terdaftar pada skenario ini.
+ *
+ * ⛔ `kosong` berarti perangkat BARU, bukan sekadar katalog kosong. Merchant
+ * yang baru memasang aplikasi belum punya `device_config`, dan justru keadaan
+ * itulah yang `status.ts:81` catat sebagai paling berbahaya: antrean kosong
+ * karena tidak pernah ada yang MASUK, bukan karena semuanya terkirim.
+ *
+ * ⛔ Ia diekspor supaya `Galeri.tsx` dan `buatDbPalsu` membacanya dari SATU
+ * tempat. Dua tempat yang memutuskan "perangkat ini terdaftar atau belum"
+ * menghasilkan topbar dan layar yang saling membantah di galeri — persis cacat
+ * yang galeri ini dipakai untuk menemukannya.
+ */
+export function perangkatTerdaftarUntuk(skenario: NamaSkenario): boolean {
+  return skenario !== 'kosong';
+}
+
+/**
+ * ⛔ Alamat yang dijamin DITOLAK, bukan `localhost:3000`.
+ *
+ * K-14 memeriksa keterjangkauan server lewat `pantauJangkauan`, dan port 3000
+ * adalah server pengembangan yang HIDUP di mesin pengembang dan MATI di runner
+ * CI. Galeri yang menjawab "terjangkau" di satu tempat dan "tidak" di tempat
+ * lain membuat penjaganya memberi dua jawaban untuk kode yang sama.
+ *
+ * Port 9 (`discard`) menolak koneksi di mana pun, jadi galeri selalu berdiri
+ * pada keadaan yang sama: perangkat terdaftar, server tidak terjangkau.
+ */
+const BASE_URL_TAK_TERJANGKAU = 'http://127.0.0.1:9';
+
+/**
+ * Alasan kegagalan per baris outbox, berulang siklik.
+ *
+ * ⛔ Tanpa `last_error`, kolom "Alasan" di K-14 jatuh ke kalimat fallback
+ * `pesanGagal` untuk SETIAP baris — tiga dari lima kolom tabel menjadi hampa,
+ * dan galeri menampilkan tabel yang tidak dapat dipakai menilai apa pun.
+ */
+const ALASAN_GAGAL = [
+  'HTTP 409 IDEMPOTENCY_MISMATCH',
+  'HTTP 401 DEVICE_REVOKED',
+  'TypeError: Failed to fetch',
+];
+
+/** `menitLalu` menit sebelum sekarang, sebagai ISO. */
+function umurAntrean(menitLalu: number): string {
+  return new Date(Date.now() - menitLalu * 60_000).toISOString();
+}
+
 /* Empat kategori, urutan tetap — warna slot diturunkan dari POSISI di daftar
    ini, jadi urutan yang berubah antar skenario akan mengubah warna "Kopi"
    di antara dua tangkapan layar yang seharusnya sebanding. */
@@ -212,21 +260,21 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         default_tax_type: 'ppn',
       },
     ],
-    device_config: [
+    device_config: perangkatTerdaftarUntuk(skenario) ? [
       {
         id: 1,
         device_id: 'dev-galeri',
         device_code: 'K1',
         tenant_id: 'ten-galeri',
         outlet_id: 'outlet-1',
-        base_url: 'http://localhost:3000',
+        base_url: BASE_URL_TAK_TERJANGKAU,
         token_secret: 'galeri',
         printer_profile_id: null,
         peripheral_id: null,
         hlc_teks: '0',
         receipt_sequence: 1,
       },
-    ],
+    ] : [],
     sesi_lokal: [
       {
         id: 1,
@@ -241,7 +289,15 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         wajib_ganti_pin: 0,
       },
     ],
-    // Antrean: hitungannya yang dibaca indikator sinkronisasi.
+    /* Antrean: hitungannya yang dibaca indikator sinkronisasi, DAN barisnya
+       yang K-14 tampilkan satu per satu.
+
+       ⛔ `created_at` SENGAJA berbeda per baris. Sebelum 21 September 2026
+       semuanya `new Date().toISOString()`, dan akibatnya kolom "Dibuat"
+       berbunyi "baru saja" untuk lima belas baris sekaligus sementara baris
+       "Tertua" di kartu berbunyi sama — dua angka yang seluruh gunanya adalah
+       BERBEDA. Antrean yang tertahan berjam-jam adalah keadaan yang K-14 ada
+       untuk menampilkannya, dan galeri tidak pernah menunjukkannya sekali pun. */
     outbox_local: [
       ...Array.from({ length: antre.menunggu }, (_, i) => ({
         id: `q${i}`,
@@ -249,7 +305,8 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         entity_id: `o${i}`,
         status: 'pending',
         percobaan: 0,
-        created_at: new Date().toISOString(),
+        last_error: null,
+        created_at: umurAntrean(i * 7 + 3),
       })),
       ...Array.from({ length: antre.gagal }, (_, i) => ({
         id: `f${i}`,
@@ -257,7 +314,10 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         entity_id: `of${i}`,
         status: 'failed',
         percobaan: 20,
-        created_at: new Date().toISOString(),
+        last_error: ALASAN_GAGAL[i % ALASAN_GAGAL.length],
+        // Yang gagal selalu LEBIH TUA daripada yang mengantre: ia sudah
+        // melewati seluruh tangga backoff sebelum menyerah.
+        created_at: umurAntrean(180 + i * 31),
       })),
     ],
     // ⛔ Keranjang berisi HANYA untuk skenario yang menanyakannya. Setiap
@@ -309,6 +369,22 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
          dibiarkan sebagai perilaku diam. */
       if (/\b(count|sum|min|max)\s*\(/i.test(sql)) {
         return [agregat(tabel, sql, baris)] as T[];
+      }
+
+      /* ⛔ SATU saringan, dan ia ada karena ketiadaannya membuat galeri
+         MEMBANTAH DIRINYA SENDIRI.
+
+         `daftarGagal` menjalankan dua query: `count(*) … WHERE status =
+         'failed'` (yang `agregat` sudah jawab benar) dan pengambilan barisnya
+         dengan `WHERE` yang sama. Fake yang mengabaikan `WHERE` menyerahkan
+         SELURUH lima belas baris untuk yang kedua, jadi K-14 menampilkan kartu
+         "Gagal terkirim 3" tepat di atas tabel berisi 15 baris — di layar yang
+         seluruh tugasnya memisahkan kedua angka itu.
+
+         Cakupannya sengaja satu bentuk saja, sejajar dengan `agregat`: fake
+         yang mulai menafsirkan `WHERE` apa pun menjadi mesin SQL kedua. */
+      if (tabel === 'outbox_local' && /status\s*=\s*'failed'/i.test(sql)) {
+        return (baris as { status: string }[]).filter((r) => r.status === 'failed') as T[];
       }
       return baris as T[];
     },

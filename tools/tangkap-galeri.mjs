@@ -44,6 +44,7 @@ const LAYAR = [
   { id: 'K-03', nama: 'Kasir — grid produk + keranjang' },
   { id: 'K-08', nama: 'Riwayat transaksi' },
   { id: 'K-12', nama: 'Tutup kas' },
+  { id: 'K-14', nama: 'Status sinkronisasi' },
   { id: 'K-15', nama: 'Perangkat' },
 ];
 
