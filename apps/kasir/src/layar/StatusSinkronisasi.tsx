@@ -387,30 +387,9 @@ export function StatusSinkronisasi() {
         </Tombol>
       </PortalAksi>
 
-      <div className="row" style={{ gap: 'var(--space-3)' }}>
-        {/* ⛔ DUA ekspor, bukan satu yang serba bisa. Yang pertama dibaca
-            manusia (`spec-h:263`); yang kedua dibaca mesin dan dapat dikirim
-            ulang. Satu berkas yang mencoba keduanya akan buruk di keduanya. */}
-        <Tombol varian="secondary" onClick={eksporPemulihan}>
-          Ekspor pemulihan (JSON)
-        </Tombol>
-      </div>
       {!siapKirim && <p className="t-caption">{ALASAN_TAK_SIAP(terdaftar, jangkauan)}</p>}
 
       {pesan && <p className="t-caption">{pesan}</p>}
-
-      <Card>
-        <div className="row between">
-          <span className="t-body-md">Penyimpanan perangkat</span>
-          <span className="t-caption num">
-            {formatUkuran(penyimpanan.dipakai)} / {formatUkuran(penyimpanan.kuota)}
-          </span>
-        </div>
-        <div className="t-caption">
-          Angka ini kuota browser, bukan kapasitas disk perangkat, dan browser boleh
-          menguranginya tanpa pemberitahuan.
-        </div>
-      </Card>
 
       {/* ⛔ Bagian inilah yang MENGGULIR, dan hanya bagian ini.
 
@@ -451,6 +430,56 @@ export function StatusSinkronisasi() {
             )
           }
         />
+
+          {/* ⛔ EMPAT blok diagnostik, DI DALAM wilayah gulir dan di bawah
+              tabelnya, 21 September 2026.
+
+              Sebelum ini keempatnya dipaku di atas tabel, dan akibatnya diukur:
+              wilayah tabel tinggal 102 px dengan kepala tabel 43 px di
+              antaranya — NOL baris utuh yang terlihat pada 1280x800. Kasir
+              membuka layar ini untuk membaca item yang gagal, dan yang paling
+              sedikit ruangnya justru itu. Prioritasnya terbalik.
+
+              ⛔ Yang TETAP dipaku hanya dua kartu angka. Keduanya jawaban
+              langsung atas pertanyaan yang kasir bawa ke layar ini — "berapa
+              yang belum sampai" — dan aksi utamanya sudah dilindungi slot
+              bilah nav, jadi tidak ada lagi yang hilang saat menggulir.
+
+              Keempat blok ini diagnostik atau untuk petugas dukungan: kuota
+              browser, ekspor yang dapat diputar ulang, keputusan migrasi skema,
+              dan tombol muat ulang. Tidak satu pun dibaca kasir saat melayani
+              pelanggan. */}
+          <div className="stack kasir-sync-diagnostik" style={{ gap: 'var(--space-4)' }}>
+            <Card>
+              <div className="row between">
+                <span className="t-body-md">Penyimpanan perangkat</span>
+                <span className="t-caption num">
+                  {formatUkuran(penyimpanan.dipakai)} / {formatUkuran(penyimpanan.kuota)}
+                </span>
+              </div>
+              <div className="t-caption">
+                Angka ini kuota browser, bukan kapasitas disk perangkat, dan browser boleh
+                menguranginya tanpa pemberitahuan.
+              </div>
+            </Card>
+
+            {/* ⛔ DUA ekspor, bukan satu yang serba bisa. Yang pertama dibaca
+                manusia (`spec-h:263`) dan ada di slot bilah nav; yang kedua
+                dibaca mesin dan dapat dikirim ulang. Satu berkas yang mencoba
+                keduanya akan buruk di keduanya. */}
+            <div className="row" style={{ gap: 'var(--space-3)' }}>
+              <Tombol varian="secondary" onClick={eksporPemulihan}>
+                Ekspor pemulihan (JSON)
+              </Tombol>
+            </div>
+
+            <p className="t-caption">
+              Skema lokal: {keputusanMigrasi.alasan}{' '}
+              <Tombol varian="secondary" onClick={muatUlang}>
+                Muat ulang angka
+              </Tombol>
+            </p>
+          </div>
         </div>
         {gagal.total > PER_HALAMAN && (
           <div className="row" style={{ gap: 'var(--space-3)' }}>
@@ -471,12 +500,6 @@ export function StatusSinkronisasi() {
         )}
       </div>
 
-      <p className="t-caption">
-        Skema lokal: {keputusanMigrasi.alasan}{' '}
-        <Tombol varian="secondary" onClick={muatUlang}>
-          Muat ulang angka
-        </Tombol>
-      </p>
     </div>
   );
 }
