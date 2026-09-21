@@ -11,6 +11,7 @@ import {
 } from '../kasir/qris-dinamis.ts';
 import type { DrafTerkirim } from '../kasir/penjualan.ts';
 import { EmptyState } from 'ds';
+import { Memuat } from '../komponen/Memuat.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
@@ -18,6 +19,7 @@ import { muatHlc } from '../lokal/hlc.ts';
 import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
 import {
   hitungKeranjang,
+  type HitunganKeranjang,
   simpanPenjualan,
   type HasilPenjualan,
   type MetodeBayar,
@@ -112,6 +114,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      yang SAMA yang `simpanPenjualan` pakai. Menghitungnya sendiri di layar
      berarti kasir membagi angka yang berbeda dari angka yang tersimpan. */
   const [total, setTotal] = useState<bigint | null>(null);
+  /* ⛔ Hitungan LENGKAP, untuk baris pajak dan Total di blok aksi. `total` di
+     atas sengaja dibiarkan apa adanya: ia dibaca jalur pembayaran, dan
+     menurunkannya dari state kedua berarti dua tempat yang memutuskan angka
+     yang ditagihkan. Yang di bawah ini hanya dibaca layar. */
+  const [hitungan, setHitungan] = useState<HitunganKeranjang | null>(null);
   /* `ARCH:358` — QRIS statis adalah satu-satunya metode digital yang berfungsi
      offline dan satu-satunya yang tidak diverifikasi sistem mana pun. Ia
      permukaan fraud yang paling mungkin perlu dimatikan untuk satu merchant
@@ -209,6 +216,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         });
         if (!hidup) return;
         setTotal(hitung.totals.total);
+        setHitungan(hitung);
       }
       setSiap(true);
     })().catch((e: Error) => {
@@ -224,7 +232,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     };
   }, [db]);
 
-  if (!siap) return <EmptyState title="Menyiapkan pembayaran" body="Membaca data perangkat." />;
+  if (!siap) return <Memuat judul="Menyiapkan pembayaran…" bentuk="blok" jumlah={4} />;
 
   if (gagalMuat) {
     return <GagalBaca akibat="Pembayaran tidak dapat diselesaikan di perangkat ini; jangan terima uang sebelum masalahnya selesai." pesan={gagalMuat} />;
@@ -545,8 +553,15 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   };
 
   return (
-    <div className="kasir-shift">
-      <h1 className="t-title">Pembayaran</h1>
+    <div className="kasir-shift kasir-bayar">
+      {/* ⛔ Isi yang MENGGULIR. Semua yang kasir baca dan ketik ada di sini;
+          yang ia tekan untuk menyelesaikan transaksi ada di blok aksi di
+          bawah, yang tidak pernah ikut bergerak. Pembayaran campuran berisi
+          beberapa bagian membuat layar ini lebih tinggi daripada kartunya, dan
+          sebelum pembagian ini tombol Bayar terdorong keluar layar tepat pada
+          transaksi yang paling rumit. */}
+      <div className="kasir-bayar-isi">
+        <h1 className="t-title">Pembayaran</h1>
 
       {/* FR-C1 — pemilih metode. `IA:65` menempatkannya di K-06.
 
@@ -617,13 +632,6 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               </Tombol>
             </div>
           ))}
-        </div>
-      )}
-
-      {sisa !== null && (
-        <div className="kasir-subtotal">
-          <span className="t-body-md">{sisa === 0n ? 'Lunas' : 'Sisa tagihan'}</span>
-          <span className="t-title num">{rupiah(sisa)}</span>
         </div>
       )}
 
@@ -720,33 +728,85 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         </>
       )}
 
-      <div className="kasir-pecahan">
-        {/* ⛔ `ghost`: aksi utama layar ini tetap Simpan Penjualan. Menambah
-            bagian adalah langkah antara, bukan tujuannya. */}
-        {metode !== 'cash' && !lunasTanpaTunai && (
-          <Tombol varian="ghost" kritis disabled={menyimpan || !formLengkap} onClick={tambahBagian}>
-            Tambah pembayaran lain
-          </Tombol>
-        )}
-        <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onKembali}>
-          Kembali
-        </Tombol>
       </div>
 
-      {galat && (
-        <p className="t-body-md kasir-login-galat" role="alert">
-          {galat}
-        </p>
-      )}
+      {/* ⛔ Blok aksi yang MENEMPEL. Angka yang ditagih dan tombol yang
+          menagihnya duduk bersama, dan keduanya tidak pernah ikut bergulir. */}
+      <div className="kasir-bayar-aksi">
+        {/* ⛔ Baris pajak memakai NAMA TARIF, bukan kata "Pajak" — konvensi
+            yang sama dengan struk (`spec-c:404`) dan dengan K-03. Layar yang
+            menyebutnya berbeda dari struk membuat kasir yang mencocokkan
+            keduanya menyimpulkan salah satunya salah.
 
-      <Tombol
-        varian="primary"
-        kritis
-        disabled={menyimpan || (metode === 'qris_dynamic' ? bagian.length > 0 : !masukanLengkap)}
-        onClick={metode === 'qris_dynamic' ? mulaiQris : bayar}
-      >
-        {menyimpan ? 'Menyimpan…' : 'Simpan Penjualan'}
-      </Tombol>
+            ⛔ Baris bernilai NOL tetap tampil (`spec-c:405`): pajak 0% adalah
+            keputusan merchant yang auditor perlu lihat, bukan ketiadaan. */}
+        {hitungan?.pajak.lines.map((t) => (
+          <div className="kasir-subtotal" key={t.taxRateId}>
+            <span className="t-body-md">{t.name}</span>
+            <span className="t-body-md num">+ {rupiah(t.amount)}</span>
+          </div>
+        ))}
+
+        {/* ⛔ TOTAL, dan sampai sekarang ia TIDAK PERNAH tampil di layar ini.
+            Kasir membaca "Subtotal" dan "Sisa tagihan" lalu menagih angka
+            ketiga yang tidak ada di manapun di hadapannya.
+
+            Nilainya `hitungan.totals.total` — fungsi yang SAMA yang
+            `simpanPenjualan` pakai, dan sumber yang sama dengan K-03.
+            Menjumlahkan baris di atas adalah aritmetika KEDUA, dan pajak
+            INKLUSIF membuatnya tidak sama dengan total yang tersimpan: ia
+            sudah ada di dalam harga, jadi `Subtotal − Diskon + Pajak`
+            melebihi `Total` tepat sebesar bagian inklusifnya.
+
+            ⛔ PEMBULATAN TIDAK ADA DI SINI, dan itu batas yang dinyatakan.
+            FR-C9 membulatkan `amount_due`, bukan `total`, dan hanya pada SISA
+            TUNAI sesudah bagian non-tunai — perhitungan yang baru lengkap di
+            dalam `simpanPenjualan`. Angka bulat hanya sah di K-07; penjaga P2
+            menolak kebocorannya ke sini. */}
+        {hitungan !== null && (
+          <div className="kasir-total">
+            <span className="t-body-md">Total</span>
+            <span className="t-title num">{rupiah(hitungan.totals.total)}</span>
+          </div>
+        )}
+
+        {/* AC FR-C1 kedua menuntut sisa tagihan TERLIHAT; kasir yang tidak
+            melihatnya harus menghitung sendiri di depan pelanggan. */}
+        {sisa !== null && (
+          <div className="kasir-subtotal">
+            <span className="t-body-md">{sisa === 0n ? 'Lunas' : 'Sisa tagihan'}</span>
+            <span className="t-title num">{rupiah(sisa)}</span>
+          </div>
+        )}
+
+        <div className="kasir-pecahan">
+          {/* ⛔ `ghost`: aksi utama layar ini tetap Simpan Penjualan. Menambah
+              bagian adalah langkah antara, bukan tujuannya. */}
+          {metode !== 'cash' && !lunasTanpaTunai && (
+            <Tombol varian="ghost" kritis disabled={menyimpan || !formLengkap} onClick={tambahBagian}>
+              Tambah pembayaran lain
+            </Tombol>
+          )}
+          <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onKembali}>
+            Kembali
+          </Tombol>
+        </div>
+
+        {galat && (
+          <p className="t-body-md kasir-login-galat" role="alert">
+            {galat}
+          </p>
+        )}
+
+        <Tombol
+          varian="primary"
+          kritis
+          disabled={menyimpan || (metode === 'qris_dynamic' ? bagian.length > 0 : !masukanLengkap)}
+          onClick={metode === 'qris_dynamic' ? mulaiQris : bayar}
+        >
+          {menyimpan ? 'Menyimpan…' : 'Simpan Penjualan'}
+        </Tombol>
+      </div>
     </div>
   );
 }

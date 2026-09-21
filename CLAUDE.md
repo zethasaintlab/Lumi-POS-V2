@@ -39,6 +39,37 @@ Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan meng
 
 **Lantai Node adalah 24.7, bukan 22** (dinaikkan 14 Agustus 2026). `crypto.argon2` — hash PIN Modul F, dan alasan repo ini tidak punya dependency Argon2 sama sekali — baru ada sejak Node 24.7.0. `engines.node`, `node-version` di kedua workflow, dan runtime pengembang dijaga tetap sepakat oleh `tests/runtime/versi-node.test.js`, yang berjalan **paling dulu** di CI. Tanpa itu, runtime yang terlalu tua muncul sebagai test PIN merah yang tidak menyebut kata "Node" sama sekali. `research/00` dan `research/03` masih menulis "Node.js 22+" — itu penyuntingan dokumen riset, bukan kewenangan agent.
 
+### ⛔ Container baru: `bash tools/siapkan-dev.sh` SEBELUM apa pun
+
+Container diganti di tengah pekerjaan (19 September 2026) dan yang baru tidak
+punya satu pun dari tujuh prasyarat: `node_modules` kosong · Node 22.22.2
+sementara repo mengunci `>=24.7` · `origin/main` tidak ada · PostgreSQL mati ·
+`.env` tidak ada · role `lumi_owner`/`lumi_app` belum dibuat · nol migrasi.
+
+⛔ **Yang mahal bukan tujuh langkahnya melainkan BENTUK kegagalannya.**
+`node --env-file=.env` pada berkas yang tidak ada mencetak satu baris
+`node: .env: not found` lalu keluar tenang, jadi sembilan suite ber-database
+tercetak sebagai **baris kosong** di ringkasan — terbaca seperti "belum
+selesai", bukan seperti "tidak pernah jalan". Kelas cacat "nol baris, bukan
+error", kali ini pada perkakasnya sendiri.
+
+Skripnya idempoten, **gagal keras dengan menyebut langkah mana**, dan diakhiri
+dengan menjalankan `test:isolation` — penyiapan yang berakhir "selesai" tanpa
+menjalankan apa pun hanyalah klaim.
+
+- ⛔ **Ia mencetak baris `export PATH=…` dan menulisnya ke `CLAUDE_ENV_FILE`.**
+  Skrip tidak dapat mengubah PATH induknya; tanpa baris itu perintah berikutnya
+  kembali ke Node yang terlalu tua, dan gejalanya muncul jauh dari sebabnya.
+- ⛔ **`.claude/hooks/session-start.sh` MEMANGGILNYA, tidak menyalinnya.** Yang
+  berbeda kebijakannya, bukan langkahnya: skrip gagal keras (dipanggil orang
+  yang ingin tahu langkah mana), hook menurunkannya jadi peringatan (sesi yang
+  menolak dimulai karena PostgreSQL mati lebih buruk daripada sesi yang dimulai
+  dengan catatan).
+- ⛔ **BUKAN untuk CI.** `.github/workflows/test.yml` menyiapkan dirinya sendiri.
+  Dua penyiapan yang saling menyalin akan menyimpang, dan yang menyimpang
+  membuat "hijau di lokal, merah di CI" tidak dapat dijelaskan. Yang dibagi
+  keduanya `db/bootstrap.js` dan `db/migrate.js`.
+
 ---
 
 ## Konvensi data
@@ -67,7 +98,7 @@ Alasan tiap pilihan ada di `research/03-TECH-STACK-EVALUATION.md`. **Jangan meng
 5. Status **tidak pernah warna saja** — selalu ada teks.
 6. Semua styling lewat token; **tidak ada nilai warna/ukuran hardcoded** di komponen.
 7. Bahasa Indonesia. Setiap komponen punya keadaan **kosong** dan **error**.
-8. Tanpa emoji, tanpa gambar/gradien/tekstur, tanpa dark mode.
+8. Tanpa emoji, tanpa dark mode. **Gradien dan tekstur DIIZINKAN sejak 1 September 2026; GAMBAR PRODUK diizinkan sejak 1 September 2026** — lihat § Pelonggaran DS #8 dan § Gambar produk.
 9. Tanpa onboarding in-app, tanpa wizard, tanpa tooltip.
 
 `_adherence.oxlintrc.json` dari `/ds-bundle` **wajib masuk CI sejak commit pertama**.
@@ -97,6 +128,201 @@ Keputusan user 31 Agustus 2026 ("Opsi A"). Rencananya enam; yang bertahan **lima
 - `packages/ds/lumi.css` mendefinisikan `--t-metric` dan mengikat cakupannya lewat selektor `.stat .t-title-lg`. Keempat token inti **sengaja tidak** didefinisikan ulang — menyalinnya menciptakan tempat kedua yang memutuskan ukuran teks.
 - `tools/oxlint-plugins/ds-adherence.mjs` menolak `t-hero`, `t-heading`, dan `t-title-lg` yang **ditulis sendiri** di `apps/` dan `packages/`. Larangannya LOKAL, bukan di `_adherence.oxlintrc.json` — berkas itu ada di `ds-bundle/`.
 - `tests/runtime/token-css-ada.test.js` menutup separuh yang lint tidak dapat lihat: **oxlint tidak membaca berkas CSS sama sekali**.
+
+### Pelonggaran DS #8 — gradien dan tekstur, 1 September 2026
+
+Keputusan user setelah membuka galeri di HP: *"sangat flat, tidak hidup, dan sangat jauh dari kasirpintar"*. Yang dicabut dari aturan #8 **hanya gradien dan tekstur**.
+
+**Yang TETAP berlaku, dan tidak dicabut oleh apa pun:**
+
+- tanpa emoji · tanpa gambar · tanpa dark mode
+- ⛔ **PALET tidak disentuh.** Tidak ada satu pun nilai warna baru. Setiap gradien disusun dari token yang sudah ada (`--surface`, `--surface-sunk`, `--surface-alt`, `--accent-soft`). Yang berubah **kedalaman**, bukan warnanya
+- aksen teal `#0D5C63` tetap satu-satunya warna AKSI, tetap < 5% area, tetap satu aksi utama per layar
+
+⛔ **Gradiennya sengaja nyaris tidak terlihat sebagai gradien.** Yang dicari adalah permukaan yang tidak rata sempurna — itu yang membuat mata membaca "benda" alih-alih "kotak putih". Gradien yang terlihat sebagai gradien akan bersaing dengan aksen, dan aksen adalah satu-satunya hal yang boleh menarik mata di layar kasir.
+
+Seluruhnya di `packages/ds/lumi.css`; `ds-bundle/` tidak mengirim satu pun gradien dan tidak disentuh.
+
+### Gambar produk — DS #8 dicabut lebih jauh, 1 September 2026
+
+Keputusan user setelah meninjau galeri: *"Card harusnya bergambar"*. Larangan
+"tanpa gambar" DICABUT. Yang tetap: tanpa emoji, tanpa dark mode, palet tidak
+disentuh.
+
+⛔ **Ini FITUR, bukan perubahan tampilan.** `item.image_url` sudah ada di skema
+sejak F0 dan **tidak pernah dibaca, tidak pernah ditulis, tidak ada di sync
+rules**; server tidak punya satu pun jalur unggah berkas. Seluruhnya dari nol.
+
+**Penyimpanan: TEKS base64 di PostgreSQL, turun lewat PowerSync.**
+Alternatif object storage ditolak karena dua hal: ia layanan berbayar baru, dan
+gambar yang tidak ikut PowerSync menuntut mekanisme cache KEDUA supaya kartu
+tidak jadi kotak kosong tepat saat internet mati — keadaan yang seluruh
+arsitektur ini ada untuk mendukungnya.
+
+### ⛔ `bytea` DICABUT 2 September 2026 — dan ia dicabut karena DIUKUR
+
+Keputusan awal user (1 September) adalah `bytea` PostgreSQL. **User menariknya
+sendiri 2 September**, setelah pengukuran, dan alasannya ditulis di sini supaya
+orang berikutnya tahu ia ditolak karena diuji — bukan karena tidak terpikir.
+
+Kalimat user, dan ia yang mengikat:
+
+> Yang menentukan bukan base64 lebih aman, melainkan bahwa jalur salah
+> menghasilkan **15 byte jadi 4 tanpa error**, dan satu-satunya pembeda rusak
+> dari utuh adalah angka yang perangkat tidak punya. Base64 menghapus kelasnya.
+
+Terukur (`docs/verifikasi/GAMBAR-ANGGARAN.md` § 5), muatan uji memuat `0x00`,
+`0xFF`, dan tiga bentuk urutan bukan-UTF-8:
+
+| Jalur | `typeof()` | `length()` | Hasil |
+|---|---|---:|---|
+| bind `Uint8Array` — benar | `blob` | 15 | IDENTIK |
+| bind string UTF-8 — salah | `text` | **4** | **BERBEDA** |
+| heks Postgres apa adanya | `text` | 33 | **BERBEDA** |
+
+⛔ Yang membuatnya kelas "nol baris, bukan error": `length()` mengembalikan 4,
+jadi pemeriksaan "ada isinya" bernilai BENAR, dan kartu tanpa gambar **tidak
+dapat dibedakan** dari item yang memang belum difoto.
+
+⛔ **Jangan mengembalikan `bytea` sebagai "optimasi ukuran".** Ongkos base64
+(+33%) sudah dibayar di anggaran: batas turun 32 KB → **30 KB mentah / 40 KB
+melintas**, dan **500 item = 19,5 MB** per perangkat — tetap di bawah ambang
+~20 MB. Setiap 1 KB tambahan pada batas adalah ~0,65 MB per perangkat.
+
+⛔ **`byte` + `checksum` menempel di baris yang sama**, diverifikasi perangkat
+saat membaca. Base64 menghapus kerusakan BINER; ia tidak menghapus kerusakan
+TRANSPORT. ~40 byte per baris untuk menukar kekosongan diam dengan keadaan
+bernama: **"gambar gagal dimuat"**, yang WAJIB berbeda dari "belum punya
+gambar".
+
+⛔ **Kartu tanpa gambar BUKAN keadaan menunggu** (keputusan user). Layar kasir
+harus dapat dipakai penuh selagi gambar menyusul — 19,5 MB di jaringan warung
+butuh waktu, dan kasir tidak boleh menunggunya. Kartu tanpa gambar berfungsi
+penuh dan tidak menampilkan penanda memuat apa pun.
+
+- ⛔ **Tabel TERPISAH (`item_image`), bukan kolom di `item`.** Blob di `item`
+  ikut terseret setiap query katalog, dan `bacaKatalog` berjalan pada setiap
+  pembukaan K-03.
+- ⛔ **Kompresi di KLIEN back-office, bukan di server.** Canvas API mengecilkan
+  ke ~400×400 WebP sebelum unggah — nol dependensi native baru di server, dan
+  CPU-nya di mesin yang tidak melayani penjualan. Server memvalidasi ukuran dan
+  mime, tidak mengolah — dan **tidak pernah men-decode base64-nya**: panjang
+  byte dihitung dari panjang teks (aritmetika). Makin sedikit titik tempat
+  biner dan teks bertukar, makin sedikit tempat 15 byte dapat menjadi 4.
+- ⛔ **Menambah raw table mengubah sidik jari skema lokal**, jadi setiap
+  perangkat membangun ulang tabel rawnya (`disconnectAndClear()`). Pelajaran
+  migrasi `0035` berlaku lagi — bedanya sekarang stream `riwayat` sudah ada
+  sebagai jalan pulang, jadi riwayat lokal kembali sendiri.
+- **Kartu tanpa gambar wajib punya bentuknya sendiri.** Merchant baru dan
+  produk yang belum difoto adalah keadaan normal, bukan pengecualian.
+
+**Unggah + render selesai 3 September 2026.** Rantainya: `GambarProduk.tsx`
+(B-07, kanvas → tangga kualitas) → `PUT /items/{id}/image` → `item_image` →
+PowerSync → `apps/kasir/src/katalog/gambar.ts` (verifikasi) → kartu K-03.
+
+- ⛔ **TIGA keadaan kartu, dan yang pertama adalah KETIADAAN kunci di peta:**
+  belum difoto (kartu NORMAL, nol penanda) · gagal verifikasi (keadaan bernama,
+  terlihat berbeda) · utuh. Peta memakai `Map` tanpa entri untuk yang pertama —
+  memetakannya ke `null` membuat "belum difoto" dan "rusak" dapat tertukar oleh
+  satu pemanggil yang lupa membedakannya. `data-gambar` di kartu membawa ketiga
+  nilainya, dan `tests/kasir/gambar-kartu.test.js` menolak setiap aturan CSS
+  dekoratif untuk `tanpa` — placeholder abu-abu mengubah katalog merchant baru,
+  yang seluruhnya belum difoto, menjadi grid yang terlihat rusak di hari
+  pertama.
+- ⛔ **`aspect-ratio: 16 / 9` di kartu, meski yang disimpan 1:1** — diukur, dan
+  tiga rasio yang lebih tinggi gugur. `IA:62` menuntut ≥12 kartu tanpa scroll;
+  1:1 → 8, 4:3 → 8, 3:2 → 8, 16:9 → 12. Penjaganya di `tools/tangkap-galeri.mjs`,
+  yang MENGHITUNG kartu terlihat, bukan hanya memotretnya. Angkanya di
+  `docs/verifikasi/GAMBAR-ANGGARAN.md` § 7.
+- ⛔ **`height: auto` WAJIB pada `<img>` kartu.** Atribut `height="400"` adalah
+  presentational hint yang menyetel `height: 400px`, dan `aspect-ratio` hanya
+  berlaku bila satu dimensi `auto`. Tanpanya gambar dirender 125×400 di kartu
+  151px, tinggi kartu 486px, **4** kartu muat — nol error, nol peringatan
+  konsol, CSS terbaca benar. Ditemukan lewat pengukuran DOM.
+- ⛔ **Kontrak OpenAPI TIDAK menyalin batasnya sebagai `maxLength`.** Ia salinan
+  ketiga yang tidak dijaga apa pun, DAN ia membuat AJV menolak lebih dulu dengan
+  `VALIDATION_ERROR` — sehingga `TERLALU_BESAR` beserta sarannya tidak pernah
+  tercapai. `bodyLimit` bawaan Fastify menahan muatan tak masuk akal; angkanya
+  diputuskan satu tempat. Dijaga `tests/domain/gambar-produk.test.js`.
+- ⛔ **`byte` dan `checksum` dihitung SERVER**, dan nilai dari klien diabaikan
+  sepenuhnya. Checksum kiriman klien membuat verifikasi perangkat memeriksa
+  klaim klien terhadap dirinya sendiri: muatan yang rusak DI KLIEN datang dengan
+  checksum yang cocok dengan kerusakannya.
+- **`BATAS_BYTE` terikat anggaran lewat test.** `BATAS_BASE64 × 500 > 20 MB`
+  MERAH. Sisa anggaran **2,5%**, dan maksimum yang masih muat ~40,9 KB base64
+  (~30,7 KB mentah) — kurang dari satu kilobyte di atas nilai sekarang.
+
+### ⛔ Kontrol urutan input K-12 DICABUT, 1 September 2026
+
+Keputusan user, diambil setelah konsekuensinya dinyatakan.
+
+`spec-d:96` berbunyi — dan menyebut dirinya sendiri sebagai kontrol:
+
+> Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan angka
+> terhitung. **Ini kontrol, bukan preferensi UX** — kasir yang melihat angka
+> target akan menghitung mundur ke angka itu.
+
+Aturan itu **tidak lagi berlaku**. K-12 menampilkan saldo seharusnya sejak
+tahap pertama.
+
+⛔ **Konsekuensi yang dinyatakan, bukan disembunyikan:** selisih kas berhenti
+menjadi angka yang dapat dipercaya, dan laporan exception **FR-G5 X7 (selisih
+kas per kasir)** kehilangan sebagian besar artinya — ia mengukur selisih dari
+hitungan yang kini dilakukan sambil melihat targetnya.
+
+⛔ **`spec-d:96` masih berbunyi sebaliknya, dan itu disengaja.** Menyunting
+dokumen spec bukan kewenangan agent (aturan yang sama dengan `research/00` dan
+`research/03` yang masih menulis "Node.js 22+"). Baris ini ada supaya orang
+berikutnya tahu kode dan spec sengaja berbeda di titik ini, bukan terlewat.
+
+### ⛔ Datar BUKAN karena design system-nya austere — `apps/kasir` tidak memakainya
+
+Diukur 1 September 2026, dan ini sebab utamanya:
+
+| Komponen yang `/ds-bundle` kirim | Dipakai kasir sebelumnya |
+|---|---|
+| `.product-card` — hover & tekan jadi teal, focus ring, `data-out` untuk habis | **0×**, diganti `.kasir-kartu` buatan sendiri |
+| `.chip` — `aria-pressed="true"` → latar teal penuh | **0×**, diganti `.kasir-chip` yang hanya menebalkan tepi |
+| `.cart-row` · `.badge` | **0×** |
+| `<Icon>` (42 ikon) | **2×** — back-office memakai **56×** |
+| `--shadow-card` | **0×** — nol shadow di seluruh `kasir.css` |
+
+Kesalahan yang sama dibuat **dua kali dalam dua jam** oleh agent yang sama: menulis `.kasir-kartu:hover` dan `.kasir-chip-aktif` sendiri tanpa memeriksa bahwa bundle sudah mengirim versi yang jauh lebih baik. **Periksa `ds-bundle/components.css` sebelum menulis satu pun kelas baru** — yang ditulis sendiri akan selalu lebih miskin daripada yang sudah dirancang, dan ia tidak menghasilkan satu pun error.
+
+Keduanya kini MODIFIER di atas komponen bundle, bukan pengganti.
+
+### ⛔ Aturan memakai `/ds-bundle` — dan ia BUKAN "pakai saja komponen bundle"
+
+Inventaris lengkap: `docs/verifikasi/BUNDLE.md` (**tujuh dari 19 komponen belum pernah dirender sekali pun — TERVERIFIKASI 2 September 2026**; angkanya berubah setiap kali komponen baru dipakai, jadi perlakukan sebagai potret bertanggal, bukan konstanta). Aturannya tiga baris, dan baris ketiga yang menyelamatkan uang:
+
+| Yang dipakai | Aturan |
+|---|---|
+| **Kelas CSS** bundle | bebas, selalu — kelas tidak menghitung apa pun |
+| **Komponen React** bundle | bebas, di mana pun ia **tidak menyentuh angka uang** |
+| Komponen yang **menyentuh uang** | ⛔ pakai **KELAS**-nya di atas markup kita, yang memformat lewat `packages/domain/src/uang-tampilan.ts` |
+
+⛔ **Dua komponen ada di baris ketiga, dan keduanya justru yang paling menggoda dipakai di layar kasir:**
+
+| Komponen | Apa yang ia lakukan pada uang |
+|---|---|
+| `CartRow` | `unitPrice * qty` — **perkalian float di jalur uang** |
+| `ProductCard` | `'Rp ' + n.toLocaleString('id-ID')` — pemformat sendiri, **tanpa `−` untuk negatif** |
+
+Keduanya dirancang untuk basis kode yang memakai `number` untuk uang. Repo ini `bigint` rupiah utuh (§ Konvensi data), dan pemformatnya **satu**.
+
+**Penegakannya membuat kesalahannya mustahil, bukan sekadar terdeteksi:** `packages/ds/index.ts` **tidak mengekspor keduanya**, dan itu disengaja — yang tidak dapat diimpor tidak dapat dipakai keliru. `tests/runtime/komponen-bundle-uang.test.js` menjaga agar ekspor itu tidak dikembalikan oleh orang yang membaca ketiadaannya sebagai kelalaian, dan test ketiganya membuktikan larangan itu **berhenti pada dua nama** — penjaga yang melarang seluruh bundle akan dimatikan, dan yang mematikannya benar.
+
+⛔ **`CartRow` tetap layak DICONTEK pada satu hal, dan sudah dicontek:** qty turun ke 0 memanggil `onRemove`. Itu meniadakan tombol "Hapus" terpisah — sekaligus meniadakan risiko salah tekan, bukan dengan menjauhkan tombolnya melainkan dengan menghapusnya.
+
+### ⛔ Pemformat rupiah: SATU, dan penjaganya melarang yang kesembilan
+
+`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 35 berkas mengimpornya (TERVERIFIKASI 2 September 2026); ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
+
+Salinan terakhir dihapus 2 September 2026: `apps/backoffice/src/langganan/upgrade.ts` — B-29, satu-satunya layar yang angkanya berakhir di tagihan yang merchant bayar.
+
+⛔ **Satu pengecualian, dan ia bukan salinan melainkan format LAIN:** `apps/kasir/src/cetak/dokumen.ts` mencetak `50.000`, bukan `Rp 50.000` (`spec-c:378`). Struk 58 mm hanya 32 kolom; awalan `Rp` di setiap baris memakan tiga karakter dari nama produk, dan nama produk yang terpotong membuat struk tidak dapat dicocokkan dengan pesanan.
+
+Dijaga `tests/runtime/pemformat-uang-tunggal.test.js`: deklarasi `rupiah`/`uang`/`formatRupiah`/`formatUang` di luar kedua berkas itu, dan string `Rp` yang **dirakit** (`` `Rp ${x}` ``, `'Rp ' + x`). Literal `'Rp 20.000'` di kalimat sengaja **tidak** ditandai — ia teks, bukan pemformat.
 
 Format Indonesia: `Rp 1.847.000` (titik ribuan, tanpa desimal) · `− Rp 8.000` · `11%` · `14:32` · `26 Jul 2026` · `2×`
 
@@ -249,7 +475,7 @@ menerima `number` alih-alih `bigint` dan TIDAK menghasilkan `−` untuk negatif.
 Merchant yang menjual "Kopi Susu Regular" dan "Kopi Susu Large" mencetak dua
 baris struk yang **tidak dapat dibedakan** — dan struk adalah satu-satunya
 bukti yang pelanggan pegang. Bidangnya dibawa sepanjang jalur cetak lalu
-dijatuhkan di titik render; 515 test kasir hijau di atasnya.
+dijatuhkan di titik render; seluruh test kasir hijau di atasnya.
 
 - ⛔ **`order_line.variation_count_at_sale` adalah SNAPSHOT, dan itu yang
   membuat ACnya dapat ditegakkan sama sekali.** Cetak ulang membangun
@@ -501,7 +727,7 @@ Sisa Modul B: tidak ada yang belum digarap. **FR-B11 ditutup** bersama antrean `
 - ⛔ **Angka kepala rekapitulasi dari `posisiPenjualan`**, lewat `rekapPenjualan` di berkas yang sama. AC FR-C13 kedua menuntut totalnya cocok dengan laporan penjualan; memakai fungsi yang sama membuat itu benar menurut **konstruksi**, dan testnya `assert.deepEqual` terhadap respons `GET /reports/sales`.
 - ⛔ **Pajak dipisah dari kolom SNAPSHOT** `order_line.tax_rate_name` (`0022`) dan `order_line.tax_jurisdiction` (`0028`), bukan JOIN ke `tax_rate`. Tarif yang di-rename setelah pelaporan tidak boleh mengubah rekapitulasi periode yang sudah dilaporkan.
 - **`tax_jurisdiction` sengaja TIDAK turun ke perangkat.** Menambah kolom raw table mengubah sidik jari skema lokal, dan itu menuntut `disconnectAndClear()` + unduh ulang katalog di setiap perangkat merchant — biaya nyata untuk kolom yang tidak satu pun layar kasir baca.
-- **`totalDiskonOrder` dan `totalServiceCharge` masih selalu NOL**: `POST /orders` menulis nol ke kolomnya. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya. ⛔ Test integrasi untuk keduanya akan hijau karena **hampa**; aturannya diuji di `tests/domain/posisi-penjualan.test.js`.
+- **`totalServiceCharge` masih selalu NOL**: `POST /orders` menulis literal `0` ke `service_charge_amount` (TERVERIFIKASI 2 September 2026). ⛔ **`totalDiskonOrder` TIDAK lagi nol sejak FR-B8/B9 (22 Agustus 2026)** — kalimat ini menyebut keduanya sampai 2 September dan sudah salah selama sebelas hari. Keduanya tetap dilaporkan karena `spec-c:444` menyebutnya. ⛔ Test integrasi untuk keduanya akan hijau karena **hampa**; aturannya diuji di `tests/domain/posisi-penjualan.test.js`.
 - **XLSX tidak dibuat.** `spec-c:444` menulis "CSV + XLSX"; XLSX menuntut dependensi baru dan CSV terbuka apa adanya di Excel dan Google Sheets. Batas yang dinyatakan.
 
 **K-06 menerima QRIS statis dan EDC, 22 Agustus 2026.** Server menerima keempat metode sejak sub-project 2; yang tidak ada adalah jalan bagi KASIR memakainya — `MetodeBayar` di klien secara harfiah `'cash'`, jadi merchant yang pelanggannya membayar QRIS mencatatnya sebagai tunai dan saldo laci berbohong sebesar seluruh omzet QRIS.
@@ -556,7 +782,7 @@ cadangkan nomor struk (lokal) → POST /orders (draf, `open`)
 
 **Tiga aplikasi kini ada**: `apps/kasir` (offline-first, PowerSync), `apps/backoffice` (online-only), `apps/hp` (Owner mobile, online-only). Sesi dan pintu HTTP keduanya yang terakhir dibagi lewat `packages/klien-api`.
 
-**Sembilan modul kini punya kode**: `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`, `peripheral`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
+**Dua belas modul kini punya kode** (TERVERIFIKASI 2 September 2026): `catalog`, `ordering`, `identity`, `cash`, `tenancy`, `sync`, `inventory`, `audit`, `peripheral`, `payment`, `reporting`, `rilis`. Peta lengkapnya di `apps/server/src/modules/README.md`. Modul-modul kecil itu lahir karena invariant #4 — jalur penjualan menunjuk ke lima modul lain, dan alternatifnya adalah `ordering` meng-query tabel milik semuanya.
 
 **Keputusan yang mengikat kode ordering:**
 
@@ -942,6 +1168,49 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 | OQ-14 | Prototipe Tauri Android — printer Bluetooth + scanner HID | Rencana mobile |
 
 
+### ⛔ Docker: daemon BISA menyala, tarik image DIBLOKIR
+
+Diukur 2 September 2026, dan ini mengoreksi catatan lama yang menyatakan Docker
+tidak tersedia — **klaim keadaan yang sudah basi**.
+
+- `docker` ADA (29.3.1) dan `dockerd` **berhasil dinyalakan** lewat `sudo`.
+- Tarik image **gagal**: `production.cloudfront.docker.com` menjawab
+  **403 Forbidden** lewat proxy egress, juga sesudah daemon dikonfigurasi
+  memakai proxy itu.
+
+⛔ Konsekuensinya untuk stack PowerSync di `prototypes/05`: ia tetap **tidak
+dapat dijalankan di sini**, tapi sebabnya berbeda dari yang tercatat
+sebelumnya. Yang dibutuhkan bukan Docker — melainkan allowlist untuk registry
+Docker, atau image yang sudah ditarik lebih dulu.
+
+### ⛔ "Nol baris, bukan error" — kelas kegagalan, bukan insiden
+
+Lima kejadian dalam satu minggu, mekanismenya identik: sesuatu gagal dan yang muncul adalah **kekosongan yang terlihat sah**, bukan galat. Katalog kosong, antrean sehat, daftar exception bersih — nol adalah jawaban SAH untuk ketiga pertanyaan itu, jadi tidak ada assertion wajar yang menolaknya.
+
+Daftar lengkap beserta mekanisme dan penjaganya: `docs/verifikasi/KELAS-GAGAL.md`. Survei kandidat berikutnya ada di sana juga — **angkanya batas atas populasi yang perlu dipilah, bukan jumlah cacat.**
+
+⛔ **Bentuk penjaga yang bekerja, dan ia bukan "assert lebih banyak":** bandingkan **dua sumber yang tidak ada apa pun menyatukannya** — sync rules ↔ DDL, sync rules ↔ `tokens.ts`, `var(--x)` ↔ definisi token. Ditambah satu syarat yang mudah terlupa: penjaga wajib membuktikan ia **memindai sesuatu**, karena penjaga yang memeriksa nol berkas hijau selamanya dan hijaunya adalah bentuk kekosongan yang sama.
+
+### ⛔ K-06/K-07 tidak boleh dinyatakan selesai tanpa tiga fixture ini
+
+Keputusan user 2 September 2026, diambil setelah audit monokultur. Ketiganya
+**mengikat**, dan ditulis di sini alih-alih diingat saat sampai ke sana.
+
+| # | Fixture yang WAJIB ada | Kenapa |
+|---|---|---|
+| 1 | `tax_rate.type = 'ppn'` **11%** | `TaxCalculator` belum pernah dijalankan dengan jenis pajak yang paling banyak dipakai merchant Indonesia. Fixture memakai `pbjt` saja — `ppn` **nol di seluruh repo**. ⛔ Kalau ternyata ia tidak menanganinya, itu **bug uang: laporkan, jangan tambal diam** |
+| 2 | `service_charge_amount != 0` **dan** `channel = 'dine_in'` | 3 berkas lawan 48 di produk F&B — yang paling khas LumiPOS justru yang paling sedikit diuji. Kanal memutuskan tarif pajak di sebagian yurisdiksi (`spec-c`) |
+| 3 | `qris_static` + `card_edc` di jalur **TAMPILAN** | Keduanya sudah teruji di jalur DATA (4 berkas: penjualan, tutup-kas, tutup-kas-refund, laporan-harian) dan TIDAK di jalur tampilan — persis lubang yang meloloskan peta metode keempat yang memuat `card` dan tidak memuat `qris_static` |
+
+⛔ **K1 (27 dari 42 empty state) dan K2 (~19 endpoint tanpa penyebut) SENGAJA
+tidak dipilah sekarang** (keputusan user). Keduanya batas atas populasi, bukan
+cacat; apakah nol di suatu layar sah atau tidak hanya dapat diputuskan **saat
+menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
+
+Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
+
+---
+
 **Sudah diputuskan 25 Agustus 2026 — FR-F5:** `cost` **TIDAK** turun ke perangkat (data leak prevention untuk margin modal owner); server men-snapshot-nya ke `order_line.cost_at_sale` saat order masuk. Jangan tanyakan ulang.
 
 **Sudah diputuskan 1 Agustus 2026 — jangan tanyakan ulang, jangan perlakukan sebagai asumsi:**
@@ -964,5 +1233,12 @@ Daftar lengkap: `research/12-OPEN-QUESTIONS.md`.
 - **Baca spec modul sebelum menulis kode modul itu.** Acceptance criteria di sana adalah kontrak.
 - **Jangan memperluas scope.** Kalau sesuatu terasa perlu tapi ada di daftar "jangan bangun", angkat sebagai pertanyaan, jangan bangun.
 - **Angka hasil pengukuran mengalahkan estimasi.** Kalau `prototypes/*/FINDINGS.md` bertentangan dengan dokumen lain, FINDINGS yang benar.
+- ⛔ **Saat dua representasi sama-sama benar, PILIH YANG DAPAT DIUJI DI CI** — bukan yang menuntut infrastruktur penuh untuk membuktikan dirinya.
+
+  Ini bukan catatan tentang gambar; ia yang paling kuat di antara alasan pencabutan `bytea` dan berlaku jauh di luarnya. Versi `bytea` hanya dapat dibuktikan dengan menjalankan PostgreSQL + PowerSync sungguhan — dan di repo ini itu berarti **tidak pernah dibuktikan sama sekali** (`Docker: daemon BISA menyala, tarik image DIBLOKIR`). Versi base64 dibuktikan `node --test` di atas SQLite yang sudah ada di setiap run: byte per byte, termasuk `0x00`, `0xFF`, dan urutan bukan-UTF-8.
+
+  Yang menentukan bukan seberapa aman jalurnya di atas kertas, melainkan **seberapa sering kebenarannya diperiksa ulang**. Jalur yang lebih aman tetapi hanya dapat diuji di lingkungan yang tidak ada berhenti diperiksa setelah hari ia ditulis, dan sejak itu ia dipercaya berdasarkan ingatan. Representasi yang sedikit lebih mahal tetapi diperiksa pada setiap commit menang atas keduanya.
+
+  Ia juga menjelaskan kenapa `KOLOM_BELUM_DIUKUR` boleh ada: kolom yang tipenya menyimpang dan tidak dapat diuji di sini **dinyatakan belum diukur**, bukan dianggap benar.
 - **Tandai asumsi.** Pakai `[ASUMSI]` seperti di dokumen riset, jangan selundupkan sebagai fakta.
 - **Lapisan sync ditulis dengan waktu, keacakan, dan I/O di-inject** sebagai dependensi — prasyarat DST, dan retrofitnya mahal. Harness referensi ada di `prototypes/02-dst-sinkronisasi/sim.py`.

@@ -53,6 +53,62 @@ test('T5 sidik jari berubah bila kolom raw table berubah', async () => {
   assert.notEqual(sidikJariRawTable(asli), sidikJariRawTable(tukarUrutan));
 });
 
+// ⛔ SIDIK JARI WAJIB MELIHAT `NOT NULL`, dan sampai 15 September 2026 ia TIDAK.
+//
+// `item_image.id` ditulis `TEXT PRIMARY KEY` tanpa `NOT NULL`. SQLite menerima
+// NULL di kolom PRIMARY KEY pada tabel rowid; PostgreSQL menolaknya, jadi
+// selisihnya baru terlihat saat sync. Memperbaiki DDL saja TIDAK CUKUP: SQLite
+// tidak dapat menambahkan `NOT NULL` ke kolom yang sudah ada, dan sidik jari
+// berbasis nama kolom tidak melihat perbedaannya sama sekali — perangkat yang
+// sudah terpasang memegang bentuk lama selamanya, tanpa satu pun error.
+test('T5 sidik jari BERUBAH bila batasan NOT NULL raw table berubah', async () => {
+  const { sidikJariSkemaLokal, batasanNotNull } = await import(SKEMA);
+  const asli = sql();
+
+  // Sentinel: kalau parsernya tidak melihat apa pun, seluruh test di bawah
+  // lulus dengan hampa — bentuk kekosongan yang `KELAS-GAGAL.md` catat.
+  const wajib = batasanNotNull(asli);
+  assert.ok(
+    (wajib.item_image ?? []).includes('id'),
+    'parser batasan tidak melihat `item_image.id NOT NULL` — apakah DDL-nya berubah?'
+  );
+
+  // Cabut `NOT NULL` dari satu kolom raw table. Nama dan urutan kolom TIDAK
+  // berubah, jadi `sidikJariRawTable` sendirian akan menjawab identik.
+  const tanpa = asli.replace('id TEXT NOT NULL PRIMARY KEY,', 'id TEXT PRIMARY KEY,');
+  assert.notEqual(tanpa, asli, 'sabotase tidak teraplikasi — polanya tidak cocok');
+
+  assert.notEqual(
+    sidikJariSkemaLokal(asli),
+    sidikJariSkemaLokal(tanpa),
+    'sidik jari BUTA terhadap perubahan NOT NULL — perangkat lama tidak akan pernah membangun ulang'
+  );
+
+  // Dan ini yang membuktikan penjaganya perlu: bagian NAMA kolom memang tidak
+  // dapat melihatnya.
+  const { kolomPerTabel, sidikJariRawTable } = await import(SKEMA);
+  assert.equal(
+    sidikJariRawTable(kolomPerTabel(asli)),
+    sidikJariRawTable(kolomPerTabel(tanpa)),
+    'kalau yang sempit pun melihatnya, fungsi gabungan tidak membeli apa pun'
+  );
+});
+
+// ⛔ Pemanggilnya WAJIB yang gabungan. Yang sempit berjalan tanpa satu pun
+// error sambil melewatkan tepat kelas perubahan di atas.
+test('T5 jalankanMigrasi memakai sidik jari GABUNGAN, bukan yang sempit', async () => {
+  const sumber = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'apps', 'kasir', 'src', 'lokal', 'migrasi.ts'),
+    'utf8'
+  );
+  const badan = sumber.slice(sumber.indexOf('export async function jalankanMigrasi'));
+  assert.match(badan, /sidikJariSkemaLokal\(/, 'jalankanMigrasi tidak memakai sidikJariSkemaLokal');
+  assert.ok(
+    !/sidikJariRawTable\(/.test(badan),
+    'jalankanMigrasi masih memanggil sidikJariRawTable — ia buta terhadap batasan'
+  );
+});
+
 // Tabel murni lokal BUKAN bagian sidik jari. Menambah kolom ke `outbox_local`
 // tidak ada hubungannya dengan checkpoint PowerSync, dan memaksa unduh ulang
 // katalog karenanya berarti membuang jendela riwayat 90 hari tanpa alasan.
@@ -154,9 +210,9 @@ test('T5 tabel lokal dibuat IF NOT EXISTS, raw table dibuat keras', async () => 
 
 test('T5 urutan langkah: bersihkan sync, DDL, baru simpan sidik jari', async () => {
   const { jalankanMigrasi } = await import(MIGRASI);
-  const { kolomPerTabel, sidikJariRawTable } = await import(SKEMA);
+  const { sidikJariSkemaLokal } = await import(SKEMA);
   const jejak = [];
-  const sidik = sidikJariRawTable(kolomPerTabel(sql()));
+  const sidik = sidikJariSkemaLokal(sql());
 
   await jalankanMigrasi({
     sqlSkema: sql(),
@@ -189,9 +245,9 @@ test('T5 urutan langkah: bersihkan sync, DDL, baru simpan sidik jari', async () 
 
 test('T5 tanpa perubahan, DDL dan pembersihan tidak dijalankan sama sekali', async () => {
   const { jalankanMigrasi } = await import(MIGRASI);
-  const { kolomPerTabel, sidikJariRawTable } = await import(SKEMA);
+  const { sidikJariSkemaLokal } = await import(SKEMA);
   const jejak = [];
-  const sidik = sidikJariRawTable(kolomPerTabel(sql()));
+  const sidik = sidikJariSkemaLokal(sql());
 
   const hasil = await jalankanMigrasi({
     sqlSkema: sql(),

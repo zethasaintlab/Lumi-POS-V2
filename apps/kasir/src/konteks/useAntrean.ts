@@ -25,10 +25,30 @@ export const RINGKASAN_KOSONG: RingkasanAntrean = {
   terakhirTerkirimPada: null,
 };
 
-export function useAntrean(): { ringkasan: RingkasanAntrean; siap: boolean; muatUlang: () => void } {
+export function useAntrean(): {
+  ringkasan: RingkasanAntrean;
+  siap: boolean;
+  /**
+   * Apakah `ringkasan` berasal dari pembacaan yang BERHASIL.
+   *
+   * ⛔ Satu boolean, bukan tiga keadaan (`belum`/`ok`/`gagal`). Versi pertama
+   * membedakan ketiganya, lalu tidak satu pun pemanggil memakai bedanya:
+   * keduanya yang bukan `ok` berarti hal yang sama — angka di layar adalah nol
+   * yang tidak diukur. Distinksi tanpa pemakai adalah slot yang akan diisi
+   * kebutuhan karangan; pelajaran `--t-data` di skala teks final.
+   *
+   * `false` sampai pembacaan pertama berhasil, DAN kembali `false` bila
+   * pembacaan berikutnya menolak — yang kedua itu keadaan nyata: OPFS yang
+   * penuh di tengah shift membuat database yang sudah terbuka berhenti dapat
+   * dibaca, dan angka terakhir yang berhasil berhenti menggambarkan apa pun.
+   */
+  antreanTerbaca: boolean;
+  muatUlang: () => void;
+} {
   const keadaan = useKeadaanLokal();
   const lokal = keadaan.lokal;
   const [ringkasan, setRingkasan] = useState<RingkasanAntrean>(RINGKASAN_KOSONG);
+  const [antreanTerbaca, setAntreanTerbaca] = useState(false);
   const [pemicu, setPemicu] = useState(0);
 
   const muatUlang = useCallback(() => setPemicu((n) => n + 1), []);
@@ -41,12 +61,42 @@ export function useAntrean(): { ringkasan: RingkasanAntrean; siap: boolean; muat
     const muat = () => {
       ringkasanAntrean(db).then(
         (r) => {
-          if (hidup) setRingkasan(r);
+          if (!hidup) return;
+          setRingkasan(r);
+          setAntreanTerbaca(true);
         },
         () => {
-          // Kegagalan membaca ringkasan tidak menjatuhkan layar. Angka lama
-          // lebih baik daripada layar putih; yang TIDAK boleh adalah angka
-          // yang dikarang jadi nol -- itu berbunyi "semua sudah terkirim".
+          /* Kegagalan membaca ringkasan tidak menjatuhkan layar. Angka lama
+             lebih baik daripada layar putih; yang TIDAK boleh adalah angka
+             yang dikarang jadi nol -- itu berbunyi "semua sudah terkirim".
+
+             ⛔ Kalimat di atas sudah ada di sini sejak 8 Agustus 2026, dan
+             SELAMA ITU ia tidak berlaku. Cabang ini kosong, jadi state
+             bertahan pada nilai awalnya -- `RINGKASAN_KOSONG`, yang PERSIS
+             angka nol yang dilarangnya. Niat yang benar dibatalkan oleh nilai
+             awal, tanpa satu pun error, dan yang membacanya adalah indikator
+             topbar di SETIAP layar sepanjang shift.
+
+             Angkanya tetap dipertahankan -- yang berubah hanya bahwa pemanggil
+             kini diberi tahu angka itu tidak dapat dipercaya.
+
+             ⛔ Baris ini dan nilai awal `false` SALING MENUTUPI pada fixture
+             galeri, dan itu diukur: skenario `error` menolak SETIAP pembacaan,
+             jadi `antreanTerbaca` tidak pernah menjadi `true` sekali pun.
+             Melepas salah satunya -- baris ini, atau nilai awalnya -- membuat
+             penjaga DOM tetap HIJAU; hanya melepas keduanya yang membuatnya
+             merah. Keduanya karena itu tidak dapat dipisahkan oleh test yang
+             ada.
+
+             Yang membedakan keduanya adalah keadaan yang fixture tidak dapat
+             hasilkan: pembacaan yang BERHASIL lalu menolak di kemudian hari --
+             OPFS yang penuh di tengah shift. Di sana nilai awal tidak menolong
+             apa pun, dan baris inilah satu-satunya yang mengembalikan
+             indikator ke keadaan jujur. Fake galeri melempar untuk selamanya
+             atau tidak sama sekali; memberinya mode "berhasil lalu gagal"
+             mengubah arti skenario `error` bagi keempat layar lain. Batas yang
+             dinyatakan, bukan lubang yang tidak diketahui. */
+          if (hidup) setAntreanTerbaca(false);
         }
       );
     };
@@ -68,5 +118,5 @@ export function useAntrean(): { ringkasan: RingkasanAntrean; siap: boolean; muat
     };
   }, [lokal, pemicu]);
 
-  return { ringkasan, siap: keadaan.tahap === 'siap', muatUlang };
+  return { ringkasan, siap: keadaan.tahap === 'siap', antreanTerbaca, muatUlang };
 }

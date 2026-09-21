@@ -7,6 +7,7 @@ import { muatHlc } from '../lokal/hlc.ts';
 import { ALASAN_NO_SALE } from '../../../../packages/domain/src/no-sale.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import type { Sesi } from '../identitas/login.ts';
+import { LatarDialog } from './LatarDialog.tsx';
 
 /* K-16 — Buka Laci (no-sale). `IA:66`: **dialog, bukan layar**.
 
@@ -121,8 +122,7 @@ export function DialogNoSale({ shiftId, konfig, sesi, onBatal, onSelesai }: Prop
   }
 
   return (
-    <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label="Buka laci">
-      <div className="kasir-dialog">
+    <LatarDialog label="Buka laci" onBatal={onBatal}>
         <h2 className="t-title">Buka laci</h2>
         <p className="t-caption kasir-login-sub">
           {urutan === null
@@ -192,8 +192,7 @@ export function DialogNoSale({ shiftId, konfig, sesi, onBatal, onSelesai }: Prop
             {menyimpan ? 'Mencatat…' : 'Buka laci'}
           </Tombol>
         </div>
-      </div>
-    </div>
+    </LatarDialog>
   );
 }
 

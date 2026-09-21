@@ -28,6 +28,11 @@ export const TABEL_RAW = [
   'modifier_list',
   'modifier',
   'item_modifier_list',
+  // Gambar produk (migrasi 0036). ⛔ Tabel TERPISAH dari `item`: blob di
+  // `item` akan dipancarkan ulang ke seluruh armada pada setiap perubahan
+  // harga, karena jalur turun mereplikasi BARIS, bukan kolom yang layar
+  // seleksi.
+  'item_image',
   // FR-A7 — tanpa ini perangkat hanya melihat anak tangga harga paling bawah.
   'price_history',
   'tax_rate',
@@ -207,6 +212,7 @@ export const KOLOM_BELUM_DIUKUR = [
   'order.has_calculation_variance',
   'order_line.is_tax_inclusive',
   'order_line.modifier_snapshot',
+
   'payment.confirmed_manually',
   'cash_drawer_shift.count_attempts',
   'audit_event.before',
@@ -260,6 +266,14 @@ export const KOLOM_BELUM_DIUKUR = [
  *   - kolom audit dan kolom yang tidak dipakai layar kasir mana pun.
  */
 export const KOLOM_SENGAJA_TIDAK_TURUN = [
+  // Gambar produk (0036). `tenant_id` disaring sync rules dan tidak pernah
+  // dibaca layar kasir — pola yang sama dengan `check.tenant_id`.
+  'item_image.tenant_id',
+  // ⛔ `updated_by` adalah id staf BACK-OFFICE. Tidak ada layar kasir yang
+  // memakainya, dan menurunkannya berarti membawa identitas orang yang tidak
+  // bekerja di outlet itu ke tablet yang dapat hilang. Aturan yang sama dengan
+  // `price_history.changed_by`.
+  'item_image.updated_by',
   // `modules_enabled` (jsonb) menentukan modul mana yang aktif di back-office.
   // Tidak ada layar kasir yang membacanya, dan menurunkannya berarti membawa
   // konfigurasi produk ke perangkat yang tidak dapat berbuat apa-apa dengannya.
@@ -394,10 +408,33 @@ export function pecahPernyataan(sqlText: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-const AWALAN_BATASAN = /^(PRIMARY|UNIQUE|CHECK|FOREIGN|CONSTRAINT)\b/i;
+/**
+ * Awalan yang menandai batasan TINGKAT TABEL, bukan definisi kolom.
+ *
+ * ⛔ Diekspor bersama `bagiKolom` dan untuk alasan yang sama: penjaga PK
+ * harus memakai definisi "apa itu kolom" yang SAMA PERSIS dengan yang
+ * `batasanNotNull` pakai. Dua definisi yang menyimpang menghasilkan penjaga
+ * yang menilai `PRIMARY KEY (tenant_id, outlet_id)` sebagai kolom bernama
+ * "PRIMARY" — dan yang menyimpang diam-diam adalah yang paling mahal.
+ */
+export const AWALAN_BATASAN = /^(PRIMARY|UNIQUE|CHECK|FOREIGN|CONSTRAINT)\b/i;
 
-/** Memecah isi `CREATE TABLE (...)` pada koma di kedalaman nol. */
-function bagiKolom(isi: string): string[] {
+/**
+ * Memecah isi `CREATE TABLE (...)` pada koma di kedalaman nol.
+ *
+ * ⛔ DIEKSPOR supaya penjaga tidak menulis pemecah KEDUA. `tests/schema/
+ * item-modifier-list.test.js` sempat memakai predikat per-BARIS atas sintaks
+ * yang per-KOLOM: `if (/NOT NULL/.test(baris)) continue` memaafkan seluruh
+ * baris bila ada `NOT NULL` di mana pun padanya, dan
+ * `id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL` menulis keduanya sebaris.
+ * Akibatnya penjaga membaca `NOT NULL` milik `tenant_id` sebagai milik `id`,
+ * melaporkan NOL pelanggar, dan memaafkan 17 tabel.
+ *
+ * Bentuk yang benar sudah ada di berkas ini sejak awal — `batasanNotNull`
+ * memakai fungsi ini — dan penjaganya tidak dapat memakainya karena ia
+ * private. Yang diperbaiki visibilitasnya, bukan logikanya.
+ */
+export function bagiKolom(isi: string): string[] {
   const hasil: string[] = [];
   let dalam = 0;
   let buf = '';
@@ -474,13 +511,78 @@ export function ekspresiNilai(tabel: string, kolom: string): string {
  * tanpa API asinkron.
  */
 export function sidikJariRawTable(kolom: Record<string, string[]>): string {
-  const kanonik = TABEL_RAW.map((t) => `${t}(${(kolom[t] ?? []).join(',')})`).join(';');
+  return fnv1a(TABEL_RAW.map((t) => `${t}(${(kolom[t] ?? []).join(',')})`).join(';'));
+}
+
+function fnv1a(kanonik: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < kanonik.length; i += 1) {
     h ^= kanonik.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
   return `fnv1a-${h.toString(16).padStart(8, '0')}-${kanonik.length}`;
+}
+
+/**
+ * Kolom raw table yang ditulis `NOT NULL`, berurutan, per tabel.
+ *
+ * ⛔ Ini BUKAN detail kerapian, dan ketiadaannya adalah cacat yang sudah
+ * terjadi. `item_image.id` ditulis `TEXT PRIMARY KEY` tanpa `NOT NULL`, dan
+ * SQLite MENERIMA NULL di kolom PRIMARY KEY pada tabel rowid — bug lama yang
+ * dipertahankan demi kompatibilitas. PostgreSQL menolaknya, jadi selisihnya
+ * baru terlihat saat sync, jauh dari sebabnya.
+ *
+ * ⛔ Kenapa ia harus masuk sidik jari, dan bukan sekadar diperbaiki di DDL:
+ * SQLite TIDAK DAPAT menambahkan `NOT NULL` ke kolom yang sudah ada. Perangkat
+ * yang sudah membangun tabelnya tetap memegang bentuk lama selamanya, dan
+ * sidik jari berbasis NAMA kolom saja tidak melihat perbedaannya — `NOT NULL`
+ * tidak mengubah satu nama pun. Jadi perbaikan DDL tanpa ini hanya berlaku
+ * untuk pemasangan BARU, dan armada yang sudah terpasang tidak pernah tahu.
+ *
+ * Yang dicatat hanya kolom yang MEMBATASI (`NOT NULL`). Menyalin seluruh teks
+ * DDL akan membuat setiap penyuntingan komentar membangun ulang seluruh
+ * armada; yang dicari perubahan BENTUK, bukan perubahan berkas.
+ */
+export function batasanNotNull(sqlText: string): Record<string, string[]> {
+  const hasil: Record<string, string[]> = {};
+  for (const p of pecahPernyataan(sqlText)) {
+    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s*\(/i.exec(p);
+    if (!m) continue;
+
+    const buka = p.indexOf('(');
+    const tutup = p.lastIndexOf(')');
+    const wajib: string[] = [];
+    for (const bagian of bagiKolom(p.slice(buka + 1, tutup))) {
+      const t = bagian.trim();
+      if (t.length === 0 || AWALAN_BATASAN.test(t)) continue;
+      if (!/\bNOT\s+NULL\b/i.test(t)) continue;
+      const nama = /^"?([a-z_]+)"?/i.exec(t);
+      if (nama) wajib.push(nama[1]);
+    }
+    hasil[m[1]] = wajib;
+  }
+  return hasil;
+}
+
+/**
+ * Sidik jari skema lokal yang BENAR-BENAR dipakai memutuskan migrasi.
+ *
+ * ⛔ Ia menggabungkan dua hal yang tidak ada apa pun menyatukannya: nama dan
+ * urutan kolom raw table (`sidikJariRawTable`) DAN kolom mana yang `NOT NULL`
+ * (`batasanNotNull`). Yang pertama sendirian buta terhadap perubahan batasan,
+ * dan perubahan batasan adalah perubahan bentuk yang SQLite tidak dapat
+ * terapkan lewat `ALTER TABLE`.
+ *
+ * ⛔ `migrasi.ts` wajib memanggil INI, bukan `sidikJariRawTable` langsung.
+ * Dijaga `tests/kasir/migrasi-lokal.test.js`; pemanggil yang memakai yang
+ * sempit akan berjalan tanpa satu pun error sambil melewatkan tepat kelas
+ * perubahan yang fungsi ini ada untuk melihatnya.
+ */
+export function sidikJariSkemaLokal(sqlText: string): string {
+  const kolom = sidikJariRawTable(kolomPerTabel(sqlText));
+  const wajib = batasanNotNull(sqlText);
+  const batasan = TABEL_RAW.map((t) => `${t}!(${(wajib[t] ?? []).join(',')})`).join(';');
+  return `${kolom}+${fnv1a(batasan)}`;
 }
 
 /**

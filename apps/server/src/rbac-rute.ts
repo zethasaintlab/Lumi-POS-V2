@@ -58,6 +58,17 @@ export const PETA_PERAN: readonly AturanRute[] = [
   { metode: 'POST', pola: '/items', operasi: 'catalog_edit' },
   { metode: 'PATCH', pola: '/items/:itemId', operasi: 'catalog_edit' },
   { metode: 'POST', pola: '/items/:itemId/archive', operasi: 'catalog_edit' },
+  // Gambar produk. ⛔ `catalog_edit`, BUKAN operasi baru: mengganti foto produk
+  // adalah menyunting katalog, dan peran yang boleh mengubah nama serta harga
+  // sudah boleh mengubah tampilannya. Operasi baru yang tidak ada di matriks
+  // `spec-f:38-53` membuat matriks itu berhenti dapat dibaca berdampingan
+  // dengan spec-nya.
+  //
+  // MEMBACA gambar sengaja tidak dijaga peran — ia dipakai layar katalog yang
+  // perannya lebih luas, dan 403 di sana menutup seluruh layar demi satu
+  // thumbnail.
+  { metode: 'PUT', pola: '/items/:itemId/image', operasi: 'catalog_edit' },
+  { metode: 'DELETE', pola: '/items/:itemId/image', operasi: 'catalog_edit' },
   { metode: 'POST', pola: '/items/:itemId/restore', operasi: 'catalog_edit' },
   { metode: 'POST', pola: '/items/:itemId/variations', operasi: 'catalog_edit' },
   { metode: 'PATCH', pola: '/items/:itemId/variations/:variationId', operasi: 'catalog_edit' },

@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { Icon, SyncIndicator } from 'ds';
+import { Avatar, Icon, SyncIndicator, Tabs, type IconName } from 'ds';
 import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
-import { TABEL_RUTE, type Rute } from './rute/tabel.ts';
+import { ruteNav, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
 import { useAntrean } from './konteks/useAntrean.ts';
 import { PitaAntrean } from './PitaAntrean.tsx';
@@ -18,6 +17,16 @@ import { PitaAntrean } from './PitaAntrean.tsx';
    Bentuknya mengikuti IA §2.1: topbar tetap (outlet · device · pengguna ·
    SyncIndicator · menu), lalu area utama. Kolom keranjang belum ada -- ia
    milik K-03, bukan pondasi. */
+
+/**
+ * Id elemen slot aksi di bilah nav.
+ *
+ * ⛔ Diekspor, bukan ditulis ulang di layar. Dua string yang tidak ada apa pun
+ * menyatukannya akan menyimpang, dan yang menyimpang menghasilkan portal yang
+ * tidak menemukan sasarannya — tombolnya hilang dari layar tanpa satu pun
+ * error, bentuk cacat "nol baris, bukan error" yang sama.
+ */
+export const SLOT_AKSI = 'kasir-slot-aksi';
 
 interface Props {
   outlet: string;
@@ -37,18 +46,59 @@ interface Props {
 }
 
 export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteAktif, children }: Props) {
-  const [menuTerbuka, setMenuTerbuka] = useState(false);
-  const { ringkasan, siap } = useAntrean();
+  const nav = ruteNav();
+  const { ringkasan, siap, antreanTerbaca } = useAntrean();
+
+  /* ⛔ `siap` saja TIDAK cukup, dan selisih antara keduanya adalah cacat yang
+     hidup di sini sampai 21 September 2026.
+
+     `siap` berarti database lokal TERBUKA. Ia tidak berarti antreannya pernah
+     terbaca: `ringkasanAntrean` dapat menolak pada database yang terbuka
+     sempurna (OPFS penuh, skema lokal belum bermigrasi), dan `useAntrean`
+     menelan penolakan itu lalu menyerahkan `RINGKASAN_KOSONG`. Indikator
+     karena itu berbunyi "Tersinkron" -- klaim tentang angka yang tidak pernah
+     ada -- di SETIAP layar, sepanjang shift.
+
+     `antreanTerbaca` bernilai `false` sampai pembacaan PERTAMA berhasil, bukan
+     hanya saat pembacaan menolak: yang ditampilkan sebelum itu juga nol, dan
+     nol yang belum diukur tidak lebih benar daripada nol yang gagal diukur.
+
+     Komentar di bawah sudah menuliskan aturannya sejak awal -- "'Tersinkron'
+     saat kita belum bisa membaca antrean adalah klaim yang tidak diketahui
+     siapa pun benar"; yang kurang hanyalah cara shell MENGETAHUINYA. */
+  const angkaDapatDipercaya = siap && antreanTerbaca;
   const indikator = keadaanIndikator(ringkasan, { perangkatTerdaftar });
 
   return (
     <div className="kasir-shell">
       <header className="kasir-topbar">
-        <span className="t-body-md truncate">{outlet}</span>
-        <span className="t-caption">·</span>
-        <span className="t-caption truncate">{device}</span>
-        <span className="t-caption">·</span>
-        <span className="t-caption truncate">{pengguna}</span>
+        {/* ⛔ Bentuk merek DISALIN dari `AppShell` bundle — kotak aksen 28px
+            berisi huruf pertama, lalu wordmark. Menuliskan bentuk merek kedua
+            untuk aplikasi kedua menghasilkan dua Lumi POS yang terlihat berbeda
+            di dua layar milik merchant yang sama.
+
+            Logo, nama "Lumi POS", dan aksen teal tidak disentuh; yang dilakukan
+            di sini hanya MENAMPILKANNYA. */}
+        <span className="kasir-merek" aria-hidden="true">
+          L
+        </span>
+        <span className="t-body-md kasir-wordmark">Lumi POS</span>
+
+        {/* ⛔ Identitas outlet dan perangkat TIDAK dibuang demi kerapian, dan ia
+            SATU BARIS — bukan baris kedua di bawah wordmark.
+
+            Tinggi topbar tidak ditentukan teksnya melainkan `min-height:
+            var(--touch-min)` pada pembungkus indikator sinkron, jadi bentuk
+            bertingkat tidak membeli apa pun yang dapat diukur dan hanya
+            menambah ruang kosong yang diambil dari grid.
+
+            Kasir yang tidak dapat membaca perangkatnya tidak dapat menjelaskan
+            nomor struknya: prefiks device (`K1-20260726-0007`) adalah
+            satu-satunya cara mencocokkan struk dengan perangkat yang
+            mencetaknya. */}
+        <span className="t-caption kasir-wordmark-sub truncate">
+          {outlet} · {device}
+        </span>
 
         <span className="grow" />
 
@@ -77,7 +127,7 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             }
           }}
         >
-          {siap ? (
+          {angkaDapatDipercaya ? (
             <SyncIndicator
               state={indikator.state}
               count={indikator.count}
@@ -91,40 +141,77 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
           )}
         </span>
 
-        <button
-          type="button"
-          className="btn"
-          aria-expanded={menuTerbuka}
-          aria-label="Menu"
-          onClick={() => setMenuTerbuka((t) => !t)}
-        >
-          <Icon name="more" size={18} />
-        </button>
+        {/* ⛔ Identitas staf: avatar inisial PLUS nama, bukan avatar saja.
+            Inisial dua huruf tidak membedakan dua kasir yang namanya berawal
+            sama, dan yang salah dikira sedang login adalah orang yang namanya
+            menempel pada setiap penjualan shift itu. `<Avatar>` bundle dipakai
+            apa adanya — ia tidak menyentuh angka uang. */}
+        <span className="kasir-staf">
+          <Avatar name={pengguna} size={32} />
+          <span className="t-caption truncate">{pengguna}</span>
+        </span>
       </header>
 
-      {menuTerbuka && (
-        <nav className="kasir-menu">
-          {TABEL_RUTE.map((r) => (
-            <button
-              key={r.layar}
-              type="button"
-              className="btn"
-              aria-current={ruteAktif?.layar === r.layar ? 'page' : undefined}
-              onClick={() => {
-                setMenuTerbuka(false);
-                navigasi(r.jalur.includes(':') ? '/riwayat' : r.jalur);
-              }}
-            >
-              <span className="truncate">{r.nama}</span>
-            </button>
-          ))}
-        </nav>
-      )}
+      {/* ⛔ Bilah nav PERSISTEN menggantikan menu "…", 2 September 2026.
+          Menu ⋮ menuntut DUA ketukan untuk setiap perpindahan, dan yang
+          pertama tidak memberi informasi apa pun — kasir menekan tombol
+          bertanda titik-titik untuk mencari tahu apa yang ada di baliknya.
+          Ia juga menyembunyikan layar mana yang sedang aktif, tepat pada
+          aplikasi yang dipakai berdiri sambil melayani orang.
+
+          `<Tabs variant="underline">` dari `/ds-bundle` — komponen yang sudah
+          dipakai back-office dan belum pernah dipakai kasir. Ia menandai tab
+          aktif dengan aksen DAN `aria-selected`, jadi keadaannya tidak pernah
+          warna saja (aturan DS #5).
+
+          ⛔ `/login` dan `/shift/buka` sengaja TIDAK ada di bilah ini — lihat
+          `Rute.nav` di `rute/tabel.ts`. Keduanya gerbang, dan tab menuju
+          gerbang yang sudah dilewati mengundang kasir keluar dari shift yang
+          sedang berjalan. */}
+      {/* ⛔ Bilah nav dan slot aksi berbagi SATU baris, bukan dua.
+
+          Baris aksi tersendiri selebar layar sudah dicoba dan DIUKUR: 57px, dan
+          grid turun dari 12 kartu terlihat menjadi 8 — menembus `IA:62`. Tinggi
+          tombol dikunci `--touch-min` 44px, jadi tidak ada bentuk baris
+          melintang yang muat; memangkas gap panel maupun gap grid tidak membeli
+          apa pun karena barisnya ragged dan defisitnya (39px) harus datang
+          utuh. Bilah ini punya ruang kosong di kanannya, dan ruang itu gratis.
+
+          ⛔ Slotnya DISEDIAKAN shell, DIISI layar lewat portal. `Kasir.tsx`
+          adalah anak shell dan tidak dapat mengoper prop ke atas; memindahkan
+          aksinya ke sini akan memindahkan shift, konfig, dan sesi ke shell
+          juga — dan shell dipakai enam layar yang tidak memerlukannya. */}
+      <div className="kasir-bilah">
+        <Tabs
+          variant="underline"
+          ariaLabel="Navigasi kasir"
+          value={ruteAktif?.jalur ?? ''}
+          onChange={(jalur) => navigasi(jalur)}
+          tabs={nav.map((r) => ({
+            value: r.jalur,
+            /* ⛔ `label` menerima ReactNode — `Tabs` bundle merendernya apa
+               adanya (`{lbl}`), jadi ikon di atas label tidak menuntut komponen
+               tab kedua yang ditulis sendiri. Yang ditulis sendiri akan
+               menyimpang dari back-office yang memakai `Tabs` yang sama. */
+            label: (
+              <>
+                <Icon name={(r.nav?.ikon ?? 'layers') as IconName} size={18} />
+                <span>{r.nav?.label ?? r.nama}</span>
+              </>
+            ),
+          }))}
+        />
+        <div id={SLOT_AKSI} className="kasir-slot-aksi" />
+      </div>
 
       {/* FR-H8. DI LUAR `kasir-konten`, jadi ia mendorong isi alih-alih
           melayang di atasnya — "banner, bukan dialog" (AC FR-H8 kedua) juga
           berarti tidak menutupi tombol yang sedang dituju jari kasir. */}
-      <PitaAntrean tertuaPada={siap ? ringkasan.tertuaPada : null} />
+      {/* ⛔ Pita FR-H8 memakai syarat yang SAMA dengan indikator. `tertuaPada`
+          yang berasal dari pembacaan yang menolak adalah `null`, dan `null`
+          berarti "tidak ada yang tertunggak" — pita itu karena itu akan DIAM
+          justru pada perangkat yang antreannya tidak dapat diperiksa. */}
+      <PitaAntrean tertuaPada={angkaDapatDipercaya ? ringkasan.tertuaPada : null} />
 
       <div className="kasir-konten">
         {children}

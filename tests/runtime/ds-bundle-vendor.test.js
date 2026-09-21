@@ -38,10 +38,25 @@ function bundleTersunting(basis) {
 }
 
 test('⛔ `ds-bundle/` identik dengan basis upstream — tidak ada suntingan di tempat', () => {
-  // `origin/main` adalah basis yang tersedia di CI maupun lokal. Kalau ia tidak
-  // ada (checkout dangkal tanpa remote), test ini MELAPOR dilewati alih-alih
-  // hijau palsu — penjaga yang diam saat tidak dapat memeriksa adalah penjaga
-  // yang menipu.
+  // `origin/main` adalah basis pembandingnya.
+  //
+  // ⛔ Kalau ia TIDAK ADA, test ini GAGAL — bukan dilewati, bukan hijau.
+  // Komentar di sini pernah menulis "melapor dilewati", dan kodenya tidak
+  // pernah melakukan itu; yang benar adalah kodenya. Penjaga yang melewatkan
+  // dirinya sendiri saat tidak dapat membandingkan akan diam-diam berhenti
+  // menjaga di lingkungan mana pun yang kebetulan tidak menyediakan ref itu,
+  // dan tidak seorang pun akan menyadarinya. Gagal keras adalah satu-satunya
+  // bentuk yang menagih perbaikan.
+  //
+  // ⛔ REF-NYA DISEDIAKAN WORKFLOW, dan di situ tempat mencarinya kalau test
+  // ini merah dengan pesan di bawah: langkah "Sediakan origin/main untuk
+  // penjaga vendor" di `.github/workflows/test.yml`.
+  //
+  // `actions/checkout@v7` memakai `--depth=1`. Pada event `push` ke `main` ref
+  // yang diambilnya mendarat sebagai `refs/remotes/origin/main`; pada event
+  // `pull_request` yang diambil hanya `refs/remotes/pull/<n>/merge`. Tanpa
+  // langkah fetch itu, penjaga ini merah di setiap PR dan hijau di setiap push
+  // ke main — dan hijau-di-main itulah yang membuatnya tampak baik-baik saja.
   let basis = 'origin/main';
   try {
     execFileSync('git', ['rev-parse', '--verify', basis], { cwd: AKAR, stdio: 'ignore' });

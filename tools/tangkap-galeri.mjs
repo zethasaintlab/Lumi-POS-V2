@@ -44,6 +44,7 @@ const LAYAR = [
   { id: 'K-03', nama: 'Kasir — grid produk + keranjang' },
   { id: 'K-08', nama: 'Riwayat transaksi' },
   { id: 'K-12', nama: 'Tutup kas' },
+  { id: 'K-14', nama: 'Status sinkronisasi' },
   { id: 'K-15', nama: 'Perangkat' },
 ];
 
@@ -57,6 +58,11 @@ const KEADAAN = [
   ['panjang', '120 varian. Grid harus tetap dapat dipindai — saringan kategori terlihat.'],
   ['meluap', 'Nama 60 karakter. Harus terpotong rapi TANPA menarik tinggi kartu tetangganya.'],
   ['angka-besar', 'Rp 12.500.000. Harus muat, tetap tabular-nums, tidak mendorong kolom sebelahnya.'],
+  // ⛔ Satu grid, TIGA keadaan gambar. "Belum difoto" wajib terlihat NORMAL —
+  // tanpa penanda memuat, tanpa placeholder abu-abu — dan "gagal dimuat" wajib
+  // terlihat BERBEDA darinya. Dua keadaan yang terlihat sama adalah kekosongan
+  // menyamar yang membuat `bytea` dicabut.
+  ['gambar', 'Campuran: bergambar, belum difoto, dan gagal verifikasi. Ketiganya harus dapat dibedakan mata.'],
 ];
 
 const peramban = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
@@ -72,7 +78,18 @@ for (const layar of LAYAR) {
     const p = await peramban.newPage({ viewport: { width: vp.width, height: vp.height } });
     p.on('pageerror', (e) => galat.push(`${layar.id}/${vp.nama}: ${e.message}`));
     p.on('console', (m) => {
-      if (m.type() === 'error') galat.push(`${layar.id}/${vp.nama}: ${m.text()}`);
+      if (m.type() !== 'error') return;
+      /* ⛔ Kegagalan MEMUAT SUMBER bukan galat di galeri, ia hasil pengukuran.
+         K-14 menembak `<baseUrl>/health` untuk memeriksa keterjangkauan, dan
+         `baseUrl` fixture sengaja menunjuk port yang menolak koneksi — itulah
+         satu-satunya cara galeri dapat menampilkan keadaan "server tidak
+         terjangkau" sama sekali.
+
+         Saringannya SEMPIT, sama persis dengan `tests/kasir-dom/
+         k14-keadaan.test.js`: lemparan halaman, `TypeError`, dan
+         `console.error` dari kode kita tetap menggagalkan penangkapan. */
+      if (/Failed to load resource/.test(m.text())) return;
+      galat.push(`${layar.id}/${vp.nama}: ${m.text()}`);
     });
 
     for (const [keadaan] of KEADAAN) {
@@ -83,6 +100,44 @@ for (const layar of LAYAR) {
       await p.waitForTimeout(500);
       await p.screenshot({ path: join(dir, `${vp.nama}-${keadaan}.png`) });
       jumlah += 1;
+
+      /* ⛔ `IA:62` — ≥12 kartu tanpa scroll — DIUKUR, tidak hanya difoto.
+       *
+       * Tangkapan layar membuktikan tampilannya; ia tidak membuktikan
+       * angkanya, dan angka inilah yang paling mudah tergerus tanpa siapa pun
+       * melihatnya. Gambar produk membuktikannya: satu `aspect-ratio` yang
+       * lebih tinggi memangkas 15 kartu menjadi 8, dan tangkapan layarnya
+       * tetap terlihat wajar — kartunya besar dan rapi.
+       *
+       * ⛔ Diukur pada SETIAP keadaan yang punya gambar, bukan pada `gambar`
+       * saja. Sejak `normal` ikut bergambar, penjaga yang hanya melihat satu
+       * nama akan melewatkan sel yang paling sering dibaca orang — dan
+       * tangkapan layarnya tetap terlihat wajar, persis cacat yang catatan di
+       * atas peringatkan. Keadaan `panjang`/`memuat`/`error`/`kosong` mengukur
+       * hal lain dan tetap di luar. */
+      if (layar.id === 'K-03' && (keadaan === 'gambar' || keadaan === 'normal')) {
+        const terlihat = await p.evaluate(() => {
+          const grid = document.querySelector('.kasir-grid');
+          if (!grid) return -1;
+          let sc = grid.parentElement;
+          while (sc) {
+            const o = getComputedStyle(sc).overflowY;
+            if (o === 'auto' || o === 'scroll') break;
+            sc = sc.parentElement;
+          }
+          if (!sc) return -1;
+          const batas = sc.getBoundingClientRect().bottom;
+          return [...grid.children].filter((k) => k.getBoundingClientRect().bottom <= batas + 1)
+            .length;
+        });
+        if (terlihat < 12) {
+          galat.push(
+            `${layar.id}/${vp.nama}: hanya ${terlihat} kartu terlihat tanpa scroll — ` +
+              '`IA:62` menuntut ≥12. Kemungkinan besar tinggi kartu bertambah ' +
+              '(`aspect-ratio` gambar, baris teks baru, padding).'
+          );
+        }
+      }
     }
     await p.close();
   }

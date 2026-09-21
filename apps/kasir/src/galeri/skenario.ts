@@ -24,7 +24,10 @@ export type NamaSkenario =
   | 'offline'
   | 'panjang'
   | 'meluap'
-  | 'angka-besar';
+  | 'angka-besar'
+  | 'gambar'
+  | 'keranjang-penuh'
+  | 'antrean-panjang';
 
 export interface Skenario {
   nama: NamaSkenario;
@@ -88,12 +91,70 @@ export const SKENARIO: readonly Skenario[] = [
       'Katering dan pesanan borongan menghasilkan angka tujuh digit. Apakah ia ' +
       'muat, tetap `tabular-nums`, dan tidak mendorong kolom di sebelahnya?',
   },
+  {
+    nama: 'gambar',
+    judul: 'Gambar produk · campuran',
+    tanya:
+      'Satu grid, TIGA keadaan sekaligus: sebagian item bergambar, sebagian ' +
+      'belum difoto, dan dua yang barisnya ADA tetapi gagal verifikasi. ' +
+      'Apakah "belum difoto" terlihat NORMAL — tanpa penanda memuat dan tanpa ' +
+      'kotak abu-abu yang terbaca rusak — dan apakah "gagal dimuat" jelas ' +
+      'BERBEDA darinya? Dua keadaan itu yang terlihat sama adalah kekosongan ' +
+      'menyamar yang membuat `bytea` dicabut.',
+  },
+  {
+    nama: 'keranjang-penuh',
+    judul: 'Keranjang penuh (20 baris)',
+    tanya:
+      'Dua puluh baris di keranjang. Apakah Subtotal dan tombol Bayar berada di ' +
+      'posisi yang SAMA seperti saat keranjang berisi tiga baris — atau kasir ' +
+      'harus menggulir untuk menagih, di depan pelanggan, pada setiap pesanan ' +
+      'besar? Tiga baris tidak pernah dapat menjawab ini.',
+  },
+  {
+    nama: 'antrean-panjang',
+    judul: 'Antrean panjang (50 gagal)',
+    tanya:
+      'Satu halaman penuh item gagal — `PER_HALAMAN` tepat 50. Apakah "Coba kirim ' +
+      'sekarang" dan kartu Penyimpanan berada di posisi yang SAMA seperti saat ' +
+      'hanya tiga yang gagal, atau keduanya terdorong ribuan piksel ke bawah oleh ' +
+      'tabelnya sendiri? Tiga baris tidak pernah dapat menjawab ini — alasan yang ' +
+      'sama persis dengan `keranjang-penuh` di K-03.',
+  },
 ];
+
+/**
+ * Baris keranjang untuk skenario `keranjang-penuh`.
+ *
+ * ⛔ DUA PULUH, bukan tiga. Panel keranjang yang isinya sedikit terlihat benar
+ * apa pun aturan flex-nya — daftar yang lebih pendek dari panelnya tidak pernah
+ * mendorong apa pun. Yang membuktikan blok bawah benar-benar menempel hanya
+ * daftar yang LEBIH PANJANG dari ruang yang tersedia.
+ *
+ * ⛔ Uang ditulis sebagai `number` di sini karena `BarisKeranjang.unitPrice`
+ * memang `number` (rupiah utuh, bukan pecahan). Nilai `bigint` di keranjang
+ * hanya ada pada diskon, dan skenario ini sengaja tanpa diskon: yang diukur
+ * posisi blok bawah, dan baris diskon menambah tinggi yang bukan bagian
+ * pertanyaannya.
+ */
+export function keranjangDuaPuluh(): string {
+  const baris = Array.from({ length: 20 }, (_, i) => ({
+    id: `baris-${i}`,
+    variationId: `var-${i}`,
+    itemName: `Item Keranjang ${i + 1}`,
+    variationName: i % 3 === 0 ? 'Large' : 'Regular',
+    variationCount: i % 3 === 0 ? 2 : 1,
+    unitPrice: 18000 + i * 500,
+    quantityMilli: 1000,
+    modifier: [],
+  }));
+  return JSON.stringify({ baris, diskon: null });
+}
 
 /** Nama menu 60 karakter — bukan karangan, ia bentuk nama yang kafe benar-benar pakai. */
 export const NAMA_PANJANG = 'Kopi Susu Gula Aren Kelapa Pandan Spesial Racikan Barista Kami';
 
-interface BarisItem {
+export interface BarisItem {
   item_id: string;
   item_name: string;
   category_id: string | null;
@@ -202,9 +263,132 @@ export function itemUntuk(skenario: NamaSkenario): BarisItem[] {
   return MENU.map(([n, v, h]) => baris(idDariNama(n), n, v, h));
 }
 
+/* --------------------------------------------------------------- gambar -- */
+
+export interface BarisGambarPalsu {
+  id: string;
+  data_base64: string;
+  byte: number;
+  checksum: string;
+  mime: string;
+}
+
+/**
+ * Gambar produk untuk galeri — DIBUAT dengan encoder yang sama dengan yang
+ * back-office pakai, bukan diambil dari berkas.
+ *
+ * ⛔ Kanvas → `toBlob('image/webp')` → base64, lalu `byte` dan `checksum`
+ * dihitung dengan fungsi domain yang SUNGGUHAN. Fixture yang byte-nya diketik
+ * tangan akan lolos verifikasi karena angkanya dikarang agar cocok — dan
+ * galeri yang seperti itu tidak pernah merender keadaan "rusak" sama sekali,
+ * yang justru satu-satunya keadaan yang sulit dibuktikan benar.
+ *
+ * ⛔ Dua baris SENGAJA dirusak, masing-masing dengan bentuk kerusakan yang
+ * berbeda: satu checksum yang tidak cocok (isi berubah, panjang tetap), satu
+ * teks yang dipotong (panjang berubah). Keduanya harus mendarat di keadaan
+ * yang sama dan terlihat.
+ *
+ * ## ⛔ `normal` ikut bergambar, dan itu memperbaiki pembanding yang bohong
+ *
+ * Sampai sekarang hanya skenario `gambar` yang punya foto, jadi `normal` —
+ * satu-satunya sel yang dibaca sebagai "beginilah layar kasir sehari-hari" —
+ * menampilkan grid yang seluruh kartunya tanpa foto. Itu bukan keadaan
+ * sehari-hari merchant mana pun setelah katalognya difoto; ia keadaan hari
+ * pertama, dan ia membuat grid terasa jenis yang berbeda dari yang dirancang.
+ *
+ * Keduanya memakai campuran yang SAMA, dan itu disengaja: dua fixture gambar
+ * yang berbeda menjadi dua jawaban untuk satu pertanyaan, dan yang menyimpang
+ * membuat perbandingan antar-sel berhenti berarti. Yang membedakan keduanya
+ * bukan datanya melainkan PERTANYAANNYA — `gambar` menanyakan apakah ketiga
+ * keadaan dapat dibedakan mata; `normal` menanyakan apakah layarnya terbaca
+ * wajar saat sebagian besar kartunya memang bergambar.
+ */
+const BERGAMBAR: readonly NamaSkenario[] = ['gambar', 'normal'];
+
+export async function gambarUntuk(
+  skenario: NamaSkenario,
+  item: readonly BarisItem[]
+): Promise<BarisGambarPalsu[]> {
+  if (!BERGAMBAR.includes(skenario)) return [];
+
+  // Item unik, dalam urutan grid.
+  const idItem = [...new Set(item.map((b) => b.item_id))];
+  const domain = await import('../../../../packages/domain/src/gambar-produk.ts');
+
+  const hasil: BarisGambarPalsu[] = [];
+  /* ⛔ Hanya SEBAGIAN item difoto, dan itu bentuk yang paling sering nyata:
+     merchant memfoto menu andalannya lebih dulu dan sisanya menyusul —
+     kadang selamanya. Grid yang seluruhnya bergambar tidak pernah menjawab
+     pertanyaan yang skenario ini ajukan. */
+  const bergambar = idItem.filter((_, i) => i % 3 !== 2);
+
+  for (const [i, id] of bergambar.entries()) {
+    const base64 = await webpPalsu(i);
+    hasil.push({
+      id,
+      data_base64: base64,
+      byte: domain.byteDariBase64(base64),
+      checksum: domain.checksumGambar(base64),
+      mime: 'image/webp',
+    });
+  }
+
+  // Kerusakan 1 — isi berubah, PANJANG TETAP. Hanya checksum yang menangkapnya.
+  const a = hasil[1];
+  if (a) a.checksum = 'deadbeef';
+
+  // Kerusakan 2 — teks DIPOTONG, dan potongannya tetap base64 yang sah.
+  // `byte` yang menangkapnya, bukan bentuknya.
+  const b = hasil[4];
+  if (b) b.data_base64 = b.data_base64.slice(0, Math.floor(b.data_base64.length / 8) * 4);
+
+  return hasil;
+}
+
+/**
+ * Satu WebP 400×400 sintetis. Warnanya diturunkan dari indeks supaya kartu
+ * dapat dibedakan satu sama lain di tangkapan layar.
+ *
+ * ⛔ Ia TIDAK memakai token warna design system, dan itu bukan pelanggaran
+ * aturan #6: ini isi GAMBAR, bukan styling komponen. Foto produk merchant
+ * juga tidak akan memakai palet kita.
+ */
+async function webpPalsu(i: number): Promise<string> {
+  const k = document.createElement('canvas');
+  k.width = 400;
+  k.height = 400;
+  const c = k.getContext('2d');
+  if (!c) return '';
+
+  const rona = (i * 47) % 360;
+  const gr = c.createLinearGradient(0, 0, 400, 400);
+  gr.addColorStop(0, `hsl(${rona} 42% 72%)`);
+  gr.addColorStop(1, `hsl(${(rona + 40) % 360} 38% 52%)`);
+  c.fillStyle = gr;
+  c.fillRect(0, 0, 400, 400);
+  c.fillStyle = `hsl(${(rona + 180) % 360} 30% 96%)`;
+  c.beginPath();
+  c.arc(200, 190, 96, 0, Math.PI * 2);
+  c.fill();
+  c.fillRect(120, 300, 160, 44);
+
+  const blob: Blob | null = await new Promise((r) => k.toBlob(r, 'image/webp', 0.8));
+  if (!blob) return '';
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (const byte of buf) s += String.fromCharCode(byte);
+  return btoa(s);
+}
+
 /** Ringkasan antrean outbox untuk indikator sinkronisasi. */
 export function antreanUntuk(skenario: NamaSkenario): { menunggu: number; gagal: number } {
   if (skenario === 'offline') return { menunggu: 12, gagal: 3 };
+  /* ⛔ TEPAT 50, dan angkanya bukan karangan: `PER_HALAMAN` di
+     `packages/sync-client/src/status.ts` adalah 50, jadi ini satu halaman penuh
+     — isi maksimum yang K-14 dapat tampilkan sekaligus, dan karena itu tekanan
+     terbesar yang tata letaknya harus tahan. `menunggu` dibuat lebih banyak
+     supaya kartu di atasnya tetap menampilkan angka yang berbeda. */
+  if (skenario === 'antrean-panjang') return { menunggu: 63, gagal: 50 };
   return { menunggu: 0, gagal: 0 };
 }
 

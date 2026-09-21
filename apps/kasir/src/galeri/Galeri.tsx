@@ -14,7 +14,8 @@ import { Kasir } from '../layar/Kasir.tsx';
 import { Riwayat } from '../layar/Riwayat.tsx';
 import { TutupKas } from '../layar/TutupKas.tsx';
 import { Perangkat } from '../layar/Perangkat.tsx';
-import { buatDbPalsu } from './db-palsu.ts';
+import { StatusSinkronisasi } from '../layar/StatusSinkronisasi.tsx';
+import { buatDbPalsu, perangkatTerdaftarUntuk } from './db-palsu.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
 
@@ -76,6 +77,15 @@ const LAYAR = [
   { id: 'K-03', nama: 'Kasir (grid + keranjang)', render: () => <Kasir /> },
   { id: 'K-08', nama: 'Riwayat', render: () => <Riwayat /> },
   { id: 'K-12', nama: 'Tutup kas', render: () => <TutupKas /> },
+  /* ⛔ K-14 masuk galeri 21 September 2026, dan sampai hari itu ia adalah
+     SATU-SATUNYA layar kasir yang tidak dapat dibuka di mana pun: galeri tidak
+     memuatnya, `harness-h2` merender shell tanpa layar, dan `/sync` di
+     aplikasi dev digerbangi login. Satu-satunya render yang pernah terjadi
+     manual, sekali, 8 Agustus 2026.
+
+     Konsekuensinya bukan ketidaknyamanan: tiga cacat di layar ini ditemukan
+     dengan MEMBACA, dan tidak satu pun test yang ada dapat melihatnya. */
+  { id: 'K-14', nama: 'Status sinkronisasi', render: () => <StatusSinkronisasi /> },
   { id: 'K-15', nama: 'Perangkat', render: () => <Perangkat /> },
 ] as const;
 
@@ -131,6 +141,7 @@ export function Galeri() {
 
   const layar = LAYAR.find((l) => l.id === layarId) ?? LAYAR[0];
   const info = SKENARIO.find((s) => s.nama === skenario) ?? SKENARIO[0];
+  const terdaftar = perangkatTerdaftarUntuk(skenario);
 
   /* ⛔ Keadaan dibangun ULANG saat skenario berubah, dan `key` di bawah
      memaksa REMOUNT. Tanpa remount, layar yang sudah memuat data skenario
@@ -218,9 +229,17 @@ export function Galeri() {
       <div className="galeri-panggung">
         <DbLokalPalsuProvider keadaan={keadaan} key={`${layarId}-${skenario}`}>
           <ShellKasir
-            outlet="ORIGEN Menteng"
-            device="K1"
-            perangkatTerdaftar
+            outlet={terdaftar ? 'ORIGEN Menteng' : 'Outlet belum dipilih'}
+            device={terdaftar ? 'K1' : 'Perangkat belum terdaftar'}
+            /* ⛔ Diturunkan dari skenario, bukan dipaku `true`.
+
+               Selama ia dipaku, galeri tidak dapat menampilkan satu-satunya
+               keadaan yang `status.ts:81` catat sebagai paling berbahaya:
+               perangkat yang belum terdaftar, yang antreannya kosong karena
+               tidak pernah ada yang MASUK. Topbar dan layar yang berbeda
+               pendapat tentang keadaan itu tidak dapat terlihat di galeri yang
+               selalu menganggap perangkatnya terdaftar. */
+            perangkatTerdaftar={terdaftar}
             pengguna="Kasir Galeri"
             ruteAktif={null}
           >

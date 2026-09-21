@@ -159,22 +159,49 @@ export async function bangunUlangSnapshot(db: DbLokal, konfig: KonfigStok): Prom
     if (h > (tertinggi.get(b.variation_id) ?? -Infinity)) tertinggi.set(b.variation_id, h);
   }
 
-  // Tidak ada movement berarti tidak ada snapshot yang perlu dibangun. Keluar
-  // SEBELUM membuka transaksi: `BEGIN IMMEDIATE` mengambil kunci global di
-  // `wa-sqlite`, dan mengambilnya untuk menulis nol baris menahan penulisan
-  // lain tanpa alasan.
-  if (saldo.size === 0) return;
+  // Ledger kosong BUKAN jaminan tidak ada pekerjaan.
+  //
+  // ⛔ `stock_movement` adalah raw table dan `stock_snapshot` murni lokal, jadi
+  // membangun ulang raw table membuang ledgernya dan MENYISAKAN snapshotnya.
+  // Snapshot yang kehilangan dasarnya tidak menjadi nol — ia menampilkan angka
+  // lamanya selamanya, tanpa satu pun error, dan movement berikutnya
+  // ditambahkan di atasnya.
+  //
+  // Yang diputuskan cabang ini karena itu bukan "apakah ledger kosong"
+  // melainkan "apakah ada yang perlu DITULIS" — pertanyaan yang memang
+  // alasannya sebut. Kuncinya tidak diambil untuk menulis nol baris; ia
+  // diambil hanya bila ada baris yatim untuk dihapus. `getAll` di bawah adalah
+  // PEMBACAAN, jadi ia tidak mengambil kunci `BEGIN IMMEDIATE` sama sekali.
+  if (saldo.size === 0) {
+    const yatim = await db.getAll<{ variation_id: string }>(
+      `SELECT variation_id FROM stock_snapshot WHERE tenant_id = ? AND outlet_id = ?`,
+      [konfig.tenantId, konfig.outletId]
+    );
+    if (yatim.length === 0) return;
+  }
 
   await db.transaction(async (tx) => {
+    // ⛔ SATU delete ber-scope, bukan satu delete per variation yang dibangun.
+    //
+    // Menghapus hanya yang akan ditulis ulang membuat snapshot tanpa dasar di
+    // ledger bertahan selamanya: loopnya menulis, dan tidak pernah menghapus.
+    // Terukur — layar menampilkan 100 saat kebenarannya 70, tidak dikoreksi
+    // oleh tutup shift mana pun, lalu −5 begitu movement baru masuk di atas
+    // saldo basi itu.
+    //
+    // ⛔ Cakupannya `tenant_id + outlet_id`: predikat yang SAMA PERSIS dengan
+    // query ledger di atas, dan dua dari tiga kolom primary key tabel ini.
+    // Snapshot outlet lain tidak tersentuh, dan itu dijaga test.
+    //
+    // ⛔ DELETE lalu INSERT, bukan `ON CONFLICT` — `ON CONFLICT(id)` pernah
+    // diterima `node:sqlite` dan DITOLAK `wa-sqlite`, seluruh test hijau
+    // sementara aplikasinya gagal (8 Agustus 2026). Bentuk yang sederhana
+    // berlaku di keduanya.
+    await tx.execute(`DELETE FROM stock_snapshot WHERE tenant_id = ? AND outlet_id = ?`, [
+      konfig.tenantId,
+      konfig.outletId,
+    ]);
     for (const [variationId, balance] of saldo) {
-      // ⛔ DELETE lalu INSERT, bukan `ON CONFLICT` — `ON CONFLICT(id)` pernah
-      // diterima `node:sqlite` dan DITOLAK `wa-sqlite`, seluruh test hijau
-      // sementara aplikasinya gagal (8 Agustus 2026). Bentuk yang sederhana
-      // berlaku di keduanya.
-      await tx.execute(
-        `DELETE FROM stock_snapshot WHERE tenant_id = ? AND outlet_id = ? AND variation_id = ?`,
-        [konfig.tenantId, konfig.outletId, variationId]
-      );
       await tx.execute(
         `INSERT INTO stock_snapshot (tenant_id, outlet_id, variation_id, balance, checkpoint_hlc)
          VALUES (?, ?, ?, ?, ?)`,

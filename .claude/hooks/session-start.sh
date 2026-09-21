@@ -22,37 +22,29 @@ cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}"
 
 log() { echo "[lumi] $*"; }
 
-# --- 1. Dependency -----------------------------------------------------------
-# `npm install`, bukan `npm ci`: state container di-cache setelah hook selesai,
-# dan `install` memanfaatkan cache itu.
-if [ ! -d node_modules ]; then
-  log "npm install"
-  npm install --no-audit --no-fund >/dev/null 2>&1 || log "npm install GAGAL (lanjut)"
+# --- 1-7. Prasyarat ----------------------------------------------------------
+#
+# ⛔ SATU sumber, bukan salinan kedua. Ketujuh langkah penyiapan (Node 24.7+,
+# dependency, ref `origin/main`, PostgreSQL, `.env`, role, migrasi) hidup di
+# `tools/siapkan-dev.sh`. Dua penyiapan yang saling menyalin akan menyimpang,
+# dan yang menyimpang menghasilkan sesi yang hidup dengan prasyarat berbeda dari
+# yang skripnya janjikan.
+#
+# ⛔ KEBIJAKANNYA yang berbeda, bukan langkahnya. Skrip itu GAGAL KERAS — ia
+# dipanggil orang yang sedang menyiapkan container dan ingin tahu persis langkah
+# mana yang gagal. Hook ini tidak boleh menggagalkan sesi: sesi yang menolak
+# dimulai karena PostgreSQL mati jauh lebih buruk daripada sesi yang dimulai
+# dengan peringatan. Jadi kegagalannya diturunkan menjadi satu baris log, dan
+# baris itu menyebut perintah yang harus dijalankan ulang secara manual.
+if bash tools/siapkan-dev.sh >/tmp/lumi-log-siapkan.txt 2>&1; then
+  log "prasyarat siap (tools/siapkan-dev.sh)"
+else
+  log "⛔ tools/siapkan-dev.sh GAGAL — sesi tetap dimulai."
+  log "   Jalankan manual: bash tools/siapkan-dev.sh"
+  tail -3 /tmp/lumi-log-siapkan.txt | while read -r baris; do log "   | ${baris}"; done
 fi
 
-# --- 2. PostgreSQL -----------------------------------------------------------
-# Idempoten: `pg_isready` lebih dulu supaya sesi yang PG-nya sudah hidup tidak
-# membayar apa pun. `--skip-systemctl-redirect` karena container tidak punya
-# systemd, dan tanpanya `pg_ctlcluster` menggantung.
-if ! pg_isready -q 2>/dev/null; then
-  log "menyalakan PostgreSQL"
-  pg_ctlcluster 16 main start --skip-systemctl-redirect >/dev/null 2>&1 \
-    || pg_ctlcluster 16 main start >/dev/null 2>&1 \
-    || log "PostgreSQL GAGAL menyala"
-  for _ in $(seq 1 20); do pg_isready -q 2>/dev/null && break; sleep 0.5; done
-fi
-pg_isready -q 2>/dev/null && log "PostgreSQL siap" || log "PostgreSQL TIDAK siap"
-
-# --- 3. Skema ----------------------------------------------------------------
-# Hanya bila databasenya belum ada. `db:migrate` sendiri idempoten (melewati
-# migrasi yang sudah tercatat), jadi menjalankannya selalu juga aman — yang
-# TIDAK aman adalah `db:reset`, dan ia tidak pernah dipanggil di sini.
-if [ -f .env ] && pg_isready -q 2>/dev/null; then
-  npm run db:bootstrap >/dev/null 2>&1 || true
-  npm run db:migrate  >/dev/null 2>&1 || log "db:migrate GAGAL"
-fi
-
-# --- 4. Server & aplikasi ----------------------------------------------------
+# --- Server & aplikasi ----------------------------------------------------
 # ⛔ Log TIDAK dibuang ke /dev/null. Server yang mati tanpa jejak adalah persis
 # yang membuat 500 tanpa penjelasan itu mahal didiagnosis.
 mkdir -p /tmp/lumi-log

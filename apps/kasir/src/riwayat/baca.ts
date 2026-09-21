@@ -44,6 +44,12 @@ interface BarisOrder {
   receipt_number: string;
   business_date: string;
   status: string;
+  /* ⛔ Keduanya OPSIONAL di tipe ini, dan itu bukan kelonggaran: `SQL_DAFTAR`
+     (K-08 daftar) sengaja tidak menyeleksinya — daftar hanya menampilkan
+     total, dan menyeret dua kolom lagi untuk setiap baris riwayat adalah
+     biaya tanpa pembaca. Yang membutuhkannya hanya query DETAIL. */
+  subtotal?: number;
+  order_discount?: number;
   total: number;
   amount_due: number;
   tax_amount: number;
@@ -157,6 +163,19 @@ export interface DetailOrder {
     receiptNumber: string;
     businessDate: string;
     status: string;
+    subtotal: number;
+    /**
+     * ⛔ Potongan tingkat order, dan sampai 2 September 2026 layar K-08 TIDAK
+     * PERNAH membacanya — query detailnya bahkan tidak menyeleksi kolomnya.
+     *
+     * Akibatnya baris + pajak tidak menjumlah ke Total pada setiap transaksi
+     * berdiskon, di layar yang dipakai memutuskan REFUND, tanpa satu baris pun
+     * yang menjelaskan selisihnya. Bentuk cacat yang sama persis dengan yang
+     * sudah dibayar di jalur cetak (`diskon: 0` yang dipaku di `dokumen.ts`,
+     * diperbaiki 22 Agustus) — dan ia bertahan sebelas hari lebih lama di sini
+     * karena tidak ada satu pun test yang menjumlahkan angka di layar.
+     */
+    orderDiscount: number;
     total: number;
     amountDue: number;
     taxAmount: number;
@@ -174,7 +193,8 @@ export interface DetailOrder {
 
 export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOrder | null> {
   const baris = await db.getAll<BarisOrder>(
-    `SELECT o.id, o.receipt_number, o.business_date, o.status, o.total, o.amount_due,
+    `SELECT o.id, o.receipt_number, o.business_date, o.status, o.subtotal,
+            o.order_discount, o.total, o.amount_due,
             o.tax_amount, o.rounding_adjustment, o.occurred_at, o.created_by,
             o.voided_by_order_id
        FROM "order" o WHERE o.id = ?`,
@@ -247,6 +267,8 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
       receiptNumber: o.receipt_number,
       businessDate: o.business_date,
       status: o.status,
+      subtotal: o.subtotal ?? 0,
+      orderDiscount: o.order_discount ?? 0,
       total: o.total,
       amountDue: o.amount_due,
       taxAmount: o.tax_amount,
@@ -359,6 +381,40 @@ function uraikanModifier(snapshot: string | null): string[] {
   } catch {
     return [];
   }
+}
+
+/** Urutan daftar riwayat K-08. */
+export type UrutanRiwayat = 'terbaru' | 'terlama' | 'terbesar';
+
+export const LABEL_URUTAN_RIWAYAT: Record<UrutanRiwayat, string> = {
+  terbaru: 'Terbaru',
+  terlama: 'Terlama',
+  terbesar: 'Nilai tertinggi',
+};
+
+/**
+ * Urutkan riwayat K-08.
+ *
+ * ⛔ Menyalin dulu, baru `sort` — alasan yang sama dengan `urutkanItem`:
+ * `sort` bekerja DI TEMPAT, dan daftar ini adalah state React.
+ *
+ * ⛔ `occurredAt` dibandingkan sebagai STRING, dan itu sah justru karena ia
+ * ISO 8601 UTC: urutan leksikografisnya sama dengan urutan waktunya.
+ * `new Date(...)` per perbandingan akan mem-parse ribuan kali untuk jawaban
+ * yang identik. Yang TIDAK sah adalah membandingkan waktu tampilan — "14:32"
+ * kehilangan tanggalnya.
+ */
+export function urutkanRiwayat<T extends { occurredAt: string; total: number }>(
+  daftar: readonly T[],
+  urutan: UrutanRiwayat
+): T[] {
+  const salinan = [...daftar];
+  if (urutan === 'terbesar') return salinan.sort((a, b) => b.total - a.total);
+  return salinan.sort((a, b) =>
+    urutan === 'terbaru'
+      ? b.occurredAt.localeCompare(a.occurredAt)
+      : a.occurredAt.localeCompare(b.occurredAt)
+  );
 }
 
 /** Pencarian nomor struk (K-08). */

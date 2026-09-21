@@ -5,6 +5,7 @@ import { createModifierListHandlers } from './handlers/modifier-lists.ts';
 import { createItemModifierListHandlers } from './handlers/item-modifier-lists.ts';
 import { createPriceHandlers } from './handlers/prices.ts';
 import { createImportHandlers } from './handlers/import.ts';
+import { createItemImageHandlers } from './handlers/item-images.ts';
 
 // Permukaan publik FR-A7 untuk modul lain (invariant #4, CLAUDE.md).
 // order_line.unit_price (Modul B) adalah SNAPSHOT hasil resolvePrice --
@@ -41,5 +42,6 @@ export function createCatalogHandlers(pool: Pool): Record<string, unknown> {
     ...createItemModifierListHandlers(pool),
     ...createPriceHandlers(pool),
     ...createImportHandlers(pool),
+    ...createItemImageHandlers(pool),
   };
 }
