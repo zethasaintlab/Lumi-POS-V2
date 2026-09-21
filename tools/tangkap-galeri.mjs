@@ -78,7 +78,18 @@ for (const layar of LAYAR) {
     const p = await peramban.newPage({ viewport: { width: vp.width, height: vp.height } });
     p.on('pageerror', (e) => galat.push(`${layar.id}/${vp.nama}: ${e.message}`));
     p.on('console', (m) => {
-      if (m.type() === 'error') galat.push(`${layar.id}/${vp.nama}: ${m.text()}`);
+      if (m.type() !== 'error') return;
+      /* ⛔ Kegagalan MEMUAT SUMBER bukan galat di galeri, ia hasil pengukuran.
+         K-14 menembak `<baseUrl>/health` untuk memeriksa keterjangkauan, dan
+         `baseUrl` fixture sengaja menunjuk port yang menolak koneksi — itulah
+         satu-satunya cara galeri dapat menampilkan keadaan "server tidak
+         terjangkau" sama sekali.
+
+         Saringannya SEMPIT, sama persis dengan `tests/kasir-dom/
+         k14-keadaan.test.js`: lemparan halaman, `TypeError`, dan
+         `console.error` dari kode kita tetap menggagalkan penangkapan. */
+      if (/Failed to load resource/.test(m.text())) return;
+      galat.push(`${layar.id}/${vp.nama}: ${m.text()}`);
     });
 
     for (const [keadaan] of KEADAAN) {

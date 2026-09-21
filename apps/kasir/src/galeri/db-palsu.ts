@@ -63,10 +63,17 @@ export function perangkatTerdaftarUntuk(skenario: NamaSkenario): boolean {
  * CI. Galeri yang menjawab "terjangkau" di satu tempat dan "tidak" di tempat
  * lain membuat penjaganya memberi dua jawaban untuk kode yang sama.
  *
- * Port 9 (`discard`) menolak koneksi di mana pun, jadi galeri selalu berdiri
- * pada keadaan yang sama: perangkat terdaftar, server tidak terjangkau.
+ * Port 65535 di loopback: di luar rentang ephemeral Linux (32768–60999), jadi
+ * tidak ada yang mengikatnya, dan koneksinya DITOLAK seketika alih-alih
+ * menggantung sampai batas waktu probe. Galeri karena itu selalu berdiri pada
+ * keadaan yang sama: perangkat terdaftar, server tidak terjangkau.
+ *
+ * ⛔ Bukan port 9 (`discard`). Ia ada di daftar port terlarang Chromium, jadi
+ * peramban menolaknya sebelum menembak dan mencatat `ERR_UNSAFE_PORT` — galat
+ * konsol yang menyebut keputusan PERAMBAN, bukan keadaan jaringan, di galeri
+ * yang penjaganya menolak setiap galat konsol.
  */
-const BASE_URL_TAK_TERJANGKAU = 'http://127.0.0.1:9';
+const BASE_URL_TAK_TERJANGKAU = 'http://127.0.0.1:65535';
 
 /**
  * Alasan kegagalan per baris outbox, berulang siklik.
@@ -347,10 +354,26 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
       // kasir tatap SELAMA menunggu, dan itu harus dapat diperiksa tanpa
       // berpacu dengan timer.
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
-      if (skenario === 'error') {
+      const tabel = tabelDari(sql);
+
+      /* ⛔ `error` menolak setiap pembacaan KECUALI identitas perangkat.
+
+         Pengecualiannya bukan kenyamanan, ia yang membuat skenario ini
+         menggambarkan keadaan yang benar-benar terjadi. `device_config`
+         dibaca sekali saat boot; query yang menolak di tengah sesi tidak
+         MEMBATALKAN pendaftaran perangkat. Selama ia ikut menolak, galeri
+         menampilkan perangkat yang tiba-tiba "belum terdaftar" — dan shell,
+         yang identitasnya datang dari skenario, berkata sebaliknya di baris
+         yang sama. Dua kalimat yang saling membantah, dibuat oleh fixture-nya
+         sendiri.
+
+         Ia juga satu-satunya jalan menuju keadaan yang paling mahal di layar
+         ini: perangkat TERDAFTAR yang daftar antreannya tidak dapat dibaca.
+         Di sanalah `ringkasan` jatuh ke 0/0 dan badge dapat berbunyi
+         "Tersinkron" untuk antrean yang tidak diketahui siapa pun. */
+      if (skenario === 'error' && tabel !== 'device_config') {
         throw new Error('database lokal tidak dapat dibaca (galeri: skenario error)');
       }
-      const tabel = tabelDari(sql);
       if (tabel === 'item_image') {
         gambar ??= gambarUntuk(skenario, item);
         return (await gambar) as T[];
