@@ -17,6 +17,7 @@ import {
   type KonfigPerangkat,
 } from '../../../../packages/sync-client/src/perangkat.ts';
 import { pantauJangkauan, type KeadaanJangkauan } from '../lokal/keterjangkauan.ts';
+import { PortalAksi } from '../komponen/PortalAksi.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { sinkronisasiSekarang, useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useAntrean } from '../konteks/useAntrean.ts';
@@ -303,7 +304,7 @@ export function StatusSinkronisasi() {
   const halamanTerakhir = Math.max(0, Math.ceil(gagal.total / PER_HALAMAN) - 1);
 
   return (
-    <div className="stack" style={{ gap: 'var(--space-4)', padding: 'var(--space-4)' }}>
+    <div className="kasir-sync">
       <div className="row" style={{ gap: 'var(--space-3)' }}>
         <span className="t-title">Status Sinkronisasi</span>
         {/* ⛔ EMPAT keadaan, dan sebelumnya hanya tiga cabang yang ditulis:
@@ -323,28 +324,56 @@ export function StatusSinkronisasi() {
         {' '}Angka ini untuk transaksi yang naik; katalog yang turun punya jadwalnya sendiri.
       </p>
 
-      <Card>
-        <div className="row between">
-          <span className="t-body-md">Menunggu terkirim</span>
-          <span className="t-title num">{ringkasan.menunggu}</span>
-        </div>
-        <div className="t-caption">Tertua: {umurRelatif(ringkasan.tertuaPada, sekarang)}</div>
-      </Card>
+      {/* ⛔ BERDAMPINGAN, bukan bertumpuk, dan itu diukur bukan dipilih.
 
-      <Card>
-        <div className="row between">
-          <span className="t-body-md">Gagal terkirim</span>
-          <span className="t-title num">{ringkasan.gagal}</span>
-        </div>
-        <div className="t-caption">
-          Item gagal tidak dihapus. Ia menunggu diperiksa, bukan menghilang.
-        </div>
-      </Card>
+          Dua kartu bertumpuk memakan 168 px dari tinggi yang tersedia untuk
+          tabel. Setelah wilayah gulir tabel lahir, ruang yang tersisa untuknya
+          tinggal 39 px di panggung galeri — kurang dari satu baris, jadi
+          "wilayah yang menggulir" itu benar secara struktur dan tidak berguna
+          bagi siapa pun. Berdampingan mengembalikan 92 px kepadanya.
 
-      {/* Satu aksi utama per layar. Nonaktif hanya bila perangkat belum
-          dihubungkan -- dan yang dinonaktifkan disertai ALASANNYA beserta
-          jalan keluarnya, bukan tombol mati tanpa keterangan. */}
-      <div className="row" style={{ gap: 'var(--space-3)' }}>
+          Bentuknya bukan desain baru: satu baris kartu angka adalah pola yang
+          sama dengan deretan `StatCard` di dasbor B-01. Ukuran angkanya TIDAK
+          berubah — `t-title` 20px, dan `--t-metric` tetap dilarang di layar
+          kasir (§ Skala teks final). */}
+      <div className="row kasir-sync-angka" style={{ gap: 'var(--space-4)', alignItems: 'stretch' }}>
+        <Card>
+          <div className="row between">
+            <span className="t-body-md">Menunggu terkirim</span>
+            <span className="t-title num">{ringkasan.menunggu}</span>
+          </div>
+          <div className="t-caption">Tertua: {umurRelatif(ringkasan.tertuaPada, sekarang)}</div>
+        </Card>
+
+        <Card>
+          <div className="row between">
+            <span className="t-body-md">Gagal terkirim</span>
+            <span className="t-title num">{ringkasan.gagal}</span>
+          </div>
+          <div className="t-caption">
+            Item gagal tidak dihapus. Ia menunggu diperiksa, bukan menghilang.
+          </div>
+        </Card>
+      </div>
+
+      {/* ⛔ DUA aksi pindah ke slot bilah nav, 21 September 2026, dan yang
+          memutuskan mana yang ikut adalah GULIR — bukan kerapian.
+
+          Tabel item gagal memuat sampai 50 baris (`PER_HALAMAN`), dan sebelum
+          ini seluruh layar yang menggulir: diukur, "Coba kirim sekarang"
+          terdorong 3.272 px ke atas begitu kasir menggulir untuk membaca
+          tabelnya. `spec-h:256` menyebut ekspor darurat jaring pengaman yang
+          "selalu tersedia", dan jaring pengaman yang menuntut gulir tiga ribu
+          piksel bukan "selalu tersedia" dalam arti apa pun. Keduanya karena itu
+          ikut; keduanya juga yang ditekan saat ada masalah.
+
+          ⛔ Yang TIDAK ikut ada alasannya, dan alasannya lebar: slot menyisakan
+          734 px setelah lima tab, dan keempat tombol berjumlah ~747 px — ia
+          MEMBUNGKUS, dan bilah yang membungkus memakan isi layar. Dua yang
+          tinggal adalah yang paling jarang ditekan kasir: ekspor pemulihan
+          dibaca petugas dukungan, dan "Muat ulang angka" diagnostik yang
+          tempatnya memang di bawah bersama baris skema lokal. */}
+      <PortalAksi>
         <Tombol
           varian="primary"
           disabled={!siapKirim || mengirim}
@@ -356,6 +385,9 @@ export function StatusSinkronisasi() {
         <Tombol varian="secondary" onClick={ekspor}>
           Ekspor darurat
         </Tombol>
+      </PortalAksi>
+
+      <div className="row" style={{ gap: 'var(--space-3)' }}>
         {/* ⛔ DUA ekspor, bukan satu yang serba bisa. Yang pertama dibaca
             manusia (`spec-h:263`); yang kedua dibaca mesin dan dapat dikirim
             ulang. Satu berkas yang mencoba keduanya akan buruk di keduanya. */}
@@ -380,8 +412,20 @@ export function StatusSinkronisasi() {
         </div>
       </Card>
 
-      <div className="stack" style={{ gap: 'var(--space-2)' }}>
+      {/* ⛔ Bagian inilah yang MENGGULIR, dan hanya bagian ini.
+
+          Sebelum 21 September 2026 yang menggulir `.kasir-konten` — pembungkus
+          milik shell yang melayani enam layar — jadi tabel 50 baris
+          menggulirkan SELURUH K-14. Terukur: "Coba kirim sekarang" dan kartu
+          Penyimpanan bergeser 3.272 px ke atas begitu kasir menggulir untuk
+          membaca tabelnya.
+
+          Bentuknya disalin dari `.kasir-baris-daftar` di keranjang K-03,
+          termasuk penanda batas gulungnya: label "Detail item gagal" dan
+          paginasi tinggal di luar penggulir, dan hanya tabelnya yang bergerak. */}
+      <div className="kasir-sync-bagian">
         <span className="t-body-md">Detail item gagal</span>
+        <div className="kasir-sync-daftar">
         <Table
           columns={kolom}
           rows={gagal.baris}
@@ -407,6 +451,7 @@ export function StatusSinkronisasi() {
             )
           }
         />
+        </div>
         {gagal.total > PER_HALAMAN && (
           <div className="row" style={{ gap: 'var(--space-3)' }}>
             <Tombol varian="secondary" disabled={halaman === 0} onClick={() => setHalaman((h) => h - 1)}>

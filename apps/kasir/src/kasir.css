@@ -1057,3 +1057,94 @@
   color: var(--accent);
   font-weight: var(--weight-medium);
 }
+
+/* --- K-14 Status Sinkronisasi ---------------------------------------------
+ *
+ * ⛔ K-14 MENGISI tinggi induknya alih-alih tumbuh mengikuti isinya, dan itu
+ * syarat yang tidak dapat dilewati.
+ *
+ * `.kasir-konten` sudah `overflow: auto`, jadi selama K-14 tumbuh mengikuti
+ * isinya, PEMBUNGKUS MILIK SHELL yang menggulir — dan ia menggulirkan seluruh
+ * layar, termasuk blok aksi dan kartu penyimpanan yang berdiri di atas tabel.
+ * Terukur sebelum perbaikan: keduanya bergeser 3.272 px ke atas begitu tabel
+ * 50 baris digulirkan sampai mentok.
+ *
+ * ⛔ Perilaku `.kasir-konten` TIDAK diubah, dan itu disengaja: ia melayani
+ * enam layar, dan lima lainnya memang benar menggulir seluruh isinya. Yang
+ * berubah hanya anaknya yang satu ini. `flex: 1` + `min-height: 0` membuat
+ * `scrollHeight` `.kasir-konten` tidak pernah melampaui `clientHeight`-nya,
+ * jadi ia berhenti menggulir DI K-14 SAJA — tanpa satu pun `if` dan tanpa
+ * menyentuh kelas yang dibagi.
+ */
+.kasir-sync {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+/*
+ * ⛔ Margin bawaan PERAMBAN, dan ketiadaan reset-nya adalah kecelakaan yang
+ * baru terlihat saat tinggi K-14 dibatasi.
+ *
+ * `ds-bundle/base.css` me-reset margin `body` dan tidak me-reset `p`, jadi
+ * setiap paragraf membawa `margin: 1em 0` bawaan UA — 30 px per paragraf, 90 px
+ * untuk ketiganya. Selama seluruh layar menggulir, 90 px itu tidak terlihat
+ * oleh siapa pun. Begitu tingginya dibatasi, ia memakan ruang yang seharusnya
+ * jadi milik tabel, dan jaraknya sendiri sudah ditetapkan `gap` — jadi yang
+ * hilang hanya jarak yang tidak pernah diminta siapa pun.
+ */
+.kasir-sync > p {
+  margin: 0;
+}
+
+/* Dua kartu angka berdampingan berbagi lebar sama rata. */
+.kasir-sync-angka > .card {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Bagian "Detail item gagal": label dan paginasi DIAM, tabelnya bergerak. */
+.kasir-sync-bagian {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-2);
+}
+
+/*
+ * ⛔ `min-height: 0` di SINI tidak menahan beban apa pun, dan itu diukur —
+ * bukan disimpulkan dari bentuk yang mirip.
+ *
+ * Melepasnya dari blok ini membuat ketiga penjaga tata letak tetap HIJAU.
+ * Sebabnya spesifikasi flexbox: ukuran minimum otomatis (`min-height: auto`)
+ * hanya berlaku bila `overflow` bernilai `visible`, dan blok ini `overflow-y:
+ * auto` — minimumnya sudah nol dengan sendirinya.
+ *
+ * Yang benar-benar menahan beban adalah `min-height: 0` pada `.kasir-sync` dan
+ * `.kasir-sync-bagian`, yang keduanya `overflow: visible`. Melepasnya dari
+ * `.kasir-sync-bagian` membuat blok aksi bergeser 3.290 px — terbukti lewat
+ * sabotase. Deklarasi di bawah dipertahankan agar bentuknya sejajar dengan
+ * `.kasir-baris-daftar` di K-03; komentar ini ada supaya orang berikutnya tidak
+ * mengira ia yang bekerja lalu menghapus yang benar.
+ *
+ * Penanda batas gulungnya DISALIN dari `.kasir-baris-daftar` apa adanya —
+ * `background-attachment: local` untuk dua lapis yang ikut bergulir, `scroll`
+ * untuk dua lapis yang diam — sehingga ia SADAR OVERFLOW dengan sendirinya:
+ * daftar tiga baris yang tidak dapat digulir tidak menampilkan apa pun. Nol
+ * warna baru; `--surface` dan `--border` sudah ada di palet.
+ */
+.kasir-sync-daftar {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+
+  background:
+    linear-gradient(var(--surface) 30%, transparent) top / 100% var(--space-4) no-repeat local,
+    linear-gradient(transparent, var(--surface) 70%) bottom / 100% var(--space-4) no-repeat local,
+    linear-gradient(var(--border), transparent) top / 100% var(--space-2) no-repeat scroll,
+    linear-gradient(transparent, var(--border)) bottom / 100% var(--space-2) no-repeat scroll;
+}
