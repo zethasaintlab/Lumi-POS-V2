@@ -12,7 +12,11 @@ import {
   type HalamanGagal,
 } from '../../../../packages/sync-client/src/status.ts';
 import type { BarisOutbox } from '../../../../packages/sync-client/src/ports.ts';
-import { bacaKonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
+import {
+  bacaKonfigPerangkat,
+  type KonfigPerangkat,
+} from '../../../../packages/sync-client/src/perangkat.ts';
+import { pantauJangkauan, type KeadaanJangkauan } from '../lokal/keterjangkauan.ts';
 import { Tombol } from '../Tombol.tsx';
 import { sinkronisasiSekarang, useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useAntrean } from '../konteks/useAntrean.ts';
@@ -30,6 +34,68 @@ import { useAntrean } from '../konteks/useAntrean.ts';
 
 const KOSONG: HalamanGagal = { baris: [], total: 0 };
 
+/**
+ * Label badge, satu per keadaan.
+ *
+ * ⛔ `tak-terbaca` BUKAN keadaan `keadaanIndikator`, dan itu disengaja: ia
+ * keadaan yang hanya layar ini ketahui. Saat `daftarGagal` menolak, `ringkasan`
+ * tetap 0/0 dan `keadaanIndikator` menjawab `ok` — jadi badge berbunyi
+ * "Tersinkron" tepat di atas `EmptyState` yang berbunyi "Ini BUKAN berarti
+ * semuanya terkirim". Satu layar, dua kalimat yang saling membantah, dan
+ * kalimat yang dibaca lebih dulu adalah yang di atas.
+ *
+ * Ditemukan saat K-14 pertama kali dirender, 21 September 2026 — bukan dari
+ * membaca kode.
+ */
+const LABEL_BADGE = {
+  ok: 'Tersinkron',
+  failed: 'Ada yang gagal',
+  queued: 'Mengantre',
+  'offline-only': 'Butuh koneksi',
+  'tak-terbaca': 'Antrean belum dapat dibaca',
+} as const;
+
+/**
+ * Kenapa "Coba kirim sekarang" tidak dapat dijalankan — kalimat per sebab.
+ *
+ * ⛔ TIGA sebab, bukan satu. Sampai 21 September 2026 layar ini punya satu
+ * kalimat untuk semuanya: *"perangkat ini belum dihubungkan ke server.
+ * Hubungkan lewat menu Perangkat."* Ia diturunkan dari `sinkronisasiSekarang()
+ * !== null` — penjadwal relay hidup atau tidak — dan itu **bukan**
+ * keterjangkauan. Konsekuensinya: perangkat yang SUDAH terdaftar dan hanya
+ * kehilangan uplink dikirim ke menu Perangkat, tempat tidak ada satu pun hal
+ * yang dapat ia perbaiki, sementara antreannya sebenarnya baik-baik saja dan
+ * akan terkirim sendiri.
+ *
+ * Kalimat yang menyuruh orang memperbaiki hal yang tidak rusak jauh lebih
+ * mahal daripada kalimat yang tidak ada: ia menghabiskan waktu kasir di jam
+ * ramai, dan ia menghapus kepercayaan pada kalimat berikutnya.
+ */
+function ALASAN_TAK_SIAP(terdaftar: boolean, jangkauan: KeadaanJangkauan): string {
+  if (!terdaftar) {
+    return (
+      'Pengiriman ulang belum dapat dijalankan: perangkat ini belum terdaftar. ' +
+      'Daftarkan lewat menu Perangkat. Ekspor darurat tetap berfungsi tanpa koneksi.'
+    );
+  }
+  if (jangkauan === 'memeriksa') {
+    return 'Memeriksa apakah server dapat dijangkau dari perangkat ini…';
+  }
+  return (
+    'Server tidak dapat dijangkau dari perangkat ini sekarang. Antreannya akan ' +
+    'terkirim sendiri begitu koneksi kembali — tidak ada yang hilang, dan tidak ada ' +
+    'yang perlu diatur ulang. Ekspor darurat tetap berfungsi tanpa koneksi.'
+  );
+}
+
+const NADA_BADGE = {
+  ok: 'success',
+  failed: 'danger',
+  queued: 'warning',
+  'offline-only': 'warning',
+  'tak-terbaca': 'warning',
+} as const;
+
 interface Penyimpanan {
   dipakai: number | null;
   kuota: number | null;
@@ -45,6 +111,8 @@ export function StatusSinkronisasi() {
   const [terhubung, setTerhubung] = useState(false);
   const [mengirim, setMengirim] = useState(false);
   const [gagalMuat, setGagalMuat] = useState<string | null>(null);
+  const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
+  const [jangkauan, setJangkauan] = useState<KeadaanJangkauan>('memeriksa');
 
   useEffect(() => {
     let hidup = true;
@@ -54,6 +122,56 @@ export function StatusSinkronisasi() {
     };
   }, []);
 
+  /* ⛔ Identitas perangkat dibaca di layar ini SENDIRI, dengan aturan yang
+     sama persis dengan `useIdentitasPerangkat` di `App.tsx`: ada `device_config`
+     berarti terdaftar, dan kegagalan baca diperlakukan sebagai BELUM terdaftar.
+
+     Ia tidak dapat dioper sebagai prop — layar adalah anak `ShellKasir`, bukan
+     saudaranya. Yang penting bukan dari mana nilainya datang melainkan bahwa
+     kedua tempat menurunkannya dari SATU sumber: baris `device_config`. */
+  useEffect(() => {
+    let hidup = true;
+    bacaKonfigPerangkat(db).then(
+      (k) => hidup && setKonfig(k),
+      () => hidup && setKonfig(null)
+    );
+    return () => {
+      hidup = false;
+    };
+  }, [db]);
+
+  const terdaftar = konfig !== null;
+
+  /* ⛔ FR-C3 — keterjangkauan server, lewat modul yang SUDAH ADA.
+     `apps/kasir/src/lokal/keterjangkauan.ts` menjawab pertanyaan ini untuk
+     K-06 sejak 24 Agustus 2026; pemeriksa kedua di layar ini akan menyimpang
+     darinya, dan dua jawaban untuk "apakah server dapat dijangkau" adalah
+     tepat yang membuat satu layar menawarkan aksi yang layar lain tahu gagal.
+
+     `memeriksa` DIPERLAKUKAN SEBAGAI TIDAK TERJANGKAU sampai terbukti
+     sebaliknya — arah yang sama dengan K-06. Aksi yang ditawarkan selama
+     jawabannya belum ada adalah aksi yang gagal di depan kasir. */
+  useEffect(() => {
+    if (!konfig) return;
+    const pemantau = pantauJangkauan({
+      baseUrl: konfig.baseUrl,
+      pasangPendengar: (nama, fn) => {
+        window.addEventListener(nama, fn);
+        return () => window.removeEventListener(nama, fn);
+      },
+    });
+    setJangkauan(pemantau.keadaan());
+    const lepas = pemantau.langgan(setJangkauan);
+    return () => {
+      lepas();
+      pemantau.hentikan();
+    };
+  }, [konfig]);
+
+  /* Tiga syarat, dan ketiganya harus benar sebelum aksi ini jujur: perangkat
+     terdaftar, penjadwal relay hidup, dan server benar-benar terjangkau. */
+  const siapKirim = terdaftar && terhubung && jangkauan === 'terjangkau';
+
   // `spec-h:261`: "Tombol coba lagi memicu pengiriman ulang segera."
   // Ia memicu penjadwal yang SAMA yang berjalan di latar -- bukan putaran
   // kedua yang berdiri sendiri, karena dua putaran bersamaan mengirim item
@@ -62,7 +180,12 @@ export function StatusSinkronisasi() {
     setMengirim(true);
     try {
       const s = await sinkronisasiSekarang();
-      if (!s) return;
+      /* ⛔ Kembali DIAM-DIAM adalah bentuk cacat tersendiri: kasir menekan
+         tombol, tidak ada yang berubah, dan tidak ada yang menjelaskan kenapa. */
+      if (!s) {
+        setPesan('Pengiriman tidak dapat dijalankan: sinkronisasi belum aktif di perangkat ini.');
+        return;
+      }
       await s.penjadwal.picu('manual');
       setPesan('Pengiriman dijalankan.');
     } finally {
@@ -70,8 +193,21 @@ export function StatusSinkronisasi() {
     }
   }, []);
 
-  const indikator = keadaanIndikator(ringkasan);
+  /* ⛔ `perangkatTerdaftar` diteruskan, sama seperti `ShellKasir` melakukannya.
+     Tanpanya `keadaanIndikator` memakai bawaan "dianggap terdaftar", dan
+     perangkat yang belum didaftarkan mendapat state `ok` → badge "Tersinkron"
+     pada antrean yang kosong karena tidak pernah ada yang MASUK ke sana.
+     `status.ts:81` menulis kelas cacat itu panjang lebar dan menyebut layar ini
+     dengan namanya sebagai pemanggil yang belum disesuaikan. */
+  const indikator = keadaanIndikator(ringkasan, { perangkatTerdaftar: terdaftar });
   const sekarang = Date.now();
+
+  /* ⛔ Kegagalan baca MENANG atas apa pun yang `keadaanIndikator` simpulkan.
+     Urutannya bukan selera: angka yang dipakainya adalah 0/0 yang berasal dari
+     pembacaan yang menolak, dan nol yang tidak diketahui tidak boleh dilaporkan
+     sebagai nol yang sehat. Arah yang sama dengan `failed` menang atas
+     `queued` di `status.ts`. */
+  const keadaanBadge = gagalMuat ? 'tak-terbaca' : indikator.state;
 
   useEffect(() => {
     let hidup = true;
@@ -170,9 +306,16 @@ export function StatusSinkronisasi() {
     <div className="stack" style={{ gap: 'var(--space-4)', padding: 'var(--space-4)' }}>
       <div className="row" style={{ gap: 'var(--space-3)' }}>
         <span className="t-title">Status Sinkronisasi</span>
-        <Badge tone={indikator.state === 'ok' ? 'success' : indikator.state === 'failed' ? 'danger' : 'warning'}>
-          {indikator.state === 'ok' ? 'Tersinkron' : indikator.state === 'failed' ? 'Ada yang gagal' : 'Mengantre'}
-        </Badge>
+        {/* ⛔ EMPAT keadaan, dan sebelumnya hanya tiga cabang yang ditulis:
+            `offline-only` jatuh ke "Mengantre", yang menyatakan ada yang
+            menunggu dikirim pada perangkat yang antreannya justru kosong.
+
+            "Butuh koneksi" bukan kata yang dikarang di sini — ia teks yang
+            `SyncIndicator` bundle render untuk `offline-only` tanpa `reason`,
+            dan itu persis yang topbar tampilkan. Dua badge untuk satu keadaan
+            harus berbunyi sama; yang berbeda kalimat membuat kasir memutuskan
+            mana yang ia percaya. */}
+        <Badge tone={NADA_BADGE[keadaanBadge]}>{LABEL_BADGE[keadaanBadge]}</Badge>
       </div>
 
       <p className="t-body">
@@ -204,8 +347,8 @@ export function StatusSinkronisasi() {
       <div className="row" style={{ gap: 'var(--space-3)' }}>
         <Tombol
           varian="primary"
-          disabled={!terhubung || mengirim}
-          title={terhubung ? undefined : 'Perangkat belum dihubungkan'}
+          disabled={!siapKirim || mengirim}
+          title={siapKirim ? undefined : ALASAN_TAK_SIAP(terdaftar, jangkauan)}
           onClick={cobaKirim}
         >
           {mengirim ? 'Mengirim…' : 'Coba kirim sekarang'}
@@ -220,13 +363,7 @@ export function StatusSinkronisasi() {
           Ekspor pemulihan (JSON)
         </Tombol>
       </div>
-      {!terhubung && (
-        <p className="t-caption">
-          Pengiriman ulang belum dapat dijalankan: perangkat ini belum dihubungkan ke
-          server. Hubungkan lewat menu Perangkat. Ekspor darurat tetap berfungsi tanpa
-          koneksi.
-        </p>
-      )}
+      {!siapKirim && <p className="t-caption">{ALASAN_TAK_SIAP(terdaftar, jangkauan)}</p>}
 
       {pesan && <p className="t-caption">{pesan}</p>}
 
