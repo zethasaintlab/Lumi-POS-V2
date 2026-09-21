@@ -167,6 +167,37 @@ async function bukaK14(keadaan) {
   return hasil;
 }
 
+/**
+ * Membaca indikator topbar pada layar APA PUN.
+ *
+ * ⛔ Terpisah dari `bukaK14`, dan pemisahannya yang jadi intinya: topbar
+ * dirender `ShellKasir`, yang membungkus SETIAP layar kasir. Kebutaannya
+ * karena itu terlihat di setiap layar setiap saat, sementara kesalahan K-14
+ * hanya terlihat saat layar itu dibuka. Penjaga yang hanya mengukurnya lewat
+ * K-14 akan terbaca seolah cacatnya milik K-14.
+ */
+async function bukaTopbar(layarId, keadaan) {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  const galat = [];
+  hal.on('pageerror', (e) => galat.push(e.message));
+  hal.on('console', (m) => {
+    if (m.type() === 'error' && /Failed to load resource/.test(m.text())) return;
+    if (m.type() === 'error') galat.push(m.text());
+  });
+  await hal.goto(`${alamat}/harness-galeri.html?layar=${layarId}&keadaan=${keadaan}`, {
+    waitUntil: 'load',
+  });
+  await hal.waitForSelector('.kasir-indikator', { timeout: 10_000 });
+  await hal.waitForTimeout(1200);
+  const teks = await hal.evaluate(() => {
+    const e = document.querySelector('.kasir-indikator');
+    return e ? e.innerText.trim().replace(/\s+/g, ' ') : null;
+  });
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol saat memuat ${layarId}/${keadaan}: ${galat.join(' | ')}`);
+  return teks;
+}
+
 // ---------------------------------------------------------------------------
 
 test('⛔ jangkar: K-14 benar-benar dirender, dan angkanya cocok dengan tabelnya', async () => {
@@ -236,33 +267,68 @@ test('⛔ (a) perangkat TERDAFTAR yang servernya tak terjangkau tidak boleh disu
 });
 
 test('⛔ (b) badge K-14 dan indikator topbar tidak boleh saling membantah', async () => {
-  /* ⛔ `kosong` saja, dan pembatasan itu punya alasan yang harus ditulis:
-     kesetaraan hanya sah di tempat KEDUA sisi punya informasi yang sama.
+  /* ⛔ DUA fixture, dan yang kedua ditambahkan 21 September 2026.
 
-     Pada `error`, K-14 tahu lebih banyak daripada shell — ia melihat
-     `daftarGagal` menolak, sementara `useAntrean` menelan kegagalannya dan
-     menyerahkan 0/0 ke topbar. Menuntut kedua badge berbunyi sama di sana
-     berarti memaksa K-14 MELUPAKAN yang ia ketahui, dan arah itu persis yang
-     penjaga ARAH di bawah larang. Kebutaan `useAntrean` adalah cacat
-     tersendiri, di berkas yang tidak disentuh task ini. */
-  const r = await bukaK14('kosong');
+     Semula `kosong` saja, dengan alasan yang ditulis di sini: kesetaraan hanya
+     sah di tempat kedua sisi punya informasi yang sama, dan pada `error` K-14
+     tahu lebih banyak daripada shell — ia melihat `daftarGagal` menolak,
+     sementara `useAntrean` menelan kegagalannya. Menuntut kesetaraan di sana
+     akan memaksa K-14 MELUPAKAN yang ia ketahui.
 
-  assert.ok(
-    /Perangkat belum terdaftar/.test(r.merek ?? ''),
-    'fixture `kosong` seharusnya perangkat BELUM terdaftar; topbar berkata sebaliknya.'
-  );
+     Alasan itu gugur begitu shell berhenti buta: kini `useAntrean` meneruskan
+     kegagalan bacanya, jadi kedua sisi tahu hal yang sama dan tidak ada yang
+     perlu dilupakan. Kesetaraan dituntut di keduanya.
 
-  assert.equal(
-    r.badge,
-    r.topbar,
-    `badge K-14 berbunyi "${r.badge}" sementara indikator topbar berbunyi "${r.topbar}", ` +
-      'untuk perangkat dan antrean yang sama persis.\n' +
-      '  Shell memanggil `keadaanIndikator(ringkasan, { perangkatTerdaftar })`; K-14 ' +
-      'memanggilnya TANPA opsi itu. Pada perangkat yang belum terdaftar antreannya ' +
-      'kosong karena tidak pernah ada yang MASUK — bukan karena semuanya terkirim.\n' +
-      '  `packages/sync-client/src/status.ts:81` menulis kelas cacat ini panjang lebar ' +
-      'dan menyebut K-14 dengan namanya sebagai pemanggil yang belum disesuaikan.'
-  );
+     ⛔ Kedua kalimat datang dari DUA pembacaan yang berbeda — `ringkasanAntrean`
+     di shell, `daftarGagal` di K-14 — di dua berkas yang tidak berbagi satu
+     konstanta pun. Yang membuat keduanya sepakat adalah keadaan sebenarnya,
+     bukan satu sumber yang kebetulan dibaca dua kali. */
+  for (const keadaan of ['kosong', 'error']) {
+    const r = await bukaK14(keadaan);
+
+    if (keadaan === 'kosong') {
+      assert.ok(
+        /Perangkat belum terdaftar/.test(r.merek ?? ''),
+        'fixture `kosong` seharusnya perangkat BELUM terdaftar; topbar berkata sebaliknya.'
+      );
+    }
+
+    assert.equal(
+      r.badge,
+      r.topbar,
+      `pada skenario \`${keadaan}\`: badge K-14 berbunyi "${r.badge}" sementara ` +
+        `indikator topbar berbunyi "${r.topbar}", untuk perangkat dan antrean yang sama persis.\n` +
+        '  Dua sebab yang pernah menghasilkan ini: shell memanggil ' +
+        '`keadaanIndikator(ringkasan, { perangkatTerdaftar })` sementara K-14 tidak, ' +
+        'dan `useAntrean` menelan kegagalan bacanya lalu menyerahkan 0/0.\n' +
+        '  `packages/sync-client/src/status.ts:81` menulis kelas cacat ini panjang lebar.'
+    );
+  }
+});
+
+test('⛔ (d) topbar tidak boleh berbunyi "Tersinkron" saat antreannya tidak dapat dibaca', async () => {
+  /* ⛔ Lebih serius daripada keempat cacat K-14, dan sebabnya bukan kode
+     melainkan JANGKAUAN: topbar dirender `ShellKasir` di setiap layar, jadi
+     ia terlihat sepanjang shift. K-14 hanya terlihat saat dibuka, dan kasir
+     membukanya justru ketika ia sudah curiga.
+
+     `useAntrean` menelan kegagalan `ringkasanAntrean` — komentarnya sendiri
+     berbunyi *"yang TIDAK boleh adalah angka yang dikarang jadi nol -- itu
+     berbunyi 'semua sudah terkirim'"* — lalu meninggalkan state awalnya,
+     `RINGKASAN_KOSONG`, yang PERSIS angka nol itu. Niatnya benar dan nilai
+     awalnya membatalkannya.
+
+     Diukur di DUA layar, bukan satu: cacatnya milik shell, dan penjaga yang
+     hanya membuka K-14 akan terbaca seolah ia milik K-14. */
+  for (const layarId of ['K-03', 'K-14']) {
+    const teks = await bukaTopbar(layarId, 'error');
+    assert.ok(
+      !/Tersinkron/.test(teks ?? ''),
+      `topbar pada ${layarId}/error berbunyi "${teks}" padahal pembacaan antrean MENOLAK. ` +
+        'Nol yang dikarang tidak dapat dibedakan dari nol yang sehat, dan yang ini ' +
+        'terlihat di setiap layar sepanjang shift.'
+    );
+  }
 });
 
 test('⛔ (c) keadaan `offline-only` punya labelnya sendiri, bukan "Tersinkron" maupun "Mengantre"', async () => {

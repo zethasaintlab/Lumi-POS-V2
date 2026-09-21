@@ -47,7 +47,26 @@ interface Props {
 
 export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteAktif, children }: Props) {
   const nav = ruteNav();
-  const { ringkasan, siap } = useAntrean();
+  const { ringkasan, siap, antreanTerbaca } = useAntrean();
+
+  /* ⛔ `siap` saja TIDAK cukup, dan selisih antara keduanya adalah cacat yang
+     hidup di sini sampai 21 September 2026.
+
+     `siap` berarti database lokal TERBUKA. Ia tidak berarti antreannya pernah
+     terbaca: `ringkasanAntrean` dapat menolak pada database yang terbuka
+     sempurna (OPFS penuh, skema lokal belum bermigrasi), dan `useAntrean`
+     menelan penolakan itu lalu menyerahkan `RINGKASAN_KOSONG`. Indikator
+     karena itu berbunyi "Tersinkron" -- klaim tentang angka yang tidak pernah
+     ada -- di SETIAP layar, sepanjang shift.
+
+     `antreanTerbaca` bernilai `false` sampai pembacaan PERTAMA berhasil, bukan
+     hanya saat pembacaan menolak: yang ditampilkan sebelum itu juga nol, dan
+     nol yang belum diukur tidak lebih benar daripada nol yang gagal diukur.
+
+     Komentar di bawah sudah menuliskan aturannya sejak awal -- "'Tersinkron'
+     saat kita belum bisa membaca antrean adalah klaim yang tidak diketahui
+     siapa pun benar"; yang kurang hanyalah cara shell MENGETAHUINYA. */
+  const angkaDapatDipercaya = siap && antreanTerbaca;
   const indikator = keadaanIndikator(ringkasan, { perangkatTerdaftar });
 
   return (
@@ -108,7 +127,7 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             }
           }}
         >
-          {siap ? (
+          {angkaDapatDipercaya ? (
             <SyncIndicator
               state={indikator.state}
               count={indikator.count}
@@ -188,7 +207,11 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
       {/* FR-H8. DI LUAR `kasir-konten`, jadi ia mendorong isi alih-alih
           melayang di atasnya — "banner, bukan dialog" (AC FR-H8 kedua) juga
           berarti tidak menutupi tombol yang sedang dituju jari kasir. */}
-      <PitaAntrean tertuaPada={siap ? ringkasan.tertuaPada : null} />
+      {/* ⛔ Pita FR-H8 memakai syarat yang SAMA dengan indikator. `tertuaPada`
+          yang berasal dari pembacaan yang menolak adalah `null`, dan `null`
+          berarti "tidak ada yang tertunggak" — pita itu karena itu akan DIAM
+          justru pada perangkat yang antreannya tidak dapat diperiksa. */}
+      <PitaAntrean tertuaPada={angkaDapatDipercaya ? ringkasan.tertuaPada : null} />
 
       <div className="kasir-konten">
         {children}
