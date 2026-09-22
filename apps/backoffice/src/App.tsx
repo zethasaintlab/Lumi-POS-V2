@@ -264,8 +264,21 @@ function Terlindungi() {
 
             ⛔ Tidak dijaga peran: setiap orang di merchant berhak tahu bahwa
             pihak kami sedang punya akses ke datanya. */}
+          {/* ⛔ `card-pad`, dan ia BUKAN perubahan tampilan yang berdiri
+            sendiri — ia jarak pengganti untuk reset `p { margin: 0 }`.
+            Terukur: dari kedelapan paragraf back-office, HANYA yang ini
+            tidak berada di container ber-`gap`, dan `.card` sendiri tidak
+            membawa padding sama sekali (padding ada di `.card-pad`). Tanpa
+            padding, jarak paragraf ini ke garis kartu jatuh dari 16 px
+            menjadi 1 px — teksnya menempel di border.
+
+            ⛔ Kelas bundle, bukan style buatan sendiri: `ds-bundle`
+            mengirim `.card-pad` persis untuk ini. Ia sekaligus menutup cacat
+            yang sudah ada sejak banner ini lahir — margin bawaan peramban
+            hanya vertikal, jadi teksnya SELALU menempel di kiri dan kanan.
+            Sesudahnya 17 px di keempat sisi. */}
         {pesanSupport && (
-          <div className="card" role="status">
+          <div className="card card-pad" role="status">
             <p className="t-body-md">
               <strong>Akses support sedang aktif.</strong> {pesanSupport}
             </p>

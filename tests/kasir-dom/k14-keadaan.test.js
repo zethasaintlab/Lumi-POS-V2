@@ -70,7 +70,7 @@ let peramban;
 
 before(async () => {
   /* ⛔ MENEGASKAN, bukan membangun — pola yang sama dengan `k06-penjaga.test.js`.
-     Tiga berkas di direktori ini memakai `dist-galeri` dan `node --test`
+     Empat berkas di direktori ini memakai `dist-galeri` dan `node --test`
      menjalankannya PARALEL; berkas yang membangun sendiri saling menghapus
      `outDir` (`emptyOutDir: true`), dan yang muncul adalah halaman kosong tanpa
      satu pun error. Alasan lengkapnya di kepala `k03-chrome.test.js`. */

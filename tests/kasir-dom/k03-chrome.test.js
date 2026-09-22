@@ -39,10 +39,10 @@
 // sejajar `build:harness-k06`.
 //
 // ⛔ Berkas ini MENEGASKAN build itu ada; ia tidak membangunnya sendiri, dan
-// itu bukan selera. Tiga berkas di direktori ini memakai `dist-galeri`, dan
+// itu bukan selera. Empat berkas di direktori ini memakai `dist-galeri`, dan
 // `node --test` menjalankan berkas secara PARALEL. Versi sebelumnya memakai
-// `existsSync` lalu `build:galeri`: ketiganya memeriksa sebelum build pertama
-// selesai, jadi ketiganya membangun — ke `outDir` yang sama, dengan
+// `existsSync` lalu `build:galeri`: keempatnya memeriksa sebelum build pertama
+// selesai, jadi keempatnya membangun — ke `outDir` yang sama, dengan
 // `emptyOutDir: true`. Build kedua MENGHAPUS `dist-galeri/` selagi server
 // statis berkas pertama melayaninya, chunk JS dijawab 404, halaman tidak
 // pernah mount, dan gejalanya `waitForSelector` yang timeout 10 detik pada
@@ -97,7 +97,7 @@ let peramban;
 
 before(async () => {
   /* ⛔ MENEGASKAN, bukan membangun — pola yang sama dengan `k06-penjaga.test.js`.
-     Tiga berkas di direktori ini memakai `dist-galeri` dan `node --test`
+     Empat berkas di direktori ini memakai `dist-galeri` dan `node --test`
      menjalankannya PARALEL; berkas yang membangun sendiri saling menghapus
      `outDir` (`emptyOutDir: true`), dan yang muncul adalah halaman kosong tanpa
      satu pun error. Alasan lengkapnya di kepala `k03-chrome.test.js`. */
