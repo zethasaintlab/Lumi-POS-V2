@@ -24,6 +24,7 @@ import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { Bidang } from '../Bidang.tsx';
+import { PortalAksi } from '../komponen/PortalAksi.tsx';
 
 /* K-12 Tutup Kas + K-13 Laporan Shift (IA §2.2).
 
@@ -315,10 +316,30 @@ export function TutupKas() {
           {galat ?? ' '}
         </p>
 
-        <div className="kasir-dialog-aksi">
+        {/* ⛔ Kedua aksi dirender ke SLOT bilah nav, bukan ke badan layar.
+
+            Terukur 21 September 2026 pada 1280×800, review dengan selisih di
+            atas ambang: isi 714 px di ruang 658 px, dan "Tutup Kas" berakhir
+            di 823 px sementara area konten berhenti di 783 px. Aksi uang 40 px
+            di luar layar; pada skenario `offline` pita FR-H8 memakan 61 px
+            lagi, jadi 101 px.
+
+            ⛔ Kasir menutup kas sambil memegang uang, sering berdiri, sering
+            terburu. Tombol yang harus dicari dengan menggulir adalah tombol
+            yang ditekan dua kali atau tidak ditekan sama sekali — dan yang
+            tidak ditekan meninggalkan shift terbuka semalaman.
+
+            Pola yang sama dengan K-03 dan K-14; `IA:430` menamai K-12 sebagai
+            salah satu layar ber-"satu aksi utama", dan aksi utama yang tergulir
+            keluar bukan aksi utama. */}
+        <PortalAksi>
           {/* Hitung ULANG tetap mungkin — tapi tercatat sebagai percobaan
               baru, dan layar mengatakannya. `spec-d`: kasir tidak dapat
-              MENGUBAH hitungan, ia memasukkan hitungan lain. */}
+              MENGUBAH hitungan, ia memasukkan hitungan lain.
+
+              ⛔ `ghost`, dan urutannya di KIRI aksi utama — dua tombol primary
+              berdampingan meniadakan "satu aksi utama per layar", dan yang
+              kritis di sini menutup kas, bukan mengulang hitungan. */}
           <Tombol
             varian="ghost"
             kritis
@@ -342,7 +363,7 @@ export function TutupKas() {
           >
             {sibuk ? 'Menutup…' : 'Tutup Kas'}
           </Tombol>
-        </div>
+        </PortalAksi>
       </div>
     );
   }
