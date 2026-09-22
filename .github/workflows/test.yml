@@ -195,6 +195,27 @@ jobs:
       # Suitenya MENOLAK berjalan tanpa build ini, jadi langkah yang hilang
       # muncul sebagai kegagalan bernama, bukan sebagai nol test yang lewat.
       - run: npm run build:harness-k06
+
+      # ⛔ Galeri dibangun SEKALI, di sini, sejajar `build:harness-k06`.
+      #
+      # Tiga berkas `tests/kasir-dom/*` memakai `dist-galeri`, dan `node --test`
+      # menjalankan berkas secara PARALEL. Sampai 22 September 2026 ketiganya
+      # membangun sendiri bila direktorinya belum ada; ketiganya memeriksa
+      # sebelum build pertama selesai, jadi ketiganya membangun — ke `outDir`
+      # yang sama dengan `emptyOutDir: true`. Build kedua menghapus direktori
+      # yang server statis berkas pertama sedang layani, dan yang muncul adalah
+      # `waitForSelector` timeout pada halaman kosong: nol error, nol
+      # peringatan konsol.
+      #
+      # Berkasnya kini MENEGASKAN direktorinya ada. Langkah yang hilang muncul
+      # sebagai kegagalan bernama, bukan sebagai penjaga yang diam-diam lewat.
+      #
+      # `pretest:kasir-dom` membangunnya juga, jadi langkah ini secara teknis
+      # berlebihan — dan itu disengaja. Keduanya BERURUTAN, jadi tidak ada yang
+      # dapat berbalapan; yang dibeli langkah ini adalah kegagalan build yang
+      # muncul dengan namanya sendiri di ringkasan CI, bukan terkubur di dalam
+      # langkah test.
+      - run: npm run build:galeri
       - run: npm run test:kasir-dom
 
       - run: npm run db:bootstrap
