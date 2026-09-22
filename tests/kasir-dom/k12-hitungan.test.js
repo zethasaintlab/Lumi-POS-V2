@@ -212,22 +212,43 @@ test('⛔ SELISIH NOL dapat dicapai — kontrol kas mengukur laci, bukan layarny
   await hal.getByRole('button', { name: 'Lanjut' }).click();
   await hal.waitForTimeout(1000);
 
-  const baris = await hal.evaluate(() =>
-    [...document.querySelectorAll('.kasir-subtotal')].map((e) =>
-      e.innerText.replace(/\s+/g, ' ').trim()
-    )
-  );
+  /* ⛔ Selisih dibaca dari PANELNYA, bukan dari baris `.kasir-subtotal`.
+     Sampai 22 September 2026 ia satu baris di antara baris rincian; sejak
+     panel selisih lahir ia punya elemennya sendiri, dengan `data-arah` yang
+     menyatakan keadaannya. Yang diuji tetap sama — selisih nol dapat dicapai —
+     dan `data-arah` membuatnya lebih kuat: nol yang dirender dengan perlakuan
+     "kurang" tetap salah meski angkanya benar. */
+  const hasil = await hal.evaluate(() => {
+    const panel = document.querySelector('.kasir-selisih');
+    return {
+      ada: panel !== null,
+      teks: panel ? panel.innerText.replace(/\s+/g, ' ').trim() : '',
+      arah: panel ? panel.getAttribute('data-arah') : null,
+      baris: [...document.querySelectorAll('.kasir-subtotal')].map((e) =>
+        e.innerText.replace(/\s+/g, ' ').trim()
+      ),
+    };
+  });
   await hal.close();
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
 
-  const selisih = baris.find((b) => /^SELISIH/i.test(b));
-  assert.ok(selisih, `baris SELISIH tidak ada. Yang terbaca: ${baris.join(' · ')}`);
+  assert.ok(
+    hasil.ada,
+    `panel selisih tidak ada. Yang terbaca: ${hasil.baris.join(' · ')}`
+  );
   assert.match(
-    selisih,
-    /Rp\s*0$/,
+    hasil.teks,
+    /Rp\s*0(\s|$)/,
     'hitungan yang TEPAT sama dengan saldo seharusnya tetap menghasilkan selisih ' +
       'bukan nol.\n  ⛔ Selisih palsu menuntut alasan, dapat menuntut PIN manajer, ' +
       'dan menandai kasirnya di FR-G5 X7 — untuk laci yang isinya benar.\n' +
-      `  Baris yang terbaca: ${baris.join(' · ')}`
+      `  Panel: "${hasil.teks}"\n  Baris: ${hasil.baris.join(' · ')}`
+  );
+  assert.equal(
+    hasil.arah,
+    'pas',
+    `selisih nol dirender dengan perlakuan "${hasil.arah}". Laci yang cocok ` +
+      'adalah kabar baik, dan kabar baik yang terlihat seperti kabar buruk ' +
+      'membuat kasir mencari uang yang tidak hilang.'
   );
 });

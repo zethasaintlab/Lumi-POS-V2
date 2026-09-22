@@ -227,3 +227,87 @@ test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenari
 
   for (const b of catatan) t.diagnostic(b);
 });
+
+test('⛔ tahap `hitung` tidak menggulir, di kedua skenario', async (t) => {
+  /* ⛔ Ia pas 658/658 px pada `normal` dan 597/597 pada `offline` sebelum
+     kartu berlangkah ditambahkan — nol piksel sisa. Satu baris lagi dan tahap
+     yang menampung field uang mulai menggulir; kasir yang menggulir untuk
+     menemukan fieldnya adalah kasir yang mengetik angka di layar yang bergerak.
+
+     ⛔ Sampai 22 September 2026 tahap ini memakai `.kasir-shift`, yang TIDAK
+     punya `overflow`. Isi yang tumbuh di sana tidak menggulir melainkan
+     MELUAP — tanpa satu pun cara mencapainya. Kelasnya kini `.kasir-grid-panel`
+     seperti kedua tahap lain, jadi kegagalannya berbentuk gulir, bukan
+     kehilangan. Penjaga ini menahan keduanya. */
+  const pelanggar = [];
+  const catatan = [];
+
+  for (const [keadaan, kenapa] of SKENARIO) {
+    const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+    const galat = [];
+    hal.on('pageerror', (e) => galat.push(e.message));
+    hal.on('console', (m) => {
+      if (m.type() === 'error' && /Failed to load resource/.test(m.text())) return;
+      if (m.type() === 'error') galat.push(m.text());
+    });
+    await hal.goto(`${alamat}/harness-galeri.html?layar=K-12&keadaan=${keadaan}`, {
+      waitUntil: 'load',
+    });
+    await hal.waitForSelector('.kasir-konten', { timeout: 10_000 });
+    await hal.waitForTimeout(1200);
+
+    const ukur = await hal.evaluate(() => {
+      const konten = document.querySelector('.kasir-konten');
+      const layar = konten?.firstElementChild;
+      if (!layar) return { err: 'layar tidak dirender' };
+      /* Field hitungan dipakai sebagai JANGKAR: ia elemen yang paling mahal
+         hilang dari layar, dan tahap yang salah dirender tidak memilikinya. */
+      const field = document.querySelector('.kasir-bidang-awalan .field');
+      return {
+        kelas: layar.className,
+        isi: Math.round(layar.scrollHeight),
+        ruang: Math.round(layar.clientHeight),
+        adaField: field !== null,
+        fieldDiDalam: field
+          ? Math.round(field.getBoundingClientRect().bottom) <=
+            Math.round(konten.getBoundingClientRect().bottom)
+          : false,
+      };
+    });
+    await hal.close();
+    assert.equal(galat.length, 0, `galat konsol di ${keadaan}: ${galat.join(' | ')}`);
+    assert.equal(ukur.err, undefined, `${keadaan}: ${ukur.err}`);
+
+    catatan.push(
+      `${keadaan} (${kenapa}): isi ${ukur.isi}px / ruang ${ukur.ruang}px, kelas ` +
+        `\`${ukur.kelas}\`, field terlihat: ${ukur.fieldDiDalam}`
+    );
+
+    /* SENTINEL: tahap yang gagal dirender punya isi 0 dan tidak menggulir —
+       jawaban yang dituntut, karena alasan yang salah. */
+    if (!ukur.adaField) {
+      pelanggar.push(`  ${keadaan}: field hitungan tidak ada; yang diukur bukan tahap \`hitung\`.`);
+      continue;
+    }
+    if (ukur.isi > ukur.ruang + 1) {
+      pelanggar.push(
+        `  ${keadaan}: isi ${ukur.isi}px melebihi ruang ${ukur.ruang}px — ` +
+          `${ukur.isi - ukur.ruang}px meluap.`
+      );
+    }
+    if (!ukur.fieldDiDalam) {
+      pelanggar.push(`  ${keadaan}: field hitungan fisik berada di luar area konten.`);
+    }
+  }
+
+  assert.deepEqual(
+    pelanggar,
+    [],
+    'tahap `hitung` K-12 tidak lagi muat dalam satu layar:\n' +
+      pelanggar.join('\n') +
+      '\n\n  Yang terukur:\n' +
+      catatan.map((b) => `    ${b}`).join('\n')
+  );
+
+  for (const b of catatan) t.diagnostic(b);
+});

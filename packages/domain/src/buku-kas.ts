@@ -75,6 +75,30 @@ const COUNTERPART: Readonly<Record<TipeMovement, CounterpartType>> = {
 };
 
 /**
+ * Nama tiap tipe movement di LAYAR.
+ *
+ * ⛔ Di sini, bukan di komponen yang menampilkannya. Kosakata `cash_movement`
+ * sudah dimiliki berkas ini (`TIPE_MOVEMENT`), dan peta nama yang hidup di
+ * layar akan menyimpang dari kosakatanya tepat saat tipe kedelapan lahir —
+ * bentuk cacat yang sama dengan peta metode pembayaran KEEMPAT yang sempat
+ * berdiri di `TutupKas.tsx` dan memuat kode `card` yang tidak ada di skema
+ * mana pun.
+ *
+ * ⛔ `Record<TipeMovement, string>`, bukan `Record<string, string>`: tipe baru
+ * yang ditambahkan ke `TIPE_MOVEMENT` tanpa namanya gagal di TypeScript, bukan
+ * muncul di layar sebagai `bank_deposit` mentah di depan kasir.
+ */
+export const LABEL_MOVEMENT: Record<TipeMovement, string> = {
+  opening_float: 'Modal awal',
+  sale: 'Penjualan tunai',
+  refund: 'Refund tunai',
+  paid_in: 'Kas masuk',
+  paid_out: 'Kas keluar',
+  bank_deposit: 'Setor ke bank',
+  adjustment: 'Koreksi',
+};
+
+/**
  * Tipe movement yang mengurangi laci.
  *
  * `bank_deposit` termasuk: menyetor ke bank berarti uangnya keluar dari laci.

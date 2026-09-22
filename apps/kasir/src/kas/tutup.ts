@@ -7,7 +7,13 @@ import type { PeristiwaAudit } from '../../../../packages/domain/src/audit-peris
 const PERISTIWA: PeristiwaAudit = 'shift_count_attempt';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
-import { butuhOtorisasiSelisih, saldoLaci } from '../../../../packages/domain/src/buku-kas.ts';
+import {
+  butuhOtorisasiSelisih,
+  saldoLaci,
+  LABEL_MOVEMENT,
+  TIPE_MOVEMENT,
+  type TipeMovement,
+} from '../../../../packages/domain/src/buku-kas.ts';
 import { bacaAmbangOutlet } from '../kasir/diskon.ts';
 import { bangunUlangSnapshot } from '../inventori/stok.ts';
 import {
@@ -234,12 +240,72 @@ export function hitungSaldoSeharusnya({
  * movement: ia sudah menjadi `saldoAwal`. Menjumlahkan keduanya menghitung
  * modal awal dua kali.
  */
-async function saldoSeharusnya(db: DbLokal, shift: BarisShift): Promise<number> {
-  const baris = await db.getAll<{ delta: number }>(
-    `SELECT delta FROM cash_movement WHERE shift_id = ? AND type <> 'opening_float'`,
+/**
+ * Rincian saldo seharusnya, per tipe movement.
+ *
+ * ⛔ Ia BUKAN aritmetika kedua. Baris yang dijumlahkan di sini adalah baris
+ * yang sama persis yang menghasilkan saldo seharusnya — dikelompokkan, bukan
+ * dihitung ulang dari sumber lain. `saldoSeharusnya` memanggilnya, jadi
+ * "jumlah rinciannya sama dengan totalnya" benar menurut KONSTRUKSI, bukan
+ * menurut dua query yang harus dijaga sepakat.
+ *
+ * ⛔ Tipe yang TIDAK punya movement tidak muncul sebagai baris nol. Merchant
+ * yang tidak pernah menyetor ke bank tidak perlu membaca "Setor ke bank Rp 0"
+ * setiap malam, dan baris nol yang berjejer membuat baris yang benar-benar
+ * bergerak lebih sulit ditemukan.
+ *
+ * ⛔ Yang PUNYA movement selalu muncul, dan itu yang penting. Mockup
+ * `TutupKasScreen` hanya menggambar empat baris (modal awal, penjualan tunai,
+ * refund tunai, kas diharapkan) — daftar yang dipaku empat akan menyembunyikan
+ * `paid_in`, `paid_out`, `bank_deposit`, dan `adjustment`. Ketidakterlihatan
+ * keempatnya PERSIS cacat yang FR-D5 tutup 24 Agustus 2026: uang yang keluar
+ * dengan sah dan tidak pernah terlihat, sehingga kasir menanggung selisihnya.
+ * Rincian yang jumlahnya tidak terlihat sama dengan totalnya lebih buruk
+ * daripada tidak ada rincian.
+ */
+export async function rincianSaldo(
+  db: DbLokal,
+  shift: BarisShift
+): Promise<RincianSaldo> {
+  const baris = await db.getAll<{ type: string; delta: number }>(
+    `SELECT type, delta FROM cash_movement WHERE shift_id = ? AND type <> 'opening_float'`,
     [shift.id]
   );
-  return saldoLaci(shift.opening_float, baris.map((b) => Number(b.delta)));
+
+  const perTipe = new Map<string, number>();
+  for (const b of baris) {
+    perTipe.set(b.type, (perTipe.get(b.type) ?? 0) + Number(b.delta));
+  }
+
+  /* Urutannya dari `TIPE_MOVEMENT`, bukan dari urutan baris database. Urutan
+     yang datang dari data membuat dua shift menampilkan rincian dengan urutan
+     berbeda, dan kasir yang membacanya setiap malam membaca posisi sebelum
+     membaca label. */
+  const bagian = TIPE_MOVEMENT.filter((t) => t !== 'opening_float' && perTipe.has(t)).map((t) => ({
+    tipe: t,
+    label: LABEL_MOVEMENT[t],
+    total: perTipe.get(t) as number,
+  }));
+
+  return {
+    saldoAwal: shift.opening_float,
+    bagian,
+    saldoSeharusnya: saldoLaci(
+      shift.opening_float,
+      baris.map((b) => Number(b.delta))
+    ),
+  };
+}
+
+export interface RincianSaldo {
+  saldoAwal: number;
+  /** Hanya tipe yang benar-benar punya movement. Lihat `rincianSaldo`. */
+  bagian: { tipe: TipeMovement; label: string; total: number }[];
+  saldoSeharusnya: number;
+}
+
+async function saldoSeharusnya(db: DbLokal, shift: BarisShift): Promise<number> {
+  return (await rincianSaldo(db, shift)).saldoSeharusnya;
 }
 
 export interface Percobaan {
@@ -283,11 +349,21 @@ export async function catatHitungan({
   sesi?: Sesi;
   idBaru?: () => string;
   hlc?: () => bigint;
-}): Promise<{ percobaan: number; selisih: number; saldoSeharusnya: number }> {
+}): Promise<{
+  percobaan: number;
+  selisih: number;
+  saldoSeharusnya: number;
+  /* ⛔ Rincian dikembalikan DARI SINI, bukan diambil layar lewat panggilan
+     kedua. Panggilan kedua adalah kesempatan kedua bagi rincian dan totalnya
+     untuk berbeda -- dan ia akan berbeda tepat saat penjualan mendarat di
+     antara keduanya, yaitu pada perangkat yang sedang sibuk. */
+  rincian: RincianSaldo;
+}> {
   const shift = await ambilShift(db, shiftId);
   if (!shift) throw new Error(`Shift ${shiftId} tidak ditemukan.`);
 
-  const seharusnya = await saldoSeharusnya(db, shift);
+  const rincian = await rincianSaldo(db, shift);
+  const seharusnya = rincian.saldoSeharusnya;
   const riwayat: Percobaan[] = shift.count_attempts ? (JSON.parse(shift.count_attempts) as Percobaan[]) : [];
   const pada = waktu().toISOString();
   riwayat.push({ hitungan, pada });
@@ -356,7 +432,12 @@ export async function catatHitungan({
     });
   });
 
-  return { percobaan: riwayat.length, selisih: hitungan - seharusnya, saldoSeharusnya: seharusnya };
+  return {
+    percobaan: riwayat.length,
+    selisih: hitungan - seharusnya,
+    saldoSeharusnya: seharusnya,
+    rincian,
+  };
 }
 
 // `butuhOtorisasiSelisih` dan `AMBANG_SELISIH` di-re-export dari
