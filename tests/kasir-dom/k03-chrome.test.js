@@ -30,17 +30,34 @@
 // shell, tidak ada grid. Yang diukur di sini justru hubungan antara keduanya,
 // jadi yang dibutuhkan build yang merender K-03 UTUH di dalam shellnya.
 //
-// Berkas ini MEMBANGUN `dist-galeri` sendiri bila belum ada: ia berjalan di
-// bawah `test:kasir-dom`, dan CI tidak menjalankan `build:galeri`. Penjaga yang
-// menuntut langkah build tambahan di workflow adalah penjaga yang akan dimatikan
-// orang berikutnya.
+// ## Prasyarat
+//
+//   npm run build:galeri
+//
+// `npm run test:kasir-dom` menjalankannya sendiri lewat `pretest:kasir-dom`, dan
+// `.github/workflows/test.yml` menjalankannya sebagai langkah tersendiri —
+// sejajar `build:harness-k06`.
+//
+// ⛔ Berkas ini MENEGASKAN build itu ada; ia tidak membangunnya sendiri, dan
+// itu bukan selera. Tiga berkas di direktori ini memakai `dist-galeri`, dan
+// `node --test` menjalankan berkas secara PARALEL. Versi sebelumnya memakai
+// `existsSync` lalu `build:galeri`: ketiganya memeriksa sebelum build pertama
+// selesai, jadi ketiganya membangun — ke `outDir` yang sama, dengan
+// `emptyOutDir: true`. Build kedua MENGHAPUS `dist-galeri/` selagi server
+// statis berkas pertama melayaninya, chunk JS dijawab 404, halaman tidak
+// pernah mount, dan gejalanya `waitForSelector` yang timeout 10 detik pada
+// selector yang CSS-nya benar — nol error, nol peringatan konsol.
+//
+// ⛔ Ia merah di CI dan hijau di lokal, karena lokal hampir selalu punya
+// `dist-galeri` dari run sebelumnya sehingga tidak satu pun berkas membangun.
+// Bentuk "nol baris, bukan error" (`docs/verifikasi/KELAS-GAGAL.md`), kali ini
+// pada perkakas testnya sendiri.
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
 
 const AKAR = path.resolve(__dirname, '..', '..');
 const DIST = path.join(AKAR, 'dist-galeri');
@@ -79,12 +96,15 @@ let alamat;
 let peramban;
 
 before(async () => {
-  if (!fs.existsSync(path.join(DIST, 'harness-galeri.html'))) {
-    execFileSync('npm', ['run', '-s', 'build:galeri'], { cwd: AKAR, stdio: 'inherit' });
-  }
+  /* ⛔ MENEGASKAN, bukan membangun — pola yang sama dengan `k06-penjaga.test.js`.
+     Tiga berkas di direktori ini memakai `dist-galeri` dan `node --test`
+     menjalankannya PARALEL; berkas yang membangun sendiri saling menghapus
+     `outDir` (`emptyOutDir: true`), dan yang muncul adalah halaman kosong tanpa
+     satu pun error. Alasan lengkapnya di kepala `k03-chrome.test.js`. */
   assert.ok(
     fs.existsSync(path.join(DIST, 'harness-galeri.html')),
-    '`npm run build:galeri` selesai tetapi dist-galeri/harness-galeri.html tidak ada.'
+    'dist-galeri/ belum dibangun. Jalankan `npm run build:galeri` lebih dulu. ' +
+      '(`npm run test:kasir-dom` melakukannya sendiri lewat `pretest:kasir-dom`.)'
   );
 
   server = http.createServer((req, res) => {
