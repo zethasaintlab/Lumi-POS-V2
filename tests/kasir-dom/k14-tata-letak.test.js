@@ -58,7 +58,6 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
 
 const AKAR = path.resolve(__dirname, '..', '..');
 const DIST = path.join(AKAR, 'dist-galeri');
@@ -96,12 +95,15 @@ let alamat;
 let peramban;
 
 before(async () => {
-  if (!fs.existsSync(path.join(DIST, 'harness-galeri.html'))) {
-    execFileSync('npm', ['run', '-s', 'build:galeri'], { cwd: AKAR, stdio: 'inherit' });
-  }
+  /* ⛔ MENEGASKAN, bukan membangun — pola yang sama dengan `k06-penjaga.test.js`.
+     Tiga berkas di direktori ini memakai `dist-galeri` dan `node --test`
+     menjalankannya PARALEL; berkas yang membangun sendiri saling menghapus
+     `outDir` (`emptyOutDir: true`), dan yang muncul adalah halaman kosong tanpa
+     satu pun error. Alasan lengkapnya di kepala `k03-chrome.test.js`. */
   assert.ok(
     fs.existsSync(path.join(DIST, 'harness-galeri.html')),
-    '`npm run build:galeri` selesai tetapi dist-galeri/harness-galeri.html tidak ada.'
+    'dist-galeri/ belum dibangun. Jalankan `npm run build:galeri` lebih dulu. ' +
+      '(`npm run test:kasir-dom` melakukannya sendiri lewat `pretest:kasir-dom`.)'
   );
 
   server = http.createServer((req, res) => {
