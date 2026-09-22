@@ -93,24 +93,58 @@ THEN login berhasil tanpa koneksi
 
 ### FR-D2 [P0] — Urutan input wajib
 
-**Deskripsi.** ⛔ **DICABUT 1 September 2026 atas keputusan user.** Aturan ini
-sebelumnya berbunyi: *"Kasir memasukkan hitungan fisik sebelum sistem
-menampilkan angka terhitung. Ini kontrol, bukan preferensi UX — kasir yang
-melihat angka target akan menghitung mundur ke angka itu."*
+**Deskripsi.** Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan
+angka terhitung. **Ini kontrol, bukan preferensi UX** — kasir yang melihat
+angka target akan menghitung mundur ke angka itu.
 
-K-12 kini menampilkan saldo seharusnya sejak tahap pertama.
+Copy design system: *"Hitung dulu, baru sistem menampilkan angkanya."*
 
-⛔ **Konsekuensi yang dinyatakan, bukan disembunyikan:** selisih kas berhenti
-menjadi angka yang dapat dipercaya, dan laporan exception **FR-G5 X7 (selisih
-kas per kasir)** kehilangan sebagian besar artinya — ia kini mengukur selisih
-dari hitungan yang dilakukan sambil melihat targetnya. Alasan pencabutan:
-layar tahap pertama yang sengaja kosong dinilai "flat dan sangat lifeless"
-dalam peninjauan visual 1 September 2026.
+### ⛔ Pencabutan 1 September 2026, dan pembatalannya 22 September 2026
 
-⛔ Copy design system *"Hitung dulu, baru sistem menampilkan angkanya"* ikut
-DICABUT bersama aturannya — kalimat itu menjanjikan urutan yang tidak lagi
-ditegakkan, dan janji yang tidak ditepati di layar uang lebih buruk daripada
-tidak ada janji.
+Aturan ini **pernah dicabut** dan **dikembalikan**. Riwayatnya ditulis di sini
+supaya pencabutan berikutnya tidak mengulang kesalahan yang sama.
+
+Pencabutan 1 September 2026 diambil setelah peninjauan visual menilai K-12
+*"flat dan sangat lifeless"*, dan yang dianggap penyebabnya adalah layar tahap
+pertama yang sengaja tidak menampilkan angka.
+
+⛔ **Diagnosisnya salah, dan mockup design system sendiri yang membuktikannya.**
+`ds-bundle/ui_kits/pos/TutupKasScreen.jsx` tetap hitungan buta — ia memuat
+kalimat *"Angka ekspektasi sistem sengaja disembunyikan sampai kolom ini
+terisi"* — dan ia kaya visual. Yang membuatnya kaya adalah empat hal yang
+**tidak pernah dibangun** di K-12: kartu berlangkah, field numerik ber-prefiks,
+rincian penuh (modal awal · penjualan tunai · refund tunai · kas diharapkan),
+dan panel selisih berwarna. Kekosongan layarnya lahir dari keempat hal itu,
+bukan dari hitungan butanya.
+
+⛔ **Yang dipertaruhkan pencabutan itu adalah kontrol kas untuk menyelesaikan
+masalah yang sebabnya di tempat lain.** Konsekuensinya dinyatakan sejak awal:
+selisih kas berhenti menjadi angka yang dapat dipercaya, dan laporan exception
+FR-G5 X7 (selisih kas per kasir) kehilangan sebagian besar artinya — ia akan
+mengukur selisih dari hitungan yang dilakukan sambil melihat targetnya. Harga
+itu dibayar untuk perbaikan tampilan yang tidak akan ia hasilkan.
+
+⛔ **Pencabutannya tidak pernah sampai ke kode, dan itu ditemukan 21 September
+2026 saat membaca K-12.** Yang disunting hanya paragraf Deskripsi ini;
+**Behavior** dan **Acceptance criteria** di bawahnya tidak berubah, `IA:62`
+tetap menulis "Urutan input wajib", `PRD:207` tetap menggambar urutannya,
+mockup tetap hitungan buta, dan `tests/kasir/tutup-kas.test.js` justru
+**menegakkan** aturan lama:
+
+```js
+assert.equal(tunai.total, null, 'total tunai tidak boleh terbaca sebelum menghitung');
+```
+
+Jadi satu keputusan tertulis di dua tempat dan diimplementasikan di nol tempat,
+sementara sebuah test mengunci kebalikannya. Pembatalan 22 September 2026
+mengembalikan dokumen ini ke keadaan yang kode dan testnya memang sudah punya —
+nol perubahan kode.
+
+⛔ **Pelajaran yang mengikat pencabutan berikutnya:** sebelum sebuah kontrol
+dicabut karena layarnya terasa kosong, periksa dulu apakah yang kosong adalah
+kontrolnya atau hal-hal di sekelilingnya yang belum dibangun. Dan pencabutan
+yang tidak menyentuh kode, test, IA, PRD, dan mockup bukan pencabutan — ia
+dokumen yang menyimpang dari produknya.
 
 **Behavior.**
 

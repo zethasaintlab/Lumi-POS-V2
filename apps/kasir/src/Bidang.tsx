@@ -50,6 +50,25 @@ interface Props {
   id?: string;
   label: string;
   hint?: string;
+  /**
+   * `lg` → kelas `.field-lg` milik bundle: 56px, `--text-display`, rata kanan.
+   *
+   * ⛔ Kelas itu BUKAN karangan kami. `components.css:45` mendefinisikannya dan
+   * komentar `Field.jsx` menyebut kasus pakainya dengan nama: *"untuk input
+   * nominal uang (uang diterima, hitungan laci)"*. 56px juga yang aturan design
+   * system #3 tuntut untuk aksi menyangkut uang.
+   */
+  ukuran?: 'md' | 'lg';
+  /**
+   * Penanda di DALAM field, mis. `Rp`.
+   *
+   * ⛔ Bundle merendernya dengan angka piksel yang dipanggang (`left: 14`,
+   * `paddingLeft: 56`) — pelanggaran aturan design system #6, dan `<Field>`
+   * sendiri tidak dapat dipakai di sini karena `_adherence.oxlintrc.json`
+   * menolak `value`/`onChange`. Versi kami memakai token saja, lewat
+   * `.kasir-bidang-awalan` di `kasir.css`.
+   */
+  awalan?: string;
   type?: 'text' | 'password';
   /* Papan ketik yang muncul di tablet. `type` tetap `text` — `type="number"`
      membawa spinner, menerima notasi eksponen, dan mengembalikan string kosong
@@ -61,27 +80,52 @@ interface Props {
   placeholder?: string;
 }
 
-export function Bidang({ id, label, hint, type = 'text', inputMode, value, onChange, placeholder }: Props) {
+export function Bidang({
+  id,
+  label,
+  hint,
+  ukuran = 'md',
+  awalan,
+  type = 'text',
+  inputMode,
+  value,
+  onChange,
+  placeholder,
+}: Props) {
   /* ⛔ Dipanggil TANPA SYARAT, juga saat `id` dikirim. Hook di balik cabang
      melanggar rules-of-hooks, dan pemanggil yang mulai/berhenti mengirim `id`
      akan menggeser urutan hook seluruh komponen. */
   const idOtomatis = useId();
   const idField = id ?? idOtomatis;
 
+  const input = (
+    <input
+      id={idField}
+      className={ukuran === 'lg' ? 'field field-lg' : 'field'}
+      type={type}
+      inputMode={inputMode}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+
   return (
     <div className="stack">
       <label className="label" htmlFor={idField}>
         {label}
       </label>
-      <input
-        id={idField}
-        className="field"
-        type={type}
-        inputMode={inputMode}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      {awalan ? (
+        <div className="kasir-bidang-awalan">
+          {/* `aria-hidden`: pembaca layar sudah mengumumkan labelnya, dan
+              "Rp" yang ikut terbaca di tengah angka membuat nominalnya lebih
+              sulit didengar, bukan lebih jelas. */}
+          <span aria-hidden="true">{awalan}</span>
+          {input}
+        </div>
+      ) : (
+        input
+      )}
       {hint && <span className="t-caption">{hint}</span>}
     </div>
   );
