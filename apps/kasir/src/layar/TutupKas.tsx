@@ -22,7 +22,8 @@ import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts'
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
-import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { Bidang } from '../Bidang.tsx';
 
 /* K-12 Tutup Kas + K-13 Laporan Shift (IA §2.2).
 
@@ -67,7 +68,12 @@ export function TutupKas() {
   const [siap, setSiap] = useState(false);
   const [gagalMuat, setGagalMuat] = useState<string | null>(null);
 
-  const [hitungan, setHitungan] = useState(0);
+  /* ⛔ TEKS, bukan angka, dan itu bukan detail. Sampai 22 September 2026
+     keadaannya `number` karena satu-satunya cara mengubahnya adalah tombol
+     pecahan. Field bebas menuntut teks: angka tidak dapat membedakan "kosong"
+     dari "nol", dan kasir yang menghapus isinya harus mendapat field kosong,
+     bukan "0" yang harus ia hapus lagi. */
+  const [hitunganTeks, setHitunganTeks] = useState('');
   const [review, setReview] = useState<{ selisih: number; saldoSeharusnya: number; percobaan: number } | null>(null);
   const [kodeAlasan, setKodeAlasan] = useState('');
   const [catatan, setCatatan] = useState('');
@@ -195,6 +201,17 @@ export function TutupKas() {
     );
   }
 
+  /* ⛔ `bacaRupiah`, bukan `Number()`. `Number('')` adalah **0**, dan nol yang
+     lahir dari field kosong adalah hitungan laci yang tidak pernah dilakukan —
+     ia lolos ke `catatHitungan` sebagai percobaan yang sah. `bacaRupiah`
+     mengembalikan `null` untuk kosong DAN untuk bentuk yang tidak sah, dan
+     keduanya memang bukan angka.
+
+     Nol yang benar-benar DIKETIK tetap sah: laci yang memang kosong ada. */
+  const hitunganTerbaca = bacaRupiah(hitunganTeks);
+  const hitunganTidakSah = hitunganTerbaca === null;
+  const hitungan = hitunganTerbaca ?? 0;
+
   const simpan = (approverId: string | null) => {
     setSibuk(true);
     setGalat(null);
@@ -308,7 +325,7 @@ export function TutupKas() {
             disabled={sibuk}
             onClick={() => {
               setReview(null);
-              setHitungan(0);
+              setHitunganTeks('');
               setGalat(null);
             }}
           >
@@ -348,16 +365,63 @@ export function TutupKas() {
           .join(' · ')}
       </p>
 
-      <p className="t-body-md">Hitungan fisik laci</p>
-      <p className="t-display num">{rupiah(hitungan)}</p>
+      {/* ⛔ FIELD BEBAS, dan tombol pecahan turun menjadi JALAN PINTAS.
 
+          Sampai 22 September 2026 tombol-tombol itu satu-satunya jalan, dan
+          pecahan terkecilnya Rp 1.000 — sementara `outlet.rounding_increment`
+          bawaannya 100, jadi saldo laci mendarat di kelipatan 100. Laci yang
+          isinya Rp 670.500 tidak dapat dinyatakan sama sekali.
+
+          ⛔ Akibatnya bukan ketidaknyamanan: selisih nol menjadi mustahil,
+          setiap tutup kas menghasilkan selisih palsu, selisih palsu menuntut
+          alasan dari daftar tertutup, yang melewati ambang menuntut PIN
+          manajer, dan FR-G5 X7 menandai kasirnya. Kontrol kas berhenti
+          mengukur laci dan mulai mengukur ketidakmampuan layarnya sendiri.
+
+          `PRD:210` menggambar `[_______]` dan mockup `TutupKasScreen` memakai
+          `<Field size="lg" prefix="Rp" inputMode="numeric">` sejak awal. */}
+      <Bidang
+        label="Hitungan fisik laci"
+        ukuran="lg"
+        awalan="Rp"
+        inputMode="numeric"
+        value={hitunganTeks}
+        /* ⛔ Yang diketik DIPERTAHANKAN apa adanya (digit dan titik), dan yang
+           menafsirkannya `bacaRupiah` — parser yang sama yang dipakai seluruh
+           repo. Memformat ulang teksnya sambil kasir mengetik akan menjadi
+           pemformat KEDUA, dan `CLAUDE.md` menetapkan hanya boleh ada satu.
+
+           Titik dibiarkan masuk justru supaya `bacaRupiah` yang memutuskan:
+           ia menerima `670.500` (kelompok tiga) dan MENOLAK `25.5` (desimal),
+           dan aturan itu tidak boleh punya salinan di sini. */
+        onChange={(v) => {
+          setHitunganTeks(v.replace(/[^\d.]/g, ''));
+          setGalat(null);
+        }}
+        placeholder="0"
+        hint={hitunganTeks !== '' && hitunganTidakSah ? 'Masukkan rupiah utuh, tanpa desimal.' : undefined}
+      />
+
+      {/* Jalan pintas, bukan satu-satunya jalan. Ia MENAMBAH ke angka yang
+          sudah ada, persis seperti sebelumnya — kasir yang menghitung lembaran
+          per pecahan tidak kehilangan caranya. */}
       <div className="kasir-pecahan">
         {PECAHAN.map((p) => (
-          <Tombol key={p} kritis disabled={sibuk} onClick={() => setHitungan((h) => h + p)}>
+          <Tombol
+            key={p}
+            kritis
+            disabled={sibuk}
+            onClick={() => setHitunganTeks(String(hitungan + p))}
+          >
             + {rupiah(p)}
           </Tombol>
         ))}
-        <Tombol varian="ghost" kritis disabled={sibuk || hitungan === 0} onClick={() => setHitungan(0)}>
+        <Tombol
+          varian="ghost"
+          kritis
+          disabled={sibuk || hitunganTeks === ''}
+          onClick={() => setHitunganTeks('')}
+        >
           Hapus
         </Tombol>
       </div>
@@ -365,7 +429,13 @@ export function TutupKas() {
       <Tombol
         varian="primary"
         kritis
-        disabled={sibuk || hitungan === 0}
+        /* ⛔ `hitunganTidakSah`, BUKAN `hitungan === 0`. Laci yang benar-benar
+           kosong adalah keadaan sah — shift yang dibuka tanpa modal dan tidak
+           menjual apa pun menutup dengan nol — dan menolaknya membuat kasir
+           mengarang angka supaya tombolnya menyala. Yang ditolak adalah field
+           KOSONG dan bentuk yang tidak dapat dibaca, dan keduanya sudah
+           `null` di `bacaRupiah`. */
+        disabled={sibuk || hitunganTidakSah}
         onClick={() => {
           setSibuk(true);
           /* ⛔ `konfig`, `sesi`, `idBaru`, dan `hlc` ikut supaya percobaan

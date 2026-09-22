@@ -412,6 +412,37 @@
   border-top: 1px solid var(--border);
 }
 
+/* Penanda "Rp" di dalam field nominal (K-12 hitungan fisik laci).
+
+   ⛔ Bundle sudah punya bentuk ini di `Field.jsx`, dan ia TIDAK disalin: ia
+   memanggang `left: 14` dan `paddingLeft: 56` sebagai angka piksel, yang
+   melanggar aturan design system #6. Yang dipakai di sini token saja.
+
+   ⛔ `--space-12` (48px), bukan angka yang dicocokkan dengan mata. `.field`
+   sendiri berpadding `--space-3` di kiri, dan "Rp" pada `--text-title` memakan
+   sekitar 28px; 12 + 28 = 40, jadi 48 menyisakan satu anak tangga skala penuh
+   sebelum angkanya mulai. Angka yang menabrak awalannya terbaca sebagai nominal
+   LAIN — "Rp 670.500" yang tumpang tindih dapat terbaca "Rp70.500". */
+.kasir-bidang-awalan {
+  position: relative;
+}
+
+.kasir-bidang-awalan > span {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-subtle);
+  font-size: var(--text-title);
+  /* Tidak menangkap ketukan: menekan "Rp" harus menaruh kursor di fieldnya,
+     bukan tidak melakukan apa pun. */
+  pointer-events: none;
+}
+
+.kasir-bidang-awalan > .field {
+  padding-left: var(--space-12);
+}
+
 .kasir-pecahan {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
