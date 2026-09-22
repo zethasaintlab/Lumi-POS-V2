@@ -252,28 +252,48 @@ PowerSync → `apps/kasir/src/katalog/gambar.ts` (verifikasi) → kartu K-03.
   MERAH. Sisa anggaran **2,5%**, dan maksimum yang masih muat ~40,9 KB base64
   (~30,7 KB mentah) — kurang dari satu kilobyte di atas nilai sekarang.
 
-### ⛔ Kontrol urutan input K-12 DICABUT, 1 September 2026
+### ⛔ Kontrol urutan input K-12: pencabutannya DIBATALKAN, 22 September 2026
 
-Keputusan user, diambil setelah konsekuensinya dinyatakan.
-
-`spec-d:96` berbunyi — dan menyebut dirinya sendiri sebagai kontrol:
+Hitungan buta **tetap berlaku**. `spec-d` FR-D2 berbunyi — dan menyebut dirinya
+sendiri sebagai kontrol:
 
 > Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan angka
 > terhitung. **Ini kontrol, bukan preferensi UX** — kasir yang melihat angka
 > target akan menghitung mundur ke angka itu.
 
-Aturan itu **tidak lagi berlaku**. K-12 menampilkan saldo seharusnya sejak
-tahap pertama.
+Aturan itu pernah **dicabut 1 September 2026** dan **dikembalikan 22 September
+2026**, keduanya keputusan user. Riwayatnya ditulis di sini karena bentuk
+kesalahannya berulang.
 
-⛔ **Konsekuensi yang dinyatakan, bukan disembunyikan:** selisih kas berhenti
-menjadi angka yang dapat dipercaya, dan laporan exception **FR-G5 X7 (selisih
-kas per kasir)** kehilangan sebagian besar artinya — ia mengukur selisih dari
-hitungan yang kini dilakukan sambil melihat targetnya.
+⛔ **Pencabutannya mendiagnosis sebab yang salah.** Alasannya K-12 dinilai
+"flat dan sangat lifeless", dan yang dituduh adalah layar tahap pertama yang
+sengaja tidak menampilkan angka. Tapi mockup `ds-bundle/ui_kits/pos/
+TutupKasScreen.jsx` **tetap hitungan buta** — ia memuat kalimat "Angka
+ekspektasi sistem sengaja disembunyikan sampai kolom ini terisi" — dan ia kaya
+visual. Yang membuatnya kaya adalah empat hal yang tidak pernah dibangun di
+K-12: kartu berlangkah, field numerik ber-prefiks, rincian penuh, dan panel
+selisih berwarna. Pencabutan itu mempertaruhkan kontrol kas untuk menyelesaikan
+masalah yang sebabnya di tempat lain.
 
-⛔ **`spec-d:96` masih berbunyi sebaliknya, dan itu disengaja.** Menyunting
-dokumen spec bukan kewenangan agent (aturan yang sama dengan `research/00` dan
-`research/03` yang masih menulis "Node.js 22+"). Baris ini ada supaya orang
-berikutnya tahu kode dan spec sengaja berbeda di titik ini, bukan terlewat.
+⛔ **Pencabutannya tidak pernah sampai ke kode, dan itu ditemukan saat membaca
+K-12 pada 21 September 2026.** Yang disunting hanya paragraf Deskripsi
+`spec-d` FR-D2 dan bagian ini; **Behavior** dan **Acceptance criteria** di
+bawahnya tidak berubah, `IA:62` tetap menulis "Urutan input wajib", `PRD:207`
+tetap menggambar urutannya, mockup tetap hitungan buta, dan
+`tests/kasir/tutup-kas.test.js` justru **menegakkan** aturan lama
+(`total tunai tidak boleh terbaca sebelum menghitung`). Satu keputusan tertulis
+di dua tempat, diimplementasikan di nol tempat, dengan sebuah test mengunci
+kebalikannya.
+
+Pembatalannya karena itu **nol perubahan kode**: yang dikembalikan hanya kedua
+dokumen, ke keadaan yang kode dan testnya memang sudah punya.
+
+⛔ **Pelajaran yang mengikat pencabutan berikutnya:** sebelum sebuah kontrol
+dicabut karena layarnya terasa kosong, periksa dulu apakah yang kosong adalah
+kontrolnya atau hal-hal di sekelilingnya yang belum dibangun. Dan pencabutan
+yang tidak menyentuh kode, test, IA, PRD, dan mockup bukan pencabutan — ia
+dokumen yang menyimpang dari produknya, dan yang menyimpang berhenti dapat
+dipakai memutuskan apa pun.
 
 ### ⛔ Datar BUKAN karena design system-nya austere — `apps/kasir` tidak memakainya
 
