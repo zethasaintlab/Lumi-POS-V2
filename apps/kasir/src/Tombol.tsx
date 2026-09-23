@@ -26,14 +26,23 @@ interface Props {
   kritis?: boolean;
   disabled?: boolean;
   title?: string;
+  /** `id` elemen yang menjelaskan tombol ini — terutama KENAPA ia nonaktif. */
+  keterangan?: string;
   onClick?: () => void;
   children: React.ReactNode;
 }
 
-export function Tombol({ varian = 'secondary', kritis = false, disabled, title, onClick, children }: Props) {
+export function Tombol({ varian = 'secondary', kritis = false, disabled, title, keterangan, onClick, children }: Props) {
   const kelas = ['btn', `btn-${varian}`, kritis ? 'btn-critical' : ''].filter(Boolean).join(' ');
   return (
-    <button type="button" className={kelas} disabled={disabled} title={title} onClick={onClick}>
+    <button
+      type="button"
+      className={kelas}
+      disabled={disabled}
+      title={title}
+      aria-describedby={keterangan}
+      onClick={onClick}
+    >
       {children}
     </button>
   );

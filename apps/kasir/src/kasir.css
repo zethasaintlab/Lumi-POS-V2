@@ -985,7 +985,15 @@
 /* Keadaan kosong keranjang — panel ini menempati sepertiga layar, dan satu
    baris abu-abu di ujung atasnya membuat dua pertiga sisanya terbaca sebagai
    ruang yang rusak alih-alih ruang yang menunggu. */
+/* ⛔ `flex: 1`, sama dengan `.kasir-baris-daftar` — dan untuk alasan yang sama.
+   Keadaan kosong MENGGANTIKAN daftar item di kolom yang sama; ruang yang
+   daftar isi harus ia isi juga, kalau tidak blok Subtotal/Total/Bayar di
+   bawahnya naik ke tengah panel. Terukur 23 September 2026: Bayar di y=371
+   saat kosong, y=695 dengan 3 atau 20 item — melompat 324 px tepat pada
+   keadaan yang kasir lihat di awal setiap pesanan. Dijaga
+   `tests/kasir-dom/k03-bayar-tetap.test.js` di tiga titik: 0, 3, 20. */
 .kasir-keranjang-kosong {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
