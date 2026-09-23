@@ -1,0 +1,87 @@
+:root {
+  /* Core */
+  --background: #f0f6f7;
+  --foreground: #16282c;
+  --card: #ffffff;
+  --card-foreground: #16282c;
+  --primary: #14706b;
+  --primary-foreground: #ffffff;
+  --secondary: #f7fafb;
+  --secondary-foreground: #16282c;
+  --muted: #f7fafb;
+  --muted-foreground: #5e747a;
+  --accent: #14706b;
+  --accent-foreground: #ffffff;
+  --border: #e3ecee;
+  --ring: #14706b;
+
+  /* Accent derivatives */
+  --accent-hover: #0f5b57;
+  --accent-subtle: #d9edf0;
+  --surface-raised: #f7fafb;
+
+  /* Status - real states only, never decorative */
+  --status-success-bg: #dff3e4;
+  --status-success-text: #2c6b3f;
+  --status-info-bg: #d6eaf5;
+  --status-info-text: #1f5a7a;
+  --status-pending-bg: #edf2f3;
+  --status-pending-text: #5e747a;
+  --status-warning-bg: #fbf0d9;
+  --status-warning-text: #8a6520;
+  --status-danger-bg: #f9e1e1;
+  --status-danger-text: #9a3535;
+
+  /* Controls & forms */
+  --input-border: #c9dcdf;
+  --destructive: #b94747;
+  --destructive-hover: #a13d3d;
+  --ghost-foreground: #28565a;
+  --ghost-hover-bg: #e8f2f2;
+  --secondary-hover: #eff6f6;
+  --chip-hover-bg: #e0eeee;
+  --option-border: #d9e6e7;
+  --keypad-border: #d7e5e6;
+  --pin-inactive-bg: #dce7e8;
+
+  /* Secondary text & icons */
+  --muted-foreground-strong: #49666a;
+  --muted-foreground-strong-alt: #47666a;
+  --sidebar-label: #789194;
+  --icon-muted: #9ab4b5;
+  --icon-muted-alt: #91b3b4;
+  --icon-muted-alt-2: #8eb1b1;
+
+  /* Image & dropzone states */
+  --dashed-border: #a9c9c8;
+  --dashed-border-strong: #b8d0d1;
+  --dashed-bg: #f7fbfb;
+  --dropzone-border: #b7d0d1;
+  --skeleton-bg: #e8f0f1;
+
+  /* Offline mode */
+  --offline-badge-bg: #fbf3d8;
+  --offline-badge-text: #876615;
+  --offline-banner-bg: #fff9e8;
+  --offline-banner-border: #e9dca8;
+  --offline-banner-text: #806215;
+
+  /* Other surfaces & dividers */
+  --card-outline: #e0eaeb;
+  --card-outline-hover: #9fc5c4;
+  --menu-hover-border: #a6c9c8;
+  --row-divider: #eef3f3;
+  --cart-divider: #c3dddc;
+  --panel-subtle-bg: #f8fbfb;
+  --avatar-bg: #d9eceb;
+  --chart-baseline: #dce8e9;
+  --progress-track: #e5eeee;
+  --step-inactive-bg: #e6eeef;
+  --step-inactive-text: #7b9597;
+  --guest-background: #fffdf9;
+  --guest-border: #e8eded;
+  --guest-card: #fffefb;
+  --switcher-bg: #1e292b;
+}
+
+

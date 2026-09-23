@@ -1,0 +1,22 @@
+:root {
+  /* Spacing - multiples of four only */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Shape - one system, never mixed */
+  --radius: 12px;          /* cards, panels, modals */
+  --radius-control: 10px;  /* buttons, inputs, selects, icon boxes */
+  --radius-pill: 999px;    /* status badges, category chips */
+
+  /* Touch targets - functional requirement, not preference */
+  --touch-min: 44px;       /* absolute minimum for anything pressable */
+  --touch-primary: 56px;   /* primary cashier actions: product cards, pay button, keypad, qty stepper */
+
+  /* Elevation - tinted with the product's teal, never pure black. Shadows only when they carry real hierarchy. */
+  --shadow-card: 0 1px 2px rgba(22, 40, 44, 0.04), 0 2px 8px rgba(22, 40, 44, 0.04);
+  --shadow-raised: 0 4px 16px rgba(22, 40, 44, 0.08);
+}

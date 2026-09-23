@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>LumiPOS - Penjelajah Desain</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19",
+    "react-dom/client": "https://esm.sh/react-dom@19/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.468.0?external=react"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Nunito Sans', sans-serif; background: #e7ecec; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import ReactDOM from "react-dom/client";
+import { Info, X, ChevronDown } from "lucide-react";
+
+const BAR_BG = "#1e292b";
+const CHIP_BG = "#2a3739";
+const CHIP_ACTIVE_BG = "#3a4b4d";
+const TEXT_DIM = "#9fb0b2";
+const TEXT_LIGHT = "#e7eeee";
+
+const APPS = [
+  {
+    id: "kasir", label: "Kasir", file: "ui_kits/kasir/index.html",
+    device: { w: 1280, h: 800, type: "tablet", label: "Tablet landscape \u00b7 1280\u00d7800" },
+    screens: [
+      { id: "login", label: "Login PIN" },
+      { id: "shift", label: "Buka Shift" },
+      { id: "kasir", label: "Layar Kasir", states: [{ id: "campuran", label: "Katalog campuran" }, { id: "keranjang-kosong", label: "Keranjang kosong" }, { id: "keranjang-penuh", label: "Keranjang penuh (20 item)" }, { id: "katalog-kosong", label: "Katalog kosong" }, { id: "offline", label: "Mode offline" }] },
+      { id: "edit-item", label: "Popup Edit Item" },
+      { id: "bayar", label: "Kartu Pembayaran", states: [{ id: "tunai", label: "Tunai" }, { id: "qris-memuat", label: "QRIS memuat" }, { id: "qris-siap", label: "QRIS siap dipindai" }, { id: "qris-terkonfirmasi", label: "QRIS terkonfirmasi" }, { id: "qris-kedaluwarsa", label: "QRIS kedaluwarsa" }, { id: "kartu", label: "Kartu" }, { id: "transfer", label: "Transfer" }] },
+      { id: "sukses", label: "Transaksi Berhasil" },
+      { id: "struk", label: "Struk Termal", states: [{ id: "58mm", label: "58mm" }, { id: "80mm", label: "80mm" }] },
+      { id: "riwayat", label: "Riwayat Transaksi", states: [{ id: "ada", label: "Ada transaksi" }, { id: "kosong", label: "Kosong" }] },
+      { id: "void", label: "Void dan Refund" },
+      { id: "laci", label: "Operasional Laci Kas" },
+      { id: "tutup", label: "Tutup Kas dan Laporan Shift" },
+    ],
+  },
+  {
+    id: "backoffice", label: "Back-office", file: "ui_kits/backoffice/index.html",
+    device: { w: 1440, h: 900, type: "desktop", label: "Desktop \u00b7 1440\u00d7900" },
+    screens: [
+      { id: "dashboard", label: "Dashboard" },
+      { id: "katalog", label: "Katalog Produk", states: [{ id: "ada", label: "Ada produk" }, { id: "kosong", label: "Kosong" }] },
+      { id: "edit-produk", label: "Edit Produk", states: [{ id: "normal", label: "Normal" }, { id: "ukuran", label: "Galat file terlalu besar" }, { id: "format", label: "Galat format tidak didukung" }, { id: "gagal", label: "Galat unggah gagal" }] },
+      { id: "staf", label: "Manajemen Staf" },
+      { id: "laporan", label: "Laporan" },
+      { id: "pengaturan", label: "Pengaturan" },
+    ],
+  },
+  {
+    id: "order", label: "Lumi-Order", file: "ui_kits/order/index.html",
+    device: { w: 390, h: 844, type: "mobile", label: "Mobile portrait \u00b7 390\u00d7844" },
+    screens: [
+      { id: "masuk", label: "Masuk via QR" },
+      { id: "menu", label: "Daftar Menu", states: [{ id: "normal", label: "Normal" }, { id: "habis", label: "Ada item habis" }, { id: "cari-kosong", label: "Pencarian kosong" }, { id: "kategori-kosong", label: "Kategori kosong" }] },
+      { id: "detail", label: "Detail Item" },
+      { id: "keranjang", label: "Keranjang", states: [{ id: "ada", label: "Ada item" }, { id: "kosong", label: "Kosong" }] },
+      { id: "bayar", label: "Pembayaran", states: [{ id: "memuat", label: "QRIS memuat" }, { id: "siap", label: "QRIS siap dipindai" }, { id: "berhasil", label: "QRIS berhasil" }, { id: "kedaluwarsa", label: "QRIS kedaluwarsa" }] },
+      { id: "status", label: "Status Pesanan", states: [{ id: "diterima", label: "Diterima" }, { id: "disiapkan", label: "Sedang disiapkan" }, { id: "siap", label: "Siap" }] },
+      { id: "riwayat", label: "Riwayat Pesanan Meja" },
+      { id: "qr-error", label: "QR Meja Bermasalah", states: [{ id: "invalid", label: "Tidak dikenali" }, { id: "kedaluwarsa", label: "Kedaluwarsa" }] },
+    ],
+  },
+];
+
+const DEFAULTS = {
+  kasir: { screen: "kasir", state: "campuran" },
+  backoffice: { screen: "dashboard", state: null },
+  order: { screen: "menu", state: "normal" },
+};
+
+function useContainerWidth() {
+  const ref = useRef(null);
+  const [w, setW] = useState(1200);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setW(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
+}
+
+function Frame({ app, screenId, stateId }) {
+  const [containerRef, containerW] = useContainerWidth();
+  const { device, file } = app;
+  const availH = typeof window !== "undefined" ? window.innerHeight - 150 : 800;
+  const scale = Math.min(1, (containerW - 24) / device.w, availH / device.h);
+  const qs = new URLSearchParams({ embed: "1", screen: screenId });
+  if (stateId) qs.set("state", stateId);
+  const src = `${file}?${qs.toString()}`;
+  const isMobile = device.type === "mobile";
+  const bezel = isMobile ? 14 : 0;
+  const outerW = device.w + bezel * 2;
+  const outerH = device.h + bezel * 2 + (isMobile ? 22 : 0);
+
+  return <div ref={containerRef} className="flex w-full flex-col items-center py-6">
+    <p className="mb-3 text-[13px]" style={{ color: "#6b7f81" }}>{device.label}</p>
+    <div style={{ width: outerW * scale, height: outerH * scale, overflow: "hidden" }}>
+      <div style={{ width: outerW, height: outerH, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+        {isMobile ? (
+          <div style={{ width: outerW, height: outerH, background: "#0d1416", borderRadius: 42, padding: bezel, boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+            <div style={{ display: "flex", justifyContent: "center", height: 22 }}><div style={{ width: 100, height: 14, background: "#0d1416", borderRadius: 10, marginTop: 4 }} /></div>
+            <iframe key={src} src={src} style={{ width: device.w, height: device.h, border: "none", borderRadius: 26, display: "block", background: "#fff" }} title={`${app.label} preview`} />
+          </div>
+        ) : (
+          <div style={{ width: device.w, height: device.h, boxShadow: "0 14px 44px rgba(22,40,44,0.16)", borderRadius: 4, overflow: "hidden", border: "1px solid #d7dede" }}>
+            <iframe key={src} src={src} style={{ width: device.w, height: device.h, border: "none", display: "block", background: "#fff" }} title={`${app.label} preview`} />
+          </div>
+        )}
+      </div>
+    </div>
+  </div>;
+}
+
+function InfoPanel({ open, onClose, screenLabel, stateLabel, device }) {
+  if (!open) return null;
+  return <div className="fixed bottom-4 right-4 z-40 w-64 rounded-xl p-4 text-[13px] shadow-[0_10px_30px_rgba(0,0,0,0.3)]" style={{ background: BAR_BG, color: TEXT_LIGHT }}>
+    <div className="mb-2 flex items-center justify-between"><span className="font-semibold">Info layar</span><button onClick={onClose} className="grid h-6 w-6 place-items-center rounded-md" style={{ color: TEXT_DIM }}><X size={14} /></button></div>
+    <dl className="space-y-1.5">
+      <div className="flex justify-between gap-3"><dt style={{ color: TEXT_DIM }}>Layar</dt><dd className="text-right font-normal">{screenLabel}</dd></div>
+      <div className="flex justify-between gap-3"><dt style={{ color: TEXT_DIM }}>Keadaan</dt><dd className="text-right font-normal">{stateLabel || "-"}</dd></div>
+      <div className="flex justify-between gap-3"><dt style={{ color: TEXT_DIM }}>Viewport</dt><dd className="text-right font-normal">{device.w} &times; {device.h} px</dd></div>
+    </dl>
+  </div>;
+}
+
+function Bar({ activeApp, setActiveApp, apps, screenOptions, stateOptions, screenId, setScreenId, stateId, setStateId, showInfo, setShowInfo }) {
+  return <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-4" style={{ height: 56, background: BAR_BG, color: TEXT_LIGHT }}>
+    <span className="hidden shrink-0 text-[13px] font-semibold sm:inline" style={{ color: TEXT_DIM }}>LumiPOS &middot; Penjelajah Desain</span>
+
+    <div className="flex shrink-0 gap-1 rounded-full p-1" style={{ background: CHIP_BG }}>
+      {apps.map(a => <button key={a.id} onClick={() => setActiveApp(a.id)} className="h-8 rounded-full px-3 text-[13px] font-semibold whitespace-nowrap" style={{ background: activeApp === a.id ? CHIP_ACTIVE_BG : "transparent", color: activeApp === a.id ? TEXT_LIGHT : TEXT_DIM }}>{a.label}</button>)}
+    </div>
+
+    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+      <select value={screenId} onChange={(e) => setScreenId(e.target.value)} className="h-9 shrink-0 rounded-lg border-none px-2.5 text-[13px] font-semibold" style={{ background: CHIP_BG, color: TEXT_LIGHT }}>
+        {screenOptions.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+      </select>
+      {stateOptions && stateOptions.length > 0 && (
+        <select value={stateId || ""} onChange={(e) => setStateId(e.target.value)} className="h-9 shrink-0 rounded-lg border-none px-2.5 text-[13px] font-semibold" style={{ background: CHIP_BG, color: TEXT_LIGHT }}>
+          {stateOptions.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+      )}
+    </div>
+
+    <button onClick={() => setShowInfo(!showInfo)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg" style={{ background: showInfo ? CHIP_ACTIVE_BG : CHIP_BG, color: TEXT_LIGHT }} title="Info layar">
+      <Info size={16} />
+    </button>
+    <span className="hidden shrink-0 text-[11px] uppercase tracking-[.08em] md:inline" style={{ color: TEXT_DIM }}>Pratinjau desain</span>
+  </div>;
+}
+
+function App() {
+  const [activeApp, setActiveApp] = useState("kasir");
+  const [selections, setSelections] = useState({ ...DEFAULTS });
+  const [showInfo, setShowInfo] = useState(true);
+
+  const app = APPS.find(a => a.id === activeApp);
+  const sel = selections[activeApp];
+  const screenConf = app.screens.find(s => s.id === sel.screen) || app.screens[0];
+  const stateOptions = screenConf.states || null;
+
+  const setScreenId = (id) => {
+    const conf = app.screens.find(s => s.id === id);
+    setSelections(prev => ({ ...prev, [activeApp]: { screen: id, state: conf.states ? conf.states[0].id : null } }));
+  };
+  const setStateId = (id) => setSelections(prev => ({ ...prev, [activeApp]: { ...prev[activeApp], state: id } }));
+
+  const activeStateLabel = stateOptions ? (stateOptions.find(s => s.id === sel.state) || {}).label : null;
+
+  return <div style={{ minHeight: "100vh" }}>
+    <Bar activeApp={activeApp} setActiveApp={setActiveApp} apps={APPS}
+      screenOptions={app.screens} screenId={screenConf.id} setScreenId={setScreenId}
+      stateOptions={stateOptions} stateId={sel.state} setStateId={setStateId}
+      showInfo={showInfo} setShowInfo={setShowInfo} />
+    <div style={{ paddingTop: 56 }}>
+      <Frame app={app} screenId={screenConf.id} stateId={sel.state} />
+    </div>
+    <InfoPanel open={showInfo} onClose={() => setShowInfo(false)} screenLabel={screenConf.label} stateLabel={activeStateLabel} device={app.device} />
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

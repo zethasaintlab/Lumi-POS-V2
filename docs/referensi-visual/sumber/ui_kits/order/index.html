@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>LumiPOS - Lumi-Order</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19",
+    "react-dom/client": "https://esm.sh/react-dom@19/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.468.0?external=react"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>body{margin:0;font-family:'Nunito Sans',sans-serif;background:var(--secondary);}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useMemo } from "react";
+import ReactDOM from "react-dom/client";
+import {
+  Bell, Check, ChefHat, ChevronDown, ChevronLeft, ChevronUp, Clock3, Copy, CookingPot,
+  ImageOff, Minus, Plus, QrCode, Search, ShoppingBag, SearchX, Store, Tag, Trash2,
+  UtensilsCrossed, Wallet, WifiOff,
+} from "lucide-react";
+
+const money = (n) => `Rp ${n.toLocaleString("id-ID")}`;
+
+function parseParams() {
+  const p = new URLSearchParams(location.search);
+  return { embed: p.get("embed") === "1", screen: p.get("screen"), state: p.get("state") };
+}
+const INIT = parseParams();
+
+const ITEMS = [
+  { id: "es-kopi-susu", name: "Es Kopi Susu", price: 18000, desc: "Kopi susu gula aren yang lembut.", image: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=300&h=300&fit=crop&auto=format", category: "Kopi", popular: true, hasVariants: true, available: true },
+  { id: "kopi-hitam", name: "Kopi Hitam", price: 10000, desc: "Kopi hitam pekat tanpa gula.", image: null, category: "Kopi", popular: false, hasVariants: false, available: true },
+  { id: "kopi-gula-aren", name: "Kopi Susu Gula Aren", price: 20000, desc: "Kopi susu dengan gula aren asli.", image: "failed", category: "Kopi", popular: false, hasVariants: false, available: true },
+  { id: "nasi-goreng", name: "Nasi Goreng Kampung", price: 28000, desc: "Nasi goreng pedas dengan telur.", image: "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=300&h=300&fit=crop&auto=format", category: "Makanan", popular: true, hasVariants: false, available: true },
+  { id: "ayam-geprek", name: "Ayam Geprek", price: 25000, desc: "Ayam goreng geprek sambal bawang.", image: null, category: "Makanan", popular: false, hasVariants: false, available: true },
+  { id: "kentang-goreng", name: "Kentang Goreng", price: 17000, desc: "Kentang goreng renyah dengan saus sambal.", image: "failed", category: "Camilan", popular: false, hasVariants: false, available: true },
+  { id: "pisang-coklat", name: "Pisang Coklat", price: 15000, desc: "Pisang goreng lumer coklat.", image: null, category: "Camilan", popular: false, hasVariants: false, available: true },
+  { id: "roti-bakar", name: "Roti Bakar Coklat", price: 16000, desc: "Roti panggang dengan coklat lumer.", image: "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=300&h=300&fit=crop&auto=format", category: "Camilan", popular: false, hasVariants: false, available: true },
+  { id: "teh-tarik", name: "Teh Tarik", price: 12000, desc: "Teh susu hangat yang ringan.", image: "https://images.unsplash.com/photo-1559314809-0d155014e29e?w=300&h=300&fit=crop&auto=format", category: "Minuman", popular: true, hasVariants: false, available: true },
+];
+const CATEGORIES = ["Semua", "Kopi", "Makanan", "Minuman", "Camilan"];
+const POPULAR_IDS = ["es-kopi-susu", "nasi-goreng", "teh-tarik"];
+const ADDONS = [{ name: "Extra shot espresso", price: 5000 }, { name: "Boba", price: 4000 }];
+
+function computeTotals(cart, promoOk) {
+  const subtotal = cart.reduce((a, l) => a + l.unitPrice * l.qty, 0);
+  const discount = promoOk ? Math.round(subtotal * 0.1) : 0;
+  const serviceFee = Math.round((subtotal - discount) * 0.05);
+  const tax = Math.round((subtotal - discount + serviceFee) * 0.1);
+  const total = subtotal - discount + serviceFee + tax;
+  return { subtotal, discount, serviceFee, tax, total };
+}
+
+const STANDALONE_SCREENS = [
+  ["masuk", "18. Masuk via QR"],
+  ["menu:normal", "19. Daftar menu"], ["menu:habis", "19b. Menu - item habis"], ["menu:cari-kosong", "19c. Menu - pencarian kosong"], ["menu:kategori-kosong", "19d. Menu - kategori kosong"],
+  ["detail", "20. Detail item"],
+  ["keranjang:ada", "21. Keranjang"], ["keranjang:kosong", "21b. Keranjang kosong"],
+  ["bayar:memuat", "22. Pembayaran - QRIS memuat"], ["bayar:siap", "22b. Pembayaran - QRIS siap"], ["bayar:berhasil", "22c. Pembayaran - berhasil"], ["bayar:kedaluwarsa", "22d. Pembayaran - kedaluwarsa"],
+  ["status:diterima", "23. Status - diterima"], ["status:disiapkan", "23b. Status - disiapkan"], ["status:siap", "23c. Status - siap"],
+  ["riwayat", "24. Riwayat pesanan meja"],
+  ["qr-error:invalid", "25. QR tidak dikenali"], ["qr-error:kedaluwarsa", "25b. QR kedaluwarsa"],
+];
+
+function MockBar({ value, setValue }) {
+  return <div className="fixed top-0 left-0 right-0 z-50 flex h-11 items-center gap-3 px-3.5 text-[13px] font-semibold" style={{ background: "var(--switcher-bg)", color: "#c7d4d5" }}>
+    <span className="text-[11px] uppercase tracking-[.08em] opacity-60">Lumi-Order</span>
+    <select value={value} onChange={(e) => setValue(e.target.value)} className="h-7 rounded-md border-none px-2 text-[13px]" style={{ background: "#2a3739", color: "#e7eeee" }}>
+      {STANDALONE_SCREENS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+    </select>
+    <span className="ml-auto text-[11px] opacity-50">Mockup preview</span>
+  </div>;
+}
+
+function Btn({ children, variant = "primary", className = "", onClick, disabled = false }) {
+  const color = { primary: "bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--accent-hover)]", secondary: "border border-[var(--input-border)] bg-transparent text-[var(--foreground)] hover:bg-[var(--secondary-hover)]", ghost: "text-[var(--ghost-foreground)] hover:bg-[var(--ghost-hover-bg)]" }[variant];
+  return <button disabled={disabled} onClick={onClick} className={`inline-flex h-11 items-center justify-center gap-2 rounded-[10px] px-4 text-[15px] font-semibold whitespace-nowrap transition active:translate-y-px disabled:opacity-40 ${color} ${className}`}>{children}</button>;
+}
+
+function Stepper({ qty, onChange, min = 1 }) {
+  const stepBtn = "grid h-9 w-9 place-items-center rounded-[10px] border";
+  return <div className="flex items-center gap-3">
+    <button onClick={() => onChange(qty - 1)} disabled={qty <= min} className={`${stepBtn} border-[var(--input-border)] text-[var(--ghost-foreground)] disabled:cursor-not-allowed disabled:border-[var(--border)] disabled:text-[var(--icon-muted)]`}><Minus size={16} /></button>
+    <span className="w-5 text-center text-[15px] font-semibold">{qty}</span>
+    <button onClick={() => onChange(qty + 1)} className={`${stepBtn} border-[var(--input-border)] text-[var(--ghost-foreground)]`}><Plus size={16} /></button>
+  </div>;
+}
+
+function Collapsible({ title, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return <div className="rounded-xl border" style={{ borderColor: "var(--guest-border)" }}>
+    <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3 text-left text-[15px] font-semibold">
+      {title}{open ? <ChevronUp size={18} className="text-[var(--muted-foreground)]" /> : <ChevronDown size={18} className="text-[var(--muted-foreground)]" />}
+    </button>
+    {open && <div className="border-t px-4 py-3" style={{ borderColor: "var(--guest-border)" }}>{children}</div>}
+  </div>;
+}
+
+function Phone({ children }) {
+  return <div className="flex justify-center" style={{ paddingTop: "var(--mockbar-h)", paddingBottom: 16, minHeight: "100vh", background: "var(--secondary)" }}>
+    <div className="flex w-full max-w-[420px] flex-col overflow-hidden rounded-[28px] shadow-[0_20px_55px_rgba(22,40,44,0.18)]" style={{ background: "var(--guest-background)", height: "calc(100vh - var(--mockbar-h) - 16px)", maxHeight: 844 }}>{children}</div>
+  </div>;
+}
+
+function TopBar({ title, onBack, right }) {
+  return <div className="flex h-14 shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: "var(--guest-border)", background: "var(--guest-background)" }}>
+    {onBack && <button onClick={onBack} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[var(--ghost-foreground)]"><ChevronLeft size={20} /></button>}
+    <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{title}</span>
+    {right}
+  </div>;
+}
+
+function ImgOrPlaceholder({ image, name, className }) {
+  if (image === "failed") return <div className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-[var(--dashed-border)] bg-[var(--dashed-bg)] text-[var(--muted-foreground)] ${className}`}><ImageOff size={16} /><span className="text-[13px] leading-none">Gagal</span></div>;
+  if (image) return <img src={image} alt={name} className={`object-cover ${className}`} />;
+  return <div className={className} />;
+}
+
+function Masuk({ setScreen }) {
+  return <Phone>
+    <div className="relative h-64 shrink-0">
+      <img src="https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800&h=500&fit=crop&auto=format" className="h-full w-full object-cover" alt="Kedai Senja" />
+      <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(22,40,44,0.75), rgba(22,40,44,0.15) 55%, rgba(22,40,44,0.35))" }} />
+      <div className="absolute left-4 right-4 top-4 flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: "rgba(22,40,44,0.45)" }}>
+        <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--card)]"><Store size={14} className="text-[var(--primary)]" /></span>
+        <span className="text-[15px] font-semibold text-white">Kedai Senja</span>
+      </div>
+      <div className="absolute bottom-4 left-4 right-4">
+        <p className="text-[13px] font-normal text-white/80">Selamat datang di</p>
+        <h1 className="mt-1 text-[32px] font-bold leading-tight text-white">Pesan dari meja Anda sendiri.</h1>
+      </div>
+    </div>
+    <div className="flex-1 overflow-auto p-4">
+      <div className="flex items-center gap-2 rounded-xl p-3" style={{ background: "var(--accent-subtle)" }}>
+        <UtensilsCrossed size={18} className="text-[var(--primary)]" />
+        <div className="text-[13px]"><span className="block font-semibold text-[var(--primary)]">Meja 07 terdeteksi</span><span className="text-[var(--muted-foreground-strong-alt)]">Buka 07.00 - 21.00 &middot; siap ± 12 menit</span></div>
+      </div>
+      <h2 className="mt-5 text-[15px] font-semibold">Menu favorit hari ini</h2>
+      <div className="mt-2.5 space-y-2.5">
+        {POPULAR_IDS.map((id) => { const it = ITEMS.find((x) => x.id === id); return <div key={id} className="flex items-center gap-3 rounded-xl border p-2.5" style={{ borderColor: "var(--guest-border)", background: "var(--guest-card)" }}>
+          <ImgOrPlaceholder image={it.image} name={it.name} className="h-14 w-14 shrink-0 rounded-lg" />
+          <div className="min-w-0 flex-1"><p className="truncate text-[15px] font-normal">{it.name}</p><p className="mt-0.5 text-[15px] font-normal text-[var(--primary)]">{money(it.price)}</p></div>
+        </div>; })}
+      </div>
+    </div>
+    <div className="border-t p-4" style={{ borderColor: "var(--guest-border)" }}><Btn className="w-full" onClick={() => setScreen("menu:normal")}><QrCode size={18} /> Mulai pesan</Btn></div>
+  </Phone>;
+}
+
+function MenuCard({ item, cartQty, onOpen, onQuickAdd }) {
+  const disabled = !item.available;
+  const Wrapper = disabled ? "div" : "button";
+  return <Wrapper onClick={disabled ? undefined : onOpen} className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left ${disabled ? "cursor-not-allowed opacity-60" : ""}`} style={{ borderColor: "var(--guest-border)", background: "var(--guest-card)" }}>
+    <div className="relative shrink-0">
+      <ImgOrPlaceholder image={item.image} name={item.name} className="h-16 w-16 rounded-lg" />
+      {cartQty > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--primary)] px-1 text-[11px] font-semibold text-[var(--primary-foreground)]">{cartQty}</span>}
+    </div>
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-1.5"><p className="truncate text-[15px] font-normal">{item.name}</p>{item.popular && <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "var(--accent-subtle)", color: "var(--primary)" }}>Populer</span>}</div>
+      <p className="mt-1 text-[15px] font-normal" style={{ color: disabled ? "var(--muted-foreground)" : "var(--primary)" }}>{money(item.price)}</p>
+      {disabled && <span className="mt-1 inline-block rounded-full px-2 py-0.5 text-[13px]" style={{ background: "var(--status-pending-bg)", color: "var(--status-pending-text)" }}>Habis</span>}
+    </div>
+    {!disabled && !item.hasVariants && (
+      <span onClick={(e) => { e.stopPropagation(); onQuickAdd(); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-full" style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}><Plus size={18} /></span>
+    )}
+  </Wrapper>;
+}
+
+function Menu({ setScreen, variant, cart, addToCart }) {
+  const habisId = variant === "habis" ? "roti-bakar" : null;
+  const forceSearchEmpty = variant === "cari-kosong";
+  const forceCategoryEmpty = variant === "kategori-kosong";
+  const [cat, setCat] = useState(forceCategoryEmpty ? "Minuman" : "Semua");
+  const [query, setQuery] = useState(forceSearchEmpty ? "xyz" : "");
+  const items = useMemo(() => ITEMS.map((it) => it.id === habisId ? { ...it, available: false } : it)
+    .filter((it) => cat === "Semua" || it.category === cat)
+    .filter((it) => it.name.toLowerCase().includes(query.toLowerCase()))
+    .filter((it) => !forceCategoryEmpty || it.category !== "Minuman"), [cat, query]);
+  const cartQtyFor = (id) => cart.filter((l) => l.itemId === id).reduce((a, l) => a + l.qty, 0);
+  const cartCount = cart.reduce((a, l) => a + l.qty, 0);
+  const { total } = computeTotals(cart, false);
+
+  return <Phone>
+    <TopBar title="Menu - Meja 7" />
+    <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--guest-border)" }}>
+      <Search size={16} className="text-[var(--muted-foreground)]" />
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari menu" className="w-full bg-transparent text-[15px] outline-none" />
+    </div>
+    <div className="relative border-b" style={{ borderColor: "var(--guest-border)" }}>
+      <div className="flex gap-2 overflow-x-auto px-4 py-3">{CATEGORIES.map((c) => <button key={c} onClick={() => setCat(c)} className={`h-9 shrink-0 rounded-full px-3.5 text-[13px] font-semibold ${cat === c ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-[var(--secondary)] text-[var(--muted-foreground-strong-alt)]"}`}>{c}</button>)}</div>
+      <div className="pointer-events-none absolute right-0 top-0 h-full w-10" style={{ background: "linear-gradient(to right, transparent, var(--guest-background))" }} />
+    </div>
+    <div className="flex-1 space-y-2.5 overflow-auto p-4">
+      {items.length === 0 ? (
+        <div className="grid h-full min-h-[280px] place-items-center text-center">
+          <div>
+            {query ? <SearchX className="mx-auto text-[var(--icon-muted)]" size={34} /> : <ShoppingBag className="mx-auto text-[var(--icon-muted)]" size={34} />}
+            <h2 className="mt-3 text-[15px] font-semibold">{query ? "Menu tidak ditemukan" : "Belum ada menu di kategori ini"}</h2>
+            <p className="mt-1 text-[13px] text-[var(--muted-foreground)]">{query ? `Coba kata kunci lain selain "${query}".` : "Pilih kategori lain untuk melihat menu."}</p>
+          </div>
+        </div>
+      ) : items.map((it) => <MenuCard key={it.id} item={it} cartQty={cartQtyFor(it.id)} onOpen={() => setScreen(`detail:${it.id}`)} onQuickAdd={() => addToCart(it, { qty: 1 })} />)}
+    </div>
+    <div className="border-t p-4" style={{ borderColor: "var(--guest-border)" }}>
+      <Btn className="w-full justify-between px-5" onClick={() => setScreen("keranjang:ada")} disabled={cartCount === 0}>
+        <span className="flex items-center gap-2"><ShoppingBag size={18} /> Lihat keranjang</span><span>{cartCount > 0 ? `${cartCount} item · ${money(total)}` : "Kosong"}</span>
+      </Btn>
+    </div>
+  </Phone>;
+}
+
+function Detail({ setScreen, itemId, addToCart }) {
+  const item = ITEMS.find((i) => i.id === itemId) || ITEMS[0];
+  const [size, setSize] = useState("Reguler");
+  const [gula, setGula] = useState("Normal");
+  const [addons, setAddons] = useState([]);
+  const [note, setNote] = useState("");
+  const [qty, setQty] = useState(1);
+  const sizeDelta = size === "Besar" ? 4000 : 0;
+  const addonsSum = addons.reduce((a, name) => a + ADDONS.find((x) => x.name === name).price, 0);
+  const unitPrice = item.price + sizeDelta + addonsSum;
+  const toggleAddon = (name) => setAddons((a) => a.includes(name) ? a.filter((x) => x !== name) : [...a, name]);
+  return <Phone>
+    <TopBar title="Detail item" onBack={() => setScreen("menu:normal")} />
+    <div className="flex-1 overflow-auto">
+      <ImgOrPlaceholder image={item.image} name={item.name} className="h-48 w-full" />
+      <div className="p-4">
+        <h1 className="text-[20px] font-semibold">{item.name}</h1>
+        <p className="mt-1 text-[15px] font-normal text-[var(--primary)]">{money(item.price)}</p>
+        <p className="mt-3 text-[15px] text-[var(--muted-foreground)]">{item.desc}</p>
+        {item.hasVariants && <>
+          <div className="mt-6"><p className="text-[15px] font-normal">Ukuran</p><div className="mt-2 flex gap-2">{["Reguler", "Besar"].map((s) => <button key={s} onClick={() => setSize(s)} className={`h-11 flex-1 rounded-[10px] border text-[15px] font-semibold ${size === s ? "border-[var(--primary)] bg-[var(--accent-subtle)] text-[var(--primary)]" : "border-[var(--input-border)]"}`}>{s}{s === "Besar" && <span className="ml-1 text-[13px] font-normal">+{money(4000)}</span>}</button>)}</div></div>
+          <div className="mt-5"><p className="text-[15px] font-normal">Tingkat gula</p><div className="mt-2 flex gap-2">{["Normal", "Kurang", "Tanpa"].map((g) => <button key={g} onClick={() => setGula(g)} className={`h-11 flex-1 rounded-[10px] border text-[15px] font-semibold ${gula === g ? "border-[var(--primary)] bg-[var(--accent-subtle)] text-[var(--primary)]" : "border-[var(--input-border)]"}`}>{g}</button>)}</div></div>
+          <div className="mt-5"><p className="text-[15px] font-normal">Tambahan</p><div className="mt-2 space-y-2">{ADDONS.map((a) => <label key={a.name} className="flex items-center justify-between rounded-[10px] border p-3 text-[15px]" style={{ borderColor: "var(--guest-border)" }}><span className="flex items-center gap-2"><input type="checkbox" checked={addons.includes(a.name)} onChange={() => toggleAddon(a.name)} className="h-5 w-5 rounded border-[var(--input-border)] accent-[var(--primary)]" />{a.name}</span><span className="text-[var(--muted-foreground)]">{money(a.price)}</span></label>)}</div></div>
+        </>}
+        <div className="mt-5"><p className="mb-1.5 text-[15px] font-normal">Catatan khusus</p><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Contoh: kurangi gula" className="h-11 w-full rounded-[10px] border border-[var(--input-border)] bg-transparent px-3 text-[15px] outline-none" /></div>
+      </div>
+    </div>
+    <div className="flex items-center gap-3 border-t p-4" style={{ borderColor: "var(--guest-border)" }}>
+      <Stepper qty={qty} onChange={(v) => setQty(Math.max(1, v))} />
+      <Btn className="flex-1" onClick={() => { addToCart(item, { qty, variantLabel: item.hasVariants ? `${size} · Gula ${gula}` : "", variantDelta: sizeDelta, addons, note }); setScreen("keranjang:ada"); }}>Tambah - {money(unitPrice * qty)}</Btn>
+    </div>
+  </Phone>;
+}
+
+function CartLine({ line, onQty, onRemove }) {
+  const [confirming, setConfirming] = useState(false);
+  return <div className="mb-2.5 rounded-xl border p-3" style={{ borderColor: "var(--guest-border)" }}>
+    <div className="flex items-center gap-3">
+      <ImgOrPlaceholder image={line.image} name={line.name} className="h-12 w-12 shrink-0 rounded-lg" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-normal">{line.name}</p>
+        {line.variantLabel && <p className="text-[13px] text-[var(--muted-foreground)]">{line.variantLabel}</p>}
+        <p className="mt-0.5 text-[13px] text-[var(--muted-foreground)]">{money(line.unitPrice)} per item</p>
+      </div>
+      <button onClick={() => setConfirming(true)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[var(--destructive)] hover:bg-[var(--status-danger-bg)]"><Trash2 size={16} /></button>
+    </div>
+    <div className="mt-2.5 flex items-center justify-between">
+      <Stepper qty={line.qty} onChange={(v) => onQty(v)} />
+      <span className="text-[15px] font-semibold">{money(line.unitPrice * line.qty)}</span>
+    </div>
+    {confirming && <div className="mt-2.5 flex items-center justify-between rounded-lg p-2.5 text-[13px]" style={{ background: "var(--status-danger-bg)", color: "var(--status-danger-text)" }}>
+      <span>Hapus {line.name} dari keranjang?</span>
+      <span className="flex gap-2"><button onClick={() => setConfirming(false)} className="font-semibold underline">Batal</button><button onClick={onRemove} className="font-semibold underline">Hapus</button></span>
+    </div>}
+  </div>;
+}
+
+function Keranjang({ setScreen, variant, cart, updateQty, removeLine }) {
+  const isEmpty = variant === "kosong" || cart.length === 0;
+  const [promo, setPromo] = useState("");
+  const [promoOk, setPromoOk] = useState(false);
+  const { subtotal, discount, serviceFee, tax, total } = computeTotals(cart, promoOk);
+  return <Phone>
+    <TopBar title="Keranjang" onBack={() => setScreen("menu:normal")} />
+    {isEmpty ? (
+      <div className="grid flex-1 place-items-center p-8 text-center">
+        <div><ShoppingBag className="mx-auto text-[var(--icon-muted)]" size={34} /><p className="mt-3 text-[15px] font-normal">Keranjang masih kosong</p><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Pilih menu untuk mulai memesan.</p><Btn className="mt-5" onClick={() => setScreen("menu:normal")}>Lihat menu</Btn></div>
+      </div>
+    ) : <>
+      <div className="flex-1 overflow-auto p-4">
+        {cart.map((l) => <CartLine key={l.lineId} line={l} onQty={(v) => updateQty(l.lineId, v)} onRemove={() => removeLine(l.lineId)} />)}
+        <Btn variant="secondary" className="mt-1 w-full" onClick={() => setScreen("menu:normal")}><Plus size={16} /> Tambah item lain</Btn>
+        <div className="mt-4"><p className="mb-1.5 text-[15px] font-normal">Catatan untuk seluruh pesanan</p><input placeholder="Contoh: antar ke meja 07" className="h-11 w-full rounded-[10px] border border-[var(--input-border)] bg-transparent px-3 text-[15px] outline-none" /></div>
+        <div className="mt-4 flex items-center gap-2"><Tag size={16} className="text-[var(--muted-foreground)]" /><input value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="Kode promo" className="h-11 flex-1 rounded-[10px] border border-[var(--input-border)] bg-transparent px-3 text-[15px] outline-none" /><Btn variant="secondary" onClick={() => setPromoOk(promo.trim().length > 0)}>Pakai</Btn></div>
+      </div>
+      <div className="border-t p-4" style={{ borderColor: "var(--guest-border)" }}>
+        <div className="space-y-1.5 text-[15px]">
+          <div className="flex justify-between text-[var(--muted-foreground)]"><span>Subtotal</span><span>{money(subtotal)}</span></div>
+          <div className="flex justify-between text-[var(--muted-foreground)]"><span>Diskon</span><span>{discount > 0 ? `-${money(discount)}` : money(0)}</span></div>
+          <div className="flex justify-between text-[var(--muted-foreground)]"><span>Biaya layanan</span><span>{money(serviceFee)}</span></div>
+          <div className="flex justify-between text-[var(--muted-foreground)]"><span>Pajak</span><span>{money(tax)}</span></div>
+          <div className="flex justify-between pt-1.5 text-[20px] font-semibold"><span>Total</span><span>{money(total)}</span></div>
+        </div>
+        <Btn className="mt-3 w-full" onClick={() => setScreen("bayar:siap")}>Bayar sekarang</Btn>
+      </div>
+    </>}
+  </Phone>;
+}
+
+function OrderSummaryList({ cart }) {
+  return <div className="space-y-2">{cart.map((l) => <div key={l.lineId} className="flex justify-between text-[15px]"><span className="text-[var(--muted-foreground)]">{l.qty}x {l.name}</span><span>{money(l.unitPrice * l.qty)}</span></div>)}</div>;
+}
+
+function QrisPanel({ live, setLive }) {
+  return <div className="text-center">
+    {live === 0 && <div className="mx-auto grid h-44 w-44 grid-cols-5 gap-1 rounded-xl border border-[var(--border)] p-4">{Array.from({ length: 25 }).map((_, i) => <span key={i} className="animate-pulse rounded bg-[var(--skeleton-bg)]" />)}</div>}
+    {live === 1 && <><div className="mx-auto grid h-44 w-44 grid-cols-9 gap-1 rounded-xl bg-white p-4 shadow-[0_5px_18px_rgba(20,112,107,.10)]">{Array.from({ length: 81 }).map((_, i) => <span key={i} className={`${[0, 1, 2, 9, 11, 18, 19, 20, 60, 61, 62, 69, 71, 78, 79, 80].includes(i) || (i * 7) % 11 < 5 ? "bg-[var(--foreground)]" : "bg-white"}`} />)}</div><p className="mt-4 text-[15px] font-normal">Pindai dengan aplikasi e-wallet</p><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Berlaku selama 04:56</p></>}
+    {live === 2 && <div className="py-4"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[var(--status-success-bg)] text-[var(--status-success-text)]"><Check size={32} /></span><h2 className="mt-4 text-[20px] font-semibold">Pembayaran berhasil</h2></div>}
+    {live === 3 && <div className="py-4"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]"><Clock3 size={28} /></span><h2 className="mt-4 text-[20px] font-semibold">Kode QR kedaluwarsa</h2><Btn className="mt-5" onClick={() => setLive(1)}>Buat kode baru</Btn></div>}
+  </div>;
+}
+
+function variantToBayar(variant) { return { memuat: 0, siap: 1, berhasil: 2, kedaluwarsa: 3 }[variant] ?? 1; }
+
+function Bayar({ setScreen, variant, cart }) {
+  const { total } = computeTotals(cart, false);
+  const [method, setMethod] = useState("QRIS");
+  const [live, setLive] = useState(variantToBayar(variant));
+  return <Phone>
+    <TopBar title="Pembayaran" onBack={() => setScreen("keranjang:ada")} />
+    <div className="flex-1 overflow-auto p-4">
+      <p className="text-[13px] text-[var(--muted-foreground)]">Selesaikan pembayaran untuk mengirim pesanan.</p>
+      <section className="mt-4 overflow-hidden rounded-xl border" style={{ borderColor: "var(--guest-border)", background: "var(--guest-card)" }}>
+        <div className="p-5 text-center" style={{ background: "var(--accent-subtle)" }}><p className="text-[13px] font-normal uppercase tracking-[.1em] text-[var(--muted-foreground-strong-alt)]">Total pesanan</p><p className="mt-1 text-[32px] font-bold">{money(total)}</p></div>
+        <div className="p-3"><div className="grid grid-cols-2 rounded-[10px] bg-[var(--secondary)] p-1">{["QRIS", "Bayar di kasir"].map((m) => <button key={m} onClick={() => setMethod(m)} className={`h-10 rounded-lg text-[13px] font-semibold ${method === m ? "bg-[var(--card)] text-[var(--primary)] shadow-sm" : "text-[var(--muted-foreground)]"}`}>{m}</button>)}</div></div>
+        <div className="p-5">
+          <div className="mb-4"><Collapsible title="Rincian pesanan"><OrderSummaryList cart={cart} /></Collapsible></div>
+          {method === "QRIS" ? <QrisPanel live={live} setLive={setLive} /> : <div className="text-center"><Wallet className="mx-auto text-[var(--primary)]" size={32} /><p className="mt-3 text-[15px] font-normal">Tunjukkan layar ini ke kasir</p><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Bayar {money(total)} secara tunai atau kartu di meja kasir.</p></div>}
+        </div>
+      </section>
+    </div>
+    <div className="border-t p-4" style={{ borderColor: "var(--guest-border)" }}>
+      {method === "QRIS" ? (live === 2 ? <Btn className="w-full" onClick={() => setScreen("status:diterima")}>Lihat status pesanan</Btn> : <Btn className="w-full" disabled={live !== 1}>Menunggu pembayaran&hellip;</Btn>) : <Btn className="w-full" onClick={() => setScreen("status:diterima")}>Konfirmasi pesanan</Btn>}
+    </div>
+  </Phone>;
+}
+
+function StatusPesanan({ setScreen, variant }) {
+  const idx = { diterima: 0, disiapkan: 1, siap: 2 }[variant] ?? 1;
+  const stages = [["Pesanan diterima", Check], ["Sedang disiapkan", CookingPot], ["Siap disajikan", ChefHat]];
+  const [copied, setCopied] = useState(false);
+  const copy = () => { navigator.clipboard && navigator.clipboard.writeText("#142"); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  return <Phone>
+    <TopBar title="Status pesanan" />
+    <div className="flex-1 overflow-auto p-4">
+      <p className="text-[15px] text-[var(--muted-foreground)]">Meja 7</p>
+      <div className="mt-1 flex items-center gap-2"><p className="text-[32px] font-bold">#142</p><button onClick={copy} className="grid h-9 w-9 place-items-center rounded-lg text-[var(--ghost-foreground)] hover:bg-[var(--ghost-hover-bg)]"><Copy size={16} /></button>{copied && <span className="text-[13px] text-[var(--primary)]">Disalin</span>}</div>
+
+      <div className="mt-6">{stages.map((s, i) => { const [label, Icon] = s; const done = i <= idx; return <div key={label} className="flex gap-3">
+        <div className="flex flex-col items-center">
+          <span className="grid h-10 w-10 place-items-center rounded-full" style={{ background: done ? "var(--status-success-bg)" : "var(--step-inactive-bg)", color: done ? "var(--status-success-text)" : "var(--step-inactive-text)" }}><Icon size={18} /></span>
+          {i < stages.length - 1 && <span className="my-1 h-10 w-0.5" style={{ background: done ? "var(--status-success-bg)" : "var(--step-inactive-bg)" }} />}
+        </div>
+        <div className="pb-6"><p className="pt-2 text-[15px] font-normal leading-snug" style={{ color: done ? "var(--foreground)" : "var(--step-inactive-text)" }}>{label}</p>{done && <p className="mt-1 text-[13px] text-[var(--muted-foreground)]">14 Sep 2026, 12.1{i}</p>}</div>
+      </div>; })}</div>
+
+      {idx === 2 ? <div className="rounded-xl p-4" style={{ background: "var(--status-success-bg)" }}><p className="text-[15px] font-normal" style={{ color: "var(--status-success-text)" }}>Pesanan siap disajikan ke meja 7.</p></div>
+        : <div className="rounded-xl p-4" style={{ background: "var(--accent-subtle)" }}><p className="text-[13px] font-normal text-[var(--muted-foreground-strong-alt)]">Estimasi siap</p><p className="mt-1 text-[20px] font-semibold text-[var(--primary)]">10 - 15 menit lagi</p></div>}
+
+      <div className="mt-4"><Collapsible title="Rincian pesanan"><div className="space-y-2 text-[15px]"><div className="flex justify-between"><span className="text-[var(--muted-foreground)]">1x Es Kopi Susu</span><span>{money(18000)}</span></div><div className="flex justify-between"><span className="text-[var(--muted-foreground)]">1x Nasi Goreng Kampung</span><span>{money(28000)}</span></div></div></Collapsible></div>
+
+      <Btn variant="secondary" className="mt-4 w-full"><Bell size={17} /> Panggil pelayan</Btn>
+      {idx === 2 && <Btn className="mt-2 w-full" onClick={() => setScreen("menu:normal")}>Pesan lagi</Btn>}
+      <button onClick={() => setScreen("riwayat")} className="mt-3 w-full text-center text-[13px] font-semibold text-[var(--ghost-foreground)]">Lihat riwayat pesanan meja ini</button>
+    </div>
+  </Phone>;
+}
+
+function Riwayat({ setScreen }) {
+  const orders = [["#142", "14 Sep 2026, 12.10", "Rp 50.600", "Sedang disiapkan", "info"], ["#139", "14 Sep 2026, 11.20", "Rp 26.000", "Selesai", "success"]];
+  return <Phone>
+    <TopBar title="Riwayat pesanan meja" onBack={() => setScreen("menu:normal")} />
+    <div className="flex-1 overflow-auto p-4">
+      <p className="mb-3 text-[13px] text-[var(--muted-foreground)]">Semua pesanan dari Meja 7 pada sesi ini.</p>
+      {orders.map((o) => <button key={o[0]} onClick={() => setScreen("status:disiapkan")} className="mb-2.5 flex w-full items-center justify-between rounded-xl border p-3 text-left" style={{ borderColor: "var(--guest-border)", background: "var(--guest-card)" }}>
+        <div><p className="text-[15px] font-semibold">{o[0]}</p><p className="text-[13px] text-[var(--muted-foreground)]">{o[1]}</p></div>
+        <div className="text-right"><p className="text-[15px] font-normal">{o[2]}</p><span className="mt-1 inline-block rounded-full px-2 py-0.5 text-[13px]" style={{ background: o[4] === "success" ? "var(--status-success-bg)" : "var(--status-info-bg)", color: o[4] === "success" ? "var(--status-success-text)" : "var(--status-info-text)" }}>{o[3]}</span></div>
+      </button>)}
+    </div>
+  </Phone>;
+}
+
+function QrError({ variant }) {
+  const invalid = variant !== "kedaluwarsa";
+  return <Phone>
+    <div className="grid flex-1 place-items-center p-8 text-center">
+      <div>
+        <span className="mx-auto grid h-16 w-16 place-items-center rounded-full" style={{ background: "var(--status-danger-bg)", color: "var(--status-danger-text)" }}><WifiOff size={28} /></span>
+        <h1 className="mt-4 text-[20px] font-semibold">{invalid ? "QR meja tidak dikenali" : "QR meja kedaluwarsa"}</h1>
+        <p className="mt-1 text-[15px] text-[var(--muted-foreground)]">{invalid ? "Kode ini tidak terhubung ke meja manapun. Minta staf memindaikan ulang QR di meja Anda." : "Sesi pemesanan meja ini sudah berakhir. Pindai ulang kode QR di meja untuk mulai memesan lagi."}</p>
+      </div>
+    </div>
+  </Phone>;
+}
+
+function App() {
+  const [combo, setCombo] = useState(() => INIT.screen ? `${INIT.screen}${INIT.state ? ":" + INIT.state : ""}` : "menu:normal");
+  const [cart, setCart] = useState([{ lineId: 1, itemId: "es-kopi-susu", name: "Es Kopi Susu", image: ITEMS[0].image, unitPrice: 18000, qty: 1, variantLabel: "Reguler · Gula Normal" }, { lineId: 2, itemId: "nasi-goreng", name: "Nasi Goreng Kampung", image: ITEMS[3].image, unitPrice: 28000, qty: 1, variantLabel: "" }]);
+  let nextId = useMemo(() => ({ current: 3 }), []).current;
+
+  const addToCart = (item, { qty = 1, variantDelta = 0, addons = [], variantLabel = "", note = "" }) => {
+    const unitPrice = item.price + variantDelta + addons.reduce((a, n) => a + ADDONS.find((x) => x.name === n).price, 0);
+    setCart((c) => [...c, { lineId: Date.now() + Math.random(), itemId: item.id, name: item.name, image: item.image, unitPrice, qty, variantLabel, addons, note }]);
+  };
+  const updateQty = (lineId, v) => setCart((c) => v <= 0 ? c.filter((l) => l.lineId !== lineId) : c.map((l) => l.lineId === lineId ? { ...l, qty: v } : l));
+  const removeLine = (lineId) => setCart((c) => c.filter((l) => l.lineId !== lineId));
+
+  const [screen, ...rest] = combo.split(":");
+  const variantSlug = rest.join(":");
+  let view;
+  if (screen === "masuk") view = <Masuk key={combo} setScreen={setCombo} />;
+  else if (screen === "menu") view = <Menu key={combo} setScreen={setCombo} variant={variantSlug || "normal"} cart={cart} addToCart={addToCart} />;
+  else if (screen === "detail") view = <Detail key={combo} setScreen={setCombo} itemId={variantSlug || "es-kopi-susu"} addToCart={addToCart} />;
+  else if (screen === "keranjang") view = <Keranjang key={combo} setScreen={setCombo} variant={variantSlug || "ada"} cart={cart} updateQty={updateQty} removeLine={removeLine} />;
+  else if (screen === "bayar") view = <Bayar key={combo} setScreen={setCombo} variant={variantSlug || "siap"} cart={cart} />;
+  else if (screen === "status") view = <StatusPesanan key={combo} setScreen={setCombo} variant={variantSlug || "disiapkan"} />;
+  else if (screen === "riwayat") view = <Riwayat key={combo} setScreen={setCombo} />;
+  else if (screen === "qr-error") view = <QrError key={combo} variant={variantSlug || "invalid"} />;
+  return <div style={{ "--mockbar-h": INIT.embed ? "0px" : "44px" }}>{!INIT.embed && <MockBar value={combo} setValue={setCombo} />}{view}</div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Image & Upload States" subtitle="Dashed frames and skeletons for missing or broken imagery" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body{margin:0;font-family:'Nunito Sans',sans-serif;background:var(--card);padding:16px;display:flex;gap:8px;}
+  .sw{flex:1;border-radius:8px;height:68px;display:flex;flex-direction:column;justify-content:flex-end;padding:6px;font-size:11px;}
+  .n{font-weight:600;}
+  .dashed{border:1.5px dashed var(--dashed-border);background:var(--dashed-bg);}
+</style>
+<div class="sw dashed" style="color:var(--muted-foreground)"><span class="n">dashed-border</span>#a9c9c8</div>
+<div class="sw" style="border:1.5px dashed var(--dashed-border-strong);color:var(--muted-foreground)"><span class="n">dashed-border-strong</span>#b8d0d1</div>
+<div class="sw" style="border:2px dashed var(--dropzone-border);background:var(--panel-subtle-bg);color:var(--muted-foreground)"><span class="n">dropzone-border</span>#b7d0d1</div>
+<div class="sw" style="background:var(--skeleton-bg);color:var(--muted-foreground)"><span class="n">skeleton-bg</span>#e8f0f1</div>

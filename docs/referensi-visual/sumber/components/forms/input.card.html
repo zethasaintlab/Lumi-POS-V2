@@ -1,0 +1,13 @@
+<!-- @dsCard group="Components" viewport="700x220" name="Input" subtitle="Label above, hint or error below, disabled" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body{margin:0;font-family:'Nunito Sans',sans-serif;background:var(--card);padding:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+  label{display:block;font-size:15px;}
+  span.l{display:block;margin-bottom:6px;}
+  input{height:44px;width:100%;box-sizing:border-box;border-radius:10px;border:1px solid var(--input-border);padding:0 12px;font-size:15px;font-family:inherit;background:var(--card);}
+  span.h{display:block;margin-top:6px;font-size:13px;color:var(--muted-foreground);}
+  span.e{display:block;margin-top:6px;font-size:13px;color:var(--destructive);}
+</style>
+<label><span class="l">Saldo awal kas</span><input value="500.000"><span class="h">Diperiksa lagi saat tutup shift.</span></label>
+<label><span class="l">Alasan pembatalan</span><input style="border-color:var(--destructive)"><span class="e">Alasan pembatalan wajib diisi.</span></label>
+<label><span class="l">Nama usaha</span><input value="Kedai Senja" disabled style="opacity:.5"></label>
