@@ -78,7 +78,7 @@ status pesanan). `apps/hp` melayani **owner** dengan empat layar M-00…M-03
 | `INDEKS.md` | Semua tangkapan dalam satu halaman, dikelompokkan per aplikasi |
 | `banding/` | Mockup (kiri) berdampingan dengan galeri kasir (kanan) |
 | `BANDING.md` | Pemetaan pasangan dan tabel selisih terukur |
-| `PALET.md` | Palet repo dan mockup berdampingan, dengan rasio kontras |
+| `PALET.md` + `palet.png` | Palet repo dan mockup berdampingan, dengan rasio kontras |
 | `alat/` | Skrip yang menghasilkan semua di atas |
 
 ## Cara tangkapan dibuat, dan batasnya
@@ -87,6 +87,7 @@ status pesanan). `apps/hp` melayani **owner** dengan empat layar M-00…M-03
 cd docs/referensi-visual/alat
 npm install
 node vendor.mjs && node potret.mjs && node indeks.mjs
+node palet.mjs
 node banding.mjs      # butuh `npm run build:galeri` di akar repo lebih dulu
 ```
 
