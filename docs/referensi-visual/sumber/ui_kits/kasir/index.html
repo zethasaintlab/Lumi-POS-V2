@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>LumiPOS - Kasir</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19",
+    "react-dom/client": "https://esm.sh/react-dom@19/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.468.0?external=react"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>body{margin:0;font-family:'Nunito Sans',sans-serif;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect } from "react";
+import ReactDOM from "react-dom/client";
+import {
+  ArrowDownLeft, ArrowUpRight, Bell, Calculator, Check, ChevronDown, ChevronLeft, CircleAlert,
+  Clock3, Coffee, CreditCard, ImageOff, LayoutGrid, LockKeyhole, Minus, Package, PauseCircle,
+  Pencil, Plus, Printer, ReceiptText, RotateCcw, Search, Send, ShoppingBag, Store, Trash2,
+  UserRound, UsersRound, UtensilsCrossed, WalletCards, WifiOff, X,
+} from "lucide-react";
+
+const money = (n) => `Rp ${n.toLocaleString("id-ID")}`;
+
+function parseParams() {
+  const p = new URLSearchParams(location.search);
+  return { embed: p.get("embed") === "1", screen: p.get("screen"), state: p.get("state") };
+}
+const INIT = parseParams();
+
+const products = [
+  ["Es Kopi Susu", 18000, "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=300&h=170&fit=crop&auto=format"],
+  ["Teh Tarik", 12000],
+  ["Nasi Goreng Kampung", 28000, "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=300&h=170&fit=crop&auto=format"],
+  ["Roti Bakar Coklat", 16000],
+  ["Ayam Geprek", 25000],
+  ["Mie Goreng Jawa", 24000],
+  ["Kwetiau Siram", 27000, "https://images.unsplash.com/photo-1559314809-0d155014e29e?w=300&h=170&fit=crop&auto=format"],
+  ["Air Mineral 600ml", 8000],
+  ["Lemon Tea", 14000],
+  ["Kentang Goreng", 17000, "failed"],
+  ["Pisang Coklat", 15000],
+  ["Susu Jahe", 13000, "failed"],
+];
+
+const STANDALONE_SCREENS = [
+  ["login", "1. Login PIN"], ["shift", "2. Buka Shift"],
+  ["kasir:campuran", "3. Layar Kasir - katalog campuran"], ["kasir:keranjang-kosong", "3b. Kasir - keranjang kosong"],
+  ["kasir:katalog-kosong", "3c. Kasir - katalog kosong"], ["kasir:offline", "3d. Kasir - mode offline"], ["kasir:keranjang-penuh", "3e. Kasir - keranjang penuh (20 item)"],
+  ["edit-item", "4. Popup Edit Item"],
+  ["bayar:tunai", "5. Kartu Pembayaran - Tunai"], ["bayar:qris-memuat", "5b. Pembayaran - QRIS memuat"],
+  ["bayar:qris-siap", "5c. Pembayaran - QRIS siap"], ["bayar:qris-terkonfirmasi", "5d. Pembayaran - QRIS terkonfirmasi"],
+  ["bayar:qris-kedaluwarsa", "5e. Pembayaran - QRIS kedaluwarsa"], ["bayar:kartu", "5f. Pembayaran - Kartu"], ["bayar:transfer", "5g. Pembayaran - Transfer"],
+  ["sukses", "6. Transaksi Berhasil"],
+  ["struk:58mm", "7. Struk Termal - 58mm"], ["struk:80mm", "7b. Struk Termal - 80mm"],
+  ["riwayat:ada", "8. Riwayat Transaksi"], ["riwayat:kosong", "8b. Riwayat - kosong"],
+  ["void", "9. Void dan Refund"], ["laci", "10. Operasional Laci Kas"], ["tutup", "11. Tutup Kas dan Laporan Shift"],
+];
+
+function MockBar({ value, setValue }) {
+  return <div className="fixed top-0 left-0 right-0 z-50 flex h-11 items-center gap-3 px-3.5 text-[13px] font-semibold" style={{ background: "var(--switcher-bg)", color: "#c7d4d5" }}>
+    <span className="text-[11px] uppercase tracking-[.08em] opacity-60">Kasir</span>
+    <select value={value} onChange={(e) => setValue(e.target.value)} className="h-7 rounded-md border-none px-2 text-[13px]" style={{ background: "#2a3739", color: "#e7eeee" }}>
+      {STANDALONE_SCREENS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+    </select>
+    <span className="ml-auto text-[11px] opacity-50">Mockup preview</span>
+  </div>;
+}
+
+function Btn({ children, variant = "primary", className = "", onClick, disabled = false }) {
+  const color = { primary: "bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--accent-hover)]", secondary: "border border-[var(--input-border)] bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--secondary-hover)]", ghost: "text-[var(--ghost-foreground)] hover:bg-[var(--ghost-hover-bg)]", danger: "bg-[var(--destructive)] text-white hover:bg-[var(--destructive-hover)]" }[variant];
+  return <button disabled={disabled} onClick={onClick} className={`inline-flex h-11 items-center justify-center gap-2 rounded-[10px] px-4 text-[15px] font-semibold whitespace-nowrap transition active:translate-y-px disabled:opacity-40 ${color} ${className}`}>{children}</button>;
+}
+
+function Badge({ children, tone = "teal" }) {
+  const tones = { teal: "bg-[var(--accent-subtle)] text-[var(--primary)]", green: "bg-[var(--status-success-bg)] text-[var(--status-success-text)]", yellow: "bg-[var(--offline-badge-bg)] text-[var(--offline-badge-text)]", red: "bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]", neutral: "bg-[var(--status-pending-bg)] text-[var(--muted-foreground)]" };
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-normal ${tones[tone]}`}>{children}</span>;
+}
+
+function Field({ label, value = "", hint, error, type = "text", onChange }) {
+  const inputProps = onChange ? { value, onChange } : { defaultValue: value };
+  return <label className="block"><span className="mb-1.5 block text-[15px] font-normal">{label}</span><input type={type} {...inputProps} className={`h-11 w-full rounded-[10px] border bg-transparent px-3 text-[15px] outline-none focus:ring-4 ${error ? "border-[var(--destructive)] focus:ring-[var(--destructive)]/15" : "border-[var(--input-border)] focus:border-[var(--primary)] focus:ring-[var(--primary)]/15"}`} />{(hint || error) && <span className={`mt-1.5 block text-[13px] ${error ? "font-normal text-[var(--destructive)]" : "text-[var(--muted-foreground)]"}`}>{error || hint}</span>}</label>;
+}
+
+function AppShell({ screen, setScreen, children }) {
+  const nav = [["kasir", "Kasir", LayoutGrid], ["riwayat", "Riwayat", ReceiptText], ["laci", "Laci kas", WalletCards], ["tutup", "Tutup shift", Calculator]];
+  return <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]" style={{ paddingTop: "var(--mockbar-h)" }}><header className="h-[68px] border-b border-[var(--border)] bg-[var(--card)] px-5"><div className="mx-auto flex h-full max-w-[1600px] items-center gap-5"><button onClick={() => setScreen("kasir")} className="flex items-center gap-2.5"><span className="grid h-9 w-9 place-items-center rounded-[10px] bg-[var(--primary)] text-[var(--primary-foreground)]"><Store size={20}/></span><span className="text-[20px] font-semibold">LumiPOS</span></button><nav className="flex h-full items-stretch gap-1 overflow-auto">{nav.map(([id, name, Icon]) => <button key={id} onClick={() => setScreen(id)} className={`flex min-w-[76px] flex-col items-center justify-center gap-1 border-b-2 px-2 text-[13px] font-semibold ${screen === id ? "border-[var(--primary)] text-[var(--primary)]" : "border-transparent text-[var(--muted-foreground)] hover:bg-[var(--background)]"}`}><Icon size={18}/>{name}</button>)}</nav><div className="ml-auto flex items-center gap-2"><button className="grid h-11 w-11 place-items-center rounded-[10px] text-[var(--ghost-foreground)] hover:bg-[var(--ghost-hover-bg)]"><Bell size={20}/></button><button className="flex h-11 items-center gap-2 rounded-[10px] px-2 text-[15px] font-semibold"><span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--avatar-bg)] text-[13px] text-[var(--primary)]">RA</span><span className="hidden md:inline">Rini Astuti</span><ChevronDown size={16}/></button></div></div></header>{children}</main>;
+}
+
+function Login({ setScreen }) {
+  const [pin, setPin] = useState(""); const [wrong, setWrong] = useState(false);
+  const input = (v) => { const next = pin.length < 4 ? pin + v : pin; setPin(next); setWrong(next === "1234"); if (next.length === 4 && next !== "1234") window.setTimeout(() => setScreen("shift"), 250); };
+  return <main className="grid min-h-screen place-items-center bg-[var(--background)] p-5" style={{ paddingTop: "var(--mockbar-h)" }}><section className="w-full max-w-[510px] rounded-xl border border-[var(--border)] bg-[var(--card)] p-7 shadow-[0_18px_55px_rgba(20,112,107,.10)]"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-[10px] bg-[var(--primary)] text-[var(--primary-foreground)]"><LockKeyhole size={21}/></span><div><h1 className="text-[20px] font-semibold">Masuk ke kasir</h1><p className="text-[13px] text-[var(--muted-foreground)]">Perangkat: Kasir Depan</p></div></div><div className="mt-8 text-center"><span className="text-[15px] font-normal text-[var(--muted-foreground)]">Halo, Rini Astuti</span><h2 className="mt-2 text-[20px] font-semibold">Masukkan PIN</h2><div className="mt-5 flex justify-center gap-3">{[0,1,2,3].map(i => <span key={i} className={`h-3 w-3 rounded-full ${pin.length > i ? (wrong ? "bg-[var(--destructive)]" : "bg-[var(--primary)]") : "bg-[var(--pin-inactive-bg)]"}`}/>)}</div>{wrong && <p className="mt-3 flex items-center justify-center gap-1 text-[13px] font-normal text-[var(--destructive)]"><CircleAlert size={14}/> PIN salah. Coba lagi.</p>}</div><div className="mx-auto mt-7 grid max-w-[330px] grid-cols-3 gap-3">{[1,2,3,4,5,6,7,8,9].map(n => <button key={n} onClick={() => input(String(n))} className="h-14 rounded-[10px] border border-[var(--keypad-border)] bg-[var(--card)] text-[20px] font-semibold hover:bg-[var(--secondary)] active:translate-y-px">{n}</button>)}<button onClick={() => setPin("")} className="grid h-14 place-items-center rounded-[10px] text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"><X size={20}/></button><button onClick={() => input("0")} className="h-14 rounded-[10px] border border-[var(--keypad-border)] bg-[var(--card)] text-[20px] font-semibold hover:bg-[var(--secondary)]">0</button><button onClick={() => setPin(pin.slice(0,-1))} className="grid h-14 place-items-center rounded-[10px] text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"><ChevronLeft size={23}/></button></div></section></main>;
+}
+
+function OpenShift({ setScreen }) {
+  return <AppShell screen="shift" setScreen={setScreen}><div className="mx-auto max-w-2xl p-6 lg:pt-12"><button onClick={() => setScreen("login")} className="mb-5 flex h-11 items-center gap-1 text-[15px] font-semibold text-[var(--ghost-foreground)]"><ChevronLeft size={18}/> Kembali</button><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-[0_10px_32px_rgba(20,112,107,.07)]"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-[10px] bg-[var(--accent-subtle)] text-[var(--primary)]"><Clock3 size={22}/></span><div><h1 className="text-[20px] font-semibold">Buka shift</h1><p className="text-[15px] text-[var(--muted-foreground)]">Siapkan kas sebelum mulai transaksi.</p></div></div><div className="mt-7 grid gap-5 md:grid-cols-2"><Field label="Cash drawer" value="Laci Utama"/><Field label="Saldo awal kas" value="500.000" type="number"/><Field label="Staf pembuka" value="Rini Astuti"/><Field label="Waktu buka" value="14 Sep 2026, 08.00"/></div><div className="mt-8 flex justify-end"><Btn className="h-14 px-6" onClick={() => setScreen("kasir")}><Clock3 size={19}/> Mulai Shift</Btn></div></section></div></AppShell>;
+}
+
+function Product({ p, add }) {
+  const [name, price, image] = p;
+  return <button onClick={add} className="min-h-[138px] overflow-hidden rounded-xl border border-[var(--card-outline)] bg-[var(--card)] text-left transition hover:-translate-y-0.5 hover:border-[var(--card-outline-hover)] hover:shadow-[0_7px_18px_rgba(20,112,107,.10)] active:translate-y-px">{typeof image === "string" && image !== "failed" && <img src={image} alt={name} className="h-[72px] w-full object-cover"/>}{image === "failed" && <div className="m-2 flex h-[60px] items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--dashed-border)] bg-[var(--dashed-bg)] text-[13px] font-normal text-[var(--muted-foreground)]"><ImageOff size={16}/> Gambar gagal</div>}<div className="p-2.5"><p className="truncate text-[15px] font-normal">{name}</p><p className="mt-1 text-[15px] font-normal text-[var(--primary)]">{money(price)}</p></div></button>;
+}
+
+function Cart({ items, onPay, edit }) {
+  const sub = items.reduce((a,i) => a + i.price*i.qty, 0); const tax = items.length ? 4600 : 0;
+  return <aside className="flex h-full min-h-0 flex-col border-l border-[var(--border)] bg-[var(--card)]"><div className="flex items-center justify-between border-b border-[var(--border)] p-4"><div><h2 className="text-[20px] font-semibold">Keranjang</h2><p className="text-[13px] text-[var(--muted-foreground)]">Pesanan baru</p></div><Btn variant="ghost" className="h-9 px-2"><Trash2 size={18}/></Btn></div>{items.length ? <div className="min-h-0 flex-1 overflow-auto p-3">{items.map((i) => <button onClick={edit} key={i.name} className="mb-2 flex w-full items-center gap-3 rounded-[10px] p-2 text-left hover:bg-[var(--background)]"><span className="grid h-9 w-9 place-items-center rounded-[10px] bg-[var(--accent-subtle)] text-[13px] font-normal text-[var(--primary)]">{i.qty}x</span><span className="min-w-0 flex-1"><span className="block truncate text-[15px] font-normal">{i.name}</span><span className="block text-[13px] text-[var(--muted-foreground)]">{money(i.price)} per item</span></span><span className="text-[15px] font-normal">{money(i.price*i.qty)}</span></button>)}</div> : <div className="grid flex-1 place-items-center p-8 text-center"><div><ShoppingBag className="mx-auto text-[var(--icon-muted)]" size={34}/><p className="mt-3 text-[15px] font-normal">Keranjang masih kosong</p><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Pilih produk dari katalog.</p></div></div>}<div className="border-t border-[var(--border)] p-4"><div className="space-y-2 text-[13px]"><p className="flex justify-between text-[var(--muted-foreground)]"><span>Subtotal</span><span>{money(sub)}</span></p><p className="flex justify-between text-[var(--muted-foreground)]"><span>Diskon</span><span>Rp 0</span></p><p className="flex justify-between text-[var(--muted-foreground)]"><span>Pajak</span><span>{money(tax)}</span></p><p className="flex justify-between pt-2 text-[20px] font-semibold"><span>Total</span><span>{money(sub+tax)}</span></p></div><Btn onClick={onPay} disabled={!items.length} className="mt-4 h-14 w-full"><CreditCard size={19}/> Bayar</Btn></div></aside>;
+}
+
+function EditItem({ close }) {
+  const [qty,setQty]=useState(1);
+  return <div className="fixed inset-0 z-40 grid place-items-center bg-[var(--foreground)]/35 p-4"><section className="w-full max-w-lg rounded-xl bg-[var(--card)] p-6 shadow-[0_18px_50px_rgba(20,112,107,.2)]"><div className="flex justify-between"><div><h2 className="text-[20px] font-semibold">Edit item</h2><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Es Kopi Susu</p></div><button onClick={close} className="grid h-11 w-11 place-items-center rounded-[10px] text-[var(--muted-foreground)] hover:bg-[var(--background)]"><X size={20}/></button></div><div className="mt-6 grid gap-5 sm:grid-cols-2"><div><p className="mb-1.5 text-[15px] font-normal">Jumlah</p><div className="flex items-center gap-3"><button onClick={()=>setQty(Math.max(1,qty-1))} className="grid h-14 w-14 place-items-center rounded-[10px] border border-[var(--input-border)] text-[var(--ghost-foreground)]"><Minus size={21}/></button><span className="w-10 text-center text-[20px] font-semibold">{qty}</span><button onClick={()=>setQty(qty+1)} className="grid h-14 w-14 place-items-center rounded-[10px] bg-[var(--primary)] text-[var(--primary-foreground)]"><Plus size={21}/></button></div></div><Field label="Harga sementara" value="18.000" type="number"/><Field label="Diskon item" value="0" type="number"/><Field label="Catatan" value="Kurangi gula"/></div><div className="mt-7 flex justify-between"><Btn variant="danger"><Trash2 size={17}/> Hapus item</Btn><div className="flex gap-2"><Btn variant="ghost" onClick={close}>Batal</Btn><Btn onClick={close}>Simpan</Btn></div></div></section></div>;
+}
+
+function Cashier({ setScreen, variant, forceEdit, onExitEdit }) {
+  const empty = variant === "keranjang-kosong"; const catalogEmpty = variant === "katalog-kosong"; const offlineDefault = variant === "offline"; const fullCart = variant === "keranjang-penuh";
+  const [items,setItems] = useState(empty ? [] : fullCart ? products.slice(0,12).concat(products.slice(0,8)).map((p,i) => ({ name: p[0], price: p[1], qty: 1 + (i % 3) })) : [{name:"Es Kopi Susu",price:18000,qty:1},{name:"Nasi Goreng Kampung",price:28000,qty:1}]);
+  const [offline,setOffline]=useState(offlineDefault); const [emptyState,setEmptyState]=useState(empty); const [edit,setEdit]=useState(!!forceEdit);
+  const add = (p) => { if (emptyState) setEmptyState(false); setItems(x => [...x, {name:p[0],price:p[1],qty:1}]); };
+  const closeEdit = () => { setEdit(false); if (forceEdit && onExitEdit) onExitEdit(); };
+  const tools = [[Plus,"Item manual"],[Calculator,"Diskon"],[ReceiptText,"Pajak"],[Pencil,"Catatan"],[UserRound,"Pelanggan"],[UtensilsCrossed,"No. Meja"],[Trash2,"Batalkan"],[PauseCircle,"Pesanan tahan"]];
+  return <AppShell screen="kasir" setScreen={setScreen}><div className="flex min-h-[680px] overflow-hidden" style={{ height: "calc(100vh - 68px - var(--mockbar-h))" }}><section className="flex min-w-0 flex-1 flex-col"><div className="flex h-[68px] items-center gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--card)] px-4">{tools.map(([Icon,label])=><button key={label} className="flex h-11 min-w-[70px] flex-col items-center justify-center gap-0.5 rounded-[10px] px-2 text-[13px] font-semibold text-[var(--ghost-foreground)] hover:bg-[var(--ghost-hover-bg)]"><Icon size={17}/><span>{label}</span></button>)}<span className="ml-auto flex items-center gap-1.5 whitespace-nowrap text-[13px] font-semibold text-[var(--muted-foreground)]"><button onClick={() => setOffline(!offline)} className={`h-7 rounded-full px-2 ${offline ? "bg-[var(--offline-badge-bg)] text-[var(--offline-badge-text)]" : "bg-[var(--status-pending-bg)]"}`}>{offline ? <><WifiOff className="inline" size={13}/> Offline</> : "Online"}</button></span></div>{offline && <div className="flex items-center gap-2 border-b border-[var(--offline-banner-border)] bg-[var(--offline-banner-bg)] px-4 py-2 text-[13px] font-normal text-[var(--offline-banner-text)]"><WifiOff size={15}/> Mode offline. Transaksi disimpan lokal dan dikirim saat online.</div>}<div className="flex items-center gap-3 bg-[var(--card)] px-4 pt-4"><div className="flex h-11 flex-1 items-center gap-2 rounded-[10px] border border-[var(--input-border)] px-3 text-[var(--muted-foreground)]"><Search size={18}/><input className="w-full text-[15px] outline-none" placeholder="Cari produk"/></div></div><div className="flex gap-2 overflow-x-auto bg-[var(--card)] px-4 py-3">{["Semua","Kopi","Makanan","Minuman","Camilan"].map((x,i)=><button key={x} className={`h-9 shrink-0 rounded-full px-3 text-[13px] font-semibold ${i===0 ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-[var(--secondary)] text-[var(--muted-foreground-strong-alt)] hover:bg-[var(--chip-hover-bg)]"}`}>{x}</button>)}</div><div className="min-h-0 flex-1 overflow-auto p-4">{catalogEmpty ? <div className="grid h-full min-h-[380px] place-items-center rounded-xl border border-dashed border-[var(--dashed-border-strong)] bg-[var(--card)] text-center"><div><Package className="mx-auto text-[var(--icon-muted-alt-2)]" size={38}/><h2 className="mt-4 text-[20px] font-semibold">Belum ada produk</h2><p className="mt-1 text-[15px] text-[var(--muted-foreground)]">Tambahkan produk agar kasir bisa mulai menjual.</p><Btn className="mt-5"><Plus size={17}/> Tambah produk</Btn></div></div> : <div className="grid grid-cols-3 gap-3 xl:grid-cols-4">{products.map((p)=><Product key={p[0]} p={p} add={() => add(p)}/>)}</div>}</div></section><div className="h-full w-[360px] shrink-0"><Cart items={emptyState?[]:items} onPay={()=>setScreen("bayar")} edit={()=>setEdit(true)}/></div></div>{edit && <EditItem close={closeEdit}/>}</AppShell>;
+}
+
+function QR({ state, setState }) {
+  return <div className="mt-5 text-center">{state===0 ? <div className="mx-auto grid h-48 w-48 grid-cols-5 gap-1 rounded-xl border border-[var(--border)] p-4">{Array.from({length:25}).map((_,i)=><span key={i} className="animate-pulse rounded bg-[var(--skeleton-bg)]"/>)}</div> : state===1 ? <><div className="mx-auto grid h-48 w-48 grid-cols-9 gap-1 rounded-xl bg-[var(--card)] p-4 shadow-[0_5px_18px_rgba(20,112,107,.10)]">{Array.from({length:81}).map((_,i)=><span key={i} className={`${[0,1,2,9,11,18,19,20,60,61,62,69,71,78,79,80].includes(i) || (i*7)%11<5 ? "bg-[var(--foreground)]" : "bg-white"}`}/>)}</div><p className="mt-4 text-[15px] font-normal">Pindai QRIS untuk membayar</p><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Berlaku selama 04:56</p></> : state===2 ? <div className="py-10"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[var(--status-success-bg)] text-[var(--status-success-text)]"><Check size={34}/></span><h3 className="mt-4 text-[20px] font-semibold">Pembayaran terkonfirmasi</h3><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Dana masuk melalui QRIS.</p></div> : <div className="py-10"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]"><RotateCcw size={30}/></span><h3 className="mt-4 text-[20px] font-semibold">Kode QR kedaluwarsa</h3><p className="mt-1 text-[13px] text-[var(--muted-foreground)]">Buat kode baru untuk melanjutkan.</p><Btn className="mt-5" onClick={()=>setState(1)}>Buat kode baru</Btn></div>}</div>;
+}
+
+function variantToPayment(variant) {
+  const map = { tunai: ["Tunai",1], "qris-memuat": ["QRIS",0], "qris-siap": ["QRIS",1], "qris-terkonfirmasi": ["QRIS",2], "qris-kedaluwarsa": ["QRIS",3], kartu: ["Kartu",1], transfer: ["Transfer",1] };
+  return map[variant] || ["Tunai",1];
+}
+
+function Payment({ setScreen, variant }) {
+  const [initMethod, initQr] = variantToPayment(variant);
+  const [method,setMethod]=useState(initMethod); const [qrState,setQrState]=useState(initQr); const [cash,setCash]=useState(50000); const total=50600;
+  return <AppShell screen="bayar" setScreen={setScreen}><div className="mx-auto max-w-3xl p-5 lg:pt-10"><button onClick={()=>setScreen("kasir")} className="mb-5 flex h-11 items-center gap-1 text-[15px] font-semibold text-[var(--ghost-foreground)]"><ChevronLeft size={18}/> Kembali ke kasir</button><section className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-[0_12px_36px_rgba(20,112,107,.08)]"><div className="border-b border-[var(--border)] bg-[var(--panel-subtle-bg)] p-6"><p className="text-[13px] font-normal uppercase tracking-[.12em] text-[var(--muted-foreground)]">Total belanja</p><h1 className="mt-1 text-[32px] font-bold tracking-tight">{money(total)}</h1></div><div className="border-b border-[var(--border)] p-3"><div className="grid grid-cols-4 rounded-[10px] bg-[var(--secondary)] p-1">{["Tunai","QRIS","Kartu","Transfer"].map(x=><button key={x} onClick={()=>setMethod(x)} className={`h-10 rounded-lg text-[13px] font-semibold ${method===x?"bg-[var(--card)] text-[var(--primary)] shadow-sm":"text-[var(--muted-foreground)]"}`}>{x}</button>)}</div></div><div className="min-h-[355px] p-6">{method==="Tunai" && <div><Field label="Nominal diterima" value={String(cash)} type="number"/><div className="mt-3 flex flex-wrap gap-2">{[20000,50000,100000].map(n=><Btn key={n} variant="secondary" onClick={()=>setCash(n)}>{money(n)}</Btn>)}</div><div className="mt-7 rounded-xl bg-[var(--accent-subtle)] p-5"><p className="text-[13px] font-normal text-[var(--muted-foreground-strong-alt)]">Kembalian</p><p className="mt-1 text-[32px] font-bold text-[var(--primary)]">{money(Math.max(0,cash-total))}</p></div></div>}{method==="QRIS" && <QR state={qrState} setState={setQrState}/>} {method==="Kartu" && <div className="grid gap-5"><Field label="Jenis kartu" value="Kartu Debit"/><Field label="Nomor referensi" hint="Tercetak pada mesin EDC."/></div>}{method==="Transfer" && <div className="grid gap-5"><Field label="Bank tujuan" value="BCA 123 456 7890"/><Field label="Nomor referensi" hint="Masukkan nomor dari bukti transfer."/></div>}</div><div className="flex justify-end border-t border-[var(--border)] p-4"><Btn className="h-14 px-7" onClick={()=>setScreen("sukses")}><Check size={19}/> Konfirmasi bayar</Btn></div></section></div></AppShell>;
+}
+
+function Success({ setScreen }) {
+  return <AppShell screen="sukses" setScreen={setScreen}><div className="mx-auto max-w-xl p-5 lg:pt-16"><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-8 text-center shadow-[0_12px_36px_rgba(20,112,107,.08)]"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[var(--status-success-bg)] text-[var(--status-success-text)]"><Check size={34}/></span><h1 className="mt-5 text-[20px] font-semibold">Transaksi selesai</h1><p className="mt-1 text-[15px] text-[var(--muted-foreground)]">TRX-140926-028 - Rini Astuti</p><div className="mt-6 rounded-xl bg-[var(--accent-subtle)] p-5"><p className="text-[13px] font-normal text-[var(--muted-foreground-strong-alt)]">Kembalian tunai</p><p className="mt-1 text-[32px] font-bold text-[var(--primary)]">Rp 49.400</p></div><div className="mt-6 grid grid-cols-2 gap-3"><Btn variant="secondary" onClick={()=>setScreen("struk")}><Printer size={17}/> Cetak Struk</Btn><Btn variant="secondary"><Send size={17}/> Kirim WhatsApp</Btn><Btn variant="secondary"><Send size={17}/> Kirim Email</Btn><Btn onClick={()=>setScreen("kasir")}><Plus size={17}/> Transaksi Baru</Btn></div></section></div></AppShell>;
+}
+
+function Receipt({ setScreen, variant, embed }) {
+  const [wide,setWide]=useState(variant === "80mm");
+  return <AppShell screen="struk" setScreen={setScreen}><div className="p-6"><div className="mx-auto max-w-4xl"><div className="mb-5 flex items-center justify-between"><div><h1 className="text-[20px] font-semibold">Preview struk</h1><p className="text-[15px] text-[var(--muted-foreground)]">Ukuran untuk printer termal.</p></div>{!embed && <div className="flex gap-2"><Btn variant="secondary" onClick={()=>setWide(false)}>58mm</Btn><Btn variant="secondary" onClick={()=>setWide(true)}>80mm</Btn></div>}</div><article className={`mx-auto bg-white p-6 font-mono text-[13px] leading-5 shadow-[0_8px_28px_rgba(20,112,107,.10)] ${wide?"w-[360px]":"w-[285px]"}`}><p className="text-center font-normal">KEDAI SENJA</p><p className="text-center">Jl. Melati No. 18, Bandung</p><p className="text-center">14/09/2026 09:24</p><p>================================</p><p>Es Kopi Susu 1 x 18.000</p><p className="text-right">18.000</p><p>Nasi Goreng Kampung 1 x 28.000</p><p className="text-right">28.000</p><p>================================</p><p>Subtotal <span className="float-right">46.000</span></p><p>Diskon <span className="float-right">0</span></p><p>Pajak <span className="float-right">4.600</span></p><p className="font-normal">TOTAL <span className="float-right">50.600</span></p><p>Tunai <span className="float-right">100.000</span></p><p>Kembalian <span className="float-right">49.400</span></p><p>Kasir: Rini Astuti</p><p className="mt-3 text-center">Terima kasih sudah berkunjung</p></article></div></div></AppShell>;
+}
+
+function History({ setScreen, variant }) {
+  const empty = variant === "kosong";
+  const tx=[["09.24","TRX-140926-028","2 item","50.600","Tunai","Selesai"],["09.10","TRX-140926-027","3 item","74.000","QRIS","Selesai"],["08.42","TRX-140926-026","1 item","18.000","Kartu","Selesai"]];
+  return <AppShell screen="riwayat" setScreen={setScreen}><div className="mx-auto max-w-[1400px] p-6"><div className="flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-[20px] font-semibold">Riwayat transaksi</h1><p className="mt-1 text-[15px] text-[var(--muted-foreground)]">Transaksi hari ini.</p></div></div><div className="mt-6 flex gap-3"><Field label="Tanggal" value="14 Sep 2026"/><Field label="Metode bayar" value="Semua metode"/></div><section className="mt-5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">{empty?<div className="grid min-h-[290px] place-items-center text-center"><div><ReceiptText className="mx-auto text-[var(--icon-muted)]" size={38}/><h2 className="mt-4 text-[20px] font-semibold">Belum ada transaksi hari ini</h2><p className="mt-1 text-[15px] text-[var(--muted-foreground)]">Transaksi yang selesai akan muncul di sini.</p></div></div>:<><div className="grid grid-cols-[.7fr_1.4fr_.8fr_1fr_1fr_.8fr] gap-3 border-b border-[var(--border)] px-5 py-3 text-[13px] font-semibold text-[var(--muted-foreground)]"><span>Waktu</span><span>Nomor transaksi</span><span>Item</span><span>Total</span><span>Metode</span><span>Status</span></div>{tx.map(r=><button onClick={()=>setScreen("void")} key={r[1]} className="grid w-full grid-cols-[.7fr_1.4fr_.8fr_1fr_1fr_.8fr] gap-3 border-b border-[var(--row-divider)] px-5 py-4 text-left text-[15px] hover:bg-[var(--panel-subtle-bg)]"><span>{r[0]}</span><span className="font-normal">{r[1]}</span><span>{r[2]}</span><span className="font-normal">Rp {r[3]}</span><span>{r[4]}</span><span><Badge tone="green">{r[5]}</Badge></span></button>)}</>}</section></div></AppShell>;
+}
+
+function VoidRefund({ setScreen }) {
+  const [confirm,setConfirm]=useState(false);
+  return <AppShell screen="void" setScreen={setScreen}><div className="flex flex-col overflow-hidden" style={{ height: "calc(100vh - 68px - var(--mockbar-h))" }}><div className="flex-1 overflow-auto p-6"><div className="mx-auto max-w-5xl"><button onClick={()=>setScreen("riwayat")} className="mb-5 flex h-11 items-center gap-1 text-[15px] font-semibold text-[var(--ghost-foreground)]"><ChevronLeft size={18}/> Kembali</button><div className="grid gap-5 lg:grid-cols-2"><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6"><h1 className="text-[20px] font-semibold">Void dan refund</h1><p className="mt-1 text-[15px] text-[var(--muted-foreground)]">Aksi ini tidak dapat dibatalkan.</p><div className="mt-6 space-y-5"><Field label="Jenis tindakan" value="Void transaksi"/><Field label="Alasan pembatalan" error={confirm ? "Alasan pembatalan wajib diisi." : undefined} hint="Wajib diisi untuk audit."/></div></section><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6"><p className="text-[13px] font-normal uppercase tracking-[.12em] text-[var(--muted-foreground)]">Transaksi asli</p><h2 className="mt-2 text-[20px] font-semibold">TRX-140926-028</h2><p className="text-[15px] text-[var(--muted-foreground)]">14 Sep 2026, 09.24 - Rini Astuti</p><div className="mt-6 space-y-3 border-y border-[var(--border)] py-5 text-[15px]"><p className="flex justify-between"><span>Es Kopi Susu x1</span><b>Rp 18.000</b></p><p className="flex justify-between"><span>Nasi Goreng Kampung x1</span><b>Rp 28.000</b></p></div><p className="mt-5 flex justify-between text-[20px] font-semibold"><span>Total</span><span>Rp 50.600</span></p><div className="mt-4"><Badge tone="green">Selesai</Badge></div></section></div></div></div><div className="shrink-0 border-t border-[var(--border)] bg-[var(--card)] px-6 py-4"><div className="mx-auto flex max-w-5xl justify-end gap-2"><Btn variant="ghost" onClick={()=>setScreen("riwayat")}>Batal</Btn><Btn variant="danger" onClick={()=>setConfirm(true)}><Trash2 size={17}/> Konfirmasi void</Btn></div></div></div></AppShell>;
+}
+
+function CashDrawer({ setScreen }) {
+  return <AppShell screen="laci" setScreen={setScreen}><div className="mx-auto max-w-5xl p-6"><div className="grid gap-5 lg:grid-cols-[.9fr_1.1fr]"><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6"><h1 className="text-[20px] font-semibold">Operasional laci</h1><p className="mt-1 text-[15px] text-[var(--muted-foreground)]">Catat pergerakan kas di luar penjualan.</p><div className="mt-6 grid grid-cols-2 gap-2"><Btn><ArrowDownLeft size={17}/> Kas masuk</Btn><Btn variant="secondary"><ArrowUpRight size={17}/> Kas keluar</Btn></div><div className="mt-5 space-y-5"><Field label="Nominal" value="50.000" type="number"/><Field label="Keterangan" value="Uang kecil dari kantor"/></div><Btn className="mt-6 w-full">Simpan catatan</Btn></section><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6"><h2 className="text-[20px] font-semibold">Riwayat shift berjalan</h2><div className="mt-5 space-y-2">{[["08.05","Kas masuk","Uang kecil dari kantor","50.000","green"],["08.55","Kas keluar","Belanja es batu","25.000","red"]].map(r=><div key={r[0]} className="flex items-center gap-3 rounded-[10px] border border-[var(--status-pending-bg)] p-3"><span className={`grid h-10 w-10 place-items-center rounded-full ${r[4]==="green"?"bg-[var(--status-success-bg)] text-[var(--status-success-text)]":"bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]"}`}>{r[4]==="green"?<ArrowDownLeft size={18}/>:<ArrowUpRight size={18}/>}</span><span className="flex-1"><b className="block text-[15px]">{r[1]}</b><span className="text-[13px] text-[var(--muted-foreground)]">{r[0]} - {r[2]}</span></span><b className="text-[15px]">Rp {r[3]}</b></div>)}</div></section></div></div></AppShell>;
+}
+
+function CloseShift({ setScreen }) {
+  const [fisik, setFisik] = useState("");
+  const expected = 1775000;
+  const fisikNum = fisik ? Number(String(fisik).replace(/\D/g, "")) : null;
+  const diff = fisikNum === null ? null : fisikNum - expected;
+  const diffBg = diff === null ? "bg-[var(--status-pending-bg)]" : diff < 0 ? "bg-[var(--status-danger-bg)]" : diff > 0 ? "bg-[var(--status-success-bg)]" : "bg-[var(--status-pending-bg)]";
+  const diffText = diff === null ? "text-[var(--muted-foreground)]" : diff < 0 ? "text-[var(--status-danger-text)]" : diff > 0 ? "text-[var(--status-success-text)]" : "text-[var(--foreground)]";
+  return <AppShell screen="tutup" setScreen={setScreen}><div className="flex flex-col overflow-hidden" style={{ height: "calc(100vh - 68px - var(--mockbar-h))" }}><div className="flex-1 overflow-auto p-6"><div className="mx-auto max-w-6xl"><h1 className="text-[20px] font-semibold">Tutup kas dan laporan shift</h1><p className="mt-1 text-[15px] text-[var(--muted-foreground)]">Shift Rini Astuti - 08.00 sampai 17.00</p><div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_.9fr]"><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6"><h2 className="text-[20px] font-semibold">Rekonsiliasi kas</h2><div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 text-[15px]">{[["Saldo awal","500.000"],["Penjualan tunai","1.250.000"],["Kas masuk","50.000"],["Kas keluar","25.000"],["Saldo seharusnya","1.775.000"]].map(r=><p key={r[0]} className="flex justify-between border-b border-[var(--status-pending-bg)] pb-3"><span className="text-[var(--muted-foreground)]">{r[0]}</span><b>Rp {r[1]}</b></p>)}</div><div className="mt-5"><Field label="Saldo akhir fisik" value={fisik} onChange={(e) => setFisik(e.target.value)} type="number"/></div><div className={`mt-5 rounded-xl p-4 ${diffBg}`}>{diff === null ? <p className="text-[13px] font-normal text-[var(--muted-foreground)]">Selisih dihitung setelah saldo akhir fisik diisi.</p> : <><p className={`text-[13px] font-normal ${diffText}`}>{diff < 0 ? "SELISIH KURANG" : diff > 0 ? "SELISIH LEBIH" : "SESUAI"}</p><p className={`mt-1 text-[20px] font-semibold ${diffText}`}>Rp {Math.abs(diff).toLocaleString("id-ID")}</p></>}</div></section><section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6"><h2 className="text-[20px] font-semibold">Ringkasan shift</h2><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-[10px] bg-[var(--secondary)] p-4"><p className="text-[13px] text-[var(--muted-foreground)]">Jumlah transaksi</p><p className="mt-1 text-[20px] font-semibold">42</p></div><div className="rounded-[10px] bg-[var(--secondary)] p-4"><p className="text-[13px] text-[var(--muted-foreground)]">Total penjualan</p><p className="mt-1 text-[20px] font-semibold">Rp 2.480.000</p></div></div><h3 className="mt-6 text-[15px] font-normal">Penjualan per metode</h3><div className="mt-3 space-y-3">{[["Tunai","1.250.000"],["QRIS","830.000"],["Kartu","400.000"]].map(r=><p key={r[0]} className="flex justify-between text-[15px]"><span className="text-[var(--muted-foreground)]">{r[0]}</span><b>Rp {r[1]}</b></p>)}</div><h3 className="mt-6 text-[15px] font-normal">Produk terlaris</h3><div className="mt-3 flex items-center justify-between rounded-[10px] bg-[var(--secondary)] p-3"><span><b className="block text-[15px]">Es Kopi Susu</b><span className="text-[13px] text-[var(--muted-foreground)]">18 terjual</span></span><Coffee className="text-[var(--primary)]" size={21}/></div></section></div></div></div><div className="shrink-0 border-t border-[var(--border)] bg-[var(--card)] px-6 py-4"><div className="mx-auto flex max-w-6xl justify-end"><Btn className="px-8">Tutup Shift</Btn></div></div></div></AppShell>;
+}
+
+function App() {
+  const [combo, setCombo] = useState(() => INIT.screen ? `${INIT.screen}${INIT.state ? ":" + INIT.state : ""}` : "kasir:campuran");
+  const [screen, variantSlug] = combo.split(":");
+  let view;
+  if (screen === "login") view = <Login key={combo} setScreen={setCombo}/>;
+  else if (screen === "shift") view = <OpenShift key={combo} setScreen={setCombo}/>;
+  else if (screen === "kasir") view = <Cashier key={combo} setScreen={setCombo} variant={variantSlug}/>;
+  else if (screen === "edit-item") view = <Cashier key={combo} setScreen={setCombo} variant="campuran" forceEdit onExitEdit={() => setCombo("kasir:campuran")}/>;
+  else if (screen === "bayar") view = <Payment key={combo} setScreen={setCombo} variant={variantSlug || "tunai"}/>;
+  else if (screen === "sukses") view = <Success key={combo} setScreen={setCombo}/>;
+  else if (screen === "struk") view = <Receipt key={combo} setScreen={setCombo} variant={variantSlug || "58mm"} embed={INIT.embed}/>;
+  else if (screen === "riwayat") view = <History key={combo} setScreen={setCombo} variant={variantSlug || "ada"}/>;
+  else if (screen === "void") view = <VoidRefund key={combo} setScreen={setCombo}/>;
+  else if (screen === "laci") view = <CashDrawer key={combo} setScreen={setCombo}/>;
+  else if (screen === "tutup") view = <CloseShift key={combo} setScreen={setCombo}/>;
+  return <div style={{ "--mockbar-h": INIT.embed ? "0px" : "44px" }}>{!INIT.embed && <MockBar value={combo} setValue={setCombo}/>}{view}</div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

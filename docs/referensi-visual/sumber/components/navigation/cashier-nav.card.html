@@ -1,0 +1,15 @@
+<!-- @dsCard group="Components" viewport="700x120" name="Cashier Nav" subtitle="One row, max 72px, everything visible - scoped to the Kasir app only" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body{margin:0;font-family:'Nunito Sans',sans-serif;}
+  nav{display:flex;align-items:stretch;gap:4px;height:72px;max-height:72px;background:var(--card);border-bottom:1px solid var(--border);padding:0 8px;}
+  button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:72px;padding:0 10px;background:transparent;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;color:var(--muted-foreground);}
+  button.active{border-bottom-color:var(--primary);color:var(--primary);}
+  .dot{width:18px;height:18px;border-radius:4px;background:currentColor;opacity:.25;}
+</style>
+<nav>
+  <button class="active"><span class="dot"></span>Kasir</button>
+  <button><span class="dot"></span>Riwayat</button>
+  <button><span class="dot"></span>Laci kas</button>
+  <button><span class="dot"></span>Tutup shift</button>
+</nav>

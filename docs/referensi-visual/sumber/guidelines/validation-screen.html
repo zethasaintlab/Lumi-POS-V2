@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>LumiPOS - Layar Uji Design System</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Nunito Sans', sans-serif; background: var(--background); color: var(--foreground); }
+  .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 20px; background: var(--switcher-bg); color: #e7eeee; }
+  .topbar h1 { font-size: 15px; font-weight: 700; margin: 0; }
+  .topbar button { height: 36px; padding: 0 14px; border-radius: 8px; border: none; background: #2a3739; color: #e7eeee; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+  section.block { margin-bottom: 48px; }
+  section.block > h2 { font-size: var(--text-title); font-weight: 600; margin: 0 0 4px; }
+  section.block > p.sub { font-size: var(--text-small); color: var(--muted-foreground); margin: 0 0 18px; }
+  .swatch-group { margin-bottom: 20px; }
+  .swatch-group h3 { font-size: var(--text-small); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--sidebar-label); margin: 0 0 10px; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .sw { border-radius: 10px; border: 1px solid var(--border); height: 76px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 10px; font-size: 11px; line-height: 1.4; }
+  .sw b { display: block; font-size: 12px; font-weight: 700; }
+  .type-row { display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--row-divider); }
+  .type-row:last-child { border-bottom: none; }
+  .type-meta { flex-shrink: 0; width: 220px; font-size: 12px; color: var(--muted-foreground); }
+  .btn-table { display: grid; grid-template-columns: 100px repeat(4, 1fr); gap: 12px; align-items: center; }
+  .btn-table .rowlabel { font-size: 13px; color: var(--muted-foreground); font-weight: 600; }
+  button.demo { height: 44px; padding: 0 16px; border-radius: 10px; font-size: 15px; font-weight: 600; font-family: inherit; white-space: nowrap; cursor: pointer; width: 100%; }
+  .b-primary { background: var(--primary); color: var(--primary-foreground); border: none; }
+  .b-primary.hover, .b-primary:hover { background: var(--accent-hover); }
+  .b-secondary { background: var(--card); color: var(--foreground); border: 1px solid var(--input-border); }
+  .b-secondary.hover, .b-secondary:hover { background: var(--secondary-hover); }
+  .b-ghost { background: transparent; color: var(--ghost-foreground); border: none; }
+  .b-ghost.hover, .b-ghost:hover { background: var(--ghost-hover-bg); }
+  .b-danger { background: var(--destructive); color: #fff; border: none; }
+  .b-danger.hover, .b-danger:hover { background: var(--destructive-hover); }
+  .active-demo { transform: translateY(1px); }
+  .disabled-demo { opacity: .4; cursor: default; }
+  .loading-demo { opacity: .7; cursor: default; }
+  .cards-row { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 16px; }
+  .pcard { border-radius: 12px; border: 1px solid var(--card-outline); background: var(--card); overflow: hidden; }
+  .pcard img { height: 72px; width: 100%; object-fit: cover; display: block; }
+  .pcard .body { padding: 10px; }
+  .pcard .name { margin: 0; font-size: 15px; }
+  .pcard .price { margin: 4px 0 0; font-size: 15px; color: var(--primary); }
+  .pcard .failed { margin: 8px; height: 60px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; border: 1px dashed var(--dashed-border); background: var(--dashed-bg); font-size: 13px; color: var(--muted-foreground); }
+  .pcard .caption { font-size: 11px; color: var(--muted-foreground); text-align: center; margin-top: 8px; text-transform: uppercase; letter-spacing: .06em; }
+  .badges { display: flex; gap: 10px; flex-wrap: wrap; }
+  .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+  .input-demo { max-width: 340px; }
+  .input-demo label { display: block; }
+  .input-demo span.l { display: block; margin-bottom: 6px; font-size: 15px; }
+  .input-demo input { height: 44px; width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--destructive); padding: 0 12px; font-size: 15px; font-family: inherit; background: var(--card); color: var(--foreground); }
+  .input-demo span.e { display: block; margin-top: 6px; font-size: 13px; color: var(--destructive); }
+  .skeleton-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .sk-qr { height: 120px; width: 120px; border-radius: 12px; border: 1px solid var(--border); display: grid; grid-template-columns: repeat(5,1fr); gap: 3px; padding: 10px; }
+  .sk-qr span { border-radius: 3px; background: var(--skeleton-bg); }
+  .sk-cards { display: flex; gap: 8px; }
+  .sk-card { width: 90px; height: 100px; border-radius: 12px; background: var(--skeleton-bg); }
+  .sk-rows { display: flex; flex-direction: column; gap: 8px; width: 180px; }
+  .sk-row { height: 16px; border-radius: 5px; background: var(--skeleton-bg); }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>LumiPOS - Layar Uji Design System</h1>
+  <button id="toggle">Mode gelap</button>
+</div>
+<main>
+
+  <section class="block">
+    <h2>1. Palet warna</h2>
+    <p class="sub">Token dan nilai hex, dikelompokkan inti / status / kontrol / permukaan.</p>
+
+    <div class="swatch-group">
+      <h3>Inti</h3>
+      <div class="swatches">
+        <div class="sw" style="background:var(--background);color:var(--foreground)"><b>--background</b>#f0f6f7</div>
+        <div class="sw" style="background:var(--foreground);color:var(--background)"><b>--foreground</b>#16282c</div>
+        <div class="sw" style="background:var(--card);color:var(--foreground)"><b>--card</b>#ffffff</div>
+        <div class="sw" style="background:var(--primary);color:var(--primary-foreground)"><b>--primary</b>#14706b</div>
+        <div class="sw" style="background:var(--secondary);color:var(--secondary-foreground)"><b>--secondary</b>#f7fafb</div>
+        <div class="sw" style="background:var(--muted);color:var(--muted-foreground)"><b>--muted</b>#f7fafb</div>
+        <div class="sw" style="background:var(--border);color:var(--foreground)"><b>--border</b>#e3ecee</div>
+        <div class="sw" style="background:var(--accent-hover);color:#fff"><b>--accent-hover</b>#0f5b57</div>
+        <div class="sw" style="background:var(--accent-subtle);color:var(--primary)"><b>--accent-subtle</b>#d9edf0</div>
+      </div>
+    </div>
+
+    <div class="swatch-group">
+      <h3>Status</h3>
+      <div class="swatches">
+        <div class="sw" style="background:var(--status-success-bg);color:var(--status-success-text)"><b>success</b>#dff3e4 / #2c6b3f</div>
+        <div class="sw" style="background:var(--status-info-bg);color:var(--status-info-text)"><b>info</b>#d6eaf5 / #1f5a7a</div>
+        <div class="sw" style="background:var(--status-pending-bg);color:var(--status-pending-text)"><b>pending</b>#edf2f3 / #5e747a</div>
+        <div class="sw" style="background:var(--status-warning-bg);color:var(--status-warning-text)"><b>warning</b>#fbf0d9 / #8a6520</div>
+        <div class="sw" style="background:var(--status-danger-bg);color:var(--status-danger-text)"><b>danger</b>#f9e1e1 / #9a3535</div>
+      </div>
+    </div>
+
+    <div class="swatch-group">
+      <h3>Kontrol</h3>
+      <div class="swatches">
+        <div class="sw" style="background:var(--card);border-color:var(--input-border);color:var(--foreground)"><b>--input-border</b>#c9dcdf</div>
+        <div class="sw" style="background:var(--destructive);color:#fff"><b>--destructive</b>#b94747</div>
+        <div class="sw" style="background:var(--destructive-hover);color:#fff"><b>--destructive-hover</b>#a13d3d</div>
+        <div class="sw" style="background:var(--ghost-hover-bg);color:var(--ghost-foreground)"><b>--ghost-hover-bg</b>#e8f2f2</div>
+        <div class="sw" style="background:var(--secondary-hover);color:var(--foreground)"><b>--secondary-hover</b>#eff6f6</div>
+        <div class="sw" style="background:var(--chip-hover-bg);color:var(--foreground)"><b>--chip-hover-bg</b>#e0eeee</div>
+        <div class="sw" style="background:var(--keypad-border);color:var(--foreground)"><b>--keypad-border</b>#d7e5e6</div>
+        <div class="sw" style="background:var(--pin-inactive-bg);color:var(--foreground)"><b>--pin-inactive-bg</b>#dce7e8</div>
+      </div>
+    </div>
+
+    <div class="swatch-group">
+      <h3>Permukaan</h3>
+      <div class="swatches">
+        <div class="sw" style="background:var(--card-outline);color:var(--foreground)"><b>--card-outline</b>#e0eaeb</div>
+        <div class="sw" style="background:var(--row-divider);color:var(--foreground)"><b>--row-divider</b>#eef3f3</div>
+        <div class="sw" style="background:var(--cart-divider);color:var(--foreground)"><b>--cart-divider</b>#c3dddc</div>
+        <div class="sw" style="background:var(--panel-subtle-bg);color:var(--foreground)"><b>--panel-subtle-bg</b>#f8fbfb</div>
+        <div class="sw" style="background:var(--avatar-bg);color:var(--primary)"><b>--avatar-bg</b>#d9eceb</div>
+        <div class="sw" style="background:var(--skeleton-bg);color:var(--muted-foreground)"><b>--skeleton-bg</b>#e8f0f1</div>
+        <div class="sw" style="background:var(--dashed-bg);border:1px dashed var(--dashed-border);color:var(--muted-foreground)"><b>--dashed-bg</b>#f7fbfb</div>
+        <div class="sw" style="background:var(--guest-background);border-color:var(--guest-border);color:var(--foreground)"><b>--guest-background</b>#fffdf9</div>
+        <div class="sw" style="background:var(--switcher-bg);color:#fff"><b>--switcher-bg</b>#1e292b</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>2. Empat ukuran teks</h2>
+    <p class="sub">Tidak boleh ada ukuran kelima.</p>
+    <div class="type-row"><span style="font-size:32px;font-weight:700;">Total belanja Rp 50.600</span><span class="type-meta">display - 32px / 700</span></div>
+    <div class="type-row"><span style="font-size:20px;font-weight:600;">Riwayat transaksi hari ini</span><span class="type-meta">title - 20px / 600</span></div>
+    <div class="type-row"><span style="font-size:15px;font-weight:400;">Kasir dapat menambah item langsung dari katalog.</span><span class="type-meta">body - 15px / 400</span></div>
+    <div class="type-row"><span style="font-size:13px;font-weight:400;">Diperbarui 14 Sep 2026, 09.24</span><span class="type-meta">small - 13px / 400</span></div>
+  </section>
+
+  <section class="block">
+    <h2>3. Tombol - semua varian dan keadaan</h2>
+    <div class="btn-table">
+      <span></span><span class="rowlabel" style="text-align:center">Primary</span><span class="rowlabel" style="text-align:center">Secondary</span><span class="rowlabel" style="text-align:center">Ghost</span><span class="rowlabel" style="text-align:center">Destructive</span>
+
+      <span class="rowlabel">Default</span>
+      <button class="demo b-primary">Bayar</button>
+      <button class="demo b-secondary">Batal</button>
+      <button class="demo b-ghost">Lainnya</button>
+      <button class="demo b-danger">Hapus</button>
+
+      <span class="rowlabel">Hover</span>
+      <button class="demo b-primary hover">Bayar</button>
+      <button class="demo b-secondary hover">Batal</button>
+      <button class="demo b-ghost hover">Lainnya</button>
+      <button class="demo b-danger hover">Hapus</button>
+
+      <span class="rowlabel">Active</span>
+      <button class="demo b-primary active-demo">Bayar</button>
+      <button class="demo b-secondary active-demo">Batal</button>
+      <button class="demo b-ghost active-demo">Lainnya</button>
+      <button class="demo b-danger active-demo">Hapus</button>
+
+      <span class="rowlabel">Disabled</span>
+      <button class="demo b-primary disabled-demo" disabled>Bayar</button>
+      <button class="demo b-secondary disabled-demo" disabled>Batal</button>
+      <button class="demo b-ghost disabled-demo" disabled>Lainnya</button>
+      <button class="demo b-danger disabled-demo" disabled>Hapus</button>
+
+      <span class="rowlabel">Loading</span>
+      <button class="demo b-primary loading-demo">Memuat...</button>
+      <button class="demo b-secondary loading-demo">Memuat...</button>
+      <button class="demo b-ghost loading-demo">Memuat...</button>
+      <button class="demo b-danger loading-demo">Memuat...</button>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>4. Kartu produk - tiga keadaan</h2>
+    <p class="sub">Yang paling penting diperiksa: keadaan 2 tanpa kotak placeholder, keadaan 3 dengan bingkai putus-putus bernama.</p>
+    <div class="cards-row">
+      <div>
+        <div class="pcard">
+          <img src="https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=300&h=170&fit=crop&auto=format" alt="Es Kopi Susu">
+          <div class="body"><p class="name">Es Kopi Susu</p><p class="price">Rp 18.000</p></div>
+        </div>
+        <p class="caption">Bergambar</p>
+      </div>
+      <div>
+        <div class="pcard">
+          <div class="body"><p class="name">Teh Tarik</p><p class="price">Rp 12.000</p></div>
+        </div>
+        <p class="caption">Belum difoto - nol placeholder</p>
+      </div>
+      <div>
+        <div class="pcard">
+          <div class="failed">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="21" x2="21" y2="3"/></svg>
+            Gambar gagal
+          </div>
+          <div class="body"><p class="name">Kentang Goreng</p><p class="price">Rp 17.000</p></div>
+        </div>
+        <p class="caption">Gagal dimuat</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>5. Badge status</h2>
+    <div class="badges">
+      <span class="badge" style="background:var(--status-success-bg);color:var(--status-success-text)">Selesai</span>
+      <span class="badge" style="background:var(--status-info-bg);color:var(--status-info-text)">Berjalan</span>
+      <span class="badge" style="background:var(--status-pending-bg);color:var(--status-pending-text)">Menunggu</span>
+      <span class="badge" style="background:var(--status-warning-bg);color:var(--status-warning-text)">Stok menipis</span>
+      <span class="badge" style="background:var(--status-danger-bg);color:var(--status-danger-text)">Batal</span>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>6. Input dengan galat</h2>
+    <div class="input-demo">
+      <label>
+        <span class="l">Alasan pembatalan</span>
+        <input value="">
+        <span class="e">Alasan pembatalan wajib diisi.</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>7. Skeleton loader</h2>
+    <div class="skeleton-row">
+      <div class="sk-qr">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="sk-cards"><div class="sk-card"></div><div class="sk-card"></div><div class="sk-card"></div></div>
+      <div class="sk-rows"><div class="sk-row"></div><div class="sk-row" style="width:70%"></div><div class="sk-row" style="width:85%"></div></div>
+    </div>
+  </section>
+
+</main>
+<script>
+  const btn = document.getElementById("toggle");
+  btn.addEventListener("click", () => {
+    const dark = document.documentElement.classList.toggle("dark");
+    btn.textContent = dark ? "Mode terang" : "Mode gelap";
+  });
+</script>
+</body>
+</html>

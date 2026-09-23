@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>LumiPOS - Penjelajah Desain</title>
+<meta name="omelette-print-source" content="v1789450871609999 design-explorer.html">
+<script src="./doc-page.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  * { animation-delay: -99s !important; animation-duration: .001s !important; animation-iteration-count: 1 !important; animation-fill-mode: both !important; animation-play-state: running !important; transition-duration: 0s !important; }
+  body { margin: 0; font-family: 'Nunito Sans', sans-serif; }
+  doc-page:not(:defined) { visibility: hidden; }
+  .bar { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #1e292b; color: #e7eeee; }
+  .bar .label { font-size: 13px; font-weight: 600; color: #9fb0b2; }
+  .chips { display: flex; gap: 4px; background: #2a3739; border-radius: 999px; padding: 4px; }
+  .chip { height: 32px; border-radius: 999px; padding: 0 12px; font-size: 13px; font-weight: 600; display: flex; align-items: center; }
+  .chip.active { background: #3a4b4d; color: #e7eeee; }
+  .chip:not(.active) { color: #9fb0b2; }
+  .pill { height: 36px; border-radius: 8px; background: #2a3739; color: #e7eeee; padding: 0 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; }
+  .caption { text-align: center; font-size: 13px; color: #6b7f81; margin: 16px 0 12px; font-family: 'Nunito Sans', sans-serif; }
+  .device { border: 1px solid #d7dede; border-radius: 4px; box-shadow: 0 14px 44px rgba(22,40,44,0.16); overflow: hidden; }
+  .note { font-family: 'Nunito Sans', sans-serif; font-size: 13px; color: #5e747a; text-align: center; margin-top: 14px; }
+</style>
+</head>
+<body>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
+<doc-page orientation="landscape" content-width="1360" content-height="900" size="letter">
+  <div class="bar">
+    <span class="label">LumiPOS &middot; Penjelajah Desain</span>
+    <div class="chips"><span class="chip active">Kasir</span><span class="chip">Back-office</span><span class="chip">Lumi-Order</span></div>
+    <div class="pill">Layar Kasir</div>
+    <div class="pill">Katalog campuran</div>
+  </div>
+  <p class="caption">Tablet landscape &middot; 1280&times;800</p>
+  <div style="display:flex; justify-content:center;">
+    <div class="device" style="width:1280px; height:800px;">
+      <iframe src="ui_kits/kasir/index.html?embed=1&screen=kasir&state=campuran" style="width:1280px; height:800px; border:none; display:block; background:#fff;" title="Kasir preview"></iframe>
+    </div>
+  </div>
+  <p class="note">Cetakan ini menampilkan satu tampilan dari Penjelajah Desain (Kasir &middot; Layar Kasir &middot; Katalog campuran). Buka design-explorer.html untuk menjelajahi seluruh layar dan keadaan secara interaktif.</p>
+</doc-page>
+</body>
+</html>

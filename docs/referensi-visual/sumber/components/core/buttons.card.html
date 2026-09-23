@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="700x280" name="Button" subtitle="Primary, secondary, ghost, danger - all states" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body{margin:0;font-family:'Nunito Sans',sans-serif;background:var(--card);padding:20px;}
+  .row{display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;}
+  .label{width:88px;font-size:13px;color:var(--muted-foreground);flex-shrink:0;}
+  button{height:44px;padding:0 16px;border-radius:10px;font-size:15px;font-weight:600;font-family:inherit;white-space:nowrap;cursor:pointer;}
+  .primary{background:var(--primary);color:var(--primary-foreground);border:none;}
+  .primary:hover{background:var(--accent-hover);}
+  .secondary{background:var(--card);color:var(--foreground);border:1px solid var(--input-border);}
+  .secondary:hover{background:var(--secondary-hover);}
+  .ghost{background:transparent;color:var(--ghost-foreground);border:none;}
+  .ghost:hover{background:var(--ghost-hover-bg);}
+  .danger{background:var(--destructive);color:#fff;border:none;}
+  .danger:hover{background:var(--destructive-hover);}
+  .disabled{opacity:.4;cursor:default;}
+  .action{height:56px;}
+</style>
+<div class="row"><span class="label">Default</span><button class="primary">Bayar</button><button class="secondary">Batal</button><button class="ghost">Lainnya</button><button class="danger">Hapus</button></div>
+<div class="row"><span class="label">Hover</span><button class="primary" style="background:var(--accent-hover)">Bayar</button><button class="secondary" style="background:var(--secondary-hover)">Batal</button><button class="ghost" style="background:var(--ghost-hover-bg)">Lainnya</button><button class="danger" style="background:var(--destructive-hover)">Hapus</button></div>
+<div class="row"><span class="label">Disabled</span><button class="primary disabled" disabled>Bayar</button><button class="secondary disabled" disabled>Batal</button><button class="ghost disabled" disabled>Lainnya</button><button class="danger disabled" disabled>Hapus</button></div>
+<div class="row"><span class="label">Loading</span><button class="primary" style="opacity:.7">Memuat...</button></div>
+<div class="row"><span class="label">56px action</span><button class="primary action">Bayar</button></div>
