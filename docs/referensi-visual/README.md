@@ -21,8 +21,9 @@ layar di sini salah.
 
 ## ⛔ Yang di mockup bertabrakan dengan spec, dan tetap DITOLAK
 
-Enam hal berikut diputuskan user. Kemunculannya di mockup tidak mengubah
-keputusan apa pun.
+Delapan hal berikut diputuskan user. Kemunculannya di mockup tidak mengubah
+keputusan apa pun. Enam yang pertama diputuskan saat ekspor ini masuk; dua
+yang terakhir ditemukan saat memotret dan diputuskan 23 September 2026.
 
 | Di mockup | Tangkapan | Kenapa ditolak |
 |---|---|---|
@@ -32,17 +33,8 @@ keputusan apa pun.
 | **Tombol toolbar yang nol kode** | `kasir--kasir--*.png` (delapan tombol: Item manual, Diskon, Pajak, Catatan, Pelanggan, No. Meja, Batalkan, Pesanan tahan) | `apps/kasir/src/layar/Kasir.tsx` membatasi toolbar pada tiga aksi. Lima sisanya tidak punya kode di repo ini, dan tiga di antaranya ada di daftar "jangan bangun" v1.1 |
 | **Ikon notifikasi** | lonceng di bilah atas Kasir dan Back-office | Tidak ada sistem notifikasi di v1. Ikon yang tidak membuka apa pun adalah kontrol mati |
 | **Keranjang tanpa kontrol qty** | `kasir--kasir--keranjang-penuh.png` (lencana `1x`/`2x`/`3x` saja) | Kasir mengubah qty di baris. Qty turun ke 0 menghapus baris; itulah yang meniadakan tombol "Hapus" terpisah (`CLAUDE.md` § aturan memakai `/ds-bundle`) |
-
-### Tabrakan tambahan yang ditemukan saat memotret
-
-Dua hal berikut **bukan** bagian dari daftar keputusan di atas. Aku
-mencatatnya karena bentuknya sama: layar yang menyiratkan perilaku yang
-berbeda dari spec. **Keduanya belum diputuskan user.**
-
-| Di mockup | Tangkapan | Aturan yang dilanggar |
-|---|---|---|
-| **"Saldo seharusnya" terlihat sebelum hitungan fisik diisi** | `kasir--tutup--tunggal.png` | `spec-d` FR-D2, hitungan buta: "Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan angka terhitung. Ini kontrol, bukan preferensi UX." Keputusan itu dikembalikan 22 September 2026 dan dijaga `tests/kasir-dom/k12-hitungan-buta.test.js`. Mockup `ds-bundle/ui_kits/pos/TutupKasScreen.jsx` yang lama justru hitungan buta; mockup ini tidak |
-| **Tombol "Konfirmasi bayar" pada QRIS dinamis** | `kasir--bayar--qris-siap.png`, `kasir--bayar--qris-memuat.png` | `spec-c:320`: "Sistem **tidak pernah** menandai pembayaran lunas tanpa konfirmasi dari gateway." Hanya QRIS statis yang dikonfirmasi orang |
+| **"Saldo seharusnya" tampil sebelum hitungan fisik diisi** | `kasir--tutup--tunggal.png` | `spec-d` FR-D2, hitungan buta: "Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan angka terhitung. Ini kontrol, bukan preferensi UX." Kontrol itu dipertahankan 22 September 2026 dan dijaga `tests/kasir-dom/k12-hitungan-buta.test.js`. "Penjualan tunai" dan "Total penjualan" di ringkasan shift mockup membocorkan angka yang sama. Mockup `ds-bundle/ui_kits/pos/TutupKasScreen.jsx` yang lama justru hitungan buta; mockup ini tidak |
+| **Tombol "Konfirmasi bayar" manual untuk QRIS dinamis** | `kasir--bayar--qris-siap.png`, `kasir--bayar--qris-memuat.png` | `spec-c:320`: "Sistem **tidak pernah** menandai pembayaran lunas tanpa konfirmasi dari gateway." Tombol manual membuat pembayaran dapat ditandai lunas **tanpa uang masuk**. Hanya QRIS statis yang dikonfirmasi orang, dan ia ditandai `confirmed_manually` supaya FR-G5 dapat menemukannya |
 
 ## ⛔ Palet mockup ini BELUM DIPUTUSKAN
 
