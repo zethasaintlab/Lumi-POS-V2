@@ -80,7 +80,19 @@ const PEMBAYARAN = [
   { method: 'qris_dynamic', amount: 250000 },
 ];
 
-const MOVEMENTS = [{ delta: 2010000 }, { delta: -25000 }];
+/* ⛔ `type` IKUT, dan sampai 22 September 2026 ia tidak ada. Fixture tanpa
+   `type` membuat `rincianSaldo` mengelompokkan seluruh baris di bawah kunci
+   `undefined`, jadi rinciannya KOSONG sementara totalnya tetap benar — bentuk
+   "nol baris, bukan error" pada fixture testnya sendiri.
+
+   Deltanya TIDAK diubah: empat test di bawah memaku angka yang diturunkan
+   darinya, dan mengubah fixture bersama demi satu test baru akan menggeser
+   ekspektasi yang sudah benar. Tipe di luar kedua ini diuji lewat fixture
+   sendiri. */
+const MOVEMENTS = [
+  { type: 'sale', delta: 2010000 },
+  { type: 'refund', delta: -25000 },
+];
 
 const JAM = () => new Date('2026-08-13T22:00:00Z');
 const ID = (() => { let n = 0; return () => `t-${++n}`; })();
@@ -446,4 +458,93 @@ test('tanpa konfig/sesi, riwayat lokal TETAP tercatat — hanya jejaknya yang hi
     'riwayat lokal harus tetap ditulis'
   );
   assert.equal(db.state.tulis.filter((t) => /INSERT INTO audit_event/.test(t.sql)).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Rincian saldo — bahan langkah 2 K-12 (22 September 2026).
+
+test('⛔ rincian saldo: jumlah bagiannya SAMA dengan saldo seharusnya', async () => {
+  const { catatHitungan } = await import(MOD);
+  /* Tujuh tipe minus `opening_float`, jadi keenam yang tersisa hadir sekaligus.
+     Mockup `TutupKasScreen` hanya menggambar tiga (penjualan, refund, dan
+     modal awal); empat lainnya justru yang ketidakterlihatannya menjadi cacat
+     FR-D5 — uang yang keluar dengan sah dan tidak pernah tercatat. */
+  const db = dbPalsu({
+    gerakan: [
+      { type: 'sale', delta: 2010000 },
+      { type: 'refund', delta: -25000 },
+      { type: 'paid_in', delta: 40000 },
+      { type: 'paid_out', delta: -60000 },
+      { type: 'bank_deposit', delta: -500000 },
+      { type: 'adjustment', delta: -3000 },
+    ],
+  });
+
+  const hasil = await catatHitungan({ db, shiftId: 's1', hitungan: 1, waktu: JAM });
+  const { saldoAwal, bagian, saldoSeharusnya } = hasil.rincian;
+
+  const jumlah = saldoAwal + bagian.reduce((a, b) => a + b.total, 0);
+  assert.equal(
+    jumlah,
+    saldoSeharusnya,
+    'jumlah rincian tidak sama dengan saldo seharusnya. ⛔ Rincian yang tidak ' +
+      'menjumlah ke totalnya membuat kasir mencari uang yang tidak hilang, dan ' +
+      'itu lebih buruk daripada tidak ada rincian sama sekali.'
+  );
+  assert.equal(saldoSeharusnya, hasil.saldoSeharusnya, 'dua angka untuk satu pertanyaan');
+});
+
+test('⛔ rincian memuat SETIAP tipe yang punya movement, bukan empat yang mockup gambar', async () => {
+  const { catatHitungan } = await import(MOD);
+  const db = dbPalsu({
+    gerakan: [
+      { type: 'sale', delta: 100000 },
+      { type: 'paid_out', delta: -50000 },
+      { type: 'bank_deposit', delta: -20000 },
+      { type: 'adjustment', delta: 1000 },
+    ],
+  });
+
+  const { bagian } = (await catatHitungan({ db, shiftId: 's1', hitungan: 1, waktu: JAM })).rincian;
+  assert.deepEqual(
+    bagian.map((b) => b.tipe),
+    ['sale', 'paid_out', 'bank_deposit', 'adjustment'],
+    'tipe yang punya movement hilang dari rincian, atau urutannya bukan urutan ' +
+      '`TIPE_MOVEMENT`. Urutan yang datang dari data membuat dua shift ' +
+      'menampilkan rincian dengan urutan berbeda.'
+  );
+  /* Nama di layar, bukan kode mentah: kasir tidak membaca `bank_deposit`. */
+  assert.deepEqual(
+    bagian.map((b) => b.label),
+    ['Penjualan tunai', 'Kas keluar', 'Setor ke bank', 'Koreksi']
+  );
+});
+
+test('⛔ tipe TANPA movement tidak muncul sebagai baris nol', async () => {
+  const { catatHitungan } = await import(MOD);
+  const db = dbPalsu({ gerakan: [{ type: 'sale', delta: 100000 }] });
+
+  const { bagian } = (await catatHitungan({ db, shiftId: 's1', hitungan: 1, waktu: JAM })).rincian;
+  assert.deepEqual(bagian.map((b) => b.tipe), ['sale']);
+});
+
+test('⛔ `opening_float` TIDAK menjadi baris rincian — ia sudah `saldoAwal`', async () => {
+  const { catatHitungan } = await import(MOD);
+  /* Query memfilternya, tapi fixture ini mengirimkannya juga: yang diuji
+     adalah bahwa rinciannya tidak menghitung modal awal DUA KALI bila baris
+     itu sampai kepadanya. Pengecualian yang sama sudah menyelamatkan
+     `saldoSeharusnya` sejak 14 Agustus 2026. */
+  const db = dbPalsu({
+    gerakan: [
+      { type: 'sale', delta: 100000 },
+      { type: 'opening_float', delta: 500000 },
+    ],
+  });
+
+  const { bagian } = (await catatHitungan({ db, shiftId: 's1', hitungan: 1, waktu: JAM })).rincian;
+  assert.equal(
+    bagian.some((b) => b.tipe === 'opening_float'),
+    false,
+    'modal awal muncul dua kali: sebagai `saldoAwal` DAN sebagai baris rincian.'
+  );
 });

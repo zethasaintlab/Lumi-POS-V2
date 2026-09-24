@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { EmptyState } from 'ds';
+import { Badge, EmptyState } from 'ds';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
@@ -12,8 +12,10 @@ import {
   ringkasanSebelumHitung,
   tutupKas,
   type LaporanShift,
+  type RincianSaldo,
   type RingkasanAwal,
 } from '../kas/tutup.ts';
+import { LABEL_MOVEMENT } from '../../../../packages/domain/src/buku-kas.ts';
 import { muatHlc } from '../lokal/hlc.ts';
 import { DialogOtorisasi } from '../komponen/DialogOtorisasi.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
@@ -25,6 +27,7 @@ import { BASIS } from '../rute/tabel.ts';
 import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { Bidang } from '../Bidang.tsx';
 import { PortalAksi } from '../komponen/PortalAksi.tsx';
+import { LangkahKas, type Langkah } from '../komponen/LangkahKas.tsx';
 
 /* K-12 Tutup Kas + K-13 Laporan Shift (IA §2.2).
 
@@ -40,6 +43,36 @@ import { PortalAksi } from '../komponen/PortalAksi.tsx';
    copy-nya: "Hitung dulu, baru sistem menampilkan angkanya." */
 
 const PECAHAN = [1000, 5000, 10000, 50000, 100000];
+
+/* ⛔ DUA langkah, bukan tiga. Tahap `selesai` (K-13) adalah layar berbeda
+   dengan judulnya sendiri, dan kas sudah tertutup saat ia muncul — penanda
+   langkah di sana menjanjikan sesuatu yang masih dapat dikerjakan, padahal
+   `CashDrawerShift` tidak dapat dibuka ulang setelah `CLOSED` (`PRD:522`). */
+const LANGKAH: Langkah[] = [
+  { nomor: 1, judul: 'Hitung uang fisik di laci' },
+  { nomor: 2, judul: 'Tinjau dan tutup' },
+];
+
+/* ⛔ Kata, bukan warna. Aturan design system #5, dan di layar uang ia paling
+   penting: kasir yang membaca panel merah tanpa kata tidak tahu apakah lacinya
+   kurang atau lebih — dua keadaan dengan konsekuensi yang sangat berbeda.
+
+   ⛔ Besarannya TANPA tanda di kalimat ini; tandanya dibawa angka besarnya
+   lewat `rupiah`. "−12,3% lebih rendah" adalah negasi ganda yang dibaca cepat
+   berarti naik — pelajaran yang sama dari G2. */
+const TEKS_SELISIH = {
+  kurang: 'Selisih — kas kurang',
+  lebih: 'Selisih — kas lebih',
+  pas: 'Cocok — tidak ada selisih',
+} as const;
+
+type ArahSelisih = keyof typeof TEKS_SELISIH;
+
+function arahDari(selisih: number): ArahSelisih {
+  if (selisih < 0) return 'kurang';
+  if (selisih > 0) return 'lebih';
+  return 'pas';
+}
 
 /* ⛔ Peta nama metode DIHAPUS dari sini, 1 September 2026.
  *
@@ -75,7 +108,12 @@ export function TutupKas() {
      dari "nol", dan kasir yang menghapus isinya harus mendapat field kosong,
      bukan "0" yang harus ia hapus lagi. */
   const [hitunganTeks, setHitunganTeks] = useState('');
-  const [review, setReview] = useState<{ selisih: number; saldoSeharusnya: number; percobaan: number } | null>(null);
+  const [review, setReview] = useState<{
+    selisih: number;
+    saldoSeharusnya: number;
+    percobaan: number;
+    rincian: RincianSaldo;
+  } | null>(null);
   const [kodeAlasan, setKodeAlasan] = useState('');
   const [catatan, setCatatan] = useState('');
   const [mintaOtorisasi, setMintaOtorisasi] = useState(false);
@@ -263,17 +301,56 @@ export function TutupKas() {
   /* Tahap REVIEW — hanya setelah hitungan dimasukkan. */
   if (review) {
     const perluOtorisasi = butuhOtorisasiSelisih(review.selisih);
+    const arahSelisih = arahDari(review.selisih);
     return (
       <div className="kasir-grid-panel">
         <h1 className="t-title">Hasil hitungan</h1>
 
-        <Baris label="Saldo awal" nilai={ringkas.saldoAwal} />
-        {/* Di tahap REVIEW angka tunai boleh muncul: hitungan fisik sudah
-            terkunci sebagai percobaan, jadi tidak ada lagi yang dapat
-            dihitung mundur. */}
-        <Baris label="Saldo seharusnya" nilai={review.saldoSeharusnya} />
+        <LangkahKas langkah={LANGKAH} aktif={2} />
+
+        {/* ⛔ RINCIAN PENUH, dan hanya di langkah 2. Di tahap `hitung` tidak
+            satu pun angka ini boleh muncul — bukan totalnya, bukan bagiannya,
+            bukan petunjuknya (FR-D2). Yang membedakan keduanya bukan CSS:
+            `ringkasanSebelumHitung` tidak memuat fieldnya sama sekali, dan
+            rincian ini datang dari `catatHitungan`, yang baru dipanggil
+            SESUDAH kasir menekan "Lanjut".
+
+            ⛔ Bagiannya dari `rincianSaldo` — baris `cash_movement` yang SAMA
+            yang menghasilkan saldo seharusnya, dikelompokkan, bukan dihitung
+            ulang. "Jumlah rincian = total" benar menurut konstruksi.
+
+            ⛔ Mockup menggambar empat baris tetap; yang dirender di sini satu
+            baris per tipe yang PUNYA movement. Daftar yang dipaku empat
+            menyembunyikan kas keluar, setoran bank, dan koreksi — dan
+            ketidakterlihatan itu persis cacat yang FR-D5 tutup. */}
+        <Baris label={LABEL_MOVEMENT.opening_float} nilai={review.rincian.saldoAwal} />
+        {review.rincian.bagian.map((b) => (
+          <Baris key={b.tipe} label={b.label} nilai={b.total} />
+        ))}
+        <Baris label="Kas diharapkan" nilai={review.saldoSeharusnya} tebal />
         <Baris label="Hitungan fisik" nilai={hitungan} />
-        <Baris label="SELISIH" nilai={review.selisih} tebal />
+
+        {/* ⛔ PANEL, bukan baris teks merah. Tiga keadaan, masing-masing dengan
+            perlakuannya sendiri — dan selisih NOL punya perlakuannya juga:
+            laci yang cocok adalah kabar baik, dan kabar baik yang dirender
+            dengan gaya yang sama dengan kabar buruk membuat kasir membaca
+            angkanya sebelum tahu apakah ia perlu khawatir.
+
+            ⛔ Statusnya dibawa KATA (`kurang`/`lebih`/`cocok`), bukan warna
+            saja — aturan design system #5. Besarannya ditampilkan tanpa
+            tandanya di label supaya "− Rp 8.000 kurang" tidak menjadi negasi
+            ganda; angka besarnya tetap membawa `−` (U+2212) lewat `rupiah`. */}
+        <div className="kasir-selisih" data-arah={arahSelisih}>
+          <div className="kasir-selisih-isi">
+            <p className="t-caption kasir-selisih-label" data-arah={arahSelisih}>
+              {TEKS_SELISIH[arahSelisih]}
+            </p>
+            <p className="t-display num kasir-selisih-nilai" data-arah={arahSelisih}>
+              {rupiah(review.selisih)}
+            </p>
+          </div>
+          {perluOtorisasi && <Badge tone="danger">Wajib alasan + PIN manajer</Badge>}
+        </div>
 
         {review.percobaan > 1 && (
           <p className="t-caption kasir-login-galat">
@@ -283,9 +360,6 @@ export function TutupKas() {
 
         {perluOtorisasi && (
           <>
-            <p className="t-body-md kasir-login-galat">
-              Selisih {rupiah(Math.abs(review.selisih))} — persetujuan manajer diperlukan.
-            </p>
             <fieldset className="kasir-alasan">
               <legend className="t-body-md">Alasan selisih</legend>
               {ALASAN_SELISIH.map((a) => (
@@ -368,10 +442,24 @@ export function TutupKas() {
     );
   }
 
-  /* Tahap HITUNG — dan di sini TIDAK ADA satu pun angka saldo terhitung. */
+  /* Tahap HITUNG — dan di sini TIDAK ADA satu pun angka saldo terhitung.
+
+     ⛔ `.kasir-grid-panel`, bukan `.kasir-shift`. Kedua tahap layar ini dulu
+     memakai kelas yang BERBEDA: `hitung` terpusat tanpa `overflow`, `review`
+     rata atas dan menggulir. Satu layar dengan dua pola membuat isinya
+     melompat saat kasir menekan "Lanjut", dan yang lebih mahal: `.kasir-shift`
+     tidak punya `overflow`, jadi isi yang tumbuh MELUAP alih-alih menggulir.
+     Tahap ini pas 658/658 px sebelum kartu berlangkah ditambahkan — satu baris
+     lagi dan ia akan terpotong tanpa satu pun cara menggulirnya.
+
+     `.kasir-shift` tidak diubah: ia melayani BukaShift, DetailTransaksi,
+     Kasir, dan Pembayaran. Yang berubah kelas mana yang K-12 pakai. */
   return (
-    <div className="kasir-shift">
+    <div className="kasir-grid-panel">
       <h1 className="t-title">Tutup Kas</h1>
+
+      <LangkahKas langkah={LANGKAH} aktif={1} />
+
       <p className="t-body-md kasir-login-sub">Hitung dulu, baru sistem menampilkan angkanya.</p>
 
       <p className="t-caption kasir-login-sub">

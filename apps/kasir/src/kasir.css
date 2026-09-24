@@ -412,6 +412,118 @@
   border-top: 1px solid var(--border);
 }
 
+/* K-12 — penanda langkah, panel selisih, dan rincian saldo.
+
+   ⛔ Seluruhnya token. Mockup `TutupKasScreen` memanggang `width: 24`,
+   `height: 24`, `left: 14`, `paddingLeft: 56`, dan `minHeight: 38` sebagai
+   angka piksel; aturan design system #6 melarangnya, dan `ds-bundle/` tidak
+   pernah disunting untuk memperbaikinya. Yang disalin bentuknya. */
+.kasir-langkah {
+  display: flex;
+  gap: var(--space-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kasir-langkah-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+/* ⛔ Aksen HANYA pada langkah yang sedang dikerjakan. Aturan design system #2
+   membatasi teal ke < 5% area dan satu aksi utama per layar; dua langkah yang
+   keduanya teal akan bersaing dengan tombol "Lanjut". */
+.kasir-langkah-item[data-keadaan='aktif'] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.kasir-langkah-nomor {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: 999px;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  background: var(--border-strong);
+  color: var(--surface);
+}
+
+.kasir-langkah-item[data-keadaan='aktif'] .kasir-langkah-nomor {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.kasir-langkah-item[data-keadaan='selesai'] .kasir-langkah-nomor {
+  background: var(--success);
+  color: var(--surface);
+}
+
+.kasir-langkah-status {
+  margin-left: auto;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+/* Panel selisih. TIGA keadaan, masing-masing dengan perlakuannya sendiri —
+   dan status dibawa TEKS, bukan warna saja (aturan design system #5). */
+.kasir-selisih {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-alt);
+}
+
+.kasir-selisih[data-arah='kurang'] {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.kasir-selisih[data-arah='lebih'] {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.kasir-selisih[data-arah='pas'] {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+}
+
+/* ⛔ Label dan angka dijarakkan `gap`, bukan margin. Keduanya `<p>`, dan
+   `packages/ds/lumi.css` me-reset margin `<p>` ke nol; di `div` biasa label
+   12 px menempel tepat di atas angka 32 px — jarak kotak 0 px, terukur 24
+   September 2026. `--space-2` meniru `StatCard` bundle, yang memberi jarak
+   yang sama antara label dan nilainya. */
+.kasir-selisih-isi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.kasir-selisih-label[data-arah='kurang'] { color: var(--danger); }
+.kasir-selisih-label[data-arah='lebih'] { color: var(--warning); }
+.kasir-selisih-label[data-arah='pas'] { color: var(--success); }
+
+/* ⛔ Angkanya mewarisi warna labelnya lewat `currentColor`-nya sendiri, bukan
+   lewat nilai warna kedua yang harus dijaga sepakat. */
+.kasir-selisih-nilai[data-arah='kurang'] { color: var(--danger); }
+.kasir-selisih-nilai[data-arah='lebih'] { color: var(--warning); }
+.kasir-selisih-nilai[data-arah='pas'] { color: var(--success); }
+
 /* Penanda "Rp" di dalam field nominal (K-12 hitungan fisik laci).
 
    ⛔ Bundle sudah punya bentuk ini di `Field.jsx`, dan ia TIDAK disalin: ia
