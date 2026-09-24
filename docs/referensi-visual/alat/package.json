@@ -1,0 +1,22 @@
+{
+  "name": "referensi-visual-alat",
+  "private": true,
+  "description": "Alat pemotret docs/referensi-visual. Bukan bagian workspace aplikasi; dependensinya hanya untuk menyajikan mockup tanpa CDN.",
+  "type": "module",
+  "scripts": {
+    "vendor": "node vendor.mjs",
+    "potret": "node potret.mjs",
+    "banding": "node banding.mjs",
+    "ukur": "node ukur.mjs"
+  },
+  "dependencies": {
+    "@babel/standalone": "7.24.7",
+    "esbuild": "0.28.1",
+    "lucide-react": "0.468.0",
+    "playwright": "1.62.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "^0.34.0",
+    "tailwindcss": "^3.4.19"
+  }
+}

@@ -1,0 +1,18 @@
+<!-- @dsCard group="Components" viewport="700x180" name="Skeleton Loader" subtitle="Shaped like the final layout - never a circular spinner" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body{margin:0;font-family:'Nunito Sans',sans-serif;background:var(--card);padding:20px;display:flex;gap:24px;align-items:flex-start;}
+  .qr{height:120px;width:120px;border-radius:12px;border:1px solid var(--border);display:grid;grid-template-columns:repeat(5,1fr);gap:3px;padding:10px;}
+  .qr span{border-radius:3px;background:var(--skeleton-bg);}
+  .cards{display:flex;gap:8px;}
+  .card{width:90px;height:100px;border-radius:12px;background:var(--skeleton-bg);}
+  .rows{display:flex;flex-direction:column;gap:8px;width:180px;}
+  .row{height:16px;border-radius:5px;background:var(--skeleton-bg);}
+</style>
+<div class="qr">
+  <span></span><span></span><span></span><span></span><span></span>
+  <span></span><span></span><span></span><span></span><span></span>
+  <span></span><span></span><span></span><span></span><span></span>
+</div>
+<div class="cards"><div class="card"></div><div class="card"></div><div class="card"></div></div>
+<div class="rows"><div class="row"></div><div class="row" style="width:70%"></div><div class="row" style="width:85%"></div></div>

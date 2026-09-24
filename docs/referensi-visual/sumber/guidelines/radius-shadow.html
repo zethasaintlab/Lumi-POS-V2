@@ -1,0 +1,16 @@
+<!-- @dsCard group="Shape" viewport="700x220" name="Radius & Shadow" subtitle="One radius system, teal-tinted shadows used only when hierarchy demands it" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body{margin:0;font-family:'Nunito Sans',sans-serif;background:var(--background);padding:20px;display:flex;gap:20px;flex-wrap:wrap;}
+  .box{background:var(--card);display:grid;place-items:center;font-size:12px;color:var(--muted-foreground);width:110px;height:70px;}
+  .r1{border-radius:12px;border:1px solid var(--border);}
+  .r2{border-radius:10px;border:1px solid var(--border);}
+  .r3{border-radius:999px;border:1px solid var(--border);width:70px;}
+  .s1{border-radius:12px;box-shadow:var(--shadow-card);}
+  .s2{border-radius:12px;box-shadow:var(--shadow-raised);}
+</style>
+<div class="box r1">12px - cards</div>
+<div class="box r2">10px - controls</div>
+<div class="box r3">pill</div>
+<div class="box s1">shadow-card</div>
+<div class="box s2">shadow-raised</div>

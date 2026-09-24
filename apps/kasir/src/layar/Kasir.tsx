@@ -1027,10 +1027,17 @@ export function Kasir() {
             hanya saat ada bagian tunai — keputusan yang baru diambil di K-06.
             Membulatkannya di sini berarti menebak metode bayar sebelum kasir
             memilihnya. */}
-        {hitungan !== null && (
+        {/* ⛔ Keranjang KOSONG tetap menampilkan Total (Rp 0). Tanpanya blok
+            ringkasan berubah bentuk tepat saat keranjang kosong — baris yang
+            muncul pada ketukan pertama menggeser semua yang di atas Bayar. Nol
+            di sini jawaban yang benar, bukan tebakan: tidak ada baris, tidak
+            ada yang ditagih. Keranjang BERISI yang hitungannya gagal tetap
+            tanpa Total (lihat `.catch` di atas) — nol di sana adalah angka
+            yang salah. */}
+        {(hitungan !== null || keranjang.baris.length === 0) && (
           <div className="kasir-total">
             <span className="t-body-md">Total</span>
-            <span className="t-title num">{rupiah(hitungan.totals.total)}</span>
+            <span className="t-title num">{rupiah(hitungan?.totals.total ?? 0n)}</span>
           </div>
         )}
 
@@ -1047,10 +1054,21 @@ export function Kasir() {
         {/* Satu aksi utama per layar (aturan #2), 56px karena menyangkut uang.
             Pembulatan tunai ditambahkan di K-06 (FR-C9) — Total di atas adalah
             total transaksi, bukan nominal tunai yang ditagih. */}
+        {/* ⛔ Bayar NONAKTIF saat keranjang kosong, dengan alasannya — tidak
+            pernah hilang. Tombol nonaktif tanpa alasan terbaca sebagai
+            aplikasi yang macet. Kalimatnya DI ATAS Bayar, sama seperti
+            peringatan persetujuan diskon: di bawahnya ia akan mendorong Bayar
+            naik, dan posisi Bayar yang tetap adalah tujuan blok ini. */}
+        {keranjang.baris.length === 0 && (
+          <p className="t-caption" id="bayar-alasan">
+            Keranjang kosong. Tambahkan item untuk menagih.
+          </p>
+        )}
         <Tombol
           varian="primary"
           kritis
           disabled={keranjang.baris.length === 0 || diskon?.perluPersetujuan === true}
+          keterangan={keranjang.baris.length === 0 ? 'bayar-alasan' : undefined}
           onClick={() => setMembayar(true)}
         >
           Bayar
