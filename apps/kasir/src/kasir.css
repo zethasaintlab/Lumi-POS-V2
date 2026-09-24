@@ -503,6 +503,17 @@
   background: var(--success-soft);
 }
 
+/* ⛔ Label dan angka dijarakkan `gap`, bukan margin. Keduanya `<p>`, dan
+   `packages/ds/lumi.css` me-reset margin `<p>` ke nol; di `div` biasa label
+   12 px menempel tepat di atas angka 32 px — jarak kotak 0 px, terukur 24
+   September 2026. `--space-2` meniru `StatCard` bundle, yang memberi jarak
+   yang sama antara label dan nilainya. */
+.kasir-selisih-isi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .kasir-selisih-label[data-arah='kurang'] { color: var(--danger); }
 .kasir-selisih-label[data-arah='lebih'] { color: var(--warning); }
 .kasir-selisih-label[data-arah='pas'] { color: var(--success); }

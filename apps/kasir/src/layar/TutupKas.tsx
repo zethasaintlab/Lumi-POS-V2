@@ -341,7 +341,7 @@ export function TutupKas() {
             tandanya di label supaya "− Rp 8.000 kurang" tidak menjadi negasi
             ganda; angka besarnya tetap membawa `−` (U+2212) lewat `rupiah`. */}
         <div className="kasir-selisih" data-arah={arahSelisih}>
-          <div>
+          <div className="kasir-selisih-isi">
             <p className="t-caption kasir-selisih-label" data-arah={arahSelisih}>
               {TEKS_SELISIH[arahSelisih]}
             </p>
