@@ -270,3 +270,30 @@
 p {
   margin: 0;
 }
+
+/* --- Warna teks bawaan peramban pada `<button>` ---------------------------
+ *
+ * ⛔ Lubang KEDUA di reset bundle, kelas yang sama dengan margin `<p>` di
+ * atas.
+ *
+ * Stylesheet peramban memberi `<button>` warna `buttontext` — hitam murni
+ * `#000000` — dan `color` elemen form tidak diwarisi dari induknya seperti
+ * elemen biasa. `ds-bundle/base.css` menyetel `body { color: var(--ink) }`,
+ * jadi setiap tombol yang tidak menyetel `color` sendiri merender teksnya
+ * `#000`, bukan `--ink` (`#14110F`). Terukur 23 September 2026: nama dan harga
+ * `.product-card` di K-03, 15 + 15 teks, satu-satunya pelanggar di kelima
+ * layar galeri.
+ *
+ * ⛔ `inherit`, bukan `var(--ink)`. Tombol di dalam permukaan yang teksnya
+ * sengaja lain (badge, pita, panel berwarna) harus mengikuti permukaannya,
+ * seperti elemen biasa. `--ink` di sini akan menjadi pemutus KEDUA yang
+ * menimpa pewarisan itu.
+ *
+ * ⛔ Tidak menyentuh tombol yang menyetel warnanya sendiri: selektor elemen
+ * (0,0,1) kalah dari setiap kelas bundle (`.btn-primary`, `.btn-danger`,
+ * `.chip`, `.stepper button`, …). Diukur sebelum dan sesudah; hanya teks
+ * `.product-card` yang berubah. Dijaga `tests/kasir-dom/warna-tombol.test.js`.
+ */
+button {
+  color: inherit;
+}
