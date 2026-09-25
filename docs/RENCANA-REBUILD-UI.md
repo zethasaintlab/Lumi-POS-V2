@@ -72,3 +72,18 @@ penjaga dan sabotase; fitur yang dibutuhkan mockup tetapi belum ada.
 - Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga.
 - Preview: `lumi-pos-v2-git-rebuild-ui-fase-1-after-school-mpp.vercel.app/harness-galeri.html?layar=…`
 - Dinyatakan: bayangan dan `--overlay` masih rona tinta lama.
+
+### Fase 2 — cakupan galeri
+
+- K-01, K-02, K-09 masuk galeri; dialog dan overlay dicapai lewat jalur klik
+  (`docs/referensi-visual/alat/banding2.mjs` `JALUR`, dan
+  `tests/kasir-dom/galeri-cakupan.test.js`).
+- Tiga cacat fixture diperbaiki: rounding 0 / `'nearest'` (K-07 tak
+  tercapai), `WHERE order_id` diabaikan + order tanpa subtotal/baris (K-09).
+- `BANDING.md` § Fase 2: sebelas pasangan baru dengan selisih bertanda.
+
+**Fitur yang dibutuhkan mockup tetapi belum ada** (dikumpulkan untuk Fase 4):
+pemilihan pengguna sebelum PIN (K-01) · banyak laci per perangkat (K-02) ·
+diskon per baris, catatan per baris (edit item) · hitung mundur QRIS ·
+pengiriman struk digital WhatsApp/Email (K-07) · pratinjau struk di layar ·
+daftar movement kas shift di perangkat (laci).
