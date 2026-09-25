@@ -52,7 +52,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.4 | Struk | dilewati | — | |
 | 3.5 | Void dan refund | selesai | #65 | |
 | 3.6 | Laci kas | selesai | #66 | |
-| 3.7 | K-01 Login | berjalan | — | |
+| 3.7 | K-01 Login | selesai | #67 | |
 | 3.8 | K-02 Buka shift | belum | — | |
 | 3.9 | K-08 Riwayat | belum | — | Format nomor struk repo dipertahankan |
 | 3.10 | K-12 Tutup kas | belum | — | Hitungan buta tetap |
@@ -268,7 +268,7 @@ sudah membawanya).
 
 Dilewati (fitur belum ada): riwayat movement shift di samping form.
 
-### Fase 3.7 — K-01 Login
+### Fase 3.7 — K-01 Login (#67)
 
 Dikejar (penjaga `tests/kasir-dom/k01-login.test.js`, 1024 dan 1280, merah
 dulu: "tidak ada kartu di dalam layar login"):
