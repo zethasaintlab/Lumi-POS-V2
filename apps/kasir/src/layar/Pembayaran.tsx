@@ -568,7 +568,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           ⛔ TIDAK ada QRIS dinamis di sini, dan ketiadaannya disengaja: ia
           online-only, dan menampilkannya lalu menonaktifkannya saat offline
           (FR-C3) menuntut metode itu ADA lebih dulu. */}
-      <div className="kasir-pecahan">
+      <div className="kasir-pecahan kasir-metode">
         {METODE_TERLIHAT.filter(
           (m) => m !== 'qris_static' || fiturAktif(fitur, 'pembayaran_qris_statis')
         ).map((m) => {
@@ -765,8 +765,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
             menolak kebocorannya ke sini. */}
         {hitungan !== null && (
           <div className="kasir-total">
-            <span className="t-body-md">Total</span>
-            <span className="t-title num">{rupiah(hitungan.totals.total)}</span>
+            <span className="t-title">Total</span>
+            <span className="t-display num">{rupiah(hitungan.totals.total)}</span>
           </div>
         )}
 
@@ -779,33 +779,36 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           </div>
         )}
 
-        <div className="kasir-pecahan">
-          {/* ⛔ `ghost`: aksi utama layar ini tetap Simpan Penjualan. Menambah
-              bagian adalah langkah antara, bukan tujuannya. */}
-          {metode !== 'cash' && !lunasTanpaTunai && (
-            <Tombol varian="ghost" kritis disabled={menyimpan || !formLengkap} onClick={tambahBagian}>
-              Tambah pembayaran lain
-            </Tombol>
-          )}
-          <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onKembali}>
-            Kembali
-          </Tombol>
-        </div>
-
         {galat && (
           <p className="t-body-md kasir-login-galat" role="alert">
             {galat}
           </p>
         )}
 
-        <Tombol
-          varian="primary"
-          kritis
-          disabled={menyimpan || (metode === 'qris_dynamic' ? bagian.length > 0 : !masukanLengkap)}
-          onClick={metode === 'qris_dynamic' ? mulaiQris : bayar}
-        >
-          {menyimpan ? 'Menyimpan…' : 'Simpan Penjualan'}
-        </Tombol>
+        {/* Satu baris: aksi sekunder di kiri, aksi utama di kanan (rebuild UI
+            Fase 3.2, mengikuti mockup). Galat di ATAS baris ini, supaya
+            kalimat yang muncul tidak menggeser tombol ke arah yang berbeda
+            dari tempat mata kasir sudah menunggu. */}
+        <div className="kasir-bayar-baris">
+          {/* ⛔ `ghost`: aksi utama layar ini tetap Simpan Penjualan. Menambah
+              bagian adalah langkah antara, bukan tujuannya. */}
+          <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onKembali}>
+            Kembali
+          </Tombol>
+          {metode !== 'cash' && !lunasTanpaTunai && (
+            <Tombol varian="ghost" kritis disabled={menyimpan || !formLengkap} onClick={tambahBagian}>
+              Tambah pembayaran lain
+            </Tombol>
+          )}
+          <Tombol
+            varian="primary"
+            kritis
+            disabled={menyimpan || (metode === 'qris_dynamic' ? bagian.length > 0 : !masukanLengkap)}
+            onClick={metode === 'qris_dynamic' ? mulaiQris : bayar}
+          >
+            {menyimpan ? 'Menyimpan…' : 'Simpan Penjualan'}
+          </Tombol>
+        </div>
       </div>
     </div>
   );

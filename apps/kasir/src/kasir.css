@@ -561,6 +561,25 @@
   gap: var(--space-3);
 }
 
+/* K-06: pemilih metode SATU baris (rebuild UI Fase 3.2, mockup: segmented
+   satu baris). Tetap `.kasir-pecahan` — P1/P5 `k06-penjaga` membaca tombol
+   metode lewat kelas itu. Kolomnya `auto-fit`, bukan 4 tetap: QRIS statis dapat
+   dimatikan lewat kill switch, dan tiga metode harus mengisi barisnya. */
+.kasir-metode {
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  align-items: start;
+}
+
+/* K-06: baris aksi — aksi sekunder di kiri, aksi utama di kanan (mockup:
+   "Konfirmasi bayar" 198×56 kanan bawah). */
+.kasir-bayar-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.kasir-bayar-baris .btn-primary { margin-left: auto; }
+
 /* K-03 kasir: grid produk + keranjang.
 
    IA §2.1: keranjang adalah kolom kanan di >=900px, bottom sheet di bawahnya.
@@ -786,7 +805,10 @@
 }
 
 .kasir-overlay-lebar {
-  max-width: min(56rem, 100%);
+  /* 728 px, lebar kartu pembayaran mockup (rebuild UI Fase 3.2). Sebelumnya
+     56rem (896): lebar yang tidak dipakai isi mana pun membuat tombol dan
+     angka tersebar jauh dari satu sama lain. Dijaga `k06-tata-letak.test.js`. */
+  max-width: min(45.5rem, 100%);
   /* Isi K-06 dapat lebih tinggi dari layar (pembayaran campuran + rincian).
      Ia menggulir DI DALAM kartunya; halaman di belakangnya tidak ikut
      bergulir, jadi latar gelapnya tetap menutup penuh. */
