@@ -239,6 +239,20 @@ kartu yang tepi bawahnya masih di dalam panel yang menggulir):
 `IA:62` menuntut ≥12 kartu tanpa scroll. Tiga rasio pertama melanggarnya, dan
 selisih di antara ketiganya belasan piksel — tidak cukup memindahkan satu baris.
 
+**Diubah 25 September 2026 (rebuild UI Fase 3.1): 3:1, foto selebar kartu.**
+Mockup `design-explorer` memasang foto `h-[72px] w-full` di tepi atas kartu
+(213 × 72 ≈ 3:1), dan grid dibatasi empat kolom. Diukur di galeri:
+
+| Lebar | Kolom | Kartu terlihat | Kartu bergambar | Foto |
+|---|---:|---:|---:|---:|
+| 1024×768 | 4 | **12** ✓ | 149 × 127 | 147 × 49 |
+| 1280×800 | 4 | **12** ✓ | 213 × 130 | 211 × 70 |
+
+Harganya: yang tampil adalah sepertiga tengah foto 1:1 yang tersimpan; produk
+tinggi (botol, gelas) kehilangan atas-bawahnya. Yang disimpan tetap 1:1.
+Penjaganya `tests/kasir-dom/k03-kepadatan.test.js` — ia berjalan di CI pada
+kedua lebar, dan sabotase 16:9 serta 1:1 menyalakannya.
+
 ⛔ **Cacat yang ditemukan pengukuran, bukan pembacaan:** atribut `height="400"`
 pada `<img>` adalah presentational hint yang menyetel `height: 400px`, dan
 `aspect-ratio` hanya berlaku bila salah satu dimensi `auto`. Tanpa `height:

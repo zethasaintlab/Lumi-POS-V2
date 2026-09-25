@@ -21,6 +21,20 @@ if (hilang.length || yatim.length) {
 }
 
 const LEBAR = { kasir: 480, backoffice: 480, order: 220 };
+
+/* Kolom "Sesudah": tangkapan pasangan mockup ↔ galeri SESUDAH layar itu
+   dikerjakan di Fase 3 rebuild UI (`BANDING_KELUAR=sesudah node banding.mjs`).
+   Dicocokkan lewat akhiran `__<layar>--<keadaan>[--x].png` (nama berkas
+   `banding.mjs`/`banding2.mjs`, tanpa awalan aplikasi — keduanya hanya
+   memasangkan layar kasir), jadi satu keadaan mockup dapat punya lebih dari
+   satu padanan. */
+const DIR_SESUDAH = path.join(AKAR, 'sesudah');
+const sesudah = fs.existsSync(DIR_SESUDAH) ? fs.readdirSync(DIR_SESUDAH).filter((f) => f.endsWith('.png')) : [];
+const sesudahUntuk = (k) => {
+  if (k.app.id !== 'kasir') return [];
+  const inti = `${k.layar.id}--${k.keadaan?.id ?? 'tunggal'}`;
+  return sesudah.filter((f) => f.endsWith(`__${inti}.png`) || f.includes(`__${inti}--`));
+};
 const baris = [];
 baris.push('# Indeks referensi visual — design-explorer');
 baris.push('');
@@ -40,13 +54,15 @@ for (const app of apps) {
   baris.push('');
   baris.push(`Viewport ${app.device.w}×${app.device.h} · ${app.screens.length} layar · ${milik.length} kombinasi`);
   baris.push('');
-  baris.push('| Layar | Keadaan | Tangkapan |');
-  baris.push('|---|---|---|');
+  baris.push('| Layar | Keadaan | Tangkapan | Sesudah (Fase 3, mockup ↔ repo) |');
+  baris.push('|---|---|---|---|');
   for (const k of milik) {
     const keadaan = k.keadaan ? `${k.keadaan.label} (\`${k.keadaan.id}\`)` : '— (`tunggal`)';
     baris.push(
       `| ${k.layar.label} (\`${k.layar.id}\`) | ${keadaan} | ` +
-        `<a href="layar/${k.berkas}"><img src="layar/${k.berkas}" width="${LEBAR[app.id] ?? 360}" alt="${app.label} · ${k.layar.label}${k.keadaan ? ' · ' + k.keadaan.label : ''}"></a> |`
+        `<a href="layar/${k.berkas}"><img src="layar/${k.berkas}" width="${LEBAR[app.id] ?? 360}" alt="${app.label} · ${k.layar.label}${k.keadaan ? ' · ' + k.keadaan.label : ''}"></a> | ` +
+        (sesudahUntuk(k).map((f) => `<a href="sesudah/${f}"><img src="sesudah/${f}" width="480" alt="Sesudah · ${f}"></a>`).join('<br>') || '—') +
+        ' |'
     );
   }
   baris.push('');

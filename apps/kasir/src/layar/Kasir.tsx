@@ -838,7 +838,7 @@ export function Kasir() {
       </div>
 
       <aside className="kasir-keranjang">
-        <h2 className="t-body-md">Keranjang</h2>
+        <h2 className="t-title">Keranjang</h2>
 
         {/* FR-E4 — peringatan stok. Aturan design system #5: status TIDAK
             PERNAH warna saja, selalu ada teks; di sini teksnya memang
@@ -1036,7 +1036,7 @@ export function Kasir() {
             yang salah. */}
         {(hitungan !== null || keranjang.baris.length === 0) && (
           <div className="kasir-total">
-            <span className="t-body-md">Total</span>
+            <span className="t-title">Total</span>
             <span className="t-title num">{rupiah(hitungan?.totals.total ?? 0n)}</span>
           </div>
         )}

@@ -46,7 +46,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 0 | Persiapan: aturan di `CLAUDE.md`, pelacak ini, penolakan #9–#10 | selesai | #59 | |
 | 1 | Palet campuran: permukaan netral terang, teks dan aksen repo | menunggu user | #60 | ⛔ **Tidak di-merge tanpa persetujuan user lewat preview.** Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga |
 | 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | selesai | #61 | Nol perubahan tata letak aplikasi |
-| 3.1 | K-03 Kasir | belum | — | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
+| 3.1 | K-03 Kasir | berjalan | — | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
 | 3.2 | K-06 Pembayaran | belum | — | Sembilan penjaga K-06 tetap hijau |
 | 3.3 | K-07 Konfirmasi | belum | — | |
 | 3.4 | Struk | belum | — | |
@@ -92,3 +92,50 @@ pemilihan pengguna sebelum PIN (K-01) · banyak laci per perangkat (K-02) ·
 diskon per baris, catatan per baris (edit item) · hitung mundur QRIS ·
 pengiriman struk digital WhatsApp/Email (K-07) · pratinjau struk di layar ·
 daftar movement kas shift di perangkat (laci).
+
+### Fase 3.1 — K-03 Kasir
+
+Dikejar (penjaga `tests/kasir-dom/k03-kepadatan.test.js`, merah dulu di
+empat titik):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Kolom grid pada 1280 | 6 | 4 | 4 |
+| Kartu bergambar 1280 | 139 × 133, foto 113 × 64 berbingkai | 213 × 130, foto 211 × 70 selebar kartu | 213 × 143, foto 213 × 72 |
+| Kartu bergambar 1024 | 151 × 156 | 149 × 127 | — |
+| Kartu terlihat (IA:62) | 12 / 15 pada 1024 · 15 pada 1280 | 12 pada keduanya | 12 dari 12 |
+| Kolom keranjang | 352 | 360 | 360 |
+| Judul "Keranjang", label "Total" | 15/500 | 20/500 | 20/600 |
+
+Sabotase yang menyala (8/8): kolom kembali 6 · foto berbingkai · rasio 16:9 ·
+rasio 1:1 (IA:62 merah di tiga penjaga) · keranjang 352 · baris keranjang
+dipendekkan · judul 15 px · label Total bobot 600.
+
+Ditolak:
+- Bobot 600 untuk judul dan label: `--weight-bold` bundle "hanya untuk
+  --text-display" (peringkat 2 mengalahkan mockup).
+- Harga kartu berwarna aksen: DS #2 dan keputusan "berat, bukan warna" di
+  `kasir.css`.
+- Chrome atas setinggi mockup (136 px): chrome repo 108 px, dan menambah
+  toolbar melintang sudah terukur menjatuhkan grid ke 8 kartu
+  (`k03-chrome.test.js`). Toolbar delapan tombol, lonceng, lencana qty tanpa
+  stepper, baris "Pajak": sudah ditolak di README.
+- Chip kategori netral: warna kategori adalah token repo; urusan palet (Fase 1).
+
+Dilewati (fitur belum ada): kosongkan keranjang sekaligus · menu pengguna di
+topbar.
+
+Dilewati, dengan alasan:
+- "Diskon Rp 0" selalu tampil dan subjudul "Rp X per item": keduanya menambah
+  baris di kolom keranjang, yang sudah hanya memperlihatkan ≈ 4 baris 82 px;
+  baris keranjang tidak boleh dipendekkan, jadi ruangnya diambil dari daftar.
+- Pita offline di dalam kolom katalog: pita milik `ShellKasir` dan berlaku
+  di setiap layar; memindahkannya hanya di K-03 adalah perubahan shell, bukan
+  K-03.
+
+Harga yang dinyatakan: foto 1:1 tampil sepertiga tengahnya (3:1). Catatan
+16:9 di `CLAUDE.md` dan `docs/verifikasi/GAMBAR-ANGGARAN.md` § 7 diperbarui.
+
+Tangkapan sesudah: `docs/referensi-visual/sesudah/`, kolom "Sesudah" di
+`INDEKS.md` (`BANDING_KELUAR=sesudah BANDING_SARING=kasir node banding.mjs`).
+

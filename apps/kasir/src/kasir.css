@@ -587,10 +587,17 @@
 }
 
 /* >=12 kartu tanpa scroll (IA:62). `auto-fill` dengan lebar minimum, bukan
-   jumlah kolom tetap: tablet 1024 dan mini-PC 1280 harus keduanya muat. */
+   jumlah kolom tetap: tablet 1024 dan mini-PC 1280 harus keduanya muat.
+
+   ⛔ Paling banyak EMPAT kolom (rebuild UI Fase 3.1, mengikuti mockup
+   `design-explorer`). Lebar minimum kolom adalah yang lebih besar dari 8rem
+   dan seperempat baris, jadi `auto-fill` tidak pernah memuat kolom kelima.
+   Pada 1024 hasilnya tetap 4; yang berubah hanya layar lebar, tempat 6 kolom
+   sempit membuat nama produk terpotong dua baris. Dijaga
+   `tests/kasir-dom/k03-kepadatan.test.js`, bersama `IA:62` di kedua lebar. */
 .kasir-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(max(8rem, calc((100% - 3 * var(--space-3)) / 4)), 1fr));
   gap: var(--space-3);
 }
 
@@ -632,6 +639,9 @@
   /* Jangkar posisi untuk `.kasir-kartu-habis`. Tanpa ini badge-nya
      memposisikan diri terhadap viewport, bukan terhadap kartunya. */
   position: relative;
+  /* Foto menempel ke tepi kartu (lihat `.kasir-kartu-gambar`); sudut atasnya
+     dipotong radius kartu di sini, bukan disalin ke foto sebagai angka kedua. */
+  overflow: hidden;
 }
 
 /* Bundle sudah menggeser warna; pergeseran 1px menambah rasa FISIK yang
@@ -677,7 +687,11 @@
 .kasir-kartu[data-gambar='tanpa'] { justify-content: center; }
 
 .kasir-kartu-gambar {
-  width: 100%;
+  /* ⛔ Foto SELEBAR kartu dan menempel di tepi atasnya (rebuild UI Fase 3.1,
+   * mockup `design-explorer`: `h-[72px] w-full object-cover`). Margin negatif
+   * sebesar padding kartu, jadi padding teks di bawahnya tidak berubah. */
+  width: calc(100% + 2 * var(--space-3));
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-3)) var(--space-1);
   /* ⛔ `height: auto` WAJIB, dan ketiadaannya membuat `aspect-ratio` di bawah
    * TIDAK BERLAKU SAMA SEKALI.
    *
@@ -692,42 +706,32 @@
    *
    * Atributnya tetap ada: ia yang memesan ruang sebelum gambar di-decode. */
   height: auto;
-  /* ⛔ 16:9 DI KARTU, meski yang tersimpan 1:1 — dan angkanya DIUKUR, bukan
-   * dipilih karena terlihat enak.
+  /* ⛔ 3:1 DI KARTU, meski yang tersimpan 1:1 — dan angkanya DIUKUR.
    *
-   * `IA:62` menuntut ≥12 kartu tanpa scroll. Diukur di galeri (build statis,
-   * viewport 1280×800, katalog yang sama persis, menghitung kartu yang tepi
-   * bawahnya masih di dalam panel yang menggulir):
+   * Riwayat: 16:9 berbingkai (1 September 2026) dipilih karena 1:1, 4:3, dan
+   * 3:2 menjatuhkan grid ke 8 kartu, sementara `IA:62` menuntut ≥12 tanpa
+   * scroll. Rasio yang LEBIH TINGGI dari 16:9 tetap gugur, dan baris ini ada
+   * supaya tidak dicoba ulang.
    *
-   *     tanpa gambar  → 15 kartu   (tinggi kartu  81px)
-   *     gambar 1:1    →  8 kartu   (kartu bergambar 231px)  ⛔ MELANGGAR IA:62
-   *     gambar 4:3    →  8 kartu   (kartu bergambar 199px)  ⛔ MELANGGAR IA:62
-   *     gambar 3:2    →  8 kartu   (kartu bergambar 189px)  ⛔ MELANGGAR IA:62
-   *     gambar 16:9   → 12 kartu   (kartu bergambar 176px)  ✓
+   * Fase 3.1 (25 September 2026) mengikuti mockup: foto selebar kartu,
+   * 213 × 72 ≈ 3:1. Lebih rendah dari 16:9, jadi IA:62 justru lebih longgar;
+   * `tests/kasir-dom/k03-kepadatan.test.js` mengukurnya pada 1024 dan 1280.
    *
-   * ⛔ 4:3 DAN 3:2 SUDAH DICOBA dan keduanya gagal — selisihnya belasan piksel,
-   * dan belasan piksel tidak memindahkan satu baris pun. Baris ini ada supaya
-   * orang berikutnya yang merasa 16:9 terlalu sempit tahu bahwa anak tangga di
-   * atasnya sudah diukur dan gugur, bukan dilewati.
-   *
-   * Yang hilang saat kartu membesar bukan kenyamanan: menu yang menuntut
-   * scroll pada setiap pesanan adalah beban yang dibayar ribuan kali sehari.
-   *
-   * Yang DISIMPAN tetap 1:1 (`SISI_PIKSEL`), dan `object-fit: cover` memotong
-   * atas-bawah dari tengahnya — merchant sudah memotong tengah saat mengunggah,
-   * jadi subjeknya ada di sana. Menyimpan 16:9 akan mengunci gambar merchant
-   * pada keputusan tata letak hari ini, dan gambar tidak dapat ditulis ulang.
+   * Harganya dinyatakan: dari foto 1:1 yang tersimpan, yang tampil adalah
+   * sepertiga tengahnya. Merchant memotong tengah saat mengunggah, jadi
+   * subjeknya ada di sana — tapi produk yang tinggi (botol, gelas) kehilangan
+   * atas dan bawahnya. Yang DISIMPAN tetap 1:1 (`SISI_PIKSEL`): gambar tidak
+   * dapat ditulis ulang, tata letak dapat.
    *
    * Menyatakan rasionya di CSS juga menahan tata letak sebelum gambar
    * di-decode, jadi grid tidak melompat saat gambar mendarat. */
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 3 / 1;
   object-fit: cover;
-  border-radius: var(--radius-control);
   /* Permukaan di belakang gambar transparan: WebP boleh punya alpha, dan yang
      tembus di atas kartu putih tetap terbaca. */
   background: var(--surface-sunk);
-  margin-bottom: var(--space-1);
   display: block;
+  max-width: none;
 }
 
 /* ⛔ Keadaan "gagal dimuat" — dan ia BUKAN kotak abu-abu.
@@ -881,7 +885,8 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  width: 22rem;
+  /* 360 px, lebar kolom keranjang mockup (rebuild UI Fase 3.1). */
+  width: 22.5rem;
   flex: none;
   border-left: 1px solid var(--border);
   background: var(--surface);
@@ -1176,7 +1181,7 @@
    yang kerangka ada untuk mencegahnya. */
 .kasir-memuat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(max(8rem, calc((100% - 3 * var(--space-3)) / 4)), 1fr));
   gap: var(--space-3);
 }
 .kasir-memuat-grid .kasir-rangka { height: 5.5rem; }

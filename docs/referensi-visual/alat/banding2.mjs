@@ -24,7 +24,12 @@ const AKAR_REF = path.resolve(DI_SINI, '..');
 const AKAR_REPO = path.resolve(AKAR_REF, '..', '..');
 const GALERI = path.join(AKAR_REPO, 'dist-galeri');
 const K06 = path.join(AKAR_REPO, 'dist-harness-k06');
-const KELUAR = path.join(AKAR_REF, 'banding');
+// `BANDING_KELUAR=sesudah` menulis ke `../sesudah/` (tangkapan Fase 3 rebuild
+// UI) dan membiarkan `../banding/` sebagai potret SEBELUM. `BANDING_SARING`
+// membatasi ke satu layar mockup (mis. `kasir`), supaya fase satu layar tidak
+// menulis ulang tangkapan layar lain.
+const KELUAR = path.join(AKAR_REF, process.env.BANDING_KELUAR ?? 'banding');
+const SARING = process.env.BANDING_SARING ?? null;
 const W = 1280;
 const H = 800;
 
@@ -92,6 +97,7 @@ async function main() {
   const hasil = [];
   for (const p of PASANGAN2) {
     const [scr, st] = p.mockup;
+    if (SARING && scr !== SARING) continue;
     const idMock = `kasir--${scr}--${st ?? 'tunggal'}`;
 
     const hm = await kMock.newPage();
@@ -155,7 +161,7 @@ async function main() {
   sMock.close();
   sGal.close();
   sK06.close();
-  fs.writeFileSync(path.join(DI_SINI, '.vendor', 'banding2.json'), JSON.stringify(hasil, null, 1));
+  if (!SARING) fs.writeFileSync(path.join(DI_SINI, '.vendor', 'banding2.json'), JSON.stringify(hasil, null, 1));
   console.log(JSON.stringify(hasil.map((h) => ({ berkas: h.berkas, galat: h.galat, dialog: h.dialog })), null, 1));
 }
 
