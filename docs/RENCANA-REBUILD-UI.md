@@ -56,7 +56,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.8 | K-02 Buka shift | selesai | #68 | |
 | 3.9 | K-08 Riwayat | selesai | #69 | Format nomor struk repo dipertahankan |
 | 3.10 | K-12 Tutup kas | selesai | #70 | Hitungan buta tetap |
-| 4 | Laporan akhir | belum | — | |
+| 4 | Laporan akhir | selesai | — | Fase 1 (#60) tetap menunggu user |
 
 ## Catatan per fase
 
@@ -383,3 +383,65 @@ FR-D2) · "Tutup Shift" 44 px (DS #3) · bobot 700 · 13 px.
 Tangkapan review: `sesudah/K-12--review__tutup--tunggal--review.png`
 (`banding.mjs` memotret tahap `hitung`).
 
+### Fase 4 — laporan akhir (25 September 2026)
+
+**Hasil.** Sepuluh layar/keadaan Fase 3 dikerjakan, sembilan ter-merge lewat
+PR ber-CI (#62–#70), satu dilewati (Struk, tanpa layar di repo). Fase 0 dan 2
+selesai (#59, #61). **Fase 1 (palet, #60) tetap menunggu persetujuan user** —
+ia masih dapat di-merge bersih ke `main` terbaru (diperiksa dengan
+`git merge-tree`), dan sesudah merge seluruh penjaga harus dijalankan ulang.
+
+| Fase | PR | Penjaga baru | Merah dulu | Sabotase menyala |
+|---|---|---|---|---|
+| 3.1 K-03 | #62 | `k03-kepadatan` | 4 titik | 8/8 |
+| 3.2 K-06 | #63 | `k06-tata-letak` | 4 test | 5/5 |
+| 3.3 K-07 | #64 | `k07-konfirmasi` | 4 test | 8/8 (satu setelah penjaga hampa diperbaiki) |
+| 3.5 K-10 | #65 | `k10-refund` | 2 test | 3/3 |
+| 3.6 Laci | #66 | `laci-kas` | 2 test | 3/3 |
+| 3.7 K-01 | #67 | `k01-login` | 2 test | 5/5 |
+| 3.8 K-02 | #68 | `k02-buka-shift` | 2 test (+2 dari tangkapan) | 6/6 |
+| 3.9 K-08 | #69 | `k08-riwayat` | 2 test | 5/5 |
+| 3.10 K-12 | #70 | `k12-review-kartu` | 2 test | 2/2 |
+
+Invarian yang dijaga dan tetap hijau di setiap PR: hitungan buta K-12 · QRIS
+layar penuh (P1) · pembulatan hanya di K-07 (P2/P3) · ≥ 12 kartu pada 1024
+(sekarang juga pada 1280) · Bayar tetap di 0/3/20 item · K-14 · tinggi bilah
+nav · `ds-bundle/` tidak disunting · nol hex di CSS kasir.
+
+**Cacat nyata yang ditemukan kampanye ini (bukan selisih tampilan):**
+
+1. **K-07 tidak pernah merender hasil cetak pertama** — kertas habis tidak
+   terlihat di mana pun, padahal `simpanPenjualan` mengembalikannya untuk
+   itu (#64, diperbaiki dan dijaga).
+2. **Galeri menimpa latar layar tanpa shell** (#67, diperbaiki).
+3. **Penjaga hampa di penjaga saya sendiri**: token aksen dibaca dari elemen
+   terlepas (#64). Sabotase yang menemukannya.
+4. **Tombol pecahan K-02 meluap** menimpa kolom kanan — ditemukan di
+   tangkapan sesudah, bukan oleh penjaga pertama (#68).
+5. **Temuan, TIDAK diperbaiki:** `DetailTransaksi.tsx` punya peta metode
+   sendiri berkunci `card` (bukan `card_edc`) — pembayaran EDC tampil sebagai
+   kode mentah di K-09, dan itu salinan kedua `LABEL_METODE`.
+6. **Kandidat flake, TIDAK diperbaiki:** `pool-koneksi-idle-mati.test.js`
+   merah sekali di CI #67 (di luar diff), hijau pada satu re-run.
+
+**⛔ Menunggu keputusan user (tidak dibangun):** field teks bebas untuk
+nominal uang — "Nominal diterima" (K-06) dan "Saldo awal" (K-02). Keduanya
+jalur MASUKAN uang baru, kondisi berhenti "menyentuh logika uang di luar tata
+letak". Pola parser sudah ada di K-12.
+
+**Fitur yang dibutuhkan mockup tetapi belum ada** (tidak dibangun, dari Fase 2
+dan 3): pemilihan pengguna sebelum PIN · banyak laci per perangkat · diskon dan
+catatan per baris · hitung mundur QRIS · struk digital WhatsApp/Email ·
+pratinjau struk · riwayat movement kas shift · kosongkan keranjang sekaligus ·
+menu pengguna di topbar · kolom Item/Metode dan penyaring tanggal/metode di
+K-08.
+
+**Selisih yang tersisa karena DITOLAK** (tabrakan dengan spec/token, daftar
+lengkap di tiap catatan fase dan `docs/referensi-visual/README.md`): bobot 600
+di luar `--text-display`, 13 px, target sentuh 44 px, aksen pada angka dan
+harga, nomor `TRX-…`, 4 titik PIN, QR di dalam kartu pembayaran, Total di atas
+kartu K-06, saldo sebelum menghitung di K-12, teks bebas untuk alasan.
+
+**Alat yang ditinggalkan:** `BANDING_KELUAR=sesudah BANDING_SARING=<layar>`
+pada `banding.mjs`/`banding2.mjs` memotret ke `docs/referensi-visual/sesudah/`
+tanpa menimpa potret SEBELUM; `INDEKS.md` punya kolom "Sesudah".
