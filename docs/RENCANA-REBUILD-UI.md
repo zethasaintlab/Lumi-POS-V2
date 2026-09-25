@@ -43,9 +43,9 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 
 | Fase | Pekerjaan | Status | PR | Catatan |
 |---|---|---|---|---|
-| 0 | Persiapan: aturan di `CLAUDE.md`, pelacak ini, penolakan #9–#10 | berjalan | — | |
-| 1 | Palet campuran: permukaan netral terang, teks dan aksen repo | belum | — | ⛔ **Tidak di-merge tanpa persetujuan user lewat preview.** Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga |
-| 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | belum | — | Nol perubahan tata letak aplikasi |
+| 0 | Persiapan: aturan di `CLAUDE.md`, pelacak ini, penolakan #9–#10 | selesai | #59 | |
+| 1 | Palet campuran: permukaan netral terang, teks dan aksen repo | menunggu user | #60 | ⛔ **Tidak di-merge tanpa persetujuan user lewat preview.** Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga |
+| 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | berjalan | — | Nol perubahan tata letak aplikasi |
 | 3.1 | K-03 Kasir | belum | — | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
 | 3.2 | K-06 Pembayaran | belum | — | Sembilan penjaga K-06 tetap hijau |
 | 3.3 | K-07 Konfirmasi | belum | — | |
@@ -62,3 +62,13 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 
 Diisi saat fase berjalan: selisih yang dikejar, ditolak, dan dilewati; hasil
 penjaga dan sabotase; fitur yang dibutuhkan mockup tetapi belum ada.
+
+### Fase 1 — palet campuran (#60, menunggu persetujuan user)
+
+- Delapan token ditimpa di `packages/ds/lumi.css`, nilainya diturunkan
+  `tools/palet-turunan.mjs`. `--warning` ikut digelapkan (4,31 → 4,52 di
+  `--surface-alt`; gagal sejak palet lama).
+- Penjaga: `tests/runtime/palet-kontras.test.js`, `tests/kasir-dom/palet-berlaku.test.js`.
+- Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga.
+- Preview: `lumi-pos-v2-git-rebuild-ui-fase-1-after-school-mpp.vercel.app/harness-galeri.html?layar=…`
+- Dinyatakan: bayangan dan `--overlay` masih rona tinta lama.
