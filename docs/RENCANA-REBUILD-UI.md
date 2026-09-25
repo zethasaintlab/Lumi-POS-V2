@@ -47,7 +47,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 1 | Palet campuran: permukaan netral terang, teks dan aksen repo | menunggu user | #60 | ⛔ **Tidak di-merge tanpa persetujuan user lewat preview.** Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga |
 | 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | selesai | #61 | Nol perubahan tata letak aplikasi |
 | 3.1 | K-03 Kasir | selesai | #62 | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
-| 3.2 | K-06 Pembayaran | berjalan | — | Sembilan penjaga K-06 tetap hijau |
+| 3.2 | K-06 Pembayaran | selesai | #63 | Sembilan penjaga K-06 tetap hijau |
 | 3.3 | K-07 Konfirmasi | belum | — | |
 | 3.4 | Struk | belum | — | |
 | 3.5 | Void dan refund | belum | — | |
@@ -139,7 +139,7 @@ Harga yang dinyatakan: foto 1:1 tampil sepertiga tengahnya (3:1). Catatan
 Tangkapan sesudah: `docs/referensi-visual/sesudah/`, kolom "Sesudah" di
 `INDEKS.md` (`BANDING_KELUAR=sesudah BANDING_SARING=kasir node banding.mjs`).
 
-### Fase 3.2 — K-06 Pembayaran
+### Fase 3.2 — K-06 Pembayaran (#63)
 
 Dikejar (penjaga `tests/kasir-dom/k06-tata-letak.test.js`, diukur di overlay
 galeri pada 1024 dan 1280, merah dulu di empat test):
