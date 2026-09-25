@@ -48,7 +48,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | selesai | #61 | Nol perubahan tata letak aplikasi |
 | 3.1 | K-03 Kasir | selesai | #62 | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
 | 3.2 | K-06 Pembayaran | selesai | #63 | Sembilan penjaga K-06 tetap hijau |
-| 3.3 | K-07 Konfirmasi | berjalan | — | |
+| 3.3 | K-07 Konfirmasi | selesai | #64 | |
 | 3.4 | Struk | belum | — | |
 | 3.5 | Void dan refund | belum | — | |
 | 3.6 | Laci kas | belum | — | |
@@ -171,7 +171,7 @@ yang menyimpan penjualan — kondisi berhenti "perubahan yang menyentuh logika
 uang di luar tata letak". Pola parsernya sudah ada di K-12 (`Bidang` ber-awalan),
 jadi biayanya kecil bila disetujui.
 
-### Fase 3.3 — K-07 Konfirmasi
+### Fase 3.3 — K-07 Konfirmasi (#64)
 
 Dikejar (penjaga `tests/kasir-dom/k07-konfirmasi.test.js`, overlay galeri pada
 1024 dan 1280, merah dulu di empat test):
