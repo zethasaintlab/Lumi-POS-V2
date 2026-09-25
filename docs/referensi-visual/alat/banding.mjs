@@ -50,7 +50,7 @@ export const PASANGAN = [
   { galeri: 'K-12', mockup: 'tutup', pasang: [[null, 'normal']] },
 ];
 
-function sajikan(akar, bawaan) {
+export function sajikan(akar, bawaan) {
   const JENIS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.png': 'image/png' };
   const server = http.createServer((req, res) => {
     const nama = decodeURIComponent((req.url ?? '/').split('?')[0]);
@@ -65,7 +65,7 @@ function sajikan(akar, bawaan) {
   return new Promise((r) => server.listen(0, '127.0.0.1', () => r(server)));
 }
 
-async function pasangRuteMockup(konteks) {
+export async function pasangRuteMockup(konteks) {
   const kirim = (route, berkas, jenis) => route.fulfill({ status: 200, contentType: jenis, body: fs.readFileSync(path.join(VENDOR, berkas)) });
   const petaFont = JSON.parse(fs.readFileSync(path.join(VENDOR, 'font', 'peta.json'), 'utf8'));
   await konteks.route('https://cdn.tailwindcss.com/**', (r) => kirim(r, 'tailwind-cdn.js', 'text/javascript'));
@@ -89,7 +89,7 @@ async function pasangRuteMockup(konteks) {
 // Pengukuran di dalam halaman. `akar` = elemen yang mewakili layar (viewport).
 
 /* eslint-disable */
-function ukurDiHalaman({ akarSel, varAksen }) {
+export function ukurDiHalaman({ akarSel, varAksen }) {
   const akar = akarSel ? document.querySelector(akarSel) : document.documentElement;
   const R = akar.getBoundingClientRect();
   const vw = akarSel ? R.width : innerWidth;
@@ -198,7 +198,7 @@ function ukurDiHalaman({ akarSel, varAksen }) {
 /* eslint-enable */
 
 /** Warna permukaan dari PIKSEL tangkapan mentah (bukan yang terkompres). */
-async function histogram(buf) {
+export async function histogram(buf) {
   const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const peta = new Map();
   for (let i = 0; i < data.length; i += 3) {
@@ -212,7 +212,7 @@ async function histogram(buf) {
     .map(([k, v]) => [`#${k.toString(16).padStart(6, '0')}`, `${((v / total) * 100).toFixed(1)}%`]);
 }
 
-function label(teks, lebar) {
+export function label(teks, lebar) {
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${lebar}" height="40"><rect width="100%" height="100%" fill="#1e292b"/>` +
       `<text x="16" y="26" font-family="sans-serif" font-size="17" fill="#e7eeee">${teks}</text></svg>`

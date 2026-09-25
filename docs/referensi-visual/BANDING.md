@@ -40,20 +40,24 @@ keranjang sama sekali. Galeri tidak punya keadaan "terdaftar, katalog kosong".
 Pasangan ini hanya dapat membandingkan kalimat dan tata letak keadaan kosong,
 bukan keranjang di sebelahnya.
 
-### Tanpa padanan di galeri
+### Tanpa padanan di galeri — ditutup Fase 2 (25 September 2026)
 
-| Layar mockup | Padanannya di repo (bukan di galeri) |
-|---|---|
-| Kasir `login` Login PIN | K-01 |
-| Kasir `shift` Buka Shift | K-02 |
-| Kasir `edit-item` Popup Edit Item | K-04/K-05, dialog modifier |
-| Kasir `bayar` Kartu Pembayaran (7 keadaan) | K-06 |
-| Kasir `sukses` Transaksi Berhasil | K-07 |
-| Kasir `struk` Struk Termal (58/80 mm) | Bukan layar: `apps/kasir/src/cetak/dokumen.ts` |
-| Kasir `void` Void dan Refund | K-10 |
-| Kasir `laci` Operasional Laci Kas | K-16 (buka laci) + FR-D5 (kas masuk/keluar) |
-| Back-office, 6 layar / 10 kombinasi | B-xx di `apps/backoffice`, tidak ada di galeri |
-| Lumi-Order, 8 layar / 18 kombinasi | **Tidak ada padanan fungsi.** `apps/hp` melayani owner, bukan pelanggan (lihat `README.md`) |
+Sejak Fase 2 rebuild UI, setiap layar kasir mockup punya padanan yang dapat
+dicapai dan diukur. Pasangan dan selisihnya ada di § Fase 2 di bawah.
+
+| Layar mockup | Padanannya di repo | Cara mencapainya di galeri |
+|---|---|---|
+| `login` | K-01 `layar/Login.tsx` | `?layar=K-01` (tanpa shell, sama dengan `App.tsx:45`) |
+| `shift` | K-02 `layar/BukaShift.tsx` | `?layar=K-02` (fixture tanpa shift terbuka) |
+| `edit-item` | K-04/K-05 `komponen/DialogModifier.tsx` — ⚠ fungsi berbeda | K-03 `normal` → kartu ber-"pilihan" |
+| `bayar` tunai / kartu | K-06 `layar/Pembayaran.tsx` | K-03 `keranjang-penuh` → Bayar (→ Kartu (EDC)) |
+| `bayar` qris-* | K-06 `komponen/PanelQris.tsx` | `harness-k06.html?render=panel&status=…` |
+| `sukses` | K-07, tahap selesai `Pembayaran.tsx` | K-06 → uang diterima ≥ tagihan → Simpan Penjualan |
+| `struk` | **tidak ada layar** — `cetak/dokumen.ts` hanya menghasilkan dokumen cetak | — (butuh fitur pratinjau struk) |
+| `void` | K-10 `komponen/DialogPembatalan.tsx` | `?layar=K-09` → Kembalikan dana |
+| `laci` | Kas masuk/keluar `komponen/DialogKasManual.tsx` (FR-D5) + buka laci K-16 `komponen/DialogNoSale.tsx` | K-03 → Kas masuk / keluar · K-03 → Buka laci |
+| Back-office, 6 layar / 10 kombinasi | B-xx di `apps/backoffice` — di luar cakupan kampanye | — |
+| Lumi-Order, 8 layar / 18 kombinasi | **Tidak ada padanan fungsi.** `apps/hp` melayani owner, bukan pelanggan | — |
 
 ### Tanpa padanan di mockup
 
@@ -205,3 +209,139 @@ bukan keranjang di sebelahnya.
 Angka dihitung dari teks tabel di atas, tanpa membedakan huruf besar: satu baris dapat membawa dua tanda
 (mis. bobot "dapat dikejar" dan 13 px "bertabrakan") dan dihitung di
 keduanya. Baris "—" tidak dihitung.
+
+
+---
+
+## Fase 2 — pasangan baru (25 September 2026)
+
+Dibangkitkan `alat/banding2.mjs`: mockup dan repo pada viewport yang sama,
+1280×800. Chrome galeri disembunyikan dan panggung ditaruh di (0,0), karena
+overlay kasir `position: fixed` mengikuti viewport. Galeri dari branch Fase 2
+(palet LAMA; Fase 1 #60 belum di-merge). Gambar di `banding/`.
+
+⛔ **Tiga fixture galeri diperbaiki untuk membuat pasangan ini jujur**, dan
+ketiganya cacat nyata di fixture, bukan di aplikasi:
+- `outlet.rounding_increment` **0**, nilai yang `simpanPenjualan` tolak. K-07 tidak pernah dapat dicapai.
+- `outlet.rounding_mode` **`'nearest'`**, di luar kosakata `half_up`/`up`/`down`.
+
+Ukuran kartu mockup diukur dari DOM (`getBoundingClientRect`); ukuran dialog repo dari `.kasir-dialog` / `.overlay .dialog`.
+- Order tanpa `subtotal` dan tanpa `order_line`, dan fake DB mengabaikan `WHERE order_id = ?`. K-09 menampilkan "Subtotal Rp 0" dan pembayaran milik order LAIN.
+
+### K-01 Login
+
+[gambar](banding/K-01-normal__login--tunggal.png)
+
+| Aspek | Mockup | Repo | Tanda |
+|---|---|---|---|
+| Komposisi | Kartu 510×522 di tengah latar bertinta, ikon gembok + "Masuk ke kasir" + nama perangkat | Tanpa kartu; judul 32/600 di atas papan angka | Dapat dikejar |
+| Salam "Halo, Rini Astuti" | Nama kasir tampil sebelum PIN | PIN saja; kasir diidentifikasi dari PIN | Butuh fitur yang belum ada: pemilihan pengguna sebelum PIN |
+| Penanda digit | **4** titik | **6** titik | **Bertabrakan dengan spec**: `spec-f:122`, "Panjang tepat 6 digit. Bukan 4" |
+| Tombol angka | 78×44 px | 110×56 px | — (repo di atas target sentuh; tidak dikecilkan) |
+| Tipografi | 20/600 · 13/400 · 15/400 | 15/500 · 15/400 · 12/400 · 20/500 · 32/600 | 13 px: bertabrakan (DS #1); bobot: dapat dikejar |
+| Permukaan (piksel) | `#F0F6F7` 64% · putih 25% | putih 98% | Tergantung keputusan palet (latar bertinta) |
+
+### K-02 Buka shift
+
+[gambar](banding/K-02-normal__shift--tunggal.png)
+
+| Aspek | Mockup | Repo | Tanda |
+|---|---|---|---|
+| Komposisi | Kartu 624×384 dengan ikon dan subjudul, dua kolom field | Kolom tunggal terpusat tanpa kartu | Dapat dikejar |
+| Saldo awal | Field teks bebas `500.000` | Tampilan angka besar + 4 tombol pecahan, tanpa field bebas | Dapat dikejar: field `Rp` bebas sudah ada di K-12 (`Bidang` `awalan`) |
+| "Cash drawer: Laci Utama" | Pilihan laci | Tidak ada; satu laci per perangkat | Butuh fitur yang belum ada: banyak laci per perangkat |
+| "Staf pembuka", "Waktu buka" | Field yang tampil (terisi) | Tidak tampil; diambil dari sesi dan jam | Dapat dikejar (tampil sebagai teks, bukan field yang dapat diubah) |
+| Aksi utama | "Mulai Shift" 149×56 kanan bawah kartu | 151×56 terpusat | Dapat dikejar |
+| "Kembali" | Ada | Tidak ada — K-02 muncul saat shift belum ada; tidak ada tujuan kembali | — |
+
+### Edit item (K-04/K-05) — ⚠ padanan terdekat, fungsi berbeda
+
+[gambar](banding/K-03-normal-modifier__edit-item--tunggal.png)
+
+Mockup menyunting BARIS keranjang yang sudah ada. Repo tidak punya dialog itu; yang ada adalah dialog modifier (448×267) yang MEMILIH opsi sebelum item masuk keranjang.
+
+| Elemen mockup | Tanda |
+|---|---|
+| Jumlah dengan stepper −/+ | — sudah ada di baris keranjang repo (`.stepper`) |
+| "Harga sementara" (mengubah harga saat menjual) | **Bertabrakan dengan spec**: harga diresolusi dari `price_history` pada `occurred_at` (FR-A7, FR-H6); tidak ada jalur harga manual per penjualan |
+| "Diskon item" | Butuh fitur yang belum ada: diskon PER BARIS (`CLAUDE.md` § diskon: "Diskon PER BARIS tidak dibangun") |
+| "Catatan" per item | Butuh fitur yang belum ada: catatan baris (`order_line` tidak punya kolomnya) |
+| "Hapus item" merah | — sudah ada: qty turun ke 0 menghapus baris (penolakan #6 berlaku terbalik: repo sengaja tanpa tombol hapus terpisah) |
+
+### K-06 Pembayaran — tunai dan kartu
+
+[tunai](banding/K-03-keranjang-penuh-bayar__bayar--tunai.png) · [kartu](banding/K-03-keranjang-penuh-kartu__bayar--kartu.png)
+
+| Aspek | Mockup | Repo | Tanda |
+|---|---|---|---|
+| Wadah | Halaman penuh dengan "Kembali ke kasir"; kartu 728×640 | Overlay dialog 896×768 di atas K-03 | Dapat dikejar (lebar dan tata letak kartu); overlay dipertahankan |
+| Total | "TOTAL BELANJA Rp 50.600" di **atas**, 32/700 | Total di blok bawah, 20/500 | Dapat dikejar: P9 menuntut Total tampil, bukan letaknya |
+| Pemilih metode | Segmented 4 tab, satu baris | 2×2 tombol 56 px | Dapat dikejar (bentuk); tab ke-4 Transfer: **ditolak #3** |
+| Uang diterima | Field teks + 3 pintasan 44 px | Angka besar + 6 pintasan 56 px, tanpa field bebas | Field bebas: dapat dikejar (pola K-12); pintasan 44 px: **ditolak #10** |
+| Panel "Kembalian Rp 0" tampil langsung di K-06 | Ya | Tidak — kembalian hanya di K-07 | **Bertabrakan dengan spec**: penjaga P3 `k06-penjaga`, dan FR-C9 (pembulatan hanya di `simpanPenjualan`, kembalian dari `amount_due` yang baru ada saat disimpan) |
+| Aksi utama | "Konfirmasi bayar" 198×56 kanan bawah | "Simpan Penjualan" 848×56 selebar kartu | Dapat dikejar |
+| Yang menggulir | Tidak ada | `.kasir-bayar-isi` 436 px tampak dari 620 px isi | — (P8 menuntut blok aksi tidak bergeser; penggulir itu yang menjaminnya) |
+
+### K-06 Panel QRIS
+
+[siap](banding/K-06-panel-pending__bayar--qris-siap.png) · [terkonfirmasi](banding/K-06-panel-confirmed__bayar--qris-terkonfirmasi.png) · [kedaluwarsa](banding/K-06-panel-kedaluwarsa__bayar--qris-kedaluwarsa.png)
+
+| Aspek | Mockup | Repo | Tanda |
+|---|---|---|---|
+| QR di dalam kartu pembayaran | Ya, dengan tab metode tetap terlihat | Panel mengganti layar penuh; tab metode dan keranjang TIDAK ada di DOM | **Ditolak #1**; invarian "QRIS mengganti layar penuh" (P1) |
+| Gambar QR | Kotak modul | QR sebagai TEKS | **Ditolak #1** (`CLAUDE.md` § FR-C3) |
+| "Berlaku selama 04:56" | Hitung mundur | Tidak ada | Butuh fitur yang belum ada: hitung mundur batas 5 menit |
+| "Konfirmasi bayar" di keadaan siap | Ada | Tidak ada; "Cek status" + "Tutup layar" | **Ditolak #8** (`spec-c:320`) |
+| Tipografi, komposisi | Kartu, 13/600 | Kolom terpusat, nominal 32/600 | Dapat dikejar (kartu), 13 px bertabrakan (DS #1) |
+
+### K-07 Transaksi berhasil
+
+[gambar](banding/K-03-keranjang-penuh-k07__sukses--tunggal.png)
+
+| Aspek | Mockup | Repo | Tanda |
+|---|---|---|---|
+| Wadah | Kartu 536×466, ikon centang dalam lingkaran hijau lembut | Dialog 896×303, tanpa ikon | Dapat dikejar |
+| Judul "Transaksi selesai" | Ada | Tidak ada; label "Kembalian" di atas angka | Dapat dikejar |
+| Kembalian | Panel aksen-lembut, 32/700 berwarna aksen | 32/600 teks utama, tanpa panel | Dapat dikejar (panel dari token yang ada) |
+| Nomor transaksi | `TRX-140926-028` | `K1-20260925-0001 · dibayar Rp 505.100` | **Ditolak #9** |
+| Pembulatan | Tidak tampil | "Pembulatan +Rp 50" | — (invarian: pembulatan HANYA tampil di K-07) |
+| Cetak struk | Tombol | Cetak berjalan sesudah simpan; tombol cetak ulang ada di K-09 | Dapat dikejar: tombol "Cetak ulang" di K-07 memakai jalur cetak ulang yang sudah ada |
+| Kirim WhatsApp, Kirim Email | Ada | Tidak ada | Butuh fitur yang belum ada: pengiriman struk digital |
+| "Transaksi Baru" | 229×**44** | 192×56 | 44 px: **ditolak #10** |
+
+### K-09 Detail transaksi — ⚠ mockup tidak punya layar ini
+
+[gambar](banding/K-09-normal__riwayat--ada.png) — dipasangkan dengan daftar riwayat mockup hanya untuk bahasa visual (kartu, tabel). Tidak ada selisih fungsi yang dapat diukur.
+
+### K-10 Void dan refund
+
+[gambar](banding/K-09-normal-refund__void--tunggal.png)
+
+| Aspek | Mockup | Repo | Tanda |
+|---|---|---|---|
+| Wadah | Halaman: kartu form + kartu "Transaksi asli" berdampingan, masing-masing 502×347, bilah aksi bawah | Dialog 448×768 di atas K-09, isi menggulir (768 dari 895 px) | Dapat dikejar: dua kolom meniadakan gulir; detail order sudah ada di K-09 |
+| "Jenis tindakan: Void transaksi" | Kasir memilih | Sistem memilih dari status order | **Bertabrakan dengan spec**: `spec-b` § Aturan pemilihan otomatis — "Kasir tidak memilih void atau refund" |
+| Alasan | Teks bebas | Daftar tertutup | **Bertabrakan dengan spec**: alasan daftar tertutup (`CLAUDE.md` § void & refund; FR-G5 menyaring per kode) |
+| Pemilihan baris yang kembali ke rak | Tidak ada | Ada, per baris dengan batas | — (FR-B7 refund parsial) |
+| Aksi "Konfirmasi void" | Merah 162×**44** | 56 px | 44 px: **ditolak #10** |
+| Nomor `TRX-…` di kartu transaksi | Ada | Nomor struk repo | **Ditolak #9** |
+
+### Laci kas — kas masuk/keluar dan buka laci
+
+[kas masuk/keluar](banding/K-03-normal-kasManual__laci--tunggal.png) · [buka laci](banding/K-03-normal-noSale__laci--tunggal--nosale.png)
+
+| Aspek | Mockup | Repo | Tanda |
+|---|---|---|---|
+| Wadah | Layar tersendiri di bilah nav ("Laci kas"): kartu form 430×428 + kartu riwayat 526×428 | Dua dialog dari slot aksi K-03 (448×768 menggulir, 448×572) | Dapat dikejar: form dan riwayat berdampingan; tab nav baru tidak (bilah nav tetap sama tinggi, dan slot aksi sudah membawanya) |
+| Arah | Toggle "Kas masuk / Kas keluar" 186×44 | Radio arah | Dapat dikejar (toggle); 44 px: ditolak #10 |
+| Keterangan | Teks bebas | Alasan daftar tertutup | **Bertabrakan dengan spec**: `counterpart_type` diturunkan dari alasan (FR-D6) |
+| "Riwayat shift berjalan" | Daftar movement dengan waktu dan nominal | Tidak ada di kasir | Butuh fitur yang belum ada: daftar `cash_movement` shift di perangkat |
+| Buka laci tanpa transaksi (no-sale) | Tidak ada | Dialog K-16 dengan alasan dan penghitung ambang | — (FR-D7) |
+| "Simpan catatan" | 380×**44** | 56 px | 44 px: **ditolak #10** |
+
+### Struk
+
+Tidak ada layar struk di repo. `apps/kasir/src/cetak/dokumen.ts` menghasilkan
+dokumen untuk printer 58/80 mm. Mockup `struk` (58mm, 80mm) adalah pratinjau
+di layar: **butuh fitur yang belum ada — pratinjau struk**. Mockup memakai kata
+"Pajak" di struk: **ditolak #2**.

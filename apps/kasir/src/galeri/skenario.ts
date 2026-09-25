@@ -397,6 +397,8 @@ export interface BarisOrderPalsu {
   receipt_number: string;
   business_date: string;
   status: string;
+  subtotal: number;
+  order_discount: number;
   total: number;
   amount_due: number;
   tax_amount: number;
@@ -418,6 +420,11 @@ function order(i: number, total: number, opsi: Partial<BarisOrderPalsu> = {}): B
     receipt_number: `K1-20260901-${String(i).padStart(4, '0')}`,
     business_date: TANGGAL,
     status: 'closed',
+    /* `subtotal` = total − pajak. Tanpanya K-09 merender "Subtotal Rp 0" di
+       atas Total yang benar — dua angka yang saling membantah, dibuat oleh
+       fixture-nya sendiri. */
+    subtotal: total - Math.round((total * 11) / 111),
+    order_discount: 0,
     total,
     amount_due: total,
     tax_amount: Math.round((total * 11) / 111),
@@ -462,7 +469,40 @@ export function orderUntuk(skenario: NamaSkenario): BarisOrderPalsu[] {
     order(5, 88_500),
     // Order asli yang DIBATALKAN — tetap `open`, penanda datang dari pembatal.
     order(6, 45_000, { status: 'open' }),
-    order(7, 0, { status: 'voided', voided_by_order_id: 'ord-6', amount_due: 0, tax_amount: 0 }),
+    order(7, 0, { status: 'voided', voided_by_order_id: 'ord-6', amount_due: 0, tax_amount: 0, subtotal: 0 }),
   ];
   return dasar;
+}
+
+/**
+ * Baris pesanan untuk setiap order — DUA baris per order, jumlahnya tepat
+ * `subtotal`. Order pembatal tidak punya baris (ia menunjuk order asli).
+ *
+ * ⛔ Ada sejak K-09 masuk galeri (Fase 2 rebuild UI, 25 September 2026).
+ * Sebelumnya `order_line` kosong, dan tidak ada layar galeri yang membacanya.
+ */
+const NAMA_BARIS = ['Kopi Susu Gula Aren', 'Croissant Butter', 'Americano', 'Matcha Latte', 'Banana Bread', 'Cold Brew'];
+
+export function barisOrderUntuk(orders: readonly BarisOrderPalsu[]) {
+  return orders
+    .filter((o) => o.status !== 'voided' && o.subtotal > 0)
+    .flatMap((o, i) => {
+      const pertama = Math.round((o.subtotal * 0.6) / 500) * 500;
+      const kedua = o.subtotal - pertama;
+      return [
+        { nama: NAMA_BARIS[i % NAMA_BARIS.length], total: pertama, qty: 1 },
+        { nama: NAMA_BARIS[(i + 3) % NAMA_BARIS.length], total: kedua, qty: 2 },
+      ].map((b, j) => ({
+        id: `${o.id}-l${j}`,
+        order_id: o.id,
+        variation_id: `var-${(i + j) % 6}`,
+        item_name: b.nama,
+        variation_name: 'Regular',
+        unit_price: Math.round(b.total / b.qty),
+        quantity: b.qty * 1000,
+        line_total: b.total,
+        tax_amount: Math.round((b.total * 11) / 100),
+        modifier_snapshot: null,
+      }));
+    });
 }

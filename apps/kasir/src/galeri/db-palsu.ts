@@ -1,6 +1,7 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import {
   antreanUntuk,
+  barisOrderUntuk,
   gambarUntuk,
   itemUntuk,
   keranjangDuaPuluh,
@@ -132,7 +133,18 @@ function agregat(tabel: string, sql: string, baris: readonly unknown[]): Record<
   return { menunggu, gagal, tertua: tertua ?? null, terakhir: null };
 }
 
-export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
+/**
+ * Penyesuaian fixture per LAYAR, bukan per skenario.
+ *
+ * `tanpaShift`: K-02 Buka Shift hanya merender formnya bila perangkat BELUM
+ * punya shift terbuka; dengan fixture bersama ia selamanya berbunyi "Shift
+ * sudah berjalan", dan layar yang ada untuk dinilai tidak pernah terlihat.
+ */
+export interface OpsiDbPalsu {
+  tanpaShift?: boolean;
+}
+
+export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbLokal {
   const antre = antreanUntuk(skenario);
   const item = itemUntuk(skenario);
   const order = orderUntuk(skenario);
@@ -159,7 +171,7 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
     stock_snapshot: [],
     sold_out_flag: [],
     order,
-    order_line: [],
+    order_line: barisOrderUntuk(order),
     /* Campuran metode, bukan tunai seluruhnya: `spec-d:201` memisahkan uang
        laci dari uang bank, dan K-12 yang hanya pernah dilihat dengan tunai
        tidak pernah merender rincian per metode sama sekali. */
@@ -167,12 +179,17 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
       .filter((o) => o.status !== 'voided')
       .map((o, i) => ({
         order_id: o.id,
+        id: `pay-${o.id}`,
         method: i % 3 === 1 ? 'qris_static' : 'cash',
         amount: o.total,
+        /* Uang yang diserahkan dibulatkan ke atas pecahan Rp 50.000 — bentuk
+           yang kasir lihat sehari-hari. Non-tunai NULL (`spec-d:201`). */
+        tendered_amount: i % 3 === 1 ? null : Math.ceil(o.total / 50_000) * 50_000,
+        change_amount: i % 3 === 1 ? null : Math.ceil(o.total / 50_000) * 50_000 - o.total,
         status: 'confirmed',
       })),
     refund: [],
-    cash_drawer_shift: [
+    cash_drawer_shift: opsi.tanpaShift ? [] : [
       {
         id: 'shift-galeri',
         tenant_id: 'ten-galeri',
@@ -220,8 +237,15 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         name: 'ORIGEN Menteng',
         timezone: 'Asia/Jakarta',
         business_day_ends_at: '04:00',
-        rounding_increment: 0,
-        rounding_mode: 'nearest',
+        /* 100, bawaan `outlet.rounding_increment` (`packages/domain/src/money.ts`).
+           Sampai 25 September 2026 nilainya 0 — nilai yang `simpanPenjualan`
+           TOLAK ("roundingIncrement harus lebih besar dari 0"), jadi K-07
+           tidak pernah dapat dicapai dari galeri. */
+        rounding_increment: 100,
+        /* `half_up` — kosakata `outlet.rounding_mode` adalah half_up/up/down.
+           `'nearest'` yang sempat di sini tidak dikenal `simpanPenjualan`, dan
+           kegagalannya baru terlihat saat K-07 dicoba dari galeri. */
+        rounding_mode: 'half_up',
         service_charge_rate: 0,
         vertical_profile_id: 'vp-1',
         discount_threshold_percent: 2000,
@@ -360,7 +384,7 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
   let gambar: Promise<unknown[]> | null = null;
 
   const db: DbLokal = {
-    async getAll<T>(sql: string): Promise<T[]> {
+    async getAll<T>(sql: string, params?: readonly unknown[]): Promise<T[]> {
       // ⛔ "Memuat" adalah promise yang TIDAK PERNAH selesai, bukan jeda 2 detik.
       // Jeda hanya menunda pertanyaannya; yang ingin dilihat adalah apa yang
       // kasir tatap SELAMA menunggu, dan itu harus dapat diperiksa tanpa
@@ -392,6 +416,20 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
       }
       const baris = perTabel[tabel] ?? [];
 
+      /* ⛔ SATU bentuk saringan lagi, dan alasannya sama dengan saringan
+         `failed` di bawah: tanpanya galeri MEMBANTAH DIRINYA SENDIRI. K-09
+         membaca `payment`/`order_line`/`refund` dengan `WHERE order_id = ?`
+         dan ordernya dengan `WHERE o.id = ?`; fake yang mengabaikannya
+         menampilkan pembayaran SELURUH order di detail satu order. Hanya
+         kesamaan dengan parameter pertama — bukan mesin SQL. */
+      const cocokOrder = /\bWHERE\s+(?:\w+\.)?(order_id|id)\s*=\s*\?/i.exec(sql);
+      if (cocokOrder && params && params.length > 0 && ['order', 'order_line', 'payment', 'refund', 'stock_movement'].includes(tabel)) {
+        const kolom = cocokOrder[1].toLowerCase();
+        const hasil = (baris as Record<string, unknown>[]).filter((r) => r[kolom] === params[0]);
+        if (/\b(count|sum|min|max)\s*\(/i.test(sql)) return (hasil.length ? [agregat(tabel, sql, hasil)] : []) as T[];
+        return hasil as T[];
+      }
+
       /* ⛔ Query AGREGAT tidak dapat dijawab dengan mengembalikan barisnya.
          `ringkasanAntrean` memakai `sum(CASE …)`, dan fake yang mengembalikan
          baris mentah menyerahkan `menunggu: undefined` — yang `?? 0` ubah
@@ -406,8 +444,8 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
         return [agregat(tabel, sql, baris)] as T[];
       }
 
-      /* ⛔ SATU saringan, dan ia ada karena ketiadaannya membuat galeri
-         MEMBANTAH DIRINYA SENDIRI.
+      /* ⛔ Saringan `status = 'failed'`, dan ia ada karena ketiadaannya
+         membuat galeri MEMBANTAH DIRINYA SENDIRI.
 
          `daftarGagal` menjalankan dua query: `count(*) … WHERE status =
          'failed'` (yang `agregat` sudah jawab benar) dan pengambilan barisnya
@@ -416,7 +454,8 @@ export function buatDbPalsu(skenario: NamaSkenario): DbLokal {
          "Gagal terkirim 3" tepat di atas tabel berisi 15 baris — di layar yang
          seluruh tugasnya memisahkan kedua angka itu.
 
-         Cakupannya sengaja satu bentuk saja, sejajar dengan `agregat`: fake
+         Cakupannya sengaja sempit — DUA bentuk saja sejak 25 September 2026,
+         ini dan `order_id`/`id = ?` di atas, sejajar dengan `agregat`: fake
          yang mulai menafsirkan `WHERE` apa pun menjadi mesin SQL kedua. */
       if (tabel === 'outbox_local' && /status\s*=\s*'failed'/i.test(sql)) {
         return (baris as { status: string }[]).filter((r) => r.status === 'failed') as T[];
