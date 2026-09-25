@@ -298,6 +298,11 @@ Dilewati (fitur belum ada): "Halo, Rini Astuti" (pemilihan pengguna sebelum
 PIN) · nama perangkat di kartu (Login tidak membaca `device_config`; menambah
 pembacaan itu di layar yang berjalan sebelum sesi ada di luar tata letak).
 
+CI #67: job `test` merah sekali di `tests/server/pool-koneksi-idle-mati.test.js`
+("pool PULIH sendiri", `Connection terminated unexpectedly`) — di luar diff
+(nol berkas server), lulus 5/5 di lokal, dan hijau pada satu kali re-run. Dicatat
+sebagai kandidat flake untuk suite server, bukan diperbaiki di kampanye ini.
+
 ### Fase 3.8 — K-02 Buka shift
 
 Dikejar (penjaga `tests/kasir-dom/k02-buka-shift.test.js`, 1024 dan 1280,
