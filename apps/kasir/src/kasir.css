@@ -396,6 +396,14 @@
 .kasir-segmented-kritis { display: flex; }
 .kasir-segmented-kritis button { min-height: var(--touch-critical); }
 
+/* K-12 tahap review — dua kartu (rebuild UI Fase 3.10). */
+.kasir-review-kolom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
 .kasir-dialog-sel {
   display: flex;
   flex-direction: column;
