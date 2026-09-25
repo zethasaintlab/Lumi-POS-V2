@@ -54,7 +54,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.6 | Laci kas | selesai | #66 | |
 | 3.7 | K-01 Login | selesai | #67 | |
 | 3.8 | K-02 Buka shift | selesai | #68 | |
-| 3.9 | K-08 Riwayat | berjalan | — | Format nomor struk repo dipertahankan |
+| 3.9 | K-08 Riwayat | selesai | #69 | Format nomor struk repo dipertahankan |
 | 3.10 | K-12 Tutup kas | belum | — | Hitungan buta tetap |
 | 4 | Laporan akhir | belum | — | |
 
@@ -333,7 +333,7 @@ Dilewati (fitur belum ada): pilihan cash drawer (satu laci per perangkat) ·
 "Waktu buka" (tanggal bisnis dihitung dari zona outlet saat disimpan; jam yang
 ditampilkan sebelum itu adalah angka yang dapat berbeda dari yang tersimpan).
 
-### Fase 3.9 — K-08 Riwayat
+### Fase 3.9 — K-08 Riwayat (#69)
 
 Dikejar (penjaga `tests/kasir-dom/k08-riwayat.test.js`, merah dulu: "judul
 halaman: null"):
