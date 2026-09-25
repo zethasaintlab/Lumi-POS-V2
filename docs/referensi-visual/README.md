@@ -21,9 +21,11 @@ layar di sini salah.
 
 ## ⛔ Yang di mockup bertabrakan dengan spec, dan tetap DITOLAK
 
-Delapan hal berikut diputuskan user. Kemunculannya di mockup tidak mengubah
+Sepuluh hal berikut diputuskan user. Kemunculannya di mockup tidak mengubah
 keputusan apa pun. Enam yang pertama diputuskan saat ekspor ini masuk; dua
-yang terakhir ditemukan saat memotret dan diputuskan 23 September 2026.
+berikutnya ditemukan saat memotret dan diputuskan 23 September 2026; dua
+terakhir ditetapkan saat kampanye rebuild UI dimulai, 25 September 2026
+(`docs/RENCANA-REBUILD-UI.md`).
 
 | Di mockup | Tangkapan | Kenapa ditolak |
 |---|---|---|
@@ -35,6 +37,8 @@ yang terakhir ditemukan saat memotret dan diputuskan 23 September 2026.
 | **Keranjang tanpa kontrol qty** | `kasir--kasir--keranjang-penuh.png` (lencana `1x`/`2x`/`3x` saja) | Kasir mengubah qty di baris. Qty turun ke 0 menghapus baris; itulah yang meniadakan tombol "Hapus" terpisah (`CLAUDE.md` § aturan memakai `/ds-bundle`) |
 | **"Saldo seharusnya" tampil sebelum hitungan fisik diisi** | `kasir--tutup--tunggal.png` | `spec-d` FR-D2, hitungan buta: "Kasir memasukkan hitungan fisik **sebelum** sistem menampilkan angka terhitung. Ini kontrol, bukan preferensi UX." Kontrol itu dipertahankan 22 September 2026 dan dijaga `tests/kasir-dom/k12-hitungan-buta.test.js`. "Penjualan tunai" dan "Total penjualan" di ringkasan shift mockup membocorkan angka yang sama. Mockup `ds-bundle/ui_kits/pos/TutupKasScreen.jsx` yang lama justru hitungan buta; mockup ini tidak |
 | **Tombol "Konfirmasi bayar" manual untuk QRIS dinamis** | `kasir--bayar--qris-siap.png`, `kasir--bayar--qris-memuat.png` | `spec-c:320`: "Sistem **tidak pernah** menandai pembayaran lunas tanpa konfirmasi dari gateway." Tombol manual membuat pembayaran dapat ditandai lunas **tanpa uang masuk**. Hanya QRIS statis yang dikonfirmasi orang, dan ia ditandai `confirmed_manually` supaya FR-G5 dapat menemukannya |
+| **Nomor transaksi `TRX-…`** | `kasir--riwayat--ada.png` | Bertabrakan dengan format nomor struk repo: prefiks perangkat + tanggal + urutan, `K1-20260726-0007` (`CLAUDE.md` § Konvensi data). Counternya lokal dan tidak pernah diminta ke server |
+| **Chip 36px dan tombol aksi uang 44px** | `kasir--kasir--*.png` (chip kategori), `kasir--tutup--tunggal.png` ("Tutup Shift" 139×44) | DS #3: target sentuh minimum 44px, aksi yang menyangkut uang 56px (`CLAUDE.md` § Aturan design system) |
 
 ## ⛔ Palet mockup ini BELUM DIPUTUSKAN
 
