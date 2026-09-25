@@ -53,7 +53,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.5 | Void dan refund | selesai | #65 | |
 | 3.6 | Laci kas | selesai | #66 | |
 | 3.7 | K-01 Login | selesai | #67 | |
-| 3.8 | K-02 Buka shift | berjalan | — | |
+| 3.8 | K-02 Buka shift | selesai | #68 | |
 | 3.9 | K-08 Riwayat | belum | — | Format nomor struk repo dipertahankan |
 | 3.10 | K-12 Tutup kas | belum | — | Hitungan buta tetap |
 | 4 | Laporan akhir | belum | — | |
@@ -303,7 +303,7 @@ CI #67: job `test` merah sekali di `tests/server/pool-koneksi-idle-mati.test.js`
 (nol berkas server), lulus 5/5 di lokal, dan hijau pada satu kali re-run. Dicatat
 sebagai kandidat flake untuk suite server, bukan diperbaiki di kampanye ini.
 
-### Fase 3.8 — K-02 Buka shift
+### Fase 3.8 — K-02 Buka shift (#68)
 
 Dikejar (penjaga `tests/kasir-dom/k02-buka-shift.test.js`, 1024 dan 1280,
 merah dulu: "buka shift tidak di dalam kartu"):
