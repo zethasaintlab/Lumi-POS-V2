@@ -47,7 +47,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 1 | Palet campuran: permukaan netral terang, teks dan aksen repo | menunggu user | #60 | ⛔ **Tidak di-merge tanpa persetujuan user lewat preview.** Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga |
 | 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | selesai | #61 | Nol perubahan tata letak aplikasi |
 | 3.1 | K-03 Kasir | selesai | #62 | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
-| 3.2 | K-06 Pembayaran | belum | — | Sembilan penjaga K-06 tetap hijau |
+| 3.2 | K-06 Pembayaran | berjalan | — | Sembilan penjaga K-06 tetap hijau |
 | 3.3 | K-07 Konfirmasi | belum | — | |
 | 3.4 | Struk | belum | — | |
 | 3.5 | Void dan refund | belum | — | |
@@ -138,4 +138,36 @@ Harga yang dinyatakan: foto 1:1 tampil sepertiga tengahnya (3:1). Catatan
 
 Tangkapan sesudah: `docs/referensi-visual/sesudah/`, kolom "Sesudah" di
 `INDEKS.md` (`BANDING_KELUAR=sesudah BANDING_SARING=kasir node banding.mjs`).
+
+### Fase 3.2 — K-06 Pembayaran
+
+Dikejar (penjaga `tests/kasir-dom/k06-tata-letak.test.js`, diukur di overlay
+galeri pada 1024 dan 1280, merah dulu di empat test):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Lebar kartu | 896 | 728 | 728 |
+| Pemilih metode | 2 × 2 | satu baris, 56 px | satu baris (segmented) |
+| Total | 15/500 · 20/500 | label 20/500 · nilai 32/600 | 32/700 |
+| Aksi utama | selebar kartu | kanan bawah, sebaris dengan Kembali | 198 × 56 kanan bawah |
+
+Sembilan penjaga `k06-penjaga` tetap hijau (P8 pada viewport 600).
+Sabotase yang menyala (5/5): lebar 896 · metode 2 × 2 · Total 20 px · aksi
+utama tidak di kanan · aksi utama selebar kartu.
+
+Ditolak:
+- Total di ATAS kartu: P9 menjaga Total di blok aksi yang menempel, dan angka
+  yang ditagih duduk di samping tombol yang menagihnya. Ukurannya dikejar,
+  letaknya tidak.
+- Bobot 700: bukan token (`--weight-bold` 600).
+- Tab metode 44 px dan pintasan uang 44 px (#10); tab Transfer (#3); panel
+  "Kembalian" di K-06 (P3, FR-C9).
+- Halaman penuh "Kembali ke kasir": overlay dipertahankan (P1 dan alur QRIS
+  bergantung padanya).
+
+⛔ **Menunggu keputusan user, tidak dibangun:** field teks bebas "Nominal
+diterima". Ia jalur MASUKAN uang baru (mengurai rupiah yang diketik) di layar
+yang menyimpan penjualan — kondisi berhenti "perubahan yang menyentuh logika
+uang di luar tata letak". Pola parsernya sudah ada di K-12 (`Bidang` ber-awalan),
+jadi biayanya kecil bila disetujui.
 
