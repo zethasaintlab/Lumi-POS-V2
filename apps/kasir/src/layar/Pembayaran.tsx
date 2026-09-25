@@ -10,7 +10,8 @@ import {
   pulihkanDraf,
 } from '../kasir/qris-dinamis.ts';
 import type { DrafTerkirim } from '../kasir/penjualan.ts';
-import { EmptyState } from 'ds';
+import { EmptyState, Icon } from 'ds';
+import { cetakUlangOrder, kalimatCetak } from '../cetak/cetak-ulang.ts';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
@@ -138,6 +139,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     nominal: bigint;
   } | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
+  // K-07 — cetak ulang dari layar konfirmasi (FR-B11).
+  const [mencetakUlang, setMencetakUlang] = useState(false);
+  const [pesanCetakUlang, setPesanCetakUlang] = useState<string | null>(null);
   const [galat, setGalat] = useState<string | null>(null);
   const [selesai, setSelesai] = useState<Extract<HasilPenjualan, { status: 'tersimpan' }> | null>(null);
 
@@ -281,9 +285,22 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
 
   if (selesai) {
     return (
-      <div className="kasir-shift">
-        <p className="t-body-md kasir-login-sub">Kembalian</p>
-        <p className="t-display num">{rupiah(selesai.kembalian)}</p>
+      <div className="kasir-shift kasir-k07">
+        {/* Rebuild UI Fase 3.3, mengikuti mockup: ikon + judul di atas angka.
+            Ikonnya berlatar `--success-soft` dan disertai judul (DS #5: status
+            tidak pernah warna saja). */}
+        <span className="kasir-k07-ikon" aria-hidden="true">
+          <Icon name="check" size={28} />
+        </span>
+        <h2 className="t-title">Transaksi selesai</h2>
+
+        {/* ⛔ Angka kembalian TETAP warna teks. Mockup mewarnainya aksen, dan
+            aksen adalah warna AKSI (DS #2) — ia bersaing dengan Transaksi Baru.
+            Yang dikejar panelnya, dari token yang sudah ada. */}
+        <div className="kasir-k07-kembalian">
+          <p className="t-body-md">Kembalian</p>
+          <p className="t-display num">{rupiah(selesai.kembalian)}</p>
+        </div>
 
         <p className="t-body-md">
           {selesai.receiptNumber} · dibayar <span className="num">{rupiah(selesai.amountDue)}</span>
@@ -301,19 +318,50 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           Penjualan tersimpan di perangkat ini dan terkirim sendiri saat internet kembali.
         </p>
 
-        <Tombol
-          varian="primary"
-          kritis
-          onClick={() => {
-            // ⛔ `keranjangKosong()`, bukan `{ baris: [] }`: transaksi baru
-            // tidak boleh mewarisi diskon — apalagi persetujuan manajer —
-            // milik pelanggan sebelumnya.
-            setelKeranjang(keranjangKosong());
-            onKembali();
-          }}
-        >
-          Transaksi Baru
-        </Tombol>
+        {/* ⛔ Hasil cetak pertama DIBACA di sini. `simpanPenjualan`
+            mengembalikannya justru supaya layar dapat berkata "struk gagal
+            dicetak, transaksi tersimpan" (invariant #3) — sampai Fase 3.3 K-07
+            tidak pernah merendernya, jadi kertas habis tidak terlihat di mana
+            pun. Teks, bukan hanya warna, dan tidak menghilang sendiri. */}
+        <p className="t-caption" role="status" data-cetak="pertama">
+          {kalimatCetak(selesai.cetak, false)}
+        </p>
+        {pesanCetakUlang && (
+          <p className="t-caption" role="status" data-cetak="ulang">
+            {pesanCetakUlang}
+          </p>
+        )}
+
+        <div className="kasir-bayar-baris">
+          {/* FR-B11 — jalur cetak ulang yang SAMA dengan K-09. */}
+          <Tombol
+            kritis
+            disabled={mencetakUlang || !konfig}
+            onClick={() => {
+              if (!konfig) return;
+              setMencetakUlang(true);
+              void cetakUlangOrder(db, selesai.orderId, konfig.outletId)
+                .then((h) => setPesanCetakUlang(kalimatCetak(h, true)))
+                .catch((e: Error) => setPesanCetakUlang(`Gagal mencetak: ${e.message}`))
+                .finally(() => setMencetakUlang(false));
+            }}
+          >
+            {mencetakUlang ? 'Mencetak…' : 'Cetak ulang struk'}
+          </Tombol>
+          <Tombol
+            varian="primary"
+            kritis
+            onClick={() => {
+              // ⛔ `keranjangKosong()`, bukan `{ baris: [] }`: transaksi baru
+              // tidak boleh mewarisi diskon — apalagi persetujuan manajer —
+              // milik pelanggan sebelumnya.
+              setelKeranjang(keranjangKosong());
+              onKembali();
+            }}
+          >
+            Transaksi Baru
+          </Tombol>
+        </div>
       </div>
     );
   }

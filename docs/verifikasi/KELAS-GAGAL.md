@@ -79,16 +79,19 @@ cacat** — tidak satu pun diperbaiki, dan sebagian mungkin ternyata aman.
 
 ### K1 — Empty state yang tidak dapat membedakan "tidak ada" dari "belum sampai"
 
-**Ukuran: 27 dari 42 berkas ber-`<EmptyState>`** tidak menyebut sinkronisasi
-sama sekali (15 menyebut).
+**Ukuran: 28 dari 42 berkas ber-`<EmptyState>`** tidak menyebut sinkronisasi
+sama sekali (14 menyebut). Naik dari 27 pada 25 September 2026 tanpa perubahan
+perilaku: `DetailTransaksi.tsx` hanya menyebut "antrean" di komentar cetak
+ulangnya, dan komentar itu pindah ke `cetak/cetak-ulang.ts` (rebuild UI Fase
+3.3). Angka ini hitungan kata, bukan pemilahan.
 
 Merchant yang membuka laporan dan melihat "Tidak ada transaksi" tidak dapat
 tahu apakah outletnya sepi atau perangkatnya belum mengirim. B-21 sudah
 menyelesaikan ini lewat `pesanLaporan`, dan alasannya tercatat: *"kegagalan
 jaringan yang terbaca sebagai pembebasan orang yang namanya tidak muncul."*
-Pola itu belum menyebar ke 27 layar lain.
+Pola itu belum menyebar ke 28 layar lain.
 
-⛔ **Bukan seluruh 27 perlu diperbaiki.** Layar yang datanya murni lokal
+⛔ **Bukan seluruh 28 perlu diperbaiki.** Layar yang datanya murni lokal
 (K-03 katalog di perangkat, dialog) tidak punya masalah ini. Yang perlu dipilah
 adalah layar yang datanya melintasi antrean.
 

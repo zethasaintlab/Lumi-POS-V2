@@ -580,6 +580,33 @@
 }
 .kasir-bayar-baris .btn-primary { margin-left: auto; }
 
+/* K-07 — konfirmasi (rebuild UI Fase 3.3, mengikuti mockup: kartu 536 px,
+   ikon dalam lingkaran lembut, kembalian di panel). Seluruhnya dari token yang
+   sudah ada. Kartunya dipersempit lewat `:has()` karena K-06 dan K-07 berbagi
+   satu overlay (`Kasir.tsx`), dan K-07 adalah keadaan Pembayaran, bukan
+   overlay tersendiri. */
+.kasir-overlay-lebar:has(.kasir-k07) { max-width: min(33.5rem, 100%); }
+.kasir-k07 { align-items: stretch; text-align: center; }
+.kasir-k07-ikon {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-critical);
+  height: var(--touch-critical);
+  border-radius: 50%;
+  background: var(--success-soft);
+  color: var(--success);
+}
+.kasir-k07-kembalian {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--accent-soft);
+}
+
 /* K-03 kasir: grid produk + keranjang.
 
    IA §2.1: keranjang adalah kolom kanan di >=900px, bottom sheet di bawahnya.
