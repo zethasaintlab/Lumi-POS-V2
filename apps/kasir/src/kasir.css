@@ -1183,13 +1183,41 @@
 
 /* K-08 baris riwayat: satu tombol penuh, karena seluruh barisnya dapat
    diketuk. Target sentuh mengikuti aturan #3. */
+/* K-08 — tabel riwayat (rebuild UI Fase 3.9). Kepala dan baris berbagi SATU
+   definisi kolom, supaya kepala tidak dapat bergeser dari isinya. */
+.kasir-halaman-kepala {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.kasir-riwayat-kartu { overflow: hidden; }
+.kasir-riwayat-daftar { gap: 0; }
+.kasir-riwayat-kepala,
 .kasir-riwayat-baris {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr) 10rem 9rem;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+.kasir-riwayat-kepala {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunk);
+}
+.kasir-riwayat-nomor {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  min-width: 0;
+}
+.kasir-riwayat-angka { text-align: right; }
+
+.kasir-riwayat-baris {
   width: 100%;
-  min-height: var(--touch-min);
-  padding: var(--space-3);
+  /* 60 px — baris mockup 61. Ruang sentuh yang lebih besar untuk baris yang
+     membuka detail, refund, dan cetak ulang. */
+  min-height: calc(var(--touch-critical) + var(--space-1));
+  padding: var(--space-2) var(--space-4);
   border: none;
   border-bottom: 1px solid var(--border);
   background: transparent;

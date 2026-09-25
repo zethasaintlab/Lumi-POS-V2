@@ -54,7 +54,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.6 | Laci kas | selesai | #66 | |
 | 3.7 | K-01 Login | selesai | #67 | |
 | 3.8 | K-02 Buka shift | selesai | #68 | |
-| 3.9 | K-08 Riwayat | belum | — | Format nomor struk repo dipertahankan |
+| 3.9 | K-08 Riwayat | selesai | #69 | Format nomor struk repo dipertahankan |
 | 3.10 | K-12 Tutup kas | belum | — | Hitungan buta tetap |
 | 4 | Laporan akhir | belum | — | |
 
@@ -332,4 +332,32 @@ orang lain) · "Kembali" (K-02 muncul saat shift belum ada; tidak ada tujuan).
 Dilewati (fitur belum ada): pilihan cash drawer (satu laci per perangkat) ·
 "Waktu buka" (tanggal bisnis dihitung dari zona outlet saat disimpan; jam yang
 ditampilkan sebelum itu adalah angka yang dapat berbeda dari yang tersimpan).
+
+### Fase 3.9 — K-08 Riwayat (#69)
+
+Dikejar (penjaga `tests/kasir-dom/k08-riwayat.test.js`, merah dulu: "judul
+halaman: null"):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Judul halaman | tidak ada | "Riwayat transaksi" 20 px + subjudul, juga saat kosong | 20/600 + subjudul |
+| Bentuk daftar | baris tanpa kartu | tabel di `.card` bundle, kepala kolom Waktu · Nomor struk · Total · Status | tabel dalam kartu, 6 kolom |
+| Urutan kolom | nomor · jam | jam PERTAMA | Waktu pertama |
+| Tinggi baris | 48 | 60 | 61 |
+| Kosong | kalimat tanpa kartu | kalimat di dalam kartu, judul tetap | ikon + kalimat di kartu |
+
+Kepala dan baris berbagi satu definisi kolom grid, jadi kepala tidak dapat
+bergeser dari isinya.
+
+Sabotase yang menyala (5/5): tanpa kartu · baris 44 · tanpa judul · kepala
+tanpa Waktu · kosong tanpa kartu.
+
+Ditolak: nomor `TRX-…` (#9) · status tunggal "Selesai" (status turun dari
+rantai koreksi + status kirim FR-H3) · 13 px (DS #1).
+
+Dilewati (fitur belum ada): kolom Item dan Metode (data baris belum dibaca
+K-08) · penyaring tanggal dan metode.
+
+Dicatat, tidak diubah: pada 1280 segmented "Nilai tertinggi" terlipat dua
+baris — sudah begitu sebelum fase ini.
 

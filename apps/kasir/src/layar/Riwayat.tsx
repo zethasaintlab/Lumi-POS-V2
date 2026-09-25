@@ -96,17 +96,33 @@ export function Riwayat() {
     return <GagalBaca akibat="Riwayat penjualan perangkat ini tidak dapat ditampilkan, dan struk lama tidak dapat dicetak ulang." pesan={gagal} />;
   }
 
+  /* Rebuild UI Fase 3.9 — judul halaman, mengikuti mockup. Ia tampil juga
+     saat kosong: layar tanpa judul yang isinya satu kalimat terbaca seperti
+     layar yang gagal memuat. */
+  const kepala = (
+    <header className="kasir-halaman-kepala">
+      <h1 className="t-title">Riwayat transaksi</h1>
+      <p className="t-body-md kasir-login-sub">Penjualan yang tersimpan di perangkat ini.</p>
+    </header>
+  );
+
   if (daftar.length === 0) {
     return (
-      <EmptyState
-        title="Belum ada transaksi"
-        body="Penjualan yang tersimpan di perangkat ini akan muncul di sini."
-      />
+      <div className="kasir-grid-panel">
+        {kepala}
+        <div className="card card-pad">
+          <EmptyState
+            title="Belum ada transaksi"
+            body="Penjualan yang tersimpan di perangkat ini akan muncul di sini."
+          />
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="kasir-grid-panel">
+      {kepala}
       {/* Baris kontrol yang sama bentuknya dengan K-03: cari di kiri, urutan
           di kanan. Dua layar daftar yang kontrolnya diletakkan berbeda menuntut
           kasir belajar dua kali. */}
@@ -126,53 +142,70 @@ export function Riwayat() {
         </div>
       </div>
 
-      {terlihat.length === 0 ? (
-        <EmptyState title="Tidak ada struk yang cocok" body={`Tidak ada hasil untuk "${kueri}".`} />
-      ) : (
-        <ul className="kasir-baris-daftar">
-          {halaman.baris.map((o) => (
-            <li key={o.id}>
-              <button
-                type="button"
-                className="kasir-riwayat-baris"
-                onClick={() => navigasi(`${BASIS}/riwayat/${o.id}`)}
-              >
-                <span className="t-body-md num">{o.receiptNumber}</span>
-                <span className="t-caption">{jam(o.occurredAt)}</span>
-                <span className="grow" />
+      {/* Tabel dalam `.card` bundle (Fase 3.9, mengikuti mockup). Kolom
+          Waktu PERTAMA; kepala kolom memakai grid yang sama dengan baris. */}
+      <div className="card kasir-riwayat-kartu">
+        {terlihat.length === 0 ? (
+          <div className="card-pad">
+            <EmptyState title="Tidak ada struk yang cocok" body={`Tidak ada hasil untuk "${kueri}".`} />
+          </div>
+        ) : (
+          <>
+            <div className="kasir-riwayat-kepala t-caption kasir-login-sub" aria-hidden="true">
+              <span>Waktu</span>
+              <span>Nomor struk</span>
+              <span className="kasir-riwayat-angka">Total</span>
+              <span>Status</span>
+            </div>
+            <ul className="kasir-baris-daftar kasir-riwayat-daftar">
+              {halaman.baris.map((o) => (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    className="kasir-riwayat-baris"
+                    onClick={() => navigasi(`${BASIS}/riwayat/${o.id}`)}
+                  >
+                    <span className="t-body-md num">{jam(o.occurredAt)}</span>
+                    <span className="kasir-riwayat-nomor">
+                      <span className="t-body-md num">{o.receiptNumber}</span>
 
-                {/* ⛔ Penanda pembatalan datang dari RANTAI KOREKSI, bukan dari
-                    `status`. Order yang sudah di-void tetap berstatus `open`
-                    (`CLAUDE.md`), jadi tanpa ini kasir melihat transaksi yang
-                    terlihat normal padahal sudah dibatalkan. */}
-                {/* ⛔ `<Badge>` bundle menggantikan `<span>` berwarna,
-                    2 September 2026. Teks merah di antara teks abu-abu adalah
-                    "status warna saja" dalam bentuk yang paling mudah luput:
-                    katanya ada, tapi ia tidak terbaca sebagai LABEL — ia
-                    terbaca sebagai kalimat yang kebetulan berwarna, dan pada
-                    baris padat mata melewatinya.
+                      {/* ⛔ Penanda pembatalan datang dari RANTAI KOREKSI, bukan dari
+                          `status`. Order yang sudah di-void tetap berstatus `open`
+                          (`CLAUDE.md`), jadi tanpa ini kasir melihat transaksi yang
+                          terlihat normal padahal sudah dibatalkan. */}
+                      {/* ⛔ `<Badge>` bundle menggantikan `<span>` berwarna,
+                          2 September 2026. Teks merah di antara teks abu-abu adalah
+                          "status warna saja" dalam bentuk yang paling mudah luput:
+                          katanya ada, tapi ia tidak terbaca sebagai LABEL — ia
+                          terbaca sebagai kalimat yang kebetulan berwarna, dan pada
+                          baris padat mata melewatinya.
 
-                    Badge bundle memberi bentuk (pil bertepi) selain warna, dan
-                    kontraknya sendiri menuntut teks. `tone` menyatakan artinya:
-                    `danger` untuk order yang dibatalkan, `neutral` untuk order
-                    yang MEMBATALKAN — yang kedua bukan kabar buruk, ia catatan
-                    koreksi. */}
-                {o.dibatalkan && <Badge tone="danger">Dibatalkan</Badge>}
-                {o.membatalkan && <Badge tone="neutral">Pembatalan</Badge>}
+                          Badge bundle memberi bentuk (pil bertepi) selain warna, dan
+                          kontraknya sendiri menuntut teks. `tone` menyatakan artinya:
+                          `danger` untuk order yang dibatalkan, `neutral` untuk order
+                          yang MEMBATALKAN — yang kedua bukan kabar buruk, ia catatan
+                          koreksi. */}
+                      {o.dibatalkan && <Badge tone="danger">Dibatalkan</Badge>}
+                      {o.membatalkan && <Badge tone="neutral">Pembatalan</Badge>}
+                    </span>
 
-                <span className="t-body-md num">{rupiah(o.total)}</span>
-                {/* Status sinkronisasi: `warning` untuk gagal, bukan `danger`.
-                    Penjualannya TERSIMPAN — yang belum terjadi adalah
-                    pengirimannya, dan merah di sini terbaca seperti uang yang
-                    hilang. `spec-h` memakai perbedaan itu. */}
-                <Badge tone={o.statusSync === 'failed' ? 'warning' : 'neutral'}>
-                  {TEKS_SYNC[o.statusSync]}
-                </Badge>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+                    <span className="t-body-md num kasir-riwayat-angka">{rupiah(o.total)}</span>
+                    {/* Status sinkronisasi: `warning` untuk gagal, bukan `danger`.
+                        Penjualannya TERSIMPAN — yang belum terjadi adalah
+                        pengirimannya, dan merah di sini terbaca seperti uang yang
+                        hilang. `spec-h` memakai perbedaan itu. */}
+                    <span>
+                      <Badge tone={o.statusSync === 'failed' ? 'warning' : 'neutral'}>
+                        {TEKS_SYNC[o.statusSync]}
+                      </Badge>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
 
       {terlihat.length > 0 && <Paginasi halaman={halaman} onPindah={setHalamanKe} />}
     </div>
