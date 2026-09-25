@@ -51,7 +51,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.3 | K-07 Konfirmasi | selesai | #64 | |
 | 3.4 | Struk | dilewati | — | |
 | 3.5 | Void dan refund | selesai | #65 | |
-| 3.6 | Laci kas | berjalan | — | |
+| 3.6 | Laci kas | selesai | #66 | |
 | 3.7 | K-01 Login | belum | — | |
 | 3.8 | K-02 Buka shift | belum | — | |
 | 3.9 | K-08 Riwayat | belum | — | Format nomor struk repo dipertahankan |
@@ -244,7 +244,7 @@ asli"; di repo ringkasan itu sudah ada di K-09 di belakang dialog, jadi kolom
 kanan memuat barang yang kembali dan jumlahnya — isi yang membuat dialog satu
 kolom menggulir.
 
-### Fase 3.6 — Laci kas
+### Fase 3.6 — Laci kas (#66)
 
 Dikejar (penjaga `tests/kasir-dom/laci-kas.test.js`, 1280×800 dan 1280×768,
 merah dulu: "arah kas masih radio"):
