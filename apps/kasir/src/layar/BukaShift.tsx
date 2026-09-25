@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { EmptyState } from 'ds';
+import { EmptyState, Icon } from 'ds';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { bukaShift, shiftAktif, validasiSaldoAwal, type ShiftAktif } from '../kas/shift.ts';
@@ -132,56 +132,87 @@ export function BukaShift() {
 
   return (
     <div className="kasir-shift">
-      <h1 className="t-title">Buka Shift</h1>
-      <p className="t-body-md kasir-login-sub">Berapa uang di laci sekarang?</p>
+      {/* Rebuild UI Fase 3.8 — KARTU dua kolom, mengikuti mockup (624 px,
+          ikon + subjudul, "Mulai Shift" di kanan bawah). */}
+      <div className="kasir-shift-kartu">
+        <div className="kasir-shift-kepala">
+          <span className="kasir-login-ikon" aria-hidden="true">
+            <Icon name="clock" size={24} />
+          </span>
+          <div>
+            <h1 className="t-title">Buka Shift</h1>
+            <p className="t-body-md kasir-login-sub">Berapa uang di laci sekarang?</p>
+          </div>
+        </div>
 
-      <p className="t-display num">{rupiah(saldo)}</p>
+        <div className="kasir-shift-kolom">
+          <div className="kasir-dialog-sel">
+            <p className="t-body-md">Saldo awal</p>
+            <p className="t-display num">{rupiah(saldo)}</p>
 
-      <div className="kasir-pecahan">
-        {PECAHAN.map((p) => (
-          <Tombol
-            key={p}
-            kritis
-            disabled={menyimpan}
-            onClick={() => {
-              setSaldo((s) => s + p);
-              setGalat(null);
-            }}
-          >
-            + {rupiah(p)}
+            <div className="kasir-pecahan">
+              {PECAHAN.map((p) => (
+                <Tombol
+                  key={p}
+                  kritis
+                  disabled={menyimpan}
+                  onClick={() => {
+                    setSaldo((s) => s + p);
+                    setGalat(null);
+                  }}
+                >
+                  + {rupiah(p)}
+                </Tombol>
+              ))}
+              <Tombol
+                varian="ghost"
+                kritis
+                disabled={menyimpan || saldo === 0}
+                onClick={() => {
+                  setSaldo(0);
+                  setGalat(null);
+                }}
+              >
+                Hapus
+              </Tombol>
+            </div>
+          </div>
+
+          {/* Mockup menampilkan staf pembuka sebagai field. Di sini TEKS: ia
+              diambil dari sesi, dan field yang dapat diubah akan mengundang
+              shift dibuka atas nama orang lain. */}
+          <dl className="kasir-dialog-sel">
+            <div>
+              <dt className="t-caption kasir-login-sub">Staf pembuka</dt>
+              <dd className="t-body-md">{sesi?.nama ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="t-caption kasir-login-sub">Tanggal bisnis</dt>
+              <dd className="t-body-md">Dihitung dari zona outlet saat shift dibuka</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Aturan design system #5: status tidak pernah warna saja. */}
+        {galat && (
+          <p className="t-body-md kasir-login-galat" role="alert">
+            {galat}
+          </p>
+        )}
+
+        {/* Kalimat ini ADA karena FR-D1 adalah janji produk yang harus terbaca
+            kasir, bukan hanya benar di kode. Merchant yang tidak tahu bahwa ini
+            berfungsi offline akan menelepon support saat internet mati. */}
+        <div className="kasir-bayar-baris">
+          <p className="t-caption kasir-login-sub">
+            Shift tersimpan di perangkat ini dan terkirim sendiri saat internet kembali.
+          </p>
+          {/* Satu aksi utama per layar (aturan #2), 56px karena menyangkut uang. */}
+          <Tombol varian="primary" kritis disabled={menyimpan} onClick={simpan}>
+            {menyimpan ? 'Menyimpan…' : 'Mulai Shift'}
           </Tombol>
-        ))}
-        <Tombol
-          varian="ghost"
-          kritis
-          disabled={menyimpan || saldo === 0}
-          onClick={() => {
-            setSaldo(0);
-            setGalat(null);
-          }}
-        >
-          Hapus
-        </Tombol>
+        </div>
       </div>
-
-      {/* Aturan design system #5: status tidak pernah warna saja. */}
-      {galat && (
-        <p className="t-body-md kasir-login-galat" role="alert">
-          {galat}
-        </p>
-      )}
-
-      {/* Satu aksi utama per layar (aturan #2), 56px karena menyangkut uang. */}
-      <Tombol varian="primary" kritis disabled={menyimpan} onClick={simpan}>
-        {menyimpan ? 'Menyimpan…' : 'Mulai Shift'}
-      </Tombol>
-
-      {/* Kalimat ini ADA karena FR-D1 adalah janji produk yang harus terbaca
-          kasir, bukan hanya benar di kode. Merchant yang tidak tahu bahwa ini
-          berfungsi offline akan menelepon support saat internet mati. */}
-      <p className="t-caption kasir-login-sub">
-        Shift tersimpan di perangkat ini dan terkirim sendiri saat internet kembali.
-      </p>
     </div>
   );
 }

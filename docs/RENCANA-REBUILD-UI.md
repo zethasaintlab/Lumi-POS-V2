@@ -53,7 +53,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.5 | Void dan refund | selesai | #65 | |
 | 3.6 | Laci kas | selesai | #66 | |
 | 3.7 | K-01 Login | selesai | #67 | |
-| 3.8 | K-02 Buka shift | belum | — | |
+| 3.8 | K-02 Buka shift | selesai | #68 | |
 | 3.9 | K-08 Riwayat | belum | — | Format nomor struk repo dipertahankan |
 | 3.10 | K-12 Tutup kas | belum | — | Hitungan buta tetap |
 | 4 | Laporan akhir | belum | — | |
@@ -297,4 +297,39 @@ bobot 600 · 13 px (DS #1).
 Dilewati (fitur belum ada): "Halo, Rini Astuti" (pemilihan pengguna sebelum
 PIN) · nama perangkat di kartu (Login tidak membaca `device_config`; menambah
 pembacaan itu di layar yang berjalan sebelum sesi ada di luar tata letak).
+
+CI #67: job `test` merah sekali di `tests/server/pool-koneksi-idle-mati.test.js`
+("pool PULIH sendiri", `Connection terminated unexpectedly`) — di luar diff
+(nol berkas server), lulus 5/5 di lokal, dan hijau pada satu kali re-run. Dicatat
+sebagai kandidat flake untuk suite server, bukan diperbaiki di kampanye ini.
+
+### Fase 3.8 — K-02 Buka shift (#68)
+
+Dikejar (penjaga `tests/kasir-dom/k02-buka-shift.test.js`, 1024 dan 1280,
+merah dulu: "buka shift tidak di dalam kartu"):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Komposisi | satu kolom terpusat, tanpa kartu | kartu 624 dengan ikon + subjudul, di atas `--surface-sunk` | kartu 624 × 384 |
+| Kolom | satu | saldo + pecahan · staf pembuka + tanggal bisnis | dua kolom field |
+| Staf pembuka | tidak tampil | TEKS dari sesi | field terisi |
+| Mulai Shift | terpusat | kanan bawah, 56 px | kanan bawah |
+
+⛔ **Ditemukan di tangkapan sesudah yang pertama, bukan oleh penjaga:** kolom
+3fr:2fr membuat tombol pecahan 56 px MELUAP menimpa "Tanggal bisnis", dan
+kartu putih di atas layar putih tidak terlihat sebagai kartu. Keduanya kini
+diukur di penjaga (merah dulu), lalu diperbaiki.
+
+Sabotase yang menyala (6/6): tanpa kartu · kartu 768 · satu kolom · 3fr:2fr
+(meluap) · latar putih · Mulai Shift selebar kartu.
+
+⛔ **Menunggu keputusan user, tidak dibangun:** field teks bebas "Saldo awal"
+— alasan yang sama dengan "Nominal diterima" K-06 (jalur masukan uang baru).
+
+Ditolak: "Staf pembuka" sebagai field yang dapat diubah (shift dibuka atas nama
+orang lain) · "Kembali" (K-02 muncul saat shift belum ada; tidak ada tujuan).
+
+Dilewati (fitur belum ada): pilihan cash drawer (satu laci per perangkat) ·
+"Waktu buka" (tanggal bisnis dihitung dari zona outlet saat disimpan; jam yang
+ditampilkan sebelum itu adalah angka yang dapat berbeda dari yang tersimpan).
 
