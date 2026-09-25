@@ -229,10 +229,13 @@ PowerSync → `apps/kasir/src/katalog/gambar.ts` (verifikasi) → kartu K-03.
   dekoratif untuk `tanpa` — placeholder abu-abu mengubah katalog merchant baru,
   yang seluruhnya belum difoto, menjadi grid yang terlihat rusak di hari
   pertama.
-- ⛔ **`aspect-ratio: 16 / 9` di kartu, meski yang disimpan 1:1** — diukur, dan
-  tiga rasio yang lebih tinggi gugur. `IA:62` menuntut ≥12 kartu tanpa scroll;
-  1:1 → 8, 4:3 → 8, 3:2 → 8, 16:9 → 12. Penjaganya di `tools/tangkap-galeri.mjs`,
-  yang MENGHITUNG kartu terlihat, bukan hanya memotretnya. Angkanya di
+- ⛔ **`aspect-ratio: 3 / 1` di kartu, foto selebar kartu, meski yang disimpan
+  1:1** (rebuild UI Fase 3.1, 25 September 2026, mengikuti mockup; sebelumnya
+  16:9 berbingkai). Diukur, dan rasio yang lebih tinggi dari 16:9 gugur:
+  `IA:62` menuntut ≥12 kartu tanpa scroll; 1:1 → 8, 4:3 → 8, 3:2 → 8, 16:9 → 12,
+  3:1 → 12 pada 1024 dan 1280. Harganya: kartu menampilkan sepertiga tengah
+  foto. Penjaganya `tests/kasir-dom/k03-kepadatan.test.js` (CI, kedua lebar)
+  dan `tools/tangkap-galeri.mjs`. Angkanya di
   `docs/verifikasi/GAMBAR-ANGGARAN.md` § 7.
 - ⛔ **`height: auto` WAJIB pada `<img>` kartu.** Atribut `height="400"` adalah
   presentational hint yang menyetel `height: 400px`, dan `aspect-ratio` hanya
