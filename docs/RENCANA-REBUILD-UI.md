@@ -48,7 +48,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | selesai | #61 | Nol perubahan tata letak aplikasi |
 | 3.1 | K-03 Kasir | selesai | #62 | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
 | 3.2 | K-06 Pembayaran | selesai | #63 | Sembilan penjaga K-06 tetap hijau |
-| 3.3 | K-07 Konfirmasi | belum | — | |
+| 3.3 | K-07 Konfirmasi | selesai | #64 | |
 | 3.4 | Struk | belum | — | |
 | 3.5 | Void dan refund | belum | — | |
 | 3.6 | Laci kas | belum | — | |
@@ -170,4 +170,46 @@ diterima". Ia jalur MASUKAN uang baru (mengurai rupiah yang diketik) di layar
 yang menyimpan penjualan — kondisi berhenti "perubahan yang menyentuh logika
 uang di luar tata letak". Pola parsernya sudah ada di K-12 (`Bidang` ber-awalan),
 jadi biayanya kecil bila disetujui.
+
+### Fase 3.3 — K-07 Konfirmasi (#64)
+
+Dikejar (penjaga `tests/kasir-dom/k07-konfirmasi.test.js`, overlay galeri pada
+1024 dan 1280, merah dulu di empat test):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Wadah | kartu pembayaran 728 × 303 | kartu 536, ikon centang di lingkaran `--success-soft` | 536 × 466, ikon dalam lingkaran lembut |
+| Judul | tidak ada | "Transaksi selesai" 20 px | ada |
+| Kembalian | 32/600 tanpa panel | panel `--accent-soft`, 32/600 warna teks | panel, 32/700 aksen |
+| Cetak struk | tidak ada | "Cetak ulang struk" (jalur K-09) | "Cetak Struk" |
+| Transaksi Baru | selebar kartu | kanan, sebaris dengan Cetak ulang, 56 px | 229 × 44 |
+
+⛔ **Cacat yang ditemukan:** `HasilPenjualan.cetak` dikembalikan
+`simpanPenjualan` supaya layar dapat berkata "struk gagal dicetak, transaksi
+tersimpan" (`CLAUDE.md` § F4), dan K-07 tidak pernah membacanya: kegagalan
+cetak pertama tidak terlihat di mana pun. Kini dirender (`data-cetak="pertama"`),
+dijaga, dan sabotasenya menyala.
+
+Jalur cetak ulang K-09 dipindahkan ke `apps/kasir/src/cetak/cetak-ulang.ts`
+(`cetakUlangOrder` + `kalimatCetak`) dan dipakai K-07 dan K-09. Satu test
+menjaga K-09 tetap membangun ulang struknya lewat jalur itu.
+
+Sabotase yang menyala (8/8): lebar 728 · ikon tanpa latar · kembalian tanpa
+panel · angka kembalian aksen · hasil cetak pertama tidak dirender · Cetak
+ulang 44 px · Transaksi Baru selebar kartu · struk K-09 tidak dibangun.
+⛔ Sabotase "angka aksen" semula TIDAK menyala: token `--accent` dibaca dari
+`color` elemen terlepas (string kosong). Penjaganya diperbaiki dan kini
+menegaskan tokennya terbaca.
+
+Klaim berangka `KELAS-GAGAL.md` K1 berubah 27/42 → 28/42 tanpa perubahan
+perilaku (komentar ber-"antrean" pindah dari `DetailTransaksi.tsx`).
+
+Ditolak: angka kembalian berwarna aksen (DS #2) · nomor `TRX-…` (#9) ·
+"Transaksi Baru" 44 px (#10).
+
+Dilewati (fitur belum ada): kirim struk WhatsApp/Email.
+
+Temuan, TIDAK diperbaiki (di luar layar ini): `DetailTransaksi.tsx` punya peta
+metode sendiri berkunci `card`, bukan `card_edc` — pembayaran EDC tampil
+sebagai kode mentah di K-09, dan ini salinan kedua `LABEL_METODE`.
 

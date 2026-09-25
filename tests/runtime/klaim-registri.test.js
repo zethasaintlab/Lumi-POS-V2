@@ -181,8 +181,8 @@ const KLAIM = [
   {
     id: 'empty-state-tanpa-antrean',
     berkas: 'docs/verifikasi/KELAS-GAGAL.md',
-    frasa: '**Ukuran: 27 dari 42 berkas ber-`<EmptyState>`**',
-    harap: '27/42',
+    frasa: '**Ukuran: 28 dari 42 berkas ber-`<EmptyState>`**',
+    harap: '28/42',
     ukur: () => {
       const semua = berkasSumber('apps', /\.tsx$/).filter((f) =>
         fs.readFileSync(f, 'utf8').includes('<EmptyState')
