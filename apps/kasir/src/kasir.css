@@ -414,6 +414,35 @@
   flex: 1;
 }
 
+/* K-02 — kartu buka shift (rebuild UI Fase 3.8): 624 px, lebar kartu mockup. */
+.kasir-shift-kartu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: min(39rem, 100%);
+  padding: var(--space-6);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+.kasir-shift:has(> .kasir-shift-kartu) { background: var(--surface-sunk); }
+.kasir-shift-kepala {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.kasir-shift-kolom {
+  display: grid;
+  /* Kolom kanan selebar isinya (maks 12rem): tombol pecahan 56 px berisi
+     "+ Rp 500.000" butuh ruang, dan kolom 3fr:2fr membuatnya MELUAP menimpa
+     kolom kanan — terukur di tangkapan sesudah pertama. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 12rem);
+  gap: var(--space-6);
+  align-items: start;
+}
+.kasir-shift-kartu dl,
+.kasir-shift-kartu dd { margin: 0; }
+
 /* --- K-06: isi yang menggulir + blok aksi yang menempel -------------------
  *
  * ⛔ MODIFIER di atas `.kasir-shift`, bukan kelas pengganti. `.kasir-shift`
