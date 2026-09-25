@@ -308,83 +308,91 @@ export function TutupKas() {
 
         <LangkahKas langkah={LANGKAH} aktif={2} />
 
-        {/* ⛔ RINCIAN PENUH, dan hanya di langkah 2. Di tahap `hitung` tidak
-            satu pun angka ini boleh muncul — bukan totalnya, bukan bagiannya,
-            bukan petunjuknya (FR-D2). Yang membedakan keduanya bukan CSS:
-            `ringkasanSebelumHitung` tidak memuat fieldnya sama sekali, dan
-            rincian ini datang dari `catatHitungan`, yang baru dipanggil
-            SESUDAH kasir menekan "Lanjut".
+        {/* Rebuild UI Fase 3.10 — DUA KARTU berdampingan, mengikuti mockup:
+            rincian saldo di kiri, selisih dan alasannya di kanan. Hanya tahap
+            ini; tahap `hitung` tetap hitungan buta (FR-D2). */}
+        <div className="kasir-review-kolom">
+          <section className="card card-pad kasir-dialog-sel">
+            {/* ⛔ RINCIAN PENUH, dan hanya di langkah 2. Di tahap `hitung` tidak
+                satu pun angka ini boleh muncul — bukan totalnya, bukan bagiannya,
+                bukan petunjuknya (FR-D2). Yang membedakan keduanya bukan CSS:
+                `ringkasanSebelumHitung` tidak memuat fieldnya sama sekali, dan
+                rincian ini datang dari `catatHitungan`, yang baru dipanggil
+                SESUDAH kasir menekan "Lanjut".
 
-            ⛔ Bagiannya dari `rincianSaldo` — baris `cash_movement` yang SAMA
-            yang menghasilkan saldo seharusnya, dikelompokkan, bukan dihitung
-            ulang. "Jumlah rincian = total" benar menurut konstruksi.
+                ⛔ Bagiannya dari `rincianSaldo` — baris `cash_movement` yang SAMA
+                yang menghasilkan saldo seharusnya, dikelompokkan, bukan dihitung
+                ulang. "Jumlah rincian = total" benar menurut konstruksi.
 
-            ⛔ Mockup menggambar empat baris tetap; yang dirender di sini satu
-            baris per tipe yang PUNYA movement. Daftar yang dipaku empat
-            menyembunyikan kas keluar, setoran bank, dan koreksi — dan
-            ketidakterlihatan itu persis cacat yang FR-D5 tutup. */}
-        <Baris label={LABEL_MOVEMENT.opening_float} nilai={review.rincian.saldoAwal} />
-        {review.rincian.bagian.map((b) => (
-          <Baris key={b.tipe} label={b.label} nilai={b.total} />
-        ))}
-        <Baris label="Kas diharapkan" nilai={review.saldoSeharusnya} tebal />
-        <Baris label="Hitungan fisik" nilai={hitungan} />
+                ⛔ Mockup menggambar empat baris tetap; yang dirender di sini satu
+                baris per tipe yang PUNYA movement. Daftar yang dipaku empat
+                menyembunyikan kas keluar, setoran bank, dan koreksi — dan
+                ketidakterlihatan itu persis cacat yang FR-D5 tutup. */}
+            <Baris label={LABEL_MOVEMENT.opening_float} nilai={review.rincian.saldoAwal} />
+            {review.rincian.bagian.map((b) => (
+              <Baris key={b.tipe} label={b.label} nilai={b.total} />
+            ))}
+            <Baris label="Kas diharapkan" nilai={review.saldoSeharusnya} tebal />
+            <Baris label="Hitungan fisik" nilai={hitungan} />
+          </section>
+          <section className="card card-pad kasir-dialog-sel">
+            {/* ⛔ PANEL, bukan baris teks merah. Tiga keadaan, masing-masing dengan
+                perlakuannya sendiri — dan selisih NOL punya perlakuannya juga:
+                laci yang cocok adalah kabar baik, dan kabar baik yang dirender
+                dengan gaya yang sama dengan kabar buruk membuat kasir membaca
+                angkanya sebelum tahu apakah ia perlu khawatir.
 
-        {/* ⛔ PANEL, bukan baris teks merah. Tiga keadaan, masing-masing dengan
-            perlakuannya sendiri — dan selisih NOL punya perlakuannya juga:
-            laci yang cocok adalah kabar baik, dan kabar baik yang dirender
-            dengan gaya yang sama dengan kabar buruk membuat kasir membaca
-            angkanya sebelum tahu apakah ia perlu khawatir.
+                ⛔ Statusnya dibawa KATA (`kurang`/`lebih`/`cocok`), bukan warna
+                saja — aturan design system #5. Besarannya ditampilkan tanpa
+                tandanya di label supaya "− Rp 8.000 kurang" tidak menjadi negasi
+                ganda; angka besarnya tetap membawa `−` (U+2212) lewat `rupiah`. */}
+            <div className="kasir-selisih" data-arah={arahSelisih}>
+              <div className="kasir-selisih-isi">
+                <p className="t-caption kasir-selisih-label" data-arah={arahSelisih}>
+                  {TEKS_SELISIH[arahSelisih]}
+                </p>
+                <p className="t-display num kasir-selisih-nilai" data-arah={arahSelisih}>
+                  {rupiah(review.selisih)}
+                </p>
+              </div>
+              {perluOtorisasi && <Badge tone="danger">Wajib alasan + PIN manajer</Badge>}
+            </div>
 
-            ⛔ Statusnya dibawa KATA (`kurang`/`lebih`/`cocok`), bukan warna
-            saja — aturan design system #5. Besarannya ditampilkan tanpa
-            tandanya di label supaya "− Rp 8.000 kurang" tidak menjadi negasi
-            ganda; angka besarnya tetap membawa `−` (U+2212) lewat `rupiah`. */}
-        <div className="kasir-selisih" data-arah={arahSelisih}>
-          <div className="kasir-selisih-isi">
-            <p className="t-caption kasir-selisih-label" data-arah={arahSelisih}>
-              {TEKS_SELISIH[arahSelisih]}
-            </p>
-            <p className="t-display num kasir-selisih-nilai" data-arah={arahSelisih}>
-              {rupiah(review.selisih)}
-            </p>
-          </div>
-          {perluOtorisasi && <Badge tone="danger">Wajib alasan + PIN manajer</Badge>}
-        </div>
-
-        {review.percobaan > 1 && (
-          <p className="t-caption kasir-login-galat">
-            Percobaan hitungan ke-{review.percobaan}. Seluruhnya tercatat.
-          </p>
-        )}
-
-        {perluOtorisasi && (
-          <>
-            <fieldset className="kasir-alasan">
-              <legend className="t-body-md">Alasan selisih</legend>
-              {ALASAN_SELISIH.map((a) => (
-                <label key={a.kode} className="kasir-alasan-opsi t-body-md">
-                  <input
-                    type="radio"
-                    name="alasan-selisih"
-                    checked={kodeAlasan === a.kode}
-                    onChange={() => setKodeAlasan(a.kode)}
-                  />
-                  {a.label}
-                </label>
-              ))}
-            </fieldset>
-            {kodeAlasan === 'lainnya' && (
-              <textarea
-                className="kasir-catatan"
-                value={catatan}
-                onChange={(e) => setCatatan(e.target.value)}
-                placeholder="Jelaskan selisihnya (minimal 10 karakter)"
-                rows={2}
-              />
+            {review.percobaan > 1 && (
+              <p className="t-caption kasir-login-galat">
+                Percobaan hitungan ke-{review.percobaan}. Seluruhnya tercatat.
+              </p>
             )}
-          </>
-        )}
+
+            {perluOtorisasi && (
+              <>
+                <fieldset className="kasir-alasan">
+                  <legend className="t-body-md">Alasan selisih</legend>
+                  {ALASAN_SELISIH.map((a) => (
+                    <label key={a.kode} className="kasir-alasan-opsi t-body-md">
+                      <input
+                        type="radio"
+                        name="alasan-selisih"
+                        checked={kodeAlasan === a.kode}
+                        onChange={() => setKodeAlasan(a.kode)}
+                      />
+                      {a.label}
+                    </label>
+                  ))}
+                </fieldset>
+                {kodeAlasan === 'lainnya' && (
+                  <textarea
+                    className="kasir-catatan"
+                    value={catatan}
+                    onChange={(e) => setCatatan(e.target.value)}
+                    placeholder="Jelaskan selisihnya (minimal 10 karakter)"
+                    rows={2}
+                  />
+                )}
+              </>
+            )}
+          </section>
+        </div>
 
         <p className="t-body-md kasir-login-galat kasir-pesan-tetap" role="alert">
           {galat ?? ' '}

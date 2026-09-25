@@ -55,7 +55,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.7 | K-01 Login | selesai | #67 | |
 | 3.8 | K-02 Buka shift | selesai | #68 | |
 | 3.9 | K-08 Riwayat | selesai | #69 | Format nomor struk repo dipertahankan |
-| 3.10 | K-12 Tutup kas | belum | — | Hitungan buta tetap |
+| 3.10 | K-12 Tutup kas | berjalan | — | Hitungan buta tetap |
 | 4 | Laporan akhir | belum | — | |
 
 ## Catatan per fase
@@ -360,4 +360,26 @@ K-08) · penyaring tanggal dan metode.
 
 Dicatat, tidak diubah: pada 1280 segmented "Nilai tertinggi" terlipat dua
 baris — sudah begitu sebelum fase ini.
+
+### Fase 3.10 — K-12 Tutup kas
+
+Dikejar (penjaga `tests/kasir-dom/k12-review-kartu.test.js`, skenario `normal`
+dan `offline`, review PENUH dengan keenam alasan; merah dulu: "rincian saldo
+tidak di dalam kartu"):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Tahap review | satu kolom | dua kartu `.card` bundle: rincian saldo · selisih + alasan | dua kartu berdampingan |
+
+Hanya tahap `review`. Tahap `hitung` tidak disentuh — hitungan buta tetap
+(`k12-hitungan-buta`), aksi tetap di slot bilah nav (`k12-aksi-slot`); kedua
+penjaga dan `k12-hitungan` hijau.
+
+Sabotase yang menyala (2/2): tanpa kartu · satu kolom.
+
+Ditolak: saldo seharusnya dan ringkasan penjualan SEBELUM menghitung (#7,
+FR-D2) · "Tutup Shift" 44 px (DS #3) · bobot 700 · 13 px.
+
+Tangkapan review: `sesudah/K-12--review__tutup--tunggal--review.png`
+(`banding.mjs` memotret tahap `hitung`).
 
