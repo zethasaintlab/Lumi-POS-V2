@@ -248,6 +248,35 @@
   gap: var(--space-4);
   padding: var(--space-6);
   flex: 1;
+  /* Rebuild UI Fase 3.7: latar bertinta di belakang kartu, mengikuti mockup.
+     Token repo; nilainya milik keputusan palet (Fase 1). */
+  background: var(--surface-sunk);
+}
+
+/* Kartu PIN — 510 px, lebar kartu mockup. `min(…, 100%)` supaya tidak pernah
+   melebihi layar sempit. */
+.kasir-login-kartu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  width: min(31.875rem, 100%);
+  padding: var(--space-6);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+
+.kasir-login-ikon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-critical);
+  height: var(--touch-critical);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .kasir-login-sub {

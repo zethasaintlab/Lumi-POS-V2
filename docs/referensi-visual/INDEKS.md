@@ -12,7 +12,7 @@ Viewport 1280×800 · 11 layar · 23 kombinasi
 
 | Layar | Keadaan | Tangkapan | Sesudah (Fase 3, mockup ↔ repo) |
 |---|---|---|---|
-| Login PIN (`login`) | — (`tunggal`) | <a href="layar/kasir--login--tunggal.png"><img src="layar/kasir--login--tunggal.png" width="480" alt="Kasir · Login PIN"></a> | — |
+| Login PIN (`login`) | — (`tunggal`) | <a href="layar/kasir--login--tunggal.png"><img src="layar/kasir--login--tunggal.png" width="480" alt="Kasir · Login PIN"></a> | <a href="sesudah/K-01-normal__login--tunggal.png"><img src="sesudah/K-01-normal__login--tunggal.png" width="480" alt="Sesudah · K-01-normal__login--tunggal.png"></a> |
 | Buka Shift (`shift`) | — (`tunggal`) | <a href="layar/kasir--shift--tunggal.png"><img src="layar/kasir--shift--tunggal.png" width="480" alt="Kasir · Buka Shift"></a> | — |
 | Layar Kasir (`kasir`) | Katalog campuran (`campuran`) | <a href="layar/kasir--kasir--campuran.png"><img src="layar/kasir--kasir--campuran.png" width="480" alt="Kasir · Layar Kasir · Katalog campuran"></a> | <a href="sesudah/K-03--normal__kasir--campuran.png"><img src="sesudah/K-03--normal__kasir--campuran.png" width="480" alt="Sesudah · K-03--normal__kasir--campuran.png"></a> |
 | Layar Kasir (`kasir`) | Keranjang kosong (`keranjang-kosong`) | <a href="layar/kasir--kasir--keranjang-kosong.png"><img src="layar/kasir--kasir--keranjang-kosong.png" width="480" alt="Kasir · Layar Kasir · Keranjang kosong"></a> | <a href="sesudah/K-03--normal__kasir--keranjang-kosong.png"><img src="sesudah/K-03--normal__kasir--keranjang-kosong.png" width="480" alt="Sesudah · K-03--normal__kasir--keranjang-kosong.png"></a> |

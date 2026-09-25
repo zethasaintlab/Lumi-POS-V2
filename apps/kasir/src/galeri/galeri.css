@@ -27,6 +27,8 @@
   overflow: hidden; background: var(--surface);
   box-shadow: var(--shadow-card);
 }
+/* Layar tanpa shell (K-01): pembungkus berperan sebagai `#root` aplikasi. */
+.galeri-akar { display: flex; flex-direction: column; }
 
 /* --- Muat di layar sempit, TANPA mengubah komposisinya -----------------------
  *

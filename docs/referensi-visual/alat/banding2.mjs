@@ -124,7 +124,8 @@ async function main() {
       idRepo = `${layar} ${keadaan}${jalur ? ` → ${jalur}` : ''}`;
       await hr.goto(`http://127.0.0.1:${sGal.address().port}/harness-galeri.html?layar=${layar}&keadaan=${keadaan}`);
       await hr.addStyleTag({ content: SEMBUNYIKAN_CHROME });
-      await hr.waitForSelector('.kasir-konten', { timeout: 15_000 });
+      // K-01 dirender tanpa shell, jadi tanpa `.kasir-konten`.
+      await hr.waitForSelector('.kasir-konten, .kasir-login', { timeout: 15_000 });
       await hr.evaluate(() => document.fonts.ready);
       await hr.waitForTimeout(1200);
       if (jalur) {

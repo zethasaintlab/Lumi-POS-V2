@@ -52,7 +52,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.4 | Struk | dilewati | — | |
 | 3.5 | Void dan refund | selesai | #65 | |
 | 3.6 | Laci kas | selesai | #66 | |
-| 3.7 | K-01 Login | belum | — | |
+| 3.7 | K-01 Login | selesai | #67 | |
 | 3.8 | K-02 Buka shift | belum | — | |
 | 3.9 | K-08 Riwayat | belum | — | Format nomor struk repo dipertahankan |
 | 3.10 | K-12 Tutup kas | belum | — | Hitungan buta tetap |
@@ -267,4 +267,34 @@ Ditolak: keterangan teks bebas (FR-D6) · "Simpan catatan" 44 px (#10) · tab
 sudah membawanya).
 
 Dilewati (fitur belum ada): riwayat movement shift di samping form.
+
+### Fase 3.7 — K-01 Login (#67)
+
+Dikejar (penjaga `tests/kasir-dom/k01-login.test.js`, 1024 dan 1280, merah
+dulu: "tidak ada kartu di dalam layar login"):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Komposisi | tanpa kartu, latar putih | kartu 510 `--surface` + bayangan di atas `--surface-sunk` | kartu 510 × 522 di latar bertinta |
+| Ikon | tidak ada | gembok di lingkaran `--accent-soft` | gembok |
+| Judul | 32/600 | 20/500 | 20/600 |
+
+Yang tetap: ENAM titik PIN (`spec-f:122`) dan tombol angka 56 px — keduanya
+dijaga di berkas yang sama.
+
+Sabotase yang menyala (5/5): tanpa kartu · kartu 640 · latar putih · judul
+32 · tombol 44.
+
+⛔ **Cacat galeri yang ditemukan:** layar tanpa shell dirender sebagai anak
+langsung panggung, dan `.galeri-panggung > *` (lebih spesifik) menimpa
+latarnya — K-01 akan tampil putih di galeri padahal di aplikasi `--surface-sunk`.
+Galeri kini membungkusnya dengan `.galeri-akar`, peran `#root` aplikasi.
+`banding2.mjs` menunggu `.kasir-konten, .kasir-login` (K-01 tanpa shell).
+
+Ditolak: 4 titik PIN (`spec-f:122`) · tombol 78 × 44 (tidak dikecilkan) ·
+bobot 600 · 13 px (DS #1).
+
+Dilewati (fitur belum ada): "Halo, Rini Astuti" (pemilihan pengguna sebelum
+PIN) · nama perangkat di kartu (Login tidak membaca `device_config`; menambah
+pembacaan itu di layar yang berjalan sebelum sesi ada di luar tata letak).
 
