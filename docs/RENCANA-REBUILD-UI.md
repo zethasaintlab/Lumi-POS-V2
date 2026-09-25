@@ -51,7 +51,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.3 | K-07 Konfirmasi | selesai | #64 | |
 | 3.4 | Struk | dilewati | — | |
 | 3.5 | Void dan refund | selesai | #65 | |
-| 3.6 | Laci kas | belum | — | |
+| 3.6 | Laci kas | selesai | #66 | |
 | 3.7 | K-01 Login | belum | — | |
 | 3.8 | K-02 Buka shift | belum | — | |
 | 3.9 | K-08 Riwayat | belum | — | Format nomor struk repo dipertahankan |
@@ -243,4 +243,28 @@ Diadaptasi, bukan disalin: kolom kanan mockup adalah ringkasan "Transaksi
 asli"; di repo ringkasan itu sudah ada di K-09 di belakang dialog, jadi kolom
 kanan memuat barang yang kembali dan jumlahnya — isi yang membuat dialog satu
 kolom menggulir.
+
+### Fase 3.6 — Laci kas (#66)
+
+Dikejar (penjaga `tests/kasir-dom/laci-kas.test.js`, 1280×800 dan 1280×768,
+merah dulu: "arah kas masih radio"):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Arah | dua radio dalam fieldset | toggle `.segmented` bundle, 56 px, `aria-pressed` | toggle "Kas masuk / Kas keluar" |
+| Dialog | menggulir 822 px pada layar 768 | tanpa gulir di kedua arah (alasan dua kolom) | kartu 430 × 428 |
+
+Toggle memakai `.segmented` bundle sebagai modifier (`.kasir-segmented-kritis`),
+bukan kelas buatan sendiri; yang ditekan diberi permukaan terangkat, bukan
+aksen — aksen milik "Catat".
+
+Sabotase yang menyala (3/3): toggle 38 px · alasan satu kolom · toggle yang
+tidak memindahkan arah (pesan penjaganya diperjelas sesudah sabotase ini
+menyala dengan pesan generik).
+
+Ditolak: keterangan teks bebas (FR-D6) · "Simpan catatan" 44 px (#10) · tab
+"Laci kas" di bilah nav (tinggi bilah nav sama di semua layar; slot aksi K-03
+sudah membawanya).
+
+Dilewati (fitur belum ada): riwayat movement shift di samping form.
 

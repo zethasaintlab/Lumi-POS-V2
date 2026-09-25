@@ -355,6 +355,18 @@
   gap: var(--space-6);
   align-items: start;
 }
+/* `.segmented` bundle untuk pilihan yang menyangkut uang (arah kas, Fase
+   3.6): selebar dialog, tombol 56 px (DS #3). Bundle memberinya 38 px, benar
+   untuk Dine In/Takeaway dan terlalu kecil untuk "uang keluar dari laci". */
+.kasir-alasan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-3);
+}
+.kasir-alasan-grid > legend { grid-column: 1 / -1; }
+.kasir-segmented-kritis { display: flex; }
+.kasir-segmented-kritis button { min-height: var(--touch-critical); }
+
 .kasir-dialog-sel {
   display: flex;
   flex-direction: column;

@@ -117,29 +117,29 @@ export function DialogKasManual({ shiftId, konfig, sesi, onBatal, onSelesai }: P
           kas dan menuntut otorisasi manajer.
         </p>
 
-        <fieldset className="kasir-alasan">
-          <legend className="t-body-md">Arah</legend>
-          <label className="kasir-alasan-opsi t-body-md">
-            <input
-              type="radio"
-              name="arah-kas"
-              checked={arah === 'keluar'}
-              disabled={menyimpan}
-              onChange={() => gantiArah('keluar')}
-            />
-            Uang keluar dari laci
-          </label>
-          <label className="kasir-alasan-opsi t-body-md">
-            <input
-              type="radio"
-              name="arah-kas"
-              checked={arah === 'masuk'}
-              disabled={menyimpan}
-              onChange={() => gantiArah('masuk')}
-            />
-            Uang masuk ke laci
-          </label>
-        </fieldset>
+        {/* Rebuild UI Fase 3.6 — arah sebagai TOGGLE, mengikuti mockup, lewat
+            `.segmented` bundle (toggle berkotak), bukan kelas buatan sendiri.
+            Yang ditekan diberi permukaan terangkat, bukan aksen: aksen milik
+            satu aksi utama layar ini, "Catat". Tingginya 56 px — memindahkan
+            uang adalah aksi uang (DS #3). */}
+        <div className="segmented kasir-segmented-kritis" role="group" aria-label="Arah">
+          <button
+            type="button"
+            aria-pressed={arah === 'keluar'}
+            disabled={menyimpan}
+            onClick={() => gantiArah('keluar')}
+          >
+            Kas keluar
+          </button>
+          <button
+            type="button"
+            aria-pressed={arah === 'masuk'}
+            disabled={menyimpan}
+            onClick={() => gantiArah('masuk')}
+          >
+            Kas masuk
+          </button>
+        </div>
 
         <Bidang
           label="Jumlah (Rp)"
@@ -159,7 +159,10 @@ export function DialogKasManual({ shiftId, konfig, sesi, onBatal, onSelesai }: P
           )}
         </p>
 
-        <fieldset className="kasir-alasan">
+        {/* Dua kolom (Fase 3.6): daftar alasan keluar membuat dialog satu
+            kolom menggulir 822 px pada layar 768, dan yang terdorong ke bawah
+            lipatan adalah tombol Catat. */}
+        <fieldset className="kasir-alasan kasir-alasan-grid">
           <legend className="t-body-md">Alasan</legend>
           {alasanUntuk(arah).map((a) => (
             <label key={a} className="kasir-alasan-opsi t-body-md">
