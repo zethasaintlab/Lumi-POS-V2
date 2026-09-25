@@ -45,7 +45,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 |---|---|---|---|---|
 | 0 | Persiapan: aturan di `CLAUDE.md`, pelacak ini, penolakan #9–#10 | selesai | #59 | |
 | 1 | Palet campuran: permukaan netral terang, teks dan aksen repo | menunggu user | #60 | ⛔ **Tidak di-merge tanpa persetujuan user lewat preview.** Sesudah merge: gabungkan `main` ke semua PR terbuka, jalankan ulang seluruh penjaga |
-| 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | berjalan | — | Nol perubahan tata letak aplikasi |
+| 2 | Cakupan galeri: login, buka shift, edit item, pembayaran, konfirmasi, struk, void/refund, laci kas | selesai | #61 | Nol perubahan tata letak aplikasi |
 | 3.1 | K-03 Kasir | belum | — | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
 | 3.2 | K-06 Pembayaran | belum | — | Sembilan penjaga K-06 tetap hijau |
 | 3.3 | K-07 Konfirmasi | belum | — | |
@@ -73,7 +73,7 @@ penjaga dan sabotase; fitur yang dibutuhkan mockup tetapi belum ada.
 - Preview: `lumi-pos-v2-git-rebuild-ui-fase-1-after-school-mpp.vercel.app/harness-galeri.html?layar=…`
 - Dinyatakan: bayangan dan `--overlay` masih rona tinta lama.
 
-### Fase 2 — cakupan galeri
+### Fase 2 — cakupan galeri (#61)
 
 - K-01, K-02, K-09 masuk galeri; dialog dan overlay dicapai lewat jalur klik
   (`docs/referensi-visual/alat/banding2.mjs` `JALUR`, dan
@@ -81,6 +81,11 @@ penjaga dan sabotase; fitur yang dibutuhkan mockup tetapi belum ada.
 - Tiga cacat fixture diperbaiki: rounding 0 / `'nearest'` (K-07 tak
   tercapai), `WHERE order_id` diabaikan + order tanpa subtotal/baris (K-09).
 - `BANDING.md` § Fase 2: sebelas pasangan baru dengan selisih bertanda.
+- Sabotase menyala: rounding 0 (K-07), filter `WHERE` dilepas (K-09 empat
+  pembayaran), K-01 di dalam shell, `tanpaShift` false (K-02).
+- Suite: kasir-dom 38, kasir 569, server 506, seluruh suite lain hijau.
+  Satu kegagalan `test:server` saat hook sesi menjalankan `test:isolation`
+  bersamaan; diulang sendirian 506/506.
 
 **Fitur yang dibutuhkan mockup tetapi belum ada** (dikumpulkan untuk Fase 4):
 pemilihan pengguna sebelum PIN (K-01) · banyak laci per perangkat (K-02) ·
