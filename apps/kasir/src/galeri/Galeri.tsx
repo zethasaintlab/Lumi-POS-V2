@@ -238,7 +238,13 @@ export function Galeri() {
       <div className="galeri-panggung">
         <DbLokalPalsuProvider keadaan={keadaan} key={`${layarId}-${skenario}`}>
           {'tanpaShell' in layar && layar.tanpaShell ? (
-            <IsiSiap>{layar.render()}</IsiSiap>
+            /* ⛔ Pembungkus meniru `#root` aplikasi. Tanpanya layar tanpa shell
+               MENJADI anak panggung, dan `.galeri-panggung > *` (lebih
+               spesifik) menimpa latarnya sendiri — K-01 tampil putih di galeri
+               padahal di aplikasi ia `--surface-sunk`. Terukur, Fase 3.7. */
+            <div className="galeri-akar">
+              <IsiSiap>{layar.render()}</IsiSiap>
+            </div>
           ) : (
             <ShellKasir
               outlet={terdaftar ? 'ORIGEN Menteng' : 'Outlet belum dipilih'}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Icon } from 'ds';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { PIN_LENGTH } from '../../../../packages/domain/src/pin.ts';
 import { masuk, type HasilLogin } from '../identitas/login.ts';
@@ -90,42 +91,50 @@ export function Login() {
 
   return (
     <div className="kasir-login">
-      <h1 className="t-display">Masukkan PIN</h1>
-      <p className="t-body-md kasir-login-sub">
-        {terkunci
-          ? `Terkunci. Coba lagi dalam ${detikTersisa} detik.`
-          : 'Enam digit. Hubungi manajer bila lupa.'}
-      </p>
-
-      <Keypad nilai={pin} panjang={PIN_LENGTH} onUbah={setPin} nonaktif={terkunci || memeriksa} />
-
-      {/* Aturan design system #5: status tidak pernah warna saja, selalu ada
-          teks. Pesan gagalnya datang dari `login.ts` dan NETRAL — ia tidak
-          menyebut apakah penggunanya ada (`spec-f:161`). */}
-      {hasil && hasil.status !== 'berhasil' && !terkunci && (
-        <p className="t-body-md kasir-login-galat" role="alert">
-          {hasil.pesan}
+      {/* Rebuild UI Fase 3.7 — KARTU di atas latar bertinta, mengikuti mockup
+          (510 px, ikon gembok, judul 20 px). Enam titik dan tombol 56 px tidak
+          berubah: `spec-f:122` dan DS #3 mengalahkan mockup (4 titik, 44 px). */}
+      <div className="kasir-login-kartu">
+        <span className="kasir-login-ikon" aria-hidden="true">
+          <Icon name="lock" size={24} />
+        </span>
+        <h1 className="t-title">Masukkan PIN</h1>
+        <p className="t-body-md kasir-login-sub">
+          {terkunci
+            ? `Terkunci. Coba lagi dalam ${detikTersisa} detik.`
+            : 'Enam digit. Hubungi manajer bila lupa.'}
         </p>
-      )}
 
-      {/* ⛔ TERPISAH dari pesan `hasil`, dan kalimatnya berbeda dengan sengaja.
-          "PIN salah" dan "aplikasi tidak dapat memeriksa PIN" menuntut tindakan
-          yang berlawanan: yang pertama diulangi, yang kedua tidak akan pernah
-          berhasil sebanyak apa pun ia diulang. Pesan `login.ts` NETRAL soal
-          ada tidaknya pengguna (`spec-f:161`); yang ini tidak menyentuh itu
-          sama sekali — ia tentang perangkatnya, bukan tentang siapa pun. */}
-      {gagalTeknis && !terkunci && (
-        <p className="t-body-md kasir-login-galat" role="alert">
-          PIN tidak dapat diperiksa di perangkat ini. Muat ulang aplikasi; bila tetap gagal,
-          hubungi dukungan. ({gagalTeknis})
-        </p>
-      )}
+        <Keypad nilai={pin} panjang={PIN_LENGTH} onUbah={setPin} nonaktif={terkunci || memeriksa} />
 
-      {memeriksa && (
-        <p className="t-caption kasir-login-sub" role="status">
-          Memeriksa…
-        </p>
-      )}
+        {/* Aturan design system #5: status tidak pernah warna saja, selalu ada
+            teks. Pesan gagalnya datang dari `login.ts` dan NETRAL — ia tidak
+            menyebut apakah penggunanya ada (`spec-f:161`). */}
+        {hasil && hasil.status !== 'berhasil' && !terkunci && (
+          <p className="t-body-md kasir-login-galat" role="alert">
+            {hasil.pesan}
+          </p>
+        )}
+
+        {/* ⛔ TERPISAH dari pesan `hasil`, dan kalimatnya berbeda dengan sengaja.
+            "PIN salah" dan "aplikasi tidak dapat memeriksa PIN" menuntut tindakan
+            yang berlawanan: yang pertama diulangi, yang kedua tidak akan pernah
+            berhasil sebanyak apa pun ia diulang. Pesan `login.ts` NETRAL soal
+            ada tidaknya pengguna (`spec-f:161`); yang ini tidak menyentuh itu
+            sama sekali — ia tentang perangkatnya, bukan tentang siapa pun. */}
+        {gagalTeknis && !terkunci && (
+          <p className="t-body-md kasir-login-galat" role="alert">
+            PIN tidak dapat diperiksa di perangkat ini. Muat ulang aplikasi; bila tetap gagal,
+            hubungi dukungan. ({gagalTeknis})
+          </p>
+        )}
+
+        {memeriksa && (
+          <p className="t-caption kasir-login-sub" role="status">
+            Memeriksa…
+          </p>
+        )}
+      </div>
     </div>
   );
 }
