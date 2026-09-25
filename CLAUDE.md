@@ -1262,3 +1262,39 @@ Daftar lengkap: `research/12-OPEN-QUESTIONS.md`.
   Ia juga menjelaskan kenapa `KOLOM_BELUM_DIUKUR` boleh ada: kolom yang tipenya menyimpang dan tidak dapat diuji di sini **dinyatakan belum diukur**, bukan dianggap benar.
 - **Tandai asumsi.** Pakai `[ASUMSI]` seperti di dokumen riset, jangan selundupkan sebagai fakta.
 - **Lapisan sync ditulis dengan waktu, keacakan, dan I/O di-inject** sebagai dependensi — prasyarat DST, dan retrofitnya mahal. Harness referensi ada di `prototypes/02-dst-sinkronisasi/sim.py`.
+- ⛔ **Penjaga dulu, merah dulu.** Untuk setiap perubahan perilaku atau tata letak, tulis penjaganya lebih dulu dan buktikan ia MERAH terhadap kode lama, baru perbaiki.
+- ⛔ **Sabotase setiap penjaga baru.** Kembalikan perubahannya dan pastikan penjaga merah **karena alasan yang benar** — pesannya menyebut hal yang dijaga, bukan timeout atau selektor yang hilang. Penjaga yang tidak menyala itu hampa: perbaiki penjaganya dan catat.
+- ⛔ **Ukur, jangan baca.** Klaim tata letak dibuktikan lewat pengukuran DOM (`getBoundingClientRect`, `getComputedStyle`), bukan lewat membaca CSS. Baris CSS yang ada belum tentu berlaku.
+- ⛔ **Penjaga invarian yang merah adalah pelanggaran**, bukan test yang perlu disesuaikan.
+- **Satu PR per pekerjaan**, branch baru dari `main` terbaru. **Push setiap commit begitu jadi.** Merge dengan **merge commit**, bukan squash.
+- **Suite yang menyentuh PostgreSQL dijalankan berurutan**, satu proses — nol konkurensi.
+- **Pengawasan PR: laporkan, jangan perbaiki sendiri** di luar yang diminta. Merah kadang informasi.
+- **Container baru:** `bash tools/siapkan-dev.sh` sebelum apa pun (§ Stack).
+
+## Rebuild UI kasir — urutan otoritas (sejak 25 September 2026)
+
+Kampanye membangun ulang tampilan `apps/kasir` supaya terlihat seperti aplikasi POS pada umumnya. Pelacak kemajuannya `docs/RENCANA-REBUILD-UI.md` — **baca itu dulu** bila melanjutkan kampanye di container baru.
+
+**Urutan otoritas saat sumber bertentangan:**
+
+1. **Spec dan test** — perilaku.
+2. **Token di kode** — nilai. `packages/ds/lumi.css` dan `ds-bundle/`, didokumentasikan di `docs/DESIGN.md`.
+3. **Mockup** `docs/referensi-visual/sumber/design-explorer.html` — tata letak dan komposisi, diikuti selama tidak bertabrakan dengan 1 dan 2. Selisih per layar terukur di `docs/referensi-visual/BANDING.md`.
+
+⛔ **Saat mockup bertabrakan dengan 1 atau 2: jangan pilih diam-diam.** Tolak elemen itu, catat di laporan, lanjutkan sisanya. Daftar yang sudah ditolak ada di `docs/referensi-visual/README.md` — jangan diterapkan.
+
+**Invarian yang tidak boleh tersentuh.** Penjaganya disebut; yang belum punya penjaga dinyatakan, bukan diandaikan:
+
+| Invarian | Penjaga |
+|---|---|
+| Hitungan buta K-12: rincian saldo hanya di tahap `review` | `tests/kasir-dom/k12-hitungan-buta.test.js` |
+| QRIS mengganti layar penuh saat panelnya aktif | `k06-penjaga.test.js` P1 |
+| Pembulatan FR-C9 hanya di `simpanPenjualan`, hanya tampil di K-07 | `k06-penjaga.test.js` P2 + `tests/kasir/penjualan.test.js` |
+| Target sentuh ≥ 44px; aksi utama kasir 56px | sebagian: `k03-chrome`, `k06-penjaga`, `k12-aksi-slot`. **Belum ada penjaga umum lintas layar** |
+| K-03: ≥ 12 kartu tanpa scroll pada 1024×768 | `k03-chrome.test.js` (IA:62) |
+| K-03: Bayar di posisi sama untuk 0, 3, 20 item | `k03-bayar-tetap.test.js` |
+| K-14: tabel item gagal ≥ 3 baris utuh | `k14-tata-letak.test.js` |
+| Tinggi bilah nav sama di semua layar | `k14-tata-letak.test.js` |
+| `ds-bundle/` tidak disunting | `tests/runtime/ds-bundle-vendor.test.js` |
+| Aksen `#0D5C63` tidak berubah | **belum ada penjaga** — `ds-bundle-vendor` menjaga berkas bundle, bukan override di `lumi.css`. Lahir di Fase 1 |
+| Nol hex hardcoded di komponen | **belum ada penjaga untuk CSS** — oxlint tidak membaca CSS. Terukur 25 September 2026: nol hex di `apps/kasir/src`. Lahir di Fase 1 |
