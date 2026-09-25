@@ -50,7 +50,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.2 | K-06 Pembayaran | selesai | #63 | Sembilan penjaga K-06 tetap hijau |
 | 3.3 | K-07 Konfirmasi | selesai | #64 | |
 | 3.4 | Struk | dilewati | — | |
-| 3.5 | Void dan refund | berjalan | — | |
+| 3.5 | Void dan refund | selesai | #65 | |
 | 3.6 | Laci kas | belum | — | |
 | 3.7 | K-01 Login | belum | — | |
 | 3.8 | K-02 Buka shift | belum | — | |
@@ -220,7 +220,7 @@ dokumen untuk printer; mockup `struk` (58/80 mm) adalah PRATINJAU di layar —
 fitur yang belum ada (daftar Fase 2). Tidak ada tata letak yang dapat dikejar
 tanpa membangunnya. Kata "Pajak" di struk mockup: ditolak #2.
 
-### Fase 3.5 — Void dan refund (K-10)
+### Fase 3.5 — Void dan refund (K-10, #65)
 
 Dikejar (penjaga `tests/kasir-dom/k10-refund.test.js`, viewport 1280×800 dan
 1280×768, merah dulu: "menggulir 895 dari 768 px"):
