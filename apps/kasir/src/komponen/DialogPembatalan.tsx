@@ -174,7 +174,7 @@ export function DialogPembatalan({
   }
 
   return (
-    <LatarDialog label="Batalkan transaksi" onBatal={onBatal}>
+    <LatarDialog label="Batalkan transaksi" onBatal={onBatal} lebar={rencana.operasi === 'refund'}>
         <h2 className="t-title">
           {rencana.operasi === 'void' ? 'Batalkan transaksi' : 'Kembalikan dana'}
         </h2>
@@ -184,101 +184,113 @@ export function DialogPembatalan({
             : `Transaksi sudah dibayar. Maksimal ${rupiah(sisaDapatDirefund)}.`}
         </p>
 
-        {rencana.operasi === 'refund' && baris.length > 0 && (
-          <fieldset className="kasir-alasan">
-            <legend className="t-body-md">Barang yang kembali</legend>
-            {/* ⛔ Terpisah dari nominal, dan sengaja. Uang yang kembali dan
-                barang yang kembali adalah dua keputusan berbeda: pelanggan
-                yang kopinya tumpah menerima uangnya tanpa mengembalikan
-                kopinya. Menggabungkannya jadi satu tombol "refund penuh" akan
-                menambah stok yang tidak pernah kembali ke rak. */}
-            {baris.map((b) => {
-              const dipilih = pilihan[b.id] ?? 0;
-              const habis = b.sisaKembaliMilli <= 0;
-              return (
-                <div key={b.id} className="kasir-alasan-opsi t-body-md">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={dipilih > 0}
-                      disabled={habis || menyimpan}
-                      onChange={() => ubahBaris(b.id, dipilih > 0 ? 0 : b.sisaKembaliMilli)}
-                    />
-                    {b.itemName}
-                    {b.variationName ? ` — ${b.variationName}` : ''}
-                  </label>{' '}
-                  <span className="t-caption num">
-                    {habis
-                      ? 'sudah dikembalikan'
-                      : `maks ${tampilkanKuantitas(String(b.sisaKembaliMilli))}`}
-                  </span>
-                </div>
-              );
-            })}
-            <p className="t-caption">
-              {terpilih.length === 0
-                ? 'Tidak ada barang yang kembali ke rak. Uang tetap dikembalikan.'
-                : `Nilai barang terpilih: ${rupiah(Number(nilaiSepadan))}.`}
-            </p>
-          </fieldset>
-        )}
+        {/* Rebuild UI Fase 3.5 — DUA kolom pada refund, mengikuti mockup
+            (form dan transaksi berdampingan, bilah aksi di bawah). Satu kolom
+            448 px menggulir 895 px, dan yang tersembunyi di bawah lipatan
+            adalah tombol yang mengembalikan uang. Void tetap satu kolom:
+            isinya hanya alasan. */}
+        <div className="kasir-dialog-kolom">
+          <div className="kasir-dialog-sel">
+            <fieldset className="kasir-alasan">
+              <legend className="t-body-md">Alasan</legend>
+              {daftarAlasan.map((a) => (
+                <label key={a.kode} className="kasir-alasan-opsi t-body-md">
+                  <input
+                    type="radio"
+                    name="alasan-batal"
+                    checked={kode === a.kode}
+                    onChange={() => setKode(a.kode)}
+                  />
+                  {a.label}
+                </label>
+              ))}
+            </fieldset>
 
-        {rencana.operasi === 'refund' && (
-          <>
-            <p className="t-body-md">Jumlah dikembalikan</p>
-            <p className="t-display num">{rupiah(jumlah)}</p>
-            <div className="kasir-pecahan">
-              <Tombol kritis disabled={menyimpan} onClick={() => setJumlah(sisaDapatDirefund)}>
-                Seluruhnya
-              </Tombol>
-              {/* ⛔ Menyalin nilai barang terpilih ke nominal, bukan mengunci
-                  keduanya. Kasir tetap boleh mengembalikan uang tanpa barang,
-                  dan barang tanpa seluruh uangnya (potongan ongkos kirim,
-                  misalnya) — keduanya keadaan nyata. */}
-              <Tombol
-                varian="ghost"
-                kritis
-                disabled={menyimpan || terpilih.length === 0}
-                onClick={() => setJumlah(Math.min(sisaDapatDirefund, Number(nilaiSepadan)))}
-              >
-                Sesuai barang
-              </Tombol>
-              <Tombol
-                varian="ghost"
-                kritis
-                disabled={menyimpan || jumlah < 10000}
-                onClick={() => setJumlah((j) => Math.max(0, j - 10000))}
-              >
-                − {rupiah(10000)}
-              </Tombol>
-            </div>
-          </>
-        )}
-
-        <fieldset className="kasir-alasan">
-          <legend className="t-body-md">Alasan</legend>
-          {daftarAlasan.map((a) => (
-            <label key={a.kode} className="kasir-alasan-opsi t-body-md">
-              <input
-                type="radio"
-                name="alasan-batal"
-                checked={kode === a.kode}
-                onChange={() => setKode(a.kode)}
+            {kode === 'lainnya' && (
+              <textarea
+                className="kasir-catatan"
+                value={catatan}
+                onChange={(e) => setCatatan(e.target.value)}
+                placeholder="Jelaskan alasannya (minimal 10 karakter)"
+                rows={2}
               />
-              {a.label}
-            </label>
-          ))}
-        </fieldset>
+            )}
+          </div>
+          {rencana.operasi === 'refund' && (
+            <div className="kasir-dialog-sel">
+              {rencana.operasi === 'refund' && baris.length > 0 && (
+                <fieldset className="kasir-alasan">
+                  <legend className="t-body-md">Barang yang kembali</legend>
+                  {/* ⛔ Terpisah dari nominal, dan sengaja. Uang yang kembali dan
+                      barang yang kembali adalah dua keputusan berbeda: pelanggan
+                      yang kopinya tumpah menerima uangnya tanpa mengembalikan
+                      kopinya. Menggabungkannya jadi satu tombol "refund penuh" akan
+                      menambah stok yang tidak pernah kembali ke rak. */}
+                  {baris.map((b) => {
+                    const dipilih = pilihan[b.id] ?? 0;
+                    const habis = b.sisaKembaliMilli <= 0;
+                    return (
+                      <div key={b.id} className="kasir-alasan-opsi t-body-md">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={dipilih > 0}
+                            disabled={habis || menyimpan}
+                            onChange={() => ubahBaris(b.id, dipilih > 0 ? 0 : b.sisaKembaliMilli)}
+                          />
+                          {b.itemName}
+                          {b.variationName ? ` — ${b.variationName}` : ''}
+                        </label>{' '}
+                        <span className="t-caption num">
+                          {habis
+                            ? 'sudah dikembalikan'
+                            : `maks ${tampilkanKuantitas(String(b.sisaKembaliMilli))}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <p className="t-caption">
+                    {terpilih.length === 0
+                      ? 'Tidak ada barang yang kembali ke rak. Uang tetap dikembalikan.'
+                      : `Nilai barang terpilih: ${rupiah(Number(nilaiSepadan))}.`}
+                  </p>
+                </fieldset>
+              )}
 
-        {kode === 'lainnya' && (
-          <textarea
-            className="kasir-catatan"
-            value={catatan}
-            onChange={(e) => setCatatan(e.target.value)}
-            placeholder="Jelaskan alasannya (minimal 10 karakter)"
-            rows={2}
-          />
-        )}
+              {rencana.operasi === 'refund' && (
+                <>
+                  <p className="t-body-md">Jumlah dikembalikan</p>
+                  <p className="t-display num">{rupiah(jumlah)}</p>
+                  <div className="kasir-pecahan">
+                    <Tombol kritis disabled={menyimpan} onClick={() => setJumlah(sisaDapatDirefund)}>
+                      Seluruhnya
+                    </Tombol>
+                    {/* ⛔ Menyalin nilai barang terpilih ke nominal, bukan mengunci
+                        keduanya. Kasir tetap boleh mengembalikan uang tanpa barang,
+                        dan barang tanpa seluruh uangnya (potongan ongkos kirim,
+                        misalnya) — keduanya keadaan nyata. */}
+                    <Tombol
+                      varian="ghost"
+                      kritis
+                      disabled={menyimpan || terpilih.length === 0}
+                      onClick={() => setJumlah(Math.min(sisaDapatDirefund, Number(nilaiSepadan)))}
+                    >
+                      Sesuai barang
+                    </Tombol>
+                    <Tombol
+                      varian="ghost"
+                      kritis
+                      disabled={menyimpan || jumlah < 10000}
+                      onClick={() => setJumlah((j) => Math.max(0, j - 10000))}
+                    >
+                      − {rupiah(10000)}
+                    </Tombol>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
         {(galatAlasan || galat) && (
           <p className="t-body-md kasir-login-galat" role="alert">

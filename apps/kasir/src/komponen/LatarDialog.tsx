@@ -44,9 +44,12 @@ import { useEffect, type ReactNode } from 'react';
 export function LatarDialog({
   label,
   onBatal,
+  lebar = false,
   children,
 }: {
   label: string;
+  /** Dialog dua kolom (K-10 refund, rebuild UI Fase 3.5). */
+  lebar?: boolean;
   /** Dipanggil saat Escape. Selalu jalur BATAL, tidak pernah konfirmasi. */
   onBatal: () => void;
   children: ReactNode;
@@ -71,7 +74,7 @@ export function LatarDialog({
 
   return (
     <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label={label}>
-      <div className="kasir-dialog">{children}</div>
+      <div className={lebar ? 'kasir-dialog kasir-dialog-lebar' : 'kasir-dialog'}>{children}</div>
     </div>
   );
 }

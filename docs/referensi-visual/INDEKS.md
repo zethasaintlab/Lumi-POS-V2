@@ -32,7 +32,7 @@ Viewport 1280×800 · 11 layar · 23 kombinasi
 | Struk Termal (`struk`) | 80mm (`80mm`) | <a href="layar/kasir--struk--80mm.png"><img src="layar/kasir--struk--80mm.png" width="480" alt="Kasir · Struk Termal · 80mm"></a> | — |
 | Riwayat Transaksi (`riwayat`) | Ada transaksi (`ada`) | <a href="layar/kasir--riwayat--ada.png"><img src="layar/kasir--riwayat--ada.png" width="480" alt="Kasir · Riwayat Transaksi · Ada transaksi"></a> | — |
 | Riwayat Transaksi (`riwayat`) | Kosong (`kosong`) | <a href="layar/kasir--riwayat--kosong.png"><img src="layar/kasir--riwayat--kosong.png" width="480" alt="Kasir · Riwayat Transaksi · Kosong"></a> | — |
-| Void dan Refund (`void`) | — (`tunggal`) | <a href="layar/kasir--void--tunggal.png"><img src="layar/kasir--void--tunggal.png" width="480" alt="Kasir · Void dan Refund"></a> | — |
+| Void dan Refund (`void`) | — (`tunggal`) | <a href="layar/kasir--void--tunggal.png"><img src="layar/kasir--void--tunggal.png" width="480" alt="Kasir · Void dan Refund"></a> | <a href="sesudah/K-09-normal-refund__void--tunggal.png"><img src="sesudah/K-09-normal-refund__void--tunggal.png" width="480" alt="Sesudah · K-09-normal-refund__void--tunggal.png"></a> |
 | Operasional Laci Kas (`laci`) | — (`tunggal`) | <a href="layar/kasir--laci--tunggal.png"><img src="layar/kasir--laci--tunggal.png" width="480" alt="Kasir · Operasional Laci Kas"></a> | — |
 | Tutup Kas dan Laporan Shift (`tutup`) | — (`tunggal`) | <a href="layar/kasir--tutup--tunggal.png"><img src="layar/kasir--tutup--tunggal.png" width="480" alt="Kasir · Tutup Kas dan Laporan Shift"></a> | — |
 

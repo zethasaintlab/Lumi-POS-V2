@@ -49,8 +49,8 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.1 | K-03 Kasir | selesai | #62 | ≥ 12 kartu pada 1024×768; baris keranjang tidak dipendekkan |
 | 3.2 | K-06 Pembayaran | selesai | #63 | Sembilan penjaga K-06 tetap hijau |
 | 3.3 | K-07 Konfirmasi | selesai | #64 | |
-| 3.4 | Struk | belum | — | |
-| 3.5 | Void dan refund | belum | — | |
+| 3.4 | Struk | dilewati | — | |
+| 3.5 | Void dan refund | berjalan | — | |
 | 3.6 | Laci kas | belum | — | |
 | 3.7 | K-01 Login | belum | — | |
 | 3.8 | K-02 Buka shift | belum | — | |
@@ -212,4 +212,35 @@ Dilewati (fitur belum ada): kirim struk WhatsApp/Email.
 Temuan, TIDAK diperbaiki (di luar layar ini): `DetailTransaksi.tsx` punya peta
 metode sendiri berkunci `card`, bukan `card_edc` — pembayaran EDC tampil
 sebagai kode mentah di K-09, dan ini salinan kedua `LABEL_METODE`.
+
+### Fase 3.4 — Struk: dilewati
+
+Repo tidak punya layar struk. `apps/kasir/src/cetak/dokumen.ts` menghasilkan
+dokumen untuk printer; mockup `struk` (58/80 mm) adalah PRATINJAU di layar —
+fitur yang belum ada (daftar Fase 2). Tidak ada tata letak yang dapat dikejar
+tanpa membangunnya. Kata "Pajak" di struk mockup: ditolak #2.
+
+### Fase 3.5 — Void dan refund (K-10)
+
+Dikejar (penjaga `tests/kasir-dom/k10-refund.test.js`, viewport 1280×800 dan
+1280×768, merah dulu: "menggulir 895 dari 768 px"):
+
+| Selisih | Sebelum | Sesudah | Mockup |
+|---|---|---|---|
+| Wadah refund | satu kolom 448, menggulir 895 px | dua kolom (alasan · barang + jumlah), tanpa gulir | dua kartu 502 berdampingan |
+| Bilah aksi | di dasar isi yang menggulir | selebar dialog, aksi utama di kanan | bilah bawah, aksi di kanan |
+
+Void tetap satu kolom sempit (isinya hanya alasan). `LatarDialog` mendapat
+prop `lebar`.
+
+Sabotase yang menyala (3/3): tanpa `lebar` · satu kolom · aksi di kiri.
+
+Ditolak: kasir memilih "Jenis tindakan" (`spec-b`: sistem yang memilih) ·
+alasan teks bebas (daftar tertutup, FR-G5) · "Konfirmasi void" 44 px (#10) ·
+nomor `TRX-…` (#9).
+
+Diadaptasi, bukan disalin: kolom kanan mockup adalah ringkasan "Transaksi
+asli"; di repo ringkasan itu sudah ada di K-09 di belakang dialog, jadi kolom
+kanan memuat barang yang kembali dan jumlahnya — isi yang membuat dialog satu
+kolom menggulir.
 

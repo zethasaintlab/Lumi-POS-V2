@@ -345,6 +345,23 @@
   gap: var(--space-3);
 }
 
+/* K-10 refund — dua kolom (rebuild UI Fase 3.5). Lebar dua kartu mockup
+   (2 × 502 + celah). Kolom menyusut menjadi satu pada layar sempit lewat
+   `auto-fit`, bukan media query: dialog yang sama muncul di tablet potret. */
+.kasir-dialog-lebar { max-width: 64rem; }
+.kasir-dialog-kolom {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+.kasir-dialog-sel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
 /* K-02 buka shift. */
 .kasir-shift {
   display: flex;
