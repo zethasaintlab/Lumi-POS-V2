@@ -55,7 +55,7 @@ Nilai status: `belum` · `berjalan` · `PR terbuka` · `menunggu user` · `seles
 | 3.7 | K-01 Login | selesai | #67 | |
 | 3.8 | K-02 Buka shift | selesai | #68 | |
 | 3.9 | K-08 Riwayat | selesai | #69 | Format nomor struk repo dipertahankan |
-| 3.10 | K-12 Tutup kas | berjalan | — | Hitungan buta tetap |
+| 3.10 | K-12 Tutup kas | selesai | #70 | Hitungan buta tetap |
 | 4 | Laporan akhir | belum | — | |
 
 ## Catatan per fase
@@ -361,7 +361,7 @@ K-08) · penyaring tanggal dan metode.
 Dicatat, tidak diubah: pada 1280 segmented "Nilai tertinggi" terlipat dua
 baris — sudah begitu sebelum fase ini.
 
-### Fase 3.10 — K-12 Tutup kas
+### Fase 3.10 — K-12 Tutup kas (#70)
 
 Dikejar (penjaga `tests/kasir-dom/k12-review-kartu.test.js`, skenario `normal`
 dan `offline`, review PENUH dengan keenam alasan; merah dulu: "rincian saldo
