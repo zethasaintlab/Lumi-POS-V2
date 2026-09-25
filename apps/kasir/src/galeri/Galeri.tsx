@@ -15,6 +15,9 @@ import { Riwayat } from '../layar/Riwayat.tsx';
 import { TutupKas } from '../layar/TutupKas.tsx';
 import { Perangkat } from '../layar/Perangkat.tsx';
 import { StatusSinkronisasi } from '../layar/StatusSinkronisasi.tsx';
+import { Login } from '../layar/Login.tsx';
+import { BukaShift } from '../layar/BukaShift.tsx';
+import { DetailTransaksi } from '../layar/DetailTransaksi.tsx';
 import { buatDbPalsu, perangkatTerdaftarUntuk } from './db-palsu.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
@@ -75,6 +78,12 @@ pasangLokalPalsu({
 
 const LAYAR = [
   { id: 'K-03', nama: 'Kasir (grid + keranjang)', render: () => <Kasir /> },
+  /* ⛔ TANPA shell: `App.tsx:45` merender `<Login />` telanjang saat sesi
+     belum ada. Login yang dipotret di dalam ShellKasir menampilkan bilah nav
+     yang tidak pernah terlihat kasir yang belum masuk. */
+  { id: 'K-01', nama: 'Login PIN', render: () => <Login />, tanpaShell: true },
+  { id: 'K-02', nama: 'Buka shift', render: () => <BukaShift /> },
+  { id: 'K-09', nama: 'Detail transaksi', render: () => <DetailTransaksi orderId="ord-1" /> },
   { id: 'K-08', nama: 'Riwayat', render: () => <Riwayat /> },
   { id: 'K-12', nama: 'Tutup kas', render: () => <TutupKas /> },
   /* ⛔ K-14 masuk galeri 21 September 2026, dan sampai hari itu ia adalah
@@ -161,7 +170,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario);
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02' });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -186,7 +195,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario]);
+  }, [skenario, layarId]);
 
   return (
     <div className="galeri">
@@ -228,27 +237,31 @@ export function Galeri() {
 
       <div className="galeri-panggung">
         <DbLokalPalsuProvider keadaan={keadaan} key={`${layarId}-${skenario}`}>
-          <ShellKasir
-            outlet={terdaftar ? 'ORIGEN Menteng' : 'Outlet belum dipilih'}
-            device={terdaftar ? 'K1' : 'Perangkat belum terdaftar'}
-            /* ⛔ Diturunkan dari skenario, bukan dipaku `true`.
-
-               Selama ia dipaku, galeri tidak dapat menampilkan satu-satunya
-               keadaan yang `status.ts:81` catat sebagai paling berbahaya:
-               perangkat yang belum terdaftar, yang antreannya kosong karena
-               tidak pernah ada yang MASUK. Topbar dan layar yang berbeda
-               pendapat tentang keadaan itu tidak dapat terlihat di galeri yang
-               selalu menganggap perangkatnya terdaftar. */
-            perangkatTerdaftar={terdaftar}
-            pengguna="Kasir Galeri"
-            ruteAktif={null}
-          >
-            {/* ⛔ `IsiSiap` ada di sini karena aplikasi sungguhan memakainya.
-                Galeri yang merender layar TANPA pembungkus yang aplikasi
-                pasang memeriksa pohon yang tidak pernah ada di perangkat
-                merchant. */}
+          {'tanpaShell' in layar && layar.tanpaShell ? (
             <IsiSiap>{layar.render()}</IsiSiap>
-          </ShellKasir>
+          ) : (
+            <ShellKasir
+              outlet={terdaftar ? 'ORIGEN Menteng' : 'Outlet belum dipilih'}
+              device={terdaftar ? 'K1' : 'Perangkat belum terdaftar'}
+              /* ⛔ Diturunkan dari skenario, bukan dipaku `true`.
+
+                 Selama ia dipaku, galeri tidak dapat menampilkan satu-satunya
+                 keadaan yang `status.ts:81` catat sebagai paling berbahaya:
+                 perangkat yang belum terdaftar, yang antreannya kosong karena
+                 tidak pernah ada yang MASUK. Topbar dan layar yang berbeda
+                 pendapat tentang keadaan itu tidak dapat terlihat di galeri yang
+                 selalu menganggap perangkatnya terdaftar. */
+              perangkatTerdaftar={terdaftar}
+              pengguna="Kasir Galeri"
+              ruteAktif={null}
+            >
+              {/* ⛔ `IsiSiap` ada di sini karena aplikasi sungguhan memakainya.
+                  Galeri yang merender layar TANPA pembungkus yang aplikasi
+                  pasang memeriksa pohon yang tidak pernah ada di perangkat
+                  merchant. */}
+              <IsiSiap>{layar.render()}</IsiSiap>
+            </ShellKasir>
+          )}
         </DbLokalPalsuProvider>
       </div>
     </div>
