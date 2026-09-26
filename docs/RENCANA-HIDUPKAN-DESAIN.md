@@ -102,6 +102,10 @@ pernah dicampur dengan kode yang membuatnya merah.
 Sub-proyek 2 dan 3 dimulai sesudah 1 di-merge. Sub-proyek 4 sesudah spec-nya
 disetujui.
 
+## Keputusan otonom
+
+Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaan yang wajar, diambil tanpa berhenti. User meninjau semuanya di gerbang berikutnya. Format satu baris per keputusan: apa · bawaan yang dipakai · alasan · cara membalik.
+
 ## Kondisi berhenti
 
 - Test yang sudah ada merah dan sebabnya bukan perubahan kampanye ini
