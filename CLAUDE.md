@@ -1274,6 +1274,63 @@ Daftar lengkap: `research/12-OPEN-QUESTIONS.md`.
 - **Pengawasan PR: laporkan, jangan perbaiki sendiri** di luar yang diminta. Merah kadang informasi.
 - **Container baru:** `bash tools/siapkan-dev.sh` sebelum apa pun (§ Stack).
 
+## Workflow Superpowers (sejak 26 September 2026)
+
+Berlaku untuk kampanye "Hidupkan desain LumiPOS" dan seluruh pekerjaan sesudahnya. **`CLAUDE.md` menang atas skill** — skill `using-superpowers` sendiri menyatakan instruksi pengguna di `CLAUDE.md` didahulukan. Bila skill dan bagian ini berbeda, bagian ini yang berlaku.
+
+### ⛔ Awal setiap session: muat `using-superpowers`
+
+Skill Superpowers v6.4.2 adalah **salinan vendor** di `.claude/skills/` (`.claude/skills/SUPERPOWERS-VENDOR.md`). Plugin aslinya punya hook `SessionStart` yang menyuntikkan `using-superpowers` ke setiap session; **salinan tidak membawa hook itu, dan bagian ini menggantikannya.**
+
+1. Di awal setiap session — termasuk sesudah pergantian container dan sesudah konteks dipadatkan — muat skill `using-superpowers` lewat Skill tool, sebelum pekerjaan apa pun.
+2. Lalu baca `docs/RENCANA-HIDUPKAN-DESAIN.md` dan `git log`, dan lanjutkan alur sub-proyek di bawah dari task terakhir yang tercatat.
+
+⛔ **Nama skill tanpa awalan.** Skill proyek dimuat dengan nama direktorinya: `using-superpowers`, `brainstorming`, `writing-plans`, `subagent-driven-development`, `requesting-code-review`, `test-driven-development`, `verification-before-completion`, `finishing-a-development-branch`, `using-git-worktrees`, dan seterusnya. Teks di dalam `SKILL.md` masih menulis `superpowers:<nama>`; itu berarti skill `<nama>` di `.claude/skills/`. Jangan menyunting salinan vendor untuk menyamakannya.
+
+### Alur per sub-proyek
+
+1. **Brainstorming → spec** di `docs/superpowers/specs/`. Keputusan arah yang sudah diambil user tidak ditanyakan ulang satu per satu: sajikan rancangan utuh sekali untuk disetujui, dan tanyakan hanya yang benar-benar belum diputuskan.
+2. **Writing-plans → plan** di `docs/superpowers/plans/`. Bagian **Global Constraints** memuat invarian yang tetap berlaku dan keputusan kampanye, **disalin kata demi kata** dari sumbernya.
+3. **Tinjauan plan pra-eksekusi.** Semua pertanyaan dikumpulkan jadi **satu kiriman** ke user, sebelum Task 1.
+4. **Eksekusi SDD** (`subagent-driven-development`). Satu implementer per task, **berurutan, tidak pernah paralel** — skill-nya melarang, dan suite PostgreSQL repo ini tidak boleh berjalan bersamaan.
+5. **Tinjauan per task** oleh reviewer SDD: kepatuhan spec + kualitas.
+6. **Tinjauan akhir satu branch** oleh model paling mampu (Opus 5.5).
+7. **Selesai:** push, buka PR, merge dengan **merge commit** bila CI hijau dan tinjauan akhir bersih. **Jangan tampilkan menu empat pilihan `finishing-a-development-branch`** — pilihannya sudah ditetapkan di sini, kecuali ada gerbang visual.
+
+Worktree: **tidak dipakai.** Session cloud sudah terisolasi; kerjakan di branch baru dari `main` terbaru, tanpa `git worktree add` (keputusan user 26 September 2026).
+
+### Model — hanya dua
+
+Selalu sebutkan model **secara eksplisit** saat mengirim subagen. Fable dan Haiku **tidak dipakai sama sekali**.
+
+| Peran | Model |
+|---|---|
+| Brainstorming spec | **Opus 5.5** (`opus`) |
+| Penulisan plan | **Opus 5.5** |
+| Tinjauan akhir satu branch | **Opus 5.5** |
+| Reviewer per task di jalur **uang, kas, dan sync** | **Opus 5.5** |
+| Subagen sabotase independen | **Opus 5.5** |
+| **Semua implementer**, termasuk task yang kodenya sudah lengkap di plan | **Sonnet 5** (`sonnet`) |
+| Reviewer per task di luar jalur uang, kas, dan sync | **Sonnet 5** |
+
+⛔ Skill SDD menyebut model termurah untuk implementer yang kodenya lengkap. Di repo ini **batas bawahnya Sonnet 5** — tidak ada peran yang turun di bawahnya.
+
+### Penjaga dan sabotase dalam SDD
+
+Aturan repo tetap berlaku: penjaga merah dulu, sabotase setiap penjaga, ukur jangan baca.
+
+- **Implementer** menulis penjaga, membuktikannya merah terhadap kode lama, menerapkan, lalu menyabotase. Bukti sabotase ditulis di laporan task: apa yang disabotase, penjaga mana yang merah, dan pesannya.
+- **Reviewer SDD bersifat baca-saja** dan tidak menyabotase. Ia memeriksa bukti sabotase di laporan dan menandai penjaga yang dicurigai hampa: mengukur elemen yang salah, memaku nilai sebagai angka tetap, atau kondisinya dipenuhi oleh test-nya sendiri.
+- **Subagen sabotase independen** (Opus 5.5) dikirim hanya untuk penjaga di jalur uang, kas, sync, dan invarian kampanye. Ia tidak melihat sabotase implementer, menulis sabotasenya sendiri, lalu memulihkan pohon kerja. Ia berjalan **sesudah** implementer selesai, tidak bersamaan.
+
+### Ledger tahan pergantian container
+
+Ledger SDD di `.superpowers/sdd/progress.md` di-ignore git dan hilang saat container berganti. Setiap kali satu task selesai, **cerminkan barisnya ke `docs/RENCANA-HIDUPKAN-DESAIN.md`**, commit, dan push. Saat session dimulai atau sesudah pergantian container, **percayai berkas yang di-commit dan `git log`, bukan ingatan.**
+
+### Gerbang visual
+
+Hanya user yang dapat melihat tampilan aplikasi. Setiap PR yang mengubah tampilan menyertakan **link preview Vercel per layar yang berubah**. Sub-proyek 1 (fondasi desain) **tidak di-merge sebelum user menyetujui preview-nya**; sub-proyek lain di-merge saat hijau, dan user meninjau sesudahnya.
+
 ## Rebuild UI kasir — urutan otoritas (sejak 25 September 2026)
 
 Kampanye membangun ulang tampilan `apps/kasir` supaya terlihat seperti aplikasi POS pada umumnya. Pelacak kemajuannya `docs/RENCANA-REBUILD-UI.md` — **baca itu dulu** bila melanjutkan kampanye di container baru.
