@@ -19,8 +19,49 @@
 //
 // Selektor: `body` (G4 — permukaan halaman), `.btn-primary` (G4, pengganti
 // invarian aksen `#0D5C63` lama — aksen kini `--primary` mockup), `.card`
-// (permukaan kartu). Warna lencana TIDAK diperiksa: ia bergantung pada kulit
-// komponen Task 9.
+// (permukaan kartu), `.kasir-konten`/`.galeri-panggung` (permukaan area
+// konten — lihat § Ronde perbaikan 1). Warna lencana TIDAK diperiksa: ia
+// bergantung pada kulit komponen Task 9.
+//
+// ## ⛔ Ronde perbaikan 1 (sabotase independen, lihat task-2-report.md)
+//
+// F1b — sabotase `@media (max-width: 1100px) { :root { --primary: #b94747; } }`
+// TIDAK terlihat oleh penjaga ini sebelumnya: hanya viewport 1280×800 yang
+// diukur, dan media query dengan ambang 1100px tidak pernah berlaku di sana.
+// 1024×768 adalah lebar tablet kasir yang DITETAPKAN `IA:62` (penjaga
+// `k03-chrome.test.js` sudah mengukur di lebar ini) — penjaga ini sekarang
+// mengukur di KEDUA viewport, bukan hanya 1280×800.
+//
+// F4 — hanya elemen PERTAMA yang cocok `.btn-primary`/`.card` yang terukur
+// (`document.querySelector`), dan hanya `body` sebagai permukaan halaman.
+// Warna hover, `.btn-primary` kedua/di dialog, dan latar area KONTEN
+// (`.kasir-konten`) bisa berganti token tanpa ketahuan — dibuktikan lewat
+// sabotase S9/S14 pada laporan sabotase independen. Diperbaiki:
+// `querySelectorAll` untuk SETIAP elemen yang cocok pada selektor yang
+// diukur, ditambah pemeriksaan latar `.kasir-konten` dan panggung galeri
+// `.galeri-panggung` terhadap `--background` mockup.
+//
+// ⛔ Batas yang dinyatakan (S9, sabotase independen): `.btn-primary:hover`,
+// `.dialog .btn-primary`, dan `.btn-primary ~ .btn-primary` TIDAK tertangkap
+// oleh `querySelectorAll` — diverifikasi dengan menjalankan sabotase itu
+// sungguhan setelah perbaikan ini: penjaga tetap hijau. Ketiganya menuntut
+// KEADAAN yang potret statis "keadaan normal" tidak pernah punya: hover
+// disimulasikan, dialog dibuka, atau dua `.btn-primary` bertetangga langsung
+// di DOM. Ini bukan lubang yang tertutup oleh `querySelectorAll` — laporan
+// sabotase sendiri menandainya "batas cakupan, bukan hampa murni". Menutupnya
+// menuntut mensimulasikan interaksi (hover/dialog), di luar lingkup ronde
+// perbaikan ini.
+//
+// ⛔ `.kasir-konten`/`.galeri-panggung` TIDAK menyetel `background-color`
+// eksplisit pada pohon yang bersih — keduanya TRANSPARAN dan membiarkan
+// warna `body` di baliknya terlihat (diukur: `rgba(0, 0, 0, 0)` pada kelima
+// layar). Itu SAH: transparan berarti "tidak menimpa" permukaan di
+// baliknya, yang secara visual tetap `--background`. Yang TIDAK sah adalah
+// nilai OPAK selain `--background` — itu yang S14 buktikan (kedua selektor
+// diganti `var(--kat-4-soft)`, warna kategori plum). `HARAP` untuk kedua
+// selektor ini karena itu menerima DUA nilai: transparan, ATAU `--background`
+// — bukan hanya satu, supaya pohon bersih tetap hijau sekaligus S14 tetap
+// merah.
 //
 // ## Prasyarat
 //
@@ -117,6 +158,9 @@ function tokenRgb(nama) {
   return hexKeRgb(TOKEN[nama]);
 }
 
+/** `background-color` bawaan CSS untuk elemen yang tidak menyetelnya sendiri. */
+const TRANSPARAN = 'rgba(0, 0, 0, 0)';
+
 /**
  * Nilai yang HARUS berlaku di peramban, per selektor.
  *
@@ -139,6 +183,12 @@ const HARAP = {
      yang paling mudah dilakukan orang berikutnya: menukar urutan dua baris
      `@import`. */
   '.card': { backgroundColor: tokenRgb('--card'), borderColor: tokenRgb('--border') },
+  /* ⛔ Ditambah Ronde perbaikan 1, F4 — lihat komentar berkas di atas. Nilai
+     yang diterima array: TRANSPARAN (bawaan, sah) ATAU `--background` mockup
+     — bukan hanya satu, supaya pohon bersih (transparan) tetap hijau
+     sekaligus sabotase yang mengganti latar ke warna lain (S14) tetap merah. */
+  '.kasir-konten': { backgroundColor: [TRANSPARAN, tokenRgb('--background')] },
+  '.galeri-panggung': { backgroundColor: [TRANSPARAN, tokenRgb('--background')] },
 };
 
 /**
@@ -151,7 +201,11 @@ const LAYAR = [
   { id: 'K-08', opsional: ['.btn-primary'] },
   { id: 'K-12', opsional: ['.card'] },
   { id: 'K-14', opsional: ['.card'] },
-  { id: 'fondasi', opsional: ['.btn-primary'] },
+  /* `.kasir-konten` opsional di sini: `fondasi` dirender `tanpaShell` (sama
+     seperti K-01), jadi tidak ada `ShellKasir` dan tidak ada `.kasir-konten`
+     sama sekali — diverifikasi lewat pengukuran DOM (lihat laporan task).
+     `.card` DIKECUALIKAN (bukan sekadar opsional) — lihat `kecualikan`. */
+  { id: 'fondasi', opsional: ['.btn-primary', '.kasir-konten'], kecualikan: ['.card'] },
 ];
 
 /**
@@ -159,8 +213,8 @@ const LAYAR = [
  * (sama seperti K-01), dan `.kasir-konten` hanya ada di dalam `ShellKasir`.
  * `.galeri-panggung` ada pada KEDUA jalur render galeri.
  */
-async function bukaLayar(peramban, alamat, id) {
-  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+async function bukaLayar(peramban, alamat, id, viewport) {
+  const hal = await peramban.newPage({ viewport });
   await hal.goto(`${alamat}/harness-galeri.html?layar=${id}&keadaan=normal`, { waitUntil: 'load' });
   await hal.waitForSelector('.galeri-panggung', { timeout: 10_000 });
   await hal.waitForFunction(
@@ -171,48 +225,82 @@ async function bukaLayar(peramban, alamat, id) {
   return hal;
 }
 
-test('⛔ palet mockup berlaku di getComputedStyle, di kelima layar galeri', async () => {
+/**
+ * Dua viewport, diukur KEDUANYA (F1b): 1280×800 (ukuran galeri lama) dan
+ * 1024×768 — lebar tablet kasir yang ditetapkan `IA:62`. Sabotase yang hanya
+ * berlaku di bawah suatu ambang `@media` (mis. `max-width: 1100px`) tidak
+ * pernah terlihat pada 1280×800 saja.
+ */
+const VIEWPORT = [
+  { width: 1280, height: 800 },
+  { width: 1024, height: 768 },
+];
+
+test('⛔ palet mockup berlaku di getComputedStyle, di kelima layar galeri, di kedua viewport', async () => {
   const beda = [];
   let selektorDiperiksa = 0;
 
-  for (const { id, opsional } of LAYAR) {
-    const hal = await bukaLayar(peramban, alamat, id);
-    const hasil = await hal.evaluate((selektorList) => {
-      const keluar = {};
-      for (const sel of selektorList) {
-        const el = sel === 'body' ? document.body : document.querySelector(sel);
-        if (!el) {
-          keluar[sel] = null;
+  for (const viewport of VIEWPORT) {
+    for (const { id, opsional, kecualikan } of LAYAR) {
+      const hal = await bukaLayar(peramban, alamat, id, viewport);
+      const hasil = await hal.evaluate((selektorList) => {
+        const keluar = {};
+        for (const sel of selektorList) {
+          const elList = sel === 'body' ? [document.body] : Array.from(document.querySelectorAll(sel));
+          keluar[sel] = elList.map((el) => {
+            const s = getComputedStyle(el);
+            return { color: s.color, backgroundColor: s.backgroundColor, borderColor: s.borderColor };
+          });
+        }
+        return keluar;
+      }, Object.keys(HARAP));
+      await hal.close();
+
+      const label = `${id} @${viewport.width}x${viewport.height}`;
+
+      for (const [sel, properti] of Object.entries(HARAP)) {
+        /* ⛔ `kecualikan` (BUKAN `opsional`): `fondasi` mengecualikan `.card`
+           sepenuhnya — halaman ini adalah GALERI TOKEN warna itu sendiri
+           (`Fondasi.tsx`), dan swatch warnanya SENGAJA menimpa `background`
+           per token lewat inline style (`className="card"` dipakai ulang
+           sebagai bingkai netral, bukan sebagai "permukaan kartu"). Setiap
+           swatch yang backgroundnya BUKAN `--card` adalah bukti token itu
+           BEKERJA, bukan pelanggaran — memeriksanya di sini akan menandai
+           68 elemen yang justru sengaja berwarna-warni sebagai "pelanggaran
+           palet". `opsional` tidak cukup di sini: elemennya ADA (136 di
+           antaranya), hanya semantiknya yang berbeda dari layar produk. */
+        if (kecualikan?.includes(sel)) continue;
+        const elemenList = hasil[sel];
+        if (elemenList.length === 0) {
+          if (opsional.includes(sel)) continue;
+          beda.push(`${label} ${sel}: elemen tidak ditemukan (bukan opsional untuk layar ini)`);
           continue;
         }
-        const s = getComputedStyle(el);
-        keluar[sel] = { color: s.color, backgroundColor: s.backgroundColor, borderColor: s.borderColor };
-      }
-      return keluar;
-    }, Object.keys(HARAP));
-    await hal.close();
-
-    for (const [sel, properti] of Object.entries(HARAP)) {
-      const nyata = hasil[sel];
-      if (nyata === null) {
-        if (opsional.includes(sel)) continue;
-        beda.push(`${id} ${sel}: elemen tidak ditemukan (bukan opsional untuk layar ini)`);
-        continue;
-      }
-      for (const [prop, nilai] of Object.entries(properti)) {
-        selektorDiperiksa += 1;
-        if (nyata[prop] !== nilai) {
-          beda.push(`${id} ${sel} ${prop}: harap ${nilai}, peramban ${nyata[prop]}`);
-        }
+        /* ⛔ F4: SETIAP elemen yang cocok diperiksa, bukan hanya yang pertama —
+           `.btn-primary` kedua (mis. di dialog), atau `.card` di luar
+           pandangan pertama, bisa memakai token lain tanpa ketahuan bila
+           hanya elemen [0] yang terukur. */
+        elemenList.forEach((nyata, idx) => {
+          for (const [prop, nilaiHarap] of Object.entries(properti)) {
+            selektorDiperiksa += 1;
+            /* Nilai harapan bisa SATU string, atau ARRAY beberapa nilai yang
+               sah (mis. `.kasir-konten`: transparan ATAU `--background`). */
+            const daftarSah = Array.isArray(nilaiHarap) ? nilaiHarap : [nilaiHarap];
+            if (!daftarSah.includes(nyata[prop])) {
+              beda.push(
+                `${label} ${sel}[${idx}] ${prop}: harap ${daftarSah.join(' atau ')}, peramban ${nyata[prop]}`
+              );
+            }
+          }
+        });
       }
     }
   }
 
-  /* ⛔ SENTINEL: penjaga harus benar-benar memindai sesuatu. Lima layar × tiga
-     properti (body 2 + btn-primary 2 + card 1, minus yang opsional) — jauh di
-     bawah jumlah nyata supaya selektor yang hilang dari satu layar tidak
-     mematikan penjaganya. */
-  assert.ok(selektorDiperiksa >= 10, `hanya ${selektorDiperiksa} pasangan selektor/properti terukur — galeri mungkin gagal memuat`);
+  /* ⛔ SENTINEL: penjaga harus benar-benar memindai sesuatu. Lima layar × dua
+     viewport × tiga properti — jauh di bawah jumlah nyata supaya selektor
+     yang hilang dari satu layar tidak mematikan penjaganya. */
+  assert.ok(selektorDiperiksa >= 20, `hanya ${selektorDiperiksa} pasangan selektor/properti terukur — galeri mungkin gagal memuat`);
 
   assert.deepEqual(beda, [], 'palet mockup tidak berlaku sesuai harapan di peramban:\n  ' + beda.join('\n  '));
 });
