@@ -54,9 +54,10 @@ function loadAdherenceConfig() {
  *
  * `t-title-lg` dilarang DITULIS, bukan dilarang ADA: `StatCard` bundle
  * memakainya untuk angka metrik B-01, dan `packages/ds/lumi.css`
- * mengikatnya ke `--t-metric` di dalam `.stat`. Yang ditolak adalah kode
- * aplikasi yang menuliskan kelasnya sendiri — di sanalah ukuran kelima bocor
- * ke layar yang tidak berhak.
+ * mengikatnya ke `var(--text-display)` di dalam `.stat` (Task 4, kampanye
+ * "Hidupkan desain": `--t-metric` dihapus, skala final adalah 32/20/15/13).
+ * Yang ditolak adalah kode aplikasi yang menuliskan kelasnya sendiri — di
+ * sanalah ukuran kelima bocor ke layar yang tidak berhak.
  *
  * ⛔ Batas yang dinyatakan: oxlint TIDAK membaca berkas CSS. Pemakaian
  * `var(--text-hero)` di dalam `.css` ditangkap
@@ -66,20 +67,21 @@ const BAN_LOKAL = [
   {
     regex: /\bt-hero\b|var\(\s*--text-hero\s*\)/,
     message:
-      "Ukuran teks `--text-hero` (40px) tidak ada di skala final. Skala: 32/20/15/12 " +
-      "plus `--t-metric` (hanya angka kartu dasbor). Lihat tabel pemetaan di CLAUDE.md.",
+      "Ukuran teks `--text-hero` (40px) tidak ada di skala final. Skala 32/20/15/13. " +
+      "Lihat tabel pemetaan di CLAUDE.md.",
   },
   {
     regex: /\bt-heading\b|var\(\s*--text-heading\s*\)/,
     message:
-      "Ukuran teks `--text-heading` (28px) tidak ada di skala final. Skala: 32/20/15/12 " +
-      "plus `--t-metric` (hanya angka kartu dasbor). Lihat tabel pemetaan di CLAUDE.md.",
+      "Ukuran teks `--text-heading` (28px) tidak ada di skala final. Skala 32/20/15/13. " +
+      "Lihat tabel pemetaan di CLAUDE.md.",
   },
   {
     regex: /\bt-title-lg\b|var\(\s*--text-title-lg\s*\)/,
     message:
       "`t-title-lg` (24px) hanya sah lewat <StatCard> di kartu dasbor B-01, tempat ia " +
-      "terikat ke `--t-metric`. Jangan menuliskan kelasnya sendiri. Lihat CLAUDE.md.",
+      "terikat ke `--text-display` (skala 32/20/15/13). Jangan menuliskan kelasnya " +
+      "sendiri. Lihat CLAUDE.md.",
   },
 ];
 

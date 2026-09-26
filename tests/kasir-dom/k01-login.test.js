@@ -154,7 +154,7 @@ for (const lebar of [1024, 1280]) {
     assert.notEqual(u.kartu.bayangan, 'none', 'kartu tanpa bayangan');
     assert.equal(u.latarLogin, u.token.sunk, `latar layar login ${u.latarLogin}, bukan --surface-sunk`);
     assert.ok(u.ikon, 'ikon gembok tidak ada');
-    assert.equal(u.judul, '20px/500', `judul ${u.judul} — 20 px, bobot 500`);
+    assert.equal(u.judul, '20px/600', `judul ${u.judul} — 20 px, bobot 600 (skala 32/20/15/13)`);
   });
 
   test(`⛔ ${lebar}: ENAM titik PIN dan tombol angka >= 56 px tetap`, async () => {

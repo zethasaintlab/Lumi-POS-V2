@@ -142,37 +142,54 @@ test('token skala teks yatim tidak dipakai di CSS aplikasi', () => {
   assert.deepEqual(
     pakai,
     [],
-    'Skala teks final adalah 32/20/15/12 plus `--t-metric` (hanya angka kartu ' +
-      'dasbor B-01). Token berikut yatim dan dilarang:\n  ' + pakai.join('\n  ')
+    'Skala teks final adalah 32/20/15/13. `--t-metric` DIHAPUS (Task 4, ' +
+      'kampanye "Hidupkan desain") — token berikut yatim dan dilarang:\n  ' +
+      pakai.join('\n  ')
   );
 });
 
 /**
- * ⛔ `--t-metric` tidak boleh bocor ke luar kartu dasbor.
+ * ⛔ `--t-metric` DIHAPUS 26 September 2026 (Task 4, kampanye "Hidupkan
+ * desain"). Skala final kembali EMPAT token — lihat spec § 5: angka KPI
+ * kartu dasbor B-01 memakai ukuran DISPLAY yang sama dengan total/kembalian
+ * di kasir, bukan ukuran kelima.
  *
- * Yang menegakkan batasnya adalah SELEKTOR (`.stat .t-title-lg`), dan selektor
- * dapat dilonggarkan oleh siapa pun yang menganggapnya kelewat ketat. Test ini
- * membuat pelonggaran itu terlihat alih-alih diam — terutama untuk
- * `apps/kasir`, yang instruksinya eksplisit: layar kasir tidak boleh memakai
- * token khusus sama sekali.
+ * Ia bukan sekadar dihapus dari `:root` — pengikatnya (`.stat .t-title-lg`)
+ * harus diarahkan ke `var(--text-display)`, bukan dibiarkan menunjuk nama
+ * yang sudah tidak ada (yang akan membuat CSS membuang seluruh deklarasi
+ * tanpa satu pun error — kelas cacat yang sama dengan yang melahirkan berkas
+ * ini).
  */
-test('`--t-metric` hanya dipakai di dalam .stat, dan tidak pernah di kasir', () => {
+test('--t-metric tidak didefinisikan lagi; .stat .t-title-lg memakai --text-display', () => {
   const isiLumi = tanpaKomentar(readFileSync(join(AKAR, 'packages/ds/lumi.css'), 'utf8'));
-  for (const m of isiLumi.matchAll(/([^{}]*)\{[^{}]*var\(--t-metric\)/g)) {
-    const selektor = m[1].trim().split('\n').pop().trim();
-    assert.ok(
-      selektor === ':root' || selektor.includes('.stat'),
-      `\`--t-metric\` dipakai di selektor "${selektor}", di luar \`.stat\`. ` +
-        'Ia token KHUSUS: hanya angka metrik kartu dasbor B-01.'
-    );
-  }
+
+  assert.ok(
+    !/--t-metric\s*:/.test(isiLumi),
+    '`--t-metric` masih didefinisikan di lumi.css. Skala final punya EMPAT ' +
+      'token (32/20/15/13); ia harus dihapus, bukan dipertahankan sebagai alias.'
+  );
+  assert.ok(
+    !isiLumi.includes('--t-metric'),
+    '`--t-metric` masih disebut di lumi.css (definisi atau pemakaian). Skala ' +
+      'final tidak lagi punya token khusus.'
+  );
+
+  const cocokSelektor = [...isiLumi.matchAll(/([^{}]*)\{([^{}]*)\}/g)].find(([, sel]) =>
+    sel.trim().split('\n').pop().trim().includes('.stat .t-title-lg')
+  );
+  assert.ok(cocokSelektor, 'selektor `.stat .t-title-lg` tidak ditemukan di lumi.css');
+  assert.match(
+    cocokSelektor[2],
+    /font-size\s*:\s*var\(--text-display\)/,
+    `.stat .t-title-lg harap \`font-size: var(--text-display)\`, dapat: "${cocokSelektor[2].trim()}"`
+  );
 
   for (const f of berkasCss(join(AKAR, 'apps/kasir'))) {
     const isi = tanpaKomentar(readFileSync(f, 'utf8'));
     assert.ok(
       !isi.includes('--t-metric'),
-      `${f.slice(AKAR.length)} memakai \`--t-metric\`. Layar kasir tidak boleh ` +
-        'memakai token khusus sama sekali.'
+      `${f.slice(AKAR.length)} memakai \`--t-metric\`. Token itu sudah dihapus ` +
+        'dari sistem ini seluruhnya.'
     );
   }
 });

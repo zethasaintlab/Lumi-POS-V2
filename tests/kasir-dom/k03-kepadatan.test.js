@@ -205,8 +205,8 @@ test('⛔ keranjang: kolom 360 px, judul dan label Total 20 px bobot 500, baris 
   await hal.close();
   assert.deepEqual(galat, []);
   assert.equal(u.keranjang, 360, `kolom keranjang ${u.keranjang} px — mockup 360`);
-  assert.equal(u.judul, '20px/500', `judul "Keranjang" ${u.judul}`);
-  assert.equal(u.labelTotal, '20px/500', `label "Total" ${u.labelTotal}`);
+  assert.equal(u.judul, '20px/600', `judul "Keranjang" ${u.judul} (skala 32/20/15/13)`);
+  assert.equal(u.labelTotal, '20px/600', `label "Total" ${u.labelTotal} (skala 32/20/15/13)`);
   /* ⛔ SENTINEL + batas: keranjang penuh punya baris, dan tidak satu pun lebih
      pendek dari 82 px (stepper 44 px, DS #3). */
   assert.ok(u.baris.length >= 3, 'skenario `keranjang-penuh` tanpa baris — penjaga hampa');
