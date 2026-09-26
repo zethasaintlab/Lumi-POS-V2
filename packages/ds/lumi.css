@@ -107,15 +107,23 @@
      --success-border, --danger-border, --warning-border, --info-border,
      --violet, --violet-soft, --violet-border */
 
-/* --- Skala teks final: LIMA token, bukan tujuh ------------------------------
+/* --- Skala teks final: EMPAT token, 32/20/15/13 ------------------------------
  *
- * Keputusan user 31 Agustus 2026 ("Opsi A"): empat token inti yang bebas
- * dipakai di mana saja, plus token KHUSUS yang hanya sah di konteks yang
- * disebut namanya. Rencananya dua token khusus; yang bertahan SATU, karena
- * yang kedua tidak punya kasus pakai nyata di layar yang sudah ada dan
- * instruksinya jelas: *"Jangan mengarang kebutuhan untuk mengisi slot."*
+ * ⛔ Task 4, kampanye "Hidupkan desain" (26 September 2026). Keputusan user
+ * 31 Agustus 2026 ("Opsi A") sempat bertahan pada LIMA token — empat inti
+ * bebas dipakai di mana saja, plus SATU token khusus (`--t-metric`) untuk
+ * angka KPI kartu dasbor B-01. Spec § 5 (`docs/superpowers/specs/
+ * 2026-09-26-fondasi-desain-design.md`) MENGHAPUS token khusus itu: angka
+ * KPI di mockup memakai ukuran DISPLAY yang sama dengan total/kembalian di
+ * kasir (32px bobot 700) — bukan ukuran kelima. Skala final kembali murni
+ * EMPAT: `--text-display` 32 · `--text-title` 20 · `--text-body` 15 ·
+ * `--text-small` 13.
  *
- * Tabel pemetaan lengkap tujuh token bundle → lima ada di `CLAUDE.md`.
+ * ⛔ `--t-metric` DIHAPUS di sini, bukan diarahkan ulang atau dipertahankan
+ * sebagai alias. `.stat .t-title-lg` (di bawah) mengikat LANGSUNG ke
+ * `var(--text-display)`.
+ *
+ * Tabel pemetaan lengkap tujuh token bundle → empat ada di `CLAUDE.md`.
  *
  * ⛔ `ds-bundle/tokens/typography.css` TIDAK disunting — ia artefak vendor.
  * Token bundle yang tidak punya tujuan setelah pemetaan karena itu tidak dapat
@@ -123,39 +131,55 @@
  * dilarang" supaya orang berikutnya tahu itu disengaja, bukan terlewat.
  */
 
-/* ⛔ Empat token INTI sengaja TIDAK didefinisikan ulang di sini.
+/* ⛔ `--text-display`/`--text-title`/`--text-body` sengaja TIDAK didefinisikan
+ * ulang di sini — ketiganya BERTABRAKAN NAMA dengan mockup
+ * (`tokens-mockup.css`) dan sudah menang lewat URUTAN `@import`
+ * (`tokens-mockup.css` sesudah token bundle, sebelum `lumi.css`), persis
+ * seperti `--accent`/`--accent-hover`/`--border` di blok pengarahan warna di
+ * atas. Menyalin nilainya ke sini menciptakan tempat KEDUA yang memutuskan
+ * ukuran teks, yang akan menyimpang pada pembaruan bundle berikutnya tanpa
+ * satu pun error.
  *
- * Nilainya (32/20/15/12) sudah benar di bundle, dan menyalinnya ke berkas ini
- * menciptakan tempat KEDUA yang memutuskan ukuran teks — dua angka untuk satu
- * pertanyaan, yang akan menyimpang pada pembaruan bundle berikutnya tanpa satu
- * pun error. Yang berkas ini tambahkan hanya yang bundle tidak punya.
+ * `--text-small` (mockup, 13px) BERBEDA: bundle tidak punya token bernama
+ * itu — bundle punya `--text-caption` (12px), nama LAIN untuk peran yang
+ * sama. Redirect di bawah adalah yang membuat `--text-caption`, dan karena
+ * itu kelas `.t-caption` bundle, mengikuti nilai mockup.
  */
-
 :root {
-  /* Angka metrik besar di kartu dasbor B-01. HANYA angka, bukan labelnya.
+  --text-caption: var(--text-small);
+
+  /* Bobot bundle diarahkan ke bobot mockup. Mockup tidak punya bobot 500 —
+   * hanya 400/600/700/800 (subset Nunito Sans yang dimuat, Task 3, juga
+   * tidak) — jadi `--weight-medium` (500 di bundle) dan `--weight-bold`
+   * (600 di bundle) TIDAK bisa diarahkan ke nilai yang sama artinya, hanya
+   * ke bobot mockup TERDEKAT yang perannya cocok: judul (600) dan display
+   * (700).
    *
-   * Ia bukan token karangan: `StatCard` bundle sudah merender nilainya pada
-   * 24px lewat kelas `t-title-lg`, dan B-01 memakai tiga di antaranya. Jadi
-   * ukuran kelima ini SUDAH ada di layar sejak dasbor lahir — yang belum ada
-   * adalah namanya dan batas tempat ia boleh muncul.
-   *
-   * ⛔ Nilainya `var(--text-title-lg)`, bukan `24px` yang diketik ulang.
-   * Angka yang disalin akan menyimpang dari bundle diam-diam; alias tidak
-   * dapat.
+   * ⛔ Konsekuensinya dinyatakan (spec § 5): kelas `.btn`/`.chip-kategori`
+   * bundle yang sudah memakai `var(--weight-medium)` untuk label tombol
+   * ikut merender 600 tanpa satu baris pun disentuh di sini — itu YANG
+   * DIMAKSUD ("body 400, 600 label tombol"), bukan efek samping. Begitu
+   * juga `t-body-md` (dipakai luas di kasir untuk teks body yang
+   * ditekankan): ia ikut merender 600, keputusan yang dinilai di gerbang
+   * visual, bukan dihindari di sini.
    */
-  --t-metric: var(--text-title-lg);
+  --weight-medium: var(--font-weight-semibold);
+  --weight-bold:   var(--font-weight-bold);
 }
 
-/* ⛔ Batasnya DITEGAKKAN di sini, bukan diserahkan pada disiplin.
+/* ⛔ Angka KPI kartu dasbor B-01 — ukuran DISPLAY, bukan token khusus.
  *
- * `--t-metric` hanya berlaku di dalam `.stat` — kartu KPI dasbor. Kelas
- * `t-title-lg` yang ditulis di luar sana tetap mendapat nilai bundle, dan
- * lint (`ds-adherence`) menolaknya di seluruh `apps/` dan `packages/`.
+ * `StatCard` bundle sudah merender nilainya lewat kelas `t-title-lg`; yang
+ * diikat di sini adalah UKURANNYA, ke `var(--text-display)` — bukan angka
+ * `32px` yang diketik ulang, yang akan menyimpang dari mockup diam-diam.
  *
- * Layar KASIR tidak boleh memakainya sama sekali, dan itu benar menurut
- * KONSTRUKSI: tidak ada satu pun `.stat` di `apps/kasir`.
+ * Selektor tetap `.stat .t-title-lg`, bukan `.t-title-lg` telanjang: kelas
+ * itu yang menegakkan batasnya (lint `ds-adherence` melarang `t-title-lg`
+ * ditulis sendiri di `apps/`/`packages/`), dan layar KASIR tidak memakainya
+ * sama sekali — benar menurut KONSTRUKSI, tidak ada satu pun `.stat` di
+ * `apps/kasir`.
  */
-.stat .t-title-lg { font-size: var(--t-metric); }
+.stat .t-title-lg { font-size: var(--text-display); }
 
 /* --- Warna kategori produk -------------------------------------------------
  *
@@ -237,8 +261,16 @@
   min-width: 44px !important;
 }
 
-/* 11px bukan token mana pun di sistem ini. Dikembalikan ke `--text-caption`. */
-.shell-group { font-size: var(--text-caption); }
+/* 11px bukan token mana pun di sistem ini. Dikembalikan ke skala final
+ * (Task 4): `--text-small` (13px, bukan `--text-caption` — nama itu sudah
+ * diarahkan ke token yang sama, tapi label grup sidebar menyebut token
+ * ukurannya langsung, sejajar cara `--sidebar-label` disebut langsung untuk
+ * warnanya, bukan lewat `--ink-subtle` bawaan bundle). */
+.shell-group {
+  font-size: var(--text-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--sidebar-label);
+}
 
 /* --- Umpan balik fisik saat ditekan ----------------------------------------
  *

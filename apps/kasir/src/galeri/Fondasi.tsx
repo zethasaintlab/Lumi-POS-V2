@@ -13,19 +13,17 @@ import { useMemo } from 'react';
  * menebak dari komposisinya. Halaman ini menjawab pertanyaan token secara
  * langsung: nama, nilai, dan rupanya — dipisah dari komposisi layar mana pun.
  *
- * Task 2 mengisi bagian `warna`. Task 3 mengisi `teks`. Keempat bagian lain
- * adalah kerangka kosong bertanda `data-fondasi`, diisi Task 4–9 di kampanye
+ * Task 2 mengisi bagian `warna`. Task 3 mengisi `teks` dengan font baru; Task 4
+ * menata ulang nilai token skala teksnya ke 32/20/15/13. Ketiga bagian lain
+ * adalah kerangka kosong bertanda `data-fondasi`, diisi Task 5–9 di kampanye
  * yang sama: `bentuk` (radius/bayangan/spasi/target sentuh), `ikon` (Lucide),
  * `wordmark` ("LumiPOS"), `komponen` (kulit komponen § 9, setiap keadaan:
  * normal, hover, nonaktif, galat).
  *
- * ⛔ Bagian `teks` (Task 3) menampilkan UKURAN dan BOBOT hari ini — bukan
- * skala 32/20/15/13 dari Global Constraints. Task 3 hanya mengganti font
- * (Inter → Nunito Sans, di-self-host); menata ulang nilai token skala teks
- * adalah pekerjaan Task 4. Menampilkan nilai yang belum berlaku sebagai
- * "sudah begini" akan menjadi tempat KEDUA yang menyatakan skala teks, dan
- * yang menyimpang dari `tokens-mockup.css`/`lumi.css` tidak akan pernah
- * terlihat di halaman yang justru ada untuk memverifikasinya.
+ * ⛔ Bagian `teks` (Task 4) menampilkan skala FINAL 32/20/15/13, bobot mockup
+ * (display 700, judul 600, body 400, caption 400) — dibaca dari
+ * `getComputedStyle`, bukan diketik ulang. `--t-metric` DIHAPUS (spec § 5);
+ * halaman ini tidak punya swatch untuknya karena token itu tidak ada lagi.
  *
  * ⛔ Di luar bundel produksi, sama seperti seluruh `apps/kasir/src/galeri/`.
  * Tidak satu byte pun dari berkas ini ada di build `index.html` yang dikirim
@@ -144,7 +142,7 @@ const GRUP_WARNA: ReadonlyArray<{ judul: string; token: readonly string[] }> = [
   },
 ];
 
-/** Bagian yang belum diisi Task 2/3 — kerangka bertanda, diisi Task 4–9. */
+/** Bagian yang belum diisi Task 2/4 — kerangka bertanda, diisi Task 5–9. */
 const BAGIAN_BELUM_DIISI = [
   { id: 'bentuk', judul: 'Bentuk' },
   { id: 'ikon', judul: 'Ikon' },
@@ -153,16 +151,15 @@ const BAGIAN_BELUM_DIISI = [
 ] as const;
 
 /**
- * Skala teks bagian `teks` (Task 3) — EMPAT token inti, dipetakan ke kelas
- * `.t-*` bundle yang sudah menyetel ukuran DAN bobotnya. Nilainya dibaca dari
- * `getComputedStyle` saat render (lihat komentar berkas), bukan diketik ulang
- * — kalau `lumi.css` mengubah nama token bobot, angka di sini ikut berubah,
- * bukan menyimpang diam-diam.
+ * Skala teks bagian `teks` (Task 4) — EMPAT token inti final (32/20/15/13),
+ * dipetakan ke kelas `.t-*` bundle yang sudah menyetel ukuran DAN bobotnya.
+ * Nilainya dibaca dari `getComputedStyle` saat render (lihat komentar
+ * berkas), bukan diketik ulang — kalau `lumi.css` mengubah nama atau nilai
+ * token, angka di sini ikut berubah, bukan menyimpang diam-diam.
  *
- * ⛔ Bobot di sini adalah bobot HARI INI (`--weight-regular` 400,
- * `--weight-medium` 500, `--weight-bold` 600) — bukan skala final
- * (display 700 / judul 600 / body 400 / label tombol 600) yang `CLAUDE.md`
- * tetapkan untuk Task 4. Task 3 mengganti FONT, bukan token skala.
+ * Bobot mockup: `--weight-bold` → display (700), `--weight-medium` → judul
+ * (600), `--weight-regular` → body/caption (400). `--t-metric` DIHAPUS
+ * (spec § 5) — tidak ada baris untuknya di sini.
  */
 const SKALA_TEKS: ReadonlyArray<{ label: string; kelas: string; tokenUkuran: string; tokenBobot: string }> = [
   { label: 'Display', kelas: 't-display', tokenUkuran: '--text-display', tokenBobot: '--weight-bold' },
