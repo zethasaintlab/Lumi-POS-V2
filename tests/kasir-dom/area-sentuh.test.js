@@ -14,45 +14,67 @@
 // SUNGGUH dapat ditekan di peramban — `::before` yang salah ukuran, atau
 // yang tidak menerima pointer sama sekali, tetap lolos baca.
 //
-// Elemen uji: 28×28 (`data-uji="sentuh-tunggal"` dan
-// `data-uji="sentuh-uang-tunggal"`) di bagian `bentuk`, `?layar=fondasi`
-// (`apps/kasir/src/galeri/Fondasi.tsx`). Angka ±21/±23 dan ±27/±29 adalah
-// SETENGAH dari 44 dan 56, ±1 — titik di dalam target harus kena, titik SATU
-// px di luarnya harus meleset. Ini membuktikan yang diukur adalah kotak 44
-// (atau 56), bukan seluruh halaman: elemen apa pun sebesar itu tanpa
-// mekanisme ini juga akan "kena" di ±21, tapi HANYA mekanisme yang benar akan
-// MELESET tepat di ±23.
+// Test pertama di berkas ini mengukur DUA elemen terisolasi 28×28
+// (`data-uji="sentuh-tunggal"` dan `data-uji="sentuh-uang-tunggal"`) di
+// `?layar=fondasi` pada titik ±21/±23 dan ±27/±29 (setengah 44/56, ±1) —
+// bukti bahwa mekanismenya BEKERJA di tingkat unit, dengan angka yang mudah
+// diperiksa manusia.
 //
-// ## ⛔ Step 1b — tetangga tidak boleh bertumpuk (keputusan user 26 Sep 2026)
+// ## ⛔ Fix round 2 (26 September 2026) — sabotase independen menemukan tiga
+// lubang di test KEDUA (`docs/…/task-5-sabotase-independen.md`, S5/S8/S9),
+// semuanya bentuk "hampa untuk kelas ini": pengukuran hanya menyentuh dua
+// elemen fixture terisolasi dan hanya keadaan `normal`, bukan SETIAP elemen
+// `.sentuh`/`.sentuh-uang` di SETIAP layar × SETIAP keadaan galeri.
 //
-// Area sentuh yang bertumpuk membuat ketukan di tepi mengenai TETANGGA yang
-// salah — di kasir itu berarti produk yang salah masuk keranjang. Test kedua
-// di berkas ini memindai SETIAP halaman galeri (daftar dibaca dari halaman,
-// bukan diketik ulang — lihat § Cakupan di `skala-teks.test.js`), termasuk
-// setiap layar kasir yang HARI INI belum punya satu pun elemen `.sentuh`
-// (jumlah pasangan yang diperiksa untuk layar itu karena itu boleh nol — yang
-// tidak boleh nol adalah `fondasi`, yang punya DUA baris tiga tombol 28×28
-// sengaja dibuat rapat untuk kasus ini: satu berjarak `--space-2` (8px), satu
-// lagi `--space-3` (12px) — gap BERBEDA, supaya penjaga ini membuktikan
-// `potongSentuh` (`packages/ds/sentuh.ts`) memotong dari celah SEBENARNYA
-// yang diteruskan, bukan konstanta 8px yang dipaku (fix round 1, Task 5).
+// **F1 — ukuran ≥44/≥56 kini diperiksa di SETIAP elemen `.sentuh`/
+// `.sentuh-uang` yang dipindai, bukan hanya dua fixture.** Untuk setiap
+// elemen: titik TENGAH, lalu untuk setiap sisi (atas/kanan/bawah/kiri) yang
+// TIDAK menghadap tetangga dalam jangkauan (dihitung dari GEOMETRI — kotak
+// perluasan BAWAAN simetris, sama seperti pemeriksaan tetangga di bawah —
+// bukan dari daftar bertipe atau dari nama komponen), titik SATU px di dalam
+// kotak target (44 atau 56, dibaca dari `--touch-min`/`--touch-critical`
+// SUNGGUHAN lewat `getComputedStyle`, bukan angka 44/56 yang diketik ulang)
+// harus dijawab elemen itu sendiri (atau turunannya — ikon di dalam tombol).
+// Sisi yang MENGHADAP tetangga sengaja TIDAK diperiksa di sini — pemeriksaan
+// tetangga (di bawah) yang menegakkannya, karena kotak targetnya di sisi itu
+// boleh lebih kecil dari 44/56 (dipotong `potongSentuh`).
 //
-// Kedekatan pasangan dihitung dari PERLUASAN BAWAAN (simetris, dari kelasnya
-// — 44 untuk `.sentuh`, 56 untuk `.sentuh-uang`) atas kotak TAMPILAN
-// (`getBoundingClientRect`), bukan dari override per-sisi yang sungguh
-// terpasang — itu yang membuat pemeriksaan ini menemukan pasangan yang PERLU
-// mekanisme anti-tumpang-tindih, terlepas dari apakah mekanisme itu sudah
-// dipasang atau belum. Untuk setiap pasangan yang lolos ambang itu, titik
-// diambil di GARIS TENGAH CELAH antara kedua kotak TAMPILAN (bukan kotak
-// perluasan), sedikit ke masing-masing sisi (±2px) supaya tidak jatuh tepat
-// di batas yang ambigu — dan setiap titik harus dijawab `elementFromPoint`
-// oleh elemen yang kotak tampilannya lebih dekat, bukan tetangganya.
+// Ini menangkap DUA bentuk regresi yang lolos sebelumnya:
+//   - sisi yang dipotong TANPA tetangga sungguhan di sana (kotak menyusut di
+//     bawah 44/56 tanpa alasan geometris) — S5, tombol tengah baris tiga
+//     dipotong juga di atas/bawah padahal tidak ada tetangga vertikal;
+//   - `::before` yang secara CSS benar tapi ikut TERPOTONG oleh leluhur
+//     `overflow: hidden`/`auto` (scroll container) atau TERTUTUP elemen lain
+//     — S9, chip kategori 28px di baris ber-scroll: `::before`-nya meluas
+//     sesuai CSS, tapi peramban tidak pernah menyerahkan titik itu ke
+//     elemen karena leluhurnya memotong hit-testing di batas kotaknya
+//     sendiri. Membaca CSS tidak pernah bisa melihat ini; hanya
+//     `elementFromPoint` yang bisa.
+//
+// **F2 — dipindai di SETIAP keadaan galeri, bukan hanya `normal`.** Daftar
+// keadaan DIBACA dari bilah galeri (`.galeri-grup[aria-label="Keadaan"]
+// button`), sama seperti daftar layar — bukan diketik ulang sebagai daftar
+// bertipe. Alih-alih membuka ulang halaman per kombinasi (9 layar × 11
+// keadaan = 99 navigasi penuh, mahal), SATU halaman dipakai dan setiap
+// kombinasi dicapai lewat KLIK pada tombol Layar lalu tombol Keadaan —
+// persis interaksi yang seorang kasir lakukan, dan jauh lebih cepat karena
+// tidak memuat ulang aset. Ini yang membuat S8 (stepper keranjang K-03)
+// terlihat: keranjang KOSONG di keadaan `normal` (0 `.stepper`), tapi
+// `keranjang-penuh` merender tombol −/+ 28px sungguhan yang tumpang tindih
+// DAN terpotong `overflow: hidden` leluhurnya.
+//
+// **F3 — pemeriksaan tetangga (non-tumpang-tindih) kini menyampel LEBIH DARI
+// satu pasang titik di ±2px dari garis tengah celah.** Untuk setiap pasangan
+// bertetangga, beberapa titik disampel merentang dari dekat garis tengah
+// (±1px) sampai dekat tepi kotak TAMPILAN masing-masing (mendekati setengah
+// celah) — kesalahan sub-2px per sisi (celah yang meleset 1px) sekarang
+// tertangkap; sebelumnya hanya ±2px yang disampel.
 //
 // ⛔ `elementFromPoint` memakai KOORDINAT VIEWPORT: elemen yang berada di luar
-// jendela terlihat (halaman `fondasi` panjang, di-scroll) mengembalikan
-// `null` atau elemen LAIN pada titik yang sama — bukan cacat mekanisme,
-// melainkan elemen itu sedang tidak di layar. Setiap pengukuran titik di
-// berkas ini karena itu didahului `scrollIntoView` pada elemen yang diukur.
+// jendela terlihat mengembalikan elemen LAIN pada titik yang sama — bukan
+// cacat mekanisme, melainkan elemen itu sedang tidak di layar. Setiap
+// pengukuran titik di berkas ini karena itu didahului `scrollIntoView` pada
+// elemen yang diukur.
 //
 // ## Prasyarat
 //
@@ -136,17 +158,45 @@ async function bukaLayar(id) {
   return hal;
 }
 
-/** Daftar layar DIBACA dari halaman — lihat komentar berkas § Step 1b. */
-async function bacaDaftarLayar() {
+/**
+ * Daftar layar DAN keadaan DIBACA dari bilah galeri, bukan diketik ulang
+ * sebagai daftar bertipe — lihat § Cakupan di `skala-teks.test.js` untuk
+ * alasan yang sama berlaku di sana.
+ */
+async function bacaDaftarGaleri() {
   const hal = await bukaLayar('fondasi');
-  const daftar = await hal.evaluate(() =>
-    Array.from(document.querySelectorAll('.galeri-grup[aria-label="Layar"] button')).map((b) =>
+  const daftar = await hal.evaluate(() => ({
+    layar: Array.from(document.querySelectorAll('.galeri-grup[aria-label="Layar"] button')).map((b) =>
       b.textContent.trim()
-    )
-  );
+    ),
+    keadaan: Array.from(document.querySelectorAll('.galeri-grup[aria-label="Keadaan"] button')).map((b) =>
+      b.textContent.trim()
+    ),
+  }));
   await hal.close();
-  assert.ok(daftar.length > 0, 'tidak ada tombol layar ditemukan di bilah galeri — halaman mungkin gagal muat');
+  assert.ok(daftar.layar.length > 0, 'tidak ada tombol layar ditemukan di bilah galeri — halaman mungkin gagal muat');
+  assert.ok(
+    daftar.keadaan.length > 0,
+    'tidak ada tombol keadaan ditemukan di bilah galeri — halaman mungkin gagal muat'
+  );
   return daftar;
+}
+
+/**
+ * Pindah ke kombinasi (layar, keadaan) lewat KLIK pada bilah galeri — bukan
+ * membangun URL dengan slug keadaan yang ditebak (label tombol Keadaan
+ * adalah TEKS manusia, bukan nilai `?keadaan=`). Klik jauh lebih murah
+ * daripada navigasi penuh: satu halaman dipakai untuk seluruh 9×11
+ * kombinasi.
+ */
+async function pindahKe(hal, layarIdx, keadaanIdx) {
+  await hal.locator('.galeri-grup[aria-label="Layar"] button').nth(layarIdx).click();
+  await hal.locator('.galeri-grup[aria-label="Keadaan"] button').nth(keadaanIdx).click();
+  await hal.waitForFunction(
+    () => (document.querySelector('.galeri-panggung')?.textContent ?? '').trim().length > 0,
+    { timeout: 10_000 }
+  );
+  await hal.waitForTimeout(120);
 }
 
 test('⛔ .sentuh (≥44) dan .sentuh-uang (≥56): area TEKAN meluas, area TAMPAK tidak — elementFromPoint, bukan CSS dibaca', async () => {
@@ -238,143 +288,258 @@ test('⛔ .sentuh (≥44) dan .sentuh-uang (≥56): area TEKAN meluas, area TAMP
   assert.equal(hasil.radiusKartu, '12px', `--radius (kartu): borderRadius ${hasil.radiusKartu}, harap 12px`);
 });
 
-test('⛔ area sentuh tetangga tidak bertumpuk — setiap halaman galeri, ≥ 2 pasangan diperiksa di fondasi', async () => {
-  const layarIds = await bacaDaftarLayar();
-  const pelanggaran = [];
-  const pasanganPerLayar = {};
+test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap layar × setiap keadaan galeri', async () => {
+  const { layar: layarLabel, keadaan: keadaanLabel } = await bacaDaftarGaleri();
 
-  for (const id of layarIds) {
-    const hal = await bukaLayar(id);
-    const hasil = await hal.evaluate(async () => {
-      function tunggu(ms) {
-        return new Promise((r) => setTimeout(r, ms));
-      }
-      function targetSize(el) {
-        return el.classList.contains('sentuh-uang') ? 56 : 44;
-      }
-      function labelEl(el) {
-        if (!el) return 'null';
-        const uji = el.getAttribute && el.getAttribute('data-uji');
-        if (uji) return `[data-uji="${uji}"]`;
-        const kelas = (el.className && typeof el.className === 'string' ? el.className : '').trim().split(/\s+/).filter(Boolean).join('.');
-        return kelas ? `${el.tagName.toLowerCase()}.${kelas}` : el.tagName.toLowerCase();
-      }
-      function rectExpandedDefault(el) {
-        const r = el.getBoundingClientRect();
-        const t = targetSize(el);
-        const mx = Math.max(0, (t - r.width) / 2);
-        const my = Math.max(0, (t - r.height) / 2);
-        return { left: r.left - mx, right: r.right + mx, top: r.top - my, bottom: r.bottom + my };
-      }
+  const hal = await bukaLayar(layarLabel[0] === 'fondasi' ? 'fondasi' : layarLabel[0]);
 
-      const panggung = document.querySelector('.galeri-panggung');
-      const semua = panggung ? Array.from(panggung.querySelectorAll('.sentuh, .sentuh-uang')) : [];
+  const pelanggaranHit = [];
+  const pelanggaranTumpang = [];
+  /** Per LABEL layar: pasangan terbesar dan elemen terbesar terlihat di ANTARA seluruh keadaan. */
+  const pasanganMaxPerLayar = {};
+  const elemenMaxPerLayar = {};
+  let kombinasiDiperiksa = 0;
+  let totalElemenDijumlah = 0;
+  let totalPasanganDijumlah = 0;
 
-      const pelanggaran = [];
-      let totalPasangan = 0;
+  for (let li = 0; li < layarLabel.length; li += 1) {
+    for (let ki = 0; ki < keadaanLabel.length; ki += 1) {
+      await pindahKe(hal, li, ki);
+      kombinasiDiperiksa += 1;
 
-      for (let i = 0; i < semua.length; i += 1) {
-        for (let j = i + 1; j < semua.length; j += 1) {
-          const a = semua[i];
-          const b = semua[j];
-          const ea = rectExpandedDefault(a);
-          const eb = rectExpandedDefault(b);
-          const overlapX = ea.left < eb.right && eb.left < ea.right;
-          const overlapY = ea.top < eb.bottom && eb.top < ea.bottom;
-          if (!(overlapX && overlapY)) continue; // bukan tetangga dekat, tidak diperiksa
+      const hasil = await hal.evaluate(async () => {
+        function tunggu(ms) {
+          return new Promise((r) => setTimeout(r, ms));
+        }
+        function nilaiToken(nama) {
+          const v = getComputedStyle(document.documentElement).getPropertyValue(nama).trim();
+          const n = parseFloat(v);
+          return Number.isFinite(n) ? n : 0;
+        }
+        const TOUCH_MIN = nilaiToken('--touch-min');
+        const TOUCH_CRITICAL = nilaiToken('--touch-critical');
+        function targetSize(el) {
+          return el.classList.contains('sentuh-uang') ? TOUCH_CRITICAL : TOUCH_MIN;
+        }
+        function labelEl(el) {
+          if (!el) return 'null';
+          const uji = el.getAttribute && el.getAttribute('data-uji');
+          if (uji) return `[data-uji="${uji}"]`;
+          const kelas = (el.className && typeof el.className === 'string' ? el.className : '').trim().split(/\s+/).filter(Boolean).join('.');
+          return kelas ? `${el.tagName.toLowerCase()}.${kelas}` : el.tagName.toLowerCase();
+        }
+        function rectExpandedDefault(el) {
+          const r = el.getBoundingClientRect();
+          const t = targetSize(el);
+          const mx = Math.max(0, (t - r.width) / 2);
+          const my = Math.max(0, (t - r.height) / 2);
+          return { left: r.left - mx, right: r.right + mx, top: r.top - my, bottom: r.bottom + my };
+        }
+        /** Beberapa titik antara 1px dari garis tengah sampai dekat tepi
+            kotak TAMPILAN masing-masing (F3) — bukan hanya ±2px. */
+        function offsetSampel(gapHalf) {
+          const batas = Math.max(1, Math.floor(gapHalf - 0.5));
+          const kandidat = [1, 2, 3, batas];
+          return Array.from(new Set(kandidat.filter((o) => o >= 1 && o <= batas))).sort((a, b) => a - b);
+        }
 
-          totalPasangan += 1;
+        const panggung = document.querySelector('.galeri-panggung');
+        const semua = panggung ? Array.from(panggung.querySelectorAll('.sentuh, .sentuh-uang')) : [];
 
-          // Bawa keduanya ke viewport SEBELUM mengukur/menekan — koordinat
-          // `elementFromPoint` adalah koordinat viewport (lihat komentar
-          // kepala berkas).
-          a.scrollIntoView({ block: 'center', inline: 'center' });
+        const pelanggaranHit = [];
+        const pelanggaranTumpang = [];
+        let totalPasangan = 0;
+
+        /* ⛔ F1 — sisi yang MENGHADAP tetangga (dalam jangkauan kotak
+           perluasan BAWAAN) dikecualikan dari pemeriksaan ukuran penuh;
+           pemeriksaan tetangga di bawah yang menegakkannya untuk sisi itu.
+           Ini dihitung dari GEOMETRI (jarak antar elemen), bukan dari nama
+           komponen atau daftar bertipe. */
+        const sisiTerpotong = semua.map(() => new Set());
+
+        for (let i = 0; i < semua.length; i += 1) {
+          for (let j = i + 1; j < semua.length; j += 1) {
+            const a = semua[i];
+            const b = semua[j];
+            const ea = rectExpandedDefault(a);
+            const eb = rectExpandedDefault(b);
+            const overlapX = ea.left < eb.right && eb.left < ea.right;
+            const overlapY = ea.top < eb.bottom && eb.top < ea.bottom;
+            if (!(overlapX && overlapY)) continue; // bukan tetangga dekat, tidak diperiksa
+
+            totalPasangan += 1;
+
+            a.scrollIntoView({ block: 'center', inline: 'center' });
+            await tunggu(0);
+
+            const ra = a.getBoundingClientRect();
+            const rb = b.getBoundingClientRect();
+
+            const gapX = ra.right <= rb.left ? rb.left - ra.right : rb.right <= ra.left ? ra.left - rb.right : null;
+            const gapY = ra.bottom <= rb.top ? rb.top - ra.bottom : rb.bottom <= ra.top ? ra.top - rb.bottom : null;
+
+            let sumbu = null;
+            if (gapX !== null && (gapY === null || gapX <= gapY)) sumbu = 'x';
+            else if (gapY !== null) sumbu = 'y';
+
+            if (sumbu === null) {
+              pelanggaranTumpang.push(
+                `${labelEl(a)} vs ${labelEl(b)}: kotak TAMPILAN sudah bertumpang tindih (bukan sekadar area sentuh yang meluas)`
+              );
+              continue;
+            }
+
+            if (sumbu === 'x') {
+              const kiri = ra.right <= rb.left ? a : b;
+              const kanan = kiri === a ? b : a;
+              sisiTerpotong[kiri === a ? i : j].add('kanan');
+              sisiTerpotong[kanan === a ? i : j].add('kiri');
+
+              const rk = kiri.getBoundingClientRect();
+              const rn = kanan.getBoundingClientRect();
+              const gapMid = (rk.right + rn.left) / 2;
+              const gapHalf = (rn.left - rk.right) / 2;
+              const y = (Math.max(rk.top, rn.top) + Math.min(rk.bottom, rn.bottom)) / 2;
+
+              for (const off of offsetSampel(gapHalf)) {
+                const titikKiri = document.elementFromPoint(gapMid - off, y);
+                const titikKanan = document.elementFromPoint(gapMid + off, y);
+                if (!(titikKiri === kiri || (kiri.contains && kiri.contains(titikKiri)))) {
+                  pelanggaranTumpang.push(
+                    `${labelEl(kiri)} vs ${labelEl(kanan)}: titik (${(gapMid - off).toFixed(1)}, ${y.toFixed(1)}) — ${off}px kiri dari tengah celah — dijawab ${labelEl(titikKiri)}, harap ${labelEl(kiri)}`
+                  );
+                }
+                if (!(titikKanan === kanan || (kanan.contains && kanan.contains(titikKanan)))) {
+                  pelanggaranTumpang.push(
+                    `${labelEl(kiri)} vs ${labelEl(kanan)}: titik (${(gapMid + off).toFixed(1)}, ${y.toFixed(1)}) — ${off}px kanan dari tengah celah — dijawab ${labelEl(titikKanan)}, harap ${labelEl(kanan)}`
+                  );
+                }
+              }
+            } else {
+              const atas = ra.bottom <= rb.top ? a : b;
+              const bawah = atas === a ? b : a;
+              sisiTerpotong[atas === a ? i : j].add('bawah');
+              sisiTerpotong[bawah === a ? i : j].add('atas');
+
+              const rk = atas.getBoundingClientRect();
+              const rn = bawah.getBoundingClientRect();
+              const gapMid = (rk.bottom + rn.top) / 2;
+              const gapHalf = (rn.top - rk.bottom) / 2;
+              const x = (Math.max(rk.left, rn.left) + Math.min(rk.right, rn.right)) / 2;
+
+              for (const off of offsetSampel(gapHalf)) {
+                const titikAtas = document.elementFromPoint(x, gapMid - off);
+                const titikBawah = document.elementFromPoint(x, gapMid + off);
+                if (!(titikAtas === atas || (atas.contains && atas.contains(titikAtas)))) {
+                  pelanggaranTumpang.push(
+                    `${labelEl(atas)} vs ${labelEl(bawah)}: titik (${x.toFixed(1)}, ${(gapMid - off).toFixed(1)}) — ${off}px atas dari tengah celah — dijawab ${labelEl(titikAtas)}, harap ${labelEl(atas)}`
+                  );
+                }
+                if (!(titikBawah === bawah || (bawah.contains && bawah.contains(titikBawah)))) {
+                  pelanggaranTumpang.push(
+                    `${labelEl(atas)} vs ${labelEl(bawah)}: titik (${x.toFixed(1)}, ${(gapMid + off).toFixed(1)}) — ${off}px bawah dari tengah celah — dijawab ${labelEl(titikBawah)}, harap ${labelEl(bawah)}`
+                  );
+                }
+              }
+            }
+          }
+        }
+
+        /* ⛔ F1 — ukuran ≥44/56 ditegakkan untuk SETIAP elemen, bukan hanya
+           dua fixture terisolasi. Titik TENGAH selalu diperiksa; per sisi,
+           hanya bila sisi itu TIDAK menghadap tetangga (lihat sisiTerpotong
+           di atas) — kotak "diharapkan" adalah kotak target PENUH (44/56)
+           terpusat pada elemen, bukan kotak `::before` sungguhan (yang boleh
+           lebih kecil bila SENGAJA dipotong; validitas pemotongan itu
+           adalah urusan pemeriksaan tetangga di atas). */
+        for (let idx = 0; idx < semua.length; idx += 1) {
+          const el = semua[idx];
+          const terpotong = sisiTerpotong[idx];
+          el.scrollIntoView({ block: 'center', inline: 'center' });
           await tunggu(0);
 
-          const ra = a.getBoundingClientRect();
-          const rb = b.getBoundingClientRect();
+          const r = el.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const cy = r.top + r.height / 2;
+          const t = targetSize(el);
+          const halfX = Math.max(r.width / 2, t / 2);
+          const halfY = Math.max(r.height / 2, t / 2);
 
-          const gapX = ra.right <= rb.left ? rb.left - ra.right : rb.right <= ra.left ? ra.left - rb.right : null;
-          const gapY = ra.bottom <= rb.top ? rb.top - ra.bottom : rb.bottom <= ra.top ? ra.top - rb.bottom : null;
-
-          let sumbu = null;
-          if (gapX !== null && (gapY === null || gapX <= gapY)) sumbu = 'x';
-          else if (gapY !== null) sumbu = 'y';
-
-          if (sumbu === null) {
-            pelanggaran.push(
-              `${labelEl(a)} vs ${labelEl(b)}: kotak TAMPILAN sudah bertumpang tindih (bukan sekadar area sentuh yang meluas)`
+          const tengah = document.elementFromPoint(cx, cy);
+          if (!(tengah === el || (el.contains && el.contains(tengah)))) {
+            pelanggaranHit.push(
+              `${labelEl(el)} (target ${t}px) di titik TENGAH (${cx.toFixed(1)}, ${cy.toFixed(1)}): dijawab ${labelEl(tengah)}, harap elemen itu sendiri atau turunannya`
             );
-            continue;
           }
 
-          if (sumbu === 'x') {
-            const kiri = ra.right <= rb.left ? a : b;
-            const kanan = kiri === a ? b : a;
-            const rk = kiri.getBoundingClientRect();
-            const rn = kanan.getBoundingClientRect();
-            const gapMid = (rk.right + rn.left) / 2;
-            const y = (Math.max(rk.top, rn.top) + Math.min(rk.bottom, rn.bottom)) / 2;
-            const titikKiri = document.elementFromPoint(gapMid - 2, y);
-            const titikKanan = document.elementFromPoint(gapMid + 2, y);
-            if (titikKiri !== kiri) {
-              pelanggaran.push(
-                `${labelEl(kiri)} vs ${labelEl(kanan)}: titik (${(gapMid - 2).toFixed(1)}, ${y.toFixed(1)}) — 2px kiri dari tengah celah — dijawab ${labelEl(titikKiri)}, harap ${labelEl(kiri)}`
-              );
-            }
-            if (titikKanan !== kanan) {
-              pelanggaran.push(
-                `${labelEl(kiri)} vs ${labelEl(kanan)}: titik (${(gapMid + 2).toFixed(1)}, ${y.toFixed(1)}) — 2px kanan dari tengah celah — dijawab ${labelEl(titikKanan)}, harap ${labelEl(kanan)}`
-              );
-            }
-          } else {
-            const atas = ra.bottom <= rb.top ? a : b;
-            const bawah = atas === a ? b : a;
-            const rk = atas.getBoundingClientRect();
-            const rn = bawah.getBoundingClientRect();
-            const gapMid = (rk.bottom + rn.top) / 2;
-            const x = (Math.max(rk.left, rn.left) + Math.min(rk.right, rn.right)) / 2;
-            const titikAtas = document.elementFromPoint(x, gapMid - 2);
-            const titikBawah = document.elementFromPoint(x, gapMid + 2);
-            if (titikAtas !== atas) {
-              pelanggaran.push(
-                `${labelEl(atas)} vs ${labelEl(bawah)}: titik (${x.toFixed(1)}, ${(gapMid - 2).toFixed(1)}) — 2px atas dari tengah celah — dijawab ${labelEl(titikAtas)}, harap ${labelEl(atas)}`
-              );
-            }
-            if (titikBawah !== bawah) {
-              pelanggaran.push(
-                `${labelEl(atas)} vs ${labelEl(bawah)}: titik (${x.toFixed(1)}, ${(gapMid + 2).toFixed(1)}) — 2px bawah dari tengah celah — dijawab ${labelEl(titikBawah)}, harap ${labelEl(bawah)}`
+          const sisiUji = [
+            ['kiri', cx - (halfX - 1), cy, halfX],
+            ['kanan', cx + (halfX - 1), cy, halfX],
+            ['atas', cx, cy - (halfY - 1), halfY],
+            ['bawah', cx, cy + (halfY - 1), halfY],
+          ];
+          for (const [nama, x, y, half] of sisiUji) {
+            if (terpotong.has(nama)) continue; // ditegakkan oleh pemeriksaan tetangga, kotaknya boleh < target di sini
+            if (half <= 1) continue; // elemen sudah >= target di sumbu ini, tidak ada margin berarti untuk diuji
+            const kena = document.elementFromPoint(x, y);
+            if (!(kena === el || (el.contains && el.contains(kena)))) {
+              pelanggaranHit.push(
+                `${labelEl(el)} sisi ${nama} (target ${t}px, tidak menghadap tetangga) di titik (${x.toFixed(1)}, ${y.toFixed(1)}): dijawab ${labelEl(kena)}, harap elemen itu sendiri atau turunannya`
               );
             }
           }
         }
-      }
 
-      return { totalPasangan, pelanggaran, jumlahElemen: semua.length };
-    });
-    await hal.close();
+        return { totalPasangan, pelanggaranHit, pelanggaranTumpang, jumlahElemen: semua.length };
+      });
 
-    pasanganPerLayar[id] = hasil.totalPasangan;
-    for (const p of hasil.pelanggaran) pelanggaran.push(`layar ${id}: ${p}`);
+      const layarNama = layarLabel[li];
+      for (const p of hasil.pelanggaranHit) pelanggaranHit.push(`layar ${layarNama} · keadaan ${keadaanLabel[ki]}: ${p}`);
+      for (const p of hasil.pelanggaranTumpang) pelanggaranTumpang.push(`layar ${layarNama} · keadaan ${keadaanLabel[ki]}: ${p}`);
+
+      pasanganMaxPerLayar[layarNama] = Math.max(pasanganMaxPerLayar[layarNama] ?? 0, hasil.totalPasangan);
+      elemenMaxPerLayar[layarNama] = Math.max(elemenMaxPerLayar[layarNama] ?? 0, hasil.jumlahElemen);
+      totalElemenDijumlah += hasil.jumlahElemen;
+      totalPasanganDijumlah += hasil.totalPasangan;
+    }
   }
 
-  const ringkasan = Object.entries(pasanganPerLayar)
-    .map(([id, n]) => `${id}=${n}`)
-    .join(', ');
+  await hal.close();
+
+  const ringkasan =
+    `Kombinasi diperiksa: ${layarLabel.length} layar × ${keadaanLabel.length} keadaan = ${kombinasiDiperiksa}. ` +
+    `Total elemen .sentuh/.sentuh-uang diperiksa (dijumlah semua kombinasi): ${totalElemenDijumlah}. ` +
+    `Total pasangan bertetangga diperiksa (dijumlah semua kombinasi): ${totalPasanganDijumlah}. ` +
+    `Pasangan terbanyak per layar (di antara seluruh keadaan): ` +
+    Object.entries(pasanganMaxPerLayar).map(([id, n]) => `${id}=${n}`).join(', ');
 
   assert.deepEqual(
-    pelanggaran,
+    pelanggaranHit,
     [],
-    `${pelanggaran.length} titik di garis tengah celah dijawab oleh tetangga, bukan elemen terdekat:\n  ` +
-      pelanggaran.join('\n  ') +
-      `\nPasangan diperiksa per layar: ${ringkasan}`
+    `${pelanggaranHit.length} elemen gagal memenuhi ukuran area sentuh minimal pada sisi yang tidak menghadap tetangga:\n  ` +
+      pelanggaranHit.join('\n  ') +
+      `\n${ringkasan}`
   );
 
+  assert.deepEqual(
+    pelanggaranTumpang,
+    [],
+    `${pelanggaranTumpang.length} titik di garis tengah celah (atau dekat tepinya) dijawab oleh tetangga, bukan elemen terdekat:\n  ` +
+      pelanggaranTumpang.join('\n  ') +
+      `\n${ringkasan}`
+  );
+
+  // Sentinel: penjaga ini harus MEMINDAI SESUATU pada `fondasi`, dengan
+  // margin — kalau angka ini nol atau sangat kecil, penjaga hampa untuk
+  // kelas ini persis seperti versi lama yang ditemukan sabotase independen.
   assert.ok(
-    (pasanganPerLayar.fondasi ?? 0) >= 4,
-    `fondasi: hanya ${pasanganPerLayar.fondasi ?? 0} pasangan .sentuh/.sentuh-uang diperiksa, harap >= 4 ` +
+    (elemenMaxPerLayar.fondasi ?? 0) >= 1,
+    `fondasi: nol elemen .sentuh/.sentuh-uang terlihat di keadaan mana pun — penjaga ini hampa. ${ringkasan}`
+  );
+  assert.ok(
+    (pasanganMaxPerLayar.fondasi ?? 0) >= 4,
+    `fondasi: pasangan bertetangga terbanyak yang terlihat hanya ${pasanganMaxPerLayar.fondasi ?? 0}, harap >= 4 ` +
       `(dua baris tiga tombol 28×28 — jarak --space-2/8px dan --space-3/12px — masing-masing ` +
-      `menghasilkan 2 pasangan bertetangga; fix round 1, Task 5, membuktikan mekanismenya gap-driven). ` +
-      `Pasangan per layar: ${ringkasan}`
+      `menghasilkan 2 pasangan bertetangga). ${ringkasan}`
   );
 });
