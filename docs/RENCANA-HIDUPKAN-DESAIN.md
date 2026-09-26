@@ -122,3 +122,4 @@ sub-proyek, task, status, commit, reviewer, sabotase.
 
 | Sub-proyek | Task | Status | Commit | Tinjauan | Sabotase |
 |---|---|---|---|---|---|
+| 1 Fondasi | Task 1 — token mockup + koreksi AA | selesai | `a0cf333` | Sonnet 5: bersih, 2 minor ditunda | implementer: 3/3 merah |
