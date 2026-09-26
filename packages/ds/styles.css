@@ -9,6 +9,14 @@
 @import '../../ds-bundle/tokens/typography.css';
 @import '../../ds-bundle/tokens/spacing.css';
 @import '../../ds-bundle/tokens/effects.css';
+/* ⛔ Nilai MOCKUP — sumber kebenaran tampilan (Global Constraints kampanye
+   "Hidupkan desain"). Diimpor SETELAH token bundle dan SEBELUM `base.css`:
+   nama yang bertabrakan (`--accent`, `--accent-hover`, `--border`) menang di
+   sini lewat urutan `@import` — deklarasi `:root` yang datang belakangan
+   menang pada spesifisitas yang sama — SEBELUM `base.css`/`components.css`
+   memakainya lewat `var()`. Lihat `packages/ds/lumi.css` § pengarahan nama
+   bundle untuk token yang TIDAK bertabrakan nama. */
+@import './tokens-mockup.css';
 @import '../../ds-bundle/base.css';
 @import '../../ds-bundle/components.css';
 /* ⛔ PALING AKHIR — override Lumi menang atas bundle tanpa satu pun

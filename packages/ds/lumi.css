@@ -21,6 +21,72 @@
  * tidak menuntut menyalin seluruh markup dialognya.
  */
 
+/* --- Pengarahan nama bundle → nilai mockup ---------------------------------
+ *
+ * ⛔ Kampanye "Hidupkan desain" (`docs/RENCANA-HIDUPKAN-DESAIN.md`): untuk
+ * TAMPILAN, mockup adalah sumber kebenaran. `packages/ds/tokens-mockup.css`
+ * (Task 1) memuat token mockup di bawah NAMA MOCKUP-nya sendiri
+ * (`--primary`, `--foreground`, `--card`, …), diimpor di `styles.css` SETELAH
+ * token bundle dan SEBELUM `base.css`/`components.css` — itu yang membuat
+ * `--accent`, `--accent-hover`, dan `--border` (nama yang bertabrakan dengan
+ * bundle) langsung bernilai mockup tanpa satu baris pun di sini.
+ *
+ * Blok ini mengarahkan token BUNDLE yang TIDAK bertabrakan nama ke token
+ * mockup padanannya, supaya setiap komponen bundle yang memakai `var(--surface)`,
+ * `var(--ink)`, dst mengikuti mockup tanpa satu pun kelasnya disentuh. Tabel
+ * sumbernya `docs/superpowers/specs/2026-09-26-fondasi-desain-design.md` § 3.
+ *
+ * Hanya WARNA yang diarahkan di sini. Typografi, bobot, radius, bayangan,
+ * font, dan ikon adalah milik task-task berikutnya di kampanye yang sama.
+ *
+ * ⛔ Tabrakan nama, dinyatakan supaya tidak dibaca sebagai kebetulan:
+ * `--accent`, `--accent-hover`, `--border` ada di KEDUA berkas dengan arti
+ * berbeda. `--accent` mockup bernilai sama dengan `--primary`, jadi menulis
+ * `--accent: var(--primary)` di sini tidak mengubah artinya — ia dokumentasi,
+ * bukan perbaikan. Nilai yang menang di peramban WAJIB diukur
+ * (`getComputedStyle`), tidak disimpulkan dari urutan berkas.
+ *
+ * ⛔ `--accent-hover` dan `--border` SENGAJA TIDAK ditulis ulang di blok
+ * `:root` di bawah. Keduanya nama yang SAMA PERSIS di mockup dan bundle;
+ * menulis `--accent-hover: var(--accent-hover);` di sini adalah referensi
+ * SIRKULER pada custom property yang sama, dan CSS menjawabnya dengan
+ * "guaranteed-invalid value" — persis kebalikan dari yang diinginkan. Nilai
+ * mockup sudah menang untuk keduanya lewat URUTAN `@import` di `styles.css`
+ * (tokens-mockup.css sesudah token bundle): baris `:root` yang datang
+ * belakangan menang pada spesifisitas yang sama, sebelum `lumi.css` ini
+ * bahkan dimuat.
+ */
+:root {
+  --accent:        var(--primary);
+  --accent-soft:   var(--accent-subtle);
+  --accent-border: var(--card-outline-hover);
+  --on-accent:     var(--primary-foreground);
+
+  --ink:           var(--foreground);
+  --ink-muted:     var(--muted-foreground);
+  --ink-subtle:    var(--muted-foreground);
+
+  --surface:       var(--card);
+  --surface-sunk:  var(--background);
+  --surface-alt:   var(--secondary);
+
+  --border-strong: var(--input-border);
+
+  --success:      var(--status-success-text);
+  --success-soft: var(--status-success-bg);
+  --danger:       var(--status-danger-text);
+  --danger-soft:  var(--status-danger-bg);
+  --warning:      var(--status-warning-text);
+  --warning-soft: var(--status-warning-bg);
+  --info:         var(--status-info-text);
+  --info-soft:    var(--status-info-bg);
+}
+
+/* Token bundle TANPA padanan di mockup — nilai bundle dipertahankan apa
+   adanya, tidak disentuh oleh pengarahan ini:
+     --success-border, --danger-border, --warning-border, --info-border,
+     --violet, --violet-soft, --violet-border */
+
 /* --- Skala teks final: LIMA token, bukan tujuh ------------------------------
  *
  * Keputusan user 31 Agustus 2026 ("Opsi A"): empat token inti yang bebas
@@ -113,10 +179,21 @@
  * selisih kas — melayang di atas layar yang masih terlihat penuh, tanpa satu
  * pun tanda bahwa sisa layar sedang tidak dapat disentuh.
  *
- * Nilainya mengikuti `.overlay` bundle (`#14110f73`), ditulis sebagai token
- * supaya keduanya tidak menyimpang.
+ * ⛔ Nilainya DIGANTI 26 September 2026 (Task 2, kampanye "Hidupkan desain").
+ * Rona lama mengikuti `.overlay` BUNDLE (`#14110f73`, rona tinta `--ink`
+ * bundle). Rona baru mengikuti `--foreground` MOCKUP — `rgba(22, 40, 44, .45)`
+ * — rona yang sama dengan `--shadow-card`/`--shadow-raised` mockup
+ * (`docs/superpowers/specs/2026-09-26-fondasi-desain-design.md` § 3). Palet
+ * mockup sekarang sumber kebenaran tampilan; overlay yang tetap berona tinta
+ * lama akan menjadi satu-satunya permukaan gelap yang tidak mengikutinya.
+ *
+ * `.overlay` BUNDLE (`ds-bundle/components.css`) menulis warnanya LITERAL
+ * (`background: rgba(20, 17, 15, 0.45)`), bukan lewat token — override di
+ * bawah menimpanya ke `var(--overlay)` supaya keduanya tidak dapat menyimpang
+ * lagi.
  */
-:root { --overlay: rgba(20, 17, 15, .45); }
+:root { --overlay: rgba(22, 40, 44, .45); }
+.overlay { background: var(--overlay); }
 
 /* --- Target sentuh: aturan DS #3 (≥ 44px) ----------------------------------
  *
