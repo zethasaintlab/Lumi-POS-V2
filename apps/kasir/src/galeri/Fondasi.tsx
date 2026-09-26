@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { potongSentuh } from 'ds';
 
 /**
  * Layar `Fondasi desain` — halaman FONDASI galeri, bukan layar produk.
@@ -198,21 +199,6 @@ const TOKEN_BENTUK = [
   '--touch-critical',
 ];
 
-/**
- * Custom property PER SISI yang dibaca `.sentuh`/`.sentuh-uang` di
- * `lumi.css` (`--sentuh-atas/kanan/bawah/kiri`) — memotong perluasan area
- * tekan HANYA pada sisi yang diberi, supaya tidak bertumpuk dengan tetangga
- * (keputusan user 26 September 2026). Setengah celah `--space-2` (8px)
- * adalah `--space-1` (4px), jadi nilainya lewat token, bukan angka karangan.
- * Bentuknya sama dengan `gayaKategori` (`packages/domain/src/warna-kategori.ts`):
- * objek custom property, di-cast `React.CSSProperties` di titik pakai.
- */
-function potongSentuh(sisi: ReadonlyArray<'kiri' | 'kanan'>): Record<string, string> {
-  const gaya: Record<string, string> = {};
-  for (const s of sisi) gaya[`--sentuh-${s}`] = 'calc(var(--space-1) * -1)';
-  return gaya;
-}
-
 /** Swatch radius/bayangan — sejajar `Swatch` warna di atas, kotaknya dibentuk lewat kelas `fondasi-bentuk-*` (`galeri.css`, chrome galeri) alih-alih inline style, supaya tidak menulis `border`/`background` sendiri di komponen (`ds-adherence` melarang literal px/hex di JSX). */
 function KotakBentuk({ label, nilai, dataUji, kelas }: { label: string; nilai: string; dataUji: string; kelas: string }) {
   return (
@@ -383,34 +369,69 @@ export function Fondasi() {
           {/* Baris TIGA tombol 28×28 berjarak `--space-2` (8px) — kasus uji
               tidak-bertumpuk (keputusan user 26 September 2026). 8px jauh
               lebih rapat dari perluasan simetris 44px; tanpa pemotongan per
-              sisi lewat `--sentuh-kiri`/`--sentuh-kanan`, area tekan tombol 1
-              dan 2 akan tumpang tindih di celahnya. Dipotong PERSIS di garis
-              tengah celah: setengah `--space-2` adalah `--space-1` (4px). */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <button
-                type="button"
-                className="sentuh fondasi-sentuh-demo"
-                data-uji="sentuh-baris-1"
-                aria-label="Uji tetangga 1"
-                style={potongSentuh(['kanan']) as React.CSSProperties}
-              />
-              <button
-                type="button"
-                className="sentuh fondasi-sentuh-demo"
-                data-uji="sentuh-baris-2"
-                aria-label="Uji tetangga 2"
-                style={potongSentuh(['kiri', 'kanan']) as React.CSSProperties}
-              />
-              <button
-                type="button"
-                className="sentuh fondasi-sentuh-demo"
-                data-uji="sentuh-baris-3"
-                aria-label="Uji tetangga 3"
-                style={potongSentuh(['kiri']) as React.CSSProperties}
-              />
+              sisi lewat `potongSentuh` (`packages/ds/sentuh.ts`), area tekan
+              tombol 1 dan 2 akan tumpang tindih di celahnya. Dipotong PERSIS
+              di garis tengah celah — `celah` diteruskan sebagai TOKEN
+              layout ('var(--space-2)'), sama persis dengan `gap` yang
+              menata baris ini, bukan angka yang diketik ulang.
+              Baris KEDUA (jarak `--space-3`, 12px) membuktikan mekanismenya
+              GAP-DRIVEN, bukan konstanta 8px yang dipaku — sabotase yang
+              mengabaikan `celah` membuat baris ini merah, bukan baris
+              pertama saja (fix round 1, temuan review Task 5). */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                <button
+                  type="button"
+                  className="sentuh fondasi-sentuh-demo"
+                  data-uji="sentuh-baris-1"
+                  aria-label="Uji tetangga 1"
+                  style={potongSentuh(['kanan'], 'var(--space-2)') as React.CSSProperties}
+                />
+                <button
+                  type="button"
+                  className="sentuh fondasi-sentuh-demo"
+                  data-uji="sentuh-baris-2"
+                  aria-label="Uji tetangga 2"
+                  style={potongSentuh(['kiri', 'kanan'], 'var(--space-2)') as React.CSSProperties}
+                />
+                <button
+                  type="button"
+                  className="sentuh fondasi-sentuh-demo"
+                  data-uji="sentuh-baris-3"
+                  aria-label="Uji tetangga 3"
+                  style={potongSentuh(['kiri'], 'var(--space-2)') as React.CSSProperties}
+                />
+              </div>
+              <span className="t-caption">3× .sentuh, 28×28, jarak --space-2 (8px) — area dipotong di tengah celah</span>
             </div>
-            <span className="t-caption">3× .sentuh, 28×28, jarak 8px — area dipotong di tengah celah</span>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                <button
+                  type="button"
+                  className="sentuh fondasi-sentuh-demo"
+                  data-uji="sentuh-gap12-1"
+                  aria-label="Uji tetangga gap besar — 1"
+                  style={potongSentuh(['kanan'], 'var(--space-3)') as React.CSSProperties}
+                />
+                <button
+                  type="button"
+                  className="sentuh fondasi-sentuh-demo"
+                  data-uji="sentuh-gap12-2"
+                  aria-label="Uji tetangga gap besar — 2"
+                  style={potongSentuh(['kiri', 'kanan'], 'var(--space-3)') as React.CSSProperties}
+                />
+                <button
+                  type="button"
+                  className="sentuh fondasi-sentuh-demo"
+                  data-uji="sentuh-gap12-3"
+                  aria-label="Uji tetangga gap besar — 3"
+                  style={potongSentuh(['kiri'], 'var(--space-3)') as React.CSSProperties}
+                />
+              </div>
+              <span className="t-caption">3× .sentuh, 28×28, jarak --space-3 (12px) — gap BERBEDA, membuktikan mekanismenya gap-driven</span>
+            </div>
           </div>
         </div>
       </section>

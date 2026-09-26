@@ -46,3 +46,10 @@ export { Modal, ConfirmDialog } from './overlay.tsx';
 // turun ke 0 memanggil `onRemove`, sehingga tombol "Hapus" terpisah tidak
 // perlu ada sama sekali.
 export { Ticket } from '../../ds-bundle/components/pos/Ticket.jsx';
+
+// `potongSentuh` — helper untuk memotong area sentuh tak terlihat
+// (`.sentuh`/`.sentuh-uang`, `lumi.css`) pada sisi yang menghadap tetangga,
+// dari CELAH SEBENARNYA layout. Lahir Task 5 (galeri `fondasi`), dipindah
+// ke sini karena sub-proyek 2 butuh mekanisme yang sama di layar kasir
+// sungguhan — lihat komentar `sentuh.ts`.
+export { potongSentuh } from './sentuh.ts';

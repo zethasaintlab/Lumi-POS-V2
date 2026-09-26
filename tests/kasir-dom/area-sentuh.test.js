@@ -31,8 +31,11 @@
 // bukan diketik ulang — lihat § Cakupan di `skala-teks.test.js`), termasuk
 // setiap layar kasir yang HARI INI belum punya satu pun elemen `.sentuh`
 // (jumlah pasangan yang diperiksa untuk layar itu karena itu boleh nol — yang
-// tidak boleh nol adalah `fondasi`, yang punya baris tiga tombol 28×28
-// berjarak 8px sengaja dibuat rapat untuk kasus ini).
+// tidak boleh nol adalah `fondasi`, yang punya DUA baris tiga tombol 28×28
+// sengaja dibuat rapat untuk kasus ini: satu berjarak `--space-2` (8px), satu
+// lagi `--space-3` (12px) — gap BERBEDA, supaya penjaga ini membuktikan
+// `potongSentuh` (`packages/ds/sentuh.ts`) memotong dari celah SEBENARNYA
+// yang diteruskan, bukan konstanta 8px yang dipaku (fix round 1, Task 5).
 //
 // Kedekatan pasangan dihitung dari PERLUASAN BAWAAN (simetris, dari kelasnya
 // — 44 untuk `.sentuh`, 56 untuk `.sentuh-uang`) atas kotak TAMPILAN
@@ -368,9 +371,10 @@ test('⛔ area sentuh tetangga tidak bertumpuk — setiap halaman galeri, ≥ 2 
   );
 
   assert.ok(
-    (pasanganPerLayar.fondasi ?? 0) >= 2,
-    `fondasi: hanya ${pasanganPerLayar.fondasi ?? 0} pasangan .sentuh/.sentuh-uang diperiksa, harap >= 2 ` +
-      `(baris tiga tombol 28×28 berjarak 8px harus menghasilkan 2 pasangan bertetangga). ` +
+    (pasanganPerLayar.fondasi ?? 0) >= 4,
+    `fondasi: hanya ${pasanganPerLayar.fondasi ?? 0} pasangan .sentuh/.sentuh-uang diperiksa, harap >= 4 ` +
+      `(dua baris tiga tombol 28×28 — jarak --space-2/8px dan --space-3/12px — masing-masing ` +
+      `menghasilkan 2 pasangan bertetangga; fix round 1, Task 5, membuktikan mekanismenya gap-driven). ` +
       `Pasangan per layar: ${ringkasan}`
   );
 });
