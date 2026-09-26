@@ -128,3 +128,4 @@ sub-proyek, task, status, commit, reviewer, sabotase.
 |---|---|---|---|---|---|
 | 1 Fondasi | Task 1 — token mockup + koreksi AA | selesai | `a0cf333` | Sonnet 5: bersih, 2 minor ditunda | implementer: 3/3 merah |
 | 1 Fondasi | Task 2 — pengarahan token bundle, halaman fondasi, nol hex | selesai | `133e966`, `d41a769`, `9fd0298` | Sonnet 5: bersih; tinjauan ulang putaran 1 bersih | implementer 3 sabotase; independen Opus 14 (6 celah ditutup di putaran 1, S9 diparkir) |
+| 1 Fondasi | Task 3 — Nunito Sans di-self-host | selesai | `0392513` | Sonnet 5: bersih, 2 minor ditunda | implementer: 2/2 merah; penjaga hampa `document.fonts.check()` ditemukan implementer dan diganti |
