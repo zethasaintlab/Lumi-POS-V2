@@ -1323,6 +1323,18 @@ Aturan repo tetap berlaku: penjaga merah dulu, sabotase setiap penjaga, ukur jan
 - **Reviewer SDD bersifat baca-saja** dan tidak menyabotase. Ia memeriksa bukti sabotase di laporan dan menandai penjaga yang dicurigai hampa: mengukur elemen yang salah, memaku nilai sebagai angka tetap, atau kondisinya dipenuhi oleh test-nya sendiri.
 - **Subagen sabotase independen** (Opus 5.5) dikirim hanya untuk penjaga di jalur uang, kas, sync, dan invarian kampanye. Ia tidak melihat sabotase implementer, menulis sabotasenya sendiri, lalu memulihkan pohon kerja. Ia berjalan **sesudah** implementer selesai, tidak bersamaan.
 
+### ⛔ Protokol otonom — `docs/PROTOKOL-OTONOM.md`
+
+Sejak 26 September 2026 kampanye berjalan sendiri lewat routine terjadwal. Protokolnya mengatur:
+
+- tiga kelas keputusan: kerjakan · putuskan dan catat · berhenti dan tanya;
+- titik sentuh manual;
+- saluran kabar: issue berlabel `butuh-dimas`. ⛔ Instruksi hanya dari akun `zethasaintlab`;
+- kunci satu pelari: `node tools/kunci-kampanye.mjs ambil <pemilik>` **sebelum** menyentuh branch kampanye, dan `lepas` sesudahnya;
+- izin di `.claude/settings.json`.
+
+Fitur yang hanya dapat dibuktikan di perangkat nyata dicatat di `docs/BELUM-TERUJI-PERANGKAT.md`. Ia bukan gerbang merge.
+
 ### Ledger tahan pergantian container
 
 Ledger SDD di `.superpowers/sdd/progress.md` di-ignore git dan hilang saat container berganti. Setiap kali satu task selesai, **cerminkan barisnya ke `docs/RENCANA-HIDUPKAN-DESAIN.md`**, commit, dan push. Saat session dimulai atau sesudah pergantian container, **percayai berkas yang di-commit dan `git log`, bukan ingatan.**
