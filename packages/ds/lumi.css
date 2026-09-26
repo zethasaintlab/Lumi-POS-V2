@@ -107,6 +107,43 @@
      --success-border, --danger-border, --warning-border, --info-border,
      --violet, --violet-soft, --violet-border */
 
+/* --- Radius, bayangan, target sentuh: nilai MOCKUP -------------------------
+ *
+ * Task 5, kampanye "Hidupkan desain" (26 September 2026). Spec § 6
+ * (`docs/superpowers/specs/2026-09-26-fondasi-desain-design.md`).
+ *
+ * Tiga nama BUNDLE tanpa padanan nama di mockup, diarahkan eksplisit — pola
+ * yang sama dengan blok warna di atas:
+ *   - `--radius-card` (bundle, dipakai `.card`/`.stat`/`.ticket`/`.dialog`)
+ *     → `var(--radius)` (mockup, 12px: "cards, panels, modals"). Nilainya
+ *     kebetulan SAMA (12px di kedua berkas); yang berubah adalah SUMBER
+ *     kebenarannya, bukan angkanya.
+ *   - `--shadow-sheet` (bundle, dipakai `.dialog`) → `var(--shadow-raised)`
+ *     (mockup, permukaan yang terangkat dari latar).
+ *   - `--touch-critical` (bundle 56px, dipakai `.btn-critical`/`.field-lg`)
+ *     → `var(--touch-primary)` (mockup, 56px: "primary cashier actions").
+ *     Nilainya juga kebetulan sama (56px keduanya) — alasan yang sama dengan
+ *     `--radius-card`.
+ *
+ * ⛔ Dua nama LAIN BERTABRAKAN dan SENGAJA TIDAK ditulis ulang di sini —
+ * alasan yang sama persis dengan `--accent-hover`/`--border` di atas: menulis
+ * ulang nama yang IDENTIK di kedua berkas adalah referensi sirkuler pada
+ * custom property yang sama. `tokens-mockup.css` menang lewat URUTAN
+ * `@import` (sesudah token bundle, sebelum `lumi.css`):
+ *   - `--radius-control` — bundle 8px, mockup 10px. Mockup MENANG (beda
+ *     angka, jadi ini satu-satunya cara memverifikasinya BUKAN kebetulan).
+ *   - `--shadow-card` — kedua berkas mendefinisikannya (bentuk berbeda,
+ *     rona berbeda). Mockup MENANG.
+ * Nilai efektif WAJIB diukur (`getComputedStyle`), bukan disimpulkan dari
+ * urutan berkas — lihat halaman `bentuk` galeri (`?layar=fondasi`) dan
+ * `tests/kasir-dom/area-sentuh.test.js`.
+ */
+:root {
+  --radius-card:    var(--radius);
+  --shadow-sheet:   var(--shadow-raised);
+  --touch-critical: var(--touch-primary);
+}
+
 /* --- Skala teks final: EMPAT token, 32/20/15/13 ------------------------------
  *
  * ⛔ Task 4, kampanye "Hidupkan desain" (26 September 2026). Keputusan user
@@ -259,6 +296,62 @@
 .dialog .btn-ghost[aria-label="Tutup"] {
   min-height: 44px !important;
   min-width: 44px !important;
+}
+
+/* --- Area sentuh tak terlihat: `.sentuh` (≥44) dan `.sentuh-uang` (≥56) ----
+ *
+ * Task 5, kampanye "Hidupkan desain". Constraint kampanye
+ * (`docs/RENCANA-HIDUPKAN-DESAIN.md`): "elemen yang di mockup lebih kecil
+ * dari 44px tampil PERSIS ukuran mockup, dengan area sentuh diperluas TANPA
+ * TERLIHAT ke 44px, dan 56px untuk aksi uang." Spec § 6 "Mekanisme area
+ * sentuh tak terlihat".
+ *
+ * `getBoundingClientRect` elemen TIDAK berubah — hanya `::before`-nya yang
+ * meluas, transparan, dan tetap menerima pointer (`pointer-events` bawaan
+ * `position: absolute` sudah `auto`; dinyatakan eksplisit di bawah supaya
+ * niatnya tidak bergantung pada nilai bawaan peramban).
+ *
+ * `.sentuh`/`.sentuh-uang` WAJIB `position: relative` — itu yang membuat
+ * elemen itu sendiri menjadi CONTAINING BLOCK bagi `::before`-nya, dan itu
+ * pula yang membuat formula `inset` di bawah menghitung PERSEN dari dimensi
+ * elemen ITU SENDIRI (top/bottom dari tingginya, left/right dari lebarnya),
+ * bukan dari leluhur positioned lain yang kebetulan ada di atasnya.
+ *
+ * Pada elemen persegi 28×28: `calc((var(--touch-min) - 100%) / -2)` =
+ * `calc((44px - 28px) / -2)` = `-8px` per sisi → total 44×44, terpusat.
+ *
+ * ⛔ Empat custom property PER SISI (`--sentuh-atas/kanan/bawah/kiri`)
+ * membiarkan pemanggil yang TAHU tata letaknya sendiri memotong perluasan
+ * itu — HANYA pada sisi yang menghadap tetangga — supaya area sentuh yang
+ * membesar tidak mencuri ketukan dari elemen sebelahnya (keputusan user 26
+ * September 2026, "area sentuh tidak boleh bertumpuk"). Lihat baris tiga
+ * tombol 28×28 berjarak 8px di bagian `bentuk` galeri (`Fondasi.tsx`): tanpa
+ * pemotongan itu, perluasan 44px bertumpang tindih di celah 8px-nya.
+ *
+ * Bawaan (tanpa override) tetap SIMETRIS di keempat sisi — kelas ini tidak
+ * diam-diam mengecil di layar yang lapang; hanya pemanggil yang benar-benar
+ * memasang nilai lain yang memotongnya.
+ */
+.sentuh,
+.sentuh-uang {
+  position: relative;
+}
+.sentuh::before,
+.sentuh-uang::before {
+  content: '';
+  position: absolute;
+  top:    var(--sentuh-atas,  calc((var(--touch-min) - 100%) / -2));
+  right:  var(--sentuh-kanan, calc((var(--touch-min) - 100%) / -2));
+  bottom: var(--sentuh-bawah, calc((var(--touch-min) - 100%) / -2));
+  left:   var(--sentuh-kiri,  calc((var(--touch-min) - 100%) / -2));
+  background: transparent;
+  pointer-events: auto;
+}
+.sentuh-uang::before {
+  top:    var(--sentuh-atas,  calc((var(--touch-critical) - 100%) / -2));
+  right:  var(--sentuh-kanan, calc((var(--touch-critical) - 100%) / -2));
+  bottom: var(--sentuh-bawah, calc((var(--touch-critical) - 100%) / -2));
+  left:   var(--sentuh-kiri,  calc((var(--touch-critical) - 100%) / -2));
 }
 
 /* 11px bukan token mana pun di sistem ini. Dikembalikan ke skala final

@@ -99,3 +99,36 @@
   }
   .galeri-tanya { padding: var(--space-2); }
 }
+
+/* --- Bagian `bentuk` di Fondasi (Task 5) -----------------------------------
+ *
+ * Chrome galeri, sejajar aturan berkas ini (komentar kepala): sengaja netral,
+ * bukan komponen produk. Ukuran swatch radius/bayangan memakai `--space-8`
+ * (sama dengan swatch warna `Swatch` di `Fondasi.tsx`); yang divariasikan
+ * hanya radius/bayangannya lewat token yang sedang diverifikasi
+ * (`tests/kasir-dom/area-sentuh.test.js` membaca `getComputedStyle`, bukan
+ * kelas ini).
+ */
+.fondasi-bentuk-kotak {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.fondasi-bentuk-radius-inti     { border-radius: var(--radius); }
+.fondasi-bentuk-radius-control  { border-radius: var(--radius-control); }
+.fondasi-bentuk-radius-pill     { border-radius: var(--radius-pill); }
+.fondasi-bentuk-bayangan-card   { box-shadow: var(--shadow-card); }
+.fondasi-bentuk-bayangan-raised { box-shadow: var(--shadow-raised); }
+
+/* Tombol uji `.sentuh`/`.sentuh-uang` — 28×28 adalah FIXTURE ukuran dari
+ * `tests/kasir-dom/area-sentuh.test.js` (lebih kecil dari `--touch-min` 44px,
+ * supaya tes dapat membuktikan tampilan TIDAK membesar sementara area
+ * tekannya membesar), bukan token desain — karena itu ditulis literal di
+ * sini, bukan lewat `var()`.
+ */
+.fondasi-sentuh-demo {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: var(--accent);
+}

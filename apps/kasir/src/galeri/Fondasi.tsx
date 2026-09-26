@@ -142,9 +142,8 @@ const GRUP_WARNA: ReadonlyArray<{ judul: string; token: readonly string[] }> = [
   },
 ];
 
-/** Bagian yang belum diisi Task 2/4 — kerangka bertanda, diisi Task 5–9. */
+/** Bagian yang belum diisi Task 2/4/5 — kerangka bertanda, diisi Task 6–9. */
 const BAGIAN_BELUM_DIISI = [
-  { id: 'bentuk', judul: 'Bentuk' },
   { id: 'ikon', judul: 'Ikon' },
   { id: 'wordmark', judul: 'Wordmark' },
   { id: 'komponen', judul: 'Komponen' },
@@ -170,6 +169,67 @@ const SKALA_TEKS: ReadonlyArray<{ label: string; kelas: string; tokenUkuran: str
 
 /** Token yang dibaca bagian `teks`, di luar warna — dipetakan ke `nilai` yang sama. */
 const TOKEN_TEKS = SKALA_TEKS.flatMap((s) => [s.tokenUkuran, s.tokenBobot]);
+
+/**
+ * Bagian `bentuk` (Task 5) — radius, bayangan, target sentuh. Spec § 6
+ * (`docs/superpowers/specs/2026-09-26-fondasi-desain-design.md`): tiga
+ * radius (`--radius` 12/kartu, `--radius-control` 10/tombol, `--radius-pill`
+ * 999/pil-chip), dua bayangan (`--shadow-card`, `--shadow-raised`), dua
+ * target sentuh (`--touch-min` 44, `--touch-critical` — diarahkan dari
+ * `--touch-primary` mockup lewat `lumi.css`).
+ *
+ * Nilainya dibaca dari `getComputedStyle` sama seperti bagian lain di
+ * berkas ini (lihat komentar kepala § "Nilai DIBACA, tidak diketik") — bukan
+ * diketik ulang dari `tokens-mockup.css`.
+ */
+const RADIUS: ReadonlyArray<{ label: string; token: string; dataUji: string; kelas: string }> = [
+  { label: '--radius (kartu)', token: '--radius', dataUji: 'radius-kartu', kelas: 'fondasi-bentuk-radius-inti' },
+  { label: '--radius-control (tombol)', token: '--radius-control', dataUji: 'radius-tombol', kelas: 'fondasi-bentuk-radius-control' },
+  { label: '--radius-pill (pil/chip)', token: '--radius-pill', dataUji: 'radius-pil', kelas: 'fondasi-bentuk-radius-pill' },
+];
+const BAYANGAN: ReadonlyArray<{ label: string; token: string; dataUji: string; kelas: string }> = [
+  { label: '--shadow-card', token: '--shadow-card', dataUji: 'bayangan-card', kelas: 'fondasi-bentuk-bayangan-card' },
+  { label: '--shadow-raised', token: '--shadow-raised', dataUji: 'bayangan-raised', kelas: 'fondasi-bentuk-bayangan-raised' },
+];
+const TOKEN_BENTUK = [
+  ...RADIUS.map((r) => r.token),
+  ...BAYANGAN.map((b) => b.token),
+  '--touch-min',
+  '--touch-critical',
+];
+
+/**
+ * Custom property PER SISI yang dibaca `.sentuh`/`.sentuh-uang` di
+ * `lumi.css` (`--sentuh-atas/kanan/bawah/kiri`) — memotong perluasan area
+ * tekan HANYA pada sisi yang diberi, supaya tidak bertumpuk dengan tetangga
+ * (keputusan user 26 September 2026). Setengah celah `--space-2` (8px)
+ * adalah `--space-1` (4px), jadi nilainya lewat token, bukan angka karangan.
+ * Bentuknya sama dengan `gayaKategori` (`packages/domain/src/warna-kategori.ts`):
+ * objek custom property, di-cast `React.CSSProperties` di titik pakai.
+ */
+function potongSentuh(sisi: ReadonlyArray<'kiri' | 'kanan'>): Record<string, string> {
+  const gaya: Record<string, string> = {};
+  for (const s of sisi) gaya[`--sentuh-${s}`] = 'calc(var(--space-1) * -1)';
+  return gaya;
+}
+
+/** Swatch radius/bayangan — sejajar `Swatch` warna di atas, kotaknya dibentuk lewat kelas `fondasi-bentuk-*` (`galeri.css`, chrome galeri) alih-alih inline style, supaya tidak menulis `border`/`background` sendiri di komponen (`ds-adherence` melarang literal px/hex di JSX). */
+function KotakBentuk({ label, nilai, dataUji, kelas }: { label: string; nilai: string; dataUji: string; kelas: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', alignItems: 'center' }}>
+      <div
+        className={`fondasi-bentuk-kotak ${kelas}`}
+        data-uji={dataUji}
+        aria-hidden="true"
+        style={{ width: 'var(--space-8)', height: 'var(--space-8)' }}
+      />
+      <span className="t-caption">{label}</span>
+      <span className="t-caption" style={{ color: 'var(--ink-muted)' }}>
+        {nilai || '(kosong)'}
+      </span>
+    </div>
+  );
+}
 
 function Swatch({ nama, nilai }: { nama: string; nilai: string }) {
   return (
@@ -200,6 +260,7 @@ export function Fondasi() {
       for (const nama of grup.token) peta[nama] = s.getPropertyValue(nama).trim();
     }
     for (const nama of TOKEN_TEKS) peta[nama] = s.getPropertyValue(nama).trim();
+    for (const nama of TOKEN_BENTUK) peta[nama] = s.getPropertyValue(nama).trim();
     return peta;
   }, []);
 
@@ -257,6 +318,100 @@ export function Fondasi() {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
           <span className="t-caption">Angka tabular (kelas .num, aturan DS #4):</span>
           <span className="num t-body">1234567890</span>
+        </div>
+      </section>
+
+      <section data-fondasi="bentuk" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+        <h2 className="t-body-md">Bentuk</h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Radius
+          </h3>
+          <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+            {RADIUS.map((r) => (
+              <KotakBentuk key={r.token} label={r.label} nilai={nilai[r.token]} dataUji={r.dataUji} kelas={r.kelas} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Bayangan
+          </h3>
+          <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+            {BAYANGAN.map((b) => (
+              <KotakBentuk key={b.token} label={b.label} nilai={nilai[b.token]} dataUji={b.dataUji} kelas={b.kelas} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Target sentuh — <code>.sentuh</code> (≥ {nilai['--touch-min'] || '(kosong)'}) dan{' '}
+            <code>.sentuh-uang</code> (≥ {nilai['--touch-critical'] || '(kosong)'})
+          </h3>
+          <p className="t-caption" style={{ margin: 0, color: 'var(--ink-muted)' }}>
+            Kotak biru di bawah tetap 28×28 — hanya area TEKAN-nya yang meluas, tak
+            terlihat (<code>tests/kasir-dom/area-sentuh.test.js</code>).
+          </p>
+
+          {/* Dua elemen TERISOLASI, berjarak lapang (`--space-8`) supaya area
+              perluasannya (44 dan 56) tidak saling mendekat — inilah yang
+              diukur `document.elementFromPoint` di ±21/±23 dan ±27/±29. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-8)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <button
+                type="button"
+                className="sentuh fondasi-sentuh-demo"
+                data-uji="sentuh-tunggal"
+                aria-label="Uji area sentuh minimal"
+              />
+              <span className="t-caption">.sentuh (tunggal)</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <button
+                type="button"
+                className="sentuh-uang fondasi-sentuh-demo"
+                data-uji="sentuh-uang-tunggal"
+                aria-label="Uji area sentuh uang minimal"
+              />
+              <span className="t-caption">.sentuh-uang (tunggal)</span>
+            </div>
+          </div>
+
+          {/* Baris TIGA tombol 28×28 berjarak `--space-2` (8px) — kasus uji
+              tidak-bertumpuk (keputusan user 26 September 2026). 8px jauh
+              lebih rapat dari perluasan simetris 44px; tanpa pemotongan per
+              sisi lewat `--sentuh-kiri`/`--sentuh-kanan`, area tekan tombol 1
+              dan 2 akan tumpang tindih di celahnya. Dipotong PERSIS di garis
+              tengah celah: setengah `--space-2` adalah `--space-1` (4px). */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <button
+                type="button"
+                className="sentuh fondasi-sentuh-demo"
+                data-uji="sentuh-baris-1"
+                aria-label="Uji tetangga 1"
+                style={potongSentuh(['kanan']) as React.CSSProperties}
+              />
+              <button
+                type="button"
+                className="sentuh fondasi-sentuh-demo"
+                data-uji="sentuh-baris-2"
+                aria-label="Uji tetangga 2"
+                style={potongSentuh(['kiri', 'kanan']) as React.CSSProperties}
+              />
+              <button
+                type="button"
+                className="sentuh fondasi-sentuh-demo"
+                data-uji="sentuh-baris-3"
+                aria-label="Uji tetangga 3"
+                style={potongSentuh(['kiri']) as React.CSSProperties}
+              />
+            </div>
+            <span className="t-caption">3× .sentuh, 28×28, jarak 8px — area dipotong di tengah celah</span>
+          </div>
         </div>
       </section>
 
