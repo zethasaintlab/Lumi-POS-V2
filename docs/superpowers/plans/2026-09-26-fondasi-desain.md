@@ -46,6 +46,14 @@ Dari spec (nilai yang dipaku):
 - Ikon: node `lucide-react@0.468.0` apa adanya, tanpa dependency npm baru.
 - Wordmark "LumiPOS": ikon `store` 20 px di kotak 36×36 `--radius-control` berlatar `--primary`, teks 20 px bobot 600.
 
+## Keputusan tinjauan pra-eksekusi (user, 26 September 2026)
+
+- `t-body-md` → 600. Kosakata bobot mockup hanya 400/600/700/800. Dinilai di preview.
+- HP 390 px dibuktikan dari dev server, bukan test CI. Utangnya dicatat di `docs/RENCANA-HIDUPKAN-DESAIN.md`; harness DOM HP tidak dibangun di sini.
+- Chip kategori netral di sub-proyek ini (Task 9 Step 0), bukan ditunda.
+- Area sentuh tidak boleh bertumpuk (Task 5).
+- Plugin ikon tidak boleh tersembunyi, dan pemakai bundle tanpa Vite ditangani (Task 7).
+
 ## Prasyarat eksekusi
 
 - Container baru: `bash tools/siapkan-dev.sh`, lalu `export PATH="/opt/nvm/versions/node/v24.7.0/bin:$PATH"`.
@@ -209,9 +217,16 @@ Dari spec (nilai yang dipaku):
   - Untuk `.sentuh-uang` dipakai ±27 dan ±29.
   - `getBoundingClientRect` tetap 28×28, jadi tampilannya tidak membesar.
   - `getComputedStyle(el).borderRadius` sesuai: tombol 10 px, kartu 12 px.
+- [ ] **Step 1b: Penjaga tidak bertumpuk (keputusan user 26 Sep 2026).** Area sentuh yang bertumpuk membuat ketukan di tepi mengenai tetangga yang salah; di kasir itu berarti produk yang salah masuk keranjang.
+  - Test `area sentuh tetangga tidak bertumpuk` memindai setiap halaman galeri, termasuk `fondasi` dan setiap layar kasir.
+  - Untuk setiap pasangan elemen `.sentuh`/`.sentuh-uang` yang area perluasannya (kotak 44 atau 56 terpusat) saling mendekat, ambil titik-titik di garis tengah celah di antara keduanya. Setiap titik harus dijawab `elementFromPoint` oleh elemen yang kotak tampilannya paling dekat, bukan tetangganya.
+  - Bagian `bentuk` di Fondasi memuat satu baris tiga tombol 28×28 berjarak 8 px sebagai kasus uji. Mekanismenya harus menahan tumpang tindih di sana, misalnya area dipotong di garis tengah celah.
+  - Hari ini belum ada elemen kasir yang memakai kelas ini. Jadi di layar kasir test harus melaporkan jumlah pasangan yang diperiksa, dan di `fondasi` jumlah itu ≥ 2.
+  - Bila celah di mockup terlalu rapat untuk memperluas tanpa bertumpuk: **laporkan, jangan perbesar tampilan diam-diam.**
 - [ ] **Step 2: MERAH** (kelas belum ada).
 - [ ] **Step 3: Implementasi.** `::before` absolut, `inset` negatif dihitung dengan `calc((var(--touch-min) - 100%) / -2)` atau `min-width`/`min-height` terpusat, transparan, dan tetap menerima pointer.
-- [ ] **Step 4: HIJAU.** Sabotase: `::before` dihapus. Test ±21 harus merah dan menyebut 44.
+- [ ] **Step 4: HIJAU.** Sabotase dua kali: `::before` dihapus (test ±21 harus merah dan menyebut 44), dan pemotongan di garis tengah celah dihapus (test tetangga harus merah dan menyebut pasangannya).
+- [ ] **Step 4b: Sabotase independen Opus 5.5** (controller) untuk kedua penjaga Task 5, termasuk penjaga tidak bertumpuk.
 - [ ] **Step 5: Invarian** `k06-penjaga` dan `k12-aksi-slot` hijau, karena tinggi tombol kritis berubah lewat `--touch-critical`.
 - [ ] **Step 6: Commit** `feat(ds): radius, bayangan mockup, dan area sentuh tak terlihat`.
 
@@ -252,6 +267,8 @@ Dari spec (nilai yang dipaku):
 - Create: `packages/ds/vite-ikon.ts`, dengan `export function ikonLumi(): Plugin` yang me-`resolveId` setiap impor `…/forms/Icon.jsx` dari dalam `ds-bundle/components/` ke `packages/ds/ikon.tsx`
 - Modify: `apps/kasir/vite.config.ts`, `apps/kasir/vite.galeri.config.ts`, `apps/kasir/vite.k06.config.ts`, `apps/backoffice/vite.config.ts`, `apps/hp/vite.config.ts`
 - Modify: `tests/runtime/ikon-lucide.test.js` (test pindai config)
+- Modify: `tests/backoffice/navigasi.test.js:89-110`. Test ini membaca daftar ikon dari sumber `ds-bundle/components/forms/Icon.jsx` lewat Node, tanpa Vite; ia diarahkan ke `iconNames` dari `packages/ds/ikon.tsx`
+- Modify: `CLAUDE.md` § Aturan design system (satu paragraf pengalihan ikon), `packages/ds/README.md`, komentar di setiap config Vite yang memasang plugin
 - Create: `tests/kasir-dom/ikon-bundle.test.js`
 - Modify: `Fondasi.tsx` bagian `ikon`
 
@@ -265,7 +282,17 @@ Dari spec (nilai yang dipaku):
   - Di `?layar=fondasi` bagian `ikon`, setiap nama di `iconNames` merender `<svg>` dengan jumlah anak sama dengan node fixture-nya.
 - [ ] **Step 3: MERAH.**
 - [ ] **Step 4: Implementasi.**
-- [ ] **Step 5: HIJAU**, lalu `npm run build:galeri`. Sabotase: plugin dicabut dari `vite.galeri.config.ts`. Kedua test harus merah dan menyebut config serta ikonnya.
+- [ ] **Step 4b: Pemakai tanpa Vite (keputusan user 26 Sep 2026).**
+  - Cari setiap test, harness, atau alat yang mengimpor atau membaca `ds-bundle/components/**` tanpa lewat Vite: `grep -rn "ds-bundle/components" tests tools apps --include=*.js --include=*.mjs --include=*.ts --include=*.tsx --include=*.html`.
+  - Yang sudah diketahui adalah `tests/backoffice/navigasi.test.js`, yang dialihkan ke `ikon.tsx`. Setiap temuan lain dilaporkan di laporan task dan ditangani dengan cara yang sama.
+  - Tambah test di `ikon-lucide.test.js`: nol berkas di `tests/`, `tools/`, dan `apps/` yang membaca `forms/Icon.jsx` bundle, kecuali `packages/ds/vite-ikon.ts`.
+- [ ] **Step 4c: Plugin tidak tersembunyi.** Keberadaannya dicatat di tiga tempat:
+  - `CLAUDE.md` § Aturan design system;
+  - `packages/ds/README.md`;
+  - komentar di setiap config Vite yang memasangnya.
+
+  ⛔ **Bukan di README vendor `ds-bundle/`**, meski itu yang diminta. `tests/runtime/ds-bundle-vendor.test.js` membandingkan seluruh `ds-bundle/` dengan `origin/main`, dan berkas baru pun terbaca sebagai suntingan. Menulis di sana membuat penjaga itu merah, dan user juga meminta ia tetap hijau. `packages/ds/README.md` adalah README lapisan yang mengekspor bundle ke aplikasi.
+- [ ] **Step 5: HIJAU**, lalu `npm run build:galeri`, `node --test tests/runtime/ds-bundle-vendor.test.js`, dan `npm run test:backoffice`. Sabotase: plugin dicabut dari `vite.galeri.config.ts`. Kedua test harus merah dan menyebut config serta ikonnya.
 - [ ] **Step 6: Commit** `feat(ds): impor ikon internal bundle dialihkan ke set Lucide`.
 
 ### Task 8: Wordmark "LumiPOS"
@@ -307,6 +334,13 @@ Dari spec (nilai yang dipaku):
 **Interfaces:**
 - Consumes: token Task 1–5.
 
+- [ ] **Step 0: Inventaris warna kategori (keputusan user 26 Sep 2026). LAPORKAN SEBELUM MENGUBAH.**
+  - `grep -rn "gayaKategori\|--kat-" apps packages` menghasilkan daftar setiap pemakaian `--kat-1…6` dan `gayaKategori` selain chip. Tulis daftar itu di laporan task.
+  - Chip K-03 berhenti memakai warna kategori: netral, dan hanya yang aktif berwarna `--primary`.
+  - Kartu produk tanpa foto yang memakai warna kategori mengikuti mockup, yaitu latar putih (`--card`).
+  - Pemakaian di luar kedua itu: laporkan dan jangan ubah, kecuali ia jelas bagian dari chip atau kartu.
+  - Token `--kat-*` dan `gayaKategori` **tetap ada**; menghapusnya diputuskan sub-proyek 2.
+  - Test (di `kulit-komponen.test.js`, galeri K-03): setiap chip kategori yang tidak aktif ber-background `--card` dan ber-color `--foreground`. Tepat satu chip aktif, dengan background `--primary`. Kartu produk tanpa foto ber-background `--card`.
 - [ ] **Step 1: Test.** Di `?layar=fondasi`, `getComputedStyle` per komponen sama dengan nilai `sumber/components/*.jsx`. Nilai pembanding dibaca dari `tokens-mockup.css` di test:
   - `.btn`: height 44, radius 10, weight 600, font 15;
   - `.btn-critical`: height 56;

@@ -111,6 +111,10 @@ disetujui.
 - BLOCKED dari implementer yang tidak dapat diselesaikan
 - Keadaan repo atau branch tidak seperti yang diharapkan
 
+## Utang yang dicatat
+
+- **`apps/hp` tanpa satu pun penjaga DOM** (keputusan user, 26 September 2026). `apps/hp` adalah aplikasi owner. Ia tidak masuk sub-proyek mana pun dan tidak punya layar di mockup; "Lumi-Order" di mockup adalah aplikasi pelanggan, bukan `apps/hp`. Fondasi desain mengubah tampilannya lewat token dan wordmark, dan buktinya hanya pengukuran dari dev server (`scrollWidth <= 390` di layar masuk), bukan test CI. Harness DOM-nya belum dibangun.
+
 ## Ledger
 
 Cerminan `.superpowers/sdd/progress.md`, diisi per task. Satu baris per task:
