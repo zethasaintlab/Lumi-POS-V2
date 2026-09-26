@@ -8,12 +8,14 @@ export { Table } from '../../ds-bundle/components/data/Table.jsx';
 export { Button } from '../../ds-bundle/components/forms/Button.jsx';
 export { Chip } from '../../ds-bundle/components/forms/Chip.jsx';
 export { Field } from '../../ds-bundle/components/forms/Field.jsx';
-export { Icon, iconNames } from '../../ds-bundle/components/forms/Icon.jsx';
-// Tipe nama ikon ikut keluar lewat permukaan publik. Tanpa ini, konsumen
-// yang ingin mengetik datanya (mis. peta menu back-office) harus mengimpor
-// internal ds-bundle — dan penjaga `no-restricted-imports` melarangnya,
-// dengan benar.
-export type { IconName } from '../../ds-bundle/components/forms/Icon';
+// ⛔ `Icon`/`iconNames`/`IconName` dari `./ikon.tsx` (Task 6), BUKAN lagi
+// dari `ds-bundle/components/forms/Icon.jsx`. Set penuh sekarang node
+// `lucide-react@0.468.0` apa adanya (`packages/ds/ikon-data.ts`); Icon.jsx
+// bundle tetap ada dan tetap dipakai KOMPONEN LAIN di dalam bundle sendiri
+// (Modal, AppShell, StatCard, SyncIndicator, Ticket, Stepper) — mengalihkan
+// impor INTERNAL itu ke sini adalah plugin Vite Task 7, bukan bagian ini.
+export { Icon, iconNames } from './ikon.tsx';
+export type { IconName } from './ikon.tsx';
 export { SegmentedControl } from '../../ds-bundle/components/forms/SegmentedControl.jsx';
 export { Stepper } from '../../ds-bundle/components/forms/Stepper.jsx';
 export { Switch } from '../../ds-bundle/components/forms/Switch.jsx';

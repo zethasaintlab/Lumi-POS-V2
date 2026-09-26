@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ComponentProps } from 'react';
 import { AppShell, EmptyState, Icon } from 'ds';
 import 'ds/styles.css';
 // SETELAH `ds/styles.css`. Ia memberi jangkar tinggi yang `base.css` design
@@ -232,7 +232,16 @@ function Terlindungi() {
       // `NAVIGASI` sengaja `readonly` — ia data tetap, dan komponen yang
       // menerimanya tidak berhak menyunting peta layar aplikasi. Disalin
       // dangkal di batas ini, bukan dilonggarkan tipenya di sumbernya.
-      nav={navigasi}
+      //
+      // ⛔ Cast `IconName` di batas ini (Task 6). `IconName` publik `ds`
+      // sekarang mencakup 50 nama kebab Lucide + 48 nama bundle (82 total);
+      // `AppShell` sendiri (vendor, `ds-bundle/` tidak disunting) masih
+      // mengetik `icon` dengan `IconName` LAMANYA SENDIRI (48 nama) dari
+      // `../forms/Icon.d.ts`. `NAVIGASI` hanya pernah memakai nama bundle
+      // lama (diuji `tests/backoffice/navigasi.test.js`), jadi nilainya
+      // selalu ada di kedua himpunan — yang tidak sepakat cuma DEKLARASI
+      // tipenya, bukan nilainya.
+      nav={navigasi as ComponentProps<typeof AppShell>['nav']}
       active={layar}
       onNavigate={setAktif}
       breadcrumb={grup && item ? [grup, item.label] : undefined}
