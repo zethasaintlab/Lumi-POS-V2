@@ -56,6 +56,26 @@
  * belakangan menang pada spesifisitas yang sama, sebelum `lumi.css` ini
  * bahkan dimuat.
  */
+/* --- Font: Nunito Sans, bukan Inter -----------------------------------------
+ *
+ * ⛔ Task 3, kampanye "Hidupkan desain" (26 September 2026). Font adalah nilai
+ * MOCKUP (`docs/RENCANA-HIDUPKAN-DESAIN.md`), dan Nunito Sans di-self-host
+ * sesuai kebijakan repo sejak F0 (`CLAUDE.md`).
+ *
+ * `ds-bundle/tokens/typography.css` (VENDOR, tidak pernah disunting)
+ * mendefinisikan `--font-sans: 'Inter', system-ui, -apple-system, sans-serif;`.
+ * Baris di bawah menang karena `lumi.css` diimpor PALING AKHIR di
+ * `styles.css` — spesifisitas sama, deklarasi belakangan menang. Nilai efektif
+ * di peramban WAJIB diukur (`getComputedStyle(body).fontFamily`), bukan
+ * disimpulkan dari urutan berkas — lihat `tests/kasir-dom/font.test.js`.
+ *
+ * Berkas font (bobot 400/600/700/800) diimpor di `packages/ds/styles.css`.
+ * Nama family di sini HARUS sepakat dengan nama `font-family` di keempat
+ * `@font-face` itu, kalau tidak stylesheet-nya termuat tanpa satu elemen pun
+ * memakainya.
+ */
+:root { --font-sans: 'Nunito Sans', system-ui, sans-serif; }
+
 :root {
   --accent:        var(--primary);
   --accent-soft:   var(--accent-subtle);

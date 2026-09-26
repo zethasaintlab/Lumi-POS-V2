@@ -1,10 +1,28 @@
 /* Entry point design system untuk konsumen apps/* -- mirror ds-bundle/styles.css
    persis, KECUALI tokens/fonts.css (yang @import Google Fonts, tidak bisa
-   dipakai offline). Baris font diganti @fontsource/inter (self-hosted,
-   di-bundle Vite ke output build). ds-bundle sendiri tidak diubah. */
-@import '@fontsource/inter/latin-400.css';
-@import '@fontsource/inter/latin-500.css';
-@import '@fontsource/inter/latin-600.css';
+   dipakai offline). Baris font diganti @fontsource/nunito-sans (self-hosted,
+   di-bundle Vite ke output build). ds-bundle sendiri tidak diubah.
+
+   ⛔ Nunito Sans, BUKAN Inter (Task 3, kampanye "Hidupkan desain", 26
+   September 2026). Font adalah nilai MOCKUP (Global Constraints kampanye:
+   "Font — Nunito Sans, di-self-host sesuai kebijakan repo sejak F0"), dan
+   `ds-bundle/tokens/typography.css` (VENDOR, tidak pernah disunting) masih
+   menulis `--font-sans: 'Inter', ...` — nama font di sini HARUS sepakat
+   dengan pengarahan `--font-sans` di `packages/ds/lumi.css`, kalau tidak
+   bobot yang diimpor di sini tidak dipakai satu elemen pun.
+
+   Empat bobot: 400 (body), 600 (judul/label tombol), 700 (display), 800
+   (belum dipakai kelas mana pun hari ini — diimpor karena mockup
+   memakainya di tempat lain di luar keempat token inti; lihat
+   `docs/superpowers/specs/2026-09-26-fondasi-desain-design.md`). TIDAK ada
+   500: kosakata bobot mockup hanya 400/600/700/800 (Keputusan tinjauan
+   pra-eksekusi, `global-constraints.md`), dan `--weight-medium` (500) bundle
+   akan dicocokkan ke wajah terdekat oleh peramban sampai Task 4 menata
+   ulang token bobot itu sendiri. */
+@import '@fontsource/nunito-sans/latin-400.css';
+@import '@fontsource/nunito-sans/latin-600.css';
+@import '@fontsource/nunito-sans/latin-700.css';
+@import '@fontsource/nunito-sans/latin-800.css';
 @import '../../ds-bundle/tokens/colors.css';
 @import '../../ds-bundle/tokens/typography.css';
 @import '../../ds-bundle/tokens/spacing.css';

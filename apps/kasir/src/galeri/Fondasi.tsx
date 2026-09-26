@@ -13,11 +13,19 @@ import { useMemo } from 'react';
  * menebak dari komposisinya. Halaman ini menjawab pertanyaan token secara
  * langsung: nama, nilai, dan rupanya — dipisah dari komposisi layar mana pun.
  *
- * Task 2 mengisi HANYA bagian `warna`. Kelima bagian lain adalah kerangka
- * kosong bertanda `data-fondasi`, diisi Task 3–9 di kampanye yang sama:
- * `teks` (skala 32/20/15/13), `bentuk` (radius/bayangan/spasi/target sentuh),
- * `ikon` (Lucide), `wordmark` ("LumiPOS"), `komponen` (kulit komponen § 9,
- * setiap keadaan: normal, hover, nonaktif, galat).
+ * Task 2 mengisi bagian `warna`. Task 3 mengisi `teks`. Keempat bagian lain
+ * adalah kerangka kosong bertanda `data-fondasi`, diisi Task 4–9 di kampanye
+ * yang sama: `bentuk` (radius/bayangan/spasi/target sentuh), `ikon` (Lucide),
+ * `wordmark` ("LumiPOS"), `komponen` (kulit komponen § 9, setiap keadaan:
+ * normal, hover, nonaktif, galat).
+ *
+ * ⛔ Bagian `teks` (Task 3) menampilkan UKURAN dan BOBOT hari ini — bukan
+ * skala 32/20/15/13 dari Global Constraints. Task 3 hanya mengganti font
+ * (Inter → Nunito Sans, di-self-host); menata ulang nilai token skala teks
+ * adalah pekerjaan Task 4. Menampilkan nilai yang belum berlaku sebagai
+ * "sudah begini" akan menjadi tempat KEDUA yang menyatakan skala teks, dan
+ * yang menyimpang dari `tokens-mockup.css`/`lumi.css` tidak akan pernah
+ * terlihat di halaman yang justru ada untuk memverifikasinya.
  *
  * ⛔ Di luar bundel produksi, sama seperti seluruh `apps/kasir/src/galeri/`.
  * Tidak satu byte pun dari berkas ini ada di build `index.html` yang dikirim
@@ -136,14 +144,35 @@ const GRUP_WARNA: ReadonlyArray<{ judul: string; token: readonly string[] }> = [
   },
 ];
 
-/** Bagian yang belum diisi Task 2 — kerangka bertanda, diisi Task 3–9. */
+/** Bagian yang belum diisi Task 2/3 — kerangka bertanda, diisi Task 4–9. */
 const BAGIAN_BELUM_DIISI = [
-  { id: 'teks', judul: 'Skala teks' },
   { id: 'bentuk', judul: 'Bentuk' },
   { id: 'ikon', judul: 'Ikon' },
   { id: 'wordmark', judul: 'Wordmark' },
   { id: 'komponen', judul: 'Komponen' },
 ] as const;
+
+/**
+ * Skala teks bagian `teks` (Task 3) — EMPAT token inti, dipetakan ke kelas
+ * `.t-*` bundle yang sudah menyetel ukuran DAN bobotnya. Nilainya dibaca dari
+ * `getComputedStyle` saat render (lihat komentar berkas), bukan diketik ulang
+ * — kalau `lumi.css` mengubah nama token bobot, angka di sini ikut berubah,
+ * bukan menyimpang diam-diam.
+ *
+ * ⛔ Bobot di sini adalah bobot HARI INI (`--weight-regular` 400,
+ * `--weight-medium` 500, `--weight-bold` 600) — bukan skala final
+ * (display 700 / judul 600 / body 400 / label tombol 600) yang `CLAUDE.md`
+ * tetapkan untuk Task 4. Task 3 mengganti FONT, bukan token skala.
+ */
+const SKALA_TEKS: ReadonlyArray<{ label: string; kelas: string; tokenUkuran: string; tokenBobot: string }> = [
+  { label: 'Display', kelas: 't-display', tokenUkuran: '--text-display', tokenBobot: '--weight-bold' },
+  { label: 'Judul', kelas: 't-title', tokenUkuran: '--text-title', tokenBobot: '--weight-medium' },
+  { label: 'Body', kelas: 't-body', tokenUkuran: '--text-body', tokenBobot: '--weight-regular' },
+  { label: 'Caption', kelas: 't-caption', tokenUkuran: '--text-caption', tokenBobot: '--weight-regular' },
+];
+
+/** Token yang dibaca bagian `teks`, di luar warna — dipetakan ke `nilai` yang sama. */
+const TOKEN_TEKS = SKALA_TEKS.flatMap((s) => [s.tokenUkuran, s.tokenBobot]);
 
 function Swatch({ nama, nilai }: { nama: string; nilai: string }) {
   return (
@@ -173,6 +202,7 @@ export function Fondasi() {
     for (const grup of GRUP_WARNA) {
       for (const nama of grup.token) peta[nama] = s.getPropertyValue(nama).trim();
     }
+    for (const nama of TOKEN_TEKS) peta[nama] = s.getPropertyValue(nama).trim();
     return peta;
   }, []);
 
@@ -211,6 +241,26 @@ export function Fondasi() {
             </div>
           </div>
         ))}
+      </section>
+
+      <section data-fondasi="teks" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <h2 className="t-body-md">Skala teks</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          {SKALA_TEKS.map((s) => (
+            <div key={s.kelas} style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+              <span className={s.kelas}>
+                {s.label} — Aa Bb 0123456789
+              </span>
+              <span className="t-caption" style={{ color: 'var(--ink-muted)' }}>
+                {nilai[s.tokenUkuran] || '(kosong)'} / {nilai[s.tokenBobot] || '(kosong)'}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>
+          <span className="t-caption">Angka tabular (kelas .num, aturan DS #4):</span>
+          <span className="num t-body">1234567890</span>
+        </div>
       </section>
 
       {BAGIAN_BELUM_DIISI.map((bagian) => (
