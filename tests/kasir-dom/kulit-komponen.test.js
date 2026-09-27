@@ -174,6 +174,7 @@ test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi),
   const hasil = await hal.evaluate(() => {
     const chip = Array.from(document.querySelectorAll('.kasir-saring .chip')).map((el) => {
       const s = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
       return {
         aktif: el.getAttribute('aria-pressed') === 'true',
         latar: s.backgroundColor,
@@ -181,6 +182,8 @@ test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi),
         borderStyle: s.borderStyle,
         ukuran: s.fontSize,
         bobot: s.fontWeight,
+        tinggi: Math.round(r.height),
+        paddingKiri: s.paddingLeft,
       };
     });
     /* ⛔ BUKAN `getComputedStyle(...).backgroundColor` di sini — DIUKUR, dan
@@ -233,6 +236,22 @@ test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi),
     if (c.bobot !== '600') bedaChip.push(`chip[${i}] bobot: harap 600, nyata ${c.bobot}`);
   }
   assert.deepEqual(bedaChip, [], 'chip kategori tidak mengikuti mockup:\n  ' + bedaChip.join('\n  '));
+
+  /* ⛔ Keputusan user di gerbang visual, 27 September 2026: chip kategori
+     K-03 dirender PERSIS ukuran mockup — 36px tinggi, 12px padding
+     horizontal (`sumber/ui_kits/kasir/index.html:131`, `h-9 px-3`) — bukan
+     `--touch-min` (44px)/`--space-4` (16px) bawaan bundle. TAMPILAN tidak
+     boleh membesar; area SENTUH diperluas tak terlihat lewat `.sentuh`
+     (`tests/kasir-dom/area-sentuh.test.js` menjaga ukuran hit-area itu,
+     bukan berkas ini). Diperiksa untuk KEDUA keadaan (aktif dan tidak) —
+     mockup tidak membedakan ukuran kotak per keadaan, hanya warnanya. */
+  const bedaUkuranChip = [];
+  for (const [i, c] of hasil.chip.entries()) {
+    if (c.tinggi !== 36) bedaUkuranChip.push(`chip[${i}] tinggi: harap 36 (mockup h-9), nyata ${c.tinggi}`);
+    if (c.paddingKiri !== '12px')
+      bedaUkuranChip.push(`chip[${i}] paddingKiri: harap 12px (mockup px-3), nyata ${c.paddingKiri}`);
+  }
+  assert.deepEqual(bedaUkuranChip, [], 'ukuran chip kategori tidak mengikuti mockup:\n  ' + bedaUkuranChip.join('\n  '));
 
   assert.ok(
     hasil.kartuTanpaFoto.length > 0,
@@ -402,7 +421,14 @@ test('⛔ Step 1: kulit komponen mengikuti mockup di ?layar=fondasi', async () =
     cek('chip-normal', 'ukuran', normal.ukuran, '13px');
     cek('chip-normal', 'bobot', normal.bobot, '600');
     cek('chip-normal', 'tepiGaya', normal.tepiGaya, 'none');
-    cek('chip-normal', 'tinggi', normal.tinggi, 44); // target sentuh — tata letak TIDAK berubah
+    /* ⛔ Keputusan user di gerbang visual, 27 September 2026: tampilan
+       PERSIS ukuran mockup (36px tinggi, 12px padding kiri — `h-9 px-3`),
+       bukan `--touch-min` (44px)/`--space-4` (16px) bawaan bundle. Area
+       sentuh diperluas TAK TERLIHAT ke 44px lewat `.sentuh` di K-03
+       sungguhan (Kasir.tsx) — `area-sentuh.test.js` menjaga itu; demo
+       fondasi ini murni swatch kulit, bukan tempat mekanisme sentuh diuji. */
+    cek('chip-normal', 'tinggi', normal.tinggi, 36);
+    cek('chip-normal', 'paddingKiri', normal.paddingKiri, '12px');
     const aktif = ada('chip-aktif');
     cek('chip-aktif', 'latar', aktif.latar, tokenRgb('--primary'));
   }
