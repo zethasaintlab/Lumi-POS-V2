@@ -169,12 +169,19 @@ function kontrasRgb(a, b) {
 // Step 0 — chip kategori netral, kartu produk tanpa foto netral (galeri K-03)
 // ---------------------------------------------------------------------------
 
-test('⛔ Step 0: chip kategori K-03 netral, kartu produk tanpa foto netral (--card)', async () => {
+test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi), kartu produk tanpa foto netral (--card)', async () => {
   const hal = await bukaLayar('K-03', 'normal');
   const hasil = await hal.evaluate(() => {
     const chip = Array.from(document.querySelectorAll('.kasir-saring .chip')).map((el) => {
       const s = getComputedStyle(el);
-      return { aktif: el.getAttribute('aria-pressed') === 'true', latar: s.backgroundColor, warna: s.color };
+      return {
+        aktif: el.getAttribute('aria-pressed') === 'true',
+        latar: s.backgroundColor,
+        warna: s.color,
+        borderStyle: s.borderStyle,
+        ukuran: s.fontSize,
+        bobot: s.fontWeight,
+      };
     });
     /* ⛔ BUKAN `getComputedStyle(...).backgroundColor` di sini — DIUKUR, dan
        nilainya `rgba(0, 0, 0, 0)` untuk SETIAP kartu, bukan karena Step 0
@@ -208,13 +215,24 @@ test('⛔ Step 0: chip kategori K-03 netral, kartu produk tanpa foto netral (--c
   assert.equal(aktif.length, 1, `harap TEPAT satu chip aktif, ditemukan ${aktif.length}`);
   assert.equal(aktif[0].latar, tokenRgb('--primary'), `chip aktif: harap latar --primary, nyata ${aktif[0].latar}`);
 
+  /* ⛔ Keputusan kampanye Hidupkan desain, 26 September 2026: mockup sumber
+     kebenaran tampilan — chip kategori K-03 mengikuti `sumber/ui_kits/
+     kasir/index.html:131`, bukan default bundle. Chip TIDAK aktif: latar
+     `--secondary`, teks `--muted-foreground-strong-alt`, TANPA tepi
+     terlihat, ukuran `--text-small` (13px) bobot 600 — bukan `--card`/
+     `--foreground`/tepi 1px/`--text-body` (15px)/400 warisan `.chip`
+     bundle. */
   const takAktif = hasil.chip.filter((c) => !c.aktif);
   const bedaChip = [];
   for (const [i, c] of takAktif.entries()) {
-    if (c.latar !== tokenRgb('--card')) bedaChip.push(`chip[${i}] latar: harap --card, nyata ${c.latar}`);
-    if (c.warna !== tokenRgb('--foreground')) bedaChip.push(`chip[${i}] warna: harap --foreground, nyata ${c.warna}`);
+    if (c.latar !== tokenRgb('--secondary')) bedaChip.push(`chip[${i}] latar: harap --secondary, nyata ${c.latar}`);
+    if (c.warna !== tokenRgb('--muted-foreground-strong-alt'))
+      bedaChip.push(`chip[${i}] warna: harap --muted-foreground-strong-alt, nyata ${c.warna}`);
+    if (c.borderStyle !== 'none') bedaChip.push(`chip[${i}] tepi: harap tanpa tepi (borderStyle none), nyata ${c.borderStyle}`);
+    if (c.ukuran !== '13px') bedaChip.push(`chip[${i}] ukuran: harap 13px, nyata ${c.ukuran}`);
+    if (c.bobot !== '600') bedaChip.push(`chip[${i}] bobot: harap 600, nyata ${c.bobot}`);
   }
-  assert.deepEqual(bedaChip, [], 'chip kategori tidak aktif tidak netral:\n  ' + bedaChip.join('\n  '));
+  assert.deepEqual(bedaChip, [], 'chip kategori tidak mengikuti mockup:\n  ' + bedaChip.join('\n  '));
 
   assert.ok(
     hasil.kartuTanpaFoto.length > 0,
@@ -245,6 +263,7 @@ test('⛔ Step 1: kulit komponen mengikuti mockup di ?layar=fondasi', async () =
       const r = el.getBoundingClientRect();
       return {
         tinggi: Math.round(r.height),
+        tinggiPersis: r.height,
         radius: s.borderRadius,
         bobot: s.fontWeight,
         ukuran: s.fontSize,
@@ -252,6 +271,7 @@ test('⛔ Step 1: kulit komponen mengikuti mockup di ?layar=fondasi', async () =
         latar: s.backgroundColor,
         warna: s.color,
         tepi: s.borderColor,
+        tepiGaya: s.borderStyle,
         paddingAtas: s.paddingTop,
         paddingKiri: s.paddingLeft,
         boxShadow: s.boxShadow,
@@ -341,6 +361,17 @@ test('⛔ Step 1: kulit komponen mengikuti mockup di ?layar=fondasi', async () =
     cek(`badge-${nada}`, 'paddingKiri', el.paddingKiri, '10px');
     diukur += 1;
     if (!(parseFloat(el.radius) >= 999)) beda.push(`badge-${nada} radius: harap >= 999, nyata ${el.radius}`);
+    /* ⛔ Tinjauan akhir Opus: `Badge.jsx` mockup TIDAK punya tepi sama
+       sekali, sementara bundle memberi setiap nada tepi 1px TERLIHAT lewat
+       `.badge-{nada}{border-color:…}` di atas tepi dasar
+       `1px solid transparent`. Diukur (`Task 9 ronde 2`): tinggi turun dari
+       29,5px (dengan tepi) ke 27,5px (tanpa) pada padding/ukuran yang sama —
+       nilai itu yang dipatok di sini, bukan diasumsikan dari aritmetika
+       kotak, supaya penjaga ini juga menangkap kalau `box-sizing` berubah. */
+    cek(`badge-${nada}`, 'tepiGaya', el.tepiGaya, 'none');
+    diukur += 1;
+    if (Math.abs(el.tinggiPersis - 27.5) > 0.5)
+      beda.push(`badge-${nada} tinggi: harap ~27,5px (mockup, tanpa tepi), nyata ${el.tinggiPersis}px`);
   }
 
   // .field / input
@@ -362,11 +393,16 @@ test('⛔ Step 1: kulit komponen mengikuti mockup di ?layar=fondasi', async () =
     if (el.boxShadow === 'none') beda.push('card-demo boxShadow: harap ada bayangan, nyata none');
   }
 
-  // .chip
+  // .chip — mockup `sumber/ui_kits/kasir/index.html:131` (keputusan kampanye
+  // Hidupkan desain, 26 September 2026: mockup sumber kebenaran tampilan).
   {
     const normal = ada('chip-normal');
-    cek('chip-normal', 'latar', normal.latar, tokenRgb('--card'));
-    cek('chip-normal', 'warna', normal.warna, tokenRgb('--foreground'));
+    cek('chip-normal', 'latar', normal.latar, tokenRgb('--secondary'));
+    cek('chip-normal', 'warna', normal.warna, tokenRgb('--muted-foreground-strong-alt'));
+    cek('chip-normal', 'ukuran', normal.ukuran, '13px');
+    cek('chip-normal', 'bobot', normal.bobot, '600');
+    cek('chip-normal', 'tepiGaya', normal.tepiGaya, 'none');
+    cek('chip-normal', 'tinggi', normal.tinggi, 44); // target sentuh — tata letak TIDAK berubah
     const aktif = ada('chip-aktif');
     cek('chip-aktif', 'latar', aktif.latar, tokenRgb('--primary'));
   }
