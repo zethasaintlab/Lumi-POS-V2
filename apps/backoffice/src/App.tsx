@@ -238,9 +238,23 @@ function Terlindungi() {
       // `AppShell` sendiri (vendor, `ds-bundle/` tidak disunting) masih
       // mengetik `icon` dengan `IconName` LAMANYA SENDIRI (48 nama) dari
       // `../forms/Icon.d.ts`. `NAVIGASI` hanya pernah memakai nama bundle
-      // lama (diuji `tests/backoffice/navigasi.test.js`), jadi nilainya
+      // lama (diuji `tests/backoffice/navigasi.test.js`, yang sejak Task 7
+      // membaca `iconNames` dari `packages/ds/ikon-peta.ts` — bukan lagi
+      // dari sumber `ds-bundle/components/forms/Icon.jsx`), jadi nilainya
       // selalu ada di kedua himpunan — yang tidak sepakat cuma DEKLARASI
       // tipenya, bukan nilainya.
+      //
+      // ⛔ Keamanan RUNTIME cast ini bergantung pada Task 7, bukan lagi
+      // hanya pada kebetulan nilai. `AppShell` merender ikonnya lewat
+      // komponen Icon dari `forms/Icon.jsx` BUNDEL secara internal — dan
+      // sejak `packages/ds/vite-ikon.ts` (`ikonLumi()`) mengalihkan impor itu ke
+      // `packages/ds/ikon.tsx`, ikon yang benar-benar dirender adalah node
+      // Lucide, set yang SAMA dengan `IconName` yang dicast di sini.
+      // Jaring pengamannya: config scan di `tests/runtime/
+      // ikon-lucide.test.js` (setiap config Vite memasang `ikonLumi()`) dan
+      // `tests/kasir-dom/ikon-bundle.test.js` (pengukuran DOM sungguhan,
+      // membuktikan komponen bundel merender node Lucide, bukan path
+      // bundel lama).
       nav={navigasi as ComponentProps<typeof AppShell>['nav']}
       active={layar}
       onNavigate={setAktif}

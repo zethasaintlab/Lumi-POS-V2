@@ -1,12 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { ikonLumi } from "../../packages/ds/vite-ikon.ts";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  // `ikonLumi()` (Task 7, `packages/ds/vite-ikon.ts`) — alih impor INTERNAL
+  // `ds-bundle/components/**` (Modal, AppShell, StatCard, SyncIndicator,
+  // Ticket, Stepper) dari `forms/Icon.jsx` bundel ke set Lucide
+  // `packages/ds/ikon.tsx` (Task 6). Plugin ini SENGAJA tidak disembunyikan
+  // (keputusan user 26 September 2026) — lihat `CLAUDE.md` § Aturan design
+  // system dan `packages/ds/README.md`.
+  plugins: [react(), ikonLumi()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { potongSentuh } from 'ds';
+import { Icon, iconNames, potongSentuh } from 'ds';
 
 /**
  * Layar `Fondasi desain` — halaman FONDASI galeri, bukan layar produk.
@@ -15,11 +15,12 @@ import { potongSentuh } from 'ds';
  * langsung: nama, nilai, dan rupanya — dipisah dari komposisi layar mana pun.
  *
  * Task 2 mengisi bagian `warna`. Task 3 mengisi `teks` dengan font baru; Task 4
- * menata ulang nilai token skala teksnya ke 32/20/15/13. Ketiga bagian lain
- * adalah kerangka kosong bertanda `data-fondasi`, diisi Task 5–9 di kampanye
- * yang sama: `bentuk` (radius/bayangan/spasi/target sentuh), `ikon` (Lucide),
- * `wordmark` ("LumiPOS"), `komponen` (kulit komponen § 9, setiap keadaan:
- * normal, hover, nonaktif, galat).
+ * menata ulang nilai token skala teksnya ke 32/20/15/13. Task 5 mengisi
+ * `bentuk` (radius/bayangan/target sentuh). Task 6/7 mengisi `ikon` — SETIAP
+ * nama di `iconNames` (Lucide `lucide-react@0.468.0`, Task 6), dirender lewat
+ * `<Icon>` publik `ds` yang SAMA dengan yang dipakai layar produk. Kedua
+ * bagian lain (`wordmark`, `komponen`) tetap kerangka kosong, diisi Task 8–9
+ * di kampanye yang sama.
  *
  * ⛔ Bagian `teks` (Task 4) menampilkan skala FINAL 32/20/15/13, bobot mockup
  * (display 700, judul 600, body 400, caption 400) — dibaca dari
@@ -143,9 +144,10 @@ const GRUP_WARNA: ReadonlyArray<{ judul: string; token: readonly string[] }> = [
   },
 ];
 
-/** Bagian yang belum diisi Task 2/4/5 — kerangka bertanda, diisi Task 6–9. */
+/** Bagian yang belum diisi — kerangka bertanda, diisi Task 8–9. `ikon` diisi
+ * Task 7 (lihat `<section data-fondasi="ikon">` di bawah), jadi tidak lagi
+ * ada di daftar ini. */
 const BAGIAN_BELUM_DIISI = [
-  { id: 'ikon', judul: 'Ikon' },
   { id: 'wordmark', judul: 'Wordmark' },
   { id: 'komponen', judul: 'Komponen' },
 ] as const;
@@ -433,6 +435,42 @@ export function Fondasi() {
               <span className="t-caption">3× .sentuh, 28×28, jarak --space-3 (12px) — gap BERBEDA, membuktikan mekanismenya gap-driven</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Bagian `ikon` (Task 7) — SETIAP nama di `iconNames` (50 kebab
+          Lucide + 48 nama bundel lama, Task 6), dirender lewat `<Icon>`
+          publik `ds`. `tests/kasir-dom/ikon-bundle.test.js` membandingkan
+          jumlah anak `<svg>` tiap kotak dengan node fixture-nya, jadi setiap
+          nama wajib punya `data-uji` yang bisa diselektor per-nama. */}
+      <section data-fondasi="ikon" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <h2 className="t-body-md">Ikon</h2>
+        <p className="t-caption">
+          {iconNames.length} nama — node <code>lucide-react@0.468.0</code> apa adanya (Task 6), dan komponen
+          bundel yang menyentuh ikon secara internal (Modal, AppShell, StatCard, SyncIndicator, Ticket,
+          Stepper) dialihkan ke set yang sama lewat plugin Vite <code>ikonLumi()</code> (Task 7,{' '}
+          <code>packages/ds/vite-ikon.ts</code>).
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+          {iconNames.map((nama) => (
+            <div
+              key={nama}
+              data-uji={`ikon-${nama}`}
+              className="card card-pad"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 'var(--space-2)',
+                width: '6rem',
+              }}
+            >
+              <Icon name={nama} size={24} />
+              <span className="t-caption" style={{ wordBreak: 'break-all', textAlign: 'center' }}>
+                {nama}
+              </span>
+            </div>
+          ))}
         </div>
       </section>
 

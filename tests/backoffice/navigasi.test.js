@@ -86,15 +86,27 @@ test('⛔ tidak ada layar back-office yang HILANG dari sidebar tanpa alasan', as
 });
 
 test('⛔ setiap nama ikon ADA di design system', async () => {
-  // TypeScript sudah menahannya lewat `IconName` (`ds-bundle/components/
-  // forms/Icon.d.ts`), tapi typecheck tidak berjalan di setiap test run dan
-  // `iconNames` adalah daftar RUNTIME. Ikon yang tidak dikenal merender
-  // kosong di sidebar — menu tanpa ikon terbaca seperti menu yang rusak,
-  // bukan seperti error.
+  // TypeScript sudah menahannya lewat `IconName` (`packages/ds/ikon.tsx`),
+  // tapi typecheck tidak berjalan di setiap test run dan `iconNames` adalah
+  // daftar RUNTIME. Ikon yang tidak dikenal merender kosong di sidebar —
+  // menu tanpa ikon terbaca seperti menu yang rusak, bukan seperti error.
+  //
+  // ⛔ Sampai Task 7 (26 September 2026, plugin Vite `ikonLumi()`), daftar
+  // "dikenal" di sini dibaca dari SUMBER `ds-bundle/components/forms/
+  // Icon.jsx` — 42 path gambar-ulang bundel. Itu bukan lagi daftar yang
+  // berlaku: `IconName` publik `ds` sekarang 50 nama kebab Lucide + 48 nama
+  // bundle lama (`packages/ds/ikon-peta.ts`, Task 6), dan `NAVIGASI` boleh
+  // memakai NAMA LUCIDE juga, bukan hanya nama bundel lama — membaca sumber
+  // vendor akan menolak setiap nama Lucide sebagai "asing" walau ia sah.
+  //
+  // `iconNames` diimpor dari `ikon-peta.ts`, BUKAN `ikon.tsx` langsung: Node
+  // MENOLAK mengimpor `.tsx` sama sekali, terbukti (Task 6, lihat kepala
+  // `tests/runtime/ikon-lucide.test.js`) — `ikon.tsx` hanya mengekspor ulang
+  // data yang sudah ada di `ikon-peta.ts` (murni `.ts`, tanpa JSX).
   const { NAVIGASI } = await import(NAV);
-  const sumber = readFileSync(join(AKAR, 'ds-bundle', 'components', 'forms', 'Icon.jsx'), 'utf8');
-  const dikenal = new Set([...sumber.matchAll(/^\s{2}'?([a-z0-9-]+)'?:\s/gm)].map((m) => m[1]));
-  assert.ok(dikenal.size > 20, `daftar ikon tidak terbaca (${dikenal.size})`);
+  const { iconNames } = await import('../../packages/ds/ikon-peta.ts');
+  const dikenal = new Set(iconNames);
+  assert.ok(dikenal.size > 20, `iconNames tidak terbaca (${dikenal.size})`);
 
   const asing = [];
   for (const grup of NAVIGASI) {

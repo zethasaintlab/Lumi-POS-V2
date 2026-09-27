@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { ikonLumi } from '../../packages/ds/vite-ikon.ts';
 
 /**
  * Back-office. SENGAJA jauh lebih sederhana daripada `apps/kasir`, dan setiap
@@ -26,7 +27,14 @@ import react from '@vitejs/plugin-react';
  * pengembangan.
  */
 export default defineConfig({
-  plugins: [react()],
+  // `ikonLumi()` (Task 7, `packages/ds/vite-ikon.ts`) — alih impor INTERNAL
+  // `ds-bundle/components/**` (mis. `AppShell`, `Modal`, `StatCard`) dari
+  // `forms/Icon.jsx` bundel ke set Lucide `packages/ds/ikon.tsx` (Task 6).
+  // Back-office memakai `AppShell` di setiap layar; tanpa plugin ini bilah
+  // navnya merender ikon bundel lama di sebelah ikon Lucide yang benar di
+  // `<Icon>` publik. Tidak disembunyikan (keputusan user 26 September 2026)
+  // — lihat `CLAUDE.md` § Aturan design system dan `packages/ds/README.md`.
+  plugins: [react(), ikonLumi()],
   server: {
     port: 1422,
     strictPort: true,
