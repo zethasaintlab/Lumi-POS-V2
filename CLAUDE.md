@@ -316,7 +316,11 @@ Diukur 1 September 2026, dan ini sebab utamanya:
 
 Kesalahan yang sama dibuat **dua kali dalam dua jam** oleh agent yang sama: menulis `.kasir-kartu:hover` dan `.kasir-chip-aktif` sendiri tanpa memeriksa bahwa bundle sudah mengirim versi yang jauh lebih baik. **Periksa `ds-bundle/components.css` sebelum menulis satu pun kelas baru** — yang ditulis sendiri akan selalu lebih miskin daripada yang sudah dirancang, dan ia tidak menghasilkan satu pun error.
 
-Keduanya kini MODIFIER di atas komponen bundle, bukan pengganti.
+`.kasir-kartu` kini MODIFIER di atas komponen bundle, bukan pengganti.
+`.kasir-chip` sendiri sudah DIHAPUS sepenuhnya (Task 9 Step 0, kampanye
+"Hidupkan desain", 26 September 2026, keputusan user): chip saringan K-03
+sekarang netral apa adanya, tanpa modifier sama sekali — `.chip` bundle
+sudah cukup.
 
 ### ⛔ Aturan memakai `/ds-bundle` — dan ia BUKAN "pakai saja komponen bundle"
 
