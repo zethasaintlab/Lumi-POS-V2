@@ -87,7 +87,13 @@ test('(b) node ikon-data.ts sama persis dengan fixture nodes.json', () => {
     readFileSync(join(AKAR, 'tests/fixture/lucide-0.468.0/nodes.json'), 'utf8'),
   );
   const namaFixture = Object.keys(fixture);
-  assert.ok(namaFixture.length >= 77, `fixture harus punya >= 77 ikon, dapat ${namaFixture.length}`);
+  /* ⛔ Ronde perbaikan akhir (tinjauan Opus, minor d): angka ini sempat
+   * `>= 77`, batas bawah longgar dari saat jumlah ikon fixture belum
+   * stabil. Diverifikasi sekarang: `nodes.json` dan `NODES` (`ikon-data.ts`)
+   * SAMA-SAMA punya PERSIS 79 entri — dipatok EXACT, bukan lagi longgar,
+   * supaya fixture yang kehilangan entri (bukan hanya bertambah) juga
+   * tertangkap. */
+  assert.equal(namaFixture.length, 79, `fixture harus punya PERSIS 79 ikon, dapat ${namaFixture.length}`);
 
   for (const nama of namaFixture) {
     assert.ok(nama in NODES, `"${nama}" ada di fixture tapi tidak di NODES ikon-data.ts`);
