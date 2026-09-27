@@ -21,6 +21,41 @@
  * tidak menuntut menyalin seluruh markup dialognya.
  */
 
+/* --- Palet campuran: permukaan netral terang, teks dan aksen repo ----------
+ *
+ * Fase 1 rebuild UI kasir, 25 September 2026 (`docs/RENCANA-REBUILD-UI.md`).
+ * Arah dari user: permukaan netral dan terang seperti mockup
+ * (`docs/referensi-visual`), bukan krem hangat; teks dan aksen dari repo.
+ *
+ * ⛔ Satu-satunya tempat berkas ini MENDEFINISIKAN ULANG token bundle. Sampai
+ * hari ini lapisan override hanya menambah token; palet adalah pengecualian
+ * yang diputuskan, karena `ds-bundle/tokens/colors.css` vendor dan tidak dapat
+ * disunting. Nilai bundle tetap di sana sebagai PEMBANDING: penjaga memeriksa
+ * bahwa teks di sini tidak lebih terang daripada nilai bundle-nya.
+ *
+ * ⛔ Nilainya DITURUNKAN, tidak diketik dari mockup: `tools/palet-turunan.mjs`
+ * mengonversi setiap token hangat ke OKLCH, MEMPERTAHANKAN kecerahannya,
+ * menurunkan chroma ke nyaris nol, dan menggeser rona ke netral-dingin (215°).
+ * Untuk teks, luminansinya tidak boleh naik. Jalankan skrip itu untuk melihat
+ * angka sebelum/sesudah; yang menjaganya `tests/runtime/palet-kontras.test.js`.
+ *
+ * `--warning` ikut digelapkan (L OKLCH turun, rona tetap): di `--surface-alt`
+ * ia sudah gagal 4,5 sejak palet LAMA (4,31) — bukan akibat palet ini.
+ *
+ * TIDAK berubah: aksen `#0D5C63` dan turunannya, warna status lain dan latar
+ * lembutnya, warna kategori, font, skala teks, radius, spasi, bayangan.
+ */
+:root {
+  --surface-sunk:  #F1F7F8;  /* latar halaman   · dari #F7F5F3 */
+  --surface-alt:   #E9EFF0;  /* baris zebra     · dari #F0EDEA */
+  --border:        #DADFE0;  /*                 · dari #E2DDD8 */
+  --border-strong: #BFC4C6;  /*                 · dari #C9C2BB */
+  --ink:           #0E1214;  /* teks utama      · dari #14110F */
+  --ink-muted:     #505658;  /* teks sekunder   · dari #5C5450 */
+  --ink-subtle:    #616769;  /* hint, meta      · dari #6E6560 */
+  --warning:       #B05001;  /*                 · dari #B45309 */
+}
+
 /* --- Skala teks final: LIMA token, bukan tujuh ------------------------------
  *
  * Keputusan user 31 Agustus 2026 ("Opsi A"): empat token inti yang bebas

@@ -147,6 +147,11 @@ async function ukurTombol(hal) {
     const bawaan = {
       aktif: warnaRef(ref.getElementById('a')).color,
       nonaktif: warnaRef(ref.getElementById('n')).color,
+      /* `--ink` halaman, DIBACA — bukan konstanta. Sentinel di bawah semula
+         memaku `rgb(20, 17, 15)`, dan palet Fase 1 (25 September 2026)
+         mengubah `--ink`: konstanta itu akan membandingkan referensi dengan
+         warna yang tidak lagi dipakai siapa pun, dan lolos selamanya. */
+      ink: getComputedStyle(document.body).color,
     };
     const panggung = document.querySelector('.galeri-panggung > *');
     const hasil = [];
@@ -210,7 +215,7 @@ test('⛔ tidak satu pun teks di dalam `<button>` layar kasir memakai warna bawa
   );
   /* SENTINEL kedua: pembandingnya harus benar-benar bawaan peramban, bukan
      warna yang kebetulan sama dengan token. */
-  assert.notEqual(bawaan.aktif, 'rgb(20, 17, 15)', 'referensi bawaan terbaca sama dengan --ink — iframe referensi ikut ter-style');
+  assert.notEqual(bawaan.aktif, bawaan.ink, `referensi bawaan terbaca sama dengan --ink halaman (${bawaan.ink}) — iframe referensi ikut ter-style`);
 
   const langgar = semua.filter((s) => s.warna === s.bawaan);
   const ringkas = [...new Map(langgar.map((l) => [`${l.layar} ${l.tombol}`, l])).values()];

@@ -11,6 +11,7 @@ terdefinisi.
 | Commit | `4dbe377df8a4790c82b519ed666cb8419497b7ea` (`4dbe377`) |
 | Branch | `perbaikan-ui-pasca-uji-manual` |
 | Tanggal | 15 September 2026 |
+| Disegarkan | 25 September 2026, § 3 Warna — palet campuran Fase 1 rebuild UI (`docs/RENCANA-REBUILD-UI.md`) |
 
 ## Berkas sumber
 
@@ -30,12 +31,15 @@ membandingkan isi direktori itu dengan basis upstream. Setiap perubahan milik
 kita hidup di `packages/ds/lumi.css`, yang diimpor paling akhir supaya
 kekhususan yang sama menang.
 
-⛔ **Lapisan override tidak mendefinisikan ulang satu pun token bundle.**
-Diperiksa: dari 69 token unik, nol bertabrakan nama antara `ds-bundle/tokens/`
-dan `packages/ds/lumi.css`. Aturan "override menang" karena itu belum pernah
-terpakai — `packages/ds/lumi.css` hanya menambah token yang bundle tidak
-punya. Komentar di berkas itu menyatakan alasannya: menyalin nilai inti ke sana
-menciptakan tempat kedua yang memutuskan hal yang sama.
+⛔ **Lapisan override mendefinisikan ulang TEPAT DELAPAN token bundle, dan
+hanya warna** (sejak 25 September 2026). Sampai hari itu nol token bertabrakan
+nama dan aturan "override menang" belum pernah terpakai. Palet campuran Fase 1
+rebuild UI mengubahnya dengan sengaja: `ds-bundle/tokens/colors.css` vendor
+dan tidak dapat disunting, jadi satu-satunya jalan mengganti nilai palet
+adalah menimpanya di `packages/ds/lumi.css`. Nilai bundle tetap di berkasnya
+sebagai PEMBANDING — `tests/runtime/palet-kontras.test.js` memeriksa bahwa
+teks override tidak lebih terang daripada nilai bundle-nya. Token lain
+(tipografi, spasi, radius, bayangan, aksen) tetap tidak ditimpa.
 
 ---
 
@@ -180,12 +184,18 @@ Terukur di `apps/` + `packages/`:
 
 ## 3. Warna
 
-Sumber: `ds-bundle/tokens/colors.css` (28) dan `packages/ds/lumi.css` (14).
+Sumber: `ds-bundle/tokens/colors.css` (28), ditimpa sebagian oleh
+`packages/ds/lumi.css`. Nilai di tabel adalah nilai yang **berlaku**; kolom
+"bundle" menyebut nilai asli bila ditimpa.
 
-Nada palet **hangat**. Komentar di `ds-bundle/tokens/colors.css` menyatakan
-alasannya sebagai keputusan produk: *"Abu netral murni terasa dingin & klinis
-untuk kafe; sedikit kehangatan agar layar tidak terasa seperti software rumah
-sakit."*
+⛔ **Nada palet NETRAL TERANG sejak 25 September 2026**, bukan lagi hangat.
+Komentar di `ds-bundle/tokens/colors.css` masih menyatakan alasan lama
+(*"Abu netral murni terasa dingin & klinis untuk kafe"*), dan berkas itu vendor
+sehingga komentarnya tidak dapat diperbarui. Keputusan yang berlaku keputusan
+user untuk kampanye rebuild UI: permukaan netral terang seperti mockup, teks
+dan aksen dari repo. Delapan token ditimpa; nilainya **diturunkan** lewat
+`tools/palet-turunan.mjs` (OKLCH: kecerahan dipertahankan, chroma nyaris nol,
+rona 215°; teks tidak boleh lebih terang), bukan diketik dari mockup.
 
 ### Aksen — satu, dan hanya satu
 
@@ -212,7 +222,7 @@ utama per layar.
 | `--danger` | `#B91C1C` | — |
 | `--danger-soft` | `#FDEAEA` | — |
 | `--danger-border` | `#EFB4B4` | — |
-| `--warning` | `#B45309` | — |
+| `--warning` | `#B05001` | bundle `#B45309`. Digelapkan Fase 1: di `--surface-alt` ia gagal 4,5 sejak palet lama (4,31 → 4,52) |
 | `--warning-soft` | `#FDF3E7` | — |
 | `--warning-border` | `#E8C79B` | — |
 
@@ -230,27 +240,34 @@ utama per layar.
 Komentar di berkas membatasi keduanya: *"Dipakai HANYA untuk identitas modul &
 kartu statistik, tidak untuk aksi utama (aksi utama tetap teal)."*
 
-### Netral hangat
+### Teks — netral
 
-| Token | Nilai | Kontras yang tercatat di berkas |
-|---|---|---|
-| `--ink` | `#14110F` | 18,8:1 putih · 16,3:1 alt — AAA |
-| `--ink-muted` | `#5C5450` | 7,4:1 putih · 6,4:1 alt — AAA |
-| `--ink-subtle` | `#6E6560` | 5,7:1 putih · 4,9:1 alt — AA |
+| Token | Nilai | Bundle | Kontras terukur (putih · halaman · alt) |
+|---|---|---|---|
+| `--ink` | `#0E1214` | `#14110F` | 18,83 · 17,39 · 16,20 |
+| `--ink-muted` | `#505658` | `#5C5450` | 7,47 · 6,90 · 6,42 |
+| `--ink-subtle` | `#616769` | `#6E6560` | 5,75 · 5,31 · 4,95 |
 
 ### Permukaan dan pembatas
 
 | Token | Nilai | Peran menurut komentar |
 |---|---|---|
 | `--surface` | `#FFFFFF` | kartu, panel |
-| `--surface-sunk` | `#F7F5F3` | latar halaman |
-| `--surface-alt` | `#F0EDEA` | baris zebra, disabled |
-| `--border` | `#E2DDD8` | — |
-| `--border-strong` | `#C9C2BB` | — |
+| `--surface-sunk` | `#F1F7F8` | latar halaman · bundle `#F7F5F3` |
+| `--surface-alt` | `#E9EFF0` | baris zebra, disabled · bundle `#F0EDEA` |
+| `--border` | `#DADFE0` | bundle `#E2DDD8` |
+| `--border-strong` | `#BFC4C6` | bundle `#C9C2BB` |
 
-Kepala berkas menyatakan metodenya: *"kontras dihitung ulang & diverifikasi,
-bukan diperkirakan. Kasus TERBURUK yang diuji: di atas `--surface-alt`
-(#F0EDEA / baris zebra), bukan di atas putih. 8 dari 8 pasangan lolos WCAG AA."*
+Kontras dijaga `tests/runtime/palet-kontras.test.js` terhadap token efektif:
+setiap teks (tiga netral, empat status, aksen) di setiap permukaan ≥ 4,5; teks
+sekunder di halaman dan kartu ≥ 6,0; badge netral ≥ 4,5; status di latar
+lembutnya ≥ 4,5; putih di aksen 7,70. `tests/kasir-dom/palet-berlaku.test.js`
+memastikan nilai itu yang sampai ke peramban. Swatch sebelum/sesudah:
+`docs/referensi-visual/fase-1/palet-sebelum-sesudah.png`.
+
+⛔ **Bayangan dan `--overlay` masih memakai rona tinta LAMA**
+(`rgba(20, 17, 15, …)`). Alfanya 0,05–0,45 dan Fase 1 tidak menyentuhnya;
+dinyatakan, bukan terlewat.
 
 ### Latar gelap dialog
 
@@ -598,7 +615,7 @@ seluruhnya, karena alasan palet di atas.
 |---|---|---|
 | `--accent` | `#14706b` | `#0D5C63` |
 | `--accent-hover` | `#0f5b57` | `#0A4A50` |
-| `--border` | `#e3ecee` | `#E2DDD8` |
+| `--border` | `#e3ecee` | `#DADFE0` (sejak Fase 1; sebelumnya `#E2DDD8`) |
 | `--radius-control` | `10px` | `8px` |
 | `--shadow-card` | `0 1px 2px rgba(22,40,44,.04), 0 2px 8px rgba(22,40,44,.04)` | `0 1px 2px rgba(20,17,15,0.05)` |
 
