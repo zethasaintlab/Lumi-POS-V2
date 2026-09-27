@@ -23,6 +23,10 @@
 //
 // Tidak menyentuh pohon kerja maupun branch kerja: commit dibangun lewat
 // `hash-object` / `mktree` / `commit-tree`.
+//
+// ⛔ Pohonnya juga memuat `vercel.json` yang mematikan deployment: Vercel
+// membaca berkas itu dari commit yang di-push, jadi setelan di `main` tidak
+// berlaku di sini, dan tanpanya setiap aksi kunci memicu deployment (#76).
 
 import { execFileSync } from 'node:child_process';
 
@@ -30,6 +34,7 @@ const BRANCH = 'kampanye-kunci';
 const REMOTE = process.env.KUNCI_REMOTE || 'origin';
 const TTL_MENIT = Number(process.env.KUNCI_TTL_MENIT || 120);
 const TRACKING = `refs/remotes/${REMOTE}/${BRANCH}`;
+const VERCEL_JSON = JSON.stringify({ git: { deploymentEnabled: false } }, null, 2) + '\n';
 
 const [aksi, pemilik] = process.argv.slice(2);
 if (!['ambil', 'segarkan', 'lepas', 'periksa'].includes(aksi) || !pemilik) {
@@ -79,7 +84,8 @@ const ringkas = aktif
 function tulis(status, pesan) {
   const isi = JSON.stringify({ status, pemilik, diperbarui: sekarang.toISOString() }, null, 2) + '\n';
   const blob = git(['hash-object', '-w', '--stdin'], isi);
-  const pohon = git(['mktree'], `100644 blob ${blob}\tKUNCI.json\n`);
+  const vercel = git(['hash-object', '-w', '--stdin'], VERCEL_JSON);
+  const pohon = git(['mktree'], `100644 blob ${blob}\tKUNCI.json\n100644 blob ${vercel}\tvercel.json\n`);
   const commit = git(['commit-tree', pohon, ...(tip ? ['-p', tip] : []), '-m', pesan]);
   try {
     git(['push', '-q', REMOTE, `${commit}:refs/heads/${BRANCH}`]);
