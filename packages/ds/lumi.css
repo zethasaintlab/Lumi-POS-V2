@@ -381,14 +381,38 @@
 }
 .field-error { color: var(--destructive); }
 
-/* .chip — bundle memakai `--ink-muted` (→ `--muted-foreground`) untuk teks
-   chip yang TIDAK aktif; chip kategori mockup memakai `--foreground` (lebih
-   gelap, kontras lebih kuat terhadap latar `--card`-nya). Chip AKTIF TIDAK
-   disentuh: `.chip[aria-pressed="true"]` bundle menang lewat SPESIFISITAS
-   atribut di atas kelas polos ini (0,2,0 > 0,1,0, apa pun urutan berkas),
-   dan nilainya (`--accent`/`--on-accent`) sudah `--primary`/
-   `--primary-foreground` lewat alias Task 2. */
-.chip { color: var(--foreground); }
+/* .chip — Ronde perbaikan akhir (tinjauan Opus, keputusan kampanye Hidupkan
+   desain 26 September 2026: mockup sumber kebenaran tampilan). Bundle
+   memakai `--surface` (→ `--card`, putih) untuk latar TIDAK aktif,
+   `--ink-muted` (→ `--muted-foreground`) untuk teks, tepi
+   `1px solid var(--border)`, dan `--text-body` (15px)/400; chip kategori
+   MOCKUP (`sumber/ui_kits/kasir/index.html:131`) TIDAK punya tepi sama
+   sekali, latar `--secondary`, teks `--muted-foreground-strong-alt`, dan
+   ukuran `--text-small` (13px) bobot 600. Bundle juga tidak punya aturan
+   HOVER sama sekali; mockup memakai `--chip-hover-bg` HANYA untuk chip
+   TIDAK aktif (`:not([aria-pressed="true"])` — kedua cabang ternary mockup
+   tidak mengubah chip aktif saat hover). Tinggi TETAP `--touch-min` (44px,
+   target sentuh) — bundle sudah benar, tidak disentuh: spec § 9 minta
+   kulitnya diikuti, bukan tata letaknya diubah.
+
+   Chip AKTIF TIDAK disentuh secara eksplisit: `.chip[aria-pressed="true"]`
+   bundle menang lewat SPESIFISITAS atribut di atas kelas polos ini
+   (0,2,0 > 0,1,0, apa pun urutan berkas), dan nilainya (`--accent`/
+   `--on-accent`) sudah `--primary`/`--primary-foreground` lewat alias
+   Task 2. Ia tetap mewarisi `border: none` dari sini — bundle hanya
+   menimpa `border-color`, bukan `border-style`, jadi `border-style: none`
+   yang ditetapkan di sini tetap menang dan chip aktif pun tanpa tepi,
+   sejalan mockup (tidak satu pun cabang ternary mockup punya kelas tepi). */
+.chip {
+  border: none;
+  background: var(--secondary);
+  color: var(--muted-foreground-strong-alt);
+  font-size: var(--text-small);
+  font-weight: var(--font-weight-semibold);
+}
+.chip:hover:not([aria-pressed='true']) {
+  background: var(--chip-hover-bg);
+}
 
 /* .product-card — bundle memakai `--border` (nama yang SAMA PERSIS di kedua
    berkas, menang lewat URUTAN `@import` — lihat komentar kepala berkas) untuk
