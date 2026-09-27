@@ -150,16 +150,20 @@ async function ukur(hal) {
     return {
       panggung: Math.round(document.querySelector('.galeri-panggung > *').getBoundingClientRect().width),
       dialog: r(dialog),
-      /* ⛔ Ronde perbaikan akhir (tinjauan Opus, minor a): `.dialog` bundle
-         SEMPAT hardcode bayangannya sendiri (`0 12px 48px rgba(20,17,15,.24)`)
-         alih-alih `var(--shadow-raised)` — mockup hanya punya dua token
-         bayangan (`--shadow-card`, `--shadow-raised`), tidak ada
-         `--shadow-sheet` di sana. Dibandingkan lewat elemen PROBE, bukan
-         string literal yang bisa berbeda format serialisasi. */
+      /* ⛔ Keputusan user di gerbang visual, 27 September 2026: bayangan
+         `.dialog` mengikuti bayangan MODAL mockup persis
+         (`sumber/ui_kits/kasir/index.html:121` dan `ui_kits/backoffice/
+         index.html:141`, keduanya `shadow-[0_18px_50px_rgba(20,112,107,.2)]`
+         — rgba itu adalah `--primary` pada alfa 0,2), lewat token
+         `--shadow-modal` (`packages/ds/lumi.css`) — bukan lagi
+         `--shadow-raised` (Ronde perbaikan akhir sebelumnya, minor a), yang
+         benar dibanding literal bundle tapi bukan bayangan MODAL mockup.
+         Dibandingkan lewat elemen PROBE, bukan string literal yang bisa
+         berbeda format serialisasi. */
       dialogShadow: getComputedStyle(dialog).boxShadow,
-      shadowRaised: (() => {
+      shadowModal: (() => {
         const e = document.createElement('div');
-        e.style.boxShadow = 'var(--shadow-raised)';
+        e.style.boxShadow = 'var(--shadow-modal)';
         document.body.appendChild(e);
         const v = getComputedStyle(e).boxShadow;
         e.remove();
@@ -203,8 +207,8 @@ for (const lebar of [1024, 1280]) {
     assert.notEqual(u.warnaAngka, u.token.accent, 'angka kembalian berwarna aksen — DS #2');
     assert.equal(
       u.dialogShadow,
-      u.shadowRaised,
-      `bayangan .dialog ${u.dialogShadow} — harap var(--shadow-raised) (${u.shadowRaised}), bukan literal bundle`
+      u.shadowModal,
+      `bayangan .dialog ${u.dialogShadow} — harap var(--shadow-modal) (${u.shadowModal}), bayangan modal mockup`
     );
   });
 
