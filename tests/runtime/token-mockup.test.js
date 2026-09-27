@@ -113,3 +113,71 @@ test('tokens-mockup.css tidak memuat @import', () => {
     'tokens-mockup.css memuat deklarasi @import — font Nunito Sans wajib di-self-host (kebijakan repo sejak F0), bukan diimpor dari Google Fonts'
   );
 });
+
+// ⛔ Ronde perbaikan akhir (tinjauan Opus) — dua test lama di atas hanya
+// memeriksa arah "setiap token SUMBER ada di target"; keduanya BUTA terhadap
+// KONTEN TAMBAHAN di tokens-mockup.css. `nol-hex-css.test.js` mengecualikan
+// berkas ini sepenuhnya (`DS_KECUALI`) karena literal warna justru intinya di
+// sini — tapi itu berarti tidak ada penjaga LAIN yang memeriksa apa yang
+// ditambahkan. Menambahkan `.btn-primary{background:#ff0000}` (aturan CSS
+// biasa, bukan token) atau `:root{--liar:#f00}` (blok :root KEDUA berisi
+// token karangan) lolos kedua test lama tanpa satu pun kegagalan — dibuktikan
+// lewat sabotase sebelum perbaikan ini ditulis (lihat laporan task).
+//
+// Perbaikannya DUA test baru, saling melengkapi:
+//   1. Himpunan NAMA token di target harus PERSIS sama dengan sumber — bukan
+//      hanya superset (`--liar` akan membuat targetnya PUNYA token yang
+//      sumbernya tidak punya, dan itu sekarang ditolak).
+//   2. Seluruh berkas (komentar dibuang) harus PERSIS SATU blok `:root { … }`
+//      teratas, tanpa apa pun di luarnya — `.btn-primary{...}` bukan token
+//      dan tidak pernah cocok pola `:root`, jadi hanya test struktural ini
+//      yang menangkapnya.
+test('himpunan nama token di tokens-mockup.css SAMA PERSIS dengan sumber — tidak lebih, tidak kurang', () => {
+  const sumber = bacaSumber();
+  const target = parseToken(fs.readFileSync(MOCKUP, 'utf8'));
+  const namaSumber = Object.keys(sumber).sort();
+  const namaTarget = Object.keys(target).sort();
+  assert.deepEqual(
+    namaTarget,
+    namaSumber,
+    'tokens-mockup.css memuat token yang TIDAK ADA di sumber (kemungkinan token karangan atau blok :root kedua) ' +
+      'atau kehilangan token sumber — himpunan namanya wajib identik'
+  );
+});
+
+/**
+ * Mengembalikan `true` hanya bila teks (komentar sudah dibuang, sudah
+ * di-trim) adalah TEPAT SATU blok `:root { … }` di level file — tidak ada
+ * apa pun sebelum `:root`, dan tidak ada apa pun (selain whitespace) sesudah
+ * kurung tutup yang menutupnya. Kurung di dalam blok dilacak lewat
+ * kedalaman eksplisit supaya nilai bersarang (`linear-gradient(...)`, kalau
+ * ada) tidak menutup blok lebih awal — pola yang sama dengan
+ * `nol-hex-css.test.js`.
+ */
+function satuBlokRootTeratas(teksTanpaKomentar) {
+  const teks = teksTanpaKomentar.trim();
+  const pembuka = /^:root(?:\[[^\]]*\])?\s*\{/.exec(teks);
+  if (!pembuka) return false;
+
+  let i = pembuka[0].length;
+  let kedalaman = 1;
+  while (i < teks.length && kedalaman > 0) {
+    if (teks[i] === '{') kedalaman++;
+    else if (teks[i] === '}') kedalaman--;
+    i++;
+  }
+  if (kedalaman !== 0) return false; // kurung tidak seimbang
+
+  const sisa = teks.slice(i).trim();
+  return sisa.length === 0;
+}
+
+test('tokens-mockup.css tidak memuat apa pun di luar SATU blok :root teratas', () => {
+  const tanpaKomentar = fs.readFileSync(MOCKUP, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(
+    satuBlokRootTeratas(tanpaKomentar),
+    'tokens-mockup.css memuat sesuatu di luar satu blok :root teratas (mis. aturan CSS lain seperti ' +
+      '.btn-primary{...}, atau blok :root kedua) — nol-hex-css.test.js mengecualikan berkas ini sepenuhnya, ' +
+      'jadi struktur berkas hanya diperiksa di sini'
+  );
+});
