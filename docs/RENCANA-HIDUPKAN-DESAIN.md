@@ -107,6 +107,7 @@ disetujui.
 Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaan yang wajar, diambil tanpa berhenti. User meninjau semuanya di gerbang berikutnya. Format satu baris per keputusan: apa · bawaan yang dipakai · alasan · cara membalik.
 
 - **Bobot 500 bundle dirender 600 di semua pemakainya** (sub-proyek 1, Task 4) · bawaan: `--weight-medium: var(--font-weight-semibold)` · alasan: mockup dan subset font tidak punya 500; selain `t-body-md` (keputusan user) ikut menebal `.label`, `.field-error`, `.sync`, `.tabs`, `.avatar`, `.shell-link` aktif, `.stepper span`, `.segmented button` aktif, `.btn`, chip kategori · cara membalik: timpa bobot per kelas di `packages/ds/lumi.css`, atau arahkan `--weight-medium` ke 400
+- **Kartu produk K-03 tanpa foto tetap bergradien tipis** (sub-proyek 1, Task 9) · bawaan: gradien `--surface` → `--surface-sunk` dari Task 2 dipertahankan, warna kategori dicabut · alasan: mockup `ProductCard.jsx` datar `--card`, tapi selisihnya ≤ 4% di tepi bawah kartu, tidak memakai warna baru, dan tata letak kartu K-03 milik sub-proyek 2 · cara membalik: hapus aturan gradien `.product-card` di bagian Kedalaman `packages/ds/lumi.css`; demo datar di halaman fondasi sudah menunjukkan versi mockup untuk dibandingkan
 
 ## Kondisi berhenti
 
@@ -136,3 +137,4 @@ sub-proyek, task, status, commit, reviewer, sabotase.
 | 1 Fondasi | Task 6 — set ikon Lucide 0.468.0 disalin, 50 mockup + 48 nama bundle | selesai | `2896a76` | Sonnet 5: bersih, 2 minor ditunda; 79 entri dicocokkan ulang byte demi byte dengan paket segar | implementer 1/1 merah (`circle-alert`) |
 | 1 Fondasi | Task 7 — plugin Vite `ikonLumi()` mengalihkan ikon internal bundel ke set Lucide | selesai | `365400f` | Sonnet 5: bersih, nol temuan; reviewer mengulang ketiga sabotase | implementer 3/3 merah (config tanpa plugin, pembaca langsung `Icon.jsx`, `resolveId` dimatikan) |
 | 1 Fondasi | Task 8 — wordmark LumiPOS di ketiga aplikasi | selesai | `15a5b1d` | Sonnet 5: bersih, 1 minor ditunda (nama ganda `AppShell` disembunyikan CSS, belum ada penjaga CI) | implementer 1/1 merah; reviewer mengulang sabotase, merah di 7 layar |
+| 1 Fondasi | Task 9 — kulit komponen, chip kategori netral | selesai | `edb828e` | Sonnet 5: bersih, 1 minor (narasi laporan); kontras alasan Bayar 4,94 | implementer: radius `.btn`, `.badge-neutral`, `.card` di bagian komponen, semua merah; reviewer mengulang ketiganya |
