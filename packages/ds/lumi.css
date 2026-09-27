@@ -346,16 +346,28 @@
 }
 .btn-danger:hover:not(:disabled) { background: var(--destructive-hover); }
 
-/* .badge — bundle memakai `--weight-medium` (→ 600 lewat alias Task 2) dan
-   padding `2px var(--space-2)` (2px 8px); `Badge.jsx` memakai bobot REGULAR
-   (400, token TIDAK dialiaskan — badge butuh bobot yang beda dari label
-   tombol) dan padding literal `4px 10px` (bukan token: tidak ada anak tangga
-   `--space-*` bernilai 10px, dan ini nilai yang `Badge.jsx` sendiri tulis
-   literal). Ukurannya (`--text-caption`→`--text-small`, 13px) sudah benar
-   lewat alias Task 4, tidak disentuh di sini. */
+/* .badge — Ronde perbaikan akhir (tinjauan Opus): bundle memakai
+   `--weight-medium` (→ 600 lewat alias Task 2), padding `2px var(--space-2)`
+   (2px 8px), dan tepi `1px solid transparent` yang tiap nada
+   (`.badge-neutral`, `.badge-accent`, dst) mengisi `border-color` jadi
+   WARNA TERLIHAT; `Badge.jsx` tidak punya tepi sama sekali. `Badge.jsx`
+   memakai bobot REGULAR (400, token TIDAK dialiaskan — badge butuh bobot
+   yang beda dari label tombol) dan padding `var(--space-1) 10px` (4px
+   10px — `--space-1` yang memberikan angka 4px-nya, bukan literal yang
+   diketik ulang; 10px tetap literal karena tidak ada anak tangga
+   `--space-*` bernilai itu, dan ini nilai yang `Badge.jsx` sendiri tulis
+   literal). `border: none` menang atas SEMUA `.badge-{nada}{border-color:…}`
+   bundle pada spesifisitas yang sama (0,1,0 keduanya, kelas ini datang
+   BELAKANGAN di cascade) — `border-style: none` yang menang membuat
+   `border-color` apa pun tidak pernah dirender. Diukur: tinggi turun dari
+   29,5px (dengan tepi 1px) ke 27,5px (tanpa tepi), padding/ukuran sama —
+   lihat `kulit-komponen.test.js`. Ukurannya (`--text-caption`→
+   `--text-small`, 13px) sudah benar lewat alias Task 4, tidak disentuh di
+   sini. */
 .badge {
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   font-weight: var(--font-weight-regular);
+  border: none;
 }
 /* Bundle `neutral` → mockup `pending` (spec § 9: "Bundle neutral → pending,
    accent → accent"). Lima nada lain sudah sepakat lewat alias Task 2;
