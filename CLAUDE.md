@@ -107,7 +107,7 @@ menjalankan apa pun hanyalah klaim.
 
 ⛔ **`ds-bundle/` adalah artefak VENDOR dan tidak pernah disunting langsung** (keputusan user, 31 Agustus 2026). Seluruh perubahan lewat override di `packages/ds`. Suntingan di tempat hilang tanpa jejak pada pembaruan bundle berikutnya, dan yang hilang adalah perbaikan aksesibilitas. Dijaga `tests/runtime/ds-bundle-vendor.test.js`.
 
-⛔ **Wordmark "LumiPOS" dengan ikon toko di kotak beraksen — bukan lagi "tidak boleh disentuh sama sekali"** (keputusan kampanye Hidupkan desain, 26 September 2026 — `docs/RENCANA-HIDUPKAN-DESAIN.md`). Aturan lama di baris ini berbunyi *"Tidak boleh disentuh sama sekali: logo, nama 'Lumi POS', aksen teal `#0D5C63`"*; digantikan. Nama tampil sebagai satu kata "LumiPOS" (tanpa spasi, ejaan berubah), lewat satu komponen `packages/ds/Wordmark.tsx`: ikon `store` 20px dalam kotak 36×36 (`--radius-control`) berlatar `--primary`, teks 20px bobot 600 di sampingnya — bukan huruf pertama atau logo lama. Dipasang di `ShellKasir` (topbar kasir), `AppShell.brand` back-office (menggantikan `LogoLumi`), dan kedua layar masuk (back-office, HP). Aksen sendiri kini nilai mockup, bukan `#0D5C63` yang dipaku — lihat aturan #2 di atas.
+⛔ **Wordmark "LumiPOS" dengan ikon toko di kotak beraksen — bukan lagi "tidak boleh disentuh sama sekali"** (keputusan kampanye Hidupkan desain, 26 September 2026 — `docs/RENCANA-HIDUPKAN-DESAIN.md`). Aturan lama di baris ini berbunyi *"Tidak boleh disentuh sama sekali: logo, nama 'Lumi POS', aksen teal `#0D5C63`"*; digantikan. Nama tampil sebagai satu kata "LumiPOS" (tanpa spasi, ejaan berubah), lewat satu komponen `packages/ds/Wordmark.tsx`: ikon `store` 20px dalam kotak 36×36 bersudut `--radius-control` berlatar `--primary`, teks 20px bobot 600 di sampingnya — bukan huruf pertama atau logo lama. Dipasang di `ShellKasir` (topbar kasir), `AppShell.brand` back-office (menggantikan `LogoLumi`), dan kedua layar masuk (back-office, HP). Aksen sendiri kini nilai mockup, bukan `#0D5C63` yang dipaku — lihat aturan #2 di atas.
 
 ⛔ **Ikon INTERNAL bundel dialihkan lewat plugin Vite, bukan disunting di tempat** (Task 7, 26 September 2026). `ds-bundle/components/**` (Modal, AppShell, StatCard, SyncIndicator, Ticket, Stepper) memanggil `Icon` dari `forms/Icon.jsx` bundel (42 path gambar-ulang "gaya Lucide") SECARA INTERNAL; `packages/ds/vite-ikon.ts` (`ikonLumi()`) mencegat impor relatif itu di `resolveId` dan mengarahkannya ke `packages/ds/ikon.tsx` — set node `lucide-react@0.468.0` apa adanya (Task 6). Dipasang di SETIAP config Vite yang merender komponen bundel (`apps/kasir/vite*.config.ts` ×3, `apps/backoffice/vite.config.ts`, `apps/hp/vite.config.ts`), dengan komentar di masing-masing — plugin ini **sengaja tidak disembunyikan** (keputusan user), lihat juga `packages/ds/README.md`. Dijaga `tests/runtime/ikon-lucide.test.js` (config yang lupa memasangnya, dan konsumen lain yang membaca `Icon.jsx` bundel langsung) dan `tests/kasir-dom/ikon-bundle.test.js` (pengukuran DOM sungguhan).
 
@@ -1353,9 +1353,11 @@ Kampanye membangun ulang tampilan `apps/kasir` supaya terlihat seperti aplikasi 
 
 **Urutan otoritas saat sumber bertentangan:**
 
-1. **Spec dan test** — perilaku.
-2. **Token di kode** — nilai. `packages/ds/lumi.css` dan `ds-bundle/`, didokumentasikan di `docs/DESIGN.md`.
-3. **Mockup** `docs/referensi-visual/sumber/design-explorer.html` — tata letak dan komposisi, diikuti selama tidak bertabrakan dengan 1 dan 2. Selisih per layar terukur di `docs/referensi-visual/BANDING.md`.
+1. **Spec dan test** — perilaku yang memindahkan uang, mengontrol kas, atau menyinkronkan data.
+2. **Mockup** `docs/referensi-visual/sumber/design-explorer.html` — seluruh TAMPILAN: nilai (palet, aksen, font, skala, radius, bayangan, spasi) dan tata letak. Selisih per layar terukur di `docs/referensi-visual/BANDING.md`.
+3. **Token di kode** — `packages/ds/tokens-mockup.css` dan `packages/ds/lumi.css`, didokumentasikan di `docs/DESIGN.md`. Ia MENYALIN nilai mockup, tidak lagi memutuskannya; token yang berbeda dari mockup adalah penyimpangan yang harus tercatat (hari ini dua, koreksi AA: `--sidebar-label` dan `--step-inactive-text`).
+
+Urutan ini digantikan oleh keputusan kampanye Hidupkan desain, 26 September 2026 (`docs/RENCANA-HIDUPKAN-DESAIN.md`). Sebelumnya token di kode menang atas mockup untuk nilai, dan mockup hanya menentukan tata letak.
 
 ⛔ **Saat mockup bertabrakan dengan 1 atau 2: jangan pilih diam-diam.** Tolak elemen itu, catat di laporan, lanjutkan sisanya. Daftar yang sudah ditolak ada di `docs/referensi-visual/README.md` — jangan diterapkan.
 
