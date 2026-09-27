@@ -298,6 +298,8 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
   /** Per LABEL layar: pasangan terbesar dan elemen terbesar terlihat di ANTARA seluruh keadaan. */
   const pasanganMaxPerLayar = {};
   const elemenMaxPerLayar = {};
+  const pelanggaranHitungChip = [];
+  let chipMaxK03 = 0;
   let kombinasiDiperiksa = 0;
   let totalElemenDijumlah = 0;
   let totalPasanganDijumlah = 0;
@@ -345,6 +347,17 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
 
         const panggung = document.querySelector('.galeri-panggung');
         const semua = panggung ? Array.from(panggung.querySelectorAll('.sentuh, .sentuh-uang')) : [];
+
+        /* ⛔ Hitungan LANGSUNG chip K-03, bukan ambang — lihat sentinel di
+           bawah pemanggil ini. `null` berarti `.kasir-saring` tidak ada di
+           kombinasi ini (layar/keadaan lain, atau K-03 dengan ≤1 kategori). */
+        const kontainerSaring = panggung ? panggung.querySelector('.kasir-saring') : null;
+        const hitungChip = kontainerSaring
+          ? {
+              chip: kontainerSaring.querySelectorAll('.chip').length,
+              chipSentuh: kontainerSaring.querySelectorAll('.chip.sentuh').length,
+            }
+          : null;
 
         const pelanggaranHit = [];
         const pelanggaranTumpang = [];
@@ -490,7 +503,7 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
           }
         }
 
-        return { totalPasangan, pelanggaranHit, pelanggaranTumpang, jumlahElemen: semua.length };
+        return { totalPasangan, pelanggaranHit, pelanggaranTumpang, jumlahElemen: semua.length, hitungChip };
       });
 
       const layarNama = layarLabel[li];
@@ -501,6 +514,15 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
       elemenMaxPerLayar[layarNama] = Math.max(elemenMaxPerLayar[layarNama] ?? 0, hasil.jumlahElemen);
       totalElemenDijumlah += hasil.jumlahElemen;
       totalPasanganDijumlah += hasil.totalPasangan;
+      if (hasil.hitungChip) {
+        if (layarNama === 'K-03') chipMaxK03 = Math.max(chipMaxK03, hasil.hitungChip.chip);
+        if (hasil.hitungChip.chip !== hasil.hitungChip.chipSentuh) {
+          pelanggaranHitungChip.push(
+            `layar ${layarNama} · keadaan ${keadaanLabel[ki]}: .kasir-saring .chip.sentuh ` +
+              `(${hasil.hitungChip.chipSentuh}) != .kasir-saring .chip (${hasil.hitungChip.chip})`
+          );
+        }
+      }
     }
   }
 
@@ -551,8 +573,13 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
      tidak menemukannya), bukan gagal ukuran — nol pelanggaran, penjaga hijau
      PERSIS sebentuk dengan "nol baris, bukan error" (`KELAS-GAGAL.md`).
      Dibuktikan lewat sabotase: menghapus `.sentuh` dari kedua tombol chip
-     `Kasir.tsx` membuat sentinel ini MERAH (elemenMaxPerLayar['K-03'] jatuh
-     ke 0).
+     `Kasir.tsx` membuat sentinel ini MERAH.
+
+     Dihitung LANGSUNG (`.kasir-saring .chip.sentuh` harus SAMA DENGAN
+     `.kasir-saring .chip`), bukan ambang `>= 2` — ambang lolos juga saat
+     SATU dari lima chip kehilangan kelasnya (4 >= 2 masih benar). Hitungan
+     langsung menandai chip mana pun yang kehilangan `.sentuh`, satu atau
+     seluruhnya.
 
      ⛔ TIDAK ada sentinel `pasanganMaxPerLayar['K-03']` sejajar: chip
      kategori sungguhan (label bebas dipilih merchant) sudah LEBIH LEBAR
@@ -560,14 +587,22 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
      `rectExpandedDefault` (heuristik deteksi tetangga di atas, yang
      memakai formula BAWAAN simetris untuk memutuskan "cukup dekat untuk
      diperiksa") menghitung mx=0 pada sisi horizontalnya dan tidak pernah
-     menandai kedua chip sebagai tetangga — bukan cacat, chip ini memang
-     TIDAK butuh perluasan horizontal untuk mencapai 44px (lebarnya sendiri
-     sudah cukup); `potongSentuh` di `Kasir.tsx` tetap dipasang sebagai jaring
-     pengaman untuk label kategori pendek yang lebih sempit dari 44px. */
+     menandai kedua chip sebagai tetangga — BUKAN cacat pemeriksaan generik
+     ini: chip memang tidak butuh perluasan horizontal untuk mencapai 44px
+     (lebarnya sendiri sudah cukup). Tapi itu juga berarti pemeriksaan
+     generik ini tidak menjangkau chip (>44px lebar) sama sekali untuk
+     overlap area sentuh SUNGGUHAN antar chip — `tests/kasir-dom/
+     k03-area-chip.test.js` menutup itu secara eksplisit, mengukur `::before`
+     tiap chip langsung alih-alih formula deteksi-tetangga bawaan di sini. */
   assert.ok(
-    (elemenMaxPerLayar['K-03'] ?? 0) >= 2,
-    `K-03: hanya ${elemenMaxPerLayar['K-03'] ?? 0} elemen .sentuh/.sentuh-uang terlihat di keadaan mana pun — ` +
-      `harap >= 2 (chip kategori "Semua" + minimal satu kategori). Penjaga ukuran di atas tidak dapat menangkap ` +
-      `chip yang kehilangan kelas \`.sentuh\` sama sekali — lihat komentar. ${ringkasan}`
+    chipMaxK03 >= 2,
+    `K-03: hanya ${chipMaxK03} chip \`.kasir-saring .chip\` terlihat di keadaan mana pun — harap >= 2 (chip ` +
+      `kategori "Semua" + minimal satu kategori), kalau tidak penjaga hitungan langsung di bawah ini hampa. ${ringkasan}`
+  );
+  assert.deepEqual(
+    pelanggaranHitungChip,
+    [],
+    `${pelanggaranHitungChip.length} kombinasi layar/keadaan punya \`.kasir-saring .chip.sentuh\` != ` +
+      `\`.kasir-saring .chip\` (chip kehilangan kelas \`.sentuh\`):\n  ` + pelanggaranHitungChip.join('\n  ')
   );
 });
