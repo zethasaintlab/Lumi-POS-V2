@@ -108,6 +108,7 @@ Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaa
 
 - **Bobot 500 bundle dirender 600 di semua pemakainya** (sub-proyek 1, Task 4) · bawaan: `--weight-medium: var(--font-weight-semibold)` · alasan: mockup dan subset font tidak punya 500; selain `t-body-md` (keputusan user) ikut menebal `.label`, `.field-error`, `.sync`, `.tabs`, `.avatar`, `.shell-link` aktif, `.stepper span`, `.segmented button` aktif, `.btn`, chip kategori · cara membalik: timpa bobot per kelas di `packages/ds/lumi.css`, atau arahkan `--weight-medium` ke 400
 - **Kartu produk K-03 tanpa foto tetap bergradien tipis** (sub-proyek 1, Task 9) · bawaan: gradien `--surface` → `--surface-sunk` dari Task 2 dipertahankan, warna kategori dicabut · alasan: mockup `ProductCard.jsx` datar `--card`, tapi selisihnya ≤ 4% di tepi bawah kartu, tidak memakai warna baru, dan tata letak kartu K-03 milik sub-proyek 2 · cara membalik: hapus aturan gradien `.product-card` di bagian Kedalaman `packages/ds/lumi.css`; demo datar di halaman fondasi sudah menunjukkan versi mockup untuk dibandingkan
+  ⛔ **DIBALIK oleh user di gerbang visual, 27 September 2026.** Kartu produk K-03 tanpa foto kini FLAT `--card`, tanpa gradien — aturan `.product-card.kasir-kartu` dihapus dari bagian Kedalaman `packages/ds/lumi.css` (bundle sudah memakai `--surface`/`--accent-soft` sendiri untuk keadaan normal/hover/aktif). `tests/kasir-dom/kulit-komponen.test.js` Step 0 memeriksa `backgroundColor`/`backgroundImage` LANGSUNG pada kartu K-03 sungguhan, bukan hanya demo swatch.
 
 ## Kondisi berhenti
 

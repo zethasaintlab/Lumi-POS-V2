@@ -721,16 +721,22 @@
   box-shadow: var(--shadow-card);
 }
 
-/* Kartu produk: cahaya dari atas, sangat tipis. Ia hilang sepenuhnya saat
-   kartu ditekan — bundle menggantinya dengan `--accent-soft`, dan dua lapis
-   yang bertumpuk akan membuat keadaan tekan terlihat kotor. */
-.product-card.kasir-kartu {
-  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-sunk) 140%);
-}
-.product-card.kasir-kartu:hover,
-.product-card.kasir-kartu:active {
-  background: var(--accent-soft);
-}
+/* ⛔ Kartu produk K-03: gradien DIBALIK — keputusan user di gerbang visual,
+ * 27 September 2026. Task 9 (26 September) mempertahankan gradien tipis di
+ * sini karena selisihnya terhadap mockup terukur kecil (≤4% di tepi bawah)
+ * — keputusan OTONOM, bukan keputusan user (`docs/RENCANA-HIDUPKAN-DESAIN.md`
+ * § Keputusan otonom). Ditinjau ulang di gerbang dan DICABUT: `ProductCard.jsx`
+ * mockup datar `--card`, tanpa gradien sama sekali, dan kartu produk K-03
+ * adalah permukaan yang paling sering dilihat kasir — perbedaan sekecil
+ * apa pun dari mockup di sana lebih terasa daripada di panel/topbar.
+ *
+ * Blok ini SENGAJA DIHAPUS, bukan diganti `background: var(--card)` —
+ * `.product-card` bundle (`ds-bundle/components.css`) sudah memakai
+ * `background: var(--surface)` (→ `--card` lewat alias Task 2) sebagai
+ * bawaan, dan `:hover`/`:active` bundle sudah `background: var(--accent-soft)`
+ * sendiri. Menulis ulang keduanya di sini hanya menciptakan tempat KEDUA
+ * yang memutuskan warna kartu, yang akan menyimpang dari bundle pada
+ * pembaruan berikutnya tanpa satu pun error. */
 
 /* --- Margin bawaan peramban pada `<p>` -------------------------------------
  *
