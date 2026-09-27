@@ -59,37 +59,18 @@
   flex: none;
 }
 
-/* Merek di kiri topbar — kotak aksen berisi huruf pertama.
- *
- * ⛔ Nilainya DISALIN dari `AppShell` bundle (28px, radius 8, `--accent` di
- * atas `--on-accent`), bukan dipilih ulang. Dua merek yang ukurannya berbeda
- * antara kasir dan back-office terbaca sebagai dua produk, dan merchant yang
- * sama membuka keduanya. Nol nilai warna baru: kedua token sudah ada.
- *
- * `border-radius` 8px ditulis apa adanya karena `--radius-control` bernilai
- * lain dan yang dibutuhkan kotak merek, bukan kontrol. Itu satu-satunya angka
- * di blok ini yang bukan token, dan ia datang dari bundle.
+/* ⛔ `.kasir-merek`/`.kasir-wordmark` (kotak aksen 28px + huruf pertama)
+ * DIHAPUS Task 8, kampanye "Hidupkan desain" (26 September 2026) — bentuk
+ * merek kasir sekarang `<Wordmark/>` dari `ds` (`.wordmark`/`.wordmark-ikon`/
+ * `.wordmark-teks`, `packages/ds/lumi.css`), komponen SATU-SATUNYA yang juga
+ * dipakai `AppShell` back-office dan kedua layar masuk. Dua kelas layout
+ * lokal yang menyalin bentuk merek sendiri adalah tepat cacat yang
+ * `Wordmark` ada untuk mencegah — lihat komentar kepala `Wordmark.tsx`.
  */
-.kasir-merek {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: var(--weight-medium);
-  flex: none;
-}
 
-/* Wordmark dan identitas outlet · perangkat — SATU BARIS, bukan bertingkat.
- * Alasannya diukur, lihat komentar padding topbar di atas.
+/* Identitas outlet · perangkat — SATU BARIS dengan wordmark, bukan
+ * bertingkat. Alasannya diukur, lihat komentar padding topbar di atas.
  */
-.kasir-wordmark {
-  flex: none;
-  white-space: nowrap;
-}
-
 .kasir-wordmark-sub {
   color: var(--ink-muted);
   min-width: 0;

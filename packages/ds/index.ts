@@ -49,6 +49,11 @@ export { Modal, ConfirmDialog } from './overlay.tsx';
 // perlu ada sama sekali.
 export { Ticket } from '../../ds-bundle/components/pos/Ticket.jsx';
 
+// Wordmark "LumiPOS" (Task 8) — satu komponen dipakai di ShellKasir kasir,
+// `AppShell.brand.logo` back-office, dan kedua layar masuk. Lihat komentar
+// kepala `Wordmark.tsx`.
+export { Wordmark } from './Wordmark.tsx';
+
 // `potongSentuh` — helper untuk memotong area sentuh tak terlihat
 // (`.sentuh`/`.sentuh-uang`, `lumi.css`) pada sisi yang menghadap tetangga,
 // dari CELAH SEBENARNYA layout. Lahir Task 5 (galeri `fondasi`), dipindah

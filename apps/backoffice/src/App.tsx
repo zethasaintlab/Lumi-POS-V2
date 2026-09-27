@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ComponentProps } from 'react';
-import { AppShell, EmptyState, Icon } from 'ds';
+import { AppShell, EmptyState, Icon, Wordmark } from 'ds';
 import 'ds/styles.css';
 // SETELAH `ds/styles.css`. Ia memberi jangkar tinggi yang `base.css` design
 // system tidak sediakan — lihat komentar di berkasnya.
@@ -63,29 +63,34 @@ import { DasborLayar } from './dasbor/Dasbor.tsx';
  * `ds-bundle` dinyatakan **final dan tidak boleh diubah** (`CLAUDE.md`), jadi
  * yang dilakukan bukan memperbaiki komponennya melainkan **tidak menyalakan
  * cabang yang melanggar**. Temuan selengkapnya di `AUDIT-APPSHELL.md`.
+ *
+ * ## `brand.logo` sekarang `<Wordmark/>`, bukan `LogoLumi` lokal
+ *
+ * Task 8 (kampanye "Hidupkan desain", keputusan user 26 September 2026)
+ * menggantikan `LogoLumi` — huruf pertama di kotak aksen, ditulis sendiri di
+ * berkas ini — dengan `<Wordmark/>` dari `ds`, komponen SATU-SATUNYA yang
+ * juga dirender `ShellKasir` kasir dan kedua layar masuk. `LogoLumi` sendiri
+ * tetap sah menurut aturan #6 (token, bukan piksel dipanggang), tapi bentuk
+ * merek yang ditulis sendiri per aplikasi adalah tepat cacat yang membuat dua
+ * "Lumi POS" terlihat berbeda di dua layar merchant yang sama — lihat
+ * komentar kepala `Wordmark.tsx`.
+ *
+ * ⛔ `Wordmark` sudah membawa teks "LumiPOS" sendiri (`.wordmark-teks`), dan
+ * `AppShell` bundle (vendor, tidak disunting) merender `brand.name` sebagai
+ * `<span>` KEDUA yang terpisah, TANPA SYARAT — memberi `name` yang sama akan
+ * menampilkannya DUA KALI berdampingan. `name` tetap diisi 'LumiPOS' (bukan
+ * dikosongkan, yang jatuh ke fallback bundle 'The Cafe by ORIGEN' lewat
+ * `||`), dan span keduanya DISEMBUNYIKAN lewat CSS —
+ * `.shell-brand > .wordmark + .t-body-md.truncate` di `packages/ds/lumi.css`.
+ *
+ * ⛔ Diverifikasi lewat pengukuran DOM manual (Playwright, dev server
+ * back-office) saat Task 8 ditulis — bukti dan langkahnya di laporan task,
+ * karena `apps/backoffice` tidak punya galeri/harness DOM di `test:kasir-dom`
+ * (itu khusus kasir) dan repo ini belum punya suite DOM back-office sama
+ * sekali. Membangun satu HANYA untuk penjaga ini adalah scope Task 8 yang
+ * tidak diminta brief — teks "LumiPOS" tepat sekali di `.shell-brand` dibaca
+ * langsung dari `AppShell.jsx` (§ di atas) dan diukur, tapi tidak dijaga CI.
  */
-
-function LogoLumi() {
-  // Hanya token. `--space-8` (32px), bukan 28px seperti fallback bawaan —
-  // 28 bukan anak tangga skala spasi mana pun, dan skala itu berbasis 4px.
-  return (
-    <span
-      style={{
-        width: 'var(--space-8)',
-        height: 'var(--space-8)',
-        borderRadius: 'var(--radius-control)',
-        background: 'var(--accent)',
-        color: 'var(--on-accent)',
-        display: 'grid',
-        placeItems: 'center',
-        fontWeight: 'var(--weight-bold)',
-        flex: 'none',
-      }}
-    >
-      L
-    </span>
-  );
-}
 
 /**
  * Penjaga rute.
@@ -227,7 +232,7 @@ function Terlindungi() {
      jaringan putus adalah kebohongan yang persis berlawanan dengan gunanya. */
   return (
     <AppShell
-      brand={{ name: 'Lumi POS', logo: <LogoLumi /> }}
+      brand={{ name: 'LumiPOS', logo: <Wordmark /> }}
       // `AppShell` mengetik `nav` sebagai array yang dapat diubah, sementara
       // `NAVIGASI` sengaja `readonly` — ia data tetap, dan komponen yang
       // menerimanya tidak berhak menyunting peta layar aplikasi. Disalin

@@ -1,4 +1,4 @@
-import { Avatar, Icon, SyncIndicator, Tabs, type IconName } from 'ds';
+import { Avatar, Icon, SyncIndicator, Tabs, Wordmark, type IconName } from 'ds';
 import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
 import { ruteNav, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
@@ -72,17 +72,12 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
   return (
     <div className="kasir-shell">
       <header className="kasir-topbar">
-        {/* ⛔ Bentuk merek DISALIN dari `AppShell` bundle — kotak aksen 28px
-            berisi huruf pertama, lalu wordmark. Menuliskan bentuk merek kedua
-            untuk aplikasi kedua menghasilkan dua Lumi POS yang terlihat berbeda
-            di dua layar milik merchant yang sama.
-
-            Logo, nama "Lumi POS", dan aksen teal tidak disentuh; yang dilakukan
-            di sini hanya MENAMPILKANNYA. */}
-        <span className="kasir-merek" aria-hidden="true">
-          L
-        </span>
-        <span className="t-body-md kasir-wordmark">Lumi POS</span>
+        {/* Wordmark "LumiPOS" — komponen SATU-SATUNYA (Task 8, keputusan user
+            26 September 2026), dipakai identik di ShellKasir, `AppShell`
+            back-office, dan kedua layar masuk. Menuliskan bentuk merek
+            sendiri di sini akan menyimpang dari ketiganya diam-diam; lihat
+            komentar kepala `packages/ds/Wordmark.tsx`. */}
+        <Wordmark />
 
         {/* ⛔ Identitas outlet dan perangkat TIDAK dibuang demi kerapian, dan ia
             SATU BARIS — bukan baris kedua di bawah wordmark.

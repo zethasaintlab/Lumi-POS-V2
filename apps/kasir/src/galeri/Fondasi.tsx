@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Icon, iconNames, potongSentuh } from 'ds';
+import { Icon, iconNames, potongSentuh, Wordmark } from 'ds';
 
 /**
  * Layar `Fondasi desain` — halaman FONDASI galeri, bukan layar produk.
@@ -18,9 +18,10 @@ import { Icon, iconNames, potongSentuh } from 'ds';
  * menata ulang nilai token skala teksnya ke 32/20/15/13. Task 5 mengisi
  * `bentuk` (radius/bayangan/target sentuh). Task 6/7 mengisi `ikon` — SETIAP
  * nama di `iconNames` (Lucide `lucide-react@0.468.0`, Task 6), dirender lewat
- * `<Icon>` publik `ds` yang SAMA dengan yang dipakai layar produk. Kedua
- * bagian lain (`wordmark`, `komponen`) tetap kerangka kosong, diisi Task 8–9
- * di kampanye yang sama.
+ * `<Icon>` publik `ds` yang SAMA dengan yang dipakai layar produk. Task 8
+ * mengisi `wordmark` dengan `<Wordmark/>` — komponen ASLI yang sama dengan
+ * yang dirender `ShellKasir`, bukan salinan. Bagian `komponen` tetap kerangka
+ * kosong, diisi Task 9 di kampanye yang sama.
  *
  * ⛔ Bagian `teks` (Task 4) menampilkan skala FINAL 32/20/15/13, bobot mockup
  * (display 700, judul 600, body 400, caption 400) — dibaca dari
@@ -144,13 +145,10 @@ const GRUP_WARNA: ReadonlyArray<{ judul: string; token: readonly string[] }> = [
   },
 ];
 
-/** Bagian yang belum diisi — kerangka bertanda, diisi Task 8–9. `ikon` diisi
- * Task 7 (lihat `<section data-fondasi="ikon">` di bawah), jadi tidak lagi
- * ada di daftar ini. */
-const BAGIAN_BELUM_DIISI = [
-  { id: 'wordmark', judul: 'Wordmark' },
-  { id: 'komponen', judul: 'Komponen' },
-] as const;
+/** Bagian yang belum diisi — kerangka bertanda, diisi Task 9. `ikon` (Task 7)
+ * dan `wordmark` (Task 8) sudah punya `<section>` sendiri di bawah, jadi
+ * tidak lagi ada di daftar ini. */
+const BAGIAN_BELUM_DIISI = [{ id: 'komponen', judul: 'Komponen' }] as const;
 
 /**
  * Skala teks bagian `teks` (Task 4) — EMPAT token inti final (32/20/15/13),
@@ -471,6 +469,23 @@ export function Fondasi() {
               </span>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Bagian `wordmark` (Task 8) — komponen ASLI `<Wordmark/>` dari `ds`,
+          SAMA PERSIS dengan yang dirender `ShellKasir`, `AppShell` back-office,
+          dan kedua layar masuk (lihat komentar kepala `Wordmark.tsx`). Salinan
+          untuk galeri akan menyimpang tepat pada saat orang membacanya di
+          sini untuk memutuskan apakah bentuknya benar. */}
+      <section data-fondasi="wordmark" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <h2 className="t-body-md">Wordmark</h2>
+        <p className="t-caption">
+          Ikon <code>store</code> di kotak 36×36 berlatar <code>--primary</code>, lalu teks
+          "LumiPOS" 20px bobot 600 — komponen yang sama dipakai ShellKasir, `AppShell` back-office,
+          dan kedua layar masuk.
+        </p>
+        <div className="card card-pad" style={{ display: 'inline-flex', width: 'fit-content' }}>
+          <Wordmark />
         </div>
       </section>
 

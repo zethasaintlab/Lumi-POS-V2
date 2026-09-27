@@ -218,6 +218,70 @@
  */
 .stat .t-title-lg { font-size: var(--text-display); }
 
+/* --- Wordmark "LumiPOS" (Task 8, kampanye "Hidupkan desain") ---------------
+ *
+ * Keputusan user 26 September 2026 (spec § 8) menggantikan aturan lama "logo,
+ * nama 'Lumi POS' tidak disentuh". Satu komponen, `packages/ds/Wordmark.tsx`,
+ * dipakai di ShellKasir, `AppShell.brand` back-office, dan kedua layar
+ * masuk. Markup mengikuti kepala `sumber/ui_kits/kasir/index.html`.
+ *
+ * Kotak ikon 36×36: DISUSUN dari token spasi (`--space-8` 32 + `--space-1` 4),
+ * bukan `36px` yang diketik ulang — komposisi ini yang membuat 36 di sini
+ * tetap anak tangga skala spasi 4px, bukan ukuran sendiri yang menyimpang
+ * diam-diam begitu `--space-8` berubah. Radius `--radius-control` — nilai
+ * yang dipaku spec § 8, sama dengan kontrol lain (tombol, input). Teks 20px
+ * bobot 600 memakai token PERSIS sama dengan `.t-title` (`--text-title` +
+ * `--weight-medium`) tanpa memakai kelasnya — wordmark adalah bentuk merek,
+ * bukan judul layar, dan dua kelas yang kebetulan sama nilainya tetap dua
+ * keputusan berbeda.
+ */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.wordmark-ikon {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-8) + var(--space-1));
+  height: calc(var(--space-8) + var(--space-1));
+  border-radius: var(--radius-control);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  flex: none;
+}
+
+.wordmark-teks {
+  font-size: var(--text-title);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+/* ⛔ `AppShell` bundle (VENDOR, tidak pernah disunting) merender
+ * `brand.logo` DAN `brand.name` sebagai teks TERPISAH, TANPA SYARAT —
+ * `ds-bundle/components/navigation/AppShell.jsx`:
+ *
+ *   {brand?.logo || <span>…</span>}
+ *   <span className="t-body-md truncate">{brand?.name || 'The Cafe by ORIGEN'}</span>
+ *
+ * Memberi `logo: <Wordmark/>` (yang sudah membawa teks "LumiPOS" sendiri)
+ * TANPA menyembunyikan span kedua akan menampilkan namanya DUA KALI
+ * berdampingan di sidebar back-office — persis cacat yang brief Task 8
+ * minta diperiksa di DOM. `name` di prop tetap diisi ('LumiPOS', bukan
+ * dikosongkan): string kosong jatuh ke fallback bundle ('The Cafe by
+ * ORIGEN') lewat `||`, dan span yang disembunyikan CSS tetap lebih aman
+ * daripada prop yang menyimpang dari isi Wordmark.
+ *
+ * Selektor sibling, bukan `:has()`: back-office satu-satunya pemakai
+ * `brand.logo` di repo ini, jadi cakupan `.wordmark + …` sudah tepat tanpa
+ * fitur selektor yang lebih baru.
+ */
+.shell-brand > .wordmark + .t-body-md.truncate {
+  display: none;
+}
+
 /* --- Warna kategori produk -------------------------------------------------
  *
  * ⛔ INI PENGKODEAN DATA, BUKAN STATUS. Enam slot punya token sendiri alih-alih
