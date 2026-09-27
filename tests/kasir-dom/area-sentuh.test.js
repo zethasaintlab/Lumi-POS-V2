@@ -542,4 +542,32 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
       `(dua baris tiga tombol 28×28 — jarak --space-2/8px dan --space-3/12px — masing-masing ` +
       `menghasilkan 2 pasangan bertetangga). ${ringkasan}`
   );
+
+  /* ⛔ Sentinel KEDUA, keputusan user di gerbang visual 27 September 2026:
+     chip kategori K-03 (36px, di bawah --touch-min) HARUS membawa `.sentuh`
+     — tanpa sentinel per-layar ini, menghapus kelasnya dari Kasir.tsx
+     TIDAK terlihat oleh penjaga di atas sama sekali: elemen tanpa `.sentuh`
+     sekadar tidak ikut terpindai (`querySelectorAll('.sentuh, .sentuh-uang')`
+     tidak menemukannya), bukan gagal ukuran — nol pelanggaran, penjaga hijau
+     PERSIS sebentuk dengan "nol baris, bukan error" (`KELAS-GAGAL.md`).
+     Dibuktikan lewat sabotase: menghapus `.sentuh` dari kedua tombol chip
+     `Kasir.tsx` membuat sentinel ini MERAH (elemenMaxPerLayar['K-03'] jatuh
+     ke 0).
+
+     ⛔ TIDAK ada sentinel `pasanganMaxPerLayar['K-03']` sejajar: chip
+     kategori sungguhan (label bebas dipilih merchant) sudah LEBIH LEBAR
+     dari `--touch-min` sebelum dipotong sisi manapun, jadi
+     `rectExpandedDefault` (heuristik deteksi tetangga di atas, yang
+     memakai formula BAWAAN simetris untuk memutuskan "cukup dekat untuk
+     diperiksa") menghitung mx=0 pada sisi horizontalnya dan tidak pernah
+     menandai kedua chip sebagai tetangga — bukan cacat, chip ini memang
+     TIDAK butuh perluasan horizontal untuk mencapai 44px (lebarnya sendiri
+     sudah cukup); `potongSentuh` di `Kasir.tsx` tetap dipasang sebagai jaring
+     pengaman untuk label kategori pendek yang lebih sempit dari 44px. */
+  assert.ok(
+    (elemenMaxPerLayar['K-03'] ?? 0) >= 2,
+    `K-03: hanya ${elemenMaxPerLayar['K-03'] ?? 0} elemen .sentuh/.sentuh-uang terlihat di keadaan mana pun — ` +
+      `harap >= 2 (chip kategori "Semua" + minimal satu kategori). Penjaga ukuran di atas tidak dapat menangkap ` +
+      `chip yang kehilangan kelas \`.sentuh\` sama sekali — lihat komentar. ${ringkasan}`
+  );
 });

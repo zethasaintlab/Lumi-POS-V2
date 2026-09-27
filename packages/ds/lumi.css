@@ -432,13 +432,26 @@
    Task 2. Ia tetap mewarisi `border: none` dari sini — bundle hanya
    menimpa `border-color`, bukan `border-style`, jadi `border-style: none`
    yang ditetapkan di sini tetap menang dan chip aktif pun tanpa tepi,
-   sejalan mockup (tidak satu pun cabang ternary mockup punya kelas tepi). */
+   sejalan mockup (tidak satu pun cabang ternary mockup punya kelas tepi).
+
+   ⛔ Keputusan user di gerbang visual, 27 September 2026: `min-height`/
+   `padding` DITIMPA juga — bundle memakai `min-height: var(--touch-min)`
+   (44px) dan `padding: 0 var(--space-4)` (16px), mockup `h-9 px-3` (36px/
+   12px). `px-3` KEBETULAN sama dengan anak tangga `--space-3` (12px) —
+   dipakai lewat token, bukan literal yang diketik ulang; `36px` TIDAK punya
+   anak tangga skala spasi yang cocok, jadi tetap literal (`h-9` bukan
+   `2 × --space-*` mana pun). TAMPILAN mengecil ke ukuran mockup; area SENTUH
+   tetap ≥44px lewat `.sentuh` (`packages/ds/sentuh.ts`), dipasang di
+   pemanggil (K-03, `Kasir.tsx`) — kelas ini sendiri tidak tahu siapa
+   pemanggilnya. */
 .chip {
   border: none;
   background: var(--secondary);
   color: var(--muted-foreground-strong-alt);
   font-size: var(--text-small);
   font-weight: var(--font-weight-semibold);
+  min-height: 36px;
+  padding: 0 var(--space-3);
 }
 .chip:hover:not([aria-pressed='true']) {
   background: var(--chip-hover-bg);

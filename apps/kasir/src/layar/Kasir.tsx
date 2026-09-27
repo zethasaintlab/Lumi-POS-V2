@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Badge, EmptyState, Icon, SegmentedControl } from 'ds';
+import { Badge, EmptyState, Icon, potongSentuh, SegmentedControl } from 'ds';
 import { PortalAksi } from '../komponen/PortalAksi.tsx';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { PER_MUAT_KATALOG } from '../komponen/halaman.ts';
@@ -658,12 +658,27 @@ export function Kasir() {
             membedakannya: hanya chip AKTIF yang boleh berwarna (`--primary`,
             warna AKSI). Warna kategori tetap ada di kartu produk back-office
             (`chip-kategori`, tabel grid produk) — dua tempat itu di luar
-            scope Step 0, lihat komentar `namaKategori` di atas. */}
+            scope Step 0, lihat komentar `namaKategori` di atas.
+
+            ⛔ `.sentuh` + `potongSentuh`, keputusan user di gerbang visual
+            27 September 2026: tampilnya 36px (mockup), tapi area SENTUH
+            tetap ≥44px — diperluas TAK TERLIHAT (`packages/ds/lumi.css`
+            § "Area sentuh tak terlihat"). Sisi kiri/kanan DIPOTONG pada
+            celah SEBENARNYA antara chip (`.kasir-saring { gap: var(--space-2)
+            }`, kasir.css) supaya perluasannya berhenti di garis tengah
+            celah, bukan menembus ke chip tetangga — nama label kategori
+            bebas dipilih merchant dan bisa lebih sempit dari 44px. Sisi
+            atas/bawah TIDAK dipotong: selisih 44−36=8px (4px per sisi) sudah
+            persis separuh `--space-2` (baris terbungkus) MAUPUN `--space-3`
+            (`.kasir-grid-panel`, jarak ke kontrol pencarian/grid produk di
+            atas dan bawah) — perluasan bawaan sudah pas tanpa tumpang
+            tindih, dibuktikan `tests/kasir-dom/area-sentuh.test.js`. */}
         {kategoriTerpakai.length > 1 && (
           <div className="kasir-saring" role="group" aria-label="Saring kategori">
             <button
               type="button"
-              className="chip"
+              className="chip sentuh"
+              style={potongSentuh(['kiri', 'kanan'], 'var(--space-2)')}
               aria-pressed={kategoriAktif === null}
               onClick={() => setKategoriAktif(null)}
             >
@@ -673,7 +688,8 @@ export function Kasir() {
               <button
                 key={k.id}
                 type="button"
-                className="chip"
+                className="chip sentuh"
+                style={potongSentuh(['kiri', 'kanan'], 'var(--space-2)')}
                 aria-pressed={kategoriAktif === k.id}
                 onClick={() => setKategoriAktif(k.id)}
               >
