@@ -1274,6 +1274,43 @@ Daftar lengkap: `research/12-OPEN-QUESTIONS.md`.
 - **Pengawasan PR: laporkan, jangan perbaiki sendiri** di luar yang diminta. Merah kadang informasi.
 - **Container baru:** `bash tools/siapkan-dev.sh` sebelum apa pun (§ Stack).
 
+## Irit (sejak 27 September 2026)
+
+Hemat dengan memampatkan struktur dan lalu lintas input-output, **bukan bahasa**. Fakta, bukti, dan angka tidak pernah dipotong. Anggaran token dipakai untuk kode, bukan narasi.
+
+**Menunggu**
+- Jangan polling CI atau proses dengan pesan berulang. Andalkan event CI yang membangunkan session.
+- Kalau harus menunggu: satu kali tunggu dengan batas waktu, tanpa pesan antara. Tidak ada pesan "menunggu", "masih berjalan", atau "bot Vercel, tanpa tindakan".
+
+**Membaca**
+- Baca rentang atau hasil `rg -n`, bukan berkas utuh, kecuali memang butuh seluruhnya.
+- Jangan baca ulang berkas yang sudah ada di konteks dan tidak berubah.
+- Diff: `--stat` atau `--name-only` dulu; isi penuh hanya untuk berkas yang relevan.
+- Jangan membuka tangkapan layar kecuali memang harus dinilai.
+
+**Menjalankan**
+- Selama iterasi: hanya suite yang relevan. Seluruh suite berurutan tetap wajib sekali di akhir task.
+- Keluaran test disaring: baris gagal dan ringkasan saja. Log CI diambil bagian yang gagal, tidak seluruhnya.
+
+**Menulis ke user**
+- Tanpa narasi langkah ("sekarang aku…", "berikutnya…"). Mulai dari hasil.
+- Tidak mengulang yang sudah dilaporkan.
+- Laporan task memakai templat tetap, ringkas tapi lengkap:
+
+      Task N — judul
+      Status: DONE | DONE_WITH_CONCERNS | BLOCKED
+      Commit: <sha>
+      Penjaga: <nama> — merah dulu: <pesan singkat>
+      Sabotase: <yang disabotase> → <penjaga> merah: "<pesan>"
+      Suite: <nama n/n, …>
+      Temuan: <kalau ada>
+
+- ⛔ Bukti sabotase, penjaga yang tidak menyala, koreksi atas laporan sendiri, dan temuan **selalu ditulis utuh**. Reviewer menilai dari situ.
+
+**Menulis kode**
+- Komentar menjelaskan *kenapa*, paling banyak tiga baris. Alasan yang lebih panjang tinggal di dokumen, dirujuk dari komentar.
+- Pesan commit: satu baris subjek dan paling banyak tiga baris alasan.
+
 ## Workflow Superpowers (sejak 26 September 2026)
 
 Berlaku untuk kampanye "Hidupkan desain LumiPOS" dan seluruh pekerjaan sesudahnya. **`CLAUDE.md` menang atas skill** — skill `using-superpowers` sendiri menyatakan instruksi pengguna di `CLAUDE.md` didahulukan. Bila skill dan bagian ini berbeda, bagian ini yang berlaku.
