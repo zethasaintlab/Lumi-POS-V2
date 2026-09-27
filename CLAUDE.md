@@ -319,8 +319,9 @@ Kesalahan yang sama dibuat **dua kali dalam dua jam** oleh agent yang sama: menu
 `.kasir-kartu` kini MODIFIER di atas komponen bundle, bukan pengganti.
 `.kasir-chip` sendiri sudah DIHAPUS sepenuhnya (Task 9 Step 0, kampanye
 "Hidupkan desain", 26 September 2026, keputusan user): chip saringan K-03
-sekarang netral apa adanya, tanpa modifier sama sekali — `.chip` bundle
-sudah cukup.
+sekarang netral, tanpa modifier kasir sama sekali — kelas `.chip` bundle
+yang dipakai, dengan kulit mockup (latar `--secondary`, tanpa tepi, 13px
+bobot 600) di `packages/ds/lumi.css`, dijaga `tests/kasir-dom/kulit-komponen.test.js`.
 
 ### ⛔ Aturan memakai `/ds-bundle` — dan ia BUKAN "pakai saja komponen bundle"
 

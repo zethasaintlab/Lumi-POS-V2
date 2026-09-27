@@ -162,8 +162,12 @@ function satuBlokRootTeratas(teksTanpaKomentar) {
   let i = pembuka[0].length;
   let kedalaman = 1;
   while (i < teks.length && kedalaman > 0) {
-    if (teks[i] === '{') kedalaman++;
-    else if (teks[i] === '}') kedalaman--;
+    // Kurung kurawal kedua di dalam :root berarti aturan BERSARANG
+    // (`:root { .btn-primary { background: #f00 } }`) — CSS bersarang yang sah
+    // dan berlaku di Chromium, jadi ia lolos pemeriksaan "satu blok" bila
+    // kedalaman boleh naik. Berkas token hanya berisi deklarasi `--nama: nilai`.
+    if (teks[i] === '{') return false;
+    if (teks[i] === '}') kedalaman--;
     i++;
   }
   if (kedalaman !== 0) return false; // kurung tidak seimbang
