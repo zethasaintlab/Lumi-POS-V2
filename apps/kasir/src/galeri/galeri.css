@@ -132,3 +132,25 @@
   border: none;
   background: var(--accent);
 }
+
+/* --- `.paksa-hover` — bagian `komponen` di Fondasi (Task 9) ----------------
+ *
+ * Chrome galeri, sejajar aturan berkas ini (komentar kepala): TIDAK ADA di
+ * produksi, hanya di halaman fondasi. `getComputedStyle` tidak dapat melihat
+ * keadaan `:hover` sungguhan tanpa mensimulasikan gerakan mouse — kelas ini
+ * memaksa hasil visual yang SAMA lewat sebuah kelas statis, supaya kulit
+ * hover tetap dapat diukur langsung tanpa interaksi Playwright.
+ *
+ * ⛔ Nilainya DISALIN dari override hover SUNGGUHAN di `packages/ds/lumi.css`
+ * (dan, untuk `.btn-primary`, dari `ds-bundle/components.css` — nilainya
+ * sudah benar tanpa override lewat alias `--accent-hover`/Task 2). Kalau
+ * salah satu berubah, baris di sini WAJIB ikut berubah — tidak ada mekanisme
+ * yang menjaga keduanya tetap sepakat selain membaca kode saat menyunting.
+ */
+.btn-primary.paksa-hover:not(:disabled) { background: var(--accent-hover); }
+.btn-secondary.paksa-hover:not(:disabled) { background: var(--secondary-hover); }
+.btn-ghost.paksa-hover:not(:disabled) {
+  background: var(--ghost-hover-bg);
+  color: var(--ghost-foreground);
+}
+.btn-danger.paksa-hover:not(:disabled) { background: var(--destructive-hover); }

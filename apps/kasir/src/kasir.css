@@ -970,22 +970,16 @@
   gap: var(--space-2);
 }
 
-/* ⛔ `.kasir-chip` kini MODIFIER di atas `.chip` bundle. Kesalahan yang SAMA
- * dengan kartu produk, dibuat dua jam sebelumnya: bundle sudah mengirim chip
- * dengan keadaan tertekan yang PENUH teal (`aria-pressed="true"` →
- * `background: var(--accent)`), dan saya menulis versi sendiri yang hanya
- * menebalkan tepi. Yang tersisa di sini cuma warna kategori untuk chip yang
- * TIDAK aktif.
- *
- * Pembagian maknanya jadi bersih: teal = "ini yang sedang aktif" (warna AKSI),
- * warna kategori = "ini kelompok apa". Chip aktif kehilangan warna
- * kategorinya, dan itu benar — dua pesan berbeda tidak boleh berebut satu
- * tempat.
+/* ⛔ `.kasir-chip` (modifier "chip diwarnai kategori") DIHAPUS di sini,
+ * Task 9 Step 0, kampanye "Hidupkan desain" (26 September 2026, keputusan
+ * user). Chip saringan K-03 sekarang NETRAL apa adanya — tanpa modifier
+ * sama sekali: `.chip` bundle sudah cukup, dan `packages/ds/lumi.css`
+ * menimpa warna teks TIDAK aktifnya ke `--foreground` (mockup). Kelas dan
+ * markupnya sendiri sudah dilepas dari `Kasir.tsx`; baris ini hanya
+ * mencatat KENAPA tidak ada apa pun lagi di sini, supaya orang berikutnya
+ * tidak menulis ulang cacat yang sama (kesalahan yang SAMA dulu dibuat dua
+ * jam sebelumnya pada kartu produk — lihat riwayat `.kasir-kartu`).
  */
-.kasir-chip:not([aria-pressed='true']) {
-  border-color: var(--chip, var(--border));
-  color: var(--chip, var(--ink-muted));
-}
 
 .chip:active { transform: translateY(1px); }
 

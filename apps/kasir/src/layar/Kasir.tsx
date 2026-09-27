@@ -4,7 +4,6 @@ import { PortalAksi } from '../komponen/PortalAksi.tsx';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { PER_MUAT_KATALOG } from '../komponen/halaman.ts';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
-import { gayaKategori } from '../../../../packages/domain/src/warna-kategori.ts';
 import { TANPA_KATEGORI } from '../../../../packages/domain/src/katalog-saringan.ts';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import {
@@ -235,10 +234,12 @@ export function Kasir() {
     return cocok.filter((i) => i.categoryId === kategoriAktif);
   }, [katalog, kueri, kategoriAktif, urutan]);
 
-  /* Nama kategori dalam urutan tampil — dasar warna slot. `gayaKategori`
-     memakai POSISI di daftar ini, bukan hash: empat kategori ke enam slot
-     bertabrakan sekitar 70% kali, terukur di browser. */
-  const namaKategori = useMemo(() => kategori.map((k) => k.nama), [kategori]);
+  /* ⛔ `namaKategori` (posisi kategori untuk `gayaKategori`) DIHAPUS di sini,
+     Task 9 Step 0, kampanye "Hidupkan desain" (26 September 2026, keputusan
+     user). Chip saringan K-03 dan kartu produk BERHENTI memakai warna
+     kategori — keduanya sekarang netral, mengikuti mockup. Token `--kat-*`
+     dan fungsi `gayaKategori` itu sendiri TETAP ADA (dipakai back-office,
+     `Produk.tsx`); menghapusnya diputuskan sub-proyek 2, bukan di sini. */
   const petaKategori = useMemo(
     () => new Map(kategori.map((k) => [k.id, k.nama])),
     [kategori]
@@ -651,11 +652,18 @@ export function Kasir() {
 
             Chip disembunyikan bila hanya ada SATU kategori: baris saringan
             yang tidak menyaring apa pun hanya memakan ruang grid. */}
+        {/* ⛔ Chip NETRAL, keputusan user 26 September 2026 (Task 9 Step 0).
+            Sebelumnya setiap chip TIDAK aktif diwarnai lewat `gayaKategori`
+            (kategori "Kopi" selalu chip teal tua, dst) — mockup tidak
+            membedakannya: hanya chip AKTIF yang boleh berwarna (`--primary`,
+            warna AKSI). Warna kategori tetap ada di kartu produk back-office
+            (`chip-kategori`, tabel grid produk) — dua tempat itu di luar
+            scope Step 0, lihat komentar `namaKategori` di atas. */}
         {kategoriTerpakai.length > 1 && (
           <div className="kasir-saring" role="group" aria-label="Saring kategori">
             <button
               type="button"
-              className="chip kasir-chip"
+              className="chip"
               aria-pressed={kategoriAktif === null}
               onClick={() => setKategoriAktif(null)}
             >
@@ -665,9 +673,8 @@ export function Kasir() {
               <button
                 key={k.id}
                 type="button"
-                className="chip kasir-chip"
+                className="chip"
                 aria-pressed={kategoriAktif === k.id}
-                style={gayaKategori(k.nama, namaKategori) as React.CSSProperties}
                 onClick={() => setKategoriAktif(k.id)}
               >
                 {k.nama}
@@ -694,7 +701,6 @@ export function Kasir() {
         ) : (
           <div className="kasir-grid">
             {terlihat.slice(0, tampil).map((item) => {
-              const nama = item.categoryId === null ? '' : petaKategori.get(item.categoryId) ?? '';
               const hargaTerendah = Math.min(...item.variations.map((v) => v.harga));
               /* ⛔ TIGA keadaan, dan yang PERTAMA adalah ketiadaan kunci.
                  `undefined` = belum difoto = kartu NORMAL. Yang ada tetapi
@@ -713,8 +719,16 @@ export function Kasir() {
                      MENYALA teal saat hover dan saat ditekan, punya focus ring,
                      dan punya keadaan habis lewat `data-out`. Semuanya ada dan
                      tidak pernah dipakai; itu sebab utama layar ini terasa
-                     mati, bukan keputusan desain. */
-                  className="product-card kasir-kartu pita-kategori"
+                     mati, bukan keputusan desain.
+
+                     ⛔ `pita-kategori` DIHAPUS di sini, Task 9 Step 0
+                     (keputusan user 26 September 2026): kartu produk
+                     mengikuti mockup, latar PUTIH netral (`--card`), tanpa
+                     pita warna kategori di tepinya. Kelas dan token warna
+                     kategori TETAP ADA (`.pita-kategori` di `lumi.css`,
+                     `--kat-*`) untuk pemakai lain; menghapusnya diputuskan
+                     sub-proyek 2. */
+                  className="product-card kasir-kartu"
                   /* FR-E5 — penandaan habis MANUAL. `data-out` meredupkan
                      kartunya (bundle), dan itu BUKAN satu-satunya penanda:
                      mengetuknya tetap menjelaskan dengan kalimat. Aturan DS #5
@@ -732,7 +746,6 @@ export function Kasir() {
                      menurunkannya dari ada/tidaknya elemen gambar akan
                      menyamakan keduanya pada hari elemen rusak dihapus. */
                   data-gambar={gbr ? gbr.keadaan : 'tanpa'}
-                  style={gayaKategori(nama, namaKategori) as React.CSSProperties}
                   onClick={() => void ketuk(item)}
                 >
                   {/* ⛔ Kartu TANPA gambar tidak merender apa pun di sini —

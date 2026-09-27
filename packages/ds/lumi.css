@@ -282,6 +282,138 @@
   display: none;
 }
 
+/* --- Kulit komponen: Button, Badge, Field, Chip, Product card --------------
+ *
+ * Task 9, kampanye "Hidupkan desain" (26 September 2026). Spec § 9
+ * (`docs/superpowers/specs/2026-09-26-fondasi-desain-design.md`): setiap
+ * kelas ini datang dari `/ds-bundle` (VENDOR, tidak pernah disunting
+ * langsung) dan dikembalikan sesuai `sumber/components/*.jsx` — HANYA lewat
+ * selektor kelas bundle dan `var()`, tanpa satu baris markup React yang
+ * berubah selain menghapus warna kategori (lihat Kasir.tsx/kasir.css, Step 0).
+ *
+ * ⛔ Sebagian besar metrik SUDAH benar TANPA satu baris pun di bawah ini —
+ * bukti bahwa Task 1/2/4/5 sudah mengarahkan nama yang dipakai bundle:
+ * `.btn` (tinggi `--touch-min`, radius `--radius-control`, bobot 600 lewat
+ * alias `--weight-medium`, font `--text-body` yang menang lewat urutan
+ * `@import`), `.btn-critical` (tinggi `--touch-primary` lewat alias
+ * `--touch-critical`), `.btn:disabled` (opacity .4, bundle sendiri),
+ * `.btn-primary` (warna, hover — `--accent`/`--accent-hover`/`--on-accent`
+ * semuanya sudah `--primary`/`--primary-foreground`), `.btn-secondary` (latar
+ * `--surface`→`--card`, tepi `--border-strong`→`--input-border`),
+ * `.badge` (radius `999px`, bundle sendiri), lima nada lencana
+ * (`accent`/`success`/`warning`/`danger`/`info` — sudah sepakat lewat alias
+ * Task 2), `.field`/`input` (tinggi, radius, tepi NORMAL), `.card` (radius,
+ * tepi, bayangan — `--radius-card`/`--border`/`--shadow-card` semuanya sudah
+ * mockup), `.chip[aria-pressed="true"]` (latar `--accent`→`--primary`), dan
+ * `.shell-group` (13px/600, diarahkan di bagian "Skala teks final" di atas).
+ *
+ * Yang di bawah HANYA menyentuh sisa: token yang bundle definisikan dengan
+ * NAMA LAIN dari padanan mockup-nya — nama yang berbeda tidak dapat menang
+ * lewat urutan `@import` karena keduanya bukan referensi ke custom property
+ * yang sama sekali.
+ */
+
+/* .btn-secondary — hover bundle memakai `--surface-alt` (→ `--secondary`,
+   warna DASAR-nya sendiri via alias Task 2): highlight-nya kebetulan
+   terlihat, tapi token yang salah. `Button.jsx` memakai `--secondary-hover`
+   khusus untuk hover, token yang TIDAK punya alias karena namanya tidak
+   bertabrakan dengan bundle. */
+.btn-secondary:hover:not(:disabled) { background: var(--secondary-hover); }
+
+/* .btn-ghost — bundle memakai `--ink-muted` (→ `--muted-foreground`) untuk
+   TEKS dan `--surface-alt` (→ `--secondary`) untuk hover; `Button.jsx`
+   punya token SENDIRI untuk keduanya (`--ghost-foreground`,
+   `--ghost-hover-bg`) yang nilainya berbeda dari alias generik itu. Bundle
+   juga mengubah WARNA TEKS saat hover (`color: var(--ink)`) — `Button.jsx`
+   tidak: teks ghost tetap SATU warna di kedua keadaan, hanya latarnya
+   berubah, jadi `color` ditulis ulang juga di baris hover. */
+.btn-ghost { color: var(--ghost-foreground); }
+.btn-ghost:hover:not(:disabled) {
+  background: var(--ghost-hover-bg);
+  color: var(--ghost-foreground);
+}
+
+/* .btn-danger — bundle memakai gaya OUTLINE (latar `--surface`, teks & tepi
+   `--danger`); `Button.jsx` memakai gaya SOLID (latar `--destructive`, teks
+   putih, tanpa tepi). `--primary-foreground` dipakai ULANG untuk teks putih
+   di sini alih-alih menulis literal `#fff`: nilainya SAMA (putih di kedua
+   berkas mockup) dan literal hex di luar `:root` melanggar G5
+   (`tests/runtime/nol-hex-css.test.js`). */
+.btn-danger {
+  background: var(--destructive);
+  color: var(--primary-foreground);
+  border-color: transparent;
+}
+.btn-danger:hover:not(:disabled) { background: var(--destructive-hover); }
+
+/* .badge — bundle memakai `--weight-medium` (→ 600 lewat alias Task 2) dan
+   padding `2px var(--space-2)` (2px 8px); `Badge.jsx` memakai bobot REGULAR
+   (400, token TIDAK dialiaskan — badge butuh bobot yang beda dari label
+   tombol) dan padding literal `4px 10px` (bukan token: tidak ada anak tangga
+   `--space-*` bernilai 10px, dan ini nilai yang `Badge.jsx` sendiri tulis
+   literal). Ukurannya (`--text-caption`→`--text-small`, 13px) sudah benar
+   lewat alias Task 4, tidak disentuh di sini. */
+.badge {
+  padding: 4px 10px;
+  font-weight: var(--font-weight-regular);
+}
+/* Bundle `neutral` → mockup `pending` (spec § 9: "Bundle neutral → pending,
+   accent → accent"). Lima nada lain sudah sepakat lewat alias Task 2;
+   `.badge-violet` bundle tidak punya padanan di keenam nada mockup dan
+   dibiarkan apa adanya — bukan kelalaian, ia tidak disebut tabel spec. */
+.badge-neutral {
+  background: var(--status-pending-bg);
+  color: var(--status-pending-text);
+}
+
+/* .field — error bundle memakai `--danger` (→ `--status-danger-text` lewat
+   alias Task 2); `Input.jsx` memakai `--destructive`, token BERBEDA
+   nilainya dari `--status-danger-text` (dua merah yang mirip, bukan
+   identik). Tepi NORMAL tidak disentuh: sudah `--input-border` lewat alias
+   `--border-strong`. */
+.field-invalid,
+.field[aria-invalid='true'] {
+  border-color: var(--destructive);
+}
+.field-invalid:focus,
+.field[aria-invalid='true']:focus {
+  outline-color: var(--destructive);
+}
+.field-error { color: var(--destructive); }
+
+/* .chip — bundle memakai `--ink-muted` (→ `--muted-foreground`) untuk teks
+   chip yang TIDAK aktif; chip kategori mockup memakai `--foreground` (lebih
+   gelap, kontras lebih kuat terhadap latar `--card`-nya). Chip AKTIF TIDAK
+   disentuh: `.chip[aria-pressed="true"]` bundle menang lewat SPESIFISITAS
+   atribut di atas kelas polos ini (0,2,0 > 0,1,0, apa pun urutan berkas),
+   dan nilainya (`--accent`/`--on-accent`) sudah `--primary`/
+   `--primary-foreground` lewat alias Task 2. */
+.chip { color: var(--foreground); }
+
+/* .product-card — bundle memakai `--border` (nama yang SAMA PERSIS di kedua
+   berkas, menang lewat URUTAN `@import` — lihat komentar kepala berkas) untuk
+   tepi NORMAL; nilainya BERBEDA dari `--card-outline` yang `ProductCard.jsx`
+   pakai (dua abu-abu yang mirip, bukan identik). Tepi HOVER bundle sudah
+   benar TANPA disentuh: `--accent-border` diarahkan ke `--card-outline-hover`
+   sejak Task 2. */
+.product-card { border-color: var(--card-outline); }
+
+/* .tabs-underline (`CashierNav.jsx`, dipakai `.kasir-bilah` — lihat
+   `kasir.css`) — bundle memakai `--text-body` (15px) untuk SETIAP tab dan
+   `--weight-medium` (600) HANYA pada tab aktif; `CashierNav.jsx` memakai
+   `--text-small` (13px) dan bobot 600 (`--font-weight-semibold`) untuk
+   KEDUA keadaan — hanya warna dan garis bawah yang berbeda antara aktif dan
+   tidak. Warna tab AKTIF bundle jatuh ke `--ink` (→ `--foreground`, netral);
+   `CashierNav.jsx` memakai `--primary` (warna AKSI, sama seperti chip aktif
+   dan aksen lain). Warna tab TIDAK aktif tidak disentuh: sudah
+   `--ink-muted`→`--muted-foreground`, sama dengan mockup. Garis bawah aktif
+   2px sudah `--accent`→`--primary` lewat alias Task 2, tidak disentuh. */
+.tabs-underline button {
+  font-size: var(--text-small);
+  font-weight: var(--font-weight-semibold);
+}
+.tabs-underline button[aria-selected='true'] { color: var(--primary); }
+
 /* --- Warna kategori produk -------------------------------------------------
  *
  * ⛔ INI PENGKODEAN DATA, BUKAN STATUS. Enam slot punya token sendiri alih-alih
@@ -464,7 +596,14 @@
 }
 
 /* Pita warna kategori di tepi kartu produk — penanda yang terbaca dari jarak
-   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat. */
+   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat.
+ *
+ * ⛔ TIDAK LAGI DITERAPKAN ke `product-card` K-03 sejak Task 9 Step 0
+ * (kampanye "Hidupkan desain", 26 September 2026, keputusan user): mockup
+ * menjadikan kartu produk netral (`--card`), tanpa pita kategori. Kelasnya
+ * dipertahankan apa adanya — bukan dihapus — untuk pemakai lain yang
+ * mungkin lahir kelak; menghapus token/kelas warna kategori diputuskan
+ * sub-proyek 2, bukan di sini. */
 .pita-kategori { box-shadow: inset 3px 0 0 var(--chip, var(--border-strong)); }
 
 @media (prefers-reduced-motion: reduce) {

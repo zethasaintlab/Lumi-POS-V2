@@ -204,8 +204,11 @@ const LAYAR = [
   /* `.kasir-konten` opsional di sini: `fondasi` dirender `tanpaShell` (sama
      seperti K-01), jadi tidak ada `ShellKasir` dan tidak ada `.kasir-konten`
      sama sekali — diverifikasi lewat pengukuran DOM (lihat laporan task).
-     `.card` DIKECUALIKAN (bukan sekadar opsional) — lihat `kecualikan`. */
-  { id: 'fondasi', opsional: ['.btn-primary', '.kasir-konten'], kecualikan: ['.card'] },
+     `.card` TIDAK LAGI dikecualikan untuk SELURUH layar — lihat "Ronde
+     perbaikan 2" di bawah `hal.evaluate`: pengecualiannya kini DIPERSEMPIT ke
+     `.card` di dalam `[data-fondasi="warna"]` saja, jadi `.card` di bagian
+     `komponen` (Task 9) tetap terperiksa di sini. */
+  { id: 'fondasi', opsional: ['.btn-primary', '.kasir-konten'] },
 ];
 
 /**
@@ -241,16 +244,46 @@ test('⛔ palet mockup berlaku di getComputedStyle, di kelima layar galeri, di k
   let selektorDiperiksa = 0;
 
   for (const viewport of VIEWPORT) {
-    for (const { id, opsional, kecualikan } of LAYAR) {
+    for (const { id, opsional } of LAYAR) {
       const hal = await bukaLayar(peramban, alamat, id, viewport);
       const hasil = await hal.evaluate((selektorList) => {
         const keluar = {};
         for (const sel of selektorList) {
           const elList = sel === 'body' ? [document.body] : Array.from(document.querySelectorAll(sel));
-          keluar[sel] = elList.map((el) => {
-            const s = getComputedStyle(el);
-            return { color: s.color, backgroundColor: s.backgroundColor, borderColor: s.borderColor };
-          });
+          keluar[sel] = elList
+            /* ⛔ Ronde perbaikan 2 (Task 9, kampanye "Hidupkan desain",
+               26 September 2026): pengecualian `.card` DIPERSEMPIT dari
+               "seluruh layar `fondasi`" ke `[data-fondasi="warna"] .card`
+               saja. Halaman `Fondasi.tsx` bagian `warna` adalah GALERI TOKEN
+               warna itu sendiri, dan swatch-nya SENGAJA menimpa `background`
+               per token lewat inline style (`className="card"` dipakai ulang
+               sebagai bingkai netral, bukan sebagai "permukaan kartu") — 68
+               elemen yang backgroundnya BUKAN `--card` di SANA adalah bukti
+               token itu BEKERJA, bukan pelanggaran. Sejak Task 9 mengisi
+               bagian `komponen`, halaman yang sama juga punya `.card` yang
+               memang harus mengikuti mockup (demo komponen `.card`, kartu
+               ikon, kartu wordmark) — mengecualikan SELURUH layar
+               menyembunyikan regresi tepat di situ. Pengecualiannya karena
+               itu dibaca DI DALAM `evaluate`, per elemen, bukan lagi lewat
+               daftar `kecualikan` per layar.
+
+               ⛔ `.btn-primary.paksa-hover` DIKECUALIKAN juga — DITEMUKAN
+               lewat menjalankan penjaga ini sungguhan sesudah Task 9 mengisi
+               bagian `komponen`, bukan diasumsikan. Demo hover-paksa
+               (`galeri.css`) SENGAJA menampilkan `--accent-hover`, bukan
+               `--primary` — itu tepat yang sedang dibuktikan Task 9 Step 1.
+               Tanpa pengecualian ini penjaga ini menandai demo yang BENAR
+               sebagai "aksen berubah", padahal produksi (tidak pernah
+               memuat `.paksa-hover`) tidak terpengaruh sama sekali. */
+            .filter((el) => {
+              if (sel === '.card' && el.closest('[data-fondasi="warna"]')) return false;
+              if (sel === '.btn-primary' && el.classList.contains('paksa-hover')) return false;
+              return true;
+            })
+            .map((el) => {
+              const s = getComputedStyle(el);
+              return { color: s.color, backgroundColor: s.backgroundColor, borderColor: s.borderColor };
+            });
         }
         return keluar;
       }, Object.keys(HARAP));
@@ -259,17 +292,6 @@ test('⛔ palet mockup berlaku di getComputedStyle, di kelima layar galeri, di k
       const label = `${id} @${viewport.width}x${viewport.height}`;
 
       for (const [sel, properti] of Object.entries(HARAP)) {
-        /* ⛔ `kecualikan` (BUKAN `opsional`): `fondasi` mengecualikan `.card`
-           sepenuhnya — halaman ini adalah GALERI TOKEN warna itu sendiri
-           (`Fondasi.tsx`), dan swatch warnanya SENGAJA menimpa `background`
-           per token lewat inline style (`className="card"` dipakai ulang
-           sebagai bingkai netral, bukan sebagai "permukaan kartu"). Setiap
-           swatch yang backgroundnya BUKAN `--card` adalah bukti token itu
-           BEKERJA, bukan pelanggaran — memeriksanya di sini akan menandai
-           68 elemen yang justru sengaja berwarna-warni sebagai "pelanggaran
-           palet". `opsional` tidak cukup di sini: elemennya ADA (136 di
-           antaranya), hanya semantiknya yang berbeda dari layar produk. */
-        if (kecualikan?.includes(sel)) continue;
         const elemenList = hasil[sel];
         if (elemenList.length === 0) {
           if (opsional.includes(sel)) continue;

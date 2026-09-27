@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Icon, iconNames, potongSentuh, Wordmark } from 'ds';
+import { Chip, Icon, iconNames, potongSentuh, Wordmark } from 'ds';
 
 /**
  * Layar `Fondasi desain` — halaman FONDASI galeri, bukan layar produk.
@@ -20,8 +20,12 @@ import { Icon, iconNames, potongSentuh, Wordmark } from 'ds';
  * nama di `iconNames` (Lucide `lucide-react@0.468.0`, Task 6), dirender lewat
  * `<Icon>` publik `ds` yang SAMA dengan yang dipakai layar produk. Task 8
  * mengisi `wordmark` dengan `<Wordmark/>` — komponen ASLI yang sama dengan
- * yang dirender `ShellKasir`, bukan salinan. Bagian `komponen` tetap kerangka
- * kosong, diisi Task 9 di kampanye yang sama.
+ * yang dirender `ShellKasir`, bukan salinan. Task 9 mengisi `komponen`:
+ * kulit setiap kelas bundle yang menyentuh tampilan komponen (tombol, lencana,
+ * field, kartu, chip, product-card, tab garis bawah, label grup sidebar),
+ * lewat KELAS bundle + `var()` — persis cara layar produk memakainya, bukan
+ * markup baru. `.paksa-hover` (`galeri.css`) memaksa hasil visual `:hover`
+ * tanpa mensimulasikan mouse, supaya kulitnya tetap terukur `getComputedStyle`.
  *
  * ⛔ Bagian `teks` (Task 4) menampilkan skala FINAL 32/20/15/13, bobot mockup
  * (display 700, judul 600, body 400, caption 400) — dibaca dari
@@ -145,10 +149,16 @@ const GRUP_WARNA: ReadonlyArray<{ judul: string; token: readonly string[] }> = [
   },
 ];
 
-/** Bagian yang belum diisi — kerangka bertanda, diisi Task 9. `ikon` (Task 7)
- * dan `wordmark` (Task 8) sudah punya `<section>` sendiri di bawah, jadi
- * tidak lagi ada di daftar ini. */
-const BAGIAN_BELUM_DIISI = [{ id: 'komponen', judul: 'Komponen' }] as const;
+/**
+ * Bagian `komponen` (Task 9) — empat varian tombol, masing-masing dalam
+ * EMPAT keadaan (normal, hover paksa, nonaktif, kritis). `.paksa-hover`
+ * (`galeri.css`) memaksa hasil visual hover TANPA mensimulasikan mouse.
+ */
+const VARIAN_TOMBOL = ['primary', 'secondary', 'ghost', 'danger'] as const;
+
+/** Keenam nada lencana mockup (`Badge.jsx`) — `violet` bundle dilewati, ia
+ * tidak punya padanan di keenam nada dan tidak disebut tabel spec § 9. */
+const NADA_LENCANA = ['neutral', 'accent', 'success', 'warning', 'danger', 'info'] as const;
 
 /**
  * Skala teks bagian `teks` (Task 4) — EMPAT token inti final (32/20/15/13),
@@ -489,12 +499,179 @@ export function Fondasi() {
         </div>
       </section>
 
-      {BAGIAN_BELUM_DIISI.map((bagian) => (
-        <section key={bagian.id} data-fondasi={bagian.id}>
-          <h2 className="t-body-md">{bagian.judul}</h2>
-          <p className="t-caption">Belum diisi — Task berikutnya di kampanye "Hidupkan desain".</p>
-        </section>
-      ))}
+      {/* Bagian `komponen` (Task 9) — kulit setiap kelas bundle yang
+          menyentuh tampilan komponen. Markup di sini MENIRU cara layar
+          produk memakainya (kelas bundle + `var()`, komponen `ds` untuk yang
+          tidak menyentuh uang), bukan style inline — halaman ini
+          memverifikasi bahwa KULITNYA (`lumi.css`) mengikuti mockup, bukan
+          menguji ulang komponennya sendiri. `ProductCard`/`CartRow` bundle
+          SENGAJA tidak diimpor (§ "Aturan memakai /ds-bundle", `CLAUDE.md`)
+          — demonya markup mentah `product-card`, sama seperti K-03. */}
+      <section data-fondasi="komponen" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+        <h2 className="t-body-md">Komponen</h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Tombol — empat varian, empat keadaan
+          </h3>
+          {VARIAN_TOMBOL.map((varian) => (
+            <div key={varian} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <span className="t-caption" style={{ width: '5rem' }}>
+                {varian}
+              </span>
+              <button type="button" className={`btn btn-${varian}`} data-uji={`btn-${varian}-normal`}>
+                Normal
+              </button>
+              <button
+                type="button"
+                className={`btn btn-${varian} paksa-hover`}
+                data-uji={`btn-${varian}-hover`}
+              >
+                Hover
+              </button>
+              <button type="button" className={`btn btn-${varian}`} disabled data-uji={`btn-${varian}-nonaktif`}>
+                Nonaktif
+              </button>
+              <button
+                type="button"
+                className={`btn btn-${varian} btn-critical`}
+                data-uji={`btn-${varian}-kritis`}
+              >
+                Kritis
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Lencana — enam nada
+          </h3>
+          {/* ⛔ KELAS bundle langsung, bukan `<Badge>`: `_adherence.oxlintrc.json`
+              (final, tidak boleh diubah) hanya mengizinkan `tone` bernilai
+              neutral/accent/success/warning/danger pada komponennya —
+              "info" (salah satu keenam nada mockup) TIDAK ADA di daftar itu.
+              Kelas CSS bundle bebas dipakai selalu (aturan "/ds-bundle"); ia
+              tidak menghitung apa pun, jadi enam kelas langsung di sini bukan
+              pelanggaran. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+            {NADA_LENCANA.map((nada) => (
+              <span key={nada} className={`badge badge-${nada}`} data-uji={`badge-${nada}`}>
+                {nada}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Field — normal dan galat
+          </h3>
+          {/* ⛔ Markup MENTAH, sejajar `Bidang.tsx`/`Field.jsx`: `<Field>`
+              bundle tidak menerima `id`/`data-uji` (`_adherence.oxlintrc.json`
+              membatasi propsnya ke `label`/`size`/`error`/`prefix`/`as`/
+              `required`). Strukturnya (`.stack` > `.label` + `.field` +
+              `.field-error`) menyalin `Field.jsx` apa adanya. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
+            <div className="stack" style={{ width: '14rem' }}>
+              <label className="label" htmlFor="fondasi-field-normal">
+                Nama produk
+              </label>
+              <input
+                id="fondasi-field-normal"
+                className="field"
+                data-uji="field-normal"
+                placeholder="Kopi Susu"
+                readOnly
+              />
+            </div>
+            <div className="stack" style={{ width: '14rem' }}>
+              <label className="label" htmlFor="fondasi-field-galat">
+                Nama produk
+              </label>
+              <input
+                id="fondasi-field-galat"
+                className="field field-invalid"
+                data-uji="field-galat"
+                aria-invalid="true"
+                aria-describedby="fondasi-field-galat-err"
+                placeholder="Kopi Susu"
+                readOnly
+              />
+              <span className="field-error" id="fondasi-field-galat-err">
+                Wajib diisi
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Kartu
+          </h3>
+          <div className="card card-pad" data-uji="card-demo" style={{ width: '14rem' }}>
+            <span className="t-body">Kartu mockup</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Chip — normal dan aktif
+          </h3>
+          {/* Komponen `<Chip>` bundle langsung (tidak menyentuh uang, props
+              sesuai `_adherence.oxlintrc.json`: hanya `selected`). Diketahui
+              via `aria-pressed` yang komponennya sendiri set — tidak butuh
+              `data-uji`, yang bukan prop yang diizinkan. */}
+          <div className="fondasi-chip-demo" style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Chip>Kopi</Chip>
+            <Chip selected>Makanan</Chip>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Kartu produk (K-03) — tanpa foto
+          </h3>
+          {/* ⛔ Netral, sejajar Kasir.tsx (Task 9 Step 0): tanpa `pita-kategori`
+              dan tanpa style warna kategori — persis markup produk sungguhan
+              sejak Step 0. */}
+          <button
+            type="button"
+            className="product-card"
+            data-uji="product-card-demo"
+            data-gambar="tanpa"
+            style={{ width: '10rem' }}
+          >
+            <span className="t-body">Kopi Susu</span>
+            <span className="t-body" style={{ color: 'var(--primary)' }}>
+              Rp 18.000
+            </span>
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Tab garis bawah
+          </h3>
+          <nav className="tabs-underline" data-uji="tabs-underline-demo">
+            <button type="button" aria-selected="true" data-uji="tabs-underline-tab-aktif">
+              Ringkasan
+            </button>
+            <button type="button" aria-selected="false" data-uji="tabs-underline-tab-normal">
+              Laporan
+            </button>
+          </nav>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <h3 className="t-caption" style={{ margin: 0 }}>
+            Label grup (sidebar back-office)
+          </h3>
+          <div className="shell-group" data-uji="shell-group-demo">
+            Katalog
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
