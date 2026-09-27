@@ -150,6 +150,21 @@ async function ukur(hal) {
     return {
       panggung: Math.round(document.querySelector('.galeri-panggung > *').getBoundingClientRect().width),
       dialog: r(dialog),
+      /* ⛔ Ronde perbaikan akhir (tinjauan Opus, minor a): `.dialog` bundle
+         SEMPAT hardcode bayangannya sendiri (`0 12px 48px rgba(20,17,15,.24)`)
+         alih-alih `var(--shadow-raised)` — mockup hanya punya dua token
+         bayangan (`--shadow-card`, `--shadow-raised`), tidak ada
+         `--shadow-sheet` di sana. Dibandingkan lewat elemen PROBE, bukan
+         string literal yang bisa berbeda format serialisasi. */
+      dialogShadow: getComputedStyle(dialog).boxShadow,
+      shadowRaised: (() => {
+        const e = document.createElement('div');
+        e.style.boxShadow = 'var(--shadow-raised)';
+        document.body.appendChild(e);
+        const v = getComputedStyle(e).boxShadow;
+        e.remove();
+        return v;
+      })(),
       judul: [...dialog.querySelectorAll('h1,h2')].map((h) => h.textContent.trim()),
       latarIkon,
       latarKembalian: kembalian ? getComputedStyle(kembalian).backgroundColor : null,
@@ -186,6 +201,11 @@ for (const lebar of [1024, 1280]) {
        dengan tombol Transaksi Baru. */
     assert.match(u.token.accent, /^rgb/, 'token --accent tidak terbaca — penjaga DS #2 hampa');
     assert.notEqual(u.warnaAngka, u.token.accent, 'angka kembalian berwarna aksen — DS #2');
+    assert.equal(
+      u.dialogShadow,
+      u.shadowRaised,
+      `bayangan .dialog ${u.dialogShadow} — harap var(--shadow-raised) (${u.shadowRaised}), bukan literal bundle`
+    );
   });
 
   test(`⛔ ${lebar}: hasil cetak terbaca, Cetak ulang di kiri, Transaksi Baru 56 px di kanan`, async () => {
