@@ -146,11 +146,34 @@
  * Nilai efektif WAJIB diukur (`getComputedStyle`), bukan disimpulkan dari
  * urutan berkas — lihat halaman `bentuk` galeri (`?layar=fondasi`) dan
  * `tests/kasir-dom/area-sentuh.test.js`.
+ *
+ * ⛔ `--shadow-modal` — token BARU, keputusan user di gerbang visual, 27
+ * September 2026. `.dialog` sempat diarahkan ke `var(--shadow-raised)`
+ * (Ronde perbaikan akhir sebelumnya, § Kulit komponen di bawah) — benar
+ * dibanding literal bundle, tapi BUKAN bayangan MODAL mockup: modal kasir
+ * (`sumber/ui_kits/kasir/index.html:121`) dan modal back-office
+ * (`sumber/ui_kits/backoffice/index.html:141`) sama-sama memakai
+ * `shadow-[0_18px_50px_rgba(20,112,107,.2)]`, dan mockup tidak punya token
+ * untuk nilai itu sama sekali — jadi `tokens-mockup.css` (yang HANYA
+ * menyalin sumber apa adanya, dijaga `tests/runtime/token-mockup.test.js`)
+ * bukan tempatnya; token BARU ini didefinisikan di sini.
+ *
+ * `rgba(20,112,107)` adalah `--primary` (`#14706b`) mentah — DIVERIFIKASI,
+ * bukan kebetulan warna mirip. Nilainya karena itu disusun dari
+ * `color-mix()` atas `--primary`, bukan hex baru yang diketik ulang:
+ * `color-mix(in srgb, var(--primary) 20%, transparent)` mencampur 20%
+ * `--primary` (alfa 1) dengan 80% transparan, dan karena RGB "transparent"
+ * tidak menyumbang apa pun ke channel warna hasil (alfa-nya nol), hasilnya
+ * SAMA PERSIS dengan `rgba(20, 112, 107, 0.2)` — RGB dari `--primary` apa
+ * adanya, alfa 0,2 dari bobot campurannya. PALET tidak disentuh (aturan DS
+ * #8 pelonggaran): tidak ada satu nilai warna baru, hanya alfa atas warna
+ * yang sudah ada.
  */
 :root {
   --radius-card:    var(--radius);
   --shadow-sheet:   var(--shadow-raised);
   --touch-critical: var(--touch-primary);
+  --shadow-modal:   0 18px 50px color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 /* --- Skala teks final: EMPAT token, 32/20/15/13 ------------------------------
@@ -402,14 +425,14 @@
 }
 .field-error { color: var(--destructive); }
 
-/* .dialog — Ronde perbaikan akhir (tinjauan Opus, minor a): bundle hardcode
-   bayangannya sendiri secara LITERAL (`0 12px 48px rgba(20,17,15,.24)`),
-   bukan lewat `var(--shadow-sheet)` walau komentar token di atas (§ Radius,
-   bayangan, target sentuh) sempat mengklaim sebaliknya — diperbaiki. Mockup
-   tidak punya token "sheet" sama sekali, hanya `--shadow-card` dan
-   `--shadow-raised`; permukaan modal yang terangkat dari latar adalah yang
-   kedua. */
-.dialog { box-shadow: var(--shadow-raised); }
+/* .dialog — bayangan MODAL mockup, keputusan user di gerbang visual, 27
+   September 2026 (`--shadow-modal`, § "Radius, bayangan, target sentuh" di
+   atas). Bundle hardcode bayangannya sendiri secara LITERAL
+   (`0 12px 48px rgba(20,17,15,.24)`); ronde perbaikan sebelumnya
+   mengarahkannya ke `var(--shadow-raised)` (dua token bayangan mockup itu
+   satu-satunya yang ADA saat itu) — benar dibanding literal bundle, tapi
+   bukan bayangan modal mockup sungguhan. */
+.dialog { box-shadow: var(--shadow-modal); }
 
 /* .chip — Ronde perbaikan akhir (tinjauan Opus, keputusan kampanye Hidupkan
    desain 26 September 2026: mockup sumber kebenaran tampilan). Bundle
