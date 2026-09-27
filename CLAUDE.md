@@ -91,45 +91,46 @@ menjalankan apa pun hanyalah klaim.
 
 ## Aturan design system — `/ds-bundle` final, jangan diubah
 
-1. Tepat **4 ukuran teks inti**: 32/20/15/12, bebas dipakai di mana saja. KDS membesar lewat `--scale`, bukan token baru. Satu token **khusus** (`--t-metric`) ada di luar keempatnya, dan hanya sah di konteks yang disebut namanya — lihat § Skala teks final.
-2. Satu aksen teal `#0D5C63`, < 5% area, **satu aksi utama per layar**.
+1. Tepat **4 ukuran teks**: 32/20/15/13, bebas dipakai di mana saja. Tidak ada token khusus — lihat § Skala teks final.
+2. Satu aksen (`--primary`, nilai mockup — saat ini `#14706b`), < 5% area, **satu aksi utama per layar**.
 3. Target sentuh ≥ **44px**; aksi menyangkut uang **56px**.
 4. Angka uang selalu `tabular-nums` (kelas `.num`).
 5. Status **tidak pernah warna saja** — selalu ada teks.
 6. Semua styling lewat token; **tidak ada nilai warna/ukuran hardcoded** di komponen.
 7. Bahasa Indonesia. Setiap komponen punya keadaan **kosong** dan **error**.
-8. Tanpa emoji, tanpa dark mode. **Gradien dan tekstur DIIZINKAN sejak 1 September 2026; GAMBAR PRODUK diizinkan sejak 1 September 2026** — lihat § Pelonggaran DS #8 dan § Gambar produk.
+8. Tanpa emoji, tanpa dark mode. Gradien, tekstur, dan gambar produk diizinkan — lihat § Pelonggaran DS #8 dan § Gambar produk.
 9. Tanpa onboarding in-app, tanpa wizard, tanpa tooltip.
+
+⛔ **Aturan #1 dan #2 mengikuti nilai MOCKUP, bukan lagi nilai lama yang dipaku** (keputusan kampanye Hidupkan desain, 26 September 2026 — `docs/RENCANA-HIDUPKAN-DESAIN.md`). Aturan #1 sebelumnya berbunyi "32/20/15/12" ditambah token khusus `--t-metric`; digantikan skala mockup 32/20/15/13 tanpa token kelima — lihat § Skala teks final untuk riwayatnya. Aturan #2 sebelumnya memaku aksen ke `#0D5C63`; digantikan aksen mockup (`--primary`, `docs/referensi-visual/sumber/tokens/colors.css`), dengan disiplin yang sama: < 5% area, satu aksi utama per layar. Nilai efektif tetap wajib diukur (`getComputedStyle`), bukan disimpulkan dari nama token — dijaga `tests/runtime/token-mockup.test.js` (nilai di berkas) dan `tests/kasir-dom/palet-berlaku.test.js` (nilai yang sungguh dirender).
 
 `_adherence.oxlintrc.json` dari `/ds-bundle` **wajib masuk CI sejak commit pertama**.
 
-⛔ **`ds-bundle/` adalah artefak VENDOR dan tidak pernah disunting langsung** (keputusan user, 31 Agustus 2026). Seluruh perubahan lewat override di `packages/ds`. Suntingan di tempat hilang tanpa jejak pada pembaruan bundle berikutnya, dan yang hilang adalah perbaikan aksesibilitas. Dijaga `tests/runtime/ds-bundle-vendor.test.js`. **Tidak boleh disentuh sama sekali:** logo, nama "Lumi POS", aksen teal `#0D5C63`.
+⛔ **`ds-bundle/` adalah artefak VENDOR dan tidak pernah disunting langsung** (keputusan user, 31 Agustus 2026). Seluruh perubahan lewat override di `packages/ds`. Suntingan di tempat hilang tanpa jejak pada pembaruan bundle berikutnya, dan yang hilang adalah perbaikan aksesibilitas. Dijaga `tests/runtime/ds-bundle-vendor.test.js`.
+
+⛔ **Wordmark "LumiPOS" dengan ikon toko di kotak beraksen — bukan lagi "tidak boleh disentuh sama sekali"** (keputusan kampanye Hidupkan desain, 26 September 2026 — `docs/RENCANA-HIDUPKAN-DESAIN.md`). Aturan lama di baris ini berbunyi *"Tidak boleh disentuh sama sekali: logo, nama 'Lumi POS', aksen teal `#0D5C63`"*; digantikan. Nama tampil sebagai satu kata "LumiPOS" (tanpa spasi, ejaan berubah), lewat satu komponen `packages/ds/Wordmark.tsx`: ikon `store` 20px dalam kotak 36×36 (`--radius-control`) berlatar `--primary`, teks 20px bobot 600 di sampingnya — bukan huruf pertama atau logo lama. Dipasang di `ShellKasir` (topbar kasir), `AppShell.brand` back-office (menggantikan `LogoLumi`), dan kedua layar masuk (back-office, HP). Aksen sendiri kini nilai mockup, bukan `#0D5C63` yang dipaku — lihat aturan #2 di atas.
 
 ⛔ **Ikon INTERNAL bundel dialihkan lewat plugin Vite, bukan disunting di tempat** (Task 7, 26 September 2026). `ds-bundle/components/**` (Modal, AppShell, StatCard, SyncIndicator, Ticket, Stepper) memanggil `Icon` dari `forms/Icon.jsx` bundel (42 path gambar-ulang "gaya Lucide") SECARA INTERNAL; `packages/ds/vite-ikon.ts` (`ikonLumi()`) mencegat impor relatif itu di `resolveId` dan mengarahkannya ke `packages/ds/ikon.tsx` — set node `lucide-react@0.468.0` apa adanya (Task 6). Dipasang di SETIAP config Vite yang merender komponen bundel (`apps/kasir/vite*.config.ts` ×3, `apps/backoffice/vite.config.ts`, `apps/hp/vite.config.ts`), dengan komentar di masing-masing — plugin ini **sengaja tidak disembunyikan** (keputusan user), lihat juga `packages/ds/README.md`. Dijaga `tests/runtime/ikon-lucide.test.js` (config yang lupa memasangnya, dan konsumen lain yang membaca `Icon.jsx` bundel langsung) dan `tests/kasir-dom/ikon-bundle.test.js` (pengukuran DOM sungguhan).
 
-### Skala teks final — LIMA token, dipetakan dari tujuh milik bundle
+### Skala teks final — EMPAT token, nilai mockup
 
-Keputusan user 31 Agustus 2026 ("Opsi A"). Rencananya enam; yang bertahan **lima**, karena token khusus kedua (`--t-data`, nilai sel tabel padat) **tidak punya kasus pakai nyata**: `.table td` bundle memakai `--text-body`, dan tidak ada satu pun berkas CSS di `apps/` yang menyetel ukuran sel tabel. Instruksinya eksplisit — *"Jangan mengarang kebutuhan untuk mengisi slot."*
+⛔ **Digantikan** (keputusan kampanye Hidupkan desain, 26 September 2026 — `docs/RENCANA-HIDUPKAN-DESAIN.md`, Task 4). Aturan lama di sini adalah keputusan user 31 Agustus 2026 ("Opsi A"): LIMA token bundle — empat inti bebas dipakai di mana saja, ditambah satu token khusus (`--t-metric`, 24px) untuk angka KPI kartu dasbor B-01. Skala final sekarang murni **EMPAT** token, nilai mockup: `--text-display` 32 · `--text-title` 20 · `--text-body` 15 · `--text-small` 13 (bundle menyebutnya `--text-caption`, diarahkan ke `--text-small` lewat `packages/ds/lumi.css`). Angka KPI dasbor B-01 memakai ukuran DISPLAY yang sama dengan total/kembalian kasir (32px, bobot 700) — bukan ukuran kelima.
 
-| Token bundle | px | Status di skala final | Boleh dipakai di |
-|---|---|---|---|
-| `--text-display` | 32 | **inti** | mana saja |
-| `--text-title` | 20 | **inti** | mana saja |
-| `--text-body` | 15 | **inti** | mana saja |
-| `--text-caption` | 12 | **inti** | mana saja |
-| `--text-title-lg` | 24 | **khusus** → `--t-metric` | HANYA angka kartu KPI dasbor B-01, lewat `<StatCard>`. Bukan labelnya. **Layar kasir: tidak sama sekali** |
-| `--text-hero` | 40 | **orphan, dilarang** | — |
-| `--text-heading` | 28 | **orphan, dilarang** | — |
+| Token | px (nilai mockup) | Bobot | Boleh dipakai di |
+|---|---:|---:|---|
+| `--text-display` | 32 | 700 | mana saja — total, kembalian kasir, angka KPI dasbor |
+| `--text-title` | 20 | 600 | mana saja — judul layar, judul kartu |
+| `--text-body` | 15 | 400 (600 untuk label tombol) | mana saja — isi, sel tabel |
+| `--text-small` (`--text-caption` bundle) | 13 | 400 (600 untuk header tabel) | mana saja — label sekunder, keterangan, waktu |
 
-⛔ **Yang orphan TIDAK DIHAPUS, dan itu disengaja, bukan terlewat.** Ketiganya hidup di `ds-bundle/tokens/typography.css` — vendor, tidak dapat disunting. Larangan adalah satu-satunya penegakan yang tersedia, dan baris ini ada supaya orang berikutnya tahu bedanya.
+⛔ **`--t-metric` DIHAPUS, bukan diarahkan ulang atau dipertahankan sebagai alias.** `StatCard` bundle masih merender kartu KPI lewat kelas `t-title-lg`; yang diikat sekarang bukan `--t-metric` melainkan LANGSUNG `var(--text-display)`, lewat selektor `.stat .t-title-lg { font-size: var(--text-display); }` di `packages/ds/lumi.css`. Selektor tetap `.stat .t-title-lg`, bukan `.t-title-lg` telanjang — kelas itu yang menegakkan batasnya, dan layar kasir tidak memakai `.stat` sama sekali.
 
-⛔ **`--t-metric` bukan token karangan.** `StatCard` bundle sudah merender nilainya pada 24px lewat kelas `t-title-lg`, dan B-01 memakai tiga di antaranya — ukuran kelima itu **sudah ada di layar sejak dasbor lahir**. Yang belum ada adalah namanya dan batas tempat ia boleh muncul. Nilainya `var(--text-title-lg)`, bukan `24px` yang diketik ulang: angka yang disalin menyimpang dari bundle diam-diam, alias tidak dapat.
+⛔ **Dua token orphan (`--text-hero` 40, `--text-heading` 28) TIDAK berubah oleh kampanye ini** dan tetap dilarang. Keduanya hidup di `ds-bundle/tokens/typography.css` — vendor, tidak dapat disunting — dan `--text-title-lg` (24px di bundle) tidak lagi punya jalan ke layar sama sekali di luar `.stat`, karena pengikatnya kini `var(--text-display)`, bukan nilainya sendiri.
 
 **Penegakannya di tiga tempat, dan pembagiannya bukan selera:**
 
-- `packages/ds/lumi.css` mendefinisikan `--t-metric` dan mengikat cakupannya lewat selektor `.stat .t-title-lg`. Keempat token inti **sengaja tidak** didefinisikan ulang — menyalinnya menciptakan tempat kedua yang memutuskan ukuran teks.
+- `packages/ds/lumi.css` mengikat `.stat .t-title-lg` ke `var(--text-display)` — tidak ada lagi definisi `--t-metric` di berkas mana pun. Ketiga token inti lain (`--text-display`, `--text-title`, `--text-body`) **sengaja tidak** didefinisikan ulang di sini — nilainya menang lewat urutan `@import` token mockup, dan menyalinnya menciptakan tempat kedua yang memutuskan ukuran teks.
 - `tools/oxlint-plugins/ds-adherence.mjs` menolak `t-hero`, `t-heading`, dan `t-title-lg` yang **ditulis sendiri** di `apps/` dan `packages/`. Larangannya LOKAL, bukan di `_adherence.oxlintrc.json` — berkas itu ada di `ds-bundle/`.
-- `tests/runtime/token-css-ada.test.js` menutup separuh yang lint tidak dapat lihat: **oxlint tidak membaca berkas CSS sama sekali**.
+- `tests/runtime/token-css-ada.test.js` menutup separuh yang lint tidak dapat lihat — **oxlint tidak membaca berkas CSS sama sekali** — dan juga menolak `--t-metric` bila muncul lagi di `lumi.css` atau di mana pun. `tests/kasir-dom/skala-teks.test.js` mengukur di peramban bahwa hanya `32px/20px/15px/13px` yang benar-benar dirender di seluruh layar galeri.
 
 ### Pelonggaran DS #8 — gradien dan tekstur, 1 September 2026
 
@@ -137,9 +138,9 @@ Keputusan user setelah membuka galeri di HP: *"sangat flat, tidak hidup, dan san
 
 **Yang TETAP berlaku, dan tidak dicabut oleh apa pun:**
 
-- tanpa emoji · tanpa gambar · tanpa dark mode
-- ⛔ **PALET tidak disentuh.** Tidak ada satu pun nilai warna baru. Setiap gradien disusun dari token yang sudah ada (`--surface`, `--surface-sunk`, `--surface-alt`, `--accent-soft`). Yang berubah **kedalaman**, bukan warnanya
-- aksen teal `#0D5C63` tetap satu-satunya warna AKSI, tetap < 5% area, tetap satu aksi utama per layar
+- tanpa emoji · tanpa dark mode (baris "tanpa gambar" yang pernah ada di sini sudah basi sejak § Gambar produk di bawah mencabutnya, hari yang sama — diperbaiki di sini, bukan bagian dari keputusan kampanye Hidupkan desain)
+- ⛔ **PALET tidak disentuh UNTUK MEMBUAT gradiennya** — pernyataan aslinya. Tidak ada satu pun nilai warna baru ditambahkan demi efek kedalaman: setiap gradien disusun dari token permukaan yang sudah ada (`--surface`, `--surface-sunk`, `--surface-alt`, `--accent-soft`). ⛔ **Nilai token-token itu sendiri BERUBAH mengikuti mockup sejak kampanye Hidupkan desain, 26 September 2026** (`docs/RENCANA-HIDUPKAN-DESAIN.md`, § Aturan design system #2 di atas) — yang tetap benar adalah "gradien tidak menambah warna baru", bukan "nilai palet tidak pernah berubah"
+- aksen (`--primary`, nilai mockup) tetap satu-satunya warna AKSI, tetap < 5% area, tetap satu aksi utama per layar — digantikan dari `#0D5C63` yang dipaku sebelumnya (keputusan kampanye Hidupkan desain, 26 September 2026)
 
 ⛔ **Gradiennya sengaja nyaris tidak terlihat sebagai gradien.** Yang dicari adalah permukaan yang tidak rata sempurna — itu yang membuat mata membaca "benda" alih-alih "kotak putih". Gradien yang terlihat sebagai gradien akan bersaing dengan aksen, dan aksen adalah satu-satunya hal yang boleh menarik mata di layar kasir.
 
@@ -148,8 +149,9 @@ Seluruhnya di `packages/ds/lumi.css`; `ds-bundle/` tidak mengirim satu pun gradi
 ### Gambar produk — DS #8 dicabut lebih jauh, 1 September 2026
 
 Keputusan user setelah meninjau galeri: *"Card harusnya bergambar"*. Larangan
-"tanpa gambar" DICABUT. Yang tetap: tanpa emoji, tanpa dark mode, palet tidak
-disentuh.
+"tanpa gambar" DICABUT. Yang tetap: tanpa emoji, tanpa dark mode. Palet:
+nilai mockup sejak kampanye Hidupkan desain, 26 September 2026 (sebelumnya
+"tidak disentuh" — lihat § Pelonggaran DS #8 di atas).
 
 ⛔ **Ini FITUR, bukan perubahan tampilan.** `item.image_url` sudah ada di skema
 sejak F0 dan **tidak pernah dibaca, tidak pernah ditulis, tidak ada di sync
@@ -660,7 +662,7 @@ Gate F0 (lihat `HANDOFF.md` untuk bukti per item):
 - [x] Skema PostgreSQL + RLS berjalan (`db/migrations/0001–0014`)
 - [x] **Test isolasi lintas-tenant hijau untuk setiap tabel** — `npm run test:isolation`, 189/189
 - [x] Skema SQLite lokal berjalan (`db/local/001-initial.sql`) — `npm run test:sqlite-local` hijau
-- [x] Font Inter di-self-host (mengganti `@import` Google Fonts)
+- [x] Font Inter di-self-host (mengganti `@import` Google Fonts) — ⛔ digantikan Nunito Sans sejak kampanye Hidupkan desain, 26 September 2026 (`docs/RENCANA-HIDUPKAN-DESAIN.md`, `docs/DESIGN.md` § 2); baris ini tetap sebagai riwayat pencapaian gate F0 pada tanggalnya, bukan keadaan font saat ini
 - [x] Header COOP/COEP di-set (`apps/kasir/vite.config.ts` + `tauri.conf.json`)
 - [x] `_adherence.oxlintrc.json` masuk CI — `npm run lint:ds` hijau, `.github/workflows/lint-ds.yml`
 - [x] Aplikasi kosong berjalan di Tauri dengan token design system terpasang
@@ -1370,5 +1372,5 @@ Kampanye membangun ulang tampilan `apps/kasir` supaya terlihat seperti aplikasi 
 | K-14: tabel item gagal ≥ 3 baris utuh | `k14-tata-letak.test.js` |
 | Tinggi bilah nav sama di semua layar | `k14-tata-letak.test.js` |
 | `ds-bundle/` tidak disunting | `tests/runtime/ds-bundle-vendor.test.js` |
-| Aksen `#0D5C63` tidak berubah | **belum ada penjaga** — `ds-bundle-vendor` menjaga berkas bundle, bukan override di `lumi.css`. Lahir di Fase 1 |
-| Nol hex hardcoded di komponen | **belum ada penjaga untuk CSS** — oxlint tidak membaca CSS. Terukur 25 September 2026: nol hex di `apps/kasir/src`. Lahir di Fase 1 |
+| Palet ikuti nilai mockup, bukan diketik ulang di kode | `tests/runtime/token-mockup.test.js` (nilai token di berkas) + `tests/kasir-dom/palet-berlaku.test.js` (nilai yang sungguh dirender di peramban, kedua viewport). Menggantikan baris lama "Aksen `#0D5C63` tidak berubah" — keputusan kampanye Hidupkan desain, 26 September 2026 (`docs/RENCANA-HIDUPKAN-DESAIN.md`), lahir Fase 1 Task 1–2 |
+| Nol hex hardcoded di komponen | `tests/runtime/nol-hex-css.test.js` — memindai `apps/*/src/**/*.css` dan `packages/ds/*.css` (kecuali `lumi.css`/`tokens-mockup.css`, yang justru mendefinisikan token dengan nilai literal). Sebelumnya "belum ada penjaga untuk CSS"; penjaga lahir kampanye Hidupkan desain, Task 2, 26 September 2026 |
