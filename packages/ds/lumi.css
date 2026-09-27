@@ -118,8 +118,17 @@
  *     → `var(--radius)` (mockup, 12px: "cards, panels, modals"). Nilainya
  *     kebetulan SAMA (12px di kedua berkas); yang berubah adalah SUMBER
  *     kebenarannya, bukan angkanya.
- *   - `--shadow-sheet` (bundle, dipakai `.dialog`) → `var(--shadow-raised)`
- *     (mockup, permukaan yang terangkat dari latar).
+ *   - `--shadow-sheet` didefinisikan bundle tapi TIDAK dipakai satu pun
+ *     kelas komponen — `.dialog` hardcode bayangannya sendiri secara
+ *     LITERAL (`0 12px 48px rgba(20,17,15,.24)`), bukan `var(--shadow-sheet)`
+ *     (diverifikasi lewat `grep` atas `ds-bundle/components.css`; komentar
+ *     ini sempat mengklaim sebaliknya — diperbaiki, ronde tinjauan akhir).
+ *     Redirect di sini dipertahankan untuk komponen bottom-sheet yang
+ *     belum dibangun (`readme.md` bundle menyebutnya, tapi belum ada kelas
+ *     untuknya); `.dialog` diarahkan LANGSUNG di § Kulit komponen ke
+ *     `var(--shadow-raised)` — mockup hanya punya DUA token bayangan
+ *     (`--shadow-card`, `--shadow-raised`), dan permukaan yang terangkat
+ *     dari latar adalah satu-satunya yang cocok untuk modal.
  *   - `--touch-critical` (bundle 56px, dipakai `.btn-critical`/`.field-lg`)
  *     → `var(--touch-primary)` (mockup, 56px: "primary cashier actions").
  *     Nilainya juga kebetulan sama (56px keduanya) — alasan yang sama dengan
@@ -392,6 +401,15 @@
   outline-color: var(--destructive);
 }
 .field-error { color: var(--destructive); }
+
+/* .dialog — Ronde perbaikan akhir (tinjauan Opus, minor a): bundle hardcode
+   bayangannya sendiri secara LITERAL (`0 12px 48px rgba(20,17,15,.24)`),
+   bukan lewat `var(--shadow-sheet)` walau komentar token di atas (§ Radius,
+   bayangan, target sentuh) sempat mengklaim sebaliknya — diperbaiki. Mockup
+   tidak punya token "sheet" sama sekali, hanya `--shadow-card` dan
+   `--shadow-raised`; permukaan modal yang terangkat dari latar adalah yang
+   kedua. */
+.dialog { box-shadow: var(--shadow-raised); }
 
 /* .chip — Ronde perbaikan akhir (tinjauan Opus, keputusan kampanye Hidupkan
    desain 26 September 2026: mockup sumber kebenaran tampilan). Bundle
