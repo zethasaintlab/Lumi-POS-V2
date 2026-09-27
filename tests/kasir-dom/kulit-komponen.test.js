@@ -169,7 +169,7 @@ function kontrasRgb(a, b) {
 // Step 0 — chip kategori netral, kartu produk tanpa foto netral (galeri K-03)
 // ---------------------------------------------------------------------------
 
-test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi), kartu produk tanpa foto netral (--card)', async () => {
+test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi, 36px/12px), kartu produk tanpa foto netral (--card)', async () => {
   const hal = await bukaLayar('K-03', 'normal');
   const hasil = await hal.evaluate(() => {
     const chip = Array.from(document.querySelectorAll('.kasir-saring .chip')).map((el) => {
@@ -186,18 +186,13 @@ test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi),
         paddingKiri: s.paddingLeft,
       };
     });
-    /* ⛔ BUKAN `getComputedStyle(...).backgroundColor` di sini — DIUKUR, dan
-       nilainya `rgba(0, 0, 0, 0)` untuk SETIAP kartu, bukan karena Step 0
-       gagal melainkan karena `.product-card.kasir-kartu` (Task 2, "Kedalaman")
-       menyetel `background: linear-gradient(...)`, shorthand yang me-reset
-       `background-color` ke transparan — keputusan yang TIDAK DISENTUH Step 0
-       dan berlaku pada SEMUA kartu, berfoto maupun tidak. Yang Step 0 ubah
-       adalah warna KATEGORI, jadi yang diperiksa di sini adalah KETIADAAN
-       `--chip`/`--chip-soft` (disuntik `gayaKategori` lewat inline style) dan
-       ketiadaan kelas `pita-kategori` — bukan warna latar mentahnya. Demo
-       `.product-card` FLAT tanpa modifier `.kasir-kartu` (data-uji
-       `product-card-demo`, bagian `komponen` Fondasi) yang membuktikan
-       "latar --card" secara harfiah, di Step 1. */
+    /* ⛔ Keputusan user di gerbang visual, 27 September 2026: DIBALIK dari
+       Task 9 (kartu produk K-03 tanpa foto sempat tetap bergradien tipis —
+       lihat `docs/RENCANA-HIDUPKAN-DESAIN.md` § Keputusan otonom). Kartu
+       kini FLAT, sejalan `ProductCard.jsx` mockup — `latar --card` dan
+       `backgroundImage: none` diperiksa LANGSUNG pada kartu K-03 SUNGGUHAN
+       di bawah ini, bukan hanya pada demo swatch `product-card-demo` (Step
+       1) yang tidak pernah memakai gradien sejak awal. */
     const kartuTanpaFoto = Array.from(document.querySelectorAll('.kasir-grid .kasir-kartu[data-gambar="tanpa"]')).map(
       (el) => {
         const s = getComputedStyle(el);
@@ -205,6 +200,8 @@ test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi),
           chipVar: s.getPropertyValue('--chip').trim(),
           chipSoftVar: s.getPropertyValue('--chip-soft').trim(),
           pitaKategori: el.classList.contains('pita-kategori'),
+          latar: s.backgroundColor,
+          latarGambar: s.backgroundImage,
         };
       }
     );
@@ -262,6 +259,8 @@ test('⛔ Step 0: chip kategori K-03 mengikuti mockup (--secondary, tanpa tepi),
     if (k.chipVar !== '') bedaKartu.push(`kartu[${i}] --chip masih disuntik: '${k.chipVar}'`);
     if (k.chipSoftVar !== '') bedaKartu.push(`kartu[${i}] --chip-soft masih disuntik: '${k.chipSoftVar}'`);
     if (k.pitaKategori) bedaKartu.push(`kartu[${i}] masih membawa kelas .pita-kategori`);
+    if (k.latar !== tokenRgb('--card')) bedaKartu.push(`kartu[${i}] latar: harap --card, nyata ${k.latar}`);
+    if (k.latarGambar !== 'none') bedaKartu.push(`kartu[${i}] backgroundImage: harap none (tanpa gradien), nyata ${k.latarGambar}`);
   }
   assert.deepEqual(bedaKartu, [], 'kartu produk tanpa foto masih diwarnai kategori:\n  ' + bedaKartu.join('\n  '));
 });
