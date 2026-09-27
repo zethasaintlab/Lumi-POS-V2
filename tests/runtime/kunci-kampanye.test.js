@@ -111,3 +111,16 @@ test('periksa melaporkan pemegang tanpa mengubah remote', () => {
   assert.match(p.keluaran, /sesi-a/);
   assert.equal(git(klonB, 'ls-remote', 'origin', 'refs/heads/kampanye-kunci'), sebelum);
 });
+
+// Vercel membaca `vercel.json` dari COMMIT yang di-push, bukan dari `main`.
+// Pohon kunci yang hanya memuat KUNCI.json membuat setiap ambil/segarkan/lepas
+// memicu deployment, apa pun isi `vercel.json` di `main` (#76, 27 September 2026).
+test('setiap commit kunci membawa vercel.json yang mematikan deployment Git', () => {
+  for (const [aksi, jam] of [['ambil', '10:00'], ['segarkan', '10:30'], ['lepas', '11:00']]) {
+    assert.equal(kunci(klonA, aksi, 'sesi-a', `2026-09-26T${jam}:00Z`).kode, 0);
+    const berkas = git(remote, 'ls-tree', '--name-only', 'kampanye-kunci').split('\n');
+    assert.ok(berkas.includes('vercel.json'), `commit ${aksi} tanpa vercel.json: pohonnya [${berkas}]`);
+    const cfg = JSON.parse(git(remote, 'show', 'kampanye-kunci:vercel.json'));
+    assert.equal(cfg.git?.deploymentEnabled, false, `commit ${aksi}: git.deploymentEnabled harus false`);
+  }
+});
