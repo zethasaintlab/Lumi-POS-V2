@@ -45,11 +45,14 @@ export function LatarDialog({
   label,
   onBatal,
   lebar = false,
+  kelas,
   children,
 }: {
   label: string;
   /** Dialog dua kolom (K-10 refund, rebuild UI Fase 3.5). */
   lebar?: boolean;
+  /** Kelas tambahan pada kotak dialog (mis. lebar khusus Edit Item). */
+  kelas?: string;
   /** Dipanggil saat Escape. Selalu jalur BATAL, tidak pernah konfirmasi. */
   onBatal: () => void;
   children: ReactNode;
@@ -74,7 +77,9 @@ export function LatarDialog({
 
   return (
     <div className="kasir-dialog-latar" role="dialog" aria-modal="true" aria-label={label}>
-      <div className={lebar ? 'kasir-dialog kasir-dialog-lebar' : 'kasir-dialog'}>{children}</div>
+      <div className={[lebar ? 'kasir-dialog kasir-dialog-lebar' : 'kasir-dialog', kelas].filter(Boolean).join(' ')}>
+        {children}
+      </div>
     </div>
   );
 }

@@ -214,6 +214,40 @@ export function ubahQty(keranjang: Keranjang, barisId: string, qtyMilli: number)
   };
 }
 
+/**
+ * Ganti modifier satu baris (Edit Item). Variation tidak dapat diganti.
+ *
+ * ⛔ Hasil yang menyamai baris LAIN (variation + himpunan modifier, id dan
+ * `qtyMilli` — urutan tidak penting) DIGABUNG: qty dijumlah dan baris yang
+ * DIEDIT yang hilang, sama dengan `tambah`. Dua baris identik membuat struk
+ * berbohong dan refund per baris ambigu.
+ *
+ * `diskon` tidak disentuh — persetujuan manajer terikat pada NOMINAL
+ * (`nominalDisetujui`) dan `statusDiskon` menghitung ulang pada render.
+ */
+export function gantiModifier(
+  keranjang: Keranjang,
+  barisId: string,
+  modifier: readonly ModifierTerpilih[]
+): Keranjang {
+  const asal = keranjang.baris.find((b) => b.id === barisId);
+  if (!asal) return keranjang;
+  const kunci = sidik(asal.variationId, modifier);
+  const kembar = keranjang.baris.find((b) => b.id !== barisId && sidik(b.variationId, b.modifier) === kunci);
+  if (kembar) {
+    return {
+      ...keranjang,
+      baris: keranjang.baris
+        .filter((b) => b.id !== barisId)
+        .map((b) => (b.id === kembar.id ? { ...b, quantityMilli: b.quantityMilli + asal.quantityMilli } : b)),
+    };
+  }
+  return {
+    ...keranjang,
+    baris: keranjang.baris.map((b) => (b.id === barisId ? { ...b, modifier: [...modifier] } : b)),
+  };
+}
+
 export function hapusBaris(keranjang: Keranjang, barisId: string): Keranjang {
   // ⛔ `lepasDiskonBilaKosong`: baris terakhir yang dihapus membawa diskonnya
   // pergi. Lihat alasannya di fungsi itu.

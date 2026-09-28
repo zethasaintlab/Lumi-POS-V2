@@ -204,3 +204,76 @@ test('⛔ subtotal MENGALIKAN harga modifier dengan kuantitasnya', async () => {
   assert.equal(satuanKeranjang(k.baris[0]), 30000n);
   assert.equal(subtotalKeranjang(k), 60000n);
 });
+
+// --- gantiModifier (Edit Item, Task 6) ---
+
+const ES = { id: 'm2', nama: 'Es', harga: 0, qtyMilli: 1000 };
+
+test('gantiModifier: modifier baru menggantikan, diskon tidak tersentuh', async () => {
+  const { keranjangKosong, tambah, gantiModifier, setelDiskon } = await import(MOD);
+  const diskon = {
+    minta: { tipe: 'persen', nilai: 1000n },
+    alasanKode: 'loyal',
+    alasanCatatan: null,
+    approverId: 'mgr',
+    nominalDisetujui: 2000n,
+  };
+  let k = tambah(keranjangKosong(), { item: ITEM, variation: V1, modifier: [GULA], idBaris: () => 'b1' });
+  k = setelDiskon(k, diskon);
+  const baru = gantiModifier(k, 'b1', [ES]);
+  assert.equal(baru.baris.length, 1);
+  assert.deepEqual(baru.baris[0].modifier, [ES]);
+  assert.equal(baru.baris[0].id, 'b1', 'id baris berubah — jejak KEP-21 dan refund per baris putus');
+  assert.equal(baru.baris[0].quantityMilli, 1000);
+  assert.equal(baru.diskon, diskon, 'gantiModifier menyentuh diskon (persetujuan manajer harus tetap terikat pada nominalDisetujui)');
+  // Asli tidak bermutasi.
+  assert.deepEqual(k.baris[0].modifier, [GULA]);
+});
+
+test('⛔ gantiModifier yang menyamai baris lain MENGGABUNG, qty dijumlah', async () => {
+  const { keranjangKosong, tambah, ubahQty, gantiModifier } = await import(MOD);
+  let k = keranjangKosong();
+  k = tambah(k, { item: ITEM, variation: V1, modifier: [], idBaris: () => 'polos' });
+  k = tambah(k, { item: ITEM, variation: V1, modifier: [GULA], idBaris: () => 'gula' });
+  k = ubahQty(k, 'polos', 2000);
+  k = ubahQty(k, 'gula', 3000);
+  // Baris "gula" diubah menjadi polos → sama dengan baris "polos".
+  const baru = gantiModifier(k, 'gula', []);
+  assert.equal(baru.baris.length, 1, 'dua baris identik tidak digabung — struk berbohong, refund per baris ambigu');
+  assert.equal(baru.baris[0].quantityMilli, 5000, 'qty tidak dijumlah (2000 + 3000)');
+  assert.equal(baru.baris[0].id, 'polos', 'yang HILANG harus baris yang diedit, bukan baris lain');
+  // Urutan modifier tidak penting.
+  let k2 = keranjangKosong();
+  k2 = tambah(k2, { item: ITEM, variation: V1, modifier: [GULA, ES], idBaris: () => 'a' });
+  k2 = tambah(k2, { item: ITEM, variation: V1, modifier: [GULA], idBaris: () => 'b' });
+  const baru2 = gantiModifier(k2, 'b', [ES, GULA]);
+  assert.equal(baru2.baris.length, 1, 'urutan modifier memisahkan baris');
+  // Variation berbeda tidak pernah digabung.
+  let k3 = keranjangKosong();
+  k3 = tambah(k3, { item: ITEM, variation: V1, modifier: [], idBaris: () => 'r' });
+  k3 = tambah(k3, { item: ITEM, variation: V2, modifier: [GULA], idBaris: () => 'l' });
+  assert.equal(gantiModifier(k3, 'l', []).baris.length, 2, 'Regular dan Large digabung');
+  // Kuantitas modifier ikut sidik jari.
+  let k4 = keranjangKosong();
+  k4 = tambah(k4, { item: ITEM, variation: V1, modifier: [GULA], idBaris: () => 'x1' });
+  k4 = tambah(k4, { item: ITEM, variation: V1, modifier: [{ ...GULA, qtyMilli: 2000 }], idBaris: () => 'x2' });
+  assert.equal(k4.baris.length, 2);
+  assert.equal(gantiModifier(k4, 'x2', [GULA]).baris.length, 1);
+});
+
+test('gantiModifier: id tak dikenal mengembalikan keranjang apa adanya', async () => {
+  const { keranjangKosong, tambah, gantiModifier } = await import(MOD);
+  const k = tambah(keranjangKosong(), { item: ITEM, variation: V1, modifier: [], idBaris: () => 'b1' });
+  assert.deepEqual(gantiModifier(k, 'tidak-ada', [GULA]), k);
+});
+
+test('gantiModifier tidak pernah menyentuh float', async () => {
+  const { keranjangKosong, tambah, ubahQty, gantiModifier, subtotalKeranjang } = await import(MOD);
+  let k = tambah(keranjangKosong(), { item: ITEM, variation: V1, modifier: [], idBaris: () => 'b1' });
+  k = ubahQty(k, 'b1', 1500);
+  const baru = gantiModifier(k, 'b1', [GULA]); // 1,5 x (20.000 + 3.000) = 34.500
+  const total = subtotalKeranjang(baru);
+  assert.equal(typeof total, 'bigint');
+  assert.equal(total, 34500n);
+  assert.ok(Number.isInteger(baru.baris[0].quantityMilli));
+});

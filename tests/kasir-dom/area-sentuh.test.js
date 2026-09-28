@@ -642,7 +642,12 @@ test('⛔ S8: baris keranjang >= 44 px dan tombol −/+ Edit Item 56 px — elem
   const uji = await hal.evaluate(() => {
     const dlg = document.querySelector('[role="dialog"][aria-label="Edit item"]');
     if (!dlg) return { error: 'Edit Item tidak terbuka dari baris keranjang' };
-    const tombol = (nama) => [...dlg.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? '').startsWith(nama));
+    const tombol = (nama) =>
+      [...dlg.querySelectorAll('button')].find((b) => {
+        const l = b.getAttribute('aria-label') ?? '';
+        // Di qty 1 label − berubah menjadi "Hapus … (jumlah menjadi 0)".
+        return nama === 'Kurangi' ? /^(Kurangi|Hapus) /.test(l) : l.startsWith(nama);
+      });
     const hasil = {};
     for (const nama of ['Kurangi', 'Tambah']) {
       const b = tombol(nama);

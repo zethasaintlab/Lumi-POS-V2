@@ -27,9 +27,10 @@ import {
   setelDiskon,
   subtotalKeranjang,
   tambah,
-  ubahQty,
+  type BarisKeranjang,
   type ModifierTerpilih,
 } from '../kasir/keranjang.ts';
+import { periksaTambahStok } from '../kasir/batas-stok.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
 import { hitungKeranjang, type HitunganKeranjang } from '../kasir/penjualan.ts';
 import { batalkanKeranjang } from '../kasir/keranjang-batal.ts';
@@ -44,7 +45,6 @@ import { catat } from '../telemetri/sink.ts';
 import { bacaStokBanyak } from '../inventori/stok.ts';
 import { bacaProfilVertikal } from '../inventori/profil.ts';
 import { bacaHabis } from '../inventori/sold-out.ts';
-import { keputusanStok } from '../../../../packages/domain/src/profil-vertikal.ts';
 import { keranjangSekarang, langgananKeranjang, setelKeranjang } from '../kasir/simpanan.ts';
 import { pulihkanKeranjang, simpanKeranjang } from '../kasir/keranjang-simpan.ts';
 import { shiftAktif, type ShiftAktif } from '../kas/shift.ts';
@@ -61,6 +61,7 @@ import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
+import { DialogEditItem } from '../komponen/DialogEditItem.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
@@ -105,6 +106,14 @@ export function Kasir() {
   const keranjang = useSyncExternalStore(langgananKeranjang, keranjangSekarang, keranjangSekarang);
   const setKeranjang = (f: (k: typeof keranjang) => typeof keranjang) => setelKeranjang(f(keranjang));
   const [pilihan, setPilihan] = useState<{ item: ItemKatalog; daftar: DaftarModifier[] } | null>(null);
+  /* Edit Item (spec § 6) — dibuka dengan menyentuh baris keranjang. Dialog,
+     bukan rute: yang diedit adalah draf, dan tidak ada keadaan yang berguna
+     untuk dipulihkan lewat URL. */
+  const [edit, setEdit] = useState<{
+    baris: BarisKeranjang;
+    daftar: DaftarModifier[];
+    lacakStok: boolean;
+  } | null>(null);
   /* ⛔ K-06/K-07 adalah MODE, bukan rute. `IA:§7` tidak memberi keduanya URL,
      dan itu TETAP benar meski keranjang kini bertahan (KEP-21).
 
@@ -400,7 +409,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas && !dialogManual && !dialogBatal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas && !dialogManual && !dialogBatal,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -454,33 +463,23 @@ export function Kasir() {
     variation: VariationKatalog,
     modifier: ModifierTerpilih[]
   ) => {
-    /* FR-E4. Yang diperiksa adalah kuantitas KUMULATIF variation ini di
-       keranjang, bukan satu ketukan — modifier berbeda memisahkan baris,
-       tapi stoknya satu. */
-    /* FR-E5 — diperiksa SEBELUM stok terhitung, dan tidak pernah disimpulkan
-       darinya. `spec-e:217`: produk yang ditandai habis "diblokir dengan
-       pesan, TETAPI manajer dapat menimpanya". Penimpaan manajer belum ada
-       jalurnya di layar ini; sampai ada, penandaan memblokir. */
-    if (habis.has(variation.id)) {
-      setPesanStok(`${item.nama} ditandai habis. Manajer dapat membuka kembali penandaannya.`);
-      setPilihan(null);
-      return;
-    }
-
-    const diminta = qtyDiKeranjang(keranjang, variation.id) + 1000;
-    const k = keputusanStok({
-      stokMilli: stok.get(variation.id) ?? 0,
-      dimintaMilli: diminta,
-      bolehNegatif,
+    /* FR-E4/E5 — SATU jalur (`periksaTambahStok`), dipakai juga tombol + Edit
+       Item. Yang diperiksa adalah kuantitas KUMULATIF variation ini di
+       keranjang, bukan satu ketukan: modifier berbeda memisahkan baris, tapi
+       stoknya satu. Penandaan habis diperiksa SEBELUM stok terhitung
+       (`spec-e:217`); penimpaan manajer belum ada jalurnya, jadi memblokir. */
+    const k = periksaTambahStok({
+      namaItem: item.nama,
+      variationId: variation.id,
       lacakStok: variation.lacakStok,
+      dimintaMilli: qtyDiKeranjang(keranjang, variation.id) + 1000,
+      stok,
+      habis,
+      bolehNegatif,
     });
 
     if (!k.boleh) {
-      /* `spec-e:152` menuntut pembatasan disertai "pesan yang menjelaskan" —
-         jadi angkanya ikut, bukan sekadar penolakan. */
-      setPesanStok(
-        `${item.nama} tersisa ${k.sisaMilli / 1000}. Tidak dapat menambah lagi.`
-      );
+      setPesanStok(k.pesan);
       setPilihan(null);
       return;
     }
@@ -489,7 +488,7 @@ export function Kasir() {
        diselesaikan"). Melarang penjualan karena sistem mengira stok habis
        akan menghentikan penjualan nyata, dan kasir mencari jalan pintas —
        memindahkan masalah ke tempat yang tidak terlihat sistem. */
-    setPesanStok(k.peringatan ? `Stok ${item.nama} tersisa ${k.sisaMilli / 1000}` : null);
+    setPesanStok(k.peringatan);
     setKeranjang((c) => tambah(c, { item, variation, modifier, idBaris: () => crypto.randomUUID() }));
     setPilihan(null);
 
@@ -529,6 +528,37 @@ export function Kasir() {
     pilihVariation(cocok.item, cocok.variation, []);
   };
   pindai.current = dipindai;
+
+  /* Edit Item. Variation dicari di katalog untuk dua hal: `lacakStok` (aturan
+     FR-E4) dan item-nya (daftar modifier). Variation yang tak lagi ada di
+     katalog dianggap tidak dilacak dan tanpa modifier — jumlahnya tetap dapat
+     diubah; menolak membuka baris yang sudah di keranjang akan mengunci
+     pesanan yang sedang berjalan.
+
+     ⛔ Gagal membaca modifier TIDAK diam: dialog tetap terbuka (jumlah dapat
+     diubah, modifier baris tidak tersentuh) dan kasir diberi tahu. */
+  const bukaEdit = async (baris: BarisKeranjang) => {
+    if (edit !== null) return;
+    let item: ItemKatalog | null = null;
+    let variation: VariationKatalog | null = null;
+    for (const i of katalog) {
+      const v = i.variations.find((x) => x.id === baris.variationId);
+      if (v) {
+        item = i;
+        variation = v;
+        break;
+      }
+    }
+    let daftar: DaftarModifier[] = [];
+    if (item) {
+      try {
+        daftar = await bacaModifier(db, item.id);
+      } catch {
+        setPesanStok('Pilihan modifier item ini tidak dapat dibaca. Jumlah tetap dapat diubah.');
+      }
+    }
+    setEdit({ baris, daftar, lacakStok: variation?.lacakStok ?? false });
+  };
 
   const ketuk = async (item: ItemKatalog) => {
     mulaiKetuk.current = performance.now();
@@ -1078,81 +1108,44 @@ export function Kasir() {
           <ul className="kasir-baris-daftar">
             {keranjang.baris.map((b) => (
               <li key={b.id} className="kasir-baris">
-                <div className="grow">
-                  <span className="t-body-md">
-                    {b.itemName}
-                    {b.variationName !== 'Regular' ? ` · ${b.variationName}` : ''}
-                  </span>
-                  {b.modifier.length > 0 && (
-                    <span className="t-caption kasir-login-sub">
-                      {' '}
-                      {/* ⛔ `×2` ikut terlihat. Modifier ber-kuantitas yang
-                          ditampilkan seperti modifier biasa membuat kasir
-                          membaca "Extra Shot" pada baris yang menagih dua. */}
-                      {b.modifier
-                        .map((m) => (m.qtyMilli === 1000 ? m.nama : `${m.nama} ×${m.qtyMilli / 1000}`))
-                        .join(', ')}
+                {/* ⛔ SATU tombol per baris, 58 px (spec § 6). Tidak ada
+                    `.stepper` dan tidak ada tombol hapus di baris: menyentuh
+                    baris membuka Edit Item, dan di sanalah qty (lewat FR-E4),
+                    modifier, dan penghapusan terjadi. Stepper lama memanggil
+                    `ubahQty` langsung dan melewati pemeriksaan stok.
+
+                    `CartRow` bundle TIDAK dipakai (`unitPrice * qty` float).
+                    ⛔ `satuanKeranjang`, bukan penjumlahan kedua di sini:
+                    salinan yang ada dulu mengabaikan kuantitas modifier, dan
+                    baris menagih satu shot sementara subtotal menagih dua. */}
+                <button
+                  type="button"
+                  className="kasir-baris-tekan"
+                  aria-haspopup="dialog"
+                  onClick={() => void bukaEdit(b)}
+                >
+                  <span className="kasir-baris-qty num">{tampilkanKuantitas(String(b.quantityMilli))}x</span>
+                  <span className="kasir-baris-isi">
+                    <span className="t-body-md kasir-baris-nama">
+                      {b.itemName}
+                      {b.variationName !== 'Regular' ? ` · ${b.variationName}` : ''}
                     </span>
-                  )}
-                </div>
-                {/* ⛔ Baris KEDUA, bukan satu baris berisi enam hal.
-                    Sebelumnya nama, kuantitas, harga, `−`, dan Hapus berbagi
-                    satu baris rapat — dan tombol Hapus duduk tepat di sebelah
-                    tombol kurang. Salah tekan di sana membuang seluruh baris
-                    pesanan alih-alih mengurangi satu, di depan pelanggan yang
-                    sedang menunggu. */}
-                <div className="kasir-baris-aksi">
-                  {/* ⛔ `.stepper` dari `/ds-bundle`, dan ⛔ tombol `+` BARU.
-                      Sampai 1 September 2026 keranjang hanya punya `−` dan
-                      Hapus — tidak ada satu pun cara menambah kuantitas dari
-                      keranjang. Kasir yang pelanggannya berkata "dua saja"
-                      harus kembali ke grid dan mengetuk produknya lagi.
-
-                      `.stepper` sudah ada di bundle dan belum pernah dipakai
-                      satu layar pun; tombolnya sudah 44px (`--touch-min`).
-
-                      ⛔ **Tombol "Hapus" terpisah DIHAPUS, 2 September 2026** —
-                      perilaku `CartRow` bundle diadopsi: kuantitas yang turun
-                      ke nol MENGHAPUS barisnya. `ubahQty` sudah melakukannya
-                      sejak awal (`qtyMilli <= 0` → `hapusBaris`); yang belum
-                      ada adalah layar yang memanfaatkannya.
-
-                      Ini menyelesaikan A8 lebih baik daripada menjauhkan
-                      tombolnya: aksi merusak yang duduk di sebelah aksi biasa
-                      tetap dapat tertekan tidak sengaja berapa pun jaraknya —
-                      yang dihapus di sini adalah tombolnya, bukan jaraknya.
-                      Pada qty 1, `−` berubah menjadi `×` dan labelnya berbunyi
-                      "Hapus": ⛔ tombol yang perilakunya berubah tanpa
-                      tampilannya berubah adalah cacat, bukan kehalusan. */}
-                  <div className="stepper">
-                    <button
-                      type="button"
-                      aria-label={
-                        b.quantityMilli <= 1000 ? `Hapus ${b.itemName}` : `Kurangi ${b.itemName}`
-                      }
-                      onClick={() => setKeranjang((k) => ubahQty(k, b.id, b.quantityMilli - 1000))}
-                    >
-                      {b.quantityMilli <= 1000 ? <Icon name="x" /> : '−'}
-                    </button>
-                    <span className="num">{b.quantityMilli / 1000}</span>
-                    <button
-                      type="button"
-                      aria-label={`Tambah ${b.itemName}`}
-                      onClick={() => setKeranjang((k) => ubahQty(k, b.id, b.quantityMilli + 1000))}
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  {/* ⛔ `satuanKeranjang`, bukan penjumlahan kedua di sini.
-                      Salinan yang ada sebelumnya mengabaikan kuantitas
-                      modifier, jadi baris menagih satu shot sementara subtotal
-                      di bawahnya menagih dua — dua angka di layar yang sama,
-                      tanpa error. */}
+                    <span className="t-caption num">{rupiah(satuanKeranjang(b))} per item</span>
+                    {b.modifier.length > 0 && (
+                      <span className="t-caption">
+                        {/* ⛔ `×2` ikut terlihat. Modifier ber-kuantitas yang
+                            ditampilkan seperti modifier biasa membuat kasir
+                            membaca "Extra Shot" pada baris yang menagih dua. */}
+                        {b.modifier
+                          .map((m) => (m.qtyMilli === 1000 ? m.nama : `${m.nama} ×${m.qtyMilli / 1000}`))
+                          .join(', ')}
+                      </span>
+                    )}
+                  </span>
                   <span className="kasir-baris-harga t-body-md num">
                     {rupiah((satuanKeranjang(b) * BigInt(b.quantityMilli)) / 1000n)}
                   </span>
-                </div>
+                </button>
               </li>
             ))}
           </ul>
@@ -1343,6 +1336,24 @@ export function Kasir() {
 
       {dialogManual && (
         <DialogKodeManual onKode={dipindai} onBatal={() => setDialogManual(false)} />
+      )}
+
+      {edit && (
+        <DialogEditItem
+          baris={edit.baris}
+          keranjang={keranjang}
+          lacakStok={edit.lacakStok}
+          stok={stok}
+          habis={habis}
+          bolehNegatif={bolehNegatif}
+          daftarModifier={edit.daftar}
+          onBatal={() => setEdit(null)}
+          onSimpan={(baru) => {
+            /* SATU tulis: qty + modifier sudah digabung di `baru`. */
+            setKeranjang(() => baru);
+            setEdit(null);
+          }}
+        />
       )}
 
       {pilihan && (

@@ -4,7 +4,10 @@ import {
   barisOrderUntuk,
   gambarUntuk,
   itemUntuk,
+  EDIT_VAR_HABIS,
+  EDIT_VAR_STOK_DUA,
   keranjangDuaPuluh,
+  keranjangEditItem,
   orderUntuk,
   type NamaSkenario,
 } from './skenario.ts';
@@ -148,6 +151,12 @@ export interface OpsiDbPalsu {
       melipatgandakan kombinasi layar×keadaan di SELURUH penjaga lain yang
       membaca daftar keadaan dari bilah galeri). */
   matikanFitur?: readonly string[];
+  /** `[EKSPLORASI]` Task 6 — fixture Edit Item lewat `?editItem=1` (bukan
+      keadaan galeri baru, alasan yang sama dengan `matikanFitur`): stok
+      dilacak dan TIDAK boleh negatif; Americano Hot stok 2, Cappuccino
+      ditandai habis; empat baris keranjang bervariation NYATA di katalog;
+      semua item punya satu daftar modifier. Dibaca `edit-item.test.js`. */
+  editItem?: boolean;
 }
 
 export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbLokal {
@@ -163,7 +172,15 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
      yang seluruhnya sehat. */
   const gerakStok = item.map((b, i) => ({
     variation_id: b.variation_id,
-    delta: i % 11 === 3 ? -2_000 : i % 5 === 0 ? 3_000 : 48_000,
+    delta: opsi.editItem
+      ? b.variation_id === EDIT_VAR_STOK_DUA
+        ? 2_000
+        : 48_000
+      : i % 11 === 3
+        ? -2_000
+        : i % 5 === 0
+          ? 3_000
+          : 48_000,
     hlc: 1,
   }));
 
@@ -171,11 +188,41 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     item,
     category: KATEGORI_PALSU,
     price_history: [],
-    modifier_list: [],
-    modifier: [],
+    /* ⛔ Fake `getAll` mengabaikan JOIN: dengan `editItem`, SETIAP item
+       mengembalikan daftar ini. Hanya untuk `edit-item.test.js`. */
+    modifier_list: opsi.editItem
+      ? [
+          {
+            id: 'ml-tambah',
+            name: 'Tambahan',
+            selection_type: 'multi',
+            min_selections: 0,
+            max_selections: null,
+            is_required: 0,
+            allow_duplicate: 1,
+            archived_at: null,
+          },
+        ]
+      : [],
+    modifier: opsi.editItem
+      ? [
+          { id: 'm-shot', modifier_list_id: 'ml-tambah', name: 'Extra shot', price: 5000, is_default: 0, sort_order: 1, archived_at: null },
+          { id: 'm-oat', modifier_list_id: 'ml-tambah', name: 'Susu oat', price: 6000, is_default: 0, sort_order: 2, archived_at: null },
+        ]
+      : [],
     stock_movement: gerakStok,
     stock_snapshot: [],
-    sold_out_flag: [],
+    sold_out_flag: opsi.editItem
+      ? [
+          {
+            variation_id: EDIT_VAR_HABIS,
+            is_sold_out: 1,
+            hlc: 1,
+            tenant_id: 'ten-galeri',
+            outlet_id: 'outlet-1',
+          },
+        ]
+      : [],
     order,
     order_line: barisOrderUntuk(order),
     /* Campuran metode, bukan tunai seluruhnya: `spec-d:201` memisahkan uang
@@ -290,7 +337,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       {
         id: 'vp-1',
         name: 'fnb',
-        allow_negative_stock: 1,
+        allow_negative_stock: opsi.editItem ? 0 : 1,
         is_tenant_default: 1,
         default_channel: 'takeaway',
         requires_barcode_flow: 0,
@@ -374,7 +421,14 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     // selalu ada akan menutupi keadaan kosong yang aturan DS #7 tuntut.
     keranjang_lokal:
       skenario === 'keranjang-penuh'
-        ? [{ id: 'kini', shift_id: 'shift-galeri', isi: keranjangDuaPuluh(), diperbarui_pada: '2026-09-01T02:00:00.000Z' }]
+        ? [
+            {
+              id: 'kini',
+              shift_id: 'shift-galeri',
+              isi: opsi.editItem ? keranjangEditItem() : keranjangDuaPuluh(),
+              diperbarui_pada: '2026-09-01T02:00:00.000Z',
+            },
+          ]
         : [],
     print_job: [],
     fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),

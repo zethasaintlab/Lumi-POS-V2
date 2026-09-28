@@ -19,6 +19,7 @@ import { Login } from '../layar/Login.tsx';
 import { BukaShift } from '../layar/BukaShift.tsx';
 import { DetailTransaksi } from '../layar/DetailTransaksi.tsx';
 import { buatDbPalsu, perangkatTerdaftarUntuk } from './db-palsu.ts';
+import { langgananKeranjang } from '../kasir/simpanan.ts';
 import { TABEL_RUTE } from '../rute/tabel.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
 import { Fondasi } from './Fondasi.tsx';
@@ -167,6 +168,22 @@ export function Galeri() {
     []
   );
 
+  /* ⛔ Pencatat perubahan keranjang, untuk `edit-item.test.js`: berapa kali
+     `setelKeranjang` dipanggil. Penulisan `keranjang_lokal` TIDAK dapat
+     membuktikan "satu kali" — React menggabung dua pembaruan sinkron dalam
+     satu render, jadi dua `setelKeranjang` di satu ketukan tetap menghasilkan
+     satu tulis. Hanya penghitung di sumbernya yang dapat membedakan. */
+  useEffect(() => {
+    const w = window as unknown as { __galeriKeranjangSet?: number };
+    w.__galeriKeranjangSet = 0;
+    return langgananKeranjang(() => {
+      w.__galeriKeranjangSet = (w.__galeriKeranjangSet ?? 0) + 1;
+    });
+  }, []);
+
+  /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
+  const editItem = useMemo(() => new URLSearchParams(window.location.search).get('editItem') === '1', []);
+
   /* ⛔ Keadaan dibangun ULANG saat skenario berubah, dan `key` di bawah
      memaksa REMOUNT. Tanpa remount, layar yang sudah memuat data skenario
      sebelumnya akan menahannya di state React-nya sendiri, dan galeri
@@ -185,7 +202,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -210,7 +227,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario, layarId, matikanFitur]);
+  }, [skenario, layarId, matikanFitur, editItem]);
 
   return (
     <div className="galeri">
