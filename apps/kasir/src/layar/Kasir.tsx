@@ -737,13 +737,12 @@ export function Kasir() {
                      tidak pernah dipakai; itu sebab utama layar ini terasa
                      mati, bukan keputusan desain.
 
-                     ⛔ `pita-kategori` DIHAPUS di sini, Task 9 Step 0
-                     (keputusan user 26 September 2026): kartu produk
-                     mengikuti mockup, latar PUTIH netral (`--card`), tanpa
-                     pita warna kategori di tepinya. Kelas dan token warna
-                     kategori TETAP ADA (`.pita-kategori` di `lumi.css`,
-                     `--kat-*`) untuk pemakai lain; menghapusnya diputuskan
-                     sub-proyek 2. */
+                     ⛔ Kartu produk netral, Task 9 Step 0 (keputusan user
+                     26 September 2026): mengikuti mockup, latar PUTIH netral
+                     (`--card`), tanpa pita warna kategori di tepinya. CSS
+                     pita itu sendiri (`.pita-kategori`) dihapus Task 2
+                     sub-proyek 2 — CSS mati, tanpa pemakai. `--kat-*` tetap
+                     ada untuk `chip-kategori` back-office. */
                   className="product-card kasir-kartu"
                   /* FR-E5 — penandaan habis MANUAL. `data-out` meredupkan
                      kartunya (bundle), dan itu BUKAN satu-satunya penanda:

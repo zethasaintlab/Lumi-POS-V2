@@ -754,16 +754,12 @@ select {
   white-space: nowrap;
 }
 
-/* Pita warna kategori di tepi kartu produk — penanda yang terbaca dari jarak
-   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat.
- *
- * ⛔ TIDAK LAGI DITERAPKAN ke `product-card` K-03 sejak Task 9 Step 0
- * (kampanye "Hidupkan desain", 26 September 2026, keputusan user): mockup
- * menjadikan kartu produk netral (`--card`), tanpa pita kategori. Kelasnya
- * dipertahankan apa adanya — bukan dihapus — untuk pemakai lain yang
- * mungkin lahir kelak; menghapus token/kelas warna kategori diputuskan
- * sub-proyek 2, bukan di sini. */
-.pita-kategori { box-shadow: inset 3px 0 0 var(--chip, var(--border-strong)); }
+/* ⛔ `.pita-kategori` DIHAPUS (Task 2, sub-proyek 2, kampanye "Hidupkan
+ * desain", 28 September 2026): CSS mati sejak Task 9 Step 0 sub-proyek 1
+ * (kartu produk K-03 sudah netral, tanpa pita kategori, dan tidak ada
+ * pemakai lain). `--kat-*` dan `gayaKategori` TETAP ADA — satu-satunya
+ * pemakainya `apps/backoffice/src/katalog/Produk.tsx` (`chip-kategori`),
+ * nasibnya milik sub-proyek 3. */
 
 @media (prefers-reduced-motion: reduce) {
   /* Umpan balik tekan DIBUANG, bukan diperlambat: yang dihindari pengguna
