@@ -129,6 +129,18 @@ async function bukaReview(keadaan) {
   await hal.goto(`${alamat}/harness-galeri.html?layar=K-12&keadaan=${keadaan}`, {
     waitUntil: 'load',
   });
+  /* ⛔ Panggung DILEPAS dari bilah/kalimat galeri, Task 3 — pola yang sama
+     dengan `k03-kepadatan.test.js`. Tanpa ini, `.galeri-bar`+`.galeri-tanya`
+     mendorong panggung turun beberapa ratus piksel dari puncak jendela, dan
+     `getBoundingClientRect().bottom <= innerHeight` (dibandingkan terhadap
+     JENDELA, bukan terhadap `.kasir-konten`) salah menuduh "Tutup Kas" di
+     luar layar padahal yang menggeser hanya chrome galerinya sendiri. */
+  await hal.addStyleTag({
+    content:
+      '.galeri-bar,.galeri-tanya{display:none!important}' +
+      '.galeri-panggung{padding:0!important;overflow:hidden!important}' +
+      '.galeri-panggung>*{width:1280px!important;height:800px!important;border:0!important;border-radius:0!important;box-shadow:none!important}',
+  });
   await hal.waitForSelector('.kasir-konten', { timeout: 10_000 });
   await hal.waitForTimeout(1200);
 

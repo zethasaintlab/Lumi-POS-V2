@@ -69,6 +69,16 @@ interface Props {
    * `.kasir-bidang-awalan` di `kasir.css`.
    */
   awalan?: string;
+  /**
+   * Label tersembunyi secara VISUAL saja (tambahan user, R1, Task 3).
+   *
+   * ⛔ Kelas `sr-only` bundle (`base.css:32`), BUKAN `display: none`. Yang
+   * kedua memutus NAMA AKSESIBEL — pembaca layar berhenti mengumumkannya
+   * sama sekali, cacat yang persis alasan `htmlFor` ada di berkas ini sejak
+   * 16 September 2026. `htmlFor`/`id` TIDAK berubah: `getByLabel('Cari
+   * produk')` tetap menemukan input-nya, dan `tests/kasir-dom/bidang-label
+   * .test.js` tetap berlaku tanpa disunting. */
+  labelTersembunyi?: boolean;
   type?: 'text' | 'password';
   /* Papan ketik yang muncul di tablet. `type` tetap `text` — `type="number"`
      membawa spinner, menerima notasi eksponen, dan mengembalikan string kosong
@@ -86,6 +96,7 @@ export function Bidang({
   hint,
   ukuran = 'md',
   awalan,
+  labelTersembunyi = false,
   type = 'text',
   inputMode,
   value,
@@ -112,7 +123,7 @@ export function Bidang({
 
   return (
     <div className="stack">
-      <label className="label" htmlFor={idField}>
+      <label className={labelTersembunyi ? 'label sr-only' : 'label'} htmlFor={idField}>
         {label}
       </label>
       {awalan ? (

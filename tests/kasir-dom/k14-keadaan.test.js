@@ -151,8 +151,15 @@ async function bukaK14(keadaan) {
       badge: bersih(konten?.querySelector('.badge')),
       /* `{outlet} · {device}` milik shell — SATU-SATUNYA sumber di DOM yang
          menyatakan apakah shell menganggap perangkat ini terdaftar. Ia dibaca
-         terpisah dari badge supaya prasyarat tiap fixture dapat dinyatakan. */
-      merek: bersih(document.querySelector('.kasir-wordmark-sub')),
+         terpisah dari badge supaya prasyarat tiap fixture dapat dinyatakan.
+
+         ⛔ Selektor DIPINDAHKAN Task 3 (header satu baris, kampanye Hidupkan
+         desain 26 September 2026): `.kasir-wordmark-sub` (baris kedua topbar
+         lama) dihapus bersama `.kasir-topbar`. `outlet · device` yang SAMA
+         sekarang baris kedua tombol pengguna di header
+         (`komponen/MenuPengguna.tsx`) — informasinya tidak hilang, hanya
+         pindah tempat. */
+      merek: bersih(document.querySelector('.kasir-menu-pengguna-teks > span:last-child')),
       teks: (konten?.innerText ?? '').replace(/\s+/g, ' '),
       kartuGagal: Number(
         /Gagal terkirim (\d+)/.exec((konten?.innerText ?? '').replace(/\s+/g, ' '))?.[1] ?? -1

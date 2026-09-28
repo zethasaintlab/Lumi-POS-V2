@@ -1,9 +1,13 @@
-import { Avatar, Icon, SyncIndicator, Tabs, Wordmark, type IconName } from 'ds';
+import { useState } from 'react';
+import { Icon, SyncIndicator, Tabs, Wordmark, type IconName } from 'ds';
 import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
 import { ruteNav, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
 import { useAntrean } from './konteks/useAntrean.ts';
+import { useKeadaanLokal } from './konteks/DbLokalProvider.tsx';
 import { PitaAntrean } from './PitaAntrean.tsx';
+import { MenuPengguna } from './komponen/MenuPengguna.tsx';
+import { PanelPemberitahuan } from './komponen/PanelPemberitahuan.tsx';
 
 /* Kerangka aplikasi kasir.
 
@@ -14,19 +18,13 @@ import { PitaAntrean } from './PitaAntrean.tsx';
    ketiganya." Aplikasi kosong F0 memakai `AppShell` karena saat itu belum ada
    layar sama sekali; mulai sekarang ia keliru.
 
-   Bentuknya mengikuti IA §2.1: topbar tetap (outlet · device · pengguna ·
-   SyncIndicator · menu), lalu area utama. Kolom keranjang belum ada -- ia
-   milik K-03, bukan pondasi. */
-
-/**
- * Id elemen slot aksi di bilah nav.
- *
- * ⛔ Diekspor, bukan ditulis ulang di layar. Dua string yang tidak ada apa pun
- * menyatukannya akan menyimpang, dan yang menyimpang menghasilkan portal yang
- * tidak menemukan sasarannya — tombolnya hilang dari layar tanpa satu pun
- * error, bentuk cacat "nol baris, bukan error" yang sama.
- */
-export const SLOT_AKSI = 'kasir-slot-aksi';
+   ⛔ Header SATU BARIS 68 px, Task 3 kampanye Hidupkan desain (26 September
+   2026, spec § 3). Sebelumnya DUA baris: `.kasir-topbar` (61 px) + bilah nav
+   berikon `.kasir-bilah` (45 px) — 106 px chrome per layar. Keduanya
+   digabung jadi satu `<header className="kasir-header">`; `SLOT_AKSI` dan
+   `PortalAksi` DIHAPUS sepenuhnya karena tidak ada lagi slot untuk diisi —
+   aksi setiap layar sekarang di badan layar itu sendiri (`.kasir-toolbar`
+   K-03, `.kasir-aksi-bawah` K-12, baris kepala K-14). */
 
 interface Props {
   outlet: string;
@@ -38,7 +36,7 @@ interface Props {
    * ⛔ Indikator sinkronisasi MEMBUTUHKANNYA. Tanpa ini ia menurunkan
    * keadaannya hanya dari hitungan antrean, dan antrean kosong pada perangkat
    * yang belum terdaftar terbaca "Tersinkron" — bersebelahan dengan tulisan
-   * "Perangkat belum terdaftar" di topbar yang sama.
+   * "Perangkat belum terdaftar" di header yang sama.
    */
   perangkatTerdaftar: boolean;
   ruteAktif: Rute | null;
@@ -48,6 +46,13 @@ interface Props {
 export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteAktif, children }: Props) {
   const nav = ruteNav();
   const { ringkasan, siap, antreanTerbaca } = useAntrean();
+  /* ⛔ `useKeadaanLokal()`, BUKAN `useDbLokal()`. Yang kedua MELEMPAR selama
+     database belum siap, dan header harus tetap dapat dirender di keadaan
+     itu — `App.tsx`: "Topbar dan menu tetap ada, kalau tidak kasir terjebak
+     di satu layar galat tanpa jalan ke mana pun." `MenuPengguna` (Keluar) dan
+     `PanelPemberitahuan` (lonceng) keduanya menerima `db` yang boleh `null`. */
+  const { lokal } = useKeadaanLokal();
+  const [panelTerbuka, setPanelTerbuka] = useState(false);
 
   /* ⛔ `siap` saja TIDAK cukup, dan selisih antara keduanya adalah cacat yang
      hidup di sini sampai 21 September 2026.
@@ -71,7 +76,7 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
 
   return (
     <div className="kasir-shell">
-      <header className="kasir-topbar">
+      <header className="kasir-header">
         {/* Wordmark "LumiPOS" — komponen SATU-SATUNYA (Task 8, keputusan user
             26 September 2026), dipakai identik di ShellKasir, `AppShell`
             back-office, dan kedua layar masuk. Menuliskan bentuk merek
@@ -79,104 +84,26 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             komentar kepala `packages/ds/Wordmark.tsx`. */}
         <Wordmark />
 
-        {/* ⛔ Identitas outlet dan perangkat TIDAK dibuang demi kerapian, dan ia
-            SATU BARIS — bukan baris kedua di bawah wordmark.
+        {/* ⛔ Bilah nav PERSISTEN menggantikan menu "…", 2 September 2026.
+            Menu ⋮ menuntut DUA ketukan untuk setiap perpindahan, dan yang
+            pertama tidak memberi informasi apa pun — kasir menekan tombol
+            bertanda titik-titik untuk mencari tahu apa yang ada di baliknya.
+            Ia juga menyembunyikan layar mana yang sedang aktif, tepat pada
+            aplikasi yang dipakai berdiri sambil melayani orang.
 
-            Tinggi topbar tidak ditentukan teksnya melainkan `min-height:
-            var(--touch-min)` pada pembungkus indikator sinkron, jadi bentuk
-            bertingkat tidak membeli apa pun yang dapat diukur dan hanya
-            menambah ruang kosong yang diambil dari grid.
+            `<Tabs variant="underline">` dari `/ds-bundle` — komponen yang sudah
+            dipakai back-office dan belum pernah dipakai kasir. Ia menandai tab
+            aktif dengan aksen DAN `aria-selected`, jadi keadaannya tidak pernah
+            warna saja (aturan DS #5).
 
-            Kasir yang tidak dapat membaca perangkatnya tidak dapat menjelaskan
-            nomor struknya: prefiks device (`K1-20260726-0007`) adalah
-            satu-satunya cara mencocokkan struk dengan perangkat yang
-            mencetaknya. */}
-        <span className="t-caption kasir-wordmark-sub truncate">
-          {outlet} · {device}
-        </span>
+            ⛔ `/login` dan `/shift/buka` sengaja TIDAK ada di bilah ini — lihat
+            `Rute.nav` di `rute/tabel.ts`. Keduanya gerbang, dan tab menuju
+            gerbang yang sudah dilewati mengundang kasir keluar dari shift yang
+            sedang berjalan.
 
-        <span className="grow" />
-
-        {/* FR-H2. `IA:114`: indikator ini adalah ENTRY POINT ke K-14, dan
-            relasinya harus eksplisit -- "indikator yang tidak dapat diklik
-            membuat kasir tidak tahu harus berbuat apa".
-
-            Selama database belum siap, yang ditampilkan `offline-only`
-            beserta alasannya: aturan design system #5 melarang status yang
-            hanya warna, dan "Tersinkron" saat kita belum bisa membaca antrean
-            adalah klaim yang tidak diketahui siapa pun benar. */}
-        {/* `span role="button"`, BUKAN `<button>`: pada state `failed`,
-            `SyncIndicator` merender tombol "Coba lagi" miliknya sendiri, dan
-            tombol di dalam tombol adalah HTML tidak sah. Keduanya menuju
-            tempat yang sama (K-14), jadi tidak ada aksi yang hilang. */}
-        <span
-          role="button"
-          tabIndex={0}
-          className="kasir-indikator"
-          aria-label="Buka Status Sinkronisasi"
-          onClick={() => navigasi('/sync')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              navigasi('/sync');
-            }
-          }}
-        >
-          {angkaDapatDipercaya ? (
-            <SyncIndicator
-              state={indikator.state}
-              count={indikator.count}
-              // `spec-h:216` menuliskan teks gagal utuh: "Gagal kirim (2) ·
-              // Coba lagi". Bagian "Coba lagi" hanya muncul bila `onRetry`
-              // diberikan -- ia tombol di dalam komponen, bukan label.
-              onRetry={indikator.state === 'failed' ? () => navigasi('/sync') : undefined}
-            />
-          ) : (
-            <SyncIndicator state="offline-only" reason="Antrean belum dapat dibaca" />
-          )}
-        </span>
-
-        {/* ⛔ Identitas staf: avatar inisial PLUS nama, bukan avatar saja.
-            Inisial dua huruf tidak membedakan dua kasir yang namanya berawal
-            sama, dan yang salah dikira sedang login adalah orang yang namanya
-            menempel pada setiap penjualan shift itu. `<Avatar>` bundle dipakai
-            apa adanya — ia tidak menyentuh angka uang. */}
-        <span className="kasir-staf">
-          <Avatar name={pengguna} size={32} />
-          <span className="t-caption truncate">{pengguna}</span>
-        </span>
-      </header>
-
-      {/* ⛔ Bilah nav PERSISTEN menggantikan menu "…", 2 September 2026.
-          Menu ⋮ menuntut DUA ketukan untuk setiap perpindahan, dan yang
-          pertama tidak memberi informasi apa pun — kasir menekan tombol
-          bertanda titik-titik untuk mencari tahu apa yang ada di baliknya.
-          Ia juga menyembunyikan layar mana yang sedang aktif, tepat pada
-          aplikasi yang dipakai berdiri sambil melayani orang.
-
-          `<Tabs variant="underline">` dari `/ds-bundle` — komponen yang sudah
-          dipakai back-office dan belum pernah dipakai kasir. Ia menandai tab
-          aktif dengan aksen DAN `aria-selected`, jadi keadaannya tidak pernah
-          warna saja (aturan DS #5).
-
-          ⛔ `/login` dan `/shift/buka` sengaja TIDAK ada di bilah ini — lihat
-          `Rute.nav` di `rute/tabel.ts`. Keduanya gerbang, dan tab menuju
-          gerbang yang sudah dilewati mengundang kasir keluar dari shift yang
-          sedang berjalan. */}
-      {/* ⛔ Bilah nav dan slot aksi berbagi SATU baris, bukan dua.
-
-          Baris aksi tersendiri selebar layar sudah dicoba dan DIUKUR: 57px, dan
-          grid turun dari 12 kartu terlihat menjadi 8 — menembus `IA:62`. Tinggi
-          tombol dikunci `--touch-min` 44px, jadi tidak ada bentuk baris
-          melintang yang muat; memangkas gap panel maupun gap grid tidak membeli
-          apa pun karena barisnya ragged dan defisitnya (39px) harus datang
-          utuh. Bilah ini punya ruang kosong di kanannya, dan ruang itu gratis.
-
-          ⛔ Slotnya DISEDIAKAN shell, DIISI layar lewat portal. `Kasir.tsx`
-          adalah anak shell dan tidak dapat mengoper prop ke atas; memindahkan
-          aksinya ke sini akan memindahkan shift, konfig, dan sesi ke shell
-          juga — dan shell dipakai enam layar yang tidak memerlukannya. */}
-      <div className="kasir-bilah">
+            ⛔ TIGA tab, bukan empat mockup (Kasir · Riwayat · Tutup shift) —
+            "Laci kas" menunggu Task 4 (`rute/tabel.ts`, komentar kepala
+            `TABEL_RUTE`). `/sync` dan `/perangkat` pindah ke `MenuPengguna`. */}
         <Tabs
           variant="underline"
           ariaLabel="Navigasi kasir"
@@ -196,8 +123,73 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             ),
           }))}
         />
-        <div id={SLOT_AKSI} className="kasir-slot-aksi" />
-      </div>
+
+        {/* Kanan header: indikator sinkron, lonceng, tombol pengguna — SATU
+            grup yang didorong ke ujung kanan (`margin-left: auto`), sama
+            polanya dengan slot aksi lama. */}
+        <div className="kasir-header-kanan">
+          {/* FR-H2. `IA:114`: indikator ini adalah ENTRY POINT ke K-14, dan
+              relasinya harus eksplisit -- "indikator yang tidak dapat diklik
+              membuat kasir tidak tahu harus berbuat apa".
+
+              Selama database belum siap, yang ditampilkan `offline-only`
+              beserta alasannya: aturan design system #5 melarang status yang
+              hanya warna, dan "Tersinkron" saat kita belum bisa membaca antrean
+              adalah klaim yang tidak diketahui siapa pun benar. */}
+          {/* `span role="button"`, BUKAN `<button>`: pada state `failed`,
+              `SyncIndicator` merender tombol "Coba lagi" miliknya sendiri, dan
+              tombol di dalam tombol adalah HTML tidak sah. Keduanya menuju
+              tempat yang sama (K-14), jadi tidak ada aksi yang hilang. */}
+          <span
+            role="button"
+            tabIndex={0}
+            className="kasir-indikator"
+            aria-label="Buka Status Sinkronisasi"
+            onClick={() => navigasi('/sync')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                navigasi('/sync');
+              }
+            }}
+          >
+            {angkaDapatDipercaya ? (
+              <SyncIndicator
+                state={indikator.state}
+                count={indikator.count}
+                // `spec-h:216` menuliskan teks gagal utuh: "Gagal kirim (2) ·
+                // Coba lagi". Bagian "Coba lagi" hanya muncul bila `onRetry`
+                // diberikan -- ia tombol di dalam komponen, bukan label.
+                onRetry={indikator.state === 'failed' ? () => navigasi('/sync') : undefined}
+              />
+            ) : (
+              <SyncIndicator state="offline-only" reason="Antrean belum dapat dibaca" />
+            )}
+          </span>
+
+          {/* P7(a), disetujui — lonceng membuka panel "Pemberitahuan
+              perangkat", yang HANYA membaca data yang sudah ada di
+              perangkat (`kasir/pemberitahuan.ts`). */}
+          <button
+            type="button"
+            className="kasir-lonceng"
+            aria-label="Pemberitahuan perangkat"
+            aria-haspopup="dialog"
+            aria-expanded={panelTerbuka}
+            onClick={() => setPanelTerbuka((t) => !t)}
+          >
+            <Icon name="bell" size={20} />
+          </button>
+
+          {/* ⛔ Identitas outlet · perangkat TIDAK dibuang demi kerapian —
+              prefiks device (`K1-20260726-0007`) adalah satu-satunya cara
+              mencocokkan struk dengan perangkat yang mencetaknya. Ia pindah
+              ke dalam tombol pengguna sebagai baris kedua 13 px di bawah
+              nama (spec § 3, keputusan otonom butir 3), bukan lagi baris
+              sendiri di topbar. */}
+          <MenuPengguna pengguna={pengguna} outlet={outlet} device={device} db={lokal?.db ?? null} />
+        </div>
+      </header>
 
       {/* FR-H8. DI LUAR `kasir-konten`, jadi ia mendorong isi alih-alih
           melayang di atasnya — "banner, bukan dialog" (AC FR-H8 kedua) juga
@@ -211,6 +203,10 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
       <div className="kasir-konten">
         {children}
       </div>
+
+      {panelTerbuka && (
+        <PanelPemberitahuan db={lokal?.db ?? null} onClose={() => setPanelTerbuka(false)} />
+      )}
     </div>
   );
 }

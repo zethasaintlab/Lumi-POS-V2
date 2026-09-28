@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Badge, EmptyState, Icon, potongSentuh, SegmentedControl } from 'ds';
-import { PortalAksi } from '../komponen/PortalAksi.tsx';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { PER_MUAT_KATALOG } from '../komponen/halaman.ts';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
@@ -520,36 +519,28 @@ export function Kasir() {
 
   return (
     <div className="kasir-utama">
-      {/* ⛔ Ketiga aksi PINDAH ke bilah nav, 20 September 2026.
+      <div className="kasir-grid-panel">
+        {/* ⛔ Toolbar di atas kolom KATALOG saja, bukan lagi diportalkan ke
+            slot bilah nav — keputusan kampanye Hidupkan desain (26 September
+            2026, spec § 4): `SLOT_AKSI`/`PortalAksi` dihapus, header satu
+            baris (Task 3) tidak lagi punya slot aksi sama sekali. Ia berada
+            DI DALAM `.kasir-grid-panel` (bukan sebelum/sejajar `.kasir-utama`)
+            justru supaya tepi kanannya tidak pernah melampaui kolom katalog —
+            bentuk yang membuat "toolbar menaungi keranjang" mustahil secara
+            struktur, bukan sekadar diukur benar.
 
-          Sebelumnya mereka duduk di dasar panel keranjang, dan di sana mereka
-          bersaing dengan satu blok yang tidak boleh diganggu: Subtotal, Total,
-          dan Bayar. Tinggi yang mereka pakai diambil dari daftar item — ruang
-          paling langka di panel itu — dan pada setiap pesanan panjang kasir
-          menggulir melewati mereka untuk menagih.
+            ⛔ Ruang yang ia pakai diambil dari grid — diukur dan diterima
+            (spec § 14 R1: "Header + toolbar mockup" 45px sisa sesudah baris
+            ke-3, masih >= 12 kartu). Baris ini BUKAN lagi baris melintang
+            SELEBAR LAYAR yang pernah diukur 57px/8 kartu (catatan lama di
+            bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
+            keranjang.
 
-          ⛔ BUKAN baris melintang tersendiri di bawah nav, meski itu yang
-          mockup gambar. Bentuk itu dicoba dan DIUKUR: 57px, dan grid turun dari
-          12 kartu terlihat menjadi 8 — menembus `IA:62`. Tinggi tombol dikunci
-          `--touch-min` 44px jadi tidak ada bentuk baris yang muat; ikon di
-          samping label hanya menghemat 4px; memangkas gap panel maupun gap grid
-          nol efek karena barisnya ragged dan defisit 39px harus datang utuh.
-          Satu-satunya yang mengembalikannya adalah membuang baris cari/urut,
-          dan itu bukan pertukaran yang layak. Keputusan user: grid menang.
-
-          ⛔ Portal, bukan prop. Layar ini anak `ShellKasir` dan tidak dapat
-          mengoper ke atas; memindahkan aksinya ke shell akan memindahkan shift,
-          konfig, dan sesi ke sana juga — ke komponen yang dipakai enam layar
-          yang tidak memerlukannya.
-
-          ⛔ TIGA aksi, dan hanya tiga. Mockup menampilkan delapan; lima sisanya
-          nol kode di repo ini dan tiga di antaranya ada di daftar "jangan
-          bangun" v1.1. Tombol yang tidak melakukan apa-apa adalah janji kepada
-          kasir yang produk ini tidak dapat tepati. */}
-      <PortalAksi>
-        {/* ⛔ SATU BARIS, semua terlihat sekaligus — bukan menu bertingkat.
-            Aksi yang disembunyikan di balik ⋮ menuntut dua ketukan dan satu
-            ingatan; kasir yang sedang menagih punya keduanya paling sedikit. */}
+            ⛔ TIGA aksi, dan hanya tiga. Mockup menampilkan delapan; lima
+            sisanya nol kode di repo ini dan tiga di antaranya ada di daftar
+            "jangan bangun" v1.1. Tombol yang tidak melakukan apa-apa adalah
+            janji kepada kasir yang produk ini tidak dapat tepati. Task 5
+            membangun sisanya (spec § 4 "Toolbar kasir delapan tombol"). */}
         <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
           {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
               uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
@@ -597,9 +588,7 @@ export function Kasir() {
             Kas masuk / keluar
           </Tombol>
         </div>
-      </PortalAksi>
 
-      <div className="kasir-grid-panel">
         {/* ⛔ Pencarian dan urutan berbagi SATU baris kontrol, 2 September 2026.
             Sebelumnya kolom cari berdiri sendiri selebar panel dan urutan
             tidak ada sama sekali — kasir yang mencari "produk termurah untuk
@@ -610,8 +599,16 @@ export function Kasir() {
             netral (bukan aksen), dan itu benar — aksi utama layar ini Bayar,
             bukan mengubah urutan. */}
         <div className="kasir-kontrol-grid">
+          {/* ⛔ Label TERSEMBUNYI secara VISUAL SAJA (tambahan user, R1, Task 3)
+              — spec § 14 R1: mockup hanya muat 12 kartu bila pita FR-H8
+              setinggi banner DAN baris label ini tidak lagi mengambil tinggi.
+              `sr-only`, bukan `display: none`: `htmlFor`/`id` tetap
+              terhubung, `getByLabel('Cari produk')` tetap menemukan input-nya
+              — `tests/kasir-dom/bidang-label.test.js` tetap berlaku tanpa
+              disunting. Placeholder tetap menjelaskan isi field bagi mata. */}
           <Bidang
             label="Cari produk"
+            labelTersembunyi
             value={kueri}
             onChange={setKueri}
             placeholder="Nama produk atau barcode"

@@ -19,6 +19,7 @@ import { Login } from '../layar/Login.tsx';
 import { BukaShift } from '../layar/BukaShift.tsx';
 import { DetailTransaksi } from '../layar/DetailTransaksi.tsx';
 import { buatDbPalsu, perangkatTerdaftarUntuk } from './db-palsu.ts';
+import { TABEL_RUTE } from '../rute/tabel.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
 import { Fondasi } from './Fondasi.tsx';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
@@ -253,7 +254,20 @@ export function Galeri() {
             </div>
           ) : (
             <ShellKasir
-              outlet={terdaftar ? 'ORIGEN Menteng' : 'Outlet belum dipilih'}
+              /* ⛔ `panjang` di sini ganda arti, dan itu disengaja: skenario
+                 yang sama menguji grid 120 varian (`skenario.ts`) DAN, sejak
+                 Task 3 (`header.test.js` G-HEADER/R2), nama outlet/pengguna
+                 PANJANG — keduanya "apa yang terjadi saat katalog/identitas
+                 merchant lebih besar dari asumsi layar". Sumber TUNGGAL
+                 (`keadaan galeri` ini) mencegah dua fixture "nama panjang"
+                 yang tidak pernah diuji bersamaan. */
+              outlet={
+                !terdaftar
+                  ? 'Outlet belum dipilih'
+                  : skenario === 'panjang'
+                    ? 'ORIGEN Menteng — Cabang Utama Jakarta Selatan Raya'
+                    : 'ORIGEN Menteng'
+              }
               device={terdaftar ? 'K1' : 'Perangkat belum terdaftar'}
               /* ⛔ Diturunkan dari skenario, bukan dipaku `true`.
 
@@ -264,8 +278,16 @@ export function Galeri() {
                  pendapat tentang keadaan itu tidak dapat terlihat di galeri yang
                  selalu menganggap perangkatnya terdaftar. */
               perangkatTerdaftar={terdaftar}
-              pengguna="Kasir Galeri"
-              ruteAktif={null}
+              pengguna={skenario === 'panjang' ? 'Kasir Nama Sangat Panjang Sekali Untuk Diuji Batas Header' : 'Kasir Galeri'}
+              /* ⛔ Diturunkan dari `TABEL_RUTE` lewat kode layar, bukan dipaku
+                 `null` (Task 3). Dipaku `null` berarti TIDAK ADA tab yang
+                 pernah `aria-selected="true"` di galeri — kelas cacat yang
+                 sama dengan `perangkatTerdaftar` di atas: galeri yang tidak
+                 pernah merender keadaan aktif tidak pernah membuktikan warna
+                 `--primary` tab aktif (spec § 3) benar-benar berlaku.
+                 `undefined` untuk layar tanpa rute (mis. "fondasi") jatuh ke
+                 `null` lewat `??`. */
+              ruteAktif={TABEL_RUTE.find((r) => r.layar === layarId) ?? null}
             >
               {/* ⛔ `IsiSiap` ada di sini karena aplikasi sungguhan memakainya.
                   Galeri yang merender layar TANPA pembungkus yang aplikasi
