@@ -224,13 +224,28 @@
 }
 /* Kolom nama + outlet·device — R2 (spec § 14): bila header tidak muat di
    1024px, NAMA yang terpotong lebih dulu (`text-overflow: ellipsis`), bukan
-   tab. `min-width: 0` WAJIB pada kolom flex agar `truncate` (lumi.css)
-   berlaku sama sekali — tanpanya kolom tumbuh mengikuti teks dan tidak
-   pernah terpotong. */
-.kasir-menu-pengguna-teks {
+   tab.
+
+   ⛔ DUA syarat, dan hilangkan SALAH SATU membuat truncate diam-diam tidak
+   pernah berlaku — diukur DOM, bukan disimpulkan dari kelas `truncate`:
+   1. `min-width: 0` di sini (kolom ini, flex item baris `.kasir-menu-
+      pengguna-tombol`) — tanpanya kolom menolak menyusut di bawah lebar
+      KONTEN nama (lantai otomatis flex item, alasan yang sama dengan
+      `.kasir-grid-panel` di atas), dan `max-width: 220px` pada tombol
+      pembungkus tidak pernah tercapai.
+   2. `align-items` BAWAAN (`stretch`), BUKAN `flex-start`. Versi pertama
+      berkas ini memakai `flex-start` supaya teks rata kiri — tapi `stretch`
+      yang membuat span nama benar-benar SELEBAR kolom ini (bukan selebar
+      kontennya sendiri); tanpanya `overflow: hidden` pada span nama
+      (`truncate`, `lumi.css`) tidak punya batas untuk memotong APA PUN, dan
+      nama 59 karakter terukur 412px — meluap 255px dari tombol 220px,
+      SEMENTARA `getBoundingClientRect()` tombolnya sendiri tetap terlihat
+      220px (anak yang meluap tidak melebarkan induknya). Rata kiri tetap
+      didapat dari `text-align: left` di bawah — properti yang benar-benar
+      mengatur perataan TEKS, bukan lebar kotak. */
+  .kasir-menu-pengguna-teks {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   min-width: 0;
   text-align: left;
 }

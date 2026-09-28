@@ -241,8 +241,13 @@ test('⛔ R2: pada 1024, nama pengguna panjang terpotong ellipsis, ketiga tab te
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   t.diagnostic(JSON.stringify(u));
 
+  /* ⛔ STRICT `<`, bukan `<=`. Versi pertama penjaga ini memakai `<=` (lewat
+     `< scrollWidth + 1`), yang HIJAU KARENA HAMPA saat scrollWidth ===
+     clientWidth — yaitu TIDAK ADA pemotongan sama sekali. Ditemukan lewat
+     pengukuran DOM (412 === 412) pada sabotase `align-items: flex-start` di
+     `.kasir-menu-pengguna-teks`, bukan dengan membaca CSS. */
   assert.ok(
-    u.namaClientWidth > 0 && u.namaClientWidth < u.namaScrollWidth + 1,
+    u.namaClientWidth > 0 && u.namaClientWidth < u.namaScrollWidth,
     `nama pengguna tidak terpotong pada 1024 (scrollWidth ${u.namaScrollWidth}, clientWidth ` +
       `${u.namaClientWidth}) — nama panjang seharusnya di-ellipsis, bukan meluap.`
   );
