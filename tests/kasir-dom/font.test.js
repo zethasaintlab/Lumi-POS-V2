@@ -185,6 +185,9 @@ test('⛔ Nunito Sans 400 dan 600 terdaftar sebagai FontFace terunduh di documen
 test('⛔ setiap .num di K-03 memakai font-variant-numeric: tabular-nums', async () => {
   const hal = await bukaLayar('K-03');
   try {
+    // Harga kartu dirender sesudah katalog galeri termuat; jeda tetap 300 ms di
+    // bukaLayar tidak menjaminnya (merah di CI 28 September 2026, PR #82).
+    await hal.waitForSelector('.num', { timeout: 10_000 }).catch(() => {});
     const hasil = await hal.evaluate(() =>
       Array.from(document.querySelectorAll('.num')).map((el) => ({
         teks: el.textContent,
