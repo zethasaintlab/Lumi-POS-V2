@@ -189,3 +189,142 @@ test('⛔ skala teks 32/20/15/13 berlaku di seluruh layar galeri (getComputedSty
     `${pelanggar.length} elemen di luar skala teks final (32/20/15/13):\n  ` + pelanggar.join('\n  ')
   );
 });
+
+// ---------------------------------------------------------------------------
+// G-LH — tinggi baris. Task 1, kampanye "Hidupkan desain" (PR 2A, kasir).
+//
+// ## ⛔ Kenapa DUA aturan (ketat/longgar), bukan satu
+//
+// Spec § 10.1 mengikat `line-height` ke EMPAT rasio mockup: display 1,15 ·
+// title 1,3 · body 1,5 · small 1,4. Kelas bundle yang memetakan LANGSUNG ke
+// peran itu (`t-display`, `t-title`, `t-body`, `t-body-md`, `t-caption`)
+// dijaga KETAT — rasio harus PERSIS pasangan ukuran↔rasio-nya, bukan sekadar
+// salah satu dari empat rasio itu. Elemen LAIN (label, badge, tab, judul
+// wordmark, dst — yang ukurannya benar lewat token tapi TIDAK memakai kelas
+// t-* bundle) dijaga LONGGAR: rasio harus salah satu dari empat nilai yang
+// sah, tapi tidak dituntut PASANGAN ukuran tertentu — mockup tidak menuliskan
+// aturan per-kelas untuk elemen di luar tujuh kelas bundle itu.
+//
+// `line-height: normal` pada elemen berteks adalah pelanggaran di KEDUA
+// jalur: ia tidak PERNAH salah satu dari empat rasio (browser menghitungnya
+// dari metrik font, bukan dari token kita), dan ia gejala paling umum dari
+// "lupa mengarahkan" — elemen yang ukurannya sudah benar (skala 32/20/15/13)
+// tapi tinggi barisnya masih warisan `ds-bundle` yang tidak menyetel apa pun.
+//
+// ## Prasyarat
+//
+//   npm run build:galeri
+
+const RASIO_SAH = [1.15, 1.3, 1.5, 1.4];
+const KELAS_KETAT = /** @type {const} */ (['t-display', 't-title', 't-body', 't-body-md', 't-caption']);
+const RASIO_KELAS = { 't-display': 1.15, 't-title': 1.3, 't-body': 1.5, 't-body-md': 1.5, 't-caption': 1.4 };
+
+/** @type {number} Minimal elemen KETAT diperiksa — lihat CLAUDE.md § "nol baris, bukan error". */
+const MINIMAL_KETAT = 50;
+/** @type {number} Minimal elemen LONGGAR diperiksa. */
+const MINIMAL_LONGGAR = 200;
+
+test('⛔ G-LH: line-height mengikuti token mockup — 32/1.15, 20/1.3, 15/1.5, 13/1.4', async (t) => {
+  const layarIds = await bacaDaftarLayar();
+  const pelanggarKetat = [];
+  const pelanggarLonggar = [];
+  let totalKetat = 0;
+  let totalLonggar = 0;
+
+  for (const id of layarIds) {
+    const hal = await bukaLayar(id);
+    const keadaanJudul = await hal.evaluate(() =>
+      Array.from(document.querySelectorAll('.galeri-grup[aria-label="Keadaan"] button')).map((b) =>
+        b.textContent.trim()
+      )
+    );
+
+    for (const judul of keadaanJudul) {
+      await hal
+        .locator('.galeri-grup[aria-label="Keadaan"]')
+        .getByRole('button', { name: judul, exact: true })
+        .click();
+      await hal.waitForTimeout(250);
+
+      const hasil = await hal.evaluate(() => {
+        const panggung = document.querySelector('.galeri-panggung');
+        if (!panggung) return [];
+        const keluar = [];
+        for (const el of panggung.querySelectorAll('*')) {
+          const punyaTeksLangsung = Array.from(el.childNodes).some(
+            (n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length > 0
+          );
+          if (!punyaTeksLangsung) continue;
+          const gaya = getComputedStyle(el);
+          keluar.push({
+            tag: el.tagName,
+            kelas: el.className && typeof el.className === 'string' ? el.className : '',
+            fontSize: gaya.fontSize,
+            lineHeight: gaya.lineHeight,
+            teks: el.textContent.trim().slice(0, 40),
+          });
+        }
+        return keluar;
+      });
+
+      for (const el of hasil) {
+        const ukuran = parseFloat(el.fontSize);
+        const kelasList = (el.kelas || '').trim().split(/\s+/).filter(Boolean);
+        const kelasKetat = kelasList.find((k) => KELAS_KETAT.includes(k));
+        const label = `layar ${id}, keadaan "${judul}", selektor "${selektorRingkas(el)}" (teks "${el.teks}")`;
+
+        if (el.lineHeight === 'normal') {
+          if (kelasKetat) {
+            totalKetat += 1;
+            pelanggarKetat.push(`${label} [.${kelasKetat}]: ${el.fontSize}/normal — harap rasio ${RASIO_KELAS[kelasKetat]}`);
+          } else {
+            totalLonggar += 1;
+            pelanggarLonggar.push(`${label}: ${el.fontSize}/normal — line-height "normal" adalah pelanggaran`);
+          }
+          continue;
+        }
+
+        const rasio = parseFloat(el.lineHeight) / ukuran;
+
+        if (kelasKetat) {
+          totalKetat += 1;
+          const harap = RASIO_KELAS[kelasKetat];
+          if (Math.abs(rasio - harap) > 0.01) {
+            pelanggarKetat.push(
+              `${label} [.${kelasKetat}]: ${el.fontSize}/${el.lineHeight} → rasio ${rasio.toFixed(3)}, harap ${harap}`
+            );
+          }
+        } else {
+          totalLonggar += 1;
+          const cocok = RASIO_SAH.some((r) => Math.abs(rasio - r) <= 0.01);
+          if (!cocok) {
+            pelanggarLonggar.push(
+              `${label}: ${el.fontSize}/${el.lineHeight} → rasio ${rasio.toFixed(3)}, harap salah satu dari {${RASIO_SAH.join(', ')}}`
+            );
+          }
+        }
+      }
+    }
+    await hal.close();
+  }
+
+  t.diagnostic(`G-LH: elemen ketat=${totalKetat}, longgar=${totalLonggar}`);
+
+  assert.ok(
+    totalKetat >= MINIMAL_KETAT,
+    `hanya ${totalKetat} elemen KETAT (t-display/t-title/t-body/t-body-md/t-caption) diperiksa — ` +
+      `harap >= ${MINIMAL_KETAT}. Penjaga yang memeriksa terlalu sedikit elemen tidak membuktikan ` +
+      'ia memindai apa pun (lihat CLAUDE.md § "nol baris, bukan error").'
+  );
+  assert.ok(
+    totalLonggar >= MINIMAL_LONGGAR,
+    `hanya ${totalLonggar} elemen LONGGAR diperiksa — harap >= ${MINIMAL_LONGGAR}.`
+  );
+
+  const pelanggar = [...pelanggarKetat, ...pelanggarLonggar];
+  assert.deepEqual(
+    pelanggar,
+    [],
+    `${pelanggar.length} elemen dengan line-height di luar token mockup:\n  ` + pelanggar.join('\n  ')
+  );
+});

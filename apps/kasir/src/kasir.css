@@ -142,7 +142,14 @@
   flex-direction: column;
   align-items: center;
   gap: 0;
-  line-height: var(--leading-tight);
+  /* ⛔ Task 1 kampanye "Hidupkan desain" (tinggi baris, PR 2A): SEBELUMNYA
+   * `--leading-tight` (1,2) — rasio yang bukan salah satu dari empat rasio
+   * mockup (1,15/1,3/1,5/1,4), dan G-LH (longgar) menolaknya. Label tab ini
+   * memakai `--text-small` (13px, lihat `.tabs-underline button` di
+   * `lumi.css`), jadi `--leading-small` (1,4) yang benar — bukan `1.5` yang
+   * diketik ulang untuk ukuran yang bukan itu.
+   */
+  line-height: var(--leading-small);
 }
 
 .kasir-shell > .tabs-underline,
@@ -777,7 +784,17 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: 1.25;
+  /* ⛔ Task 1 kampanye "Hidupkan desain" (tinggi baris, PR 2A): SEBELUMNYA
+   * `1.25` literal di sini — nilai yang menang atas `.t-body-md` bundle
+   * (spesifisitas sama, `.kasir-kartu-nama` datang belakangan di cascade)
+   * dan membuat nama kartu 15px terukur 18,75px (rasio 1,25), bukan 1,5
+   * mockup (`docs/superpowers/specs/2026-09-28-kasir-design.md` § 10.1).
+   * `var(--leading-body)` — token bundle yang SUDAH dipakai `.t-body-md`
+   * (`ds-bundle/tokens/typography.css:39`), bukan `1.5` yang diketik ulang:
+   * tempat kedua yang memutuskan angka yang sama akan menyimpang diam-diam.
+   * Konsekuensinya terukur (spec § 10.1): kartu berfoto tumbuh 7px (148→155).
+   */
+  line-height: var(--leading-body);
 }
 
 /* ⛔ Berat, bukan warna. Menaikkan harga dengan warna akan menambah warna
@@ -1127,7 +1144,11 @@
   padding: 0 var(--space-3);
   border-color: var(--border);
   font-size: var(--text-caption);
-  line-height: var(--leading-tight);
+  /* ⛔ Task 1 kampanye "Hidupkan desain" (tinggi baris, PR 2A): SEBELUMNYA
+   * `--leading-tight` (1,2), bukan salah satu dari empat rasio mockup —
+   * G-LH (longgar) menolaknya. `--text-caption` di sini adalah `--text-small`
+   * (13px, lihat pengarahan di `lumi.css`), jadi `--leading-small` (1,4). */
+  line-height: var(--leading-small);
   white-space: nowrap;
 }
 

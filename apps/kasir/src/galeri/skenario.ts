@@ -27,7 +27,8 @@ export type NamaSkenario =
   | 'angka-besar'
   | 'gambar'
   | 'keranjang-penuh'
-  | 'antrean-panjang';
+  | 'antrean-panjang'
+  | 'gambar-antrean';
 
 export interface Skenario {
   nama: NamaSkenario;
@@ -120,6 +121,16 @@ export const SKENARIO: readonly Skenario[] = [
       'hanya tiga yang gagal, atau keduanya terdorong ribuan piksel ke bawah oleh ' +
       'tabelnya sendiri? Tiga baris tidak pernah dapat menjawab ini — alasan yang ' +
       'sama persis dengan `keranjang-penuh` di K-03.',
+  },
+  {
+    nama: 'gambar-antrean',
+    judul: 'Gambar + pita antrean (G-IA62-PITA)',
+    tanya:
+      'Kartu berfoto DAN pita antrean FR-H8 tampil sekaligus di K-03 — kombinasi ' +
+      'yang belum pernah diukur sebelum kampanye ini (`spec-h:302` § 14 R1). ' +
+      'Apakah ≥ 12 kartu masih terlihat tanpa scroll pada 1024×768 dengan KEDUANYA ' +
+      'memakan tinggi grid, atau IA:62 hanya pernah lolos karena kedua tekanan itu ' +
+      'tidak pernah diuji bersamaan?',
   },
 ];
 
@@ -303,7 +314,11 @@ export interface BarisGambarPalsu {
  * keadaan dapat dibedakan mata; `normal` menanyakan apakah layarnya terbaca
  * wajar saat sebagian besar kartunya memang bergambar.
  */
-const BERGAMBAR: readonly NamaSkenario[] = ['gambar', 'normal'];
+/* ⛔ `gambar-antrean` ikut bergambar (Task 1, G-IA62-PITA): tanpa foto, kartu
+ * kembali ke 81px dan selalu muat — penjaga yang mengukur "kartu berfoto DAN
+ * pita" pada kartu polos hampa persis seperti dijelaskan di
+ * `k03-chrome.test.js`. */
+const BERGAMBAR: readonly NamaSkenario[] = ['gambar', 'normal', 'gambar-antrean'];
 
 export async function gambarUntuk(
   skenario: NamaSkenario,
@@ -382,7 +397,14 @@ async function webpPalsu(i: number): Promise<string> {
 
 /** Ringkasan antrean outbox untuk indikator sinkronisasi. */
 export function antreanUntuk(skenario: NamaSkenario): { menunggu: number; gagal: number } {
-  if (skenario === 'offline') return { menunggu: 12, gagal: 3 };
+  /* ⛔ `gambar-antrean` memakai angka yang PERSIS `offline` (bukan kebetulan):
+     baris gagal tertua di sana berumur ~4,03 jam (§ `umurAntrean` di
+     `db-palsu.ts`, `180 + (i%3)*31` menit), melewati `peringatanJam` FR-H8
+     (4 jam) dengan tipis — angka yang sama dengan pita "61 px" yang spec § 14
+     R1 catat sudah lolos hari ini. Angka baru yang tidak terikat ke formula
+     `umurAntrean` akan diam-diam gagal memicu pita, dan G-IA62-PITA akan hijau
+     karena hampa (pita tidak pernah dirender), bukan karena tata letak benar. */
+  if (skenario === 'offline' || skenario === 'gambar-antrean') return { menunggu: 12, gagal: 3 };
   /* ⛔ TEPAT 50, dan angkanya bukan karangan: `PER_HALAMAN` di
      `packages/sync-client/src/status.ts` adalah 50, jadi ini satu halaman penuh
      — isi maksimum yang K-14 dapat tampilkan sekaligus, dan karena itu tekanan

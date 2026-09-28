@@ -153,7 +153,7 @@ async function bukaK03(keadaan) {
 
 // ---------------------------------------------------------------------------
 
-test('⛔ anggaran chrome: grid tetap >= 12 kartu terlihat tanpa scroll (IA:62)', async () => {
+test('⛔ anggaran chrome: grid tetap >= 12 kartu terlihat tanpa scroll (IA:62)', async (t) => {
   const { hal, galat } = await bukaK03('normal');
   const ukur = await hal.evaluate(() => {
     const grid = document.querySelector('.kasir-grid');
@@ -170,15 +170,35 @@ test('⛔ anggaran chrome: grid tetap >= 12 kartu terlihat tanpa scroll (IA:62)'
       const e = document.querySelector(s);
       return e ? Math.round(e.getBoundingClientRect().height) : 0;
     };
+    const r = (e) => e.getBoundingClientRect();
+    const kartu = [...grid.children];
+    /* R1 (spec § 14) — baris ke-3 kartu, dikelompokkan lewat `top` bulat yang
+       sama. Sama dengan `k03-kepadatan.test.js`, diukur di sini juga supaya
+       titik ukur R1-a mencakup jalur "anggaran chrome" (topbar+bilah lama). */
+    const tops = [...new Set(kartu.map((k) => Math.round(r(k).top)))].sort((a, b) => a - b);
+    const yBaris3 = tops[2];
+    const barisKe3 =
+      yBaris3 === undefined
+        ? null
+        : Math.round(Math.max(...kartu.filter((k) => Math.round(r(k).top) === yBaris3).map((k) => r(k).bottom)));
     return {
-      terlihat: [...grid.children].filter((k) => k.getBoundingClientRect().bottom <= batas + 1).length,
-      total: grid.children.length,
+      terlihat: kartu.filter((k) => r(k).bottom <= batas + 1).length,
+      total: kartu.length,
       topbar: t('.kasir-topbar'),
       bilah: t('.kasir-bilah'),
-      berfoto: [...grid.children].filter((k) => k.querySelector('img')).length,
+      berfoto: kartu.filter((k) => k.querySelector('img')).length,
+      batas: Math.round(batas),
+      barisKe3,
     };
   });
   await hal.close();
+
+  /* R1-a (spec § 14, indeks § "Titik ukur R1") — jalur "anggaran chrome"
+     (1280×800, topbar+bilah hari ini, BUKAN header 68px Task 3). */
+  t.diagnostic(
+    `R1 1280 (anggaran chrome): baris-3=${ukur.barisKe3} batas=${ukur.batas} ` +
+      `sisa=${ukur.barisKe3 === null ? 'n/a' : ukur.batas - ukur.barisKe3} kartu=${ukur.terlihat}`
+  );
 
   assert.equal(galat.length, 0, `galat konsol saat memuat K-03: ${galat.join(' | ')}`);
   assert.ok(!ukur.err, ukur.err);
