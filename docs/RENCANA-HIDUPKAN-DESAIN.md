@@ -102,6 +102,15 @@ pernah dicampur dengan kode yang membuatnya merah.
 Sub-proyek 2 dan 3 dimulai sesudah 1 di-merge. Sub-proyek 4 sesudah spec-nya
 disetujui.
 
+## Keputusan produk tertunda
+
+- **"Item manual" sebagai item berharga bebas di luar katalog** (P4, keputusan
+  user 28 September 2026, issue #76 komentar `5862870577`). Sub-proyek 2
+  membangun "Item manual" sebagai masukan kode barcode/SKU (P4(a)). Di Kasir
+  Pintar, "barang custom" berarti item berharga bebas di luar katalog, jadi
+  itu kemungkinan arti sebenarnya di mockup. Butuh FR sendiri (harga manual,
+  pajak, `cost_at_sale`, audit), tidak dibangun sekarang.
+
 ## Keputusan otonom
 
 Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaan yang wajar, diambil tanpa berhenti. User meninjau semuanya di gerbang berikutnya. Format satu baris per keputusan: apa · bawaan yang dipakai · alasan · cara membalik.
