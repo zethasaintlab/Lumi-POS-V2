@@ -124,3 +124,25 @@ test('setiap commit kunci membawa vercel.json yang mematikan deployment Git', ()
     assert.equal(cfg.git?.deploymentEnabled, false, `commit ${aksi}: git.deploymentEnabled harus false`);
   }
 });
+
+// Sebelum setiap push: `pastikan` membuktikan kunci MASIH dipegang session ini
+// dan belum basi. Yang sudah diambil alih berhenti tanpa push (#76, 28 September 2026).
+test('pastikan: 0 hanya untuk pemilik yang kuncinya masih segar, dan tidak mengubah remote', () => {
+  assert.equal(kunci(klonA, 'ambil', 'sesi-a', '2026-09-26T10:00:00Z').kode, 0);
+  const sebelum = git(klonA, 'ls-remote', 'origin', 'refs/heads/kampanye-kunci');
+  const ok = kunci(klonA, 'pastikan', 'sesi-a', '2026-09-26T11:00:00Z');
+  assert.equal(ok.kode, 0, `pemilik yang segar harus lolos: ${ok.keluaran}`);
+  assert.equal(git(klonA, 'ls-remote', 'origin', 'refs/heads/kampanye-kunci'), sebelum, 'pastikan tidak boleh menulis');
+  const lain = kunci(klonB, 'pastikan', 'sesi-b', '2026-09-26T11:00:00Z');
+  assert.equal(lain.kode, 5, `non-pemilik harus ditolak: ${lain.keluaran}`);
+  const basi = kunci(klonA, 'pastikan', 'sesi-a', '2026-09-26T12:01:00Z');
+  assert.equal(basi.kode, 6, `kunci sendiri yang sudah basi harus ditolak, bukan dianggap aman: ${basi.keluaran}`);
+});
+
+test('pastikan: session yang kuncinya sudah diambil alih ditolak dengan nama pemilik baru', () => {
+  assert.equal(kunci(klonA, 'ambil', 'sesi-a', '2026-09-26T10:00:00Z').kode, 0);
+  assert.equal(kunci(klonB, 'ambil', 'sesi-b', '2026-09-26T12:05:00Z').kode, 0);
+  const p = kunci(klonA, 'pastikan', 'sesi-a', '2026-09-26T12:06:00Z');
+  assert.equal(p.kode, 5, p.keluaran);
+  assert.match(p.keluaran, /sesi-b/, 'pesan menyebut siapa yang kini memegang kunci');
+});

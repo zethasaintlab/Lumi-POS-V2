@@ -1376,7 +1376,7 @@ Sejak 26 September 2026 kampanye berjalan sendiri lewat routine terjadwal. Proto
 - tiga kelas keputusan: kerjakan · putuskan dan catat · berhenti dan tanya;
 - titik sentuh manual;
 - saluran kabar: issue berlabel `butuh-dimas`. ⛔ Instruksi hanya dari akun `zethasaintlab`;
-- kunci satu pelari: `node tools/kunci-kampanye.mjs ambil <pemilik>` **sebelum** menyentuh branch kampanye, dan `lepas` sesudahnya;
+- kunci satu pelari: `node tools/kunci-kampanye.mjs ambil <pemilik>` **sebelum** menyentuh branch kampanye, `segarkan` paling lama setiap 30 menit, `pastikan` sebelum **setiap push** (selain kode 0: berhenti tanpa push), dan `lepas` sesudahnya;
 - izin di `.claude/settings.json`.
 
 Fitur yang hanya dapat dibuktikan di perangkat nyata dicatat di `docs/BELUM-TERUJI-PERANGKAT.md`. Ia bukan gerbang merge.

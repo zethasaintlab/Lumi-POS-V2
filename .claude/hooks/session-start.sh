@@ -22,6 +22,15 @@ cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}"
 
 log() { echo "[lumi] $*"; }
 
+# ⛔ Session TANPA pengguna (routine terjadwal) tidak menyalakan apa pun di sini.
+# Routine yang menganggur harus murah: ia memeriksa kunci, akses GitHub, ledger,
+# dan issue lebih dulu, dan baru menjalankan siapkan-dev.sh bila ada pekerjaan
+# (docs/PROTOKOL-OTONOM.md § 4). [ASUMSI] nilai variabel ini di routine, § 7.
+if [ "${CLAUDE_CODE_SESSION_ATTENDED:-}" != "1" ]; then
+  log "session tanpa pengguna: penyiapan dilewati. Routine menjalankan tools/siapkan-dev.sh sendiri bila ada pekerjaan."
+  exit 0
+fi
+
 # --- 1-7. Prasyarat ----------------------------------------------------------
 #
 # ⛔ SATU sumber, bukan salinan kedua. Ketujuh langkah penyiapan (Node 24.7+,
