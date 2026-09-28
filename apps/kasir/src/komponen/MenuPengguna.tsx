@@ -19,7 +19,17 @@ import { keluar } from '../konteks/useSesi.ts';
  * dan shell harus tetap dapat dirender di keadaan itu (`App.tsx`: "Topbar
  * dan menu tetap ada, kalau tidak kasir terjebak di satu layar galat tanpa
  * jalan ke mana pun"). `db === null` karena itu adalah keadaan SAH, bukan
- * kelalaian — Keluar dinonaktifkan sampai database siap.
+ * kelalaian.
+ *
+ * ⛔ Tombol Keluar TIDAK dinonaktifkan saat `db === null` — perbaikan tinjauan
+ * (fix round 1), komentar sebelumnya mengklaim perilaku yang kodenya tidak
+ * punya. `lakukanKeluar()` mengirim `db ?? undefined`, dan `keluar()`
+ * (`konteks/useSesi.ts`) jatuh ke `lokalSekarang()` saat argumennya
+ * `undefined` — promise modul yang SAMA yang sedang dibuka `DbLokalProvider`.
+ * Menonaktifkan tombolnya tidak menambah apa pun terhadap FR-H4: baik
+ * ditekan sekarang maupun sesudah database siap, pemeriksaan antrean baru
+ * berjalan SETELAH database benar-benar terbuka — kasir hanya menunggu lebih
+ * lama (`sibuk` tetap `true` selama itu), bukan melewati pemeriksaannya.
  */
 export function MenuPengguna({
   pengguna,
