@@ -260,3 +260,74 @@ test('tidak menulis cash_movement, order, atau payment', async () => {
   assert.equal((await query('SELECT id FROM "order" WHERE shift_id = $1', [id])).length, 0);
   assert.equal((await query('SELECT id FROM payment')).length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Fix round 1 — idempotensi: key + body dibandingkan, bukan key saja.
+// ---------------------------------------------------------------------------
+
+test('⛔ (a) key sama + body sama → respons sama, tetap SATU audit_event', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const payload = { id: crypto.randomUUID(), total: '7000' };
+  const satu = await kirim(id, payload, {}, key);
+  const dua = await kirim(id, payload, {}, key);
+  assert.equal(satu.statusCode, 201, satu.body);
+  assert.equal(dua.statusCode, 201, dua.body);
+  assert.deepEqual(JSON.parse(dua.body), JSON.parse(satu.body));
+  assert.equal(await jumlahAudit(id), 1);
+});
+
+test('⛔ (b) key sama + body BERBEDA → 422 IDEMPOTENCY_KEY_HASH_MISMATCH, bukan respons pembatalan pertama, nol baris kedua', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const pertama = { id: crypto.randomUUID(), total: '7000' };
+  const kedua = { id: crypto.randomUUID(), total: '99000' };
+  assert.equal((await kirim(id, pertama, {}, key)).statusCode, 201);
+  const res = await kirim(id, kedua, {}, key);
+  assert.equal(
+    res.statusCode,
+    422,
+    `pembatalan kedua (key sama, body beda) tidak ditolak sebagai mismatch idempotensi: ${res.statusCode} ${res.body}`
+  );
+  assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+  assert.equal(await jumlahAudit(id), 1, 'baris kedua tertulis');
+  const [ada] = await query(`SELECT count(*)::int AS n FROM audit_event WHERE id = $1`, [kedua.id]);
+  assert.equal(ada.n, 0);
+});
+
+test('⛔ (b2) body beda hanya pada total (id sama) tetap mismatch', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const idAudit = crypto.randomUUID();
+  assert.equal((await kirim(id, { id: idAudit, total: '7000' }, {}, key)).statusCode, 201);
+  const res = await kirim(id, { id: idAudit, total: '8000' }, {}, key);
+  assert.equal(res.statusCode, 422, res.body);
+  assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+});
+
+test('⛔ (c) dua request BERSAMAAN, key sama → satu 201 dan satu 409 IDEMPOTENCY_KEY_CONFLICT, bukan 500', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const payload = { id: crypto.randomUUID() };
+  // Pool dipanaskan supaya keduanya sungguh bersamaan (pola tests/ordering/idempotency).
+  await Promise.all([
+    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: hdr() }),
+    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: hdr() }),
+  ]);
+  const [a, b] = await Promise.all([kirim(id, payload, {}, key), kirim(id, payload, {}, key)]);
+  const status = [a.statusCode, b.statusCode].sort();
+  assert.deepEqual(status, [201, 409], `dapat ${JSON.stringify(status)}: ${a.body} | ${b.body}`);
+  const kalah = a.statusCode === 409 ? a : b;
+  assert.equal(JSON.parse(kalah.body).error.code, 'IDEMPOTENCY_KEY_CONFLICT');
+  assert.equal(await jumlahAudit(id), 1);
+});
+
+test('occurredAt rusak → 400 VALIDATION_ERROR, bukan 500', async () => {
+  const id = await shift();
+  for (const buruk of ['bukan-tanggal', '2026-13-45', '   ']) {
+    const res = await kirim(id, { occurredAt: buruk });
+    assert.equal(res.statusCode, 400, `${buruk}: ${res.statusCode} ${res.body}`);
+    assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(await jumlahAudit(id), 0);
+});

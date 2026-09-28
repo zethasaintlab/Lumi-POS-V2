@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Pool } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
@@ -10,6 +10,7 @@ import {
   claimIdempotencyKey,
   completeIdempotencyKey,
   insertOutboxEvent,
+  IdempotencyKeyConflictError,
 } from '../../sync/index.ts';
 import { EVENT_KERANJANG_DIBATALKAN } from '../../../../../../packages/domain/src/keranjang-batal.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
@@ -82,13 +83,47 @@ export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, 
       if (body.hlc !== undefined && body.hlc !== null && !(typeof body.hlc === 'string' && /^\d+$/.test(body.hlc))) {
         throw new HttpError(400, 'VALIDATION_ERROR', 'hlc harus string bilangan bulat.');
       }
+      // ⛔ `occurredAt` rusak dijawab 400, bukan 500 dari `timestamptz`.
+      if (
+        body.occurredAt !== undefined &&
+        body.occurredAt !== null &&
+        !(
+          typeof body.occurredAt === 'string' &&
+          /^\d{4}-\d{2}-\d{2}T/.test(body.occurredAt) &&
+          !Number.isNaN(Date.parse(body.occurredAt))
+        )
+      ) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'occurredAt harus timestamp ISO 8601.');
+      }
+      // ⛔ Hash SELURUH isi yang bermakna, bukan hanya id: key yang sama dengan
+      // isi berbeda adalah bug klien, dan menjawabnya dengan respons pertama
+      // membuat pembatalan kedua hilang tanpa error (pola `orders.ts`).
+      const requestHash = createHash('sha256')
+        .update(
+          JSON.stringify([
+            shiftId,
+            body.id,
+            body.lineCount,
+            body.quantityMilli,
+            body.total,
+            body.occurredAt ?? null,
+          ])
+        )
+        .digest('hex');
       const hlcValue =
         typeof body.hlc === 'string' ? hlc.update(BigInt(body.hlc)) : hlc.tick();
 
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         const cached = await findIdempotencyKey(client, idempotencyKey);
-        if (cached !== null && cached.completed) {
-          return { kind: 'cached' as const, record: cached };
+        if (cached !== null) {
+          if (cached.requestHash !== requestHash) {
+            throw new HttpError(
+              422,
+              'IDEMPOTENCY_KEY_HASH_MISMATCH',
+              `Idempotency-Key ${idempotencyKey} sudah dipakai untuk request dengan body yang berbeda.`
+            );
+          }
+          if (cached.completed) return { kind: 'cached' as const, record: cached };
         }
         await assertUserVisible(client, actorId);
         // ⛔ Dijaga di sini, bukan lewat `PETA_PERAN` (lihat `DIKECUALIKAN`):
@@ -105,11 +140,18 @@ export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, 
           throw new HttpError(404, 'SHIFT_NOT_FOUND', `Shift ${shiftId} tidak ditemukan.`);
         }
 
-        await claimIdempotencyKey(client, {
-          key: idempotencyKey,
-          tenantId,
-          requestHash: `${shiftId}:${body.id as string}`,
-        });
+        try {
+          await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
+        } catch (err) {
+          if (err instanceof IdempotencyKeyConflictError) {
+            throw new HttpError(
+              409,
+              'IDEMPOTENCY_KEY_CONFLICT',
+              `Request dengan Idempotency-Key ${idempotencyKey} sedang diproses request lain, coba lagi.`
+            );
+          }
+          throw err;
+        }
 
         await recordAuditEvent(client, {
           id: body.id as string,
