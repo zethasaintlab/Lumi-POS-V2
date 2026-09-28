@@ -67,6 +67,12 @@ test('setiap kalimat ⛔ lama masih ada di CLAUDE.md atau docs/keputusan/*.md', 
   }
 
   const sumber = isiTernormalisasi();
+  // Kalimat yang DITULIS ULANG (bukan dihapus) wajib punya penggantinya di salah satu sumber.
+  for (const exc of fixture.exceptions || []) {
+    if (!exc.pengganti) continue;
+    const p = normalize(exc.pengganti);
+    assert.ok(sumber.some((s) => s.text.includes(p)), `pengganti kalimat yang ditulis ulang hilang: ${exc.pengganti}`);
+  }
   const hilang = [];
 
   for (const entriMentah of fixture.entries) {

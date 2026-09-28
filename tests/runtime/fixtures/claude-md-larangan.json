@@ -309,7 +309,8 @@
     },
     {
       "text": "- ⛔ **Biaya yang dinyatakan:** `order_line` adalah raw table, jadi kolom baru mengubah sidik jari skema lokal dan setiap perangkat membangun ulang tabel raw-nya (`disconnectAndClear()`). Riwayat penjualan LOKAL perangkat hilang karenanya — K-08 dan cetak ulang K-09 untuk penjualan lama berhenti bekerja di perangkat yang sudah terpasang. Datanya ada di server; `order_line` belum ada di sync rules jalur turun, jadi ia tidak kembali sendiri.",
-      "reason": "Group 3 (task instruction): fakta ini basi sejak stream 'riwayat' (29 Agustus 2026) — order_line KINI kembali lewat stream itu (device-scoped, tanpa batas tanggal). Kalimat ditulis ulang di tempat baru untuk menyatakan fakta saat ini, bukan dihapus dari makna."
+      "reason": "Group 3 (task instruction): fakta ini basi sejak stream 'riwayat' (29 Agustus 2026) — order_line KINI kembali lewat stream itu (device-scoped, tanpa batas tanggal). Kalimat ditulis ulang di tempat baru untuk menyatakan fakta saat ini, bukan dihapus dari makna.",
+      "pengganti": "**Sejak stream `riwayat` (29 Agustus 2026), `order_line` kembali lewat stream itu**"
     }
   ]
 }

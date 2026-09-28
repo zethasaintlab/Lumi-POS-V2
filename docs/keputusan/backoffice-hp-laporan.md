@@ -126,7 +126,8 @@ dijatuhkan di titik render; seluruh test kasir hijau di atasnya.
   di perangkat yang sudah terpasang. **Sejak stream `riwayat` (29 Agustus
   2026), `order_line` kembali lewat stream itu** — disaring per `device_id`,
   tanpa batas tanggal — jadi riwayat lokal tidak lagi hilang permanen di
-  perangkat yang bermigrasi.
+  perangkat yang bermigrasi. Batas yang dinyatakan: stream itu **belum pernah
+  dijalankan terhadap PowerSync sungguhan** (`kasir-offline-sync.md`).
 
 ⛔ **AC FR-G6 KELIMA: `Payload Optimized <50KB (Environment-Blocked)`** —
 status resmi user, 25 Agustus 2026. *"Render < 2 detik pada koneksi seluler"*

@@ -25,13 +25,13 @@ Pelanggaran = cacat, bukan preferensi gaya. Tolak di review.
 
 Aturan saja, tanpa riwayat — riwayat dan alasan lengkap ada di `docs/keputusan/*.md`. Subagen yang menyentuh jalur uang tidak boleh bergantung pada mengikuti rujukan; daftar ini wajib cukup sendiri.
 
-- Pembulatan FR-C9 hanya pada SISA TUNAI sesudah bagian non-tunai, dan hanya di `simpanPenjualan` — tidak pernah di layar, tidak pernah di total.
+- Pembulatan FR-C9 hanya pada SISA TUNAI sesudah bagian non-tunai, tidak pernah pada `total`. Di perangkat hanya dihitung di `simpanPenjualan` dan hanya tampil di K-07, tidak pernah di K-06; di server hanya di handler `payments` (`computeCashRounding`).
 - Pembayaran campuran: bagian TUNAI dikirim TERAKHIR (rantai `depends_on` eksplisit); server menghitungnya dari `total − SUM(confirmed)`.
 - Satu baris `payment` per bagian pembayaran. Tidak pernah digabung jadi satu baris.
 - Kelebihan bayar NON-TUNAI ditolak. Hanya satu bagian tunai per transaksi.
 - QRIS dinamis hanya `confirmed` dari jawaban GATEWAY — tidak pernah ditebak dari status tak dikenal.
 - Sync rules adalah SATU-SATUNYA batas tenant pada jalur turun PowerSync (replikasi logis tidak tunduk RLS).
-- `item_variation.cost` TIDAK PERNAH turun ke perangkat; server men-snapshot ke `order_line.cost_at_sale` saat order masuk.
+- `item_variation.cost` dan `order_line.cost_at_sale` TIDAK PERNAH turun ke perangkat; server men-snapshot `cost` ke `cost_at_sale` saat order masuk, dan nilai dari klien diabaikan.
 - `cash_movement` adalah SATU-SATUNYA definisi saldo laci (`saldo_awal + SUM(delta)`) — tidak ada sumber kedua.
 - Pembayaran NON-TUNAI tidak pernah menulis `cash_movement`.
 - `posisi-penjualan.ts` adalah SATU-SATUNYA definisi omzet; laporan lain memanggilnya, tidak menghitung ulang.
@@ -247,20 +247,26 @@ Supaya mengikuti rujukan bersifat mekanis, bukan penilaian:
 | `apps/server/src/modules/ordering/**`, `payment/**`, `cash/**` | `docs/keputusan/uang-pembayaran-kas.md` |
 | `apps/server/src/modules/catalog/**` | `docs/keputusan/uang-pembayaran-kas.md` (harga/katalog), `docs/keputusan/database.md` (FK lintas-tenant) |
 | `apps/server/src/modules/reporting/**`, `identity/**`, `tenancy/**` | `docs/keputusan/backoffice-hp-laporan.md` |
-| `apps/server/src/modules/sync/**`, `peripheral/**`, `rilis/**` (flag/rollout) | `docs/keputusan/rilis-dan-flag.md` |
+| `apps/server/src/modules/sync/**` (idempotency, outbox, token perangkat) | `docs/keputusan/uang-pembayaran-kas.md` (idempotency, ordering) + `docs/keputusan/kasir-offline-sync.md` |
+| `apps/server/src/modules/peripheral/**` | `docs/keputusan/backoffice-hp-laporan.md` (`peripheral_configured`) + `docs/keputusan/cetak.md` |
+| `apps/server/src/modules/rilis/**` (flag/rollout) | `docs/keputusan/rilis-dan-flag.md` |
+| `apps/server/src/tenant-context.ts`, `konteks-permintaan.ts`, `sesi.ts` | `docs/keputusan/backoffice-hp-laporan.md` (support, sesi) + `docs/keputusan/database.md` (RLS/FK) |
 | `apps/server/src/modules/audit/**`, `inventory/**` | `docs/keputusan/backoffice-hp-laporan.md` (audit), `docs/keputusan/uang-pembayaran-kas.md` (stok F3) |
-| `apps/kasir/src/kas/**`, `kasir/**` (keranjang, diskon, pembayaran) | `docs/keputusan/uang-pembayaran-kas.md` |
+| `apps/kasir/src/kas/**`, `kasir/**` (keranjang, diskon, pembayaran), `layar/**` (termasuk `Pembayaran.tsx` K-06/K-07), `riwayat/**`, `katalog/**`, `inventori/**` | `docs/keputusan/uang-pembayaran-kas.md` + `docs/keputusan/design-system.md` (tampilan, gambar produk) |
+| `apps/kasir/src/fitur/**` | `docs/keputusan/rilis-dan-flag.md` |
+| `apps/kasir/src/identitas/**`, `perangkat/**` | `docs/keputusan/kasir-offline-sync.md` (token perangkat, FR-F12) + `docs/keputusan/cetak.md` (profil printer) |
 | `apps/kasir/src/lokal/**`, `apps/kasir/src/sync/**`, skema raw table, `db/local/**` | `docs/keputusan/kasir-offline-sync.md` |
 | `apps/kasir/src/cetak/**` | `docs/keputusan/cetak.md` |
 | `apps/kasir/src/telemetri/**` | `docs/keputusan/kasir-offline-sync.md` |
 | `apps/backoffice/src/**` | `docs/keputusan/backoffice-hp-laporan.md` |
 | `apps/hp/src/**` | `docs/keputusan/backoffice-hp-laporan.md` |
-| `packages/domain/src/buku-kas.ts`, `kas-manual.ts`, `pembayaran-campuran.ts`, `pilihan-refund.ts`, `mdr.ts`, `numeric.ts`, `posisi-penjualan.ts` | `docs/keputusan/uang-pembayaran-kas.md` |
+| `packages/domain/src/buku-kas.ts`, `kas-manual.ts`, `pembayaran-campuran.ts`, `pembayaran-manual.ts`, `pilihan-refund.ts`, `mdr.ts`, `numeric.ts`, `money.ts`, `tax.ts`, `diskon.ts`, `alokasi.ts`, `posisi-penjualan.ts`, `modifier-pilihan.ts`, `uang-tampilan.ts`, `metode-tampilan.ts` | `docs/keputusan/uang-pembayaran-kas.md` |
+| `packages/klien-api/**` | `docs/keputusan/backoffice-hp-laporan.md` (§ G2, sesi bersama) |
 | `packages/domain/src/rilis.ts`, `fitur.ts` | `docs/keputusan/rilis-dan-flag.md` |
 | `packages/domain/src/audit-peristiwa.ts`, `ambang.ts` | `docs/keputusan/backoffice-hp-laporan.md` |
 | `packages/ds/**`, `**/*.css` (kecuali `ds-bundle/`) | `docs/keputusan/design-system.md` |
 | `db/migrations/**` | modul yang tabelnya disentuh (lihat baris di atas) + `docs/keputusan/database.md` untuk FK/RLS |
-| sync rules (PowerSync) | `docs/keputusan/kasir-offline-sync.md` |
+| `prototypes/05-powersync-jalur-turun/powersync/sync-config.yaml` (sync rules) | `docs/keputusan/kasir-offline-sync.md` |
 | `tools/kill-switch.mjs`, `tools/naikkan-tahap.mjs` | `docs/keputusan/rilis-dan-flag.md` |
 | `tools/siapkan-dev.sh`, `tools/kunci-kampanye.mjs` | bagian § Container baru / § Protokol otonom di `CLAUDE.md` ini |
 
@@ -276,7 +282,9 @@ Jangan menebak jawabannya — tanyakan atau catat sebagai asumsi bertanda.
 
 ### ⛔ "Nol baris, bukan error" — kelas kegagalan, bukan insiden
 
-Daftar lengkap, mekanisme, dan penjaganya: `docs/verifikasi/KELAS-GAGAL.md`.
+Lima kejadian dalam satu minggu, mekanismenya identik: sesuatu gagal dan yang muncul adalah **kekosongan yang terlihat sah**, bukan galat. Katalog kosong, antrean sehat, daftar exception bersih — nol adalah jawaban SAH untuk ketiga pertanyaan itu, jadi tidak ada assertion wajar yang menolaknya.
+
+Daftar lengkap beserta mekanisme dan penjaganya: `docs/verifikasi/KELAS-GAGAL.md`. Survei kandidat berikutnya ada di sana juga — **angkanya batas atas populasi yang perlu dipilah, bukan jumlah cacat.**
 
 ---
 
@@ -304,7 +312,7 @@ Daftar lengkap: `research/12-OPEN-QUESTIONS.md`.
 - **Angka hasil pengukuran mengalahkan estimasi.** Kalau `prototypes/*/FINDINGS.md` bertentangan dengan dokumen lain, FINDINGS yang benar.
 - ⛔ **Saat dua representasi sama-sama benar, PILIH YANG DAPAT DIUJI DI CI** — bukan yang menuntut infrastruktur penuh untuk membuktikan dirinya.
 
-  Ini bukan catatan tentang gambar; ia yang paling kuat di antara alasan pencabutan `bytea` dan berlaku jauh di luarnya. Versi `bytea` hanya dapat dibuktikan dengan menjalankan PostgreSQL + PowerSync sungguhan — dan di repo ini itu berarti **tidak pernah dibuktikan sama sekali** (`Docker: daemon BISA menyala, tarik image DIBLOKIR`). Versi base64 dibuktikan `node --test` di atas SQLite yang sudah ada di setiap run: byte per byte, termasuk `0x00`, `0xFF`, dan urutan bukan-UTF-8.
+  Ini bukan catatan tentang gambar; ia yang paling kuat di antara alasan pencabutan `bytea` dan berlaku jauh di luarnya. Versi `bytea` hanya dapat dibuktikan dengan menjalankan PostgreSQL + PowerSync sungguhan — dan di repo ini itu berarti **tidak pernah dibuktikan sama sekali** (`docs/keputusan/database.md` § Docker, diukur 2 September 2026, belum diukur ulang). Versi base64 dibuktikan `node --test` di atas SQLite yang sudah ada di setiap run: byte per byte, termasuk `0x00`, `0xFF`, dan urutan bukan-UTF-8.
 
   Yang menentukan bukan seberapa aman jalurnya di atas kertas, melainkan **seberapa sering kebenarannya diperiksa ulang**. Jalur yang lebih aman tetapi hanya dapat diuji di lingkungan yang tidak ada berhenti diperiksa setelah hari ia ditulis, dan sejak itu ia dipercaya berdasarkan ingatan. Representasi yang sedikit lebih mahal tetapi diperiksa pada setiap commit menang atas keduanya.
 
