@@ -193,3 +193,24 @@ test('--t-metric tidak didefinisikan lagi; .stat .t-title-lg memakai --text-disp
     );
   }
 });
+
+test('⛔ .pita-kategori tidak didefinisikan di CSS mana pun — CSS mati sejak Task 9 sub-proyek 1', () => {
+  const berkas = [
+    ...readdirSync(join(AKAR, 'packages/ds'))
+      .filter((n) => n.endsWith('.css'))
+      .map((n) => join(AKAR, 'packages/ds', n)),
+    ...berkasCss(join(AKAR, 'apps')),
+  ];
+  const pakai = [];
+  for (const f of berkas) {
+    const isi = tanpaKomentar(readFileSync(f, 'utf8'));
+    if (isi.includes('.pita-kategori')) pakai.push(f.slice(AKAR.length));
+  }
+  assert.deepEqual(
+    pakai,
+    [],
+    'Task 2 (sub-proyek 2) menghapus `.pita-kategori` dari `lumi.css` — CSS ' +
+      'mati sejak Task 9 sub-proyek 1 (kartu produk K-03 netral, tanpa pita ' +
+      'kategori). Kelas ditemukan lagi di:\n  ' + pakai.join('\n  ')
+  );
+});
