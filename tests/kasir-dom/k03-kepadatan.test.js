@@ -20,7 +20,8 @@
 //   - `IA:62`: ≥ 12 kartu terlihat tanpa scroll pada 1024×768 (panggung
 //     galeri) DAN pada 1280×800. Kartu yang lebih lebar menjadi lebih tinggi;
 //     yang menahannya adalah rasio foto, dan penjaga ini yang membuktikannya.
-//   - Baris keranjang TIDAK dipendekkan (82 px, stepper 44 px, DS #3).
+//   - Baris keranjang 58 px (satu tombol per baris, Task 6 kampanye Hidupkan
+//     desain), area tekan >= 44 px (DS #3).
 //
 // ## Prasyarat
 //
@@ -269,16 +270,48 @@ test('⛔ G-IA62-PITA: ≥ 12 kartu pada 1024×768 dengan kartu berfoto DAN pita
   );
 });
 
-test('⛔ keranjang: kolom 360 px, judul dan label Total 20 px bobot 500, baris TIDAK dipendekkan', async () => {
+test('⛔ keranjang: kolom 360 px, judul dan label Total 20 px bobot 500, baris 58 px dengan area tekan >= 44 px — keputusan kampanye Hidupkan desain 26 Sep 2026', async () => {
   const { hal, galat } = await bukaK03('keranjang-penuh', 1024);
   const u = await ukur(hal);
+  /* ⛔ Area tekan DIUKUR (`elementFromPoint`), bukan disimpulkan dari tinggi
+     baris: titik tengah dan titik 21 px di atas/bawahnya (kotak 44 px) harus
+     dijawab TOMBOL baris itu sendiri. Satu tombol per baris — bukan dua, bukan
+     nol (baris tanpa tombol tidak dapat membuka Edit Item sama sekali). */
+  const tekan = await hal.evaluate(() => {
+    const hasil = [];
+    for (const li of document.querySelectorAll('.kasir-baris')) {
+      li.scrollIntoView({ block: 'center' });
+      const tombol = li.querySelectorAll('button');
+      const b = tombol[0];
+      if (!b) {
+        hasil.push({ tombol: 0 });
+        continue;
+      }
+      const r = b.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const kena = (y) => {
+        const e = document.elementFromPoint(cx, y);
+        return e === b || b.contains(e);
+      };
+      hasil.push({ tombol: tombol.length, tinggi: r.height, tengah: kena(cy), atas: kena(cy - 21), bawah: kena(cy + 21) });
+    }
+    return hasil;
+  });
   await hal.close();
   assert.deepEqual(galat, []);
   assert.equal(u.keranjang, 360, `kolom keranjang ${u.keranjang} px — mockup 360`);
   assert.equal(u.judul, '20px/600', `judul "Keranjang" ${u.judul} (skala 32/20/15/13)`);
   assert.equal(u.labelTotal, '20px/600', `label "Total" ${u.labelTotal} (skala 32/20/15/13)`);
-  /* ⛔ SENTINEL + batas: keranjang penuh punya baris, dan tidak satu pun lebih
-     pendek dari 82 px (stepper 44 px, DS #3). */
+  /* ⛔ SENTINEL + batas: keranjang penuh punya baris. */
   assert.ok(u.baris.length >= 3, 'skenario `keranjang-penuh` tanpa baris — penjaga hampa');
-  assert.ok(Math.min(...u.baris) >= 82, `baris keranjang dipendekkan: ${Math.min(...u.baris)} px (< 82)`);
+  for (const h of u.baris) {
+    assert.ok(Math.abs(h - 58) <= 2, `baris keranjang ${h} px — spec § 6: satu tombol 58 px ± 2`);
+  }
+  assert.equal(tekan.length, u.baris.length, 'jumlah hasil ukur area tekan != jumlah baris');
+  for (const [i, t] of tekan.entries()) {
+    assert.equal(t.tombol, 1, `baris ${i}: ${t.tombol} tombol — spec § 6: SATU tombol per baris`);
+    assert.ok(t.tinggi >= 44, `baris ${i}: tombol setinggi ${t.tinggi} px < 44 (DS #3)`);
+    assert.ok(t.tengah && t.atas && t.bawah, `baris ${i}: area tekan 44 px tidak dijawab tombol barisnya (tengah/atas/bawah = ${t.tengah}/${t.atas}/${t.bawah})`);
+  }
 });

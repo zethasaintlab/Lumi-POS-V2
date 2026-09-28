@@ -43,7 +43,7 @@ const DIST = path.join(AKAR, 'dist-galeri');
 
 /**
  * Kelima layar galeri, dengan skenario yang merender tombol terbanyak.
- * K-03 dua kali: `normal` punya kartu produk, `keranjang-penuh` punya stepper.
+ * K-03 dua kali: `normal` punya kartu produk, `keranjang-penuh` punya baris keranjang (satu tombol per baris; stepper dihapus Task 6).
  */
 const SEL = [
   ['K-03', 'normal'],
