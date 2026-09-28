@@ -187,7 +187,7 @@ function translateConstraintError(err: unknown): never {
 //
 // `occurred_at` memakai jam DATABASE bila klien tidak mengirimnya. Bukan
 // new Date() di Node: dua jam yang berbeda sudah pernah menyebabkan bug nyata
-// di repo ini (CLAUDE.md § Keputusan yang mengikat kode ordering).
+// di repo ini (docs/keputusan/uang-pembayaran-kas.md § Keputusan yang mengikat kode ordering).
 const INSERT_VOID_ORDER_SQL = `
   INSERT INTO "order" (
     id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,

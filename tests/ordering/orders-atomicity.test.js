@@ -6,7 +6,7 @@
 // brief T4). Untuk SETIAP kasus dibuktikan NOL baris tersisa di KEEMPAT
 // tabel: order, check, order_line, order_line_modifier -- bukan hanya
 // status code, dan bukan hanya tabel order (temuan berulang di repo ini,
-// lihat CLAUDE.md § "Temuan F1").
+// lihat docs/keputusan/database.md § "Temuan F1").
 //
 // Pola test SAMA dengan tests/ordering/orders.test.js: seedTenantBase,
 // appSetup untuk pembuktian langsung ke DB (BEGIN/set_config/COMMIT).

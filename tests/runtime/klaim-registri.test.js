@@ -81,7 +81,7 @@ const KLAIM = [
   },
   {
     id: 'ikon-bundle',
-    berkas: 'CLAUDE.md',
+    berkas: 'docs/keputusan/design-system.md',
     frasa: '`<Icon>` (42 ikon)',
     harap: 42,
     ukur: () => {
@@ -92,7 +92,7 @@ const KLAIM = [
   },
   {
     id: 'ikon-backoffice',
-    berkas: 'CLAUDE.md',
+    berkas: 'docs/keputusan/design-system.md',
     frasa: 'back-office memakai **56×**',
     harap: 56,
     ukur: () =>
@@ -102,7 +102,7 @@ const KLAIM = [
   },
   {
     id: 'modul-server',
-    berkas: 'CLAUDE.md',
+    berkas: 'docs/keputusan/uang-pembayaran-kas.md',
     frasa: '**Dua belas modul kini punya kode**',
     harap: 12,
     ukur: () =>
@@ -112,7 +112,7 @@ const KLAIM = [
   },
   {
     id: 'peripheral-belum-ada',
-    berkas: 'CLAUDE.md',
+    berkas: 'docs/keputusan/cetak.md',
     frasa: '`peripheralAktif()` masih mengembalikan `null`',
     harap: true,
     // Klaim KEADAAN, bukan hitungan: gate F4 bagian pertama berdiri di atasnya,
@@ -121,7 +121,7 @@ const KLAIM = [
   },
   {
     id: 'service-charge-nol',
-    berkas: 'CLAUDE.md',
+    berkas: 'docs/keputusan/uang-pembayaran-kas.md',
     frasa: '`POST /orders` menulis literal `0` ke `service_charge_amount`',
     harap: true,
     ukur: () => {
@@ -165,7 +165,7 @@ const KLAIM = [
   },
   {
     id: 'docker-daemon-vs-tarik-image',
-    berkas: 'CLAUDE.md',
+    berkas: 'docs/keputusan/database.md',
     frasa: '### ⛔ Docker: daemon BISA menyala, tarik image DIBLOKIR',
     harap: true,
     // ⛔ Klaim KEADAAN tentang lingkungan, bukan tentang kode — dan justru
