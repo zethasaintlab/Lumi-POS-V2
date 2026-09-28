@@ -120,5 +120,10 @@ test('⛔ bilah nav diturunkan dari TABEL_RUTE, dan gerbang tidak masuk', async 
   // Rute berparameter tidak dapat dinavigasi tanpa idnya.
   assert.ok(!jalur.some((j) => j.includes(':')), 'rute berparameter tidak boleh jadi tab');
 
-  assert.deepEqual(jalur, ['/', '/riwayat', '/shift/tutup', '/sync', '/perangkat']);
+  /* ⛔ EMPAT → TIGA tab, keputusan kampanye Hidupkan desain (26 September
+     2026, Task 3 PR 2A): `/sync` dan `/perangkat` kehilangan `nav` — Sinkron
+     dan Perangkat pindah ke menu pengguna di header. `Laci kas` (P10(a))
+     menunggu Task 4 (penyuntingan `product/IA-lumi-pos-v1.md`, tertahan Q9),
+     jadi tabelnya TIGA di sini, bukan EMPAT seperti target mockup akhir. */
+  assert.deepEqual(jalur, ['/', '/riwayat', '/shift/tutup']);
 });

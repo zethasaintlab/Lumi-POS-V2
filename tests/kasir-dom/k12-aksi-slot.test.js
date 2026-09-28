@@ -150,40 +150,32 @@ test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenari
     const { hal, galat } = await bukaReview(keadaan);
 
     const ukur = await hal.evaluate(() => {
-      const konten = document.querySelector('.kasir-konten');
-      /* ⛔ Tab navigasi DIKECUALIKAN, dan itu bukan kerapian. Bilah nav punya
-         item bernama "Tutup Kas" juga — ia yang membawa kasir ke layar ini —
+      /* ⛔ Tab navigasi DIKECUALIKAN, dan itu bukan kerapian. Header punya
+         tab bernama "Tutup shift" juga — ia yang membawa kasir ke layar ini —
          dan `querySelectorAll('button')` menemukannya LEBIH DULU karena ia
          lebih tinggi di pohon. Versi pertama penjaga ini mengukur tab itu:
          tingginya 46px dan posisinya 124px, jadi ia melaporkan pelanggaran
          target sentuh atas tab navigasi sambil tidak pernah melihat tombol
          aksinya sama sekali. Ditemukan dengan mencetak apa yang ia ukur.
 
-         `[role="tablist"]` adalah pembeda yang benar: slot aksi berada di
-         bilah nav yang SAMA, jadi menyaring per `.kasir-bilah` akan membuang
-         tombol yang justru dicari. */
+         `[role="tablist"]` adalah pembeda yang benar. */
       const semua = [...document.querySelectorAll('button')].filter(
         (b) => !b.closest('[role="tablist"]')
       );
       const tombol = semua.find((b) => /^Tutup Kas$/i.test(b.innerText.trim()));
-      if (!konten || !tombol) return { err: !konten ? '.kasir-konten hilang' : 'tombol "Tutup Kas" tidak ada' };
-      const k = konten.getBoundingClientRect();
+      if (!tombol) return { err: 'tombol "Tutup Kas" tidak ada' };
       const b = tombol.getBoundingClientRect();
-      const slot = document.querySelector('.kasir-slot-aksi');
+      const aksiBawah = document.querySelector('.kasir-aksi-bawah');
+      const header = document.querySelector('.kasir-header');
       return {
-        batasKonten: Math.round(k.bottom),
         bawahTombol: Math.round(b.bottom),
+        tinggiJendela: Math.round(window.innerHeight),
         tinggiTombol: Math.round(b.height),
-        diSlot: slot ? slot.contains(tombol) : false,
-        labelSlot: slot
-          ? [...slot.querySelectorAll('button')].map((x) => x.innerText.trim().replace(/\s+/g, ' '))
+        diAksiBawah: aksiBawah ? aksiBawah.contains(tombol) : false,
+        labelAksiBawah: aksiBawah
+          ? [...aksiBawah.querySelectorAll('button')].map((x) => x.innerText.trim().replace(/\s+/g, ' '))
           : null,
-        /* ⛔ Ambang sentuh diperiksa DI SINI juga. Tombol yang dipindahkan ke
-           bilah nav mudah mengecil mengikuti tinggi bilahnya, dan 56px adalah
-           tuntutan aturan design system #3 untuk aksi menyangkut uang. */
-        tinggiBilah: Math.round(
-          document.querySelector('.kasir-bilah')?.getBoundingClientRect().height ?? 0
-        ),
+        diHeader: header ? header.contains(tombol) : false,
       };
     });
     await hal.close();
@@ -191,15 +183,16 @@ test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenari
     assert.equal(ukur.err, undefined, `${keadaan}: ${ukur.err}`);
 
     catatan.push(
-      `${keadaan} (${kenapa}): bawah tombol ${ukur.bawahTombol}px, batas konten ` +
-        `${ukur.batasKonten}px, tinggi tombol ${ukur.tinggiTombol}px, di slot: ${ukur.diSlot}` +
-        (ukur.labelSlot ? `, isi slot: [${ukur.labelSlot.join(' · ')}]` : '')
+      `${keadaan} (${kenapa}): bawah tombol ${ukur.bawahTombol}px, tinggi jendela ` +
+        `${ukur.tinggiJendela}px, tinggi tombol ${ukur.tinggiTombol}px, di .kasir-aksi-bawah: ` +
+        `${ukur.diAksiBawah}, di header: ${ukur.diHeader}` +
+        (ukur.labelAksiBawah ? `, isi: [${ukur.labelAksiBawah.join(' · ')}]` : '')
     );
 
-    if (ukur.bawahTombol > ukur.batasKonten) {
+    if (ukur.bawahTombol > ukur.tinggiJendela) {
       pelanggar.push(
-        `  ${keadaan}: "Tutup Kas" berakhir di ${ukur.bawahTombol}px sementara area ` +
-          `konten berhenti di ${ukur.batasKonten}px — ${ukur.bawahTombol - ukur.batasKonten}px ` +
+        `  ${keadaan}: "Tutup Kas" berakhir di ${ukur.bawahTombol}px sementara jendela ` +
+          `berhenti di ${ukur.tinggiJendela}px — ${ukur.bawahTombol - ukur.tinggiJendela}px ` +
           'di luar layar.'
       );
     }
@@ -208,6 +201,12 @@ test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenari
         `  ${keadaan}: tinggi "Tutup Kas" ${ukur.tinggiTombol}px, di bawah 56px yang ` +
           'aturan design system #3 tuntut untuk aksi menyangkut uang.'
       );
+    }
+    if (!ukur.diAksiBawah) {
+      pelanggar.push(`  ${keadaan}: "Tutup Kas" tidak berada di dalam \`.kasir-aksi-bawah\`.`);
+    }
+    if (ukur.diHeader) {
+      pelanggar.push(`  ${keadaan}: "Tutup Kas" bocor ke dalam \`.kasir-header\`.`);
     }
   }
 
@@ -220,8 +219,8 @@ test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenari
       'terburu. Tombol yang harus dicari dengan menggulir adalah tombol yang ' +
       'ditekan dua kali atau tidak ditekan sama sekali — dan yang tidak ditekan ' +
       'meninggalkan shift terbuka semalaman.\n' +
-      '  K-03 dan K-14 sudah memindahkan aksinya ke slot bilah nav lewat ' +
-      '`PortalAksi`.\n\n  Yang terukur:\n' +
+      '  `.kasir-aksi-bawah` menempel di bawah layar, di luar wilayah yang ' +
+      'menggulir.\n\n  Yang terukur:\n' +
       catatan.map((b) => `    ${b}`).join('\n')
   );
 
