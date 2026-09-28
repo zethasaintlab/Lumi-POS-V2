@@ -158,6 +158,14 @@ export function Galeri() {
   const layar = LAYAR.find((l) => l.id === layarId) ?? LAYAR[0];
   const info = SKENARIO.find((s) => s.nama === skenario) ?? SKENARIO[0];
   const terdaftar = perangkatTerdaftarUntuk(skenario);
+  /* `?matikan=diskon_kasir` — kill switch dipaksa MATI TANPA menambah
+     keadaan galeri baru (`OpsiDbPalsu.matikanFitur`). Dibaca SEKALI: ini
+     jalur test (`k03-toolbar.test.js` G-TOOLBAR), bukan sesuatu yang
+     berubah lewat klik bilah galeri. */
+  const matikanFitur = useMemo(
+    () => (new URLSearchParams(window.location.search).get('matikan') ?? '').split(',').filter(Boolean),
+    []
+  );
 
   /* ⛔ Keadaan dibangun ULANG saat skenario berubah, dan `key` di bawah
      memaksa REMOUNT. Tanpa remount, layar yang sudah memuat data skenario
@@ -177,7 +185,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02' });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -202,7 +210,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario, layarId]);
+  }, [skenario, layarId, matikanFitur]);
 
   return (
     <div className="galeri">

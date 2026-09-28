@@ -142,6 +142,12 @@ function agregat(tabel: string, sql: string, baris: readonly unknown[]): Record<
  */
 export interface OpsiDbPalsu {
   tanpaShift?: boolean;
+  /** Kunci `fitur.ts` yang dipaksa MATI (`aktif: 0`) — dipakai
+      `tests/kasir-dom/k03-toolbar.test.js` untuk membuktikan "Diskon HILANG,
+      bukan nonaktif" tanpa menambah keadaan galeri baru (yang akan
+      melipatgandakan kombinasi layar×keadaan di SELURUH penjaga lain yang
+      membaca daftar keadaan dari bilah galeri). */
+  matikanFitur?: readonly string[];
 }
 
 export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbLokal {
@@ -371,7 +377,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         ? [{ id: 'kini', shift_id: 'shift-galeri', isi: keranjangDuaPuluh(), diperbarui_pada: '2026-09-01T02:00:00.000Z' }]
         : [],
     print_job: [],
-    fitur_lokal: [],
+    fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),
     telemetry_local: [],
     // Diisi di `getAll` — WebP-nya di-encode kanvas, dan itu async.
     item_image: [],

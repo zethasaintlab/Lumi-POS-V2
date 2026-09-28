@@ -1271,44 +1271,68 @@
    tombol itu sudah tidak ada — qty turun ke nol yang menghapus.) */
 .kasir-baris-harga { margin-left: auto; }
 
-/* --- Toolbar aksi: SATU BARIS, semua terlihat sekaligus -------------------
+/* --- Toolbar aksi: bilah 68px, tombol ikon-DI-ATAS-label ------------------
  *
- * Sebelumnya ketiga aksi ini adalah kolom tombol selebar panel, dan kolom itu
- * memakan tinggi yang diambil dari daftar item — ruang yang paling langka di
- * panel ini. Tiga tombol bertumpuk = ~150px; satu baris ikon = 56px.
+ * ⛔ Task 5, kampanye "Hidupkan desain" (spec § 4 "Toolbar kasir delapan
+ * tombol", target mockup): "bilah 68 px di atas kolom katalog saja, latar
+ * `--card`, tombol ghost min-lebar 70 px, tinggi 44 px, ikon 17 px DI ATAS
+ * label 13/600." SEBELUMNYA (Task 3) ikon dan label duduk MENDATAR — bentuk
+ * itu benar untuk tiga tombol tanpa target ukuran; mockup menuntut kolom.
+ *
+ * ⛔⛔ BILAH 68px DITOLAK, R1-c (Task 5, laporan `task-5-report.md` §
+ * Temuan) — `docs/RENCANA-HIDUPKAN-DESAIN.md` § Ledger/Utang. `.kasir-
+ * grid-panel` `overflow-y: auto` SELALU kelebihan konten (grid + "Muat
+ * lebih banyak"), jadi flexbox mengecilkan SETIAP anak yang dapat menyusut
+ * ke tinggi minimum kontennya (`min-height: auto`) — bilah ini sudah 44px
+ * di kode LAMA sekalipun (natural, dari tinggi tombol), bukan 68px yang
+ * pernah terlihat siapa pun. Memaksanya (`flex-shrink: 0` + `height: 68px`,
+ * dicoba dan DIBATALKAN) membuat G-IA62-PITA (`k03-kepadatan.test.js`,
+ * "wajib hijau tanpa disunting") MERAH: 1024×768 `gambar-antrean` turun ke
+ * 8 kartu (sisa −18px, dari +6px sebelumnya) — pelanggaran invariant
+ * `IA:62`, bukan sekadar angka mepet. Kondisi berhenti eksplisit
+ * (`RENCANA-HIDUPKAN-DESAIN.md` § Kondisi berhenti: "Invarian tidak dapat
+ * dipenuhi oleh ukuran mockup"). TIDAK ADA rekayasa tata letak untuk
+ * "menyelamatkan" angka — bilah TETAP natural (~44-46px, ikut tinggi
+ * tombol), persis pola "tolak elemen mockup, lanjutkan sisanya" (`CLAUDE.md`
+ * § Rebuild UI kasir). Ukuran TOMBOL di dalamnya (70×44, ikon 17, label
+ * 13/600) TETAP mockup — konflik hanya pada tinggi BILAH LUAR.
  *
  * ⛔ IKON TIDAK PERNAH SENDIRIAN, dan itu bukan kehati-hatian berlebihan.
  * `IA:66` menempatkan "Buka laci" satu ketukan dari layar ini, dan membuka
  * laci adalah pola fraud paling dasar (`spec-d:229`). Ikon tanpa kata menuntut
  * kasir menghafal tiga glyph yang mirip; yang salah tekan membuka laci di
- * depan pelanggan. Labelnya karena itu ikut, pada `--text-caption`.
+ * depan pelanggan. Labelnya karena itu ikut, pada `--text-small`/600
+ * (`.kasir-toolbar-label`, bukan `--text-caption` bawaan `.btn` — bobot 600
+ * hanya berlaku untuk label toolbar, bukan seluruh teks `.btn` di layar lain).
  *
- * ⛔ Target sentuh tetap `--touch-min`. Tombol yang mengecil karena ikonnya
- * kecil melanggar aturan design system #3 tanpa satu pun error.
- *
- * Nol nilai baru: seluruhnya token yang sudah ada.
+ * ⛔ Target sentuh tetap `--touch-min` (44px TINGGI persis mockup; LEBAR
+ * min 70px — keduanya di atas 44, jadi tidak ada perluasan tak terlihat yang
+ * dibutuhkan di sini, beda dari chip kategori 36px).
  */
 .kasir-toolbar {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+  background: var(--card);
 }
 
 .kasir-toolbar .btn {
-  /* ⛔ MENDATAR dan selebar isinya, bukan kolom `flex: 1`.
-     Bentuk kolom dirancang saat baris ini selebar panel keranjang; di bilah nav
-     ia duduk di samping tab yang tingginya 46px, dan kolom ikon-di-atas-label
-     akan menaikkan seluruh bilah — tinggi yang diambil dari grid. */
   flex: none;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 70px;
+  height: 44px;
+  padding: 0 var(--space-2);
   border-color: var(--border);
-  font-size: var(--text-caption);
-  /* ⛔ Task 1 kampanye "Hidupkan desain" (tinggi baris, PR 2A): SEBELUMNYA
-   * `--leading-tight` (1,2), bukan salah satu dari empat rasio mockup —
-   * G-LH (longgar) menolaknya. `--text-caption` di sini adalah `--text-small`
-   * (13px, lihat pengarahan di `lumi.css`), jadi `--leading-small` (1,4). */
-  line-height: var(--leading-small);
   white-space: nowrap;
+}
+
+.kasir-toolbar-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-small);
 }
 
 /* ⛔ Pembatas hanya pada baris PERTAMA blok ringkasan.

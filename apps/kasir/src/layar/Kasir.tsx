@@ -53,6 +53,7 @@ import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogNoSale } from '../komponen/DialogNoSale.tsx';
 import { DialogKasManual } from '../komponen/DialogKasManual.tsx';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
+import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
@@ -139,6 +140,10 @@ export function Kasir() {
      baris outlet terbaca. */
   const [ambangDiskon, setAmbangDiskon] = useState<AmbangDiskon>(AMBANG_DISKON_BAWAAN);
   const [dialogDiskon, setDialogDiskon] = useState(false);
+  /* Toolbar #1 — Item manual (P4(a), spec § 4 baris 1). Dialog, alasan yang
+     sama dengan Diskon/Kas manual: tidak punya keadaan yang berguna lewat
+     URL. */
+  const [dialogManual, setDialogManual] = useState(false);
   /* `ARCH:358` — kill switch per fitur per merchant. Dibaca dari perangkat,
      jadi ia tetap berlaku offline; fitur yang belum pernah disegarkan
      mengikuti bawaan kode dan tetap menyala. */
@@ -258,6 +263,17 @@ export function Kasir() {
      menyetujui membuat potongannya tumbuh melewati angka yang ia lihat, dan
      kasir harus mengetahuinya di sini, bukan setelah menekan Bayar. */
   const diskon = statusDiskon(subtotal, keranjang.diskon, ambangDiskon);
+  /* Toolbar — alasan Diskon NONAKTIF (Aturan tombol §4: nonaktif DENGAN
+     alasan, bukan hilang). `null` = Diskon aktif; string = teks yang
+     `aria-describedby` toolbar-diskon-alasan` rujuk. Dua sebab, dua kalimat —
+     kasir yang keranjangnya kosong dan kasir yang sesinya tidak dikenali
+     butuh instruksi yang berbeda. */
+  const alasanDiskonNonaktif =
+    keranjang.baris.length === 0
+      ? 'Keranjang kosong. Tidak ada yang bisa didiskon.'
+      : sesi === null
+        ? 'Sesi tidak dikenali. Masuk ulang untuk memberi diskon.'
+        : null;
 
   /* ⛔ Hook dipasang SEBELUM setiap `return` bersyarat di bawah — aturan hooks
      React. Penanganannya (`dipindai`) baru terdefinisi di bawah, jadi ia
@@ -329,7 +345,7 @@ export function Kasir() {
        diabaikan, dan scan di sana menambahkan produk ke keranjang di
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
-    aktif: pilihan === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas,
+    aktif: pilihan === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas && !dialogManual,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -536,12 +552,25 @@ export function Kasir() {
             bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
             keranjang.
 
-            ⛔ TIGA aksi, dan hanya tiga. Mockup menampilkan delapan; lima
-            sisanya nol kode di repo ini dan tiga di antaranya ada di daftar
-            "jangan bangun" v1.1. Tombol yang tidak melakukan apa-apa adalah
-            janji kepada kasir yang produk ini tidak dapat tepati. Task 5
-            membangun sisanya (spec § 4 "Toolbar kasir delapan tombol"). */}
+            ⛔ EMPAT aksi hari ini: dua TERPASANG mockup (Item manual, Diskon,
+            urutan `LABEL_TOOLBAR_MOCKUP` § 4) + dua SEMENTARA (Buka laci, Kas
+            masuk/keluar — tetap di sini sampai Task 4/Laci kas
+            mengeluarkannya, `tests/kasir-dom/k03-toolbar.test.js`). Empat
+            sisanya di mockup (Pajak, Catatan, Pelanggan, No. Meja, Batalkan,
+            Pesanan tahan) nol kode di repo ini; tombol yang tidak melakukan
+            apa-apa adalah janji kepada kasir yang produk ini tidak dapat
+            tepati — Task 5B/10/11/12 membangun sisanya (spec § 4 "Toolbar
+            kasir delapan tombol"). */}
         <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
+          {/* Item manual — P4(a), keputusan user (spec § 4 baris 1): dialog
+              masukan kode, bukan "barang custom" (keputusan produk tertunda,
+              `docs/RENCANA-HIDUPKAN-DESAIN.md`). Selalu ada: tidak ada kill
+              switch untuknya dan tidak bergantung pada isi keranjang. */}
+          <Tombol varian="ghost" onClick={() => setDialogManual(true)}>
+            <Icon name="plus" size={17} />
+            <span className="kasir-toolbar-label">Item manual</span>
+          </Tombol>
+
           {/* ⛔ `ghost`: aksi utama K-03 tetap Bayar. Diskon adalah pengurangan
               uang merchant dan tidak boleh terlihat seperti langkah biasa dalam
               setiap penjualan.
@@ -550,16 +579,30 @@ export function Kasir() {
               Tombol mati yang tetap terlihat mengundang kasir menekannya
               berulang lalu menelepon merchant support. Yang menegakkannya tetap
               `statusDiskon` di jalur penulisan — layar tidak pernah jadi
-              satu-satunya penjaga. */}
+              satu-satunya penjaga.
+
+              ⛔ Tombol yang TIDAK berlaku (keranjang kosong, atau sesi tidak
+              dikenali) tetap ADA, nonaktif DENGAN alasan (Aturan tombol §4) —
+              bukan hilang seperti kill switch di atas. `keterangan` menunjuk
+              teks alasan yang sungguh berubah menurut sebabnya, bukan satu
+              kalimat generik untuk kedua kasus. */}
           {fiturAktif(fitur, 'diskon_kasir') && (
             <Tombol
               varian="ghost"
               disabled={keranjang.baris.length === 0 || sesi === null}
+              keterangan={alasanDiskonNonaktif !== null ? 'toolbar-diskon-alasan' : undefined}
               onClick={() => setDialogDiskon(true)}
             >
-              <Icon name="tag" size={20} />
-              {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
+              <Icon name="calculator" size={17} />
+              <span className="kasir-toolbar-label">
+                {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
+              </span>
             </Tombol>
+          )}
+          {alasanDiskonNonaktif !== null && (
+            <span id="toolbar-diskon-alasan" className="sr-only">
+              {alasanDiskonNonaktif}
+            </span>
           )}
 
           {/* K-16 — Buka laci (no-sale). `IA:102` menempatkannya di menu ⋮, tapi
@@ -568,13 +611,22 @@ export function Kasir() {
               memegang shift, konfig, dan sesi — dan "maksimal 2 tap dari K-03"
               (`IA:104`) terpenuhi dengan satu.
 
+              ⛔ SEMENTARA (spec § 4 "Aturan tombol"): pindah ke layar Laci kas
+              begitu Task 4 selesai; sampai saat itu tetap di sini supaya
+              fungsinya tidak hilang dari kasir.
+
               ⛔ `ghost`, bukan `primary`: membuka laci adalah pola fraud paling
               dasar (`spec-d:229`); ia tidak boleh terlihat seperti langkah
               biasa. */}
           {fiturAktif(fitur, 'buka_laci_no_sale') && (
-            <Tombol varian="ghost" disabled={sesi === null} onClick={() => setBukaLaci(true)}>
-              <Icon name="register" size={20} />
-              Buka laci
+            <Tombol
+              varian="ghost"
+              disabled={sesi === null}
+              keterangan={sesi === null ? 'toolbar-sesi-alasan' : undefined}
+              onClick={() => setBukaLaci(true)}
+            >
+              <Icon name="register" size={17} />
+              <span className="kasir-toolbar-label">Buka laci</span>
             </Tombol>
           )}
 
@@ -582,11 +634,23 @@ export function Kasir() {
               switch tidak boleh menyentuh audit maupun menghentikan penjualan
               (`spec-f:369`), dan mematikan pencatatan kas berarti uang yang
               tetap keluar tanpa jejak, lalu muncul sebagai selisih yang menuduh
-              kasirnya. */}
-          <Tombol varian="ghost" disabled={sesi === null} onClick={() => setDialogKas(true)}>
-            <Icon name="swap" size={20} />
-            Kas masuk / keluar
+              kasirnya.
+
+              ⛔ SEMENTARA, alasan yang sama dengan Buka laci di atas. */}
+          <Tombol
+            varian="ghost"
+            disabled={sesi === null}
+            keterangan={sesi === null ? 'toolbar-sesi-alasan' : undefined}
+            onClick={() => setDialogKas(true)}
+          >
+            <Icon name="swap" size={17} />
+            <span className="kasir-toolbar-label">Kas masuk / keluar</span>
           </Tombol>
+          {sesi === null && (
+            <span id="toolbar-sesi-alasan" className="sr-only">
+              Sesi tidak dikenali. Masuk ulang untuk memakai aksi ini.
+            </span>
+          )}
         </div>
 
         {/* ⛔ Pencarian dan urutan berbagi SATU baris kontrol, 2 September 2026.
@@ -1175,6 +1239,10 @@ export function Kasir() {
             setDialogDiskon(false);
           }}
         />
+      )}
+
+      {dialogManual && (
+        <DialogKodeManual onKode={dipindai} onBatal={() => setDialogManual(false)} />
       )}
 
       {pilihan && (

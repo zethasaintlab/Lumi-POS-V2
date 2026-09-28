@@ -221,7 +221,7 @@ function idDariNama(nama: string): string {
   return 'item-' + nama.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function baris(itemId: string, nama: string, varian: string, harga: number): BarisItem {
+function baris(itemId: string, nama: string, varian: string, harga: number, barcode: string | null = null): BarisItem {
   return {
     item_id: itemId,
     item_name: nama,
@@ -233,10 +233,19 @@ function baris(itemId: string, nama: string, varian: string, harga: number): Bar
     variation_id: `${itemId}-v${varian}`,
     variation_name: varian,
     harga_dasar: harga,
-    barcode: null,
+    barcode,
     track_stock: 1,
   };
 }
+
+/** K-17/Item manual (Task 5) — SATU variation berbarcode di katalog `normal`.
+    Sebelum ini `barcode` selalu `null` di seluruh fixture galeri (tidak ada
+    satu pun tempat yang menguji jalur `cariBarcode` lewat DOM); tanpa baris
+    ini `tests/kasir-dom/k03-toolbar.test.js` tidak dapat membuktikan "kode
+    dikenal masuk lewat jalur scan" — ia hanya dapat membuktikan jalur kode
+    ASING. Nilainya bukan barcode nyata, sekadar ID stabil yang dijaga sama
+    persis dengan literal di test itu. */
+export const KODE_BARCODE_FIXTURE = '8992761111017';
 
 /** Baris `item` untuk sebuah skenario. */
 export function itemUntuk(skenario: NamaSkenario): BarisItem[] {
@@ -270,8 +279,11 @@ export function itemUntuk(skenario: NamaSkenario): BarisItem[] {
   }
 
   // normal · memuat · error · offline memakai katalog yang sama; yang berbeda
-  // adalah PERILAKU db-nya, bukan isinya.
-  return MENU.map(([n, v, h]) => baris(idDariNama(n), n, v, h));
+  // adalah PERILAKU db-nya, bukan isinya. "Kopi Tubruk ORIGEN" (satu
+  // variation, tanpa modifier) membawa `KODE_BARCODE_FIXTURE`.
+  return MENU.map(([n, v, h]) =>
+    baris(idDariNama(n), n, v, h, n === 'Kopi Tubruk ORIGEN' ? KODE_BARCODE_FIXTURE : null)
+  );
 }
 
 /* --------------------------------------------------------------- gambar -- */
