@@ -291,10 +291,22 @@
  * lolos. `.tabs-underline button` dan `.chip` diarahkan ke `--text-small` di
  * bagian "Kulit komponen" di bawah — keduanya ikut daftar ini karena
  * pengarahan UKURAN di sana tidak membawa `line-height`.
+ *
+ * ⛔ `.badge` DIKELUARKAN dari daftar ini — regresi Task 1, ditemukan dan
+ * diputuskan Task 3 (fix round 1, sub-proyek 2 PR 2A). `tests/kasir-dom/
+ * kulit-komponen.test.js` (Step 1, sub-proyek 1) mengukur tinggi lencana
+ * mockup ~27,5px TANPA tepi pada padding 4px atas+bawah dan `--text-small`
+ * (13px) — itu HANYA tercapai pada rasio 1,5 (13 × 1,5 + 8 = 27,5), bukan
+ * 1,4 milik Task 1 (13 × 1,4 + 8 = 26,2, angka yang persis penjaga itu ukur
+ * setelah Task 1). Penjaga mockup `kulit-komponen` (sub-proyek 1) MENANG
+ * atas Step 6 brief Task 1 untuk kelas ini — 1,5 tetap salah satu dari
+ * empat rasio sah G-LH (longgar), jadi tidak ada penjaga yang dilonggarkan.
+ * `.badge` karena itu jatuh ke `--leading-body` (1,5) bawaan `body`, SAMA
+ * seperti sebelum Task 1 — lihat komentar `body` di atas untuk alasan
+ * kenapa nilainya tidak disalin ulang di sini.
  */
 .label,
 .field-error,
-.badge,
 .shell-top,
 .sync,
 .table th,
