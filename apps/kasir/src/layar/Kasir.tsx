@@ -1124,7 +1124,7 @@ export function Kasir() {
                   aria-haspopup="dialog"
                   onClick={() => void bukaEdit(b)}
                 >
-                  <span className="kasir-baris-qty num">{tampilkanKuantitas(String(b.quantityMilli))}x</span>
+                  <span className="kasir-baris-qty num">{tampilkanKuantitas(String(b.quantityMilli))}×</span>
                   <span className="kasir-baris-isi">
                     <span className="t-body-md kasir-baris-nama">
                       {b.itemName}

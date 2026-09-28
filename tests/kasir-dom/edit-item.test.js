@@ -80,7 +80,7 @@ after(async () => {
 /**
  * `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`, `db-palsu.ts`),
  * tanpa menambah keadaan galeri baru. Empat baris keranjang bervariation NYATA
- * di katalog: Americano Hot (stok 2, qty 1), Cappuccino (ditandai HABIS, qty
+ * di katalog: Americano Hot (stok 3, dua baris masing-masing qty 1: polos dan Extra shot), Cappuccino (ditandai HABIS, qty
  * 2), Kopi Susu Gula Aren (Extra shot, qty 1) dan kembarannya tanpa
  * modifier (qty 1); stok TIDAK boleh negatif.
  */
@@ -175,15 +175,15 @@ test('⛔ + melewati stok ditolak dengan kalimat FR-E4, qty draf tidak naik', as
   const tulis0 = await baselineTulis(hal);
   await bukaEdit(hal, 'Americano');
   await hal.getByRole('button', { name: /^Tambah Americano/ }).click();
-  assert.equal(await qtyDraf(hal), '2', '+ pertama (stok 2, qty 1 → 2) harus diizinkan');
+  assert.equal(await qtyDraf(hal), '2', '+ pertama (stok 3; baris ini 1 → 2, baris lain 1: kumulatif 3) harus diizinkan');
   await hal.getByRole('button', { name: /^Tambah Americano/ }).click();
   const alert = await alertDialog(hal);
   assert.equal(
     alert,
-    'Americano tersisa 2. Tidak dapat menambah lagi.',
-    '+ melewati stok tetapi kalimat FR-E4 berangka tidak muncul (stok 2, tidak boleh negatif)'
+    'Americano tersisa 3. Tidak dapat menambah lagi.',
+    '+ melewati stok KUMULATIF (draf 3 + baris lain 1 = 4 > stok 3) tetapi kalimat FR-E4 berangka tidak muncul'
   );
-  assert.equal(await qtyDraf(hal), '2', 'qty draf naik melewati stok (3 > 2) — pemeriksaan FR-E4 dilewati');
+  assert.equal(await qtyDraf(hal), '2', 'qty draf naik melewati stok kumulatif (draf 3 + baris lain 1 > 3) — pemeriksaan FR-E4 dilewati');
   // Ditolak ≠ menulis: keranjang belum disentuh, Simpan belum ditekan.
   assert.equal(await jumlahTulis(hal), tulis0, 'penolakan stok menulis keranjang');
   await hal.close();
@@ -209,6 +209,7 @@ test('⛔ variation ditandai habis: + ditolak kalimat habis, − tetap bekerja',
 test('⛔ − di qty 1 → draf 0, tombol utama "Hapus dari keranjang" (danger), menekannya menghapus baris', async () => {
   const { hal } = await bukaK03({ editItem: true });
   const sebelum = (await barisTeks(hal)).length;
+  const americano0 = (await barisTeks(hal)).filter((t) => t.includes('Americano')).length;
   await bukaEdit(hal, 'Americano');
   assert.equal(await hal.getByRole('button', { name: 'Simpan', exact: true }).count(), 1);
   await hal.getByRole('button', { name: /^Hapus Americano/ }).click();
@@ -223,7 +224,7 @@ test('⛔ − di qty 1 → draf 0, tombol utama "Hapus dari keranjang" (danger),
   await hal.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Edit item"]'));
   const sesudah = await barisTeks(hal);
   assert.equal(sesudah.length, sebelum - 1, 'menekan "Hapus dari keranjang" tidak menghapus barisnya');
-  assert.ok(!sesudah.some((t) => t.includes('Americano')), 'baris Americano masih ada');
+  assert.equal(sesudah.filter((t) => t.includes('Americano')).length, americano0 - 1, 'baris Americano yang dihapus masih ada (atau baris kembarnya ikut terhapus)');
   await hal.close();
 });
 
@@ -285,7 +286,7 @@ test('Batal tidak mengubah keranjang; Simpan menerapkan qty + modifier dalam sat
   assert.equal(baris.quantityMilli, 2000, 'qty tersimpan bukan 2000');
   assert.deepEqual(baris.modifier.map((m) => m.id).sort(), ['m-oat', 'm-shot'], 'modifier tersimpan salah');
   const teks = (await barisTeks(hal)).find((t) => t.includes('Kopi Susu Gula Aren'));
-  assert.match(teks, /2x/, 'lencana qty tidak menjadi 2x');
+  assert.match(teks, /2×/, 'lencana qty tidak menjadi 2× (tanda kali, CLAUDE.md § format)');
   assert.match(teks, /Susu oat/, 'modifier baru tidak tampil di baris');
   await hal.close();
 });
@@ -362,14 +363,34 @@ test('⛔ melepas modifier hingga menyamai baris lain MENGGABUNG di layar, qty d
   const { hal } = await bukaK03({ editItem: true });
   const sebelum = (await barisTeks(hal)).filter((t) => t.includes('Kopi Susu Gula Aren'));
   assert.equal(sebelum.length, 2, 'fixture: harus ada baris bermodifier DAN kembarannya — penjaga hampa');
-  await bukaEdit(hal, 'Extra shot');
+  await bukaEdit(hal, /Kopi Susu Gula Aren[\s\S]*Extra shot/);
   await hal.getByRole('button', { name: /^Tambah Kopi Susu/ }).click(); // qty draf 2
   await hal.locator(DIALOG).getByLabel(/Extra shot/).uncheck();
   await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
   await hal.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Edit item"]'));
   const sesudah = (await barisTeks(hal)).filter((t) => t.includes('Kopi Susu Gula Aren'));
   assert.equal(sesudah.length, 1, 'dua baris identik tidak digabung — struk berbohong, refund per baris ambigu');
-  assert.match(sesudah[0], /3x/, `qty gabungan bukan 3 (draf 2 + kembaran 1): ${sesudah[0]}`);
+  assert.match(sesudah[0], /3×/, `qty gabungan bukan 3 (draf 2 + kembaran 1): ${sesudah[0]}`);
   assert.ok(!/Extra shot/.test(sesudah[0]), 'modifier yang dilepas masih tampil');
+  await hal.close();
+});
+
+test('⛔ + dihitung KUMULATIF lintas baris: baris lain variation yang sama ikut terhitung (FR-E4)', async () => {
+  const { hal } = await bukaK03({ editItem: true });
+  // Fixture: Americano Hot stok 3 terbagi dua baris (1 + 1). Baris polos naik 1 → 2 masih
+  // muat per baris (2 ≤ 3) DAN kumulatif (3 ≤ 3). Naik lagi: per baris 3 ≤ 3 (muat), kumulatif 4 > 3 (tidak).
+  const americano = (await barisTeks(hal)).filter((t) => t.includes('Americano'));
+  assert.equal(americano.length, 2, 'fixture: harus ada DUA baris Americano — penjaga hampa');
+  await bukaEdit(hal, 'Americano');
+  await hal.getByRole('button', { name: /^Tambah Americano/ }).click();
+  assert.equal(await qtyDraf(hal), '2');
+  await hal.getByRole('button', { name: /^Tambah Americano/ }).click();
+  const pesan = await alertDialog(hal);
+  assert.equal(
+    pesan,
+    'Americano tersisa 3. Tidak dapat menambah lagi.',
+    'stok kumulatif lintas baris tidak dihitung: + diterima padahal jumlah SEMUA baris Americano (draf 3 + baris lain 1) melewati stok 3 — pemeriksaan per baris meloloskan oversell'
+  );
+  assert.equal(await qtyDraf(hal), '2', 'qty draf naik melewati stok kumulatif');
   await hal.close();
 });

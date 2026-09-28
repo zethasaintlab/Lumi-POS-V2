@@ -5,7 +5,7 @@ import {
   gambarUntuk,
   itemUntuk,
   EDIT_VAR_HABIS,
-  EDIT_VAR_STOK_DUA,
+  EDIT_VAR_STOK_TERBATAS,
   keranjangDuaPuluh,
   keranjangEditItem,
   orderUntuk,
@@ -153,7 +153,7 @@ export interface OpsiDbPalsu {
   matikanFitur?: readonly string[];
   /** `[EKSPLORASI]` Task 6 — fixture Edit Item lewat `?editItem=1` (bukan
       keadaan galeri baru, alasan yang sama dengan `matikanFitur`): stok
-      dilacak dan TIDAK boleh negatif; Americano Hot stok 2, Cappuccino
+      dilacak dan TIDAK boleh negatif; Americano Hot stok 3 (dua baris: 1 + 1), Cappuccino
       ditandai habis; empat baris keranjang bervariation NYATA di katalog;
       semua item punya satu daftar modifier. Dibaca `edit-item.test.js`. */
   editItem?: boolean;
@@ -173,8 +173,8 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   const gerakStok = item.map((b, i) => ({
     variation_id: b.variation_id,
     delta: opsi.editItem
-      ? b.variation_id === EDIT_VAR_STOK_DUA
-        ? 2_000
+      ? b.variation_id === EDIT_VAR_STOK_TERBATAS
+        ? 3_000
         : 48_000
       : i % 11 === 3
         ? -2_000

@@ -165,15 +165,18 @@ export function keranjangDuaPuluh(): string {
 /* `[EKSPLORASI]` Task 6 — fixture Edit Item (`?editItem=1`, `db-palsu.ts`).
    Id variation MENUNJUK katalog `normal` (`baris()` → `${itemId}-v${varian}`);
    tanpa itu `lacakStok` tidak dapat ditemukan dan pemeriksaan stok tak berlaku. */
-export const EDIT_VAR_STOK_DUA = 'item-americano-vHot';
+export const EDIT_VAR_STOK_TERBATAS = 'item-americano-vHot';
 export const EDIT_VAR_HABIS = 'item-cappuccino-vRegular';
 export const EDIT_VAR_MODIFIER = 'item-kopi-susu-gula-aren-vRegular';
 
-/** Empat baris: stok 2 (qty 1), habis (qty 2), bermodifier Extra shot (qty 1), dan kembarannya tanpa modifier (qty 1). */
+/** Empat baris: stok 3 terbagi dua baris (1 + 1), habis (qty 2), bermodifier Extra shot (qty 1), dan kembarannya tanpa modifier (qty 1). */
 export function keranjangEditItem(): string {
   const dasar = { variationCount: 1, modifier: [] as unknown[] };
   const baris = [
-    { ...dasar, id: 'edit-stok', variationId: EDIT_VAR_STOK_DUA, itemName: 'Americano', variationName: 'Hot', unitPrice: 22000, quantityMilli: 1000 },
+    { ...dasar, id: 'edit-stok', variationId: EDIT_VAR_STOK_TERBATAS, itemName: 'Americano', variationName: 'Hot', unitPrice: 22000, quantityMilli: 1000 },
+    /* ⛔ Baris KEDUA variation bertok terbatas yang sama (modifier berbeda memisahkan baris, stoknya satu):
+       1 + 1 dari stok 3. + di salah satu baris harus dihitung KUMULATIF (FR-E4), bukan per baris. */
+    { ...dasar, id: 'edit-stok-shot', variationId: EDIT_VAR_STOK_TERBATAS, itemName: 'Americano', variationName: 'Hot', unitPrice: 22000, quantityMilli: 1000, modifier: [{ id: 'm-shot', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }] },
     { ...dasar, id: 'edit-habis', variationId: EDIT_VAR_HABIS, itemName: 'Cappuccino', variationName: 'Regular', unitPrice: 28000, quantityMilli: 2000 },
     {
       ...dasar,

@@ -387,7 +387,7 @@ async function keadaanKeranjang(hal) {
     total: document.querySelector('.kasir-total .num')?.textContent ?? null,
     // Lencana qty `2x` (Task 6: keranjang tanpa stepper).
     qty: [...document.querySelectorAll('.kasir-baris .kasir-baris-qty')].reduce(
-      (n, el) => n + Number((el.textContent ?? '0').replace('x', '').replace(',', '.')),
+      (n, el) => n + Number((el.textContent ?? '0').replace('×', '').replace(',', '.')),
       0
     ),
   }));

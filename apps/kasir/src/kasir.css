@@ -1279,6 +1279,7 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
+  /* 58 px = tinggi baris mockup `Cart`; tidak ada token untuk tinggi baris. */
   min-height: 58px;
   padding: var(--space-2) var(--space-1);
   border: 0;
@@ -1302,6 +1303,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* 36 px = kotak lencana mockup; tidak ada token ukuran ikon/lencana (--space-* berhenti di 32). */
   min-width: 36px;
   height: 36px;
   padding: 0 var(--space-1);
