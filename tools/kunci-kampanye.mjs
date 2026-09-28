@@ -4,10 +4,16 @@
 //   node tools/kunci-kampanye.mjs ambil    <pemilik>
 //   node tools/kunci-kampanye.mjs segarkan <pemilik>
 //   node tools/kunci-kampanye.mjs lepas    <pemilik>
+//   node tools/kunci-kampanye.mjs pastikan <pemilik>
 //   node tools/kunci-kampanye.mjs periksa  -
 //
 // Kode keluar: 0 berhasil / bebas · 3 dipegang pemilik lain · 4 kalah balapan
-// (coba lagi dari awal) · 5 bukan pemilik · 2 pemakaian salah.
+// (coba lagi dari awal) · 5 bukan pemilik · 6 kunci sendiri sudah basi ·
+// 2 pemakaian salah.
+//
+// ⛔ `pastikan` dijalankan SEBELUM SETIAP PUSH dan tidak menulis apa pun. Kunci
+// yang sudah diambil alih (5) atau basi (6) berarti berhenti tanpa push:
+// session lain mungkin sedang menulis branch yang sama.
 //
 // ⛔ Kuncinya satu branch di remote, `kampanye-kunci`, berisi satu berkas
 // `KUNCI.json`. Setiap perubahan adalah commit BARU di atas tip yang terbaca,
@@ -37,8 +43,8 @@ const TRACKING = `refs/remotes/${REMOTE}/${BRANCH}`;
 const VERCEL_JSON = JSON.stringify({ git: { deploymentEnabled: false } }, null, 2) + '\n';
 
 const [aksi, pemilik] = process.argv.slice(2);
-if (!['ambil', 'segarkan', 'lepas', 'periksa'].includes(aksi) || !pemilik) {
-  console.error('pakai: kunci-kampanye.mjs ambil|segarkan|lepas <pemilik> · periksa -');
+if (!['ambil', 'segarkan', 'lepas', 'pastikan', 'periksa'].includes(aksi) || !pemilik) {
+  console.error('pakai: kunci-kampanye.mjs ambil|segarkan|lepas|pastikan <pemilik> · periksa -');
   process.exit(2);
 }
 
@@ -114,6 +120,15 @@ if (aksi === 'ambil') {
 if (!aktif || keadaan.pemilik !== pemilik) {
   console.error(`bukan pemilik: ${ringkas}`);
   process.exit(5);
+}
+
+if (aksi === 'pastikan') {
+  if (!dipegang) {
+    console.error(`kunci sendiri sudah basi: ${ringkas}. Segarkan dulu; jangan push.`);
+    process.exit(6);
+  }
+  console.log(`masih dipegang: ${ringkas}`);
+  process.exit(0);
 }
 tulis(aksi === 'lepas' ? 'bebas' : 'aktif', `${aksi}: ${pemilik}`);
 console.log(`${aksi}: ${pemilik}`);
