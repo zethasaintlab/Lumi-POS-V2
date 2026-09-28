@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Tombol } from '../Tombol.tsx';
 
 /* Keypad 6 digit — dipakai K-01 (login) dan K-11 (otorisasi).
@@ -26,6 +27,12 @@ interface Props {
 }
 
 export function Keypad({ nilai, panjang, onUbah, nonaktif = false }: Props) {
+  /* G-TOMBOL-HIDUP: tombol nonaktif menunjuk teks alasan (`sr-only`, bukan
+     angka apa pun — PIN tidak boleh bocor lewat alasan). */
+  const idAlasan = useId();
+  const alasanMati = nonaktif
+    ? 'Keypad dimatikan sementara: terkunci atau sedang memeriksa PIN.'
+    : 'Belum ada angka untuk dihapus.';
   const tekan = (digit: string) => {
     if (nilai.length >= panjang) return;
     onUbah(nilai + digit);
@@ -44,25 +51,35 @@ export function Keypad({ nilai, panjang, onUbah, nonaktif = false }: Props) {
 
       <div className="kasir-keypad-grid">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
-          <Tombol key={d} kritis disabled={nonaktif} onClick={() => tekan(d)}>
+          <Tombol key={d} kritis disabled={nonaktif} keterangan={nonaktif ? idAlasan : undefined} onClick={() => tekan(d)}>
             {d}
           </Tombol>
         ))}
-        <Tombol varian="ghost" kritis disabled={nonaktif || nilai.length === 0} onClick={() => onUbah('')}>
+        <Tombol
+          varian="ghost"
+          kritis
+          disabled={nonaktif || nilai.length === 0}
+          keterangan={nonaktif || nilai.length === 0 ? idAlasan : undefined}
+          onClick={() => onUbah('')}
+        >
           Hapus
         </Tombol>
-        <Tombol kritis disabled={nonaktif} onClick={() => tekan('0')}>
+        <Tombol kritis disabled={nonaktif} keterangan={nonaktif ? idAlasan : undefined} onClick={() => tekan('0')}>
           0
         </Tombol>
         <Tombol
           varian="ghost"
           kritis
           disabled={nonaktif || nilai.length === 0}
+          keterangan={nonaktif || nilai.length === 0 ? idAlasan : undefined}
           onClick={() => onUbah(nilai.slice(0, -1))}
         >
           ←
         </Tombol>
       </div>
+      <span id={idAlasan} className="sr-only">
+        {alasanMati}
+      </span>
     </div>
   );
 }

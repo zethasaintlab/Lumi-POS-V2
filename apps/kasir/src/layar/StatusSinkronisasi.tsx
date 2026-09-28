@@ -330,10 +330,14 @@ export function StatusSinkronisasi() {
             varian="primary"
             disabled={!siapKirim || mengirim}
             title={siapKirim ? undefined : ALASAN_TAK_SIAP(terdaftar, jangkauan)}
+            keterangan={!siapKirim || mengirim ? 'sinkron-kirim-alasan' : undefined}
             onClick={cobaKirim}
           >
             {mengirim ? 'Mengirim…' : 'Coba kirim sekarang'}
           </Tombol>
+          <span id="sinkron-kirim-alasan" className="sr-only">
+            {mengirim ? 'Sedang mengirim.' : ALASAN_TAK_SIAP(terdaftar, jangkauan)}
+          </span>
           <Tombol varian="secondary" onClick={ekspor}>
             Ekspor darurat
           </Tombol>

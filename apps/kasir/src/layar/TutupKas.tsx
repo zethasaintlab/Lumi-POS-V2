@@ -546,10 +546,14 @@ export function TutupKas() {
           varian="ghost"
           kritis
           disabled={sibuk || hitunganTeks === ''}
+          keterangan={sibuk || hitunganTeks === '' ? 'tutupkas-hapus-alasan' : undefined}
           onClick={() => setHitunganTeks('')}
         >
           Hapus
         </Tombol>
+        <span id="tutupkas-hapus-alasan" className="sr-only">
+          {sibuk ? 'Sedang memproses hitungan.' : 'Belum ada angka hitungan untuk dihapus.'}
+        </span>
       </div>
 
       <Tombol
@@ -562,6 +566,7 @@ export function TutupKas() {
            KOSONG dan bentuk yang tidak dapat dibaca, dan keduanya sudah
            `null` di `bacaRupiah`. */
         disabled={sibuk || hitunganTidakSah}
+        keterangan={sibuk || hitunganTidakSah ? 'tutupkas-lanjut-alasan' : undefined}
         onClick={() => {
           setSibuk(true);
           /* ⛔ `konfig`, `sesi`, `idBaru`, dan `hlc` ikut supaya percobaan
@@ -589,6 +594,9 @@ export function TutupKas() {
       >
         Lanjut
       </Tombol>
+      <span id="tutupkas-lanjut-alasan" className="sr-only">
+        {sibuk ? 'Sedang memproses hitungan.' : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
+      </span>
     </div>
   );
 }

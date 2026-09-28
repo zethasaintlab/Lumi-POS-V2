@@ -286,9 +286,17 @@ export function Perangkat() {
           />
 
           <div className="row" style={{ gap: 'var(--space-3)' }}>
-            <Tombol varian="primary" disabled={!siapKirim(nilai)} onClick={simpan}>
+            <Tombol
+              varian="primary"
+              disabled={!siapKirim(nilai)}
+              keterangan={!siapKirim(nilai) ? 'perangkat-simpan-alasan' : undefined}
+              onClick={simpan}
+            >
               Simpan
             </Tombol>
+            <span id="perangkat-simpan-alasan" className="sr-only">
+              Lengkapi seluruh kolom perangkat dulu.
+            </span>
           </div>
         </div>
       </Card>
@@ -345,10 +353,14 @@ export function Perangkat() {
         <Tombol
           varian="primary"
           disabled={profilId === '' || profilId === tersimpanProfil}
+          keterangan={profilId === '' || profilId === tersimpanProfil ? 'perangkat-profil-alasan' : undefined}
           onClick={simpanProfil}
         >
           Simpan profil untuk perangkat ini
         </Tombol>
+        <span id="perangkat-profil-alasan" className="sr-only">
+          {profilId === '' ? 'Pilih profil printer dulu.' : 'Profil ini sudah tersimpan untuk perangkat ini.'}
+        </span>
       </div>
 
       {pesanProfilSimpan && <p className="t-caption">{pesanProfilSimpan}</p>}
@@ -378,9 +390,17 @@ export function Perangkat() {
           tersimpan dan masih dapat dicetak dari layar Detail Transaksi.
         </div>
         <div className="row" style={{ gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-          <Tombol varian="secondary" disabled={memproses || tertunda === 0} onClick={() => void prosesAntrean()}>
+          <Tombol
+            varian="secondary"
+            disabled={memproses || tertunda === 0}
+            keterangan={memproses || tertunda === 0 ? 'perangkat-cetak-alasan' : undefined}
+            onClick={() => void prosesAntrean()}
+          >
             {memproses ? 'Mencoba…' : 'Coba cetak lagi'}
           </Tombol>
+          <span id="perangkat-cetak-alasan" className="sr-only">
+            {memproses ? 'Sedang mencoba mencetak.' : 'Tidak ada struk yang menunggu dicetak.'}
+          </span>
         </div>
       </Card>
 

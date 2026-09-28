@@ -168,6 +168,7 @@ export function BukaShift() {
                 varian="ghost"
                 kritis
                 disabled={menyimpan || saldo === 0}
+                keterangan={menyimpan || saldo === 0 ? 'bukashift-hapus-alasan' : undefined}
                 onClick={() => {
                   setSaldo(0);
                   setGalat(null);
@@ -175,6 +176,9 @@ export function BukaShift() {
               >
                 Hapus
               </Tombol>
+              <span id="bukashift-hapus-alasan" className="sr-only">
+                {menyimpan ? 'Sedang menyimpan shift.' : 'Belum ada saldo awal untuk dihapus.'}
+              </span>
             </div>
           </div>
 
