@@ -18,6 +18,14 @@
 // gagal dicetak, transaksi tersimpan" (`CLAUDE.md` § F4) — dan K-07 tidak
 // pernah membacanya. Kegagalan cetak pertama tidak terlihat di mana pun.
 //
+// ⛔ Tinjauan menemukan CELAH PENJAGA (bukan CSS) pada bayangan `.dialog`:
+// versi sebelumnya hanya membandingkan `.dialog` dengan probe `var(--shadow-
+// modal)` — keduanya bisa SAMA-SAMA salah kalau `lumi.css` menyimpang dari
+// mockup, dan penjaga itu tidak pernah menyala. Sekarang nilai token itu
+// sendiri DIKUNCI ke `rgba(20,112,107,.2)` dan offset `0 18px 50px`, diurai
+// dari string komputasi (`color(srgb …)` ATAU `rgba(...)`), bukan lewat
+// kanvas — lihat komentar di `ukur()`.
+//
 // ## Prasyarat
 //
 //   npm run build:galeri
@@ -147,9 +155,69 @@ async function ukur(hal) {
       const b = getComputedStyle(e).backgroundColor;
       if (b !== 'rgba(0, 0, 0, 0)') { latarIkon = b; break; }
     }
+
+    /* ⛔ Uraikan `boxShadow` komputasi jadi warna + offset — dibaca dari
+       STRING SERIALISASI-nya sendiri (`color(srgb r g b / a)` ATAU
+       `rgba(r, g, b, a)`, keduanya ditangani), bukan lewat kanvas: mengisi
+       kanvas dengan warna beralfa rendah (0,2) lalu membaca `getImageData`
+       kembali MENGUANTISASI lewat penyimpanan premultiplied 8-bit — diukur
+       memberi [20,110,105] untuk warna [20,112,107,0.2], selisih 2/255,
+       DUA KALI lipat toleransi 1/255 yang diminta. `color(srgb …)` menulis
+       kanal sebagai pecahan 0–1 presisi penuh; mengalikannya balik ×255
+       tidak melalui kuantisasi apa pun. */
+    function uraiBayangan(str) {
+      const m = str.match(/^(.*?)\s+(-?[\d.]+px)\s+(-?[\d.]+px)\s+(-?[\d.]+px)(?:\s+(-?[\d.]+px))?$/);
+      if (!m) return { warnaMentah: str, offset: null, kanal: null };
+      const warna = m[1];
+      const offset = { x: m[2], y: m[3], blur: m[4], spread: m[5] ?? '0px' };
+      let mm = warna.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\s*\)$/);
+      if (mm) {
+        return {
+          warnaMentah: warna,
+          offset,
+          kanal: { r: parseFloat(mm[1]) * 255, g: parseFloat(mm[2]) * 255, b: parseFloat(mm[3]) * 255, a: mm[4] !== undefined ? parseFloat(mm[4]) : 1 },
+        };
+      }
+      mm = warna.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/);
+      if (mm) {
+        return {
+          warnaMentah: warna,
+          offset,
+          kanal: { r: parseFloat(mm[1]), g: parseFloat(mm[2]), b: parseFloat(mm[3]), a: mm[4] !== undefined ? parseFloat(mm[4]) : 1 },
+        };
+      }
+      return { warnaMentah: warna, offset, kanal: null };
+    }
+    const shadowModalStr = (() => {
+      const e = document.createElement('div');
+      e.style.boxShadow = 'var(--shadow-modal)';
+      document.body.appendChild(e);
+      const v = getComputedStyle(e).boxShadow;
+      e.remove();
+      return v;
+    })();
+
     return {
       panggung: Math.round(document.querySelector('.galeri-panggung > *').getBoundingClientRect().width),
       dialog: r(dialog),
+      /* ⛔ Keputusan user di gerbang visual, 27 September 2026: bayangan
+         `.dialog` mengikuti bayangan MODAL mockup persis
+         (`sumber/ui_kits/kasir/index.html:121` dan `ui_kits/backoffice/
+         index.html:141`, keduanya `shadow-[0_18px_50px_rgba(20,112,107,.2)]`
+         — rgba itu adalah `--primary` pada alfa 0,2), lewat token
+         `--shadow-modal` (`packages/ds/lumi.css`) — bukan lagi
+         `--shadow-raised` (Ronde perbaikan akhir sebelumnya, minor a), yang
+         benar dibanding literal bundle tapi bukan bayangan MODAL mockup.
+         Dibandingkan lewat elemen PROBE, bukan string literal yang bisa
+         berbeda format serialisasi. */
+      dialogShadow: getComputedStyle(dialog).boxShadow,
+      shadowModal: shadowModalStr,
+      /* ⛔ Nilai LITERAL mockup dikunci di sini, bukan hanya kesepakatan
+         `.dialog` dengan probe `--shadow-modal` (keduanya bisa SAMA-SAMA
+         salah bila `lumi.css` menyimpang dari mockup — sabotase membuktikan
+         gap ini: mengganti nilai token tetap membuat `dialogShadow ===
+         shadowModal` benar, penjaga di atas tidak pernah merah). */
+      shadowModalUkur: uraiBayangan(shadowModalStr),
       judul: [...dialog.querySelectorAll('h1,h2')].map((h) => h.textContent.trim()),
       latarIkon,
       latarKembalian: kembalian ? getComputedStyle(kembalian).backgroundColor : null,
@@ -186,6 +254,27 @@ for (const lebar of [1024, 1280]) {
        dengan tombol Transaksi Baru. */
     assert.match(u.token.accent, /^rgb/, 'token --accent tidak terbaca — penjaga DS #2 hampa');
     assert.notEqual(u.warnaAngka, u.token.accent, 'angka kembalian berwarna aksen — DS #2');
+    assert.equal(
+      u.dialogShadow,
+      u.shadowModal,
+      `bayangan .dialog ${u.dialogShadow} — harap var(--shadow-modal) (${u.shadowModal}), bayangan modal mockup`
+    );
+
+    /* ⛔ Nilai `--shadow-modal` DIKUNCI ke mockup (rgba(20,112,107,.2),
+       0 18px 50px), bukan hanya "sama dengan .dialog". `--primary` pada
+       alfa 0,2. Toleransi 1/255 RGB, 0,01 alfa — pembulatan serialisasi
+       `color(srgb …)`, bukan slack desain. */
+    const k = u.shadowModalUkur.kanal;
+    assert.ok(k, `--shadow-modal: warna tidak terurai dari ${JSON.stringify(u.shadowModalUkur)}`);
+    assert.ok(Math.abs(k.r - 20) <= 1, `--shadow-modal R ${k.r} — mockup 20 (rgba(20,112,107,.2))`);
+    assert.ok(Math.abs(k.g - 112) <= 1, `--shadow-modal G ${k.g} — mockup 112 (rgba(20,112,107,.2))`);
+    assert.ok(Math.abs(k.b - 107) <= 1, `--shadow-modal B ${k.b} — mockup 107 (rgba(20,112,107,.2))`);
+    assert.ok(Math.abs(k.a - 0.2) <= 0.01, `--shadow-modal alfa ${k.a} — mockup 0,2`);
+    assert.deepEqual(
+      u.shadowModalUkur.offset,
+      { x: '0px', y: '18px', blur: '50px', spread: '0px' },
+      `--shadow-modal offset ${JSON.stringify(u.shadowModalUkur.offset)} — mockup 0 18px 50px`
+    );
   });
 
   test(`⛔ ${lebar}: hasil cetak terbaca, Cetak ulang di kiri, Transaksi Baru 56 px di kanan`, async () => {

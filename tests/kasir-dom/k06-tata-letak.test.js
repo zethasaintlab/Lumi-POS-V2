@@ -175,8 +175,8 @@ for (const lebar of [1024, 1280]) {
     const u = await ukur(hal);
     await hal.close();
     assert.deepEqual(galat, []);
-    assert.equal(u.totalNilai, '32px/600', `nilai Total ${u.totalNilai} — mockup 32 px`);
-    assert.equal(u.totalLabel, '20px/500', `label Total ${u.totalLabel}`);
+    assert.equal(u.totalNilai, '32px/700', `nilai Total ${u.totalNilai} — mockup 32 px, bobot 700 (skala 32/20/15/13)`);
+    assert.equal(u.totalLabel, '20px/600', `label Total ${u.totalLabel} (skala 32/20/15/13)`);
     assert.ok(u.primer && u.primer.teks === 'Simpan Penjualan', 'aksi utama tidak ditemukan di blok aksi');
     assert.ok(u.primer.h >= 56, `aksi utama ${u.primer.h} px — 56 px (DS #3)`);
     assert.equal(u.primer.r, u.aksi.r, 'aksi utama tidak menempel di tepi kanan blok aksi');

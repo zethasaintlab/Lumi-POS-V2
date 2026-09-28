@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { ikonLumi } from '../../packages/ds/vite-ikon.ts';
 
 /**
  * Build TERPISAH untuk harness DOM K-06 — hanya untuk test, nol infrastruktur.
@@ -24,7 +25,11 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   root: __dirname,
   base: './',
-  plugins: [react()],
+  // `ikonLumi()` (Task 7) — alih impor INTERNAL `ds-bundle/components/**`
+  // ke set Lucide `packages/ds/ikon.tsx` (Task 6). Tidak disembunyikan
+  // (keputusan user 26 September 2026) — lihat `CLAUDE.md` § Aturan design
+  // system dan `packages/ds/README.md`.
+  plugins: [react(), ikonLumi()],
 
   build: {
     outDir: '../../dist-harness-k06',

@@ -59,37 +59,18 @@
   flex: none;
 }
 
-/* Merek di kiri topbar — kotak aksen berisi huruf pertama.
- *
- * ⛔ Nilainya DISALIN dari `AppShell` bundle (28px, radius 8, `--accent` di
- * atas `--on-accent`), bukan dipilih ulang. Dua merek yang ukurannya berbeda
- * antara kasir dan back-office terbaca sebagai dua produk, dan merchant yang
- * sama membuka keduanya. Nol nilai warna baru: kedua token sudah ada.
- *
- * `border-radius` 8px ditulis apa adanya karena `--radius-control` bernilai
- * lain dan yang dibutuhkan kotak merek, bukan kontrol. Itu satu-satunya angka
- * di blok ini yang bukan token, dan ia datang dari bundle.
+/* ⛔ `.kasir-merek`/`.kasir-wordmark` (kotak aksen 28px + huruf pertama)
+ * DIHAPUS Task 8, kampanye "Hidupkan desain" (26 September 2026) — bentuk
+ * merek kasir sekarang `<Wordmark/>` dari `ds` (`.wordmark`/`.wordmark-ikon`/
+ * `.wordmark-teks`, `packages/ds/lumi.css`), komponen SATU-SATUNYA yang juga
+ * dipakai `AppShell` back-office dan kedua layar masuk. Dua kelas layout
+ * lokal yang menyalin bentuk merek sendiri adalah tepat cacat yang
+ * `Wordmark` ada untuk mencegah — lihat komentar kepala `Wordmark.tsx`.
  */
-.kasir-merek {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: var(--weight-medium);
-  flex: none;
-}
 
-/* Wordmark dan identitas outlet · perangkat — SATU BARIS, bukan bertingkat.
- * Alasannya diukur, lihat komentar padding topbar di atas.
+/* Identitas outlet · perangkat — SATU BARIS dengan wordmark, bukan
+ * bertingkat. Alasannya diukur, lihat komentar padding topbar di atas.
  */
-.kasir-wordmark {
-  flex: none;
-  white-space: nowrap;
-}
-
 .kasir-wordmark-sub {
   color: var(--ink-muted);
   min-width: 0;
@@ -989,22 +970,16 @@
   gap: var(--space-2);
 }
 
-/* ⛔ `.kasir-chip` kini MODIFIER di atas `.chip` bundle. Kesalahan yang SAMA
- * dengan kartu produk, dibuat dua jam sebelumnya: bundle sudah mengirim chip
- * dengan keadaan tertekan yang PENUH teal (`aria-pressed="true"` →
- * `background: var(--accent)`), dan saya menulis versi sendiri yang hanya
- * menebalkan tepi. Yang tersisa di sini cuma warna kategori untuk chip yang
- * TIDAK aktif.
- *
- * Pembagian maknanya jadi bersih: teal = "ini yang sedang aktif" (warna AKSI),
- * warna kategori = "ini kelompok apa". Chip aktif kehilangan warna
- * kategorinya, dan itu benar — dua pesan berbeda tidak boleh berebut satu
- * tempat.
+/* ⛔ `.kasir-chip` (modifier "chip diwarnai kategori") DIHAPUS di sini,
+ * Task 9 Step 0, kampanye "Hidupkan desain" (26 September 2026, keputusan
+ * user). Chip saringan K-03 sekarang NETRAL apa adanya — tanpa modifier
+ * sama sekali: `.chip` bundle sudah cukup, dan `packages/ds/lumi.css`
+ * menimpa warna teks TIDAK aktifnya ke `--foreground` (mockup). Kelas dan
+ * markupnya sendiri sudah dilepas dari `Kasir.tsx`; baris ini hanya
+ * mencatat KENAPA tidak ada apa pun lagi di sini, supaya orang berikutnya
+ * tidak menulis ulang cacat yang sama (kesalahan yang SAMA dulu dibuat dua
+ * jam sebelumnya pada kartu produk — lihat riwayat `.kasir-kartu`).
  */
-.kasir-chip:not([aria-pressed='true']) {
-  border-color: var(--chip, var(--border));
-  color: var(--chip, var(--ink-muted));
-}
 
 .chip:active { transform: translateY(1px); }
 

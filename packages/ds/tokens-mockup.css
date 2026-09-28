@@ -1,0 +1,140 @@
+/*
+ * Token mockup — salinan persis `docs/referensi-visual/sumber/tokens/*.css`,
+ * digabung ke satu blok `:root`, tanpa `@import` (font Nunito Sans wajib
+ * di-self-host, kebijakan repo sejak F0) dan tanpa deklarasi `font-family`
+ * (dipasang lewat self-host di tempat lain, bukan token).
+ *
+ * Task 2-9 memakai token ini lewat `var()`. `tests/runtime/token-mockup.test.js`
+ * menjaga berkas ini tetap SAMA PERSIS dengan sumbernya, kecuali empat
+ * koreksi AA yang ditandai di bawah — penyimpangan itu SATU-SATUNYA yang sah
+ * (CLAUDE.md § Rebuild UI kasir, Global Constraints Task 1).
+ *
+ * ⛔ Jangan menambah, menghapus, atau menulis ulang token di sini tanpa
+ * menyalin sumbernya. Ini bukan tempat menyunting palet — palet milik
+ * `docs/referensi-visual/sumber/tokens/colors.css`.
+ */
+
+:root {
+  /* Core */
+  --background: #f0f6f7;
+  --foreground: #16282c;
+  --card: #ffffff;
+  --card-foreground: #16282c;
+  --primary: #14706b;
+  --primary-foreground: #ffffff;
+  --secondary: #f7fafb;
+  --secondary-foreground: #16282c;
+  --muted: #f7fafb;
+  --muted-foreground: #5e747a;
+  --accent: #14706b;
+  --accent-foreground: #ffffff;
+  --border: #e3ecee;
+  --ring: #14706b;
+
+  /* Accent derivatives */
+  --accent-hover: #0f5b57;
+  --accent-subtle: #d9edf0;
+  --surface-raised: #f7fafb;
+
+  /* Status - real states only, never decorative */
+  --status-success-bg: #dff3e4;
+  --status-success-text: #2c6b3f;
+  --status-info-bg: #d6eaf5;
+  --status-info-text: #1f5a7a;
+  --status-pending-bg: #edf2f3;
+  /* Koreksi AA: #5e747a → #5c7177 — kontras vs --status-pending-bg naik dari 4,37 ke 4,55 */
+  --status-pending-text: #5c7177;
+  --status-warning-bg: #fbf0d9;
+  --status-warning-text: #8a6520;
+  --status-danger-bg: #f9e1e1;
+  --status-danger-text: #9a3535;
+
+  /* Controls & forms */
+  --input-border: #c9dcdf;
+  --destructive: #b94747;
+  --destructive-hover: #a13d3d;
+  --ghost-foreground: #28565a;
+  --ghost-hover-bg: #e8f2f2;
+  --secondary-hover: #eff6f6;
+  --chip-hover-bg: #e0eeee;
+  --option-border: #d9e6e7;
+  --keypad-border: #d7e5e6;
+  --pin-inactive-bg: #dce7e8;
+
+  /* Secondary text & icons */
+  --muted-foreground-strong: #49666a;
+  --muted-foreground-strong-alt: #47666a;
+  /* Koreksi AA: #789194 → #5e7477 — kontras vs --background naik dari 3,06 ke 4,53 */
+  --sidebar-label: #5e7477;
+  /* Koreksi AA: #9ab4b5 → #789b9c — kontras vs --card naik dari 2,19 ke 3,01 (ambang ikon 3,0) */
+  --icon-muted: #789b9c;
+  --icon-muted-alt: #91b3b4;
+  --icon-muted-alt-2: #8eb1b1;
+
+  /* Image & dropzone states */
+  --dashed-border: #a9c9c8;
+  --dashed-border-strong: #b8d0d1;
+  --dashed-bg: #f7fbfb;
+  --dropzone-border: #b7d0d1;
+  --skeleton-bg: #e8f0f1;
+
+  /* Offline mode */
+  --offline-badge-bg: #fbf3d8;
+  --offline-badge-text: #876615;
+  --offline-banner-bg: #fff9e8;
+  --offline-banner-border: #e9dca8;
+  --offline-banner-text: #806215;
+
+  /* Other surfaces & dividers */
+  --card-outline: #e0eaeb;
+  --card-outline-hover: #9fc5c4;
+  --menu-hover-border: #a6c9c8;
+  --row-divider: #eef3f3;
+  --cart-divider: #c3dddc;
+  --panel-subtle-bg: #f8fbfb;
+  --avatar-bg: #d9eceb;
+  --chart-baseline: #dce8e9;
+  --progress-track: #e5eeee;
+  --step-inactive-bg: #e6eeef;
+  /* Koreksi AA: #7b9597 → #596f71 — kontras vs --step-inactive-bg naik dari 2,71 ke 4,53 */
+  --step-inactive-text: #596f71;
+  --guest-background: #fffdf9;
+  --guest-border: #e8eded;
+  --guest-card: #fffefb;
+  --switcher-bg: #1e292b;
+
+  /* Spacing - multiples of four only */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Shape - one system, never mixed */
+  --radius: 12px;          /* cards, panels, modals */
+  --radius-control: 10px;  /* buttons, inputs, selects, icon boxes */
+  --radius-pill: 999px;    /* status badges, category chips */
+
+  /* Touch targets - functional requirement, not preference */
+  --touch-min: 44px;       /* absolute minimum for anything pressable */
+  --touch-primary: 56px;   /* primary cashier actions: product cards, pay button, keypad, qty stepper */
+
+  /* Elevation - tinted with the product's teal, never pure black. Shadows only when they carry real hierarchy. */
+  --shadow-card: 0 1px 2px rgba(22, 40, 44, 0.04), 0 2px 8px rgba(22, 40, 44, 0.04);
+  --shadow-raised: 0 4px 16px rgba(22, 40, 44, 0.08);
+
+  /* Exactly four sizes. Never a fifth - fix hierarchy with weight or color instead. */
+  --text-display: 32px;   /* weight 700, line-height 1.15 - totals, change due, headline numbers */
+  --text-title: 20px;     /* weight 600, line-height 1.3 - screen titles, card titles */
+  --text-body: 15px;      /* weight 400 (600 for button labels), line-height 1.5 - body copy, table cells */
+  --text-small: 13px;     /* weight 400 (600 for table headers), line-height 1.4 - secondary labels, captions, timestamps */
+
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800; /* never on body text */
+
+  /* The only monospace use in the product: thermal receipt preview */
+  --font-mono: 'Courier New', ui-monospace, monospace;
+}

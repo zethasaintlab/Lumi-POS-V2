@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AppShell, EmptyState, Icon } from 'ds';
+import { useCallback, useEffect, useState, type ComponentProps } from 'react';
+import { AppShell, EmptyState, Icon, Wordmark } from 'ds';
 import 'ds/styles.css';
 // SETELAH `ds/styles.css`. Ia memberi jangkar tinggi yang `base.css` design
 // system tidak sediakan — lihat komentar di berkasnya.
@@ -63,29 +63,34 @@ import { DasborLayar } from './dasbor/Dasbor.tsx';
  * `ds-bundle` dinyatakan **final dan tidak boleh diubah** (`CLAUDE.md`), jadi
  * yang dilakukan bukan memperbaiki komponennya melainkan **tidak menyalakan
  * cabang yang melanggar**. Temuan selengkapnya di `AUDIT-APPSHELL.md`.
+ *
+ * ## `brand.logo` sekarang `<Wordmark/>`, bukan `LogoLumi` lokal
+ *
+ * Task 8 (kampanye "Hidupkan desain", keputusan user 26 September 2026)
+ * menggantikan `LogoLumi` — huruf pertama di kotak aksen, ditulis sendiri di
+ * berkas ini — dengan `<Wordmark/>` dari `ds`, komponen SATU-SATUNYA yang
+ * juga dirender `ShellKasir` kasir dan kedua layar masuk. `LogoLumi` sendiri
+ * tetap sah menurut aturan #6 (token, bukan piksel dipanggang), tapi bentuk
+ * merek yang ditulis sendiri per aplikasi adalah tepat cacat yang membuat dua
+ * "Lumi POS" terlihat berbeda di dua layar merchant yang sama — lihat
+ * komentar kepala `Wordmark.tsx`.
+ *
+ * ⛔ `Wordmark` sudah membawa teks "LumiPOS" sendiri (`.wordmark-teks`), dan
+ * `AppShell` bundle (vendor, tidak disunting) merender `brand.name` sebagai
+ * `<span>` KEDUA yang terpisah, TANPA SYARAT — memberi `name` yang sama akan
+ * menampilkannya DUA KALI berdampingan. `name` tetap diisi 'LumiPOS' (bukan
+ * dikosongkan, yang jatuh ke fallback bundle 'The Cafe by ORIGEN' lewat
+ * `||`), dan span keduanya DISEMBUNYIKAN lewat CSS —
+ * `.shell-brand > .wordmark + .t-body-md.truncate` di `packages/ds/lumi.css`.
+ *
+ * ⛔ Diverifikasi lewat pengukuran DOM manual (Playwright, dev server
+ * back-office) saat Task 8 ditulis — bukti dan langkahnya di laporan task,
+ * karena `apps/backoffice` tidak punya galeri/harness DOM di `test:kasir-dom`
+ * (itu khusus kasir) dan repo ini belum punya suite DOM back-office sama
+ * sekali. Membangun satu HANYA untuk penjaga ini adalah scope Task 8 yang
+ * tidak diminta brief — teks "LumiPOS" tepat sekali di `.shell-brand` dibaca
+ * langsung dari `AppShell.jsx` (§ di atas) dan diukur, tapi tidak dijaga CI.
  */
-
-function LogoLumi() {
-  // Hanya token. `--space-8` (32px), bukan 28px seperti fallback bawaan —
-  // 28 bukan anak tangga skala spasi mana pun, dan skala itu berbasis 4px.
-  return (
-    <span
-      style={{
-        width: 'var(--space-8)',
-        height: 'var(--space-8)',
-        borderRadius: 'var(--radius-control)',
-        background: 'var(--accent)',
-        color: 'var(--on-accent)',
-        display: 'grid',
-        placeItems: 'center',
-        fontWeight: 'var(--weight-bold)',
-        flex: 'none',
-      }}
-    >
-      L
-    </span>
-  );
-}
 
 /**
  * Penjaga rute.
@@ -227,12 +232,35 @@ function Terlindungi() {
      jaringan putus adalah kebohongan yang persis berlawanan dengan gunanya. */
   return (
     <AppShell
-      brand={{ name: 'Lumi POS', logo: <LogoLumi /> }}
+      brand={{ name: 'LumiPOS', logo: <Wordmark /> }}
       // `AppShell` mengetik `nav` sebagai array yang dapat diubah, sementara
       // `NAVIGASI` sengaja `readonly` — ia data tetap, dan komponen yang
       // menerimanya tidak berhak menyunting peta layar aplikasi. Disalin
       // dangkal di batas ini, bukan dilonggarkan tipenya di sumbernya.
-      nav={navigasi}
+      //
+      // ⛔ Cast `IconName` di batas ini (Task 6). `IconName` publik `ds`
+      // sekarang mencakup 50 nama kebab Lucide + 48 nama bundle (82 total);
+      // `AppShell` sendiri (vendor, `ds-bundle/` tidak disunting) masih
+      // mengetik `icon` dengan `IconName` LAMANYA SENDIRI (48 nama) dari
+      // `../forms/Icon.d.ts`. `NAVIGASI` hanya pernah memakai nama bundle
+      // lama (diuji `tests/backoffice/navigasi.test.js`, yang sejak Task 7
+      // membaca `iconNames` dari `packages/ds/ikon-peta.ts` — bukan lagi
+      // dari sumber `ds-bundle/components/forms/Icon.jsx`), jadi nilainya
+      // selalu ada di kedua himpunan — yang tidak sepakat cuma DEKLARASI
+      // tipenya, bukan nilainya.
+      //
+      // ⛔ Keamanan RUNTIME cast ini bergantung pada Task 7, bukan lagi
+      // hanya pada kebetulan nilai. `AppShell` merender ikonnya lewat
+      // komponen Icon dari `forms/Icon.jsx` BUNDEL secara internal — dan
+      // sejak `packages/ds/vite-ikon.ts` (`ikonLumi()`) mengalihkan impor itu ke
+      // `packages/ds/ikon.tsx`, ikon yang benar-benar dirender adalah node
+      // Lucide, set yang SAMA dengan `IconName` yang dicast di sini.
+      // Jaring pengamannya: config scan di `tests/runtime/
+      // ikon-lucide.test.js` (setiap config Vite memasang `ikonLumi()`) dan
+      // `tests/kasir-dom/ikon-bundle.test.js` (pengukuran DOM sungguhan,
+      // membuktikan komponen bundel merender node Lucide, bukan path
+      // bundel lama).
+      nav={navigasi as ComponentProps<typeof AppShell>['nav']}
       active={layar}
       onNavigate={setAktif}
       breadcrumb={grup && item ? [grup, item.label] : undefined}

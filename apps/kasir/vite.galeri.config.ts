@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { ikonLumi } from '../../packages/ds/vite-ikon.ts';
 
 /**
  * Build TERPISAH untuk galeri komponen — situs statis, nol infrastruktur.
@@ -30,7 +31,15 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   root: __dirname,
   base: './',
-  plugins: [react()],
+  // `ikonLumi()` (Task 7) — alih impor INTERNAL `ds-bundle/components/**`
+  // (Modal, AppShell, StatCard, SyncIndicator, Ticket, Stepper) dari
+  // `forms/Icon.jsx` bundel ke set Lucide `packages/ds/ikon.tsx` (Task 6).
+  // Galeri render KOMPONEN ASLI (§ kepala `Galeri.tsx`), termasuk
+  // `SyncIndicator` di `ShellKasir` — tanpa plugin ini, K-03 galeri
+  // menampilkan ikon bundel lama bersebelahan dengan ikon Lucide di
+  // tempat lain di layar yang sama. Tidak disembunyikan (keputusan user
+  // 26 September 2026) — lihat `CLAUDE.md` § Aturan design system.
+  plugins: [react(), ikonLumi()],
 
   build: {
     outDir: '../../dist-galeri',

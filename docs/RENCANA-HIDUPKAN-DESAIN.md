@@ -106,6 +106,10 @@ disetujui.
 
 Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaan yang wajar, diambil tanpa berhenti. User meninjau semuanya di gerbang berikutnya. Format satu baris per keputusan: apa · bawaan yang dipakai · alasan · cara membalik.
 
+- **Bobot 500 bundle dirender 600 di semua pemakainya** (sub-proyek 1, Task 4) · bawaan: `--weight-medium: var(--font-weight-semibold)` · alasan: mockup dan subset font tidak punya 500; selain `t-body-md` (keputusan user) ikut menebal `.label`, `.field-error`, `.sync`, `.tabs`, `.avatar`, `.shell-link` aktif, `.stepper span`, `.segmented button` aktif, `.btn`, chip kategori · cara membalik: timpa bobot per kelas di `packages/ds/lumi.css`, atau arahkan `--weight-medium` ke 400
+- **Kartu produk K-03 tanpa foto tetap bergradien tipis** (sub-proyek 1, Task 9) · bawaan: gradien `--surface` → `--surface-sunk` dari Task 2 dipertahankan, warna kategori dicabut · alasan: mockup `ProductCard.jsx` datar `--card`, tapi selisihnya ≤ 4% di tepi bawah kartu, tidak memakai warna baru, dan tata letak kartu K-03 milik sub-proyek 2 · cara membalik: hapus aturan gradien `.product-card` di bagian Kedalaman `packages/ds/lumi.css`; demo datar di halaman fondasi sudah menunjukkan versi mockup untuk dibandingkan
+  ⛔ **DIBALIK oleh user di gerbang visual, 27 September 2026.** Kartu produk K-03 tanpa foto kini FLAT `--card`, tanpa gradien — aturan `.product-card.kasir-kartu` dihapus dari bagian Kedalaman `packages/ds/lumi.css` (bundle sudah memakai `--surface`/`--accent-soft` sendiri untuk keadaan normal/hover/aktif). `tests/kasir-dom/kulit-komponen.test.js` Step 0 memeriksa `backgroundColor`/`backgroundImage` LANGSUNG pada kartu K-03 sungguhan, bukan hanya demo swatch.
+
 ## Kondisi berhenti
 
 - Test yang sudah ada merah dan sebabnya bukan perubahan kampanye ini
@@ -115,6 +119,14 @@ Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaa
 - BLOCKED dari implementer yang tidak dapat diselesaikan
 - Keadaan repo atau branch tidak seperti yang diharapkan
 
+## Utang yang dicatat
+
+- **`apps/hp` tanpa satu pun penjaga DOM** (keputusan user, 26 September 2026). `apps/hp` adalah aplikasi owner. Ia tidak masuk sub-proyek mana pun dan tidak punya layar di mockup; "Lumi-Order" di mockup adalah aplikasi pelanggan, bukan `apps/hp`. Fondasi desain mengubah tampilannya lewat token dan wordmark, dan buktinya hanya pengukuran dari dev server (`scrollWidth <= 390` di layar masuk), bukan test CI. Harness DOM-nya belum dibangun.
+- **Tinggi baris (spec § 5, 1,15/1,3/1,4) belum dikirim.** Skala teks final (32/20/15/13) dan bobotnya sudah benar (Task 4), tapi `packages/ds/lumi.css` tidak mendefinisikan `line-height` sama sekali untuk keempat token itu — elemen tetap memakai bawaan browser. Ditunda ke sub-proyek 2 karena tinggi baris mengubah tinggi elemen bertumpuk teks (judul kartu, label + nilai), dan itu menyentuh invarian tata letak K-03 (≥12 kartu tanpa scroll, IA:62) dan K-14 (tabel gagal ≥3 baris utuh) yang penjaganya hidup di sub-proyek 2, bukan di sini.
+- **Kulit `.shell-link` mockup belum diikuti.** `packages/ds/lumi.css` hanya menyentuh tinggi (`min-height: 44px`, target sentuh); warna TIDAK aktif (`--muted-foreground-strong`) dan latar hover (`--background`) masih bawaan bundle (`--ink-muted`/`--surface-alt`). Ditunda ke sub-proyek 3 — `.shell-link` dipakai navigasi sidebar back-office, layar yang sub-proyek 3 kerjakan, bukan token/kulit komponen generik milik sub-proyek 1.
+- **`.pita-kategori` di `lumi.css` kini CSS mati.** Task 9 Step 0 menghapus kelas dan markupnya dari `Kasir.tsx` (kartu produk K-03 tanpa foto jadi netral, tanpa warna kategori), tapi aturan `.pita-kategori { box-shadow: inset 3px 0 0 var(--chip, var(--border-strong)); }` di `lumi.css` sengaja tidak ikut dihapus — token `--kat-*` yang dipakainya masih dipakai `chip-kategori` back-office. Pembersihan `.pita-kategori` bersama `--kat-*` yang benar-benar tidak terpakai ditunda ke sub-proyek 2, bersama keputusan lain yang menyentuh markup K-03.
+- **Nama ganda `AppShell` disembunyikan CSS, belum ada penjaga CI** (Task 8, `--shell-brand > .wordmark + .t-body-md.truncate`). `AppShell` bundle merender `brand.logo` DAN `brand.name` sebagai teks terpisah tanpa syarat; span kedua disembunyikan lewat selektor CSS supaya nama "LumiPOS" tidak tampil dua kali di sidebar. Diperiksa manual di DOM saat Task 8, tapi belum ada test yang menegakkannya di CI — akan dijaga oleh harness DOM back-office sub-proyek 3, yang sudah membuka layar bersidebar untuk keperluan lain.
+
 ## Ledger
 
 Cerminan `.superpowers/sdd/progress.md`, diisi per task. Satu baris per task:
@@ -122,3 +134,15 @@ sub-proyek, task, status, commit, reviewer, sabotase.
 
 | Sub-proyek | Task | Status | Commit | Tinjauan | Sabotase |
 |---|---|---|---|---|---|
+| 1 Fondasi | Task 1 — token mockup + koreksi AA | selesai | `a0cf333` | Sonnet 5: bersih, 2 minor ditunda | implementer: 3/3 merah |
+| 1 Fondasi | Task 2 — pengarahan token bundle, halaman fondasi, nol hex | selesai | `133e966`, `d41a769`, `9fd0298` | Sonnet 5: bersih; tinjauan ulang putaran 1 bersih | implementer 3 sabotase; independen Opus 14 (6 celah ditutup di putaran 1, S9 diparkir) |
+| 1 Fondasi | Task 3 — Nunito Sans di-self-host | selesai | `0392513` | Sonnet 5: bersih, 2 minor ditunda | implementer: 2/2 merah; penjaga hampa `document.fonts.check()` ditemukan implementer dan diganti |
+| 1 Fondasi | Task 4 — skala 32/20/15/13, bobot mockup, `--t-metric` dihapus | selesai | `d53a6c0`, `9b1f4ff` | Sonnet 5: bersih, 1 minor ditunda | implementer: 1/1 merah; reviewer mengulang sabotase 12 px, merah di 8 layar |
+| 1 Fondasi | Task 5 — radius, bayangan, area sentuh tak terlihat + tidak bertumpuk | selesai | `5530f1c`, `0615b5a`, `981bdc6` | Sonnet 5: 1 Important (pembantu potong demo-only) ditutup putaran 1; tinjauan ulang putaran 2 bersih | implementer 2/2; independen Opus 14 (3 celah: elemen non-demo, keadaan keranjang penuh, sampel ±2 px — ditutup putaran 2) |
+| 1 Fondasi | Task 6 — set ikon Lucide 0.468.0 disalin, 50 mockup + 48 nama bundle | selesai | `2896a76` | Sonnet 5: bersih, 2 minor ditunda; 79 entri dicocokkan ulang byte demi byte dengan paket segar | implementer 1/1 merah (`circle-alert`) |
+| 1 Fondasi | Task 7 — plugin Vite `ikonLumi()` mengalihkan ikon internal bundel ke set Lucide | selesai | `365400f` | Sonnet 5: bersih, nol temuan; reviewer mengulang ketiga sabotase | implementer 3/3 merah (config tanpa plugin, pembaca langsung `Icon.jsx`, `resolveId` dimatikan) |
+| 1 Fondasi | Task 8 — wordmark LumiPOS di ketiga aplikasi | selesai | `15a5b1d` | Sonnet 5: bersih, 1 minor ditunda (nama ganda `AppShell` disembunyikan CSS, belum ada penjaga CI) | implementer 1/1 merah; reviewer mengulang sabotase, merah di 7 layar |
+| 1 Fondasi | Task 9 — kulit komponen, chip kategori netral | selesai | `edb828e` | Sonnet 5: bersih, 1 minor (narasi laporan); kontras alasan Bayar 4,94 | implementer: radius `.btn`, `.badge-neutral`, `.card` di bagian komponen, semua merah; reviewer mengulang ketiganya |
+| 1 Fondasi | Task 10 — dokumen mengikuti keputusan kampanye | selesai | `fb4c4b1` + perbaikan urutan otoritas | Sonnet 5: 1 Important (urutan otoritas `CLAUDE.md` masih menaruh token di atas mockup), ditutup controller | — (dokumen; `test:runtime` 50/50) |
+| 1 Fondasi | Tinjauan akhir satu branch | selesai | `1c12669`..`400e622`, `4dc7c88` | Opus 5.5: FIXES_REQUIRED (3 Important: penjaga token buta tambahan, chip K-03 belum ikut mockup, lencana bertepi) → ditutup; tinjauan ulang Opus: READY_FOR_PR | Opus mengulang sabotase ketiga Important; celah aturan bersarang di `:root` ditutup controller (penjaga lama hijau, baru merah) |
+| 1 Fondasi | Gerbang visual putaran 1 (chip 36/12 + `.sentuh`, kartu flat, bayangan modal) | selesai, menunggu persetujuan user | `c6178ca`..`e1c951c`, `812db10` | Opus 5.5: FIXES_REQUIRED (2 Important: tumpang-tindih area sentuh chip tak dijaga CI, nilai `--shadow-modal` tak dipaku) → ditutup `812db10` (`k03-area-chip.test.js`, k07 memaku rgba(20,112,107,.2) 0 18px 50px) | Tampilan terukur benar di peramban; bobot 600 (poin 3) menunggu pilihan user |

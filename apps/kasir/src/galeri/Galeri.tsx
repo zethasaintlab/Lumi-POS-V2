@@ -20,6 +20,7 @@ import { BukaShift } from '../layar/BukaShift.tsx';
 import { DetailTransaksi } from '../layar/DetailTransaksi.tsx';
 import { buatDbPalsu, perangkatTerdaftarUntuk } from './db-palsu.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
+import { Fondasi } from './Fondasi.tsx';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
 
 /**
@@ -96,6 +97,11 @@ const LAYAR = [
      dengan MEMBACA, dan tidak satu pun test yang ada dapat melihatnya. */
   { id: 'K-14', nama: 'Status sinkronisasi', render: () => <StatusSinkronisasi /> },
   { id: 'K-15', nama: 'Perangkat', render: () => <Perangkat /> },
+  /* ⛔ TANPA shell, sama alasannya dengan K-01: halaman ini BUKAN layar
+     produk — ia dokumentasi token, dan bilah nav kasir di sekelilingnya
+     hanya akan membuat orang mengira token ada di layar yang sedang
+     ditampilkan. Lihat `Fondasi.tsx` § kenapa ini ada. */
+  { id: 'fondasi', nama: 'Fondasi desain', render: () => <Fondasi />, tanpaShell: true },
 ] as const;
 
 /**

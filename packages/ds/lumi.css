@@ -21,15 +21,178 @@
  * tidak menuntut menyalin seluruh markup dialognya.
  */
 
-/* --- Skala teks final: LIMA token, bukan tujuh ------------------------------
+/* --- Pengarahan nama bundle → nilai mockup ---------------------------------
  *
- * Keputusan user 31 Agustus 2026 ("Opsi A"): empat token inti yang bebas
- * dipakai di mana saja, plus token KHUSUS yang hanya sah di konteks yang
- * disebut namanya. Rencananya dua token khusus; yang bertahan SATU, karena
- * yang kedua tidak punya kasus pakai nyata di layar yang sudah ada dan
- * instruksinya jelas: *"Jangan mengarang kebutuhan untuk mengisi slot."*
+ * ⛔ Kampanye "Hidupkan desain" (`docs/RENCANA-HIDUPKAN-DESAIN.md`): untuk
+ * TAMPILAN, mockup adalah sumber kebenaran. `packages/ds/tokens-mockup.css`
+ * (Task 1) memuat token mockup di bawah NAMA MOCKUP-nya sendiri
+ * (`--primary`, `--foreground`, `--card`, …), diimpor di `styles.css` SETELAH
+ * token bundle dan SEBELUM `base.css`/`components.css` — itu yang membuat
+ * `--accent`, `--accent-hover`, dan `--border` (nama yang bertabrakan dengan
+ * bundle) langsung bernilai mockup tanpa satu baris pun di sini.
  *
- * Tabel pemetaan lengkap tujuh token bundle → lima ada di `CLAUDE.md`.
+ * Blok ini mengarahkan token BUNDLE yang TIDAK bertabrakan nama ke token
+ * mockup padanannya, supaya setiap komponen bundle yang memakai `var(--surface)`,
+ * `var(--ink)`, dst mengikuti mockup tanpa satu pun kelasnya disentuh. Tabel
+ * sumbernya `docs/superpowers/specs/2026-09-26-fondasi-desain-design.md` § 3.
+ *
+ * Hanya WARNA yang diarahkan di sini. Typografi, bobot, radius, bayangan,
+ * font, dan ikon adalah milik task-task berikutnya di kampanye yang sama.
+ *
+ * ⛔ Tabrakan nama, dinyatakan supaya tidak dibaca sebagai kebetulan:
+ * `--accent`, `--accent-hover`, `--border` ada di KEDUA berkas dengan arti
+ * berbeda. `--accent` mockup bernilai sama dengan `--primary`, jadi menulis
+ * `--accent: var(--primary)` di sini tidak mengubah artinya — ia dokumentasi,
+ * bukan perbaikan. Nilai yang menang di peramban WAJIB diukur
+ * (`getComputedStyle`), tidak disimpulkan dari urutan berkas.
+ *
+ * ⛔ `--accent-hover` dan `--border` SENGAJA TIDAK ditulis ulang di blok
+ * `:root` di bawah. Keduanya nama yang SAMA PERSIS di mockup dan bundle;
+ * menulis `--accent-hover: var(--accent-hover);` di sini adalah referensi
+ * SIRKULER pada custom property yang sama, dan CSS menjawabnya dengan
+ * "guaranteed-invalid value" — persis kebalikan dari yang diinginkan. Nilai
+ * mockup sudah menang untuk keduanya lewat URUTAN `@import` di `styles.css`
+ * (tokens-mockup.css sesudah token bundle): baris `:root` yang datang
+ * belakangan menang pada spesifisitas yang sama, sebelum `lumi.css` ini
+ * bahkan dimuat.
+ */
+/* --- Font: Nunito Sans, bukan Inter -----------------------------------------
+ *
+ * ⛔ Task 3, kampanye "Hidupkan desain" (26 September 2026). Font adalah nilai
+ * MOCKUP (`docs/RENCANA-HIDUPKAN-DESAIN.md`), dan Nunito Sans di-self-host
+ * sesuai kebijakan repo sejak F0 (`CLAUDE.md`).
+ *
+ * `ds-bundle/tokens/typography.css` (VENDOR, tidak pernah disunting)
+ * mendefinisikan `--font-sans: 'Inter', system-ui, -apple-system, sans-serif;`.
+ * Baris di bawah menang karena `lumi.css` diimpor PALING AKHIR di
+ * `styles.css` — spesifisitas sama, deklarasi belakangan menang. Nilai efektif
+ * di peramban WAJIB diukur (`getComputedStyle(body).fontFamily`), bukan
+ * disimpulkan dari urutan berkas — lihat `tests/kasir-dom/font.test.js`.
+ *
+ * Berkas font (bobot 400/600/700/800) diimpor di `packages/ds/styles.css`.
+ * Nama family di sini HARUS sepakat dengan nama `font-family` di keempat
+ * `@font-face` itu, kalau tidak stylesheet-nya termuat tanpa satu elemen pun
+ * memakainya.
+ */
+:root { --font-sans: 'Nunito Sans', system-ui, sans-serif; }
+
+:root {
+  --accent:        var(--primary);
+  --accent-soft:   var(--accent-subtle);
+  --accent-border: var(--card-outline-hover);
+  --on-accent:     var(--primary-foreground);
+
+  --ink:           var(--foreground);
+  --ink-muted:     var(--muted-foreground);
+  --ink-subtle:    var(--muted-foreground);
+
+  --surface:       var(--card);
+  --surface-sunk:  var(--background);
+  --surface-alt:   var(--secondary);
+
+  --border-strong: var(--input-border);
+
+  --success:      var(--status-success-text);
+  --success-soft: var(--status-success-bg);
+  --danger:       var(--status-danger-text);
+  --danger-soft:  var(--status-danger-bg);
+  --warning:      var(--status-warning-text);
+  --warning-soft: var(--status-warning-bg);
+  --info:         var(--status-info-text);
+  --info-soft:    var(--status-info-bg);
+}
+
+/* Token bundle TANPA padanan di mockup — nilai bundle dipertahankan apa
+   adanya, tidak disentuh oleh pengarahan ini:
+     --success-border, --danger-border, --warning-border, --info-border,
+     --violet, --violet-soft, --violet-border */
+
+/* --- Radius, bayangan, target sentuh: nilai MOCKUP -------------------------
+ *
+ * Task 5, kampanye "Hidupkan desain" (26 September 2026). Spec § 6
+ * (`docs/superpowers/specs/2026-09-26-fondasi-desain-design.md`).
+ *
+ * Tiga nama BUNDLE tanpa padanan nama di mockup, diarahkan eksplisit — pola
+ * yang sama dengan blok warna di atas:
+ *   - `--radius-card` (bundle, dipakai `.card`/`.stat`/`.ticket`/`.dialog`)
+ *     → `var(--radius)` (mockup, 12px: "cards, panels, modals"). Nilainya
+ *     kebetulan SAMA (12px di kedua berkas); yang berubah adalah SUMBER
+ *     kebenarannya, bukan angkanya.
+ *   - `--shadow-sheet` didefinisikan bundle tapi TIDAK dipakai satu pun
+ *     kelas komponen — `.dialog` hardcode bayangannya sendiri secara
+ *     LITERAL (`0 12px 48px rgba(20,17,15,.24)`), bukan `var(--shadow-sheet)`
+ *     (diverifikasi lewat `grep` atas `ds-bundle/components.css`; komentar
+ *     ini sempat mengklaim sebaliknya — diperbaiki, ronde tinjauan akhir).
+ *     Redirect di sini dipertahankan untuk komponen bottom-sheet yang
+ *     belum dibangun (`readme.md` bundle menyebutnya, tapi belum ada kelas
+ *     untuknya); `.dialog` diarahkan LANGSUNG di § Kulit komponen ke
+ *     `var(--shadow-raised)` — mockup hanya punya DUA token bayangan
+ *     (`--shadow-card`, `--shadow-raised`), dan permukaan yang terangkat
+ *     dari latar adalah satu-satunya yang cocok untuk modal.
+ *   - `--touch-critical` (bundle 56px, dipakai `.btn-critical`/`.field-lg`)
+ *     → `var(--touch-primary)` (mockup, 56px: "primary cashier actions").
+ *     Nilainya juga kebetulan sama (56px keduanya) — alasan yang sama dengan
+ *     `--radius-card`.
+ *
+ * ⛔ Dua nama LAIN BERTABRAKAN dan SENGAJA TIDAK ditulis ulang di sini —
+ * alasan yang sama persis dengan `--accent-hover`/`--border` di atas: menulis
+ * ulang nama yang IDENTIK di kedua berkas adalah referensi sirkuler pada
+ * custom property yang sama. `tokens-mockup.css` menang lewat URUTAN
+ * `@import` (sesudah token bundle, sebelum `lumi.css`):
+ *   - `--radius-control` — bundle 8px, mockup 10px. Mockup MENANG (beda
+ *     angka, jadi ini satu-satunya cara memverifikasinya BUKAN kebetulan).
+ *   - `--shadow-card` — kedua berkas mendefinisikannya (bentuk berbeda,
+ *     rona berbeda). Mockup MENANG.
+ * Nilai efektif WAJIB diukur (`getComputedStyle`), bukan disimpulkan dari
+ * urutan berkas — lihat halaman `bentuk` galeri (`?layar=fondasi`) dan
+ * `tests/kasir-dom/area-sentuh.test.js`.
+ *
+ * ⛔ `--shadow-modal` — token BARU, keputusan user di gerbang visual, 27
+ * September 2026. `.dialog` sempat diarahkan ke `var(--shadow-raised)`
+ * (Ronde perbaikan akhir sebelumnya, § Kulit komponen di bawah) — benar
+ * dibanding literal bundle, tapi BUKAN bayangan MODAL mockup: modal kasir
+ * (`sumber/ui_kits/kasir/index.html:121`) dan modal back-office
+ * (`sumber/ui_kits/backoffice/index.html:141`) sama-sama memakai
+ * `shadow-[0_18px_50px_rgba(20,112,107,.2)]`, dan mockup tidak punya token
+ * untuk nilai itu sama sekali — jadi `tokens-mockup.css` (yang HANYA
+ * menyalin sumber apa adanya, dijaga `tests/runtime/token-mockup.test.js`)
+ * bukan tempatnya; token BARU ini didefinisikan di sini.
+ *
+ * `rgba(20,112,107)` adalah `--primary` (`#14706b`) mentah — DIVERIFIKASI,
+ * bukan kebetulan warna mirip. Nilainya karena itu disusun dari
+ * `color-mix()` atas `--primary`, bukan hex baru yang diketik ulang:
+ * `color-mix(in srgb, var(--primary) 20%, transparent)` mencampur 20%
+ * `--primary` (alfa 1) dengan 80% transparan, dan karena RGB "transparent"
+ * tidak menyumbang apa pun ke channel warna hasil (alfa-nya nol), hasilnya
+ * SAMA PERSIS dengan `rgba(20, 112, 107, 0.2)` — RGB dari `--primary` apa
+ * adanya, alfa 0,2 dari bobot campurannya. PALET tidak disentuh (aturan DS
+ * #8 pelonggaran): tidak ada satu nilai warna baru, hanya alfa atas warna
+ * yang sudah ada.
+ */
+:root {
+  --radius-card:    var(--radius);
+  --shadow-sheet:   var(--shadow-raised);
+  --touch-critical: var(--touch-primary);
+  --shadow-modal:   0 18px 50px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* --- Skala teks final: EMPAT token, 32/20/15/13 ------------------------------
+ *
+ * ⛔ Task 4, kampanye "Hidupkan desain" (26 September 2026). Keputusan user
+ * 31 Agustus 2026 ("Opsi A") sempat bertahan pada LIMA token — empat inti
+ * bebas dipakai di mana saja, plus SATU token khusus (`--t-metric`) untuk
+ * angka KPI kartu dasbor B-01. Spec § 5 (`docs/superpowers/specs/
+ * 2026-09-26-fondasi-desain-design.md`) MENGHAPUS token khusus itu: angka
+ * KPI di mockup memakai ukuran DISPLAY yang sama dengan total/kembalian di
+ * kasir (32px bobot 700) — bukan ukuran kelima. Skala final kembali murni
+ * EMPAT: `--text-display` 32 · `--text-title` 20 · `--text-body` 15 ·
+ * `--text-small` 13.
+ *
+ * ⛔ `--t-metric` DIHAPUS di sini, bukan diarahkan ulang atau dipertahankan
+ * sebagai alias. `.stat .t-title-lg` (di bawah) mengikat LANGSUNG ke
+ * `var(--text-display)`.
+ *
+ * Tabel pemetaan lengkap tujuh token bundle → empat ada di `CLAUDE.md`.
  *
  * ⛔ `ds-bundle/tokens/typography.css` TIDAK disunting — ia artefak vendor.
  * Token bundle yang tidak punya tujuan setelah pemetaan karena itu tidak dapat
@@ -37,39 +200,309 @@
  * dilarang" supaya orang berikutnya tahu itu disengaja, bukan terlewat.
  */
 
-/* ⛔ Empat token INTI sengaja TIDAK didefinisikan ulang di sini.
+/* ⛔ `--text-display`/`--text-title`/`--text-body` sengaja TIDAK didefinisikan
+ * ulang di sini — ketiganya BERTABRAKAN NAMA dengan mockup
+ * (`tokens-mockup.css`) dan sudah menang lewat URUTAN `@import`
+ * (`tokens-mockup.css` sesudah token bundle, sebelum `lumi.css`), persis
+ * seperti `--accent`/`--accent-hover`/`--border` di blok pengarahan warna di
+ * atas. Menyalin nilainya ke sini menciptakan tempat KEDUA yang memutuskan
+ * ukuran teks, yang akan menyimpang pada pembaruan bundle berikutnya tanpa
+ * satu pun error.
  *
- * Nilainya (32/20/15/12) sudah benar di bundle, dan menyalinnya ke berkas ini
- * menciptakan tempat KEDUA yang memutuskan ukuran teks — dua angka untuk satu
- * pertanyaan, yang akan menyimpang pada pembaruan bundle berikutnya tanpa satu
- * pun error. Yang berkas ini tambahkan hanya yang bundle tidak punya.
+ * `--text-small` (mockup, 13px) BERBEDA: bundle tidak punya token bernama
+ * itu — bundle punya `--text-caption` (12px), nama LAIN untuk peran yang
+ * sama. Redirect di bawah adalah yang membuat `--text-caption`, dan karena
+ * itu kelas `.t-caption` bundle, mengikuti nilai mockup.
  */
-
 :root {
-  /* Angka metrik besar di kartu dasbor B-01. HANYA angka, bukan labelnya.
+  --text-caption: var(--text-small);
+
+  /* Bobot bundle diarahkan ke bobot mockup. Mockup tidak punya bobot 500 —
+   * hanya 400/600/700/800 (subset Nunito Sans yang dimuat, Task 3, juga
+   * tidak) — jadi `--weight-medium` (500 di bundle) dan `--weight-bold`
+   * (600 di bundle) TIDAK bisa diarahkan ke nilai yang sama artinya, hanya
+   * ke bobot mockup TERDEKAT yang perannya cocok: judul (600) dan display
+   * (700).
    *
-   * Ia bukan token karangan: `StatCard` bundle sudah merender nilainya pada
-   * 24px lewat kelas `t-title-lg`, dan B-01 memakai tiga di antaranya. Jadi
-   * ukuran kelima ini SUDAH ada di layar sejak dasbor lahir — yang belum ada
-   * adalah namanya dan batas tempat ia boleh muncul.
-   *
-   * ⛔ Nilainya `var(--text-title-lg)`, bukan `24px` yang diketik ulang.
-   * Angka yang disalin akan menyimpang dari bundle diam-diam; alias tidak
-   * dapat.
+   * ⛔ Konsekuensinya dinyatakan (spec § 5): kelas `.btn`/`.chip-kategori`
+   * bundle yang sudah memakai `var(--weight-medium)` untuk label tombol
+   * ikut merender 600 tanpa satu baris pun disentuh di sini — itu YANG
+   * DIMAKSUD ("body 400, 600 label tombol"), bukan efek samping. Begitu
+   * juga `t-body-md` (dipakai luas di kasir untuk teks body yang
+   * ditekankan): ia ikut merender 600, keputusan yang dinilai di gerbang
+   * visual, bukan dihindari di sini.
    */
-  --t-metric: var(--text-title-lg);
+  --weight-medium: var(--font-weight-semibold);
+  --weight-bold:   var(--font-weight-bold);
 }
 
-/* ⛔ Batasnya DITEGAKKAN di sini, bukan diserahkan pada disiplin.
+/* ⛔ Angka KPI kartu dasbor B-01 — ukuran DISPLAY, bukan token khusus.
  *
- * `--t-metric` hanya berlaku di dalam `.stat` — kartu KPI dasbor. Kelas
- * `t-title-lg` yang ditulis di luar sana tetap mendapat nilai bundle, dan
- * lint (`ds-adherence`) menolaknya di seluruh `apps/` dan `packages/`.
+ * `StatCard` bundle sudah merender nilainya lewat kelas `t-title-lg`; yang
+ * diikat di sini adalah UKURANNYA, ke `var(--text-display)` — bukan angka
+ * `32px` yang diketik ulang, yang akan menyimpang dari mockup diam-diam.
  *
- * Layar KASIR tidak boleh memakainya sama sekali, dan itu benar menurut
- * KONSTRUKSI: tidak ada satu pun `.stat` di `apps/kasir`.
+ * Selektor tetap `.stat .t-title-lg`, bukan `.t-title-lg` telanjang: kelas
+ * itu yang menegakkan batasnya (lint `ds-adherence` melarang `t-title-lg`
+ * ditulis sendiri di `apps/`/`packages/`), dan layar KASIR tidak memakainya
+ * sama sekali — benar menurut KONSTRUKSI, tidak ada satu pun `.stat` di
+ * `apps/kasir`.
  */
-.stat .t-title-lg { font-size: var(--t-metric); }
+.stat .t-title-lg { font-size: var(--text-display); }
+
+/* --- Wordmark "LumiPOS" (Task 8, kampanye "Hidupkan desain") ---------------
+ *
+ * Keputusan user 26 September 2026 (spec § 8) menggantikan aturan lama "logo,
+ * nama 'Lumi POS' tidak disentuh". Satu komponen, `packages/ds/Wordmark.tsx`,
+ * dipakai di ShellKasir, `AppShell.brand` back-office, dan kedua layar
+ * masuk. Markup mengikuti kepala `sumber/ui_kits/kasir/index.html`.
+ *
+ * Kotak ikon 36×36: DISUSUN dari token spasi (`--space-8` 32 + `--space-1` 4),
+ * bukan `36px` yang diketik ulang — komposisi ini yang membuat 36 di sini
+ * tetap anak tangga skala spasi 4px, bukan ukuran sendiri yang menyimpang
+ * diam-diam begitu `--space-8` berubah. Radius `--radius-control` — nilai
+ * yang dipaku spec § 8, sama dengan kontrol lain (tombol, input). Teks 20px
+ * bobot 600 memakai token PERSIS sama dengan `.t-title` (`--text-title` +
+ * `--weight-medium`) tanpa memakai kelasnya — wordmark adalah bentuk merek,
+ * bukan judul layar, dan dua kelas yang kebetulan sama nilainya tetap dua
+ * keputusan berbeda.
+ */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.wordmark-ikon {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-8) + var(--space-1));
+  height: calc(var(--space-8) + var(--space-1));
+  border-radius: var(--radius-control);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  flex: none;
+}
+
+.wordmark-teks {
+  font-size: var(--text-title);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+/* ⛔ `AppShell` bundle (VENDOR, tidak pernah disunting) merender
+ * `brand.logo` DAN `brand.name` sebagai teks TERPISAH, TANPA SYARAT —
+ * `ds-bundle/components/navigation/AppShell.jsx`:
+ *
+ *   {brand?.logo || <span>…</span>}
+ *   <span className="t-body-md truncate">{brand?.name || 'The Cafe by ORIGEN'}</span>
+ *
+ * Memberi `logo: <Wordmark/>` (yang sudah membawa teks "LumiPOS" sendiri)
+ * TANPA menyembunyikan span kedua akan menampilkan namanya DUA KALI
+ * berdampingan di sidebar back-office — persis cacat yang brief Task 8
+ * minta diperiksa di DOM. `name` di prop tetap diisi ('LumiPOS', bukan
+ * dikosongkan): string kosong jatuh ke fallback bundle ('The Cafe by
+ * ORIGEN') lewat `||`, dan span yang disembunyikan CSS tetap lebih aman
+ * daripada prop yang menyimpang dari isi Wordmark.
+ *
+ * Selektor sibling, bukan `:has()`: back-office satu-satunya pemakai
+ * `brand.logo` di repo ini, jadi cakupan `.wordmark + …` sudah tepat tanpa
+ * fitur selektor yang lebih baru.
+ */
+.shell-brand > .wordmark + .t-body-md.truncate {
+  display: none;
+}
+
+/* --- Kulit komponen: Button, Badge, Field, Chip, Product card --------------
+ *
+ * Task 9, kampanye "Hidupkan desain" (26 September 2026). Spec § 9
+ * (`docs/superpowers/specs/2026-09-26-fondasi-desain-design.md`): setiap
+ * kelas ini datang dari `/ds-bundle` (VENDOR, tidak pernah disunting
+ * langsung) dan dikembalikan sesuai `sumber/components/*.jsx` — HANYA lewat
+ * selektor kelas bundle dan `var()`, tanpa satu baris markup React yang
+ * berubah selain menghapus warna kategori (lihat Kasir.tsx/kasir.css, Step 0).
+ *
+ * ⛔ Sebagian besar metrik SUDAH benar TANPA satu baris pun di bawah ini —
+ * bukti bahwa Task 1/2/4/5 sudah mengarahkan nama yang dipakai bundle:
+ * `.btn` (tinggi `--touch-min`, radius `--radius-control`, bobot 600 lewat
+ * alias `--weight-medium`, font `--text-body` yang menang lewat urutan
+ * `@import`), `.btn-critical` (tinggi `--touch-primary` lewat alias
+ * `--touch-critical`), `.btn:disabled` (opacity .4, bundle sendiri),
+ * `.btn-primary` (warna, hover — `--accent`/`--accent-hover`/`--on-accent`
+ * semuanya sudah `--primary`/`--primary-foreground`), `.btn-secondary` (latar
+ * `--surface`→`--card`, tepi `--border-strong`→`--input-border`),
+ * `.badge` (radius `999px`, bundle sendiri), lima nada lencana
+ * (`accent`/`success`/`warning`/`danger`/`info` — sudah sepakat lewat alias
+ * Task 2), `.field`/`input` (tinggi, radius, tepi NORMAL), `.card` (radius,
+ * tepi, bayangan — `--radius-card`/`--border`/`--shadow-card` semuanya sudah
+ * mockup), `.chip[aria-pressed="true"]` (latar `--accent`→`--primary`), dan
+ * `.shell-group` (13px/600, diarahkan di bagian "Skala teks final" di atas).
+ *
+ * Yang di bawah HANYA menyentuh sisa: token yang bundle definisikan dengan
+ * NAMA LAIN dari padanan mockup-nya — nama yang berbeda tidak dapat menang
+ * lewat urutan `@import` karena keduanya bukan referensi ke custom property
+ * yang sama sekali.
+ */
+
+/* .btn-secondary — hover bundle memakai `--surface-alt` (→ `--secondary`,
+   warna DASAR-nya sendiri via alias Task 2): highlight-nya kebetulan
+   terlihat, tapi token yang salah. `Button.jsx` memakai `--secondary-hover`
+   khusus untuk hover, token yang TIDAK punya alias karena namanya tidak
+   bertabrakan dengan bundle. */
+.btn-secondary:hover:not(:disabled) { background: var(--secondary-hover); }
+
+/* .btn-ghost — bundle memakai `--ink-muted` (→ `--muted-foreground`) untuk
+   TEKS dan `--surface-alt` (→ `--secondary`) untuk hover; `Button.jsx`
+   punya token SENDIRI untuk keduanya (`--ghost-foreground`,
+   `--ghost-hover-bg`) yang nilainya berbeda dari alias generik itu. Bundle
+   juga mengubah WARNA TEKS saat hover (`color: var(--ink)`) — `Button.jsx`
+   tidak: teks ghost tetap SATU warna di kedua keadaan, hanya latarnya
+   berubah, jadi `color` ditulis ulang juga di baris hover. */
+.btn-ghost { color: var(--ghost-foreground); }
+.btn-ghost:hover:not(:disabled) {
+  background: var(--ghost-hover-bg);
+  color: var(--ghost-foreground);
+}
+
+/* .btn-danger — bundle memakai gaya OUTLINE (latar `--surface`, teks & tepi
+   `--danger`); `Button.jsx` memakai gaya SOLID (latar `--destructive`, teks
+   putih, tanpa tepi). `--primary-foreground` dipakai ULANG untuk teks putih
+   di sini alih-alih menulis literal `#fff`: nilainya SAMA (putih di kedua
+   berkas mockup) dan literal hex di luar `:root` melanggar G5
+   (`tests/runtime/nol-hex-css.test.js`). */
+.btn-danger {
+  background: var(--destructive);
+  color: var(--primary-foreground);
+  border-color: transparent;
+}
+.btn-danger:hover:not(:disabled) { background: var(--destructive-hover); }
+
+/* .badge — Ronde perbaikan akhir (tinjauan Opus): bundle memakai
+   `--weight-medium` (→ 600 lewat alias Task 2), padding `2px var(--space-2)`
+   (2px 8px), dan tepi `1px solid transparent` yang tiap nada
+   (`.badge-neutral`, `.badge-accent`, dst) mengisi `border-color` jadi
+   WARNA TERLIHAT; `Badge.jsx` tidak punya tepi sama sekali. `Badge.jsx`
+   memakai bobot REGULAR (400, token TIDAK dialiaskan — badge butuh bobot
+   yang beda dari label tombol) dan padding `var(--space-1) 10px` (4px
+   10px — `--space-1` yang memberikan angka 4px-nya, bukan literal yang
+   diketik ulang; 10px tetap literal karena tidak ada anak tangga
+   `--space-*` bernilai itu, dan ini nilai yang `Badge.jsx` sendiri tulis
+   literal). `border: none` menang atas SEMUA `.badge-{nada}{border-color:…}`
+   bundle pada spesifisitas yang sama (0,1,0 keduanya, kelas ini datang
+   BELAKANGAN di cascade) — `border-style: none` yang menang membuat
+   `border-color` apa pun tidak pernah dirender. Diukur: tinggi turun dari
+   29,5px (dengan tepi 1px) ke 27,5px (tanpa tepi), padding/ukuran sama —
+   lihat `kulit-komponen.test.js`. Ukurannya (`--text-caption`→
+   `--text-small`, 13px) sudah benar lewat alias Task 4, tidak disentuh di
+   sini. */
+.badge {
+  padding: var(--space-1) 10px;
+  font-weight: var(--font-weight-regular);
+  border: none;
+}
+/* Bundle `neutral` → mockup `pending` (spec § 9: "Bundle neutral → pending,
+   accent → accent"). Lima nada lain sudah sepakat lewat alias Task 2;
+   `.badge-violet` bundle tidak punya padanan di keenam nada mockup dan
+   dibiarkan apa adanya — bukan kelalaian, ia tidak disebut tabel spec. */
+.badge-neutral {
+  background: var(--status-pending-bg);
+  color: var(--status-pending-text);
+}
+
+/* .field — error bundle memakai `--danger` (→ `--status-danger-text` lewat
+   alias Task 2); `Input.jsx` memakai `--destructive`, token BERBEDA
+   nilainya dari `--status-danger-text` (dua merah yang mirip, bukan
+   identik). Tepi NORMAL tidak disentuh: sudah `--input-border` lewat alias
+   `--border-strong`. */
+.field-invalid,
+.field[aria-invalid='true'] {
+  border-color: var(--destructive);
+}
+.field-invalid:focus,
+.field[aria-invalid='true']:focus {
+  outline-color: var(--destructive);
+}
+.field-error { color: var(--destructive); }
+
+/* .dialog — bayangan MODAL mockup, keputusan user di gerbang visual, 27
+   September 2026 (`--shadow-modal`, § "Radius, bayangan, target sentuh" di
+   atas). Bundle hardcode bayangannya sendiri secara LITERAL
+   (`0 12px 48px rgba(20,17,15,.24)`); ronde perbaikan sebelumnya
+   mengarahkannya ke `var(--shadow-raised)` (dua token bayangan mockup itu
+   satu-satunya yang ADA saat itu) — benar dibanding literal bundle, tapi
+   bukan bayangan modal mockup sungguhan. */
+.dialog { box-shadow: var(--shadow-modal); }
+
+/* .chip — Ronde perbaikan akhir (tinjauan Opus, keputusan kampanye Hidupkan
+   desain 26 September 2026: mockup sumber kebenaran tampilan). Bundle
+   memakai `--surface` (→ `--card`, putih) untuk latar TIDAK aktif,
+   `--ink-muted` (→ `--muted-foreground`) untuk teks, tepi
+   `1px solid var(--border)`, dan `--text-body` (15px)/400; chip kategori
+   MOCKUP (`sumber/ui_kits/kasir/index.html:131`) TIDAK punya tepi sama
+   sekali, latar `--secondary`, teks `--muted-foreground-strong-alt`, dan
+   ukuran `--text-small` (13px) bobot 600. Bundle juga tidak punya aturan
+   HOVER sama sekali; mockup memakai `--chip-hover-bg` HANYA untuk chip
+   TIDAK aktif (`:not([aria-pressed="true"])` — kedua cabang ternary mockup
+   tidak mengubah chip aktif saat hover). Tinggi TETAP `--touch-min` (44px,
+   target sentuh) — bundle sudah benar, tidak disentuh: spec § 9 minta
+   kulitnya diikuti, bukan tata letaknya diubah.
+
+   Chip AKTIF TIDAK disentuh secara eksplisit: `.chip[aria-pressed="true"]`
+   bundle menang lewat SPESIFISITAS atribut di atas kelas polos ini
+   (0,2,0 > 0,1,0, apa pun urutan berkas), dan nilainya (`--accent`/
+   `--on-accent`) sudah `--primary`/`--primary-foreground` lewat alias
+   Task 2. Ia tetap mewarisi `border: none` dari sini — bundle hanya
+   menimpa `border-color`, bukan `border-style`, jadi `border-style: none`
+   yang ditetapkan di sini tetap menang dan chip aktif pun tanpa tepi,
+   sejalan mockup (tidak satu pun cabang ternary mockup punya kelas tepi).
+
+   ⛔ Keputusan user di gerbang visual, 27 September 2026: `min-height`/
+   `padding` DITIMPA juga — bundle memakai `min-height: var(--touch-min)`
+   (44px) dan `padding: 0 var(--space-4)` (16px), mockup `h-9 px-3` (36px/
+   12px). `px-3` KEBETULAN sama dengan anak tangga `--space-3` (12px) —
+   dipakai lewat token, bukan literal yang diketik ulang; `36px` TIDAK punya
+   anak tangga skala spasi yang cocok, jadi tetap literal (`h-9` bukan
+   `2 × --space-*` mana pun). TAMPILAN mengecil ke ukuran mockup; area SENTUH
+   tetap ≥44px lewat `.sentuh` (`packages/ds/sentuh.ts`), dipasang di
+   pemanggil (K-03, `Kasir.tsx`) — kelas ini sendiri tidak tahu siapa
+   pemanggilnya. */
+.chip {
+  border: none;
+  background: var(--secondary);
+  color: var(--muted-foreground-strong-alt);
+  font-size: var(--text-small);
+  font-weight: var(--font-weight-semibold);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+}
+.chip:hover:not([aria-pressed='true']) {
+  background: var(--chip-hover-bg);
+}
+
+/* .product-card — bundle memakai `--border` (nama yang SAMA PERSIS di kedua
+   berkas, menang lewat URUTAN `@import` — lihat komentar kepala berkas) untuk
+   tepi NORMAL; nilainya BERBEDA dari `--card-outline` yang `ProductCard.jsx`
+   pakai (dua abu-abu yang mirip, bukan identik). Tepi HOVER bundle sudah
+   benar TANPA disentuh: `--accent-border` diarahkan ke `--card-outline-hover`
+   sejak Task 2. */
+.product-card { border-color: var(--card-outline); }
+
+/* .tabs-underline (`CashierNav.jsx`, dipakai `.kasir-bilah` — lihat
+   `kasir.css`) — bundle memakai `--text-body` (15px) untuk SETIAP tab dan
+   `--weight-medium` (600) HANYA pada tab aktif; `CashierNav.jsx` memakai
+   `--text-small` (13px) dan bobot 600 (`--font-weight-semibold`) untuk
+   KEDUA keadaan — hanya warna dan garis bawah yang berbeda antara aktif dan
+   tidak. Warna tab AKTIF bundle jatuh ke `--ink` (→ `--foreground`, netral);
+   `CashierNav.jsx` memakai `--primary` (warna AKSI, sama seperti chip aktif
+   dan aksen lain). Warna tab TIDAK aktif tidak disentuh: sudah
+   `--ink-muted`→`--muted-foreground`, sama dengan mockup. Garis bawah aktif
+   2px sudah `--accent`→`--primary` lewat alias Task 2, tidak disentuh. */
+.tabs-underline button {
+  font-size: var(--text-small);
+  font-weight: var(--font-weight-semibold);
+}
+.tabs-underline button[aria-selected='true'] { color: var(--primary); }
 
 /* --- Warna kategori produk -------------------------------------------------
  *
@@ -113,10 +546,21 @@
  * selisih kas — melayang di atas layar yang masih terlihat penuh, tanpa satu
  * pun tanda bahwa sisa layar sedang tidak dapat disentuh.
  *
- * Nilainya mengikuti `.overlay` bundle (`#14110f73`), ditulis sebagai token
- * supaya keduanya tidak menyimpang.
+ * ⛔ Nilainya DIGANTI 26 September 2026 (Task 2, kampanye "Hidupkan desain").
+ * Rona lama mengikuti `.overlay` BUNDLE (`#14110f73`, rona tinta `--ink`
+ * bundle). Rona baru mengikuti `--foreground` MOCKUP — `rgba(22, 40, 44, .45)`
+ * — rona yang sama dengan `--shadow-card`/`--shadow-raised` mockup
+ * (`docs/superpowers/specs/2026-09-26-fondasi-desain-design.md` § 3). Palet
+ * mockup sekarang sumber kebenaran tampilan; overlay yang tetap berona tinta
+ * lama akan menjadi satu-satunya permukaan gelap yang tidak mengikutinya.
+ *
+ * `.overlay` BUNDLE (`ds-bundle/components.css`) menulis warnanya LITERAL
+ * (`background: rgba(20, 17, 15, 0.45)`), bukan lewat token — override di
+ * bawah menimpanya ke `var(--overlay)` supaya keduanya tidak dapat menyimpang
+ * lagi.
  */
-:root { --overlay: rgba(20, 17, 15, .45); }
+:root { --overlay: rgba(22, 40, 44, .45); }
+.overlay { background: var(--overlay); }
 
 /* --- Target sentuh: aturan DS #3 (≥ 44px) ----------------------------------
  *
@@ -140,8 +584,72 @@
   min-width: 44px !important;
 }
 
-/* 11px bukan token mana pun di sistem ini. Dikembalikan ke `--text-caption`. */
-.shell-group { font-size: var(--text-caption); }
+/* --- Area sentuh tak terlihat: `.sentuh` (≥44) dan `.sentuh-uang` (≥56) ----
+ *
+ * Task 5, kampanye "Hidupkan desain". Constraint kampanye
+ * (`docs/RENCANA-HIDUPKAN-DESAIN.md`): "elemen yang di mockup lebih kecil
+ * dari 44px tampil PERSIS ukuran mockup, dengan area sentuh diperluas TANPA
+ * TERLIHAT ke 44px, dan 56px untuk aksi uang." Spec § 6 "Mekanisme area
+ * sentuh tak terlihat".
+ *
+ * `getBoundingClientRect` elemen TIDAK berubah — hanya `::before`-nya yang
+ * meluas, transparan, dan tetap menerima pointer (`pointer-events` bawaan
+ * `position: absolute` sudah `auto`; dinyatakan eksplisit di bawah supaya
+ * niatnya tidak bergantung pada nilai bawaan peramban).
+ *
+ * `.sentuh`/`.sentuh-uang` WAJIB `position: relative` — itu yang membuat
+ * elemen itu sendiri menjadi CONTAINING BLOCK bagi `::before`-nya, dan itu
+ * pula yang membuat formula `inset` di bawah menghitung PERSEN dari dimensi
+ * elemen ITU SENDIRI (top/bottom dari tingginya, left/right dari lebarnya),
+ * bukan dari leluhur positioned lain yang kebetulan ada di atasnya.
+ *
+ * Pada elemen persegi 28×28: `calc((var(--touch-min) - 100%) / -2)` =
+ * `calc((44px - 28px) / -2)` = `-8px` per sisi → total 44×44, terpusat.
+ *
+ * ⛔ Empat custom property PER SISI (`--sentuh-atas/kanan/bawah/kiri`)
+ * membiarkan pemanggil yang TAHU tata letaknya sendiri memotong perluasan
+ * itu — HANYA pada sisi yang menghadap tetangga — supaya area sentuh yang
+ * membesar tidak mencuri ketukan dari elemen sebelahnya (keputusan user 26
+ * September 2026, "area sentuh tidak boleh bertumpuk"). Lihat baris tiga
+ * tombol 28×28 berjarak 8px di bagian `bentuk` galeri (`Fondasi.tsx`): tanpa
+ * pemotongan itu, perluasan 44px bertumpang tindih di celah 8px-nya.
+ *
+ * Bawaan (tanpa override) tetap SIMETRIS di keempat sisi — kelas ini tidak
+ * diam-diam mengecil di layar yang lapang; hanya pemanggil yang benar-benar
+ * memasang nilai lain yang memotongnya.
+ */
+.sentuh,
+.sentuh-uang {
+  position: relative;
+}
+.sentuh::before,
+.sentuh-uang::before {
+  content: '';
+  position: absolute;
+  top:    var(--sentuh-atas,  calc((var(--touch-min) - 100%) / -2));
+  right:  var(--sentuh-kanan, calc((var(--touch-min) - 100%) / -2));
+  bottom: var(--sentuh-bawah, calc((var(--touch-min) - 100%) / -2));
+  left:   var(--sentuh-kiri,  calc((var(--touch-min) - 100%) / -2));
+  background: transparent;
+  pointer-events: auto;
+}
+.sentuh-uang::before {
+  top:    var(--sentuh-atas,  calc((var(--touch-critical) - 100%) / -2));
+  right:  var(--sentuh-kanan, calc((var(--touch-critical) - 100%) / -2));
+  bottom: var(--sentuh-bawah, calc((var(--touch-critical) - 100%) / -2));
+  left:   var(--sentuh-kiri,  calc((var(--touch-critical) - 100%) / -2));
+}
+
+/* 11px bukan token mana pun di sistem ini. Dikembalikan ke skala final
+ * (Task 4): `--text-small` (13px, bukan `--text-caption` — nama itu sudah
+ * diarahkan ke token yang sama, tapi label grup sidebar menyebut token
+ * ukurannya langsung, sejajar cara `--sidebar-label` disebut langsung untuk
+ * warnanya, bukan lewat `--ink-subtle` bawaan bundle). */
+.shell-group {
+  font-size: var(--text-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--sidebar-label);
+}
 
 /* --- Umpan balik fisik saat ditekan ----------------------------------------
  *
@@ -178,7 +686,14 @@
 }
 
 /* Pita warna kategori di tepi kartu produk — penanda yang terbaca dari jarak
-   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat. */
+   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat.
+ *
+ * ⛔ TIDAK LAGI DITERAPKAN ke `product-card` K-03 sejak Task 9 Step 0
+ * (kampanye "Hidupkan desain", 26 September 2026, keputusan user): mockup
+ * menjadikan kartu produk netral (`--card`), tanpa pita kategori. Kelasnya
+ * dipertahankan apa adanya — bukan dihapus — untuk pemakai lain yang
+ * mungkin lahir kelak; menghapus token/kelas warna kategori diputuskan
+ * sub-proyek 2, bukan di sini. */
 .pita-kategori { box-shadow: inset 3px 0 0 var(--chip, var(--border-strong)); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -229,16 +744,22 @@
   box-shadow: var(--shadow-card);
 }
 
-/* Kartu produk: cahaya dari atas, sangat tipis. Ia hilang sepenuhnya saat
-   kartu ditekan — bundle menggantinya dengan `--accent-soft`, dan dua lapis
-   yang bertumpuk akan membuat keadaan tekan terlihat kotor. */
-.product-card.kasir-kartu {
-  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-sunk) 140%);
-}
-.product-card.kasir-kartu:hover,
-.product-card.kasir-kartu:active {
-  background: var(--accent-soft);
-}
+/* ⛔ Kartu produk K-03: gradien DIBALIK — keputusan user di gerbang visual,
+ * 27 September 2026. Task 9 (26 September) mempertahankan gradien tipis di
+ * sini karena selisihnya terhadap mockup terukur kecil (≤4% di tepi bawah)
+ * — keputusan OTONOM, bukan keputusan user (`docs/RENCANA-HIDUPKAN-DESAIN.md`
+ * § Keputusan otonom). Ditinjau ulang di gerbang dan DICABUT: `ProductCard.jsx`
+ * mockup datar `--card`, tanpa gradien sama sekali, dan kartu produk K-03
+ * adalah permukaan yang paling sering dilihat kasir — perbedaan sekecil
+ * apa pun dari mockup di sana lebih terasa daripada di panel/topbar.
+ *
+ * Blok ini SENGAJA DIHAPUS, bukan diganti `background: var(--card)` —
+ * `.product-card` bundle (`ds-bundle/components.css`) sudah memakai
+ * `background: var(--surface)` (→ `--card` lewat alias Task 2) sebagai
+ * bawaan, dan `:hover`/`:active` bundle sudah `background: var(--accent-soft)`
+ * sendiri. Menulis ulang keduanya di sini hanya menciptakan tempat KEDUA
+ * yang memutuskan warna kartu, yang akan menyimpang dari bundle pada
+ * pembaruan berikutnya tanpa satu pun error. */
 
 /* --- Margin bawaan peramban pada `<p>` -------------------------------------
  *

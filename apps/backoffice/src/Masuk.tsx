@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Card } from 'ds';
+import { Card, Wordmark } from 'ds';
 import { Tombol } from './Tombol.tsx';
 import { Bidang } from './Bidang.tsx';
 import { useSesi } from '../../../packages/klien-api/src/sesi.tsx';
@@ -111,9 +111,11 @@ export function Masuk({ onDaftar, kabar }: Props) {
         <Card>
           <div className="card-pad">
             <form className="stack" style={{ gap: 'var(--space-4)' }} onSubmit={kirim}>
-              <div className="stack" style={{ gap: 'var(--space-1)' }}>
+              <div className="stack" style={{ gap: 'var(--space-2)' }}>
+                {/* Wordmark "LumiPOS" (Task 8) — komponen SATU-SATUNYA, sama
+                    dengan `ShellKasir` kasir dan `AppShell.brand` di atas. */}
+                <Wordmark />
                 <div className="t-title">Masuk ke Back Office</div>
-                <div className="t-caption">Lumi POS</div>
               </div>
 
               {kabar ? (
