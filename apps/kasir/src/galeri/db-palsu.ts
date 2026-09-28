@@ -390,7 +390,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   let gambar: Promise<unknown[]> | null = null;
 
   /* Catatan penulisan galeri — lihat `execute`. */
-  const tulis: { sql: string; params: readonly unknown[] }[] = [];
+  const tulis: { sql: string; params: readonly unknown[]; dalam: boolean }[] = [];
   (globalThis as { __galeriTulis?: unknown }).__galeriTulis = tulis;
 
   const db: DbLokal = {
@@ -423,6 +423,13 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       if (tabel === 'item_image') {
         gambar ??= gambarUntuk(skenario, item);
         return (await gambar) as T[];
+      }
+      if (
+        tabel === 'cash_drawer_shift' &&
+        /outlet_id, device_id, status/.test(sql) &&
+        (globalThis as { __galeriShiftTutup?: boolean }).__galeriShiftTutup
+      ) {
+        return [{ outlet_id: 'outlet-1', device_id: 'dev-galeri', status: 'closed' }] as T[];
       }
       const baris = perTabel[tabel] ?? [];
 
@@ -473,17 +480,41 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       return baris as T[];
     },
     async execute(sql: string, params?: readonly unknown[]) {
-      if (skenario === 'error') throw new Error('galeri: skenario error');
-      /* ⛔ Penulisan DICATAT, dan hanya untuk dibaca test DOM lewat
-         `window.__galeriTulis` — bukan mesin SQL. Satu-satunya efek yang
-         ditiru adalah `DELETE FROM keranjang_lokal`, karena Batalkan
-         (Task 5B) membuktikan keranjang tersimpan ikut hilang. */
-      tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [] });
-      if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
+      return jalankan(sql, params, false);
     },
     async transaction<T>(fn: (tx: DbLokal) => Promise<T>): Promise<T> {
-      return fn(db);
+      /* ⛔ `tx` adalah objek BERBEDA dari `db`, dan penulisan lewat `tx`
+         ditandai `dalam: true`. Dengan `fn(db)` (bentuk lama) penulisan yang
+         bocor keluar transaksi tak dapat dibedakan dari yang di dalamnya.
+         Tidak ada rollback di sini — galeri untuk kerja visual; kebenaran
+         atomik dijaga `tests/kasir/keranjang-batal.test.js` (SQLite sungguhan). */
+      const tx: DbLokal = {
+        getAll: (sql, params) => db.getAll(sql, params),
+        execute: (sql, params) => jalankan(sql, params, true),
+        transaction: () => {
+          throw new Error('galeri: transaksi bersarang');
+        },
+      };
+      return fn(tx);
     },
   };
+
+  /* ⛔ Penulisan DICATAT, dan hanya untuk dibaca test DOM lewat
+     `window.__galeriTulis` — bukan mesin SQL. Satu-satunya efek yang ditiru
+     adalah `DELETE FROM keranjang_lokal` (Batalkan, Task 5B, membuktikan
+     keranjang tersimpan ikut hilang).
+
+     Dua kait KEGAGALAN, diset test lewat `window` sesudah halaman dimuat
+     (bukan skenario baru): `__galeriGagalTulis` membuat INSERT audit_event
+     melempar (perangkat gagal menulis jejak); `__galeriShiftTutup` membuat
+     pembacaan status shift oleh Batalkan menjawab `closed`. */
+  async function jalankan(sql: string, params: readonly unknown[] | undefined, dalam: boolean) {
+    if (skenario === 'error') throw new Error('galeri: skenario error');
+    if (/INSERT INTO audit_event/i.test(sql) && (globalThis as { __galeriGagalTulis?: boolean }).__galeriGagalTulis) {
+      throw new Error('galeri: penulisan jejak gagal (perangkat penuh)');
+    }
+    tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
+    if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
+  }
   return db;
 }

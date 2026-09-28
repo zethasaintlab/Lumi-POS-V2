@@ -46,7 +46,7 @@ const KONFIG = {
 };
 const SESI = { userId: 'u-sari', nama: 'Sari', peran: ['cashier'], masukPada: '', wajibGantiPin: false };
 
-function buatDb({ gagalSetelAudit = false, shiftStatus = 'open', denganKeranjang = true } = {}) {
+function buatDb({ gagalSetelAudit = false, gagalCommit = false, shiftStatus = 'open', denganKeranjang = true } = {}) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec(DDL);
   sqlite.prepare(`INSERT INTO cash_drawer_shift VALUES ('s1','o1','d1',?)`).run(shiftStatus);
@@ -55,11 +55,15 @@ function buatDb({ gagalSetelAudit = false, shiftStatus = 'open', denganKeranjang
       .prepare(`INSERT INTO keranjang_lokal VALUES ('kini','s1','{}','2026-09-28T00:00:00Z')`)
       .run();
   }
-  const api = {
-    sqlite,
-    async getAll(sql, params = []) {
-      return sqlite.prepare(sql).all(...params);
-    },
+  // ⛔ `tx` adalah objek BERBEDA dari `db`. Bila keduanya identik (`fn(api)`),
+  // penulisan yang bocor keluar transaksi — DELETE sesudah commit, `simpanHlc`
+  // lewat `db` — tak dapat dibedakan dari yang di dalamnya, dan penjaga
+  // "transaksi tunggal" hijau untuk kode yang tidak atomik.
+  // Setiap `execute` lewat `db` (bukan `tx`) dicatat di `bocor`.
+  const bocor = [];
+  const baca = async (sql, params = []) => sqlite.prepare(sql).all(...params);
+  const tx = {
+    getAll: baca,
     async execute(sql, params = []) {
       sqlite.prepare(sql).run(...params);
       // Perangkat "mati" tepat sesudah audit tertulis, sebelum langkah lain.
@@ -67,10 +71,24 @@ function buatDb({ gagalSetelAudit = false, shiftStatus = 'open', denganKeranjang
         throw new Error('perangkat mati di tengah transaksi');
       }
     },
+    async transaction() {
+      throw new Error('transaksi bersarang tidak didukung');
+    },
+  };
+  const api = {
+    sqlite,
+    bocor,
+    getAll: baca,
+    async execute(sql, params = []) {
+      bocor.push(sql.replace(/\s+/g, ' ').trim());
+      sqlite.prepare(sql).run(...params);
+    },
     async transaction(fn) {
       sqlite.exec('BEGIN');
       try {
-        const hasil = await fn(api);
+        const hasil = await fn(tx);
+        // ⛔ Perangkat mati TEPAT SAAT COMMIT: semua yang ditulis fn hilang.
+        if (gagalCommit) throw new Error('perangkat mati saat COMMIT');
         sqlite.exec('COMMIT');
         return hasil;
       } catch (e) {
@@ -190,4 +208,39 @@ test('⛔ TIDAK menulis order, payment, cash_movement', async () => {
   assert.equal(n(d, '"order"'), 0);
   assert.equal(n(d, 'payment'), 0);
   assert.equal(n(d, 'cash_movement'), 0);
+});
+
+test('⛔ SEMUA penulisan lewat tx: nol penulisan di luar transaksi (DELETE keranjang, simpanHlc, audit, outbox)', async () => {
+  const { batalkanKeranjang } = await import(MOD);
+  const d = buatDb();
+  await batalkanKeranjang(args(d));
+  assert.deepEqual(
+    d.bocor,
+    [],
+    `penulisan bocor KELUAR transaksi lewat db (bukan tx): ${JSON.stringify(d.bocor)} — keranjang/HLC tidak lagi atomik dengan jejaknya`
+  );
+  assert.equal(n(d, 'keranjang_lokal'), 0);
+});
+
+test('⛔ HLC perangkat ditulis DI DALAM transaksi: device_config.hlc_teks = hlc audit sesudah sukses', async () => {
+  const { batalkanKeranjang } = await import(MOD);
+  const d = buatDb();
+  await batalkanKeranjang(args(d, { hlc: () => 4242n }));
+  assert.equal(d.sqlite.prepare('SELECT hlc_teks FROM device_config WHERE id = 1').get().hlc_teks, '4242');
+  assert.equal(d.sqlite.prepare('SELECT hlc FROM audit_event').get().hlc, 4242);
+});
+
+test('⛔ perangkat mati SAAT COMMIT: nol audit, nol outbox, keranjang_lokal utuh, HLC tidak maju', async () => {
+  const { batalkanKeranjang } = await import(MOD);
+  const d = buatDb({ gagalCommit: true });
+  await assert.rejects(() => batalkanKeranjang(args(d, { hlc: () => 4242n })), /saat COMMIT/);
+  assert.equal(n(d, 'audit_event'), 0, 'audit tertinggal padahal COMMIT gagal');
+  assert.equal(n(d, 'outbox_local'), 0, 'outbox tertinggal padahal COMMIT gagal');
+  assert.equal(n(d, 'keranjang_lokal'), 1, 'keranjang hilang padahal COMMIT gagal — penghapusan bocor keluar transaksi');
+  assert.equal(
+    d.sqlite.prepare('SELECT hlc_teks FROM device_config WHERE id = 1').get().hlc_teks,
+    '0',
+    'HLC maju padahal COMMIT gagal — simpanHlc bocor keluar transaksi'
+  );
+  assert.deepEqual(d.bocor, [], `penulisan bocor keluar transaksi: ${JSON.stringify(d.bocor)}`);
 });

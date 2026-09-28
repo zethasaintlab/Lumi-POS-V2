@@ -6274,7 +6274,10 @@ paths:
                   type: string
                   pattern: '^[0-9]+$'
                   description: Total keranjang yang tampil di layar, rupiah utuh sebagai string.
-                occurredAt: { type: string, nullable: true }
+                occurredAt:
+                  type: string
+                  nullable: true
+                  description: ISO 8601 berzona dengan tanggal nyata; selain itu 400.
                 hlc: { type: string, nullable: true }
       responses:
         '201':
@@ -6294,6 +6297,21 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '403':
           description: Peran tidak boleh mencatat pembatalan (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            Request lain dengan Idempotency-Key yang sama sedang diproses
+            (IDEMPOTENCY_KEY_CONFLICT); kirim ulang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >-
+            Idempotency-Key sudah dipakai untuk isi yang berbeda
+            (IDEMPOTENCY_KEY_HASH_MISMATCH). Bukan cache hit: pembatalan
+            kedua tidak pernah dijawab dengan respons pembatalan pertama.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

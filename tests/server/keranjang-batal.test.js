@@ -324,10 +324,51 @@ test('⛔ (c) dua request BERSAMAAN, key sama → satu 201 dan satu 409 IDEMPOTE
 
 test('occurredAt rusak → 400 VALIDATION_ERROR, bukan 500', async () => {
   const id = await shift();
-  for (const buruk of ['bukan-tanggal', '2026-13-45', '   ']) {
+  for (const buruk of [
+    'bukan-tanggal', '2026-13-45', '   ',
+    // Tanggal yang TIDAK ADA (V8 menggulirkannya ke 2 Maret) dan tanpa zona
+    // (ditafsirkan zona server) — keduanya mengubah `occurred_at` diam-diam.
+    '2026-02-30T00:00:00Z', '2026-04-31T10:00:00Z', '2026-09-28T03:00:00',
+  ]) {
     const res = await kirim(id, { occurredAt: buruk });
     assert.equal(res.statusCode, 400, `${buruk}: ${res.statusCode} ${res.body}`);
     assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
   }
   assert.equal(await jumlahAudit(id), 0);
+});
+
+test('⛔ (b3) key sama + body beda HANYA pada occurredAt → 422 (occurredAt ada di hash)', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const idAudit = crypto.randomUUID();
+  assert.equal((await kirim(id, { id: idAudit, occurredAt: '2026-09-28T03:00:00.000Z' }, {}, key)).statusCode, 201);
+  const res = await kirim(id, { id: idAudit, occurredAt: '2026-09-28T04:00:00.000Z' }, {}, key);
+  assert.equal(res.statusCode, 422, `occurredAt beda tidak terdeteksi sebagai mismatch idempotensi: ${res.body}`);
+  assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+});
+
+test('⛔ audit_event.id = body.id: TEPAT satu baris dengan id itu', async () => {
+  const id = await shift();
+  const idAudit = crypto.randomUUID();
+  const res = await kirim(id, { id: idAudit });
+  assert.equal(res.statusCode, 201, res.body);
+  assert.equal(JSON.parse(res.body).id, idAudit);
+  const rows = await query(`SELECT event_type, entity_id FROM audit_event WHERE id = $1`, [idAudit]);
+  assert.equal(rows.length, 1, `id audit_event tidak terikat ke body.id (${idAudit}): ${rows.length} baris`);
+  assert.equal(rows[0].event_type, 'cart_cleared');
+});
+
+test('⛔ aktor tersimpan = staf sesi yang mengirim (bukan user sah lain)', async () => {
+  // Manajer yang login, bukan owner seed: aktor SALAH-tapi-sah (mis. user
+  // pertama di tabel) tidak boleh lolos hanya karena `recordAuditEvent` puas.
+  const token = await buatSesi(db, { tenantId: tenant.id, userId: manajer });
+  const id = await shift();
+  const res = await kirim(id, {}, { authorization: `Bearer ${token}` });
+  assert.equal(res.statusCode, 201, res.body);
+  const [r] = await query(
+    `SELECT actor_user_id FROM audit_event WHERE event_type = 'cart_cleared' AND entity_id = $1`,
+    [id]
+  );
+  assert.equal(r.actor_user_id, manajer, `aktor tersimpan ${r.actor_user_id}, harap staf sesi ${manajer}`);
+  assert.notEqual(r.actor_user_id, base.user.id);
 });
