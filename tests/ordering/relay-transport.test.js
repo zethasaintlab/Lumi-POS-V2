@@ -299,6 +299,35 @@ test('percobaan hitungan kas (count_attempt) mendarat lewat relay', async () => 
   sampai(hasil, 'count_attempt');
 });
 
+test('⛔ jejak Batalkan keranjang (cart_cleared) mendarat lewat relay, tanpa Bearer', async () => {
+  // Keputusan user 28 September 2026 (issue #76). Rincian di
+  // `tests/server/keranjang-batal.test.js`; yang ditegakkan DI SINI adalah
+  // bahwa jenisnya benar-benar pernah melewati transport asli — tanpa rute
+  // di `sesi.ts` ia dijawab 401 dan berhenti permanen di antrean.
+  const fx = await perangkatDanShift();
+  await relaikan({
+    entity_type: 'shift',
+    entity_id: fx.shiftId,
+    payload: {
+      id: fx.shiftId, outletId: base.outlet.id, deviceId: fx.deviceId,
+      businessDate: TANGGAL, openingFloat: 100000,
+    },
+  });
+  const hasil = await relaikan({
+    entity_type: 'cart_cleared',
+    entity_id: fx.shiftId,
+    payload: {
+      id: crypto.randomUUID(),
+      lineCount: 2,
+      quantityMilli: 3000,
+      total: '61050',
+      hlc: '1',
+      occurredAt: new Date().toISOString(),
+    },
+  });
+  sampai(hasil, 'cart_cleared');
+});
+
 test('⛔ no-sale di ATAS ambang mendarat KARENA penyetuju ikut di baris outbox', async () => {
   const fx = await perangkatDanShift();
   await relaikan({

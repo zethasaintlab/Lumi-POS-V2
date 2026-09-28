@@ -166,7 +166,8 @@ async function ukur(hal) {
       total: kartu.length,
       foto,
       keranjang: Math.round(r(keranjang).width),
-      judul: gaya(keranjang.querySelector(':scope > h2')),
+      // `h2` kini di dalam `.kasir-keranjang-kepala` (Task 5B: ikon kosongkan di kanannya).
+      judul: gaya(keranjang.querySelector('.kasir-keranjang-kepala > h2')),
       labelTotal: gaya(keranjang.querySelector('.kasir-total > span:first-child')),
       baris,
       batas: Math.round(bawah),

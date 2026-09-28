@@ -261,14 +261,15 @@ test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header
      ⛔ Sejak Task 5 (kampanye Hidupkan desain, G-TOOLBAR sebagian): "Item
      manual" masuk lebih dulu, mengikuti urutan `LABEL_TOOLBAR_MOCKUP` di
      `k03-toolbar.test.js`. "Buka laci" dan "Kas masuk / keluar" tetap ada —
-     SEMENTARA sampai Task 4 (Laci kas) mengeluarkannya dari toolbar ini. */
+     SEMENTARA sampai Task 4 (Laci kas) mengeluarkannya dari toolbar ini.
+     Task 5B menambah "Batalkan" tepat sesudah "Diskon". */
   assert.deepEqual(
     hasil.label,
-    ['Item manual', 'Diskon', 'Buka laci', 'Kas masuk / keluar'],
-    'isi toolbar tidak sesuai. Empat label ini yang punya kode di repo hari ' +
-      'ini (dua TERPASANG mockup + dua SEMENTARA); empat lainnya di mockup ' +
-      'belum, dan tombol yang tidak melakukan apa-apa tidak boleh ' +
-      'ditambahkan ke sini.'
+    ['Item manual', 'Diskon', 'Batalkan', 'Buka laci', 'Kas masuk / keluar'],
+    'isi toolbar tidak sesuai. Lima label ini yang punya kode di repo hari ' +
+      'ini (tiga TERPASANG mockup — Item manual, Diskon, Batalkan (Task 5B) — ' +
+      'plus dua SEMENTARA); lima lainnya di mockup belum, dan tombol yang ' +
+      'tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
   );
 
   /* Aturan design system #3. */

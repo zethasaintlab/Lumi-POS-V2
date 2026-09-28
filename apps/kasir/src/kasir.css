@@ -1189,6 +1189,22 @@
   overflow: hidden;
 }
 
+/* Kepala keranjang: judul di kiri, ikon kosongkan di kanan (mockup). Tombolnya
+ * `.btn` bundle, jadi target sentuh tetap `--touch-min`; lebarnya disamakan
+ * supaya ikon tunggal tidak menjadi target yang lebih sempit dari 44px. */
+.kasir-keranjang-kepala {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.kasir-keranjang-kosongkan {
+  flex: none;
+  min-width: var(--touch-min);
+  padding: 0 var(--space-2);
+}
+
 .kasir-baris-daftar {
   display: flex;
   flex-direction: column;

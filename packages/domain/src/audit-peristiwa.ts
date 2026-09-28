@@ -93,6 +93,10 @@ export const PERISTIWA_AUDIT = {
   // hitungan klien DITANDAI alih-alih ditolak, dan penandanya adalah baris
   // audit ini.
   calculation_variance: 'transaksi',
+  // Tidak ada di daftar spec-f:288 — keputusan user 28 Sep 2026 (issue #76):
+  // keranjang yang dibatalkan sesudah barang di-scan adalah pola kecurangan
+  // kasir. Keranjang bukan `order`; yang dicatat adalah peristiwanya.
+  cart_cleared: 'transaksi',
 
   // Kas
   cash_drawer_opened: 'kas',

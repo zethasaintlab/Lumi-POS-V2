@@ -32,8 +32,8 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Batalkan',
   'Pesanan tahan',
 ];
-/** Label mockup yang SUDAH dibangun (Task 5). Task 5B/10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon']);
+/** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
+const TERPASANG = new Set(['Item manual', 'Diskon', 'Batalkan']);
 /** Label NON-mockup yang masih di toolbar sampai Task 4 (Laci kas) selesai. */
 const SEMENTARA = new Set(['Buka laci', 'Kas masuk / keluar']);
 
@@ -338,4 +338,138 @@ test('⛔ scanner global mati selama dialog toolbar terbuka', async () => {
     sebelum,
     `keranjang berubah (${sebelum} → ${sesudah}) dari scan yang masuk SELAMA dialog toolbar terbuka — scanner global harus mati`
   );
+});
+
+// ---------------------------------------------------------------------------
+// Task 5B — Batalkan keranjang dengan jejak `audit_event` (G-BATAL-AUDIT, sisi
+// layar). Keputusan user 28 September 2026 (issue #76).
+// ---------------------------------------------------------------------------
+
+/** Penulisan yang dicatat db palsu galeri (`window.__galeriTulis`). */
+const bacaTulis = (hal) => hal.evaluate(() => (window.__galeriTulis ?? []).map((t) => ({ sql: t.sql, params: t.params.map(String) })));
+const audit = (tulis) => tulis.filter((t) => /INSERT INTO audit_event/.test(t.sql));
+const outbox = (tulis) => tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+const hapusKeranjang = (tulis) => tulis.filter((t) => /^DELETE FROM keranjang_lokal/.test(t.sql));
+
+/** Tombol harus ADA — pesan yang menyebut apa yang dijaga, bukan timeout klik. */
+async function pastikanTombol(hal, nama, keterangan) {
+  const n = await hal.getByRole('button', { name: nama, exact: true }).count();
+  assert.equal(n >= 1, true, `tombol "${nama}" tidak ada di K-03 (${keterangan})`);
+}
+
+async function keadaanKeranjang(hal) {
+  return hal.evaluate(() => ({
+    baris: document.querySelectorAll('.kasir-baris').length,
+    total: document.querySelector('.kasir-total .num')?.textContent ?? null,
+    qty: [...document.querySelectorAll('.kasir-baris .stepper .num')].reduce(
+      (n, el) => n + Number((el.textContent ?? '0').replace(',', '.')),
+      0
+    ),
+  }));
+}
+
+test('⛔ Batalkan: konfirmasi "Kosongkan keranjang? N item", lalu keranjang kosong, keranjang_lokal hilang, dan SATU audit_event cart_cleared dengan total = Total yang tampil', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  const sebelum = await keadaanKeranjang(hal);
+  assert.ok(sebelum.baris > 0, 'fixture keranjang-penuh tidak punya baris');
+  const totalTampil = sebelum.total.replace(/\D/g, '');
+  assert.ok(totalTampil.length > 0, `Total tidak terbaca: ${sebelum.total}`);
+
+  assert.equal((await bacaTulis(hal)).filter((t) => /audit_event/.test(t.sql)).length, 0, 'audit sudah ada sebelum konfirmasi');
+
+  await pastikanTombol(hal, 'Batalkan', 'toolbar Batalkan belum terpasang');
+  await hal.getByRole('button', { name: 'Batalkan', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  const teksDialog = await hal.locator('[role="dialog"]').innerText();
+  assert.match(teksDialog, /Kosongkan keranjang\?/);
+  assert.match(teksDialog, new RegExp(`${sebelum.qty} item`), `dialog tidak menyebut jumlah item ${sebelum.qty}: ${teksDialog}`);
+  // Belum dikonfirmasi: belum ada yang tertulis.
+  assert.equal(audit(await bacaTulis(hal)).length, 0, 'audit tertulis SEBELUM konfirmasi');
+
+  await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
+  const tulis = await bacaTulis(hal);
+  const dialogTertutup = (await hal.locator('[role="dialog"]').count()) === 0;
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(dialogTertutup, 'dialog konfirmasi tetap terbuka sesudah berhasil');
+  assert.equal(audit(tulis).length, 0 + 1, `harus TEPAT satu audit_event; ada ${audit(tulis).length} — nol audit adalah cacat yang fitur ini cegah`);
+  const p = audit(tulis)[0].params;
+  assert.equal(p[5], 'cart_cleared', `event_type ${p[5]}`);
+  assert.equal(p[6], 'shift-galeri', 'entity_id harus shift berjalan');
+  assert.ok(p[4].length > 0, 'actor_user_id kosong');
+  const after = JSON.parse(p[7]);
+  assert.equal(after.total, totalTampil, `total audit ${after.total} != Total yang tampil ${totalTampil}`);
+  assert.equal(after.line_count, sebelum.baris);
+  assert.equal(after.quantity_milli / 1000, sebelum.qty);
+  const antre = outbox(tulis);
+  assert.equal(antre.length, 1, 'outbox harus tepat satu');
+  assert.ok(antre[0].params.includes('cart_cleared'), 'entity_type outbox bukan cart_cleared');
+  assert.ok(hapusKeranjang(tulis).length >= 1, 'baris keranjang_lokal tidak dihapus');
+});
+
+test('⛔ batal di konfirmasi → keranjang utuh, nol audit', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  const sebelum = await keadaanKeranjang(hal);
+  const hapusAwal = hapusKeranjang(await bacaTulis(hal)).length;
+
+  await pastikanTombol(hal, 'Batalkan', 'toolbar Batalkan belum terpasang');
+  await hal.getByRole('button', { name: 'Batalkan', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  await hal.getByRole('button', { name: 'Batal', exact: true }).click();
+  await hal.waitForTimeout(300);
+  const sesudah = await keadaanKeranjang(hal);
+  const tulis = await bacaTulis(hal);
+  const dialogTertutup = (await hal.locator('[role="dialog"]').count()) === 0;
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(dialogTertutup, 'dialog tidak tertutup sesudah Batal');
+  assert.equal(sesudah.baris, sebelum.baris, 'keranjang berubah padahal dibatalkan di konfirmasi');
+  assert.equal(audit(tulis).length, 0, 'audit tertulis padahal kasir menekan Batal');
+  assert.equal(outbox(tulis).length, 0, 'outbox tertulis padahal kasir menekan Batal');
+  assert.equal(hapusKeranjang(tulis).length, hapusAwal, 'keranjang_lokal dihapus padahal kasir menekan Batal');
+});
+
+test('ikon tempat sampah kepala keranjang memanggil handler yang SAMA (audit tertulis juga)', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  await pastikanTombol(hal, 'Kosongkan keranjang', 'ikon tempat sampah kepala keranjang belum ada');
+  await hal.getByRole('button', { name: 'Kosongkan keranjang', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
+  const tulis = await bacaTulis(hal);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(audit(tulis).length, 1, 'ikon tempat sampah tidak menulis audit_event');
+  assert.equal(audit(tulis)[0].params[5], 'cart_cleared');
+});
+
+test('Batalkan dan ikon tempat sampah NONAKTIF dengan alasan saat keranjang kosong', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal' });
+  const hasil = await hal.evaluate(() => {
+    const baca = (b) => {
+      if (!b) return { ada: false };
+      const id = b.getAttribute('aria-describedby');
+      const el = id ? document.getElementById(id) : null;
+      return { ada: true, disabled: b.disabled, teks: el ? el.textContent.trim() : null };
+    };
+    const toolbar = document.querySelector('.kasir-toolbar');
+    const batal = [...toolbar.querySelectorAll('button')].find((b) => /Batalkan/.test(b.innerText));
+    const sampah = document.querySelector('button[aria-label="Kosongkan keranjang"]');
+    return { batal: baca(batal), sampah: baca(sampah) };
+  });
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  for (const [nama, h] of Object.entries(hasil)) {
+    assert.ok(h.ada, `tombol ${nama} tidak ditemukan`);
+    assert.equal(h.disabled, true, `${nama} tidak nonaktif padahal keranjang kosong`);
+    assert.ok(h.teks && h.teks.length > 0, `${nama} nonaktif tanpa alasan terbaca`);
+  }
 });

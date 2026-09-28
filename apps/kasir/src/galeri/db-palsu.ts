@@ -389,6 +389,10 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
      skenario yang justru ada untuk dinilai matanya. */
   let gambar: Promise<unknown[]> | null = null;
 
+  /* Catatan penulisan galeri — lihat `execute`. */
+  const tulis: { sql: string; params: readonly unknown[] }[] = [];
+  (globalThis as { __galeriTulis?: unknown }).__galeriTulis = tulis;
+
   const db: DbLokal = {
     async getAll<T>(sql: string, params?: readonly unknown[]): Promise<T[]> {
       // ⛔ "Memuat" adalah promise yang TIDAK PERNAH selesai, bukan jeda 2 detik.
@@ -468,8 +472,14 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       }
       return baris as T[];
     },
-    async execute() {
+    async execute(sql: string, params?: readonly unknown[]) {
       if (skenario === 'error') throw new Error('galeri: skenario error');
+      /* ⛔ Penulisan DICATAT, dan hanya untuk dibaca test DOM lewat
+         `window.__galeriTulis` — bukan mesin SQL. Satu-satunya efek yang
+         ditiru adalah `DELETE FROM keranjang_lokal`, karena Batalkan
+         (Task 5B) membuktikan keranjang tersimpan ikut hilang. */
+      tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [] });
+      if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
     },
     async transaction<T>(fn: (tx: DbLokal) => Promise<T>): Promise<T> {
       return fn(db);

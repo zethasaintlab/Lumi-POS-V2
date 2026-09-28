@@ -6224,6 +6224,85 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /shifts/{shiftId}/cart-cleared:
+    post:
+      operationId: recordCartCleared
+      summary: Jejak audit pembatalan keranjang (`cart_cleared`).
+      description: >-
+        Keputusan user 28 September 2026 (issue #76): pembatalan keranjang
+        sesudah barang di-scan adalah pola kecurangan kasir — pelanggan
+        membayar tunai, keranjang dibatalkan, uangnya tidak tercatat.
+        Keranjang tetap BUKAN `order`; yang dicatat adalah PERISTIWA
+        pembatalannya, satu `audit_event` dengan `after` =
+        `{ line_count, quantity_milli, total }`.
+
+
+        ⛔ `total` dicatat SEBAGAIMANA DILAPORKAN perangkat (string rupiah
+        utuh, presisi di atas 2^53); server tidak menghitung ulang keranjang
+        yang tidak pernah dikirim kepadanya.
+
+
+        ⛔ Shift yang sudah TERTUTUP tetap diterima: ini catatan fakta lampau
+        dari relay yang terlambat, bukan perintah (pola `count_attempt`).
+        Tidak menulis `order`, `payment`, maupun `cash_movement`.
+        `Idempotency-Key` wajib; pengiriman ulang mengembalikan respons asli.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, lineCount, quantityMilli, total]
+              properties:
+                id:
+                  type: string
+                  description: ULID/UUIDv7 dari klien; juga id `audit_event`-nya.
+                lineCount:
+                  type: integer
+                  minimum: 1
+                  description: Jumlah baris keranjang saat dibatalkan.
+                quantityMilli:
+                  type: integer
+                  minimum: 1
+                  description: Jumlah kuantitas seluruh baris, ×1000.
+                total:
+                  type: string
+                  pattern: '^[0-9]+$'
+                  description: Total keranjang yang tampil di layar, rupiah utuh sebagai string.
+                occurredAt: { type: string, nullable: true }
+                hlc: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Pembatalan tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, shiftId]
+                properties:
+                  id: { type: string }
+                  shiftId: { type: string }
+        '400':
+          description: Field tidak sah (VALIDATION_ERROR), atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Peran tidak boleh mencatat pembatalan (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Shift atau aktor tidak ditemukan (SHIFT_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /shifts/{shiftId}/close:
     post:
       operationId: closeShift

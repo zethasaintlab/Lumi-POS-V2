@@ -21,6 +21,7 @@ import {
 } from '../katalog/baca.ts';
 import { bacaGambarKatalog, PESAN_GAMBAR_RUSAK, type GambarItem } from '../katalog/gambar.ts';
 import {
+  keranjangKosong,
   qtyDiKeranjang,
   satuanKeranjang,
   setelDiskon,
@@ -31,6 +32,10 @@ import {
 } from '../kasir/keranjang.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
 import { hitungKeranjang, type HitunganKeranjang } from '../kasir/penjualan.ts';
+import { batalkanKeranjang } from '../kasir/keranjang-batal.ts';
+import { muatHlc } from '../lokal/hlc.ts';
+import { tampilkanKuantitas } from '../../../../packages/domain/src/kuantitas.ts';
+import { DialogKonfirmasiKosongkan } from '../komponen/DialogKonfirmasiKosongkan.tsx';
 import {
   AMBANG_DISKON_BAWAAN,
   type AmbangDiskon,
@@ -69,7 +74,7 @@ import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
    yang tombol Bayar-nya pasti gagal adalah cara terburuk menyampaikan itu. */
 
 export function Kasir() {
-  const { db } = useDbLokal();
+  const { db, pemberitahu } = useDbLokal();
   const { sesi } = useSesi();
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [shift, setShift] = useState<ShiftAktif | null>(null);
@@ -144,6 +149,10 @@ export function Kasir() {
      sama dengan Diskon/Kas manual: tidak punya keadaan yang berguna lewat
      URL. */
   const [dialogManual, setDialogManual] = useState(false);
+  /* Toolbar #7 — Batalkan (spec § 4 baris 7). Dialog konfirmasi, dan
+     mengonfirmasi menulis `audit_event` `cart_cleared` (keputusan user
+     28 September 2026, issue #76). */
+  const [dialogBatal, setDialogBatal] = useState(false);
   /* `ARCH:358` — kill switch per fitur per merchant. Dibaca dari perangkat,
      jadi ia tetap berlaku offline; fitur yang belum pernah disegarkan
      mengikuti bawaan kode dan tetap menyala. */
@@ -275,6 +284,51 @@ export function Kasir() {
         ? 'Sesi tidak dikenali. Masuk ulang untuk memberi diskon.'
         : null;
 
+  /* Batalkan — alasan NONAKTIF, dua sebab dua kalimat (Aturan tombol §4).
+     Tombol toolbar dan ikon tempat sampah di kepala keranjang berbagi satu
+     alasan dan SATU handler (`konfirmasiBatal`). */
+  const alasanBatalNonaktif =
+    keranjang.baris.length === 0
+      ? 'Keranjang kosong. Tidak ada yang bisa dibatalkan.'
+      : sesi === null
+        ? 'Sesi tidak dikenali. Masuk ulang untuk membatalkan keranjang.'
+        : null;
+
+  /* ⛔ Konfirmasi Batalkan: total DIHITUNG ULANG lewat `hitungKeranjang` pada
+     saat konfirmasi (fungsi yang sama dengan blok Total), bukan memakai
+     `hitungan` state — state itu bisa tertinggal satu ketukan di belakang
+     keranjang, dan jejak yang totalnya beda dari layar tidak membuktikan apa
+     pun. Bukan aritmetika kedua: satu fungsi, dipanggil sekali lagi.
+
+     ⛔ Gagal apa pun (total tak terhitung, jejak tak tertulis) mengembalikan
+     pesan dan keranjang TETAP UTUH: keranjang kosong tanpa jejak adalah
+     persis yang fitur ini cegah. */
+  const konfirmasiBatal = async (): Promise<string | null> => {
+    if (!konfig || !sesi || !shift) {
+      return 'Sesi atau shift tidak dikenali. Keranjang TIDAK dibatalkan.';
+    }
+    const h = await hitungKeranjang({ db, konfig, keranjang, shift, waktu: () => new Date() });
+    const hlc = await muatHlc(db, () => Date.now());
+    const hasil = await batalkanKeranjang({
+      db,
+      konfig,
+      sesi,
+      shiftId: shift.id,
+      keranjang,
+      total: h.totals.total,
+      waktu: () => new Date(),
+      idBaru: () => crypto.randomUUID(),
+      hlc: () => hlc.tick(),
+    });
+    if (hasil.status === 'shift_tidak_terbuka') {
+      return 'Shift sudah tidak terbuka. Keranjang TIDAK dibatalkan.';
+    }
+    if (hasil.status === 'tercatat') pemberitahu.beritahu();
+    setelKeranjang(keranjangKosong());
+    setDialogBatal(false);
+    return null;
+  };
+
   /* ⛔ Hook dipasang SEBELUM setiap `return` bersyarat di bawah — aturan hooks
      React. Penanganannya (`dipindai`) baru terdefinisi di bawah, jadi ia
      dipanggil lewat ref: memindahkan `dipindai` ke atas berarti memindahkan
@@ -345,7 +399,8 @@ export function Kasir() {
        diabaikan, dan scan di sana menambahkan produk ke keranjang di
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
-    aktif: pilihan === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas && !dialogManual,
+    aktif:
+      pilihan === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas && !dialogManual && !dialogBatal,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -602,6 +657,26 @@ export function Kasir() {
           {alasanDiskonNonaktif !== null && (
             <span id="toolbar-diskon-alasan" className="sr-only">
               {alasanDiskonNonaktif}
+            </span>
+          )}
+
+          {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
+              konfirmasi dan jejak audit (spec § 4 baris 7). Tidak di balik
+              kill switch: kill switch tidak boleh menyentuh audit
+              (`spec-f:369`). Ikon tempat sampah di kepala keranjang memanggil
+              handler yang SAMA. */}
+          <Tombol
+            varian="ghost"
+            disabled={alasanBatalNonaktif !== null}
+            keterangan={alasanBatalNonaktif !== null ? 'toolbar-batal-alasan' : undefined}
+            onClick={() => setDialogBatal(true)}
+          >
+            <Icon name="trash-2" size={17} />
+            <span className="kasir-toolbar-label">Batalkan</span>
+          </Tombol>
+          {alasanBatalNonaktif !== null && (
+            <span id="toolbar-batal-alasan" className="sr-only">
+              {alasanBatalNonaktif}
             </span>
           )}
 
@@ -927,7 +1002,22 @@ export function Kasir() {
       </div>
 
       <aside className="kasir-keranjang">
-        <h2 className="t-title">Keranjang</h2>
+        <div className="kasir-keranjang-kepala">
+          <h2 className="t-title">Keranjang</h2>
+          {/* Mockup: ikon tempat sampah di kepala keranjang. Handler SAMA
+              dengan tombol Batalkan toolbar; nonaktif dengan alasan yang
+              sama, bukan hilang. */}
+          <button
+            type="button"
+            className="btn btn-ghost kasir-keranjang-kosongkan"
+            aria-label="Kosongkan keranjang"
+            aria-describedby={alasanBatalNonaktif !== null ? 'toolbar-batal-alasan' : undefined}
+            disabled={alasanBatalNonaktif !== null}
+            onClick={() => setDialogBatal(true)}
+          >
+            <Icon name="trash-2" size={17} />
+          </button>
+        </div>
 
         {/* FR-E4 — peringatan stok. Aturan design system #5: status TIDAK
             PERNAH warna saja, selalu ada teks; di sini teksnya memang
@@ -1238,6 +1328,16 @@ export function Kasir() {
             setKeranjang((k) => setelDiskon(k, d));
             setDialogDiskon(false);
           }}
+        />
+      )}
+
+      {dialogBatal && (
+        <DialogKonfirmasiKosongkan
+          jumlahItem={tampilkanKuantitas(
+            String(keranjang.baris.reduce((n, b) => n + b.quantityMilli, 0))
+          )}
+          onKonfirmasi={konfirmasiBatal}
+          onBatal={() => setDialogBatal(false)}
         />
       )}
 

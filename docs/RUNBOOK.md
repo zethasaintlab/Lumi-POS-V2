@@ -506,6 +506,24 @@ manusia hanya kecepatan.
 
 ---
 
+### 8.7 Batalkan keranjang: jejak `cart_cleared` tertahan di antrean
+
+Keputusan user 28 September 2026 (issue #76): **Batalkan keranjang menulis
+`audit_event` `cart_cleared`** (aktor, jumlah baris, kuantitas, total yang
+tampil) — pembatalan keranjang sesudah barang di-scan adalah pola kecurangan
+kasir. Keranjang tetap bukan `order`; tidak ada uang yang berpindah.
+
+| Gejala | Artinya |
+|---|---|
+| Item `cart_cleared` di K-14 berhenti dengan `404` atau `401` | ⛔ **Server belum diperbarui.** Rute `POST /shifts/{id}/cart-cleared` baru; klien baru di atas server lama menghasilkan persis ini. **Urutan rilis: server dulu, klien sesudahnya** (R8, R11). Jejaknya aman di antrean lokal; setelah server diperbarui, putar ulang dengan alat di § 10.1. |
+| `SESSION_INVALID` pada item itu | Rute belum terdaftar sebagai jalur perangkat di `apps/server/src/sesi.ts` — relay tidak mengirim Bearer. Cacat kode, bukan data. |
+| Keranjang kosong tapi tidak ada jejak di B-22 | Kelompok `transaksi`, jenis `cart_cleared`. Bila perangkat masih offline, jejaknya baru tiba saat antrean terkuras — dan shift yang sudah ditutup **tetap diterima** (fakta lampau). |
+
+⛔ **Jangan menyisipkan atau menghapus `audit_event` manual** untuk
+"merapikan" hitungan pembatalan: jejaknya bertahan lima tahun dan tidak pernah
+di-`UPDATE`. `total` dicatat **sebagaimana dilaporkan perangkat** — server tidak
+pernah melihat keranjangnya.
+
 ## 9. Server tidak sehat
 
 | Gejala | Periksa |

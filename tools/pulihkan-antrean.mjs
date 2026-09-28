@@ -54,6 +54,7 @@ const RUTE = {
   cash_movement: (id) => `/shifts/${encodeURIComponent(id)}/cash-movements`,
   count_attempt: (id) => `/shifts/${encodeURIComponent(id)}/count-attempts`,
   peripheral: () => '/peripherals',
+  cart_cleared: (id) => `/shifts/${encodeURIComponent(id)}/cart-cleared`,
 };
 
 function argumen(nama, bawaan) {
