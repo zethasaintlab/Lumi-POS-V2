@@ -2,9 +2,11 @@
 
 Kampanye "Hidupkan desain LumiPOS apa adanya". Keputusan kampanye:
 `docs/RENCANA-HIDUPKAN-DESAIN.md`. Spec ini disusun 28 September 2026 dari
-`main` `f01d7d1`, sesudah sub-proyek 1 (fondasi) di-merge. **Belum disetujui
-user.** Keputusan arah yang sudah diambil user tidak ditanyakan ulang; yang
-belum diputuskan dikumpulkan di § 13.
+`main` `f01d7d1`, sesudah sub-proyek 1 (fondasi) di-merge. **Direvisi 28
+September 2026** mengikuti jawaban user atas P1–P10 (issue #76, komentar
+`5862870577`, akun `zethasaintlab`): bawaan disetujui kecuali P1 (dengan
+syarat), P4, P5, dua keputusan otonom yang dibalik, dan tiga tambahan. Jawaban
+itu dikutip utuh di § 13; yang masih terbuka ada di indeks plan § Pertanyaan.
 
 Prinsipnya tetap satu kalimat: **identik secara tampilan, aman secara
 perilaku.** Mockup menang untuk tampilan; spec dan test menang untuk perilaku
@@ -21,7 +23,9 @@ pratinjau struk).
 
 **Di luar sub-proyek ini:** layar back-office (sub-proyek 3), aplikasi
 pelanggan (sub-proyek 4), `apps/hp`. Pengecualian: peta label metode
-pembayaran back-office disentuh § 5 karena Transfer lahir di sini.
+pembayaran back-office, **setiap laporan per metode** (server, back-office,
+HP M-01, ekspor), dan satu rute server untuk audit Batalkan disentuh di sini,
+karena Transfer dan audit Batalkan lahir di sini (§ 5, § 4).
 
 **Selesai bila:**
 
@@ -40,10 +44,10 @@ pembayaran back-office disentuh § 5 karena Transfer lahir di sini.
 | Mockup (`screen:state`) | Repo | Yang berubah |
 |---|---|---|
 | `login` | K-01 `layar/Login.tsx` | Sisa selisih kecil: judul/subjudul kartu mengikuti mockup. **Tetap 6 digit** (`spec-f:122`); salam "Halo, Rini Astuti" sebelum PIN tidak dibangun (pemilihan pengguna sebelum PIN tidak ada di spec) |
-| `shift` | K-02 `layar/BukaShift.tsx` | Tombol "Kembali" mockup tidak dibangun (K-02 adalah gerbang, tidak ada tujuan kembali, `BANDING.md` § K-02). Field "Cash drawer" tidak dibangun (satu laci per perangkat). Selebihnya sudah dikejar Fase 3.8 rebuild UI |
+| `shift` | K-02 `layar/BukaShift.tsx` | **Kolom "Saldo awal kas" bebas** lewat `bacaRupiah` (§ 9, keputusan user). Tombol "Kembali" mockup tidak dibangun (K-02 adalah gerbang, tidak ada tujuan kembali, `BANDING.md` § K-02). Field "Cash drawer" tidak dibangun (satu laci per perangkat). Selebihnya sudah dikejar Fase 3.8 rebuild UI |
 | `kasir:campuran`, `keranjang-kosong`, `keranjang-penuh`, `katalog-kosong`, `offline` | K-03 `layar/Kasir.tsx` + K-17 | **Besar.** Header satu baris (§ 3), toolbar delapan tombol (§ 4), field cari tanpa label terlihat, keranjang tanpa stepper dengan baris 58 px (§ 6), baris Diskon selalu tampil, baris "Pajak · nama tarif" (keputusan bawaan #5), tombol kosongkan keranjang di kepala keranjang (= toolbar "Batalkan"), banner offline setinggi mockup |
 | `edit-item` | **Baru**: `komponen/DialogEditItem.tsx` (memakai ulang pemilih modifier K-04/K-05) | § 6 |
-| `bayar:tunai`, `qris-memuat`, `qris-siap`, `qris-terkonfirmasi`, `qris-kedaluwarsa`, `kartu`, `transfer` | K-06 `layar/Pembayaran.tsx` + `komponen/PanelQris.tsx` | **Besar.** Kartu pembayaran bertoggle empat metode, total di atas, QR di dalam kartu, Transfer, aksi "Konfirmasi bayar" (§ 5, § 7) |
+| `bayar:tunai`, `qris-memuat`, `qris-siap`, `qris-terkonfirmasi`, `qris-kedaluwarsa`, `kartu`, `transfer` | K-06 `layar/Pembayaran.tsx` + `komponen/PanelQris.tsx` | **Besar.** Kartu pembayaran bertoggle empat metode, total di atas, QR di dalam kartu, Transfer, kolom "Nominal diterima" + kotak Kembalian yang hidup (keputusan user), aksi "Konfirmasi bayar" (§ 5, § 7) |
 | `sukses` | K-07 (tahap selesai `Pembayaran.tsx`) | Kembalian berwarna `--primary` seperti mockup; "Cetak Struk" membuka pratinjau struk (§ 8) |
 | `struk:58mm`, `struk:80mm` | **Baru**: pratinjau struk, `komponen/PratinjauStruk.tsx` | § 8 |
 | `riwayat:ada`, `riwayat:kosong` | K-08 `layar/Riwayat.tsx` | Penyaring Tanggal + Metode bayar, kolom Item dan Metode (§ 9). Nomor tetap `K1-YYYYMMDD-NNNN` (keputusan bawaan #3) |
@@ -90,8 +94,12 @@ chevron).
   sudah menolak logout saat antrean belum kosong (FR-H4, `spec-f:207`), tetapi
   **tidak ada satu tombol pun yang memanggilnya hari ini**. Menu ini
   menyambungkannya; pesan penolakannya ditampilkan apa adanya.
-- **Lonceng**: lihat § 13 P7. Bawaan: panel "Pemberitahuan perangkat" yang
+- **Lonceng** (P7(a), disetujui): panel "Pemberitahuan perangkat" yang
   hanya membaca data yang sudah ada di perangkat.
+- **Label "Cari produk" tersembunyi secara visual saja** (tambahan user untuk
+  R1): kelas `sr-only`, tetap terhubung lewat `htmlFor`/`id` dan dapat
+  ditemukan `getByLabel('Cari produk')`. Penjaga `bidang-label` tetap berlaku
+  tanpa disunting.
 - **Pita antrean FR-H8** (`PitaAntrean.tsx`, terukur 61 px) dirender dengan
   bentuk banner offline mockup (padding 8 px, teks 13 px, ikon 15 px, ≈ 34 px).
   Kalimat, syarat, dan tautannya tidak berubah. Alasan tinggi: § 14 R1.
@@ -112,13 +120,13 @@ jadi portal ke shell tidak diperlukan lagi.
 
 | # | Tombol (ikon) | Fungsi | Ada di kode hari ini | Yang dibangun |
 |---|---|---|---|---|
-| 1 | Item manual (`plus`) | Lihat § 13 P4. **Bawaan:** dialog masukan kode — kasir mengetik barcode/SKU saat scanner gagal atau label rusak | `cariBarcode` + jalur `dipindai` di `layar/Kasir.tsx` (K-17) | Dialog berisi satu `Bidang` + tombol Tambah; hasilnya lewat `dipindai`, jadi aturan stok FR-E4/E5 dan pesan "Barcode tidak dikenali" tetap satu jalur |
+| 1 | Item manual (`plus`) | **P4(a), keputusan user:** dialog masukan kode — kasir mengetik barcode/SKU saat scanner gagal atau label rusak. Arti "barang custom" ala Kasir Pintar (item berharga bebas di luar katalog) adalah **keputusan produk tertunda** yang butuh FR sendiri, dicatat di `docs/RENCANA-HIDUPKAN-DESAIN.md`, tidak dibangun | `cariBarcode` + jalur `dipindai` di `layar/Kasir.tsx` (K-17) | Dialog berisi satu `Bidang` + tombol Tambah; hasilnya lewat `dipindai`, jadi aturan stok FR-E4/E5 dan pesan "Barcode tidak dikenali" tetap satu jalur |
 | 2 | Diskon (`calculator`) | Diskon tingkat order FR-B8 | `komponen/DialogDiskon.tsx`, `kasir/diskon.ts` `statusDiskon` | Pindah dari slot bilah ke toolbar. Tetap **hilang** saat kill switch `diskon_kasir` mati (bukan nonaktif) |
-| 3 | Pajak (`receipt-text`) | Keputusan bawaan #2: pilihan tarif outlet yang sudah terdefinisi. **Diterjemahkan sebagai pilihan kanal Dine in/Takeaway** — lihat di bawah dan § 13 P9 | `hitungKeranjang(... channel)` sudah menerima `channel` (`kasir/penjualan.ts:351`), server menerima `body.channel`; tetapi layar selalu memakai `'takeaway'` | Lembar pilihan kanal yang menampilkan nama tarif hasil resolusi `TaxCalculator` untuk setiap kanal; `channel` disimpan di keranjang |
-| 4 | Catatan (`pencil`) | Catatan tingkat pesanan, tercetak di struk | Tidak ada. `order` tidak punya kolom catatan (`0007_ordering.sql`) | Lihat § 13 P6 |
-| 5 | Pelanggan (`user-round`) | Nama pemesan ("atas nama"), tercetak di struk | Tidak ada. `check.label` ada di skema server dan lokal tetapi selalu `NULL` (`orders.ts` `INSERT_CHECK_SQL`, `penjualan.ts:781`) | Lihat § 13 P5 |
-| 6 | No. Meja (`utensils-crossed`) | Label meja, tercetak di struk. **Bukan** manajemen meja (v1.1, `CLAUDE.md` § Jangan bangun) | Tidak ada | Lihat § 13 P5 |
-| 7 | Batalkan (`trash-2`) | Mengosongkan keranjang yang belum dibayar | `kosongkan()` di `kasir/keranjang.ts:226`; tidak dipakai layar mana pun | Konfirmasi "Kosongkan keranjang? N item" lalu `setelKeranjang(keranjangKosong())`. Juga dipanggil ikon tempat sampah di kepala keranjang (mockup). Tanpa baris database: keranjang belum menjadi `order` (FR-B1 AC: `DRAFT` yang ditinggalkan tidak menghasilkan baris) |
+| 3 | Pajak (`receipt-text`) | Keputusan bawaan #2: pilihan tarif outlet yang sudah terdefinisi. **Diterjemahkan sebagai pilihan kanal Dine in/Takeaway** (P9(a), disetujui) — lihat di bawah | `hitungKeranjang(... channel)` sudah menerima `channel` (`kasir/penjualan.ts:351`), server menerima `body.channel`; tetapi layar selalu memakai `'takeaway'` | Lembar pilihan kanal yang menampilkan nama tarif hasil resolusi `TaxCalculator` untuk setiap kanal; `channel` disimpan di keranjang |
+| 4 | Catatan (`pencil`) | Catatan tingkat pesanan, tercetak di struk | Tidak ada. `order` tidak punya kolom catatan (`0007_ordering.sql`) | P6(a): kolom `order.note` (≤ 140), dalam **satu migrasi** dengan dua kolom P5(b) |
+| 5 | Pelanggan (`user-round`) | Nama pemesan ("atas nama"), tercetak di struk. **Nama saja, tanpa nomor telepon** (keputusan user) | Tidak ada. `check.label` ada di skema server dan lokal tetapi selalu `NULL` (`orders.ts` `INSERT_CHECK_SQL`, `penjualan.ts:781`) | P5(b): kolom terstruktur `order.customer_name` (≤ 40). `check.label` tetap `NULL` |
+| 6 | No. Meja (`utensils-crossed`) | Nomor meja, tercetak di struk. **Bukan** manajemen meja (v1.1, `CLAUDE.md` § Jangan bangun); disimpan sebagai **data** karena sub-proyek 4 memesan per meja | Tidak ada | P5(b): kolom terstruktur `order.table_number` (teks ≤ 16 `[ASUMSI]`, mis. "4", "A3") |
+| 7 | Batalkan (`trash-2`) | Mengosongkan keranjang yang belum dibayar | `kosongkan()` di `kasir/keranjang.ts:226`; tidak dipakai layar mana pun | Konfirmasi "Kosongkan keranjang? N item" tetap ada, lalu **`audit_event` `cart_cleared`** (aktor, jumlah item, total, waktu) ditulis dan dikirim ke server — keputusan user yang membalik keputusan otonom lama (§ 4 "Batalkan dan jejak audit"). Juga dipanggil ikon tempat sampah di kepala keranjang (mockup). Tetap **tanpa baris `order`** (FR-B1 AC: `DRAFT` yang ditinggalkan tidak menghasilkan baris order) |
 | 8 | Pesanan tahan (`pause-circle`) | Menyimpan keranjang berjalan untuk dilanjutkan, lalu memulai keranjang baru | Parsial: `kasir/keranjang-simpan.ts` (KEP-21) menyimpan **satu** keranjang berjalan per perangkat (`id = 'kini'`) | Tabel **murni lokal** baru `keranjang_tahan` (tidak didaftarkan ke PowerSync, tidak naik ke server). Tombol membuka daftar tahanan shift ini: Tahan pesanan ini · Lanjutkan · Buang |
 
 ### Pajak sebagai pilihan kanal
@@ -141,6 +149,14 @@ Konsekuensi yang dinyatakan: fixture `channel = 'dine_in'` + service charge
 yang dituntut `uang-pembayaran-kas.md` § "K-06/K-07 tidak boleh dinyatakan
 selesai tanpa tiga fixture ini" menjadi wajib di task ini.
 
+⛔ **Dine in tidak menyiratkan biaya layanan** (tambahan user untuk P9).
+`service_charge_amount` tetap terkunci nol di perangkat (`penjualan.ts`
+mengirim `serviceChargeAmount: 0n`) dan di server (`orders.ts` menulis literal
+`0`, registri `klaim-registri.test.js` id `service-charge-nol`). Lembar Pajak,
+baris keranjang, K-06, K-07, dan struk tidak memuat kata "layanan"/"service"
+dalam keadaan Dine in, **termasuk** saat `outlet.service_charge_rate` bukan
+nol. Penjaga G-TANPA-LAYANAN (§ 11).
+
 ### Pesanan tahan — batas yang dinyatakan
 
 - Murni lokal, satu perangkat. **Bukan** berbagi order antar perangkat
@@ -153,9 +169,47 @@ selesai tanpa tiga fixture ini" menjadi wajib di task ini.
   menuntut persetujuan baru" tetap dari `statusDiskon`.
 - **K-12 menolak tutup shift selama ada tahanan** dan menampilkan daftarnya,
   sejajar FR-B1 AC keempat ("Menutup shift dengan order OPEN menampilkan
-  daftar dan meminta konfirmasi per order"). Membuang tahanan tidak menulis
-  apa pun ke server, sama seperti Batalkan.
+  daftar dan meminta konfirmasi per order"). Membuang tahanan menulis
+  peristiwa `cart_cleared` yang sama dengan Batalkan (§ 4 "Batalkan dan jejak
+  audit"); selain itu tidak ada yang naik ke server.
 - Batas jumlah tahanan: 20 per shift `[ASUMSI]`.
+
+### Batalkan dan jejak audit (keputusan user, 28 September 2026)
+
+Alasan user, dikutip: *"pembatalan keranjang sesudah barang di-scan adalah
+pola kecurangan kasir — pelanggan membayar tunai, keranjang dibatalkan,
+uangnya tidak tercatat."* Keranjang tetap bukan `order`; yang dicatat adalah
+**peristiwa** pembatalannya.
+
+- **Peristiwa:** `event_type = 'cart_cleared'`, kelompok `transaksi` di
+  `PERISTIWA_AUDIT` (`packages/domain/src/audit-peristiwa.ts`); tidak ada di
+  daftar `spec-f:288`, dinyatakan di komentarnya seperti
+  `calculation_variance`. `entity_type = 'cash_drawer_shift'`, `entity_id` =
+  shift berjalan (pola no-sale K-16, `kasir/no-sale.ts`). `actor_user_id` =
+  staf sesi; `occurred_at` + `hlc` perangkat; `after` =
+  `{ "line_count": n, "quantity_milli": n, "total": "<bigint rupiah>" }`,
+  `total` = `hitungKeranjang(...).totals.total` keranjang saat dibatalkan
+  (angka yang sama dengan yang kasir lihat, bukan aritmetika kedua).
+- **Satu transaksi lokal:** `audit_event` lokal + `enqueue` outbox + hapus
+  baris `keranjang_lokal`. Perangkat yang mati di tengah meninggalkan keadaan
+  "keranjang utuh, tanpa jejak" atau "keranjang kosong, dengan jejak" — tidak
+  pernah keranjang kosong tanpa jejak.
+- **Offline penuh:** dikirim lewat outbox, `entity_type` outbox baru
+  `cart_cleared` → `POST /shifts/{shiftId}/cart-cleared` (modul `cash`,
+  pemilik `cash_drawer_shift`; pola `no-sale.ts`). Rute masuk daftar jalur
+  perangkat `apps/server/src/sesi.ts` dan `rbac-rute.ts`, dan `openapi.yaml`
+  (spec-first). Server menerima peristiwa **meski shiftnya sudah ditutup**
+  saat relay tiba (alasan yang sama dengan `count_attempt`): ini catatan fakta
+  lampau, bukan perintah. `total` dicatat **sebagaimana dilaporkan
+  perangkat**, dan dinyatakan begitu.
+- **Konfirmasi tetap ada.** Batal di konfirmasi tidak menulis apa pun.
+  Keranjang kosong: tombol nonaktif, tidak ada peristiwa.
+- **Pesanan tahan yang dibuang** (§ 4 #8) memakai peristiwa yang sama dengan
+  keranjang tahanan sebagai isinya: membuang tahanan sesudah barang di-scan
+  adalah pola yang sama persis. Perluasan ini keputusan otonom (§ 12).
+- **Di luar sub-proyek ini:** baris laporan exception per kasir untuk
+  `cart_cleared` (FR-G5, back-office). Peristiwanya terbaca di log audit B-22
+  lewat kelompok `transaksi` sejak hari pertama; laporannya utang sub-proyek 3.
 
 ### Aturan tombol
 
@@ -196,7 +250,7 @@ selesai tanpa tiga fixture ini" menjadi wajib di task ini.
 | Kasir | `MetodeBayar` tidak memuat `other` (`kasir/penjualan.ts:77`) |
 | Label | `other: 'Lainnya'` di `metode-tampilan.ts`, `cetak/metode.ts`, dan **dua salinan lokal** di back-office (`penjualan/b04.ts:65`, `laporan/Pembayaran.tsx:70`) |
 
-### Rancangan (bawaan, sampai § 13 P1 dan P2 dijawab)
+### Rancangan (P1(a) dengan syarat, P2(a) — keputusan user 28 September 2026)
 
 **Transfer adalah metode konfirmasi-manual yang berfungsi offline**, bentuknya
 sama dengan QRIS statis: tidak ada sistem yang memverifikasi, kasir
@@ -206,17 +260,28 @@ menyatakan uang sudah masuk berdasarkan bukti di ponsel pelanggan.
   `provider_reference` = nomor referensi dari bukti transfer (**wajib**),
   `acquirer` = bank tujuan (opsional, teks bebas). Nol migrasi: semua kolom
   sudah ada. `provider` membedakan transfer dari voucher kelak.
+- ⛔ **Syarat user: uang bank tidak boleh tersembunyi dari pemilik.** Setiap
+  tampilan dan ekspor yang mengelompokkan per metode mengelompokkan menurut
+  `(method, provider)` dan menampilkan **"Transfer"**, tidak pernah "Lainnya"
+  (lihat butir Laporan).
 - **Validasi di domain, dipakai perangkat dan server** (pola
   `uang-pembayaran-kas.md` § "Aturan validasi QRIS statis dan EDC hidup di
   `pembayaran-manual.ts`"): `periksaTransfer(referensi, bank)` =
   `periksaReferensi` (≥ 3 karakter) + `periksaBukanNomorKartu` pada kedua
   field (FR-C5 AC keempat). Nomor rekening 10 digit lolos; 13–19 digit ditolak
   `POSSIBLE_CARD_NUMBER`.
-- **`confirmed_manually`**: lihat § 13 P2. Bawaan **`true`**, supaya transfer
-  masuk laporan exception FR-G5 bersama QRIS statis.
+- **`confirmed_manually = true`** (P2(a), disetujui), sejajar QRIS statis.
+  Laporan exception FR-G5 per konfirmasi manual belum ada untuk QRIS statis
+  maupun transfer (indeks plan Q3, masih terbuka).
 - **Server:** `other` masuk `SUPPORTED_METHODS` dan `MANUAL_METHODS`;
   `recordManualPayment` mendapat cabang `other` yang menuntut `provider` dari
-  daftar tertutup (`'bank_transfer'` saja di v1).
+  daftar tertutup (`'bank_transfer'` saja di v1). Komentar
+  `payments.ts:479` ("`provider` sengaja dibiarkan NULL … laporan mengira
+  transaksi ini pernah diverifikasi") **ditulis ulang**: untuk transfer
+  `provider` menyebut SALURAN, bukan pemverifikasi; tanda "tidak diverifikasi
+  sistem" adalah `confirmed_manually`. QRIS statis dan EDC tetap `provider`
+  NULL. Diperiksa: tidak satu pun query di `apps/server/src/modules/reporting`
+  membaca `provider`.
 - **Kas:** tidak menulis `cash_movement`. Aturan yang sudah ada berlaku tanpa
   perubahan: perangkat hanya menulis movement untuk `bagianTunai`
   (`penjualan.ts:917`), server hanya di cabang tunai (`payments.ts:980`).
@@ -233,18 +298,30 @@ menyatakan uang sudah masuk berdasarkan bukti di ponsel pelanggan.
   sama dengan `pembayaran_qris_statis` (permukaan fraud yang tidak
   diverifikasi sistem). Tidak menyentuh audit, tidak menghentikan penjualan
   (tunai tetap ada).
-- **Label:** `LABEL_METODE` diturunkan dari `(method, provider)`:
-  `other` + `bank_transfer` → "Transfer", `other` lain → "Lainnya". Dua
+- **Label:** satu fungsi domain `kodeLaporanMetode(method, provider)` →
+  `'transfer'` untuk `other` + `bank_transfer`, selebihnya `method`; dan
+  `labelMetode(method, provider?)` = `LABEL_METODE[kodeLaporanMetode(…)]`
+  dengan `LABEL_METODE.transfer = 'Transfer'`. `other` tanpa provider →
+  "Lainnya" (tidak pernah dihasilkan transfer). Dua
   salinan back-office dihapus dan diganti impor `labelMetode` (salinan kelima
   dan keenam dari peta yang `TutupKas.tsx:76` sudah pernah temukan
   menyimpang). Struk (`cetak/metode.ts`): "Transfer", ditambah baris "Ref:
   …" dan penanda konfirmasi manual, sejajar QRIS statis.
-- **Laporan:** `posisi-penjualan.ts` tidak disentuh (omzet tidak per metode).
-  Rincian per metode di B-03/B-04/M-01/K-12 mengelompokkan menurut
-  `method`; transfer tampil sebagai baris sendiri bila pengelompokan
-  memakai label turunan `(method, provider)`. Plan memeriksa setiap query
-  `GROUP BY method` dan memutuskan per query; yang tidak diubah tetap
-  melaporkan transfer di bawah "Lainnya", dan itu dinyatakan.
+- **Laporan — SETIAP pengelompokan per metode, tanpa pengecualian**
+  (syarat user P1): `posisi-penjualan.ts` tidak disentuh (omzet tidak per
+  metode). Yang diubah, masing-masing mengambil `provider` dan melipat lewat
+  `kodeLaporanMetode` (SQL tidak menulis ulang aturannya dengan `CASE`):
+  laporan pembayaran / rekonsiliasi FR-C12 (`reports-pembayaran.ts`
+  `ambilPembayaran`, dipakai juga ekspor `reports-ekspor.ts` dan HP M-01
+  `ringkasan-hp.ts`), detail shift back-office (`reporting/handlers/shift.ts`),
+  detail transaksi B-04 (`detail-transaksi.ts`, satu baris per pembayaran,
+  menambah `provider`), K-12 perangkat (`kas/tutup.ts`), laporan harian
+  perangkat (`laporan/harian.ts`), K-08 (`riwayat/baca.ts`), dan struk
+  (`cetak/metode.ts`, `cetak/ulang.ts`). Field `method` pada respons laporan
+  agregat membawa **kode laporan** (`'transfer'`), didokumentasikan di
+  `openapi.yaml`; klien N-1 menampilkan kode mentah "transfer" sampai
+  diperbarui — tidak pernah "Lainnya". Ekspor CSV menulis `transfer`.
+  Penjaga G-LAPORAN-TRF (§ 11).
 - **Kompatibilitas N-1:** server lama menolak `other`. Urutan rilis: server
   dulu, klien sesudahnya. Klien baru yang bertemu server lama menerima
   `PAYMENT_METHOD_UNSUPPORTED` dan barisnya berhenti di outbox — kondisi yang
@@ -339,23 +416,63 @@ sudah diketik. Keputusan otonom, § 12.
 
 | Tab | Isi | Sumber perilaku |
 |---|---|---|
-| Tunai | Field "Nominal diterima" (awalan `Rp`, rata kanan, pola K-12) + pintasan pecahan | `PECAHAN` yang ada. Mockup memberi tiga pintasan 44 px; repo tetap enam pecahan, tampil 44 px dengan `.sentuh-uang` |
+| Tunai | Kolom "Nominal diterima" (awalan `Rp`, rata kanan, dibaca `bacaRupiah`, pola K-12) + **tiga pintasan yang MENETAPKAN nilai** (Rp 20.000 · Rp 50.000 · Rp 100.000, persis mockup) + kotak **Kembalian** yang hidup | Keputusan user: menggantikan enam `PECAHAN` yang menambah (`Pembayaran.tsx:73`). Pintasan tampil 44 px dengan `.sentuh-uang`. Lihat "Nominal diterima dan Kembalian" di bawah |
 | QRIS | Sub-pilihan **QRIS dinamis** / **QRIS statis**, lalu isi masing-masing | Dinamis: `mulaiQris` + `PanelQris` (FR-C14). Statis: field referensi wajib (FR-C2). Dinamis tetap terlihat dan nonaktif dengan "Perlu internet" saat tak terjangkau (FR-C3, P5). Statis hilang saat `pembayaran_qris_statis` mati |
 | Kartu | Kode approval (wajib), 4 digit terakhir (opsional) | FR-C4. Mockup menulis "Jenis kartu" + "Nomor referensi"; label repo tetap karena kolomnya `approval_code`/`card_last4` |
 | Transfer | "Bank tujuan" + "Nomor referensi" (wajib) | § 5 |
 
-- **Total dari `hitungan.totals.total`**, di blok atas. Pembulatan FR-C9
-  **tidak** tampil di K-06 (P2).
-- ⛔ **Panel "Kembalian" mockup di tab Tunai DITOLAK.** Kembalian bergantung
-  pada `amount_due` yang baru ada sesudah pembulatan di `simpanPenjualan`;
-  menampilkannya di K-06 melanggar FR-C9 dan penjaga P3. Panel yang sama
-  (latar `--accent-subtle`, 32/700) dipakai untuk **"Uang diterima"**, dan
-  kembalian tetap hanya di K-07. Dicatat di `docs/referensi-visual/README.md`.
+- **Total dari `hitungan.totals.total`**, di blok atas. `total` tidak pernah
+  dibulatkan.
+- **Panel "Kembalian" mockup DITERIMA** (keputusan user 28 September 2026,
+  membalik penolakan di versi pertama spec ini). Aturannya di bagian berikut.
 - **Pembayaran campuran** (keputusan bawaan #4): tautan kecil "Bayar dengan
   lebih dari satu metode" di bawah isi metode. Membukanya menampilkan daftar
   bagian ber-Hapus dan sisa tagihan (P7) di dalam kartu yang sama.
 - **Aksi utama berlabel "Konfirmasi bayar"** untuk Tunai, QRIS statis, Kartu,
   dan Transfer. Galat tetap di atas bilah aksi (P8).
+
+### Nominal diterima dan Kembalian (keputusan user, 28 September 2026)
+
+User, dikutip: *"Kembalian dihitung lewat `rencanakanPembayaran` yang sama
+dengan yang dipakai `simpanPenjualan`, bukan aritmetika kedua. Pembulatan
+FR-C9 tetap satu sumber."* Ini **membalik dengan sengaja** aturan `CLAUDE.md`
+§ Aturan uang ("… hanya tampil di K-07, tidak pernah di K-06") dan baris
+invarian "Pembulatan FR-C9 hanya di `simpanPenjualan`, hanya tampil di K-07".
+Keduanya ditulis ulang dalam task tersendiri, dengan tanggal dan sumber.
+
+- ⛔ **Satu fungsi, dua pemanggil.** Pemetaan bagian pembayaran → masukan
+  `rencanakanPembayaran` (termasuk `nominal ?? totals.total` untuk bagian
+  non-tunai tanpa nominal, `rounding_increment ?? 100`, `rounding_mode ??
+  'half_up'`) diekstrak dari `simpanPenjualan` (`penjualan.ts:685-694`) ke
+  fungsi murni baru `rencanaBayarKeranjang(hitungan, bagian)` di
+  `kasir/penjualan.ts`. `simpanPenjualan` dan K-06 memanggilnya; tidak ada
+  lagi pemanggil `rencanakanPembayaran` lain di `apps/kasir`. Salinan
+  pemetaan di layar akan menyimpang tepat di bawaan-bawaan itu.
+- **Masukan:** kolom "Nominal diterima" dibaca `bacaRupiah` (`packages/domain/
+  src/uang-tampilan.ts:88`). Kosong atau cacat → `null`, bukan `0`; kotak
+  Kembalian menampilkan `Rp —` dan "Konfirmasi bayar" nonaktif dengan alasan
+  "Isi nominal yang diterima." Pintasan menulis angkanya ke kolom yang sama
+  (menetapkan, bukan menambah).
+- **Kembalian** = `rencana.kembalian` dari hasil `ok`. Hasil `KURANG_BAYAR`:
+  Kembalian `Rp —` dan alasan "Uang diterima kurang dari tagihan tunai." —
+  tanpa angka kurang yang dihitung di layar. Galat lain: pesan rencana apa
+  adanya.
+- **Pembayaran campuran:** bagian non-tunai masuk `bagian` yang sama; kotak
+  Kembalian dihitung dari seluruh rencana, jadi pembulatan jatuh pada SISA
+  tunai sesudah non-tunai, persis seperti yang tersimpan.
+- **Baris tagihan tunai dibulatkan** (keputusan otonom § 12): bila
+  `rencana.roundingAdjustment !== 0n`, di bawah Kembalian tampil kalimat 13 px
+  "Tagihan tunai dibulatkan menjadi Rp X" dengan `X = rencana.tunaiDitagih`.
+  Tanpanya kembalian 6.500 untuk uang 100.000 atas total 93.555 terbaca
+  sebagai salah hitung di depan pelanggan.
+- ⛔ **Penjaga P2 dan P3 diubah dengan sengaja, dalam commit tersendiri**:
+  dari "tidak ada kembalian/pembulatan di K-06" menjadi **"kembalian di K-06
+  sama persis dengan kembalian yang tersimpan sesudah simpan"**
+  (`payment.change_amount` baris tunai, dan angka K-07), diuji dengan
+  pembulatan aktif (increment 100, 500, 1.000) dan pembayaran campuran
+  (QRIS statis + tunai; Transfer + tunai). Masuk cakupan sabotase independen.
+- K-07 tetap menampilkan baris pembulatan dan kembalian dari hasil
+  `simpanPenjualan` (sumbernya rencana yang sama).
 
 ### QRIS dinamis di dalam kartu
 
@@ -376,11 +493,16 @@ sudah diketik. Keputusan otonom, § 12.
   centang hijau + "Pembayaran terkonfirmasi"), dan `kedaluwarsa` ("Kode QR
   kedaluwarsa" + "Buat kode baru") mengikuti mockup. Kalimat P6 yang
   membedakan habis waktu dari ditolak penerbit tidak berubah.
-- **Kapan QR diminta**: § 13 P3. Bawaan: kartu QRIS dinamis menampilkan
+- **Kapan QR diminta** (P3(b), disetujui): kartu QRIS dinamis menampilkan
   nominal + tombol sekunder "Tampilkan kode QR"; QR baru diminta saat itu
   ditekan.
-- **Encoder QR**: § 13 P3b. `qrString` tetap tersedia sebagai teks yang dapat
-  dipilih di bawah gambar (jalur salin), sesuai README § Diterima.
+- **Encoder QR** (P3b(a), disetujui): `qrcode-generator`, dirender SVG.
+  `qrString` tetap tersedia sebagai teks yang dapat dipilih di bawah gambar
+  (jalur salin), sesuai README § Diterima.
+- ⛔ **Tambahan user untuk P3b:** *"Gambar yang tidak dapat dipindai lebih
+  buruk daripada tidak ada gambar."* Penjaga G-QR mendekode gambar QR yang
+  **dirender** dan membandingkannya dengan string dari gateway, pada ukuran
+  tampilnya (192 px, tanpa pembesaran) maupun diperbesar.
 - Pemulihan draf (`pulihkanDraf`, `spec-c:328`) langsung membuka tab QRIS
   dalam keadaan menunggu, terkunci.
 
@@ -389,12 +511,13 @@ sudah diketik. Keputusan otonom, § 12.
 **K-07** (mockup `Success`): kartu 536 px (terukur, `BANDING.md`), lingkaran centang, "Transaksi
 selesai", nomor struk (`K1-…`, bukan `TRX-…`) + nama kasir, panel kembalian
 `--accent-subtle` dengan angka 32/700 **berwarna `--primary`** (mockup; aksen
-di sini angka, bukan aksi kedua), grid 2×2 tombol. Pembulatan tetap tampil
-hanya di sini. Kalimat hasil cetak pertama (`kalimatCetak`) tetap.
+di sini angka, bukan aksi kedua), grid 2×2 tombol. Baris pembulatan tetap
+tampil di sini; kembaliannya sama persis dengan yang K-06 tampilkan (§ 7).
+Kalimat hasil cetak pertama (`kalimatCetak`) tetap.
 
 - "Cetak Struk" → pratinjau struk (mockup `sukses → struk`).
 - "Transaksi Baru" tetap `setelKeranjang(keranjangKosong())`.
-- "Kirim WhatsApp" dan "Kirim Email": § 13 P8. Bawaan: tidak dirender
+- "Kirim WhatsApp" dan "Kirim Email" (P8(a), disetujui): tidak dirender
   (tidak ada tombol mati); grid menjadi dua tombol.
 
 **Pratinjau struk** (mockup `Receipt`): judul "Preview struk", toggle
@@ -440,7 +563,9 @@ ke `ESC a`) dirender di pratinjau dengan `text-align`, bukan spasi.
   `cash_movement` lokal, baca-saja. Movement penjualan tunai tidak
   ditampilkan (mockup hanya menampilkan kas manual). Tanpa saldo: saldo laci tetap hanya di K-12 tahap
   review (hitungan buta FR-D2 tidak boleh dibocorkan lewat layar lain).
-- Rute: § 13 P10. Bawaan `/laci`.
+- Rute (P10(a), disetujui): `/laci`. Penyuntingan `product/IA-lumi-pos-v1.md`
+  §2.2 + §7 yang menyertainya menunggu Q9 (kewenangan menyunting `product/`),
+  lihat indeks plan.
 
 **K-08 Riwayat.** Tambah penyaring Tanggal (tanggal bisnis, jendela riwayat
 lokal) dan Metode bayar (dari `LABEL_METODE`), kolom Item (jumlah baris) dan
@@ -453,7 +578,21 @@ Shift". Tahap `hitung` tetap tanpa satu angka pun yang bocor
 (`k12-hitungan-buta`). "Total penjualan" dan "Penjualan per metode" hanya di
 `review`. Tutup ditolak selama ada Pesanan tahan (§ 4).
 
-**K-01, K-02, K-10.** Hanya selisih sisa di § 2.
+**K-02 Saldo awal (keputusan user, 28 September 2026).** Mockup `shift`
+memberi kolom "Saldo awal kas" bernilai bebas. Hari ini K-02 hanya punya
+empat tombol pecahan yang MENAMBAH (`BukaShift.tsx:30`, 50.000–500.000) dan
+tidak ada cara mengetik angka bebas.
+
+- Kolom "Saldo awal kas" (awalan `Rp`, rata kanan) dibaca `bacaRupiah`, pola
+  K-12 (`TutupKas.tsx:243-250`). Kosong atau cacat → `null`: "Mulai Shift"
+  nonaktif dengan alasan "Isi saldo awal kas."; **kosong tidak pernah menjadi
+  Rp 0**. Nol yang diketik tetap sah (laci kosong adalah keadaan nyata), dan
+  `validasiSaldoAwal` (`kas/shift.ts:79`) tetap penentu akhirnya.
+- Tombol pecahan dihapus, mengikuti mockup (keputusan otonom § 12).
+- Jalur tulis `bukaShift` tidak berubah: `opening_float` tetap satu-satunya
+  movement pembuka, dan saldo laci tetap `saldo_awal + SUM(delta)`.
+
+**K-01, K-10.** Hanya selisih sisa di § 2.
 
 ## 10. Utang dari sub-proyek 1
 
@@ -488,11 +627,14 @@ dengan kode itu.
 | `k12-aksi-slot.test.js` | "Tutup Kas" di slot bilah nav | "Tutup Shift" di bilah aksi bawah, terlihat tanpa gulir di tahap review |
 | `k06-penjaga.test.js` P1 | pemilih metode **tidak ada di DOM** selama panel QRIS | pemilih metode ada tetapi setiap tab `disabled`, dengan alasan; "Kembali ke kasir" dan tautan campuran **tidak ada**; tombol utama nonaktif berlabel "Menunggu pembayaran"; tab nav terkunci. Keputusan kampanye "Selama QRIS menunggu, toggle metode dan keranjang terkunci" menggantikan "tidak ada di DOM" |
 | `k06-penjaga.test.js` P5, P7, P8, P9 + `galeri-cakupan.test.js` K-07 + `k06-tata-letak.test.js` + `k07-konfirmasi.test.js` | teks "Simpan Penjualan", `QRIS`/`QRIS statis`/`Kartu (EDC)` sebagai tombol, "metode SATU baris 56 px", Total di blok aksi bawah, "Cetak ulang di kiri, Transaksi Baru 56 px di kanan" | "Konfirmasi bayar", segmented empat tab + sub-pilihan QRIS, Total di blok atas 32/700, K-07 grid tombol |
+| `k06-penjaga.test.js` P2 + P3 (**keputusan user 28 Sep 2026**, commit tersendiri, bukan keputusan kampanye 26 Sep) | P2: K-06 tidak memanggil `computeCashRounding`/`roundingAdjustment`/`rencanakanPembayaran` dan tidak merender baris pembulatan; P3: kata "Kembalian" tidak pernah di K-06 | **P2**: pembulatan satu sumber — `Pembayaran.tsx` tidak memanggil `computeCashRounding` maupun `rencanakanPembayaran` langsung, hanya `rencanaBayarKeranjang`; `apps/kasir/src` punya tepat satu pemanggil `rencanakanPembayaran` (di dalam `rencanaBayarKeranjang`). **P3**: kembalian di K-06 **sama persis** dengan kembalian K-07 dan `payment.change_amount` tersimpan, dengan pembulatan aktif dan pembayaran campuran |
+| `k06-penjaga.test.js` P3, `k07-konfirmasi.test.js:122`, `galeri-cakupan.test.js:139` (jalur ke K-07) | menekan `+ Rp 100.000` (pecahan yang menambah) | mengetik di "Nominal diterima" atau menekan pintasan "Rp 100.000" yang menetapkan |
+| `k02-buka-shift.test.js` | saldo awal lewat tombol pecahan | kolom "Saldo awal kas"; kosong ≠ Rp 0 |
 | `laci-kas.test.js` | dialog kas manual dari K-03, toggle 56 px | layar Laci kas dua kartu; toggle tampil 44 px dengan `.sentuh-uang` |
 | `galeri-cakupan.test.js` dialog kas masuk/keluar dan buka laci | dibuka dari K-03 | dibuka dari Laci kas |
 | `area-sentuh.test.js` S8 | `.stepper` keranjang | baris keranjang dan tombol Edit Item |
 | `warna-tombol.test.js`, `komponen-bundle-uang.test.js` | disebut `stepper` | diperiksa di plan; `komponen-bundle-uang` tetap melarang `CartRow`/`ProductCard` |
-| `tests/kasir/rute.test.js`, `urutan-tampilan.test.js` | `TABEL_RUTE` = IA §7, urutan nav lima tab | empat tab mockup; `/laci` bila P10 disetujui, bersama penyuntingan IA §7 |
+| `tests/kasir/rute.test.js`, `urutan-tampilan.test.js` | `TABEL_RUTE` = IA §7, urutan nav lima tab | empat tab mockup; `/laci` (P10(a) disetujui) bersama penyuntingan IA §7, yang menunggu Q9 — `rute.test.js` tidak disunting dan tetap mengikat tabel rute ke IA |
 
 ### Invarian yang wajib hijau tanpa disunting
 
@@ -501,11 +643,12 @@ dengan kode itu.
 - posisi Bayar sama untuk 0, 3, dan 20 item (`k03-bayar-tetap`);
 - K-14 ≥ 3 baris tabel (`k14-tata-letak`);
 - hitungan buta K-12 (`k12-hitungan-buta`);
-- P2 dan P3 (`k06-penjaga`): pembulatan dan kata "Kembalian" tidak pernah di
-  K-06; `tests/kasir/penjualan.test.js` untuk pembulatan hanya di
-  `simpanPenjualan`;
+- `tests/kasir/penjualan.test.js` untuk pembulatan hanya pada sisa tunai;
+  (P2 dan P3 `k06-penjaga` pindah ke tabel di atas: diubah atas keputusan
+  user);
 - label terhubung (`bidang-label`), termasuk field cari yang labelnya kini
-  tak terlihat (label tetap ada, disembunyikan secara visual);
+  tak terlihat (label tetap ada, `sr-only`, dan `getByLabel('Cari produk')`
+  menemukan input-nya);
 - area chip tidak bertumpuk (`k03-area-chip`), skala teks (`skala-teks`),
   palet (`palet-berlaku`), nol hex (`nol-hex-css`), ikon Lucide
   (`ikon-lucide`, `ikon-bundle`), `ds-bundle` tidak disunting.
@@ -526,15 +669,21 @@ Bila salah satunya merah karena ukuran mockup: kondisi berhenti, laporkan.
 | G-TRF-KAS | Property: penjualan apa pun yang memuat bagian transfer menulis `cash_movement` hanya sebesar bagian tunainya, di perangkat dan di server | `tests/kasir/penjualan.test.js`, `tests/payment/*` | property |
 | G-TRF-RELAY | Transfer offline → outbox → server, dengan retry dan respons hilang, tanpa baris ganda | `tests/payment/pembayaran-offline-relay.test.js` | PostgreSQL |
 | G-LABEL | Satu peta label metode: tidak ada `LABEL_METODE` lokal di `apps/backoffice` | `tests/runtime/` (pindai) | pindai |
-| G-QR | QR yang dirender di-decode di peramban (decoder di devDependency test) dan hasilnya **sama persis** dengan `qrString` | `tests/kasir-dom/k06-qr.test.js` | DOM |
+| G-QR | QR yang dirender di-decode di peramban (decoder di devDependency test) dan hasilnya **sama persis** dengan `qrString`, pada ukuran tampil 192 px **dan** diperbesar (tambahan user) | `tests/kasir-dom/k06-qr.test.js` | DOM |
 | G-STRUK | `tataLetakStruk(dok, profil)` sama dengan teks yang diturunkan dari byte `renderEscPos` (kode ESC dibuang), untuk 58 dan 80 mm, termasuk transliterasi dan dua kolom yang dipotong; pratinjau di DOM menampilkan baris yang sama | `tests/kasir/escpos.test.js` + `tests/kasir-dom/pratinjau-struk.test.js` | murni + DOM |
 | G-IA62-PITA | ≥ 12 kartu pada 1024×768 dengan kartu berfoto **dan** pita antrean FR-H8 tampil | `k03-kepadatan.test.js` (skenario baru) | DOM |
 | G-LH | `line-height` yang dihitung untuk setiap elemen teks galeri ∈ {1.15, 1.3, 1.5, 1.4} × ukurannya | `tests/kasir-dom/skala-teks.test.js` | DOM |
 | G-KELUAR | Menu pengguna → Keluar memanggil `keluar()`; dengan antrean tidak kosong, pesan FR-H4 tampil dan sesi tetap | `tests/kasir-dom/header.test.js` | DOM |
+| G-KEMBALIAN (= P2/P3 baru) | Property: `rencanaBayarKeranjang(hitungan, bagian).rencana.kembalian` = `kembalian` hasil `simpanPenjualan` = `payment.change_amount` tersimpan, untuk total × increment {100, 500, 1.000} × mode × bagian {tunai saja, QRIS statis + tunai, Transfer + tunai}; DOM: angka K-06 = angka K-07 = baris tersimpan; `Pembayaran.tsx` tidak menyentuh `computeCashRounding`/`rencanakanPembayaran` | `tests/kasir/penjualan.test.js`, `tests/kasir-dom/k06-penjaga.test.js` | property + DOM + pindai |
+| G-NOMINAL | "Nominal diterima" dan "Saldo awal kas": kosong/cacat → `Rp —` / aksi nonaktif dengan alasan, **tidak pernah Rp 0**; `25.5` ditolak; pintasan K-06 menetapkan, tidak menambah | `tests/kasir-dom/k06-penjaga.test.js`, `tests/kasir-dom/k02-buka-shift.test.js` | DOM |
+| G-BATAL-AUDIT | Batalkan (dan Buang tahanan) menulis tepat satu `audit_event` `cart_cleared` berisi aktor, `line_count`, `quantity_milli`, `total` = total yang tampil, dalam transaksi yang sama dengan penghapusan `keranjang_lokal` + outbox; batal di konfirmasi dan keranjang kosong tidak menulis apa pun; server menerima dengan idempotensi (retry + respons hilang), isolasi tenant, shift yang sudah ditutup | `tests/kasir/keranjang-batal.test.js`, `tests/server/keranjang-batal.test.js`, `tests/kasir-dom/k03-toolbar.test.js` | murni + PostgreSQL + DOM |
+| G-LAPORAN-TRF | Satu fixture berisi tunai + QRIS statis + transfer + `other` tanpa provider: setiap laporan per metode (pembayaran/FR-C12, ekspor, HP M-01, detail shift, B-04, K-12, laporan harian, K-08, struk) memuat baris/label "Transfer" berjumlah tepat bagian transfer, dan jumlah seluruh baris metode = jumlah pembayaran terkonfirmasi (tidak ada uang yang hilang dari pengelompokan) | `tests/server/laporan-transfer.test.js`, `tests/kasir/*`, `tests/backoffice/*`, `tests/hp/*` | PostgreSQL + murni |
+| G-TANPA-LAYANAN | Dengan `channel = 'dine_in'` dan `outlet.service_charge_rate` bukan nol: `service_charge_amount` = 0 di perangkat dan server; tidak ada teks /layanan\|service/i di lembar Pajak, keranjang, K-06, K-07, dan dokumen struk | `tests/kasir/penjualan.test.js`, `tests/payment/tax-in-orders.test.js`, `tests/kasir-dom/k03-toolbar.test.js` | murni + PostgreSQL + DOM |
 
 Setiap penjaga: merah dulu terhadap kode lama, lalu disabotase. Penjaga di
 jalur uang, kas, dan sync (G-EDIT stok, G-TAHAN, G-KANAL, G-TRF*, P1 baru,
-G-STRUK) mendapat subagen sabotase independen.
+G-KEMBALIAN/P2/P3 baru, G-NOMINAL, G-BATAL-AUDIT, G-LAPORAN-TRF,
+G-TANPA-LAYANAN, G-STRUK) mendapat subagen sabotase independen.
 
 ## 12. Keputusan otonom
 
@@ -553,85 +702,88 @@ dikerjakan.
 - **Urutkan produk tetap ada** · segmented ringkas di kanan field cari, satu
   baris 44 px, tanpa label terlihat · fungsi yang sudah ada tidak dibuang;
   mockup tidak punya kontrol urut · hapus kontrolnya.
-- **Pintasan tunai enam pecahan** · bukan tiga seperti mockup · kasir
-  menekan pecahan yang diterima; tiga pecahan menghapus Rp 2.000/5.000/10.000
-  · kurangi `PECAHAN` ke tiga.
-- **Batalkan tanpa audit** · konfirmasi saja · keranjang belum menjadi
-  `order`, FR-B1 melarang barisnya · tambahkan telemetri `keranjang_dikosongkan`.
 - **Pesanan tahan maksimal 20 per shift** `[ASUMSI]` · ubah konstanta.
 - **Kill switch `pembayaran_transfer`** · menyala bawaan · permukaan fraud
   tak terverifikasi, pola QRIS statis · hapus kuncinya dari `FITUR`.
+- **Baris "Tagihan tunai dibulatkan menjadi Rp X" di K-06** · tampil 13 px di
+  bawah Kembalian hanya bila `roundingAdjustment !== 0n`, dari rencana yang
+  sama · kembalian yang tidak sama dengan "uang − total" tanpa penjelasan
+  terbaca sebagai salah hitung · hapus barisnya (kembalian tetap).
+- **K-02 tanpa tombol pecahan** · kolom "Saldo awal kas" saja, persis mockup
+  · user menilai kolom bebas cukup di K-06 dengan alasan yang sama · kembalikan
+  pecahan sebagai pintasan yang menetapkan.
+- **Buang pesanan tahan menulis `cart_cleared`** · sama dengan Batalkan ·
+  membuang tahanan adalah pola kecurangan yang sama persis dengan yang user
+  sebut · hapus pemanggilan dari `buangTahanan`.
+- **Rute audit Batalkan di modul `cash`** (`POST /shifts/{shiftId}/cart-cleared`)
+  · pemilik `cash_drawer_shift`, pola no-sale · keranjang bukan `order`, jadi
+  modul `ordering` tidak memilikinya · pindahkan ke `ordering` dengan
+  `entity_type` yang sama.
+- **`order.table_number` teks ≤ 16, `order.customer_name` ≤ 40** `[ASUMSI]` ·
+  teks, bukan integer (meja "A3", "Teras 2") · ubah CHECK lewat migrasi
+  expand-contract berikutnya.
 
-## 13. Pertanyaan untuk user
+### Dibalik user, 28 September 2026 (issue #76, komentar `5862870577`)
 
-Hanya yang tidak diputuskan `RENCANA-HIDUPKAN-DESAIN.md`, `CLAUDE.md`, atau
-spec. Setiap pertanyaan punya bawaan; tanpa jawaban, bawaan dipakai.
+- ~~**Pintasan tunai enam pecahan**~~ → **tiga nominal yang MENETAPKAN nilai,
+  persis mockup** (Rp 20.000 · Rp 50.000 · Rp 100.000), dengan kolom nominal
+  bebas di bawahnya.
+- ~~**Batalkan tanpa audit**~~ → **Batalkan dicatat sebagai `audit_event`**:
+  jumlah item, total, staf, waktu; konfirmasi tetap ada (§ 4 "Batalkan dan
+  jejak audit").
 
-**P1. Transfer: disimpan sebagai apa?**
-(a) `method = 'other'` + `provider = 'bank_transfer'`, nol migrasi, sesuai
-`spec-c:244` ("Lainnya: … transfer … dengan catatan wajib"). Laporan yang
-mengelompokkan per `method` saja akan menyebutnya "Lainnya" sampai query-nya
-diubah. (b) Metode baru `bank_transfer`: migrasi CHECK `payment` dan `refund`
-(expand-contract, `lock_timeout`), baris sendiri di setiap laporan.
-**Bawaan: (a).**
+## 13. Jawaban user atas P1–P10
 
-**P2. Apakah Transfer ditandai `confirmed_manually` dan masuk laporan
-exception FR-G5?** Tidak ada sistem yang memverifikasinya, sama dengan QRIS
-statis. (a) Ya. (b) Tidak; nomor referensi dianggap bukti cukup, seperti EDC.
-**Bawaan: (a).**
+Sumber: issue #76, komentar `5862870577`, akun `zethasaintlab` (satu-satunya
+otoritas, `docs/PROTOKOL-OTONOM.md`), 28 September 2026. Dikutip utuh; mengikat.
 
-**P3. QRIS dinamis: kapan QR diminta?** Mockup menampilkan QR memuat begitu
-tab QRIS disentuh. Setiap permintaan QR mencadangkan nomor struk dan membuat
-order draf di server; tab yang tersentuh tanpa sengaja meninggalkan order
-`abandoned` dengan nomor struk "dibatalkan". (a) Saat tab disentuh, persis
-mockup. (b) Kartu QRIS menampilkan nominal + tombol "Tampilkan kode QR", QR
-diminta saat itu ditekan. **Bawaan: (b).**
+> Setuju dengan bawaan, kecuali yang di bawah.
+>
+> ## Jawaban berbeda dari bawaan
+>
+> **P1 — Transfer: (a), dengan syarat.** `method='other'` + `provider='bank_transfer'`, tanpa migrasi, sesuai spec-c:244. Tapi laporan per metode dan rekonsiliasi FR-C12 mengelompokkan menurut `provider` dan menampilkan **"Transfer"**, tidak pernah "Lainnya". Uang bank tidak boleh tersembunyi dari pemilik.
+>
+> **P4 — Item manual: (a).** Catat di `docs/RENCANA-HIDUPKAN-DESAIN.md` sebagai keputusan produk tertunda: di Kasir Pintar, "barang custom" berarti item berharga bebas di luar katalog, jadi itu kemungkinan arti sebenarnya di mockup. Butuh FR sendiri, tidak dibangun sekarang.
+>
+> **P5 — Pelanggan dan No. Meja: (b), dua kolom terstruktur.** Sub-proyek 4 memesan per meja dan butuh nomor meja sebagai data. Satukan dengan kolom `order.note` dari P6 dalam **satu migrasi**, supaya perangkat hanya membangun ulang sekali. Nama pelanggan saja, tanpa nomor telepon.
+>
+> ## Keputusan otonom yang dibalik
+>
+> **Batalkan keranjang dicatat sebagai `audit_event`**: jumlah item, total, staf, waktu. Keranjang memang belum jadi order, tapi pembatalan keranjang sesudah barang di-scan adalah pola kecurangan kasir — pelanggan membayar tunai, keranjang dibatalkan, uangnya tidak tercatat. Konfirmasi tetap ada.
+>
+> **Pintasan tunai mengikuti mockup**: tiga nominal yang **menetapkan** nilai, bukan enam pecahan yang menambah. Dengan kolom nominal bebas di bawah, ini cukup.
+>
+> ## Yang belum ada di spec — tambahkan
+>
+> **K-06 kolom "Nominal diterima" dan kotak Kembalian yang hidup, seperti mockup.** **K-02 kolom "Saldo awal".** Keduanya kolom nominal bebas memakai `bacaRupiah` yang sudah ada di K-12.
+>
+> ⛔ Ini jalur uang. Kembalian **dihitung lewat `rencanakanPembayaran` yang sama** dengan yang dipakai `simpanPenjualan`, bukan aritmetika kedua. Pembulatan FR-C9 tetap satu sumber.
+>
+> Penjaga P2 dan P3 diubah dengan sengaja, dalam commit tersendiri: dari "tidak ada kembalian di K-06" menjadi **"kembalian di K-06 sama persis dengan kembalian yang tersimpan sesudah simpan"**. Uji dengan pembulatan aktif dan pembayaran campuran. Masuk cakupan sabotase independen Opus.
+>
+> ## Tambahan untuk yang sudah disetujui
+>
+> - **P3b QR:** penjaga mendekode gambar QR yang dirender dan membandingkannya dengan string dari gateway. Gambar yang tidak dapat dipindai lebih buruk daripada tidak ada gambar.
+> - **R1 label cari disembunyikan:** tersembunyi secara visual saja, tetap terhubung lewat `htmlFor` dan dapat ditemukan `getByLabel`. Penjaga `bidang-label` tetap berlaku.
+> - **P9 Pajak:** pastikan tidak ada yang menyiratkan biaya layanan saat Dine in dipilih — `service_charge` masih terkunci nol di klien dan server.
+>
+> Lanjut ke writing-plans.
 
-**P3b. Encoder QR.** Stack tidak punya pembuat gambar QR (`uang-pembayaran-
-kas.md`: "QR ditampilkan sebagai TEKS … menuntut pustaka baru"). (a)
-Dependency `qrcode-generator` (MIT, tanpa dependency, versi dipaku),
-dirender sebagai SVG. (b) Encoder ditulis sendiri. Keduanya dijaga G-QR.
-**Bawaan: (a).**
+### Keputusan yang berlaku
 
-**P4. "Item manual" berarti apa?** (a) Masukan kode barcode/SKU manual,
-memakai jalur scan yang ada; nol perilaku uang baru. (b) Item berharga
-bebas di luar katalog: butuh FR baru, varian khusus di katalog, aturan pajak
-dan `cost_at_sale`, dan ia membuka jalur harga manual yang ditolak di Edit
-Item. **Bawaan: (a).**
-
-**P5. Pelanggan dan No. Meja disimpan di mana?** (a) Keduanya satu teks
-"label pesanan" di `check.label` (kolom sudah ada di server dan lokal, nol
-migrasi; mis. "Meja 4 · Budi"), maksimal 40 karakter, dicetak di struk, tanpa
-nomor telepon (UU PDP, `ERD:666`). (b) Dua kolom baru di `order`: migrasi
-server + raw table lokal (lihat risiko R4). **Bawaan: (a).**
-
-**P6. Catatan pesanan.** `order` tidak punya kolom catatan. (a) Kolom baru
-`order.note` (expand, nullable, ≤ 140 karakter, periksa bukan nomor kartu),
-dicetak di struk. Ia menyentuh raw table `order`, jadi setiap perangkat
-menjalankan `disconnectAndClear()` dan mengunduh ulang riwayat (R4). (b)
-Catatan masuk `check.label` bersama P5. **Bawaan: (a)**, digabung dalam satu
-migrasi dengan apa pun yang P5 putuskan supaya biaya R4 dibayar sekali.
-
-**P7. Lonceng notifikasi** (pertanyaan terbuka dari sub-proyek 1). (a) Panel
-"Pemberitahuan perangkat" yang membaca data yang sudah ada: item gagal kirim
-(K-14), struk gagal cetak (`print_job`), QRIS menunggu (`draf_qris_lokal`),
-dan kredensial offline mendekati 30 hari (OQ-08). Jumlahnya tampil sebagai
-teks, bukan titik warna. (b) Lonceng tidak dirender. **Bawaan: (a).**
-
-**P8. K-07 "Kirim WhatsApp" dan "Kirim Email".** Butuh penyedia pesan, data
-kontak pelanggan (UU PDP), dan jalur online-only. (a) Tidak dirender di v1.
-(b) Dibangun di sub-proyek ini. **Bawaan: (a).**
-
-**P9. Tombol Pajak.** Keputusan bawaan #2 berbunyi "pilihan tarif outlet yang
-sudah terdefinisi". Memilih tarif langsung melompati resolusi `TaxCalculator`
-(FR-C6). (a) Pilihan **kanal** Dine in/Takeaway yang menampilkan tarif yang
-akan berlaku, sesuai FR-C7 "Sumber channel". (b) Daftar tarif baca-saja tanpa
-pilihan. **Bawaan: (a).**
-
-**P10. Rute layar Laci kas.** IA §7 tidak punya rute laci, dan
-`tests/kasir/rute.test.js` mengikat tabel rute ke IA §7. (a) Rute baru
-`/laci`, IA §7 dan §2.2 disunting bersamaan. (b) Mode tanpa URL di dalam K-03.
-**Bawaan: (a).**
+| # | Pertanyaan (versi pertama spec ini) | Keputusan | Di mana |
+|---|---|---|---|
+| P1 | Transfer disimpan sebagai apa | **(a) dengan syarat**: `other` + `provider='bank_transfer'`, nol migrasi; SETIAP laporan per metode dan rekonsiliasi FR-C12 mengelompokkan menurut `provider` dan menampilkan "Transfer", tidak pernah "Lainnya" | § 5 |
+| P2 | Transfer `confirmed_manually` | (a) ya — bawaan disetujui | § 5 |
+| P3 | Kapan QR diminta | (b) saat "Tampilkan kode QR" ditekan — bawaan disetujui | § 7 |
+| P3b | Encoder QR | (a) `qrcode-generator` — bawaan disetujui, **plus** G-QR mendekode gambar yang dirender | § 7, § 11 |
+| P4 | Arti "Item manual" | **(a)** masukan kode; item berharga bebas = keputusan produk tertunda di `RENCANA-HIDUPKAN-DESAIN.md` | § 4 |
+| P5 | Pelanggan dan No. Meja | **(b)** dua kolom terstruktur `order.customer_name` + `order.table_number`, satu migrasi dengan P6; nama saja, tanpa telepon | § 4, R4 |
+| P6 | Catatan pesanan | (a) `order.note` — bawaan disetujui, dalam migrasi yang sama | § 4 |
+| P7 | Lonceng | (a) panel "Pemberitahuan perangkat" — bawaan disetujui | § 3 |
+| P8 | WhatsApp/Email K-07 | (a) tidak dirender — bawaan disetujui | § 8 |
+| P9 | Tombol Pajak | (a) pilihan kanal — bawaan disetujui, **plus** tidak ada yang menyiratkan biaya layanan pada Dine in | § 4, § 11 |
+| P10 | Rute Laci kas | (a) `/laci` — bawaan disetujui; suntingan IA menunggu Q9 | § 9 |
 
 ## 14. Risiko
 
@@ -672,13 +824,17 @@ tidak akan pernah terjadi pada kontrol yang tidak dirender. Mitigasi: P1 baru
 memeriksa `disabled` **dan** bahwa klik (lewat `dispatchEvent`, melewati
 `disabled`) tidak mengubah metode maupun nominal; sabotase independen.
 
-**R4 — Sync: kolom baru di raw table `order`.** Bila P5(b) atau P6(a)
-dipilih, sidik jari skema lokal berubah, setiap perangkat menjalankan
+**R4 — Sync: tiga kolom baru di raw table `order`.** P5(b) + P6(a) dipilih:
+`customer_name`, `table_number`, `note` dalam **satu** migrasi
+(`0037_order_customer_table_note.sql`). Sidik jari skema lokal berubah sekali,
+setiap perangkat menjalankan
 `disconnectAndClear()` dan mengunduh ulang katalog + riwayat
 (`kasir-offline-sync.md` § stream `riwayat`). Outbox tidak tersentuh (murni
 lokal), tetapi perangkat yang offline saat pembaruan berjalan dengan katalog
-kosong sampai terhubung. Semua kolom baru dikumpulkan dalam **satu** migrasi.
-Kompatibilitas N-1: server menerima payload tanpa field baru.
+kosong sampai terhubung. Kompatibilitas N-1: server menerima payload tanpa
+field baru. `customer_name` adalah data pribadi (UU PDP) yang ikut turun ke
+perangkat lewat stream `riwayat` — terbatas tenant oleh sync rules, dan hanya
+nama (tanpa telepon, keputusan user).
 
 **R5 — Uang: Transfer adalah permukaan fraud baru** yang berfungsi offline
 dan tidak diverifikasi apa pun. Mitigasi: referensi wajib, periksa nomor
@@ -693,13 +849,36 @@ shift ditutup di perangkat lain (atau sesudah kredensial offline habis) tidak
 terlihat server. Batas yang dinyatakan: tahanan murni lokal, dan K-12
 perangkat ini menolak tutup selama ada tahanan.
 
-**R8 — Rilis: urutan server → klien** untuk Transfer, label pesanan, dan
-catatan. Klien baru di atas server lama menghasilkan baris outbox
-`gagal-permanen`. Runbook dan catatan rilis wajib menyebutnya.
+**R8 — Rilis: urutan server → klien** untuk Transfer, audit Batalkan
+(`cart_cleared`), kolom pelanggan/meja/catatan. Klien baru di atas server lama
+menghasilkan baris outbox `gagal-permanen`. Runbook dan catatan rilis wajib
+menyebutnya.
+
+**R10 — Uang: pembulatan tampil di K-06 SEBELUM penjualan disimpan.**
+Keputusan user membalik aturan "hanya tampil di K-07". Bahayanya bukan
+tampilnya, melainkan **dua aritmetika**: layar yang menghitung kembalian atau
+pembulatan dengan jalannya sendiri akan menyimpang dari yang tersimpan tepat
+di tepi yang paling sulit terlihat — bawaan `rounding_increment ?? 100`,
+bagian non-tunai tanpa nominal (`?? totals.total`), atau urutan
+bulatkan-lalu-kurangi (80 rupiah per transaksi, `uang-pembayaran-kas.md`
+§ Pembayaran campuran). Mitigasi: `rencanaBayarKeranjang` satu fungsi untuk
+keduanya; G-KEMBALIAN membandingkan angka K-06 dengan baris yang tersimpan
+(bukan dengan rumus di test) pada increment 100/500/1.000 dan pembayaran
+campuran; P2 baru memindai bahwa `Pembayaran.tsx` tidak memanggil fungsi
+pembulatan apa pun selain itu; sabotase independen. Keadaan kedua yang
+berbahaya: kolom kosong terbaca 0 dan kembalian negatif/nol tampil sah —
+ditutup `bacaRupiah` (`null`, bukan 0) dan G-NOMINAL.
+
+**R11 — Uang/sync: audit Batalkan adalah jenis outbox baru.** Rute baru
+berarti daftar jalur perangkat (`sesi.ts`), RBAC (`rbac-rute.ts`), OpenAPI,
+`ENTITY_TYPES` + `RUTE` sync-client harus sepakat; satu yang tertinggal
+membuat setiap pembatalan offline berhenti `401`/`gagal-permanen` — bentuk
+yang sama dengan no-sale sebelum `sesi.ts:213` ada. G-BATAL-AUDIT menguji
+relay ujung ke ujung.
 
 **R9 — Cakupan.** Delapan tombol, dua layar baru, satu metode pembayaran,
-satu kemungkinan migrasi, dan satu dependency. Karena itu sub-proyek ini
-dipecah menjadi empat PR (§ 15).
+satu migrasi (tiga kolom), satu rute server, sembilan laporan per metode, dan
+satu dependency. Karena itu sub-proyek ini dipecah menjadi empat PR (§ 15).
 
 ## 15. Pecahan task (masukan untuk writing-plans)
 
@@ -717,11 +896,12 @@ task **U**.
 
 | Task | Isi | Baca |
 |---|---|---|
-| 1 | Tinggi baris empat token + G-LH; ukur ulang semua invarian | `design-system.md` |
-| 2 | Hapus `.pita-kategori`, rapikan komentar | `design-system.md` |
-| 3 | Header satu baris, tab mockup, menu pengguna + Keluar, indikator sinkron, lonceng (per P7), pita FR-H8 setinggi banner; ubah penjaga `k14-tata-letak`/rute | `design-system.md`, `kasir-offline-sync.md` (indikator, FR-H4, antrean) |
-| 4 **U** | Layar Laci kas (FR-D5 + K-16 + riwayat shift), rute per P10; ubah penjaga `laci-kas`/`galeri-cakupan` | `uang-pembayaran-kas.md`, `design-system.md`, `rilis-dan-flag.md` (kill switch no-sale) |
-| 5 | Toolbar K-03 dengan tombol yang fungsinya sudah ada: Diskon, Batalkan, Item manual (per P4 bawaan); field cari tanpa label terlihat; G-TOOLBAR sebagian, G-IA62-PITA, G-TOMBOL-HIDUP; ubah penjaga `k03-chrome` | `uang-pembayaran-kas.md` (diskon), `design-system.md`, `rilis-dan-flag.md` |
+| 1 ✔ | Tinggi baris empat token + G-LH; ukur ulang semua invarian (**selesai** `f666efe`; G-IA62-PITA merah sampai Task 3, dinilai di R1-b) | `design-system.md` |
+| 2 ✔ | Hapus `.pita-kategori`, rapikan komentar (**selesai** `ed626af`, `625f614`) | `design-system.md` |
+| 3 | Header satu baris, tab mockup, menu pengguna + Keluar, indikator sinkron, lonceng (P7), pita FR-H8 setinggi banner, label cari `sr-only` + `getByLabel`; ubah penjaga `k14-tata-letak`/rute; sabotase (3) Task 1 yang ditunda | `design-system.md`, `kasir-offline-sync.md` (indikator, FR-H4, antrean) |
+| 4 **U** | Layar Laci kas (FR-D5 + K-16 + riwayat shift), rute `/laci` (P10); ubah penjaga `laci-kas`/`galeri-cakupan`. Suntingan IA menunggu Q9 — lihat indeks plan § Urutan bila Q9 terbuka | `uang-pembayaran-kas.md`, `design-system.md`, `rilis-dan-flag.md` (kill switch no-sale) |
+| 5 | Toolbar K-03 dengan tombol yang fungsinya sudah ada: Diskon, Item manual (P4(a)); G-TOOLBAR sebagian, G-TOMBOL-HIDUP; ubah penjaga `k03-chrome` | `uang-pembayaran-kas.md` (diskon), `design-system.md`, `rilis-dan-flag.md` |
+| 5B **U** | Batalkan: konfirmasi + `audit_event` `cart_cleared` (perangkat, outbox, rute server `cash`, OpenAPI, `sesi.ts`, RBAC); G-BATAL-AUDIT | `uang-pembayaran-kas.md` (idempotency), `kasir-offline-sync.md` (outbox), `backoffice-hp-laporan.md` (audit, sesi) |
 | 6 **U** | Keranjang tanpa stepper + Edit Item + `gantiModifier` + pemeriksaan stok; ubah penjaga `k03-kepadatan`/`area-sentuh` | `uang-pembayaran-kas.md` (diskon, stok F3), `kasir-offline-sync.md` (KEP-21), `design-system.md` |
 
 Tanpa toolbar lengkap PR ini hanya merender tombol yang bekerja; G-TOMBOL-HIDUP
@@ -732,17 +912,18 @@ kedelapan label di akhir PR 2C.
 
 | Task | Isi | Baca |
 |---|---|---|
-| 7 **U** | Transfer: domain (`periksaTransfer`, `dikonfirmasiManual`, `MetodeCampuran`), server `MANUAL_METHODS`, kasir `MetodeBayar` + outbox, kill switch, label satu peta (hapus dua salinan back-office), struk; migrasi hanya bila P1(b) | `uang-pembayaran-kas.md`, `kasir-offline-sync.md`, `rilis-dan-flag.md`, `backoffice-hp-laporan.md` (label laporan), `database.md` (bila P1(b)), `cetak.md` |
-| 8 **U** | Kartu pembayaran bertoggle: halaman di shell, total atas, segmented + sub-pilihan QRIS, "Konfirmasi bayar", tautan campuran, panel "Uang diterima"; ubah penjaga P1/P5/P7–P9/`k06-tata-letak`/`galeri-cakupan` | `uang-pembayaran-kas.md`, `design-system.md` |
-| 9 **U** | QR di dalam kartu (encoder per P3b), hitung mundur, keadaan memuat/terkonfirmasi/kedaluwarsa, penguncian toggle + nav, pemulihan draf; G-QR | `uang-pembayaran-kas.md`, `kasir-offline-sync.md` (draf lokal), `design-system.md` |
+| 7 **U** | Transfer (P1(a) dengan syarat): domain (`periksaTransfer`, `dikonfirmasiManual`, `MetodeCampuran`, `kodeLaporanMetode`, `labelMetode`), server `MANUAL_METHODS` + komentar `payments.ts:479`, kasir `MetodeBayar` + outbox, kill switch, label satu peta; **setiap laporan per metode** menampilkan "Transfer"; G-LAPORAN-TRF | `uang-pembayaran-kas.md`, `kasir-offline-sync.md`, `rilis-dan-flag.md`, `backoffice-hp-laporan.md` (label laporan), `cetak.md` |
+| 8 **U** | Kartu pembayaran bertoggle: halaman di shell, total atas, segmented + sub-pilihan QRIS, "Konfirmasi bayar", tautan campuran, kolom "Nominal diterima" + tiga pintasan yang menetapkan (tanpa kotak Kembalian); ubah penjaga P1/P5/P7–P9/`k06-tata-letak`/`galeri-cakupan`/jalur `+ Rp 100.000` | `uang-pembayaran-kas.md`, `design-system.md` |
+| 8B **U** | Kembalian hidup di K-06: `rencanaBayarKeranjang` diekstrak dari `simpanPenjualan`; kotak Kembalian + baris tagihan dibulatkan; `CLAUDE.md` + `uang-pembayaran-kas.md` mencatat keputusan user (commit tersendiri); penjaga P2/P3 diubah (commit tersendiri); G-KEMBALIAN, G-NOMINAL (K-06) | `uang-pembayaran-kas.md`, `design-system.md` |
+| 9 **U** | QR di dalam kartu (P3b), hitung mundur, keadaan memuat/terkonfirmasi/kedaluwarsa, penguncian toggle + nav, pemulihan draf; G-QR pada ukuran tampil | `uang-pembayaran-kas.md`, `kasir-offline-sync.md` (draf lokal), `design-system.md` |
 
 ### PR 2C — fungsi toolbar baru
 
 | Task | Isi | Baca |
 |---|---|---|
-| 10 **U** | Pajak = pilihan kanal (per P9); `channel` di keranjang, `hitungKeranjang`, `simpanPenjualan`; fixture `ppn` 11% + `dine_in` + service charge; G-KANAL | `uang-pembayaran-kas.md` |
-| 11 **U** | Pelanggan + No. Meja (per P5) dan Catatan (per P6): satu migrasi bila ada, server menerima field opsional (N-1), raw table + `put`, `disconnectAndClear`, struk | `uang-pembayaran-kas.md`, `database.md`, `kasir-offline-sync.md`, `cetak.md` |
-| 12 **U** | Pesanan tahan: `keranjang_tahan` murni lokal, daftar, lanjutkan/buang, penolakan tutup shift di K-12; G-TAHAN; G-TOOLBAR lengkap delapan | `kasir-offline-sync.md`, `uang-pembayaran-kas.md` |
+| 10 **U** | Pajak = pilihan kanal (P9); `channel` di keranjang, `hitungKeranjang`, `simpanPenjualan`; fixture `ppn` 11% + `dine_in`; G-KANAL, G-TANPA-LAYANAN | `uang-pembayaran-kas.md` |
+| 11 **U** | Pelanggan + No. Meja (P5(b)) dan Catatan (P6(a)): **satu** migrasi tiga kolom, server menerima field opsional (N-1), raw table + `put`, sync rules, `disconnectAndClear`, struk. Suntingan ERD menunggu Q9 | `uang-pembayaran-kas.md`, `database.md`, `kasir-offline-sync.md`, `cetak.md` |
+| 12 **U** | Pesanan tahan: `keranjang_tahan` murni lokal, daftar, lanjutkan/buang (buang menulis `cart_cleared` lewat jalur Task 5B), penolakan tutup shift di K-12; G-TAHAN; G-TOOLBAR lengkap delapan | `kasir-offline-sync.md`, `uang-pembayaran-kas.md` |
 
 ### PR 2D — K-07, struk, dan layar sisanya
 
@@ -751,11 +932,12 @@ kedelapan label di akhir PR 2C.
 | 13 | `tataLetakStruk` diekstrak dari `renderEscPos`; pratinjau struk; K-07 mockup; G-STRUK; ubah penjaga `k07-konfirmasi` | `cetak.md`, `uang-pembayaran-kas.md`, `design-system.md` |
 | 14 | K-08 penyaring tanggal + metode, kolom Item + Metode | `uang-pembayaran-kas.md`, `design-system.md` |
 | 15 **U** | K-12 dua kartu di tahap review + bilah aksi bawah; ubah penjaga `k12-aksi-slot` | `uang-pembayaran-kas.md`, `design-system.md` |
-| 16 | Sisa K-01, K-02, K-10 | `design-system.md`, `uang-pembayaran-kas.md` (K-10) |
-| 17 | Dokumen: `docs/referensi-visual/README.md` (ditolak baru: panel Kembalian di K-06, Hapus item terpisah, harga sementara, diskon item, catatan per item, WhatsApp/Email per P8, pil toolbar), `BANDING.md`, `CLAUDE.md` § Rebuild UI (baris "Tinggi bilah nav sama" → header), `docs/DESIGN.md`, IA §7 bila P10(a), cermin ledger | — (dokumen) |
+| 16 **U** | K-02 kolom "Saldo awal kas" (`bacaRupiah`, G-NOMINAL); sisa K-01, K-10 | `uang-pembayaran-kas.md`, `design-system.md` |
+| 17 | Dokumen: `docs/referensi-visual/README.md` (panel Kembalian K-06 kini DITERIMA; ditolak baru: Hapus item terpisah, harga sementara, diskon item, catatan per item, WhatsApp/Email, pil toolbar), `BANDING.md`, `CLAUDE.md` § Rebuild UI (baris "Tinggi bilah nav sama" → header; baris QRIS), `docs/DESIGN.md`, verifikasi IA/ERD per Q9, cermin ledger | — (dokumen) |
 
 **Satu PR atau beberapa: empat.** Alasannya: 2B dan 2C memindahkan uang dan
-butuh urutan rilis server → klien; 2A murni tampilan dan kas yang sudah ada;
+butuh urutan rilis server → klien; 2A tampilan, kas yang sudah ada, dan satu
+rute audit (5B, juga server → klien);
 2D bergantung pada 2C (struk mencetak label dan catatan). PR yang lebih kecil
 membuat tinjauan akhir Opus dapat membaca seluruh diff jalur uang. Urutan:
 2A → 2B → 2C → 2D; tinjauan akhir satu branch per PR.
