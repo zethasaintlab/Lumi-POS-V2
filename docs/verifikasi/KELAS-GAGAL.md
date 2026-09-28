@@ -341,3 +341,11 @@ Komentar di `seed-explore.mjs` menyatakan run kedua menabrak `EMAIL_TAKEN`.
 Tidak ada `EMAIL_TAKEN` di seluruh `apps/server/src`, dan tidak ada index unik
 pada `"user".email`. Ia bukan catatan yang membusuk — ia **salah sejak
 ditulis**, dan ia mengarahkan pembacanya menjauh dari sebab yang sebenarnya.
+
+---
+
+Dipindah dari CLAUDE.md, 28 September 2026 (#76/#78) — kalimat asli § "Nol
+baris, bukan error", disalin apa adanya karena § Bentuk penjaga yang bekerja
+di atas memparafrasekannya, bukan menyalinnya:
+
+⛔ **Bentuk penjaga yang bekerja, dan ia bukan "assert lebih banyak":** bandingkan **dua sumber yang tidak ada apa pun menyatukannya** — sync rules ↔ DDL, sync rules ↔ `tokens.ts`, `var(--x)` ↔ definisi token. Ditambah satu syarat yang mudah terlupa: penjaga wajib membuktikan ia **memindai sesuatu**, karena penjaga yang memeriksa nol berkas hijau selamanya dan hijaunya adalah bentuk kekosongan yang sama.
