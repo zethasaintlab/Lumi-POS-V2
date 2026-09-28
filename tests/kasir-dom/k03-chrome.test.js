@@ -253,16 +253,22 @@ test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header
       '(keputusan kampanye 26 September 2026), toolbar kini milik `Kasir.tsx` sendiri.'
   );
 
-  /* Ketiga label disebutkan apa adanya. Perbandingan "ada tiga tombol" akan
-     tetap hijau saat salah satunya diganti tombol lain — dan tombol yang
-     tertukar di layar kasir berarti laci terbuka saat kasir bermaksud memberi
-     diskon. */
+  /* Label disebutkan apa adanya, dalam urutan MOCKUP. Perbandingan "ada N
+     tombol" akan tetap hijau saat salah satunya diganti tombol lain — dan
+     tombol yang tertukar di layar kasir berarti laci terbuka saat kasir
+     bermaksud memberi diskon.
+
+     ⛔ Sejak Task 5 (kampanye Hidupkan desain, G-TOOLBAR sebagian): "Item
+     manual" masuk lebih dulu, mengikuti urutan `LABEL_TOOLBAR_MOCKUP` di
+     `k03-toolbar.test.js`. "Buka laci" dan "Kas masuk / keluar" tetap ada —
+     SEMENTARA sampai Task 4 (Laci kas) mengeluarkannya dari toolbar ini. */
   assert.deepEqual(
     hasil.label,
-    ['Diskon', 'Buka laci', 'Kas masuk / keluar'],
-    'isi toolbar tidak sesuai. Ketiga aksi ini yang punya kode di repo; ' +
-      'lima lainnya di mockup tidak, dan tombol yang tidak melakukan apa-apa ' +
-      'tidak boleh ditambahkan ke sini.'
+    ['Item manual', 'Diskon', 'Buka laci', 'Kas masuk / keluar'],
+    'isi toolbar tidak sesuai. Empat label ini yang punya kode di repo hari ' +
+      'ini (dua TERPASANG mockup + dua SEMENTARA); empat lainnya di mockup ' +
+      'belum, dan tombol yang tidak melakukan apa-apa tidak boleh ' +
+      'ditambahkan ke sini.'
   );
 
   /* Aturan design system #3. */
