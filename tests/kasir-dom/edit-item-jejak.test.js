@@ -356,3 +356,54 @@ test('⛔ dialog menyatakan bahwa pengurangan TERCATAT — hanya saat draf lebih
   assert.match(await hal.locator(`${DIALOG} [data-uji="edit-tercatat"]`).innerText(), /tercatat di audit/i);
   await hal.close();
 });
+
+test('⛔ Esc / klik latar / tombol Tutup SELAMA menyimpan tidak menutup dialog — galat penulisan yang gagal tetap terlihat', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const awal = await barisTeks(hal);
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.evaluate(() => { window.__galeriGagalTulis = true; window.__galeriTulisLambat = true; });
+  await hal.getByRole('button', { name: /Simpan|Mencatat/ }).click();
+  await hal.waitForSelector(`${DIALOG} button:has-text("Mencatat")`, { timeout: 2000 });
+  // Di tengah penyimpanan: Esc, klik latar, dan Tutup.
+  await hal.keyboard.press('Escape');
+  await hal.mouse.click(4, 4);
+  const adaSaatMenyimpan = await hal.locator(DIALOG).count();
+  const tutupNonaktif = await hal.evaluate(
+    (sel) => document.querySelector(`${sel} button[aria-label="Tutup"]`)?.disabled ?? null,
+    DIALOG
+  );
+  const galatDialog = await hal
+    .waitForSelector(`${DIALOG} [role="alert"]`, { timeout: 4000 })
+    .then((e) => e.innerText())
+    .catch(() => null);
+  const dialog = await hal.locator(DIALOG).count();
+  const sesudah = await barisTeks(hal);
+  await hal.close();
+  assert.equal(adaSaatMenyimpan, 1, 'Esc/latar menutup dialog di tengah penyimpanan — galat penulisan akan dibuang tanpa terlihat kasir');
+  assert.equal(tutupNonaktif, true, 'tombol Tutup tidak nonaktif selama menyimpan');
+  assert.equal(dialog, 1, 'dialog hilang sesudah penulisan gagal');
+  assert.notEqual(galatDialog, null, 'galat penulisan yang gagal tidak terlihat (dialog ditutup di tengah penyimpanan)');
+  assert.match(galatDialog, /TIDAK disimpan/);
+  assert.deepEqual(sesudah, awal, 'keranjang berubah padahal penulisan gagal');
+});
+
+test('⛔ klik ganda Simpan (dua klik di tugas yang sama) menulis TEPAT satu jejak dan satu outbox', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.evaluate((sel) => {
+    const b = [...document.querySelectorAll(`${sel} button`)].find((x) => x.textContent?.trim() === 'Simpan');
+    b.click();
+    b.click();
+  }, DIALOG);
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+  assert.equal(audit(baru).length, 1, `klik ganda menulis ${audit(baru).length} jejak untuk satu penurunan — membesar-besarkan catatan kasir`);
+  assert.equal(outbox(baru).length, 1, `klik ganda menulis ${outbox(baru).length} baris outbox`);
+});

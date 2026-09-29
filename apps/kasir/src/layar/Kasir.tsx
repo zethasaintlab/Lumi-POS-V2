@@ -338,9 +338,23 @@ export function Kasir() {
      ⛔ Gagal apa pun (shift tidak terbuka, jejak tak tertulis) mengembalikan
      pesan dan keranjang TETAP UTUH — dialog menahan. Galat tidak ditelan:
      keranjang berkurang tanpa jejak adalah persis yang fitur ini cegah. */
+  const sedangSimpanEdit = useRef(false);
   const simpanEdit = async (baru: typeof keranjang, qtySesudahMilli: number): Promise<string | null> => {
     const asal = edit?.baris;
     if (!asal) return 'Baris tidak dikenali. Perubahan TIDAK disimpan.';
+    if (sedangSimpanEdit.current) return null;
+    sedangSimpanEdit.current = true;
+    try {
+      return await simpanEditAman(asal, baru, qtySesudahMilli);
+    } finally {
+      sedangSimpanEdit.current = false;
+    }
+  };
+  const simpanEditAman = async (
+    asal: BarisKeranjang,
+    baru: typeof keranjang,
+    qtySesudahMilli: number
+  ): Promise<string | null> => {
     if (qtySesudahMilli >= asal.quantityMilli) {
       setKeranjang(() => baru);
       setEdit(null);

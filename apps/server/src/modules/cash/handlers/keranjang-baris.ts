@@ -35,9 +35,14 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
  *
  * Shift `closed` tetap diterima (pola `count_attempt`). Angka dicatat
  * SEBAGAIMANA DILAPORKAN perangkat — server tidak pernah melihat keranjangnya.
- * `reducedValue` sengaja TIDAK dicocokkan ulang dengan `unitPrice × selisih`:
- * menolak jejak yang angkanya menyimpang berarti membuang bukti justru pada
- * perangkat yang salah hitung.
+ *
+ * ## ⛔ `reducedValue` DIHITUNG ULANG (terima, tandai, laporkan)
+ *
+ * Server memegang seluruh masukannya: `unitPrice × (sebelum − sesudah) / 1000`
+ * dalam bigint. Nilai server-lah yang disimpan sebagai `reduced_value`. Bila
+ * nilai klien berbeda, peristiwa TETAP diterima (pola `calculation_variance`,
+ * `spec-h:93`, `orders.ts`), `after` memuat `reduced_value_client` dan
+ * `variance_amount`, dan satu audit `calculation_variance` terpisah ditulis.
  *
  * ## ⛔ TIDAK menulis `order`, `payment`, maupun `cash_movement`.
  */
@@ -125,6 +130,10 @@ export function createCartLineReducedHandlers(pool: Pool, hlc: Hlc): Record<stri
           ])
         )
         .digest('hex');
+      // Dihitung SEBELUM transaksi (narrowing tipe tidak melewati closure).
+      const nilaiServer =
+        (BigInt(body.unitPrice) * BigInt(body.quantityBeforeMilli - body.quantityAfterMilli)) / 1000n;
+      const klienValue = body.reducedValue;
       const hlcValue =
         typeof body.hlc === 'string' ? hlc.update(BigInt(body.hlc)) : hlc.tick();
 
@@ -168,6 +177,9 @@ export function createCartLineReducedHandlers(pool: Pool, hlc: Hlc): Record<stri
           throw err;
         }
 
+        const selisih = BigInt(klienValue) - nilaiServer;
+        const menyimpang = selisih !== 0n;
+
         await recordAuditEvent(client, {
           id: body.id as string,
           tenantId,
@@ -188,11 +200,38 @@ export function createCartLineReducedHandlers(pool: Pool, hlc: Hlc): Record<stri
             quantity_before_milli: body.quantityBeforeMilli,
             quantity_after_milli: body.quantityAfterMilli,
             unit_price: body.unitPrice,
-            reduced_value: body.reducedValue,
+            reduced_value: nilaiServer.toString(),
+            ...(menyimpang
+              ? { reduced_value_client: body.reducedValue, variance_amount: selisih.toString() }
+              : {}),
           },
           hlc: hlcValue,
           occurredAt: typeof body.occurredAt === 'string' ? body.occurredAt : null,
         });
+
+        if (menyimpang) {
+          await recordAuditEvent(client, {
+            id: randomUUID(),
+            tenantId,
+            outletId: rows[0].outlet_id,
+            deviceId: rows[0].device_id,
+            actorUserId: actorId,
+            approverUserId: null,
+            eventType: 'calculation_variance',
+            entityType: 'cash_drawer_shift',
+            entityId: shiftId,
+            reasonCode: null,
+            reasonNote: null,
+            after: {
+              source_audit_id: body.id as string,
+              client_reduced_value: body.reducedValue,
+              server_reduced_value: nilaiServer.toString(),
+              variance_amount: selisih.toString(),
+            },
+            hlc: hlcValue,
+            occurredAt: typeof body.occurredAt === 'string' ? body.occurredAt : null,
+          });
+        }
 
         await insertOutboxEvent(client, {
           id: randomUUID(),
@@ -200,7 +239,7 @@ export function createCartLineReducedHandlers(pool: Pool, hlc: Hlc): Record<stri
           aggregateType: 'cash_drawer_shift',
           aggregateId: shiftId,
           eventType: 'cash_drawer.cart_line_reduced',
-          payload: { shiftId, auditId: body.id, reducedValue: body.reducedValue },
+          payload: { shiftId, auditId: body.id, reducedValue: nilaiServer.toString() },
         });
 
         const jawab = { id: body.id as string, shiftId };

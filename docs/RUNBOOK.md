@@ -540,8 +540,18 @@ tidak dicatat.
 | Kasir melihat "Shift sudah tidak terbuka. Perubahan TIDAK disimpan." | Sengaja: penurunan qty tanpa shift terbuka tidak dapat dicatat, jadi keranjang dibiarkan utuh. Buka shift, ulangi. |
 | Kasir melihat "Perubahan TIDAK disimpan: …" | Penulisan jejak lokal gagal (disk penuh, dsb.). Keranjang tetap utuh; tidak ada jejak setengah jadi. |
 
-⛔ Angka dicatat **sebagaimana dilaporkan perangkat** dan tidak dicocokkan ulang
-di server; jangan menyisipkan atau menghapus `audit_event` manual.
+⛔ Server **menghitung ulang** `reducedValue` (`unitPrice × (sebelum − sesudah) / 1000`,
+bigint) dan menyimpan hasil server sebagai `after.reduced_value`. Bila nilai
+perangkat berbeda, peristiwa **tetap diterima** dan ditandai: `after` memuat
+`reduced_value_client` + `variance_amount`, dan satu audit `calculation_variance`
+(entitas shift) ditulis. Selisih di B-22 berarti perangkat salah hitung atau
+diubah-ubah; bukan alasan menolak atau menghapus jejak. Jangan menyisipkan atau
+menghapus `audit_event` manual.
+
+⛔ **Batas yang diketahui:** menurunkan qty DAN melepas modifier berbayar dalam
+satu Simpan hanya mencatat bagian qty (harga satuan baris SEBELUM diedit ×
+selisih qty). Nilai modifier yang dilepas tidak tercatat; melepas modifier tanpa
+menurunkan qty memang tidak dicatat (lingkup keputusan user).
 
 ## 9. Server tidak sehat
 

@@ -162,11 +162,12 @@ test('⛔ baris dihapus (quantityAfterMilli = 0) diterima dan tersimpan sebagai 
 
 test('⛔ uang di atas 2^53 tetap tepat di after (string, bukan number)', async () => {
   const id = await shift();
-  const res = await kirim(id, { unitPrice: '9007199254740993', reducedValue: '9007199254740994' });
+  const res = await kirim(id, { unitPrice: '9007199254740993', reducedValue: '18014398509481986' });
   assert.equal(res.statusCode, 201, res.body);
   const [r] = await query(`SELECT after FROM audit_event WHERE event_type = 'cart_line_reduced' AND entity_id = $1`, [id]);
   assert.equal(r.after.unit_price, '9007199254740993');
-  assert.equal(r.after.reduced_value, '9007199254740994');
+  assert.equal(r.after.reduced_value, '18014398509481986');
+  assert.equal(r.after.reduced_value_client, undefined, 'nilai cocok tetapi ditandai menyimpang');
 });
 
 test('⛔ retry berulang DAN respons hilang: satu baris', async () => {
@@ -434,4 +435,56 @@ test('⛔ key + isi SAMA tetapi shift BERBEDA → 422 (shiftId ada di hash), buk
   const res = await kirim(b, payload, {}, key);
   assert.equal(res.statusCode, 422, `key + isi sama di shift lain dijawab ${res.statusCode}: shiftId tidak ada di hash — ${res.body}`);
   assert.equal(await jumlahAudit(b), 0);
+});
+
+const jumlahVarian = async (shiftId) =>
+  (await query(`SELECT id FROM audit_event WHERE event_type = 'calculation_variance' AND entity_id = $1`, [shiftId])).length;
+
+test('⛔ reducedValue COCOK dengan hitungan server → tanpa penanda, tanpa audit calculation_variance', async () => {
+  const id = await shift();
+  assert.equal((await kirim(id)).statusCode, 201);
+  const [r] = await query(`SELECT after FROM audit_event WHERE event_type = 'cart_line_reduced' AND entity_id = $1`, [id]);
+  assert.equal(r.after.reduced_value, '60000');
+  assert.equal('reduced_value_client' in r.after, false, 'penanda selisih muncul padahal nilai cocok');
+  assert.equal('variance_amount' in r.after, false);
+  assert.equal(await jumlahVarian(id), 0);
+});
+
+test('⛔ reducedValue DIUBAH-UBAH klien → tetap diterima 201, nilai SERVER disimpan, kedua nilai + selisih tercatat, satu calculation_variance', async () => {
+  const id = await shift();
+  const idAudit = crypto.randomUUID();
+  // 30000 × (3000 − 1000) / 1000 = 60000; klien melaporkan 1000.
+  const res = await kirim(id, { id: idAudit, reducedValue: '1000' });
+  assert.equal(res.statusCode, 201, `jejak dengan nilai klien menyimpang ditolak: ${res.body}`);
+  const [r] = await query(`SELECT after FROM audit_event WHERE id = $1`, [idAudit]);
+  assert.equal(r.after.reduced_value, '60000', 'reduced_value yang disimpan adalah nilai klien yang TIDAK diverifikasi, bukan hitungan server');
+  assert.equal(r.after.reduced_value_client, '1000');
+  assert.equal(r.after.variance_amount, '-59000');
+  const v = await query(`SELECT after, actor_user_id FROM audit_event WHERE event_type = 'calculation_variance' AND entity_id = $1`, [id]);
+  assert.equal(v.length, 1);
+  assert.deepEqual(v[0].after, {
+    source_audit_id: idAudit, client_reduced_value: '1000', server_reduced_value: '60000', variance_amount: '-59000',
+  });
+  assert.equal(v[0].actor_user_id, base.user.id);
+  // Retry: tidak menggandakan varian.
+  assert.equal(await jumlahVarian(id), 1);
+});
+
+test('⛔ selisih di atas 2^53 dihitung dalam bigint (tanpa float)', async () => {
+  const id = await shift();
+  const idAudit = crypto.randomUUID();
+  const res = await kirim(id, { id: idAudit, unitPrice: '9007199254740993', reducedValue: '18014398509481984' });
+  assert.equal(res.statusCode, 201, res.body);
+  const [r] = await query(`SELECT after FROM audit_event WHERE id = $1`, [idAudit]);
+  assert.equal(r.after.reduced_value, '18014398509481986');
+  assert.equal(r.after.variance_amount, '-2', 'selisih 2 hilang lewat aritmetika float');
+});
+
+test('⛔ nilai klien LEBIH BESAR dari hitungan server juga ditandai (selisih positif)', async () => {
+  const id = await shift();
+  const idAudit = crypto.randomUUID();
+  assert.equal((await kirim(id, { id: idAudit, reducedValue: '61000' })).statusCode, 201);
+  const [r] = await query(`SELECT after FROM audit_event WHERE id = $1`, [idAudit]);
+  assert.equal(r.after.variance_amount, '1000');
+  assert.equal(r.after.reduced_value, '60000');
 });

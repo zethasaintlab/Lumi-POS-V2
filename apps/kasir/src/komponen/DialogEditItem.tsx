@@ -1,5 +1,5 @@
 import { Icon } from 'ds';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { PilihanModifier } from '../../../../packages/domain/src/modifier-pilihan.ts';
 import { tampilkanKuantitas } from '../../../../packages/domain/src/kuantitas.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
@@ -77,6 +77,9 @@ export function DialogEditItem({
   const [berubahModifier, setBerubahModifier] = useState(false);
   const [pesan, setPesan] = useState<{ teks: string; blokir: boolean } | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
+  /* ⛔ Penjaga masuk-ulang SINKRON: `disabled` baru berlaku sesudah render, dan
+     klik kedua di tugas yang sama akan mencatat pengurangan yang sama dua kali. */
+  const sedangKirim = useRef(false);
   const [galatSimpan, setGalatSimpan] = useState<string | null>(null);
 
   const kurang = pesanKurangSemua(daftarModifier, terpilih);
@@ -127,12 +130,17 @@ export function DialogEditItem({
   };
 
   const kirim = (baru: Keranjang) => {
+    if (sedangKirim.current) return;
+    sedangKirim.current = true;
     setMenyimpan(true);
     setGalatSimpan(null);
     void onSimpan(baru, qty)
       .then((galat) => setGalatSimpan(galat))
       .catch((e: Error) => setGalatSimpan(`Perubahan TIDAK disimpan: ${e.message}`))
-      .finally(() => setMenyimpan(false));
+      .finally(() => {
+        sedangKirim.current = false;
+        setMenyimpan(false);
+      });
   };
 
   const simpan = () => {
@@ -148,10 +156,17 @@ export function DialogEditItem({
     kirim(baru);
   };
 
+  /* ⛔ Menutup dialog SELAMA menyimpan membuang galat penulisan yang gagal ke
+     komponen yang sudah dilepas: kasir tidak diberi tahu bahwa keranjangnya
+     tidak berubah. Esc, latar, dan tombol tutup sama-sama diblokir. */
+  const tutup = () => {
+    if (!sedangKirim.current) onBatal();
+  };
+
   const tanpaPerubahan = qty === baris.quantityMilli && !berubahModifier;
 
   return (
-    <LatarDialog label="Edit item" kelas="kasir-dialog-edit" onBatal={onBatal}>
+    <LatarDialog label="Edit item" kelas="kasir-dialog-edit" onBatal={tutup}>
       <div className="kasir-edit-kepala">
         <div className="kasir-edit-judul">
           <h2 className="t-title">Edit item</h2>
@@ -160,7 +175,7 @@ export function DialogEditItem({
             {baris.variationName !== 'Regular' ? ` · ${baris.variationName}` : ''}
           </p>
         </div>
-        <button type="button" className="btn btn-ghost kasir-edit-tutup" aria-label="Tutup" onClick={onBatal}>
+        <button type="button" className="btn btn-ghost kasir-edit-tutup" aria-label="Tutup" disabled={menyimpan} onClick={tutup}>
           <Icon name="x" size={18} />
         </button>
       </div>

@@ -660,6 +660,8 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   async function jalankan(sql: string, params: readonly unknown[] | undefined, dalam: boolean) {
     if (skenario === 'error') throw new Error('galeri: skenario error');
     if (/INSERT INTO audit_event/i.test(sql) && (globalThis as { __galeriGagalTulis?: boolean }).__galeriGagalTulis) {
+      /* `__galeriTulisLambat`: penulisan yang lambat gagal, supaya test dapat menekan Esc di tengah penyimpanan. */
+      if ((globalThis as { __galeriTulisLambat?: boolean }).__galeriTulisLambat) await new Promise((r) => setTimeout(r, 400));
       throw new Error('galeri: penulisan jejak gagal (perangkat penuh)');
     }
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
