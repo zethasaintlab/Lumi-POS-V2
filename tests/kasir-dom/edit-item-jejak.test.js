@@ -374,6 +374,18 @@ test('⛔ Esc / klik latar / tombol Tutup SELAMA menyimpan tidak menutup dialog 
     (sel) => document.querySelector(`${sel} button[aria-label="Tutup"]`)?.disabled ?? null,
     DIALOG
   );
+  // Batal juga: nonaktif dengan alasan terbaca, dan dipaksa klik pun tidak menutup dialog.
+  const batal = await hal.evaluate((sel) => {
+    const b = [...document.querySelectorAll(`${sel} button`)].find((x) => x.textContent?.trim() === 'Batal');
+    if (!b) return null;
+    const id = b.getAttribute('aria-describedby');
+    const alasan = id ? document.getElementById(id)?.textContent?.trim() ?? '' : '';
+    return { nonaktif: b.disabled, alasan };
+  }, DIALOG);
+  await hal.evaluate((sel) => {
+    [...document.querySelectorAll(`${sel} button`)].find((x) => x.textContent?.trim() === 'Batal')?.click();
+  }, DIALOG);
+  const adaSesudahBatal = await hal.locator(DIALOG).count();
   const galatDialog = await hal
     .waitForSelector(`${DIALOG} [role="alert"]`, { timeout: 4000 })
     .then((e) => e.innerText())
@@ -383,6 +395,10 @@ test('⛔ Esc / klik latar / tombol Tutup SELAMA menyimpan tidak menutup dialog 
   await hal.close();
   assert.equal(adaSaatMenyimpan, 1, 'Esc/latar menutup dialog di tengah penyimpanan — galat penulisan akan dibuang tanpa terlihat kasir');
   assert.equal(tutupNonaktif, true, 'tombol Tutup tidak nonaktif selama menyimpan');
+  assert.notEqual(batal, null, 'tombol Batal tidak ada saat menyimpan');
+  assert.equal(batal.nonaktif, true, 'tombol Batal AKTIF selama menyimpan — melewati penjaga tutup dan membuang galat penulisan');
+  assert.ok(batal.alasan.length > 0, 'Batal nonaktif tanpa alasan terbaca (aria-describedby kosong)');
+  assert.equal(adaSesudahBatal, 1, 'klik Batal di tengah penyimpanan menutup dialog — galat penulisan yang gagal tidak akan terlihat');
   assert.equal(dialog, 1, 'dialog hilang sesudah penulisan gagal');
   assert.notEqual(galatDialog, null, 'galat penulisan yang gagal tidak terlihat (dialog ditutup di tengah penyimpanan)');
   assert.match(galatDialog, /TIDAK disimpan/);
@@ -406,4 +422,31 @@ test('⛔ klik ganda Simpan (dua klik di tugas yang sama) menulis TEPAT satu jej
   await hal.close();
   assert.equal(audit(baru).length, 1, `klik ganda menulis ${audit(baru).length} jejak untuk satu penurunan — membesar-besarkan catatan kasir`);
   assert.equal(outbox(baru).length, 1, `klik ganda menulis ${outbox(baru).length} baris outbox`);
+});
+
+test('⛔ turun qty SEKALIGUS ganti modifier dalam satu Simpan: harga jejak = satuan baris SEBELUM diedit, bukan modifier draf', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  const satuanSebelum = angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  assert.equal(await qtyDraf(hal), '2', 'fixture: Cappuccino qty 2 — penjaga hampa');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click(); // 2 → 1
+  await hal.locator(DIALOG).getByLabel(/Susu oat/).check(); // +6.000 pada draf
+  const satuanDraf = angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  assert.equal(satuanDraf, satuanSebelum + 6000n, 'fixture: modifier draf harus mengubah satuan — penjaga hampa bila tidak');
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+  assert.equal(audit(baru).length, 1, 'turun qty + ganti modifier tidak menulis TEPAT satu jejak');
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(after.quantity_before_milli, 2000);
+  assert.equal(after.quantity_after_milli, 1000);
+  assert.equal(
+    after.unit_price,
+    satuanSebelum.toString(),
+    `harga jejak ${after.unit_price} berasal dari modifier DRAF (harap satuan baris SEBELUM diedit ${satuanSebelum})`
+  );
+  assert.equal(after.reduced_value, satuanSebelum.toString(), 'nilai berkurang bukan satuan sebelum × 1 item');
 });

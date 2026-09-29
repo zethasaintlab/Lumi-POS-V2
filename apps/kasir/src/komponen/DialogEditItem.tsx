@@ -175,7 +175,11 @@ export function DialogEditItem({
             {baris.variationName !== 'Regular' ? ` · ${baris.variationName}` : ''}
           </p>
         </div>
-        <button type="button" className="btn btn-ghost kasir-edit-tutup" aria-label="Tutup" disabled={menyimpan} onClick={tutup}>
+        <button type="button" className="btn btn-ghost kasir-edit-tutup" aria-label="Tutup"
+          disabled={menyimpan}
+          aria-describedby={menyimpan ? 'edit-menyimpan-alasan' : undefined}
+          onClick={tutup}
+        >
           <Icon name="x" size={18} />
         </button>
       </div>
@@ -213,6 +217,12 @@ export function DialogEditItem({
         </p>
       )}
 
+      {menyimpan && (
+        <p className="t-caption" id="edit-menyimpan-alasan">
+          Sedang mencatat perubahan. Batal dan Tutup nonaktif sampai selesai.
+        </p>
+      )}
+
       {galatSimpan && (
         <p className="t-body-md kasir-login-galat" role="alert">
           {galatSimpan}
@@ -245,7 +255,13 @@ export function DialogEditItem({
       </div>
 
       <div className="kasir-dialog-aksi">
-        <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onBatal}>
+        <Tombol
+          varian="ghost"
+          kritis
+          disabled={menyimpan}
+          keterangan={menyimpan ? 'edit-menyimpan-alasan' : undefined}
+          onClick={tutup}
+        >
           Batal
         </Tombol>
         {qty === 0 ? (

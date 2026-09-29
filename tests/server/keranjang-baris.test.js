@@ -337,6 +337,7 @@ test('⛔ (b) key sama + body BERBEDA → 422 IDEMPOTENCY_KEY_HASH_MISMATCH, nol
 
 test('⛔ (b2) body beda HANYA pada satu field (id sama) tetap mismatch — SETIAP field ada di hash', async () => {
   const kasus = [
+    ['id', { id: crypto.randomUUID() }],
     ['variationId', { variationId: 'var-lain' }],
     ['itemName', { itemName: 'Teh' }],
     ['variationName', { variationName: 'Large' }],
@@ -487,4 +488,75 @@ test('⛔ nilai klien LEBIH BESAR dari hitungan server juga ditandai (selisih po
   const [r] = await query(`SELECT after FROM audit_event WHERE id = $1`, [idAudit]);
   assert.equal(r.after.variance_amount, '1000');
   assert.equal(r.after.reduced_value, '60000');
+});
+
+test('⛔ (SV12) qty pecahan: unitPrice × Δqty TIDAK habis dibagi 1000 → nilai cocok dengan aturan perangkat (dipotong), tanpa penanda selisih', async () => {
+  // Aturan yang SAMA dengan perangkat: `ringkasPenguranganBaris` (domain)
+  // memotong pembagian bigint, seperti `subtotalKeranjang`. 1001 × 500 / 1000 = 500,5 → 500.
+  const { ringkasPenguranganBaris } = await import('../../packages/domain/src/keranjang-baris.ts');
+  const perangkat = ringkasPenguranganBaris({
+    variationId: 'v', itemName: 'Kopi Kiloan', variationName: 'Regular',
+    quantityBeforeMilli: 1500, quantityAfterMilli: 1000, unitPrice: 1001n,
+  });
+  assert.equal(perangkat.reduced_value, '500', 'fixture: harus TIDAK habis dibagi (500,5) — penjaga hampa');
+  const id = await shift();
+  const idAudit = crypto.randomUUID();
+  const res = await kirim(id, {
+    id: idAudit, quantityBeforeMilli: 1500, quantityAfterMilli: 1000,
+    unitPrice: '1001', reducedValue: perangkat.reduced_value,
+  });
+  assert.equal(res.statusCode, 201, res.body);
+  const [r] = await query(`SELECT after FROM audit_event WHERE id = $1`, [idAudit]);
+  assert.equal(r.after.reduced_value, '500', `server membulatkan qty pecahan lain dari perangkat (harap 500, dipotong; dapat ${r.after.reduced_value})`);
+  assert.equal('variance_amount' in r.after, false, `qty pecahan memancarkan selisih palsu (server membulatkan lain dari perangkat): ${JSON.stringify(r.after)}`);
+  assert.equal(await jumlahVarian(id), 0);
+});
+
+test('⛔ (SV13) atomisitas: calculation_variance gagal → cart_line_reduced DAN catatan idempotensi ikut batal; retry mengerjakan keduanya', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const idAudit = crypto.randomUUID();
+  const payload = { id: idAudit, reducedValue: '1000' }; // menyimpang → menulis varian
+  await owner.query(`
+    CREATE OR REPLACE FUNCTION tolak_varian_uji() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.event_type = 'calculation_variance' THEN RAISE EXCEPTION 'injeksi-gagal-varian'; END IF;
+      RETURN NEW;
+    END $$`);
+  await owner.query(`CREATE TRIGGER trg_tolak_varian_uji BEFORE INSERT ON audit_event FOR EACH ROW EXECUTE FUNCTION tolak_varian_uji()`);
+  let gagal;
+  try {
+    gagal = await kirim(id, payload, {}, key);
+  } finally {
+    await owner.query('DROP TRIGGER IF EXISTS trg_tolak_varian_uji ON audit_event');
+    await owner.query('DROP FUNCTION IF EXISTS tolak_varian_uji()');
+  }
+  assert.notEqual(gagal.statusCode, 201, `penulisan varian yang gagal tetap dijawab sukses: ${gagal.body}`);
+  assert.equal(
+    await jumlahAudit(id), 0,
+    'cart_line_reduced TERCATAT padahal calculation_variance gagal — keduanya bukan satu transaksi (varian hilang permanen saat retry)'
+  );
+  const idem = await query('SELECT 1 FROM idempotency_key WHERE key = $1', [key]);
+  assert.equal(idem.length, 0, 'catatan idempotensi tertinggal — retry dijawab cached tanpa varian');
+  // Retry dengan key yang sama mengerjakan KEDUANYA.
+  const ulang = await kirim(id, payload, {}, key);
+  assert.equal(ulang.statusCode, 201, ulang.body);
+  assert.equal(await jumlahAudit(id), 1);
+  assert.equal(await jumlahVarian(id), 1);
+});
+
+test('⛔ (R2 arah sebaliknya) cart-line-reduced dulu, lalu cart-cleared dengan key yang sama → 422, bukan respons rute pertama', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  assert.equal((await kirim(id, {}, {}, key)).statusCode, 201);
+  const res = await app.inject({
+    method: 'POST',
+    url: `/shifts/${id}/cart-cleared`,
+    headers: { 'idempotency-key': key, ...hdr() },
+    payload: { id: crypto.randomUUID(), lineCount: 1, quantityMilli: 1000, total: '1000' },
+  });
+  assert.equal(res.statusCode, 422, `cart-cleared dengan key milik cart-line-reduced dijawab ${res.statusCode}: ${res.body}`);
+  assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+  const [n] = await query(`SELECT count(*)::int AS n FROM audit_event WHERE event_type = 'cart_cleared' AND entity_id = $1`, [id]);
+  assert.equal(n.n, 0);
 });
