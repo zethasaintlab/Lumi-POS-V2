@@ -5,6 +5,7 @@ import { createShiftHandlers } from './handlers/shifts.ts';
 import { createTutupHandlers } from './handlers/tutup.ts';
 import { createNoSaleHandlers } from './handlers/no-sale.ts';
 import { createCartClearedHandlers } from './handlers/keranjang-batal.ts';
+import { createCartLineReducedHandlers } from './handlers/keranjang-baris.ts';
 import { createCashMovementHandlers } from './handlers/kas-manual.ts';
 
 // Modul cash lahir kecil dan disengaja demikian (keputusan Q1,
@@ -26,6 +27,8 @@ export function createCashHandlers(pool: Pool, hlc: Hlc): Record<string, unknown
     // modul ini karena `cash_drawer_shift` milik modul ini, dan peristiwanya
     // menempel pada shift (pola no-sale).
     ...createCartClearedHandlers(pool, hlc),
+    // Saudara `cart-cleared` (Task 5C, Q2 issue #76): satu baris dikurangi/dihapus.
+    ...createCartLineReducedHandlers(pool, hlc),
   };
 }
 

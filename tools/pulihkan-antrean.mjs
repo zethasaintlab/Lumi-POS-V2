@@ -55,6 +55,7 @@ const RUTE = {
   count_attempt: (id) => `/shifts/${encodeURIComponent(id)}/count-attempts`,
   peripheral: () => '/peripherals',
   cart_cleared: (id) => `/shifts/${encodeURIComponent(id)}/cart-cleared`,
+  cart_line_reduced: (id) => `/shifts/${encodeURIComponent(id)}/cart-line-reduced`,
 };
 
 function argumen(nama, bawaan) {

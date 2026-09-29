@@ -97,6 +97,9 @@ export const PERISTIWA_AUDIT = {
   // keranjang yang dibatalkan sesudah barang di-scan adalah pola kecurangan
   // kasir. Keranjang bukan `order`; yang dicatat adalah peristiwanya.
   cart_cleared: 'transaksi',
+  // Task 5C — Q2 issue #76: penghapusan baris dan penurunan qty adalah
+  // keluarga peristiwa yang sama dengan `cart_cleared`.
+  cart_line_reduced: 'transaksi',
 
   // Kas
   cash_drawer_opened: 'kas',

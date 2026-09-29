@@ -34,6 +34,7 @@ import { periksaTambahStok } from '../kasir/batas-stok.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
 import { hitungKeranjang, type HitunganKeranjang } from '../kasir/penjualan.ts';
 import { batalkanKeranjang } from '../kasir/keranjang-batal.ts';
+import { kurangiBarisKeranjang } from '../kasir/keranjang-kurang.ts';
 import { muatHlc } from '../lokal/hlc.ts';
 import { tampilkanKuantitas } from '../../../../packages/domain/src/kuantitas.ts';
 import { DialogKonfirmasiKosongkan } from '../komponen/DialogKonfirmasiKosongkan.tsx';
@@ -326,6 +327,47 @@ export function Kasir() {
     if (hasil.status === 'tercatat') pemberitahu.beritahu();
     setelKeranjang(keranjangKosong());
     setDialogBatal(false);
+    return null;
+  };
+
+  /* ⛔ Simpan Edit Item. Qty yang TURUN (atau baris dihapus) menulis jejak
+     `cart_line_reduced` + outbox + `keranjang_lokal` hasil edit dalam SATU
+     transaksi lokal (Task 5C, issue #76 Q2); kenaikan qty dan perubahan
+     modifier tetap SATU `setelKeranjang` tanpa jejak.
+
+     ⛔ Gagal apa pun (shift tidak terbuka, jejak tak tertulis) mengembalikan
+     pesan dan keranjang TETAP UTUH — dialog menahan. Galat tidak ditelan:
+     keranjang berkurang tanpa jejak adalah persis yang fitur ini cegah. */
+  const simpanEdit = async (baru: typeof keranjang, qtySesudahMilli: number): Promise<string | null> => {
+    const asal = edit?.baris;
+    if (!asal) return 'Baris tidak dikenali. Perubahan TIDAK disimpan.';
+    if (qtySesudahMilli >= asal.quantityMilli) {
+      setKeranjang(() => baru);
+      setEdit(null);
+      return null;
+    }
+    if (!konfig || !sesi || !shift) {
+      return 'Sesi atau shift tidak dikenali. Perubahan TIDAK disimpan.';
+    }
+    const hlc = await muatHlc(db, () => Date.now());
+    const hasil = await kurangiBarisKeranjang({
+      db,
+      konfig,
+      sesi,
+      shiftId: shift.id,
+      baris: asal,
+      qtySesudahMilli,
+      keranjangBaru: baru,
+      waktu: () => new Date(),
+      idBaru: () => crypto.randomUUID(),
+      hlc: () => hlc.tick(),
+    });
+    if (hasil.status === 'shift_tidak_terbuka') {
+      return 'Shift sudah tidak terbuka. Perubahan TIDAK disimpan.';
+    }
+    if (hasil.status === 'tercatat') pemberitahu.beritahu();
+    setelKeranjang(baru);
+    setEdit(null);
     return null;
   };
 
@@ -1229,11 +1271,7 @@ export function Kasir() {
           bolehNegatif={bolehNegatif}
           daftarModifier={edit.daftar}
           onBatal={() => setEdit(null)}
-          onSimpan={(baru) => {
-            /* SATU tulis: qty + modifier sudah digabung di `baru`. */
-            setKeranjang(() => baru);
-            setEdit(null);
-          }}
+          onSimpan={simpanEdit}
         />
       )}
 

@@ -288,6 +288,16 @@ export const DIKECUALIKAN: readonly { metode: string; pola: string; alasan: stri
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/cart-line-reduced',
+    alasan:
+      'Jejak audit penurunan qty / penghapusan baris keranjang (saudara cart-cleared). ' +
+      'Alasan yang SAMA dengan no-sale dan count-attempts: kasir justru orang yang mengedit keranjangnya, dan setiap entri di PETA_PERAN ' +
+      'diuji MENOLAK kasir. Yang ditulis hanya JEJAK — nol `order`, `payment`, ' +
+      '`cash_movement`. Yang menjaganya `assertBoleh(shift_open_close)` di handler ' +
+      '(menutup akuntan, `spec-f:82`)',
+  },
+  {
+    metode: 'POST',
     pola: '/peripherals',
     alasan:
       'K-15. `IA:65` memberi layarnya ke "Manajer+", dan operasi RBAC-nya ' +

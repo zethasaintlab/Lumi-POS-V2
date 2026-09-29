@@ -12,67 +12,57 @@ import {
   insertOutboxEvent,
   IdempotencyKeyConflictError,
 } from '../../sync/index.ts';
-import { EVENT_KERANJANG_DIBATALKAN } from '../../../../../../packages/domain/src/keranjang-batal.ts';
+import { EVENT_BARIS_DIKURANGI } from '../../../../../../packages/domain/src/keranjang-baris.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
+import { timestampSah } from './keranjang-batal.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
- * `POST /shifts/{shiftId}/cart-cleared` — jejak audit Batalkan keranjang.
+ * `POST /shifts/{shiftId}/cart-line-reduced` — jejak audit penurunan qty /
+ * penghapusan satu baris keranjang (Edit Item).
  *
- * Keputusan user 28 September 2026 (issue #76): pembatalan keranjang sesudah
- * barang di-scan adalah pola kecurangan kasir — pelanggan membayar tunai,
- * keranjang dibatalkan, uangnya tidak tercatat. Keranjang bukan `order`; yang
- * ditulis di sini hanya PERISTIWA-nya.
+ * Keputusan user 28 September 2026 (issue #76, Q2): kalau Batalkan tercatat
+ * tapi menghapus baris satu per satu tidak, kecurangannya cuma pindah cara.
+ *
+ * ## Kenapa rute SAUDARA, bukan berbagi `cart-cleared`
+ *
+ * Muatannya berbeda bentuk (satu baris: item, qty sebelum/sesudah, harga;
+ * bukan ringkasan keranjang). Satu rute untuk dua bentuk berarti validasi dan
+ * hash bersyarat — tempat cacat idempotensi bersembunyi. Keduanya satu
+ * KELUARGA: kelompok `transaksi`, pola handler identik (ikut `cart-cleared`).
  *
  * ## ⛔ Fakta lampau, bukan perintah
  *
- * Shift yang sudah `closed` tetap diterima (pola `count_attempt`): relay yang
- * antreannya baru terkuras tidak boleh membuang jejak justru pada perangkat
- * yang paling lama offline. `total` dicatat SEBAGAIMANA DILAPORKAN perangkat —
- * server tidak pernah melihat keranjangnya, jadi tidak ada yang dapat
- * dihitung ulang.
+ * Shift `closed` tetap diterima (pola `count_attempt`). Angka dicatat
+ * SEBAGAIMANA DILAPORKAN perangkat — server tidak pernah melihat keranjangnya.
+ * `reducedValue` sengaja TIDAK dicocokkan ulang dengan `unitPrice × selisih`:
+ * menolak jejak yang angkanya menyimpang berarti membuang bukti justru pada
+ * perangkat yang salah hitung.
  *
- * ## ⛔ TIDAK menulis `order`, `payment`, maupun `cash_movement`
- *
- * Tidak ada uang yang berpindah. Jejak yang dijaga: satu `audit_event`.
- *
- * ## Idempotensi
- *
- * Pola no-sale: key di-claim, event ditulis, key di-complete. Respons yang
- * hilang lalu dikirim ulang mengembalikan respons asli, bukan baris kedua.
+ * ## ⛔ TIDAK menulis `order`, `payment`, maupun `cash_movement`.
  */
 
 interface Masukan {
   id?: unknown;
-  lineCount?: unknown;
-  quantityMilli?: unknown;
-  total?: unknown;
+  variationId?: unknown;
+  itemName?: unknown;
+  variationName?: unknown;
+  quantityBeforeMilli?: unknown;
+  quantityAfterMilli?: unknown;
+  unitPrice?: unknown;
+  reducedValue?: unknown;
   occurredAt?: unknown;
   hlc?: unknown;
 }
 
-/**
- * ⛔ ISO 8601 BERZONA dan tanggal NYATA. `Date.parse` menggulirkan
- * `2026-02-30` ke 2 Maret dan menafsirkan timestamp tanpa zona sebagai zona
- * server — keduanya mengubah `occurred_at` audit tanpa error.
- */
-export function timestampSah(v: unknown): v is string {
-  if (typeof v !== 'string') return false;
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(v);
-  if (!m) return false;
-  const [y, mo, d, h, mi] = [m[1], m[2], m[3], m[4], m[5]].map(Number);
-  if (h > 23 || mi > 59 || (m[6] !== undefined && Number(m[6]) > 59)) return false;
-  const hari = new Date(Date.UTC(y, mo - 1, d));
-  if (hari.getUTCFullYear() !== y || hari.getUTCMonth() !== mo - 1 || hari.getUTCDate() !== d) return false;
-  return !Number.isNaN(Date.parse(v));
-}
+const bulat = (v: unknown, min: number): v is number =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= min;
+const teksIsi = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+const uangString = (v: unknown): v is string => typeof v === 'string' && /^\d+$/.test(v);
 
-const bulatPositif = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isSafeInteger(v) && v >= 1;
-
-export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
+export function createCartLineReducedHandlers(pool: Pool, hlc: Hlc): Record<string, unknown> {
   return {
-    async recordCartCleared(req: FastifyRequest, reply: FastifyReply) {
+    async recordCartLineReduced(req: FastifyRequest, reply: FastifyReply) {
       const tenantId = getTenantId(req);
       const actorId = getActorId(req);
       const { shiftId } = req.params as { shiftId: string };
@@ -82,24 +72,33 @@ export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, 
       if (typeof idempotencyKey !== 'string' || idempotencyKey.trim() === '') {
         throw new HttpError(400, 'MISSING_IDEMPOTENCY_KEY', 'Header Idempotency-Key wajib.');
       }
-      if (typeof body.id !== 'string' || body.id.trim() === '') {
+      if (!teksIsi(body.id)) {
         throw new HttpError(400, 'VALIDATION_ERROR', 'id wajib diisi klien (ULID/UUIDv7).');
       }
-      if (!bulatPositif(body.lineCount)) {
-        throw new HttpError(400, 'VALIDATION_ERROR', 'lineCount harus bilangan bulat >= 1.');
+      if (!teksIsi(body.variationId)) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'variationId wajib diisi.');
       }
-      if (!bulatPositif(body.quantityMilli)) {
-        throw new HttpError(400, 'VALIDATION_ERROR', 'quantityMilli harus bilangan bulat >= 1.');
+      if (!teksIsi(body.itemName) || !teksIsi(body.variationName)) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'itemName dan variationName wajib diisi.');
       }
-      // ⛔ Uang sebagai STRING, konvensi yang sama dengan kas manual: number
-      // kehilangan presisi di atas 2^53 sebelum sampai ke sini.
-      if (typeof body.total !== 'string' || !/^\d+$/.test(body.total)) {
-        throw new HttpError(400, 'VALIDATION_ERROR', 'total harus string bilangan bulat tanpa tanda.');
+      if (!bulat(body.quantityBeforeMilli, 1)) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'quantityBeforeMilli harus bilangan bulat >= 1.');
+      }
+      if (!bulat(body.quantityAfterMilli, 0)) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'quantityAfterMilli harus bilangan bulat >= 0.');
+      }
+      // ⛔ Peristiwa ini adalah PENURUNAN. `sesudah >= sebelum` bukan
+      // pengurangan dan tidak boleh tampil sebagai satu di log audit.
+      if (body.quantityAfterMilli >= body.quantityBeforeMilli) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'quantityAfterMilli harus lebih kecil dari quantityBeforeMilli.');
+      }
+      // ⛔ Uang sebagai STRING: number kehilangan presisi di atas 2^53.
+      if (!uangString(body.unitPrice) || !uangString(body.reducedValue)) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'unitPrice dan reducedValue harus string bilangan bulat tanpa tanda.');
       }
       if (body.hlc !== undefined && body.hlc !== null && !(typeof body.hlc === 'string' && /^\d+$/.test(body.hlc))) {
         throw new HttpError(400, 'VALIDATION_ERROR', 'hlc harus string bilangan bulat.');
       }
-      // ⛔ `occurredAt` rusak dijawab 400, bukan 500 dari `timestamptz`.
       if (body.occurredAt !== undefined && body.occurredAt !== null && !timestampSah(body.occurredAt)) {
         throw new HttpError(
           400,
@@ -107,17 +106,21 @@ export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, 
           'occurredAt harus timestamp ISO 8601 bertanggal nyata dan berzona (mis. 2026-09-28T03:00:00Z).'
         );
       }
-      // ⛔ Hash SELURUH isi yang bermakna, bukan hanya id: key yang sama dengan
-      // isi berbeda adalah bug klien, dan menjawabnya dengan respons pertama
-      // membuat pembatalan kedua hilang tanpa error (pola `orders.ts`).
+      // ⛔ Hash SELURUH isi yang bermakna (pola `cart-cleared`): key yang sama
+      // dengan isi berbeda adalah bug klien, dan menjawabnya dengan respons
+      // pertama membuat penurunan kedua hilang tanpa error.
       const requestHash = createHash('sha256')
         .update(
           JSON.stringify([
             shiftId,
             body.id,
-            body.lineCount,
-            body.quantityMilli,
-            body.total,
+            body.variationId,
+            body.itemName,
+            body.variationName,
+            body.quantityBeforeMilli,
+            body.quantityAfterMilli,
+            body.unitPrice,
+            body.reducedValue,
             body.occurredAt ?? null,
           ])
         )
@@ -140,7 +143,7 @@ export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, 
         await assertUserVisible(client, actorId);
         // ⛔ Dijaga di sini, bukan lewat `PETA_PERAN` (lihat `DIKECUALIKAN`):
         // kasir memang boleh, akuntan tidak (`spec-f:82`).
-        await assertBoleh(client, actorId, 'shift_open_close', 'mencatat pembatalan keranjang');
+        await assertBoleh(client, actorId, 'shift_open_close', 'mencatat pengurangan baris keranjang');
 
         // FK klien-suplai ke tabel ber-`tenant_id` (temuan F1): `shiftId`
         // datang dari path dan FK tidak tunduk RLS.
@@ -172,16 +175,20 @@ export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, 
           deviceId: rows[0].device_id,
           actorUserId: actorId,
           approverUserId: null,
-          eventType: EVENT_KERANJANG_DIBATALKAN,
+          eventType: EVENT_BARIS_DIKURANGI,
           entityType: 'cash_drawer_shift',
           entityId: shiftId,
           reasonCode: null,
           reasonNote: null,
-          // ⛔ `total` tetap STRING di jsonb.
+          // ⛔ Uang tetap STRING di jsonb.
           after: {
-            line_count: body.lineCount,
-            quantity_milli: body.quantityMilli,
-            total: body.total,
+            variation_id: body.variationId,
+            item_name: body.itemName,
+            variation_name: body.variationName,
+            quantity_before_milli: body.quantityBeforeMilli,
+            quantity_after_milli: body.quantityAfterMilli,
+            unit_price: body.unitPrice,
+            reduced_value: body.reducedValue,
           },
           hlc: hlcValue,
           occurredAt: typeof body.occurredAt === 'string' ? body.occurredAt : null,
@@ -192,8 +199,8 @@ export function createCartClearedHandlers(pool: Pool, hlc: Hlc): Record<string, 
           tenantId,
           aggregateType: 'cash_drawer_shift',
           aggregateId: shiftId,
-          eventType: 'cash_drawer.cart_cleared',
-          payload: { shiftId, auditId: body.id, total: body.total },
+          eventType: 'cash_drawer.cart_line_reduced',
+          payload: { shiftId, auditId: body.id, reducedValue: body.reducedValue },
         });
 
         const jawab = { id: body.id as string, shiftId };

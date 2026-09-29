@@ -328,6 +328,39 @@ test('⛔ jejak Batalkan keranjang (cart_cleared) mendarat lewat relay, tanpa Be
   sampai(hasil, 'cart_cleared');
 });
 
+test('⛔ jejak Edit Item yang menurunkan qty (cart_line_reduced) mendarat lewat relay, tanpa Bearer', async () => {
+  // Task 5C (issue #76, Q2). Rincian di `tests/server/keranjang-baris.test.js`;
+  // yang ditegakkan DI SINI adalah bahwa jenisnya benar-benar pernah melewati
+  // transport asli — tanpa rute di `sesi.ts` ia dijawab 401 dan berhenti
+  // permanen di antrean.
+  const fx = await perangkatDanShift();
+  await relaikan({
+    entity_type: 'shift',
+    entity_id: fx.shiftId,
+    payload: {
+      id: fx.shiftId, outletId: base.outlet.id, deviceId: fx.deviceId,
+      businessDate: TANGGAL, openingFloat: 100000,
+    },
+  });
+  const hasil = await relaikan({
+    entity_type: 'cart_line_reduced',
+    entity_id: fx.shiftId,
+    payload: {
+      id: crypto.randomUUID(),
+      variationId: 'var-kopi',
+      itemName: 'Kopi Susu',
+      variationName: 'Regular',
+      quantityBeforeMilli: 3000,
+      quantityAfterMilli: 0,
+      unitPrice: '30000',
+      reducedValue: '90000',
+      hlc: '1',
+      occurredAt: new Date().toISOString(),
+    },
+  });
+  sampai(hasil, 'cart_line_reduced');
+});
+
 test('⛔ no-sale di ATAS ambang mendarat KARENA penyetuju ikut di baris outbox', async () => {
   const fx = await perangkatDanShift();
   await relaikan({

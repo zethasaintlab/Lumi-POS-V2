@@ -39,7 +39,13 @@ import {
    ⛔ Tidak ada field harga, diskon, atau catatan (spec § 6, ditolak): harga
    diresolusi dari `price_history`, diskon tetap tingkat order, `order_line`
    tidak punya kolom catatan. Tidak ada tombol "Hapus item" terpisah — qty
-   turun ke 0 mengubah tombol utama menjadi "Hapus dari keranjang". */
+   turun ke 0 mengubah tombol utama menjadi "Hapus dari keranjang".
+
+   ⛔ Simpan yang MENURUNKAN qty (atau menghapus baris) meninggalkan jejak
+   audit (Task 5C, issue #76 Q2). `onSimpan` mengembalikan pesan galat, atau
+   `null` bila berhasil (pemanggil menutup dialog): kegagalan menulis jejak
+   MENAHAN dialog dan keranjang tetap utuh — keranjang berkurang tanpa jejak
+   adalah persis yang fitur ini cegah. */
 
 export function DialogEditItem({
   baris,
@@ -61,7 +67,8 @@ export function DialogEditItem({
   bolehNegatif: boolean;
   daftarModifier: readonly DaftarModifier[];
   onBatal: () => void;
-  onSimpan: (baru: Keranjang) => void;
+  /** Mengembalikan pesan galat, atau `null` bila berhasil. `qtySesudahMilli` = qty draf (0 = dihapus). */
+  onSimpan: (baru: Keranjang, qtySesudahMilli: number) => Promise<string | null>;
 }) {
   const [qty, setQty] = useState(baris.quantityMilli);
   const [terpilih, setTerpilih] = useState<PilihanPerDaftar>(() =>
@@ -69,6 +76,8 @@ export function DialogEditItem({
   );
   const [berubahModifier, setBerubahModifier] = useState(false);
   const [pesan, setPesan] = useState<{ teks: string; blokir: boolean } | null>(null);
+  const [menyimpan, setMenyimpan] = useState(false);
+  const [galatSimpan, setGalatSimpan] = useState<string | null>(null);
 
   const kurang = pesanKurangSemua(daftarModifier, terpilih);
 
@@ -117,9 +126,18 @@ export function DialogEditItem({
     setQty((q) => q + 1000);
   };
 
+  const kirim = (baru: Keranjang) => {
+    setMenyimpan(true);
+    setGalatSimpan(null);
+    void onSimpan(baru, qty)
+      .then((galat) => setGalatSimpan(galat))
+      .catch((e: Error) => setGalatSimpan(`Perubahan TIDAK disimpan: ${e.message}`))
+      .finally(() => setMenyimpan(false));
+  };
+
   const simpan = () => {
     if (qty === 0) {
-      onSimpan(ubahQty(keranjang, baris.id, 0));
+      kirim(ubahQty(keranjang, baris.id, 0));
       return;
     }
     /* Urutan: qty DULU, lalu modifier. `gantiModifier` dapat menggabung baris
@@ -127,7 +145,7 @@ export function DialogEditItem({
        final — kebalikannya membuang qty draf. */
     let baru = ubahQty(keranjang, baris.id, qty);
     if (berubahModifier) baru = gantiModifier(baru, baris.id, modifierDraf);
-    onSimpan(baru);
+    kirim(baru);
   };
 
   const tanpaPerubahan = qty === baris.quantityMilli && !berubahModifier;
@@ -174,6 +192,18 @@ export function DialogEditItem({
         )}
       </div>
 
+      {qty < baris.quantityMilli && (
+        <p className="t-caption" data-uji="edit-tercatat">
+          Pengurangan ini tercatat di audit: siapa, item, jumlah sebelum dan sesudah.
+        </p>
+      )}
+
+      {galatSimpan && (
+        <p className="t-body-md kasir-login-galat" role="alert">
+          {galatSimpan}
+        </p>
+      )}
+
       {pesan && (
         <p className={pesan.blokir ? 't-body-md kasir-login-galat' : 't-caption'} role={pesan.blokir ? 'alert' : 'status'}>
           {pesan.teks}
@@ -200,22 +230,22 @@ export function DialogEditItem({
       </div>
 
       <div className="kasir-dialog-aksi">
-        <Tombol varian="ghost" kritis onClick={onBatal}>
+        <Tombol varian="ghost" kritis disabled={menyimpan} onClick={onBatal}>
           Batal
         </Tombol>
         {qty === 0 ? (
-          <Tombol varian="danger" kritis onClick={simpan}>
-            Hapus dari keranjang
+          <Tombol varian="danger" kritis disabled={menyimpan} onClick={simpan}>
+            {menyimpan ? 'Mencatat…' : 'Hapus dari keranjang'}
           </Tombol>
         ) : (
           <Tombol
             varian="primary"
             kritis
-            disabled={kurang.length > 0}
+            disabled={kurang.length > 0 || menyimpan}
             keterangan={kurang.length > 0 ? 'edit-kurang' : undefined}
             onClick={tanpaPerubahan ? onBatal : simpan}
           >
-            Simpan
+            {menyimpan ? 'Mencatat…' : 'Simpan'}
           </Tombol>
         )}
       </div>

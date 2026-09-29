@@ -6321,6 +6321,122 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /shifts/{shiftId}/cart-line-reduced:
+    post:
+      operationId: recordCartLineReduced
+      summary: Jejak audit penurunan qty atau penghapusan satu baris keranjang (`cart_line_reduced`).
+      description: >-
+        Task 5C, keputusan user 28 September 2026 (issue #76, Q2): kalau
+        pembatalan keranjang tercatat tapi menghapus baris satu per satu tidak,
+        kecurangannya cuma pindah cara. Saudara `cart-cleared` (satu keluarga
+        peristiwa, kelompok `transaksi`): satu `audit_event` dengan `after` =
+        `{ variation_id, item_name, variation_name, quantity_before_milli,
+        quantity_after_milli, unit_price, reduced_value }`. Baris yang dihapus
+        adalah penurunan ke `quantityAfterMilli = 0`.
+
+
+        ⛔ Angka dicatat SEBAGAIMANA DILAPORKAN perangkat (uang sebagai string
+        rupiah utuh, presisi di atas 2^53); server tidak menghitung ulang
+        keranjang yang tidak pernah dikirim kepadanya.
+
+
+        ⛔ Shift yang sudah TERTUTUP tetap diterima (fakta lampau dari relay
+        yang terlambat, pola `count_attempt`). Tidak menulis `order`,
+        `payment`, maupun `cash_movement`. `Idempotency-Key` wajib;
+        pengiriman ulang mengembalikan respons asli.
+
+
+        Klien baru di atas server lama menerima 404 dari rute ini
+        (`docs/RUNBOOK.md` § 8.7); server diperbarui lebih dulu.
+      parameters:
+        - name: shiftId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - variationId
+                - itemName
+                - variationName
+                - quantityBeforeMilli
+                - quantityAfterMilli
+                - unitPrice
+                - reducedValue
+              properties:
+                id:
+                  type: string
+                  description: ULID/UUIDv7 dari klien; juga id `audit_event`-nya.
+                variationId: { type: string }
+                itemName: { type: string }
+                variationName: { type: string }
+                quantityBeforeMilli:
+                  type: integer
+                  minimum: 1
+                  description: Qty baris sebelum diedit, ×1000.
+                quantityAfterMilli:
+                  type: integer
+                  minimum: 0
+                  description: Qty sesudah, ×1000; 0 = baris dihapus. Harus lebih kecil dari `quantityBeforeMilli`.
+                unitPrice:
+                  type: string
+                  pattern: '^[0-9]+$'
+                  description: Harga satuan baris (modifier ikut), rupiah utuh sebagai string.
+                reducedValue:
+                  type: string
+                  pattern: '^[0-9]+$'
+                  description: Nilai yang berkurang, rupiah utuh sebagai string.
+                occurredAt:
+                  type: string
+                  nullable: true
+                  description: ISO 8601 berzona dengan tanggal nyata; selain itu 400.
+                hlc: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Pengurangan tercatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, shiftId]
+                properties:
+                  id: { type: string }
+                  shiftId: { type: string }
+        '400':
+          description: Field tidak sah (VALIDATION_ERROR), atau Idempotency-Key hilang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Peran tidak boleh mencatat pengurangan (FORBIDDEN).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Shift atau aktor tidak ditemukan (SHIFT_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >-
+            Request lain dengan Idempotency-Key yang sama sedang diproses
+            (IDEMPOTENCY_KEY_CONFLICT); kirim ulang.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >-
+            Idempotency-Key sudah dipakai untuk isi yang berbeda
+            (IDEMPOTENCY_KEY_HASH_MISMATCH). Bukan cache hit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /shifts/{shiftId}/close:
     post:
       operationId: closeShift

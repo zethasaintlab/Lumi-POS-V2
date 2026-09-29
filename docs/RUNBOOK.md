@@ -524,6 +524,25 @@ kasir. Keranjang tetap bukan `order`; tidak ada uang yang berpindah.
 di-`UPDATE`. `total` dicatat **sebagaimana dilaporkan perangkat** — server tidak
 pernah melihat keranjangnya.
 
+#### 8.7.1 Saudara: `cart_line_reduced` (Edit Item menurunkan qty / menghapus baris)
+
+Task 5C, keputusan user 28 September 2026 (issue #76, Q2): kalau Batalkan
+tercatat tapi menghapus baris satu per satu tidak, kecurangannya cuma pindah
+cara. **Edit Item yang menurunkan qty, atau "Hapus dari keranjang", menulis
+`audit_event` `cart_line_reduced`** (item, qty sebelum/sesudah, harga satuan,
+nilai berkurang, aktor). Kenaikan qty dan perubahan modifier tanpa penurunan
+tidak dicatat.
+
+| Gejala | Artinya |
+|---|---|
+| Item `cart_line_reduced` di K-14 berhenti dengan `404` | ⛔ **Server belum diperbarui.** Rute `POST /shifts/{id}/cart-line-reduced` baru; klien baru di atas server lama menghasilkan persis ini (`gagal-permanen`, dapat diputar ulang). **Server dulu, klien sesudahnya.** Jejaknya aman di antrean lokal; setelah server diperbarui, putar ulang dengan alat di § 10.1 (`tools/pulihkan-antrean.mjs` sudah memuat rutenya). |
+| `401 SESSION_INVALID` pada item itu | Rute belum terdaftar sebagai jalur perangkat di `apps/server/src/sesi.ts`. Cacat kode, bukan data. |
+| Kasir melihat "Shift sudah tidak terbuka. Perubahan TIDAK disimpan." | Sengaja: penurunan qty tanpa shift terbuka tidak dapat dicatat, jadi keranjang dibiarkan utuh. Buka shift, ulangi. |
+| Kasir melihat "Perubahan TIDAK disimpan: …" | Penulisan jejak lokal gagal (disk penuh, dsb.). Keranjang tetap utuh; tidak ada jejak setengah jadi. |
+
+⛔ Angka dicatat **sebagaimana dilaporkan perangkat** dan tidak dicocokkan ulang
+di server; jangan menyisipkan atau menghapus `audit_event` manual.
+
 ## 9. Server tidak sehat
 
 | Gejala | Periksa |
