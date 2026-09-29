@@ -2,6 +2,7 @@ import type { Rute } from '../rute/tabel.ts';
 import { BelumDibangun } from './BelumDibangun.tsx';
 import { BukaShift } from './BukaShift.tsx';
 import { Kasir } from './Kasir.tsx';
+import { LaciKas } from './LaciKas.tsx';
 import { DetailTransaksi } from './DetailTransaksi.tsx';
 import { Perangkat } from './Perangkat.tsx';
 import { Riwayat } from './Riwayat.tsx';
@@ -24,6 +25,7 @@ const LAYAR: Record<string, (p: { params: Record<string, string> }) => React.Rea
   'K-12': TutupKas,
   'K-14': StatusSinkronisasi,
   'K-15': Perangkat,
+  'K-18': LaciKas,
 };
 
 export function Layar({ rute, params = {} }: { rute: Rute | null; params?: Record<string, string> }) {

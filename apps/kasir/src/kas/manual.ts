@@ -164,3 +164,64 @@ export async function catatKasManual({
 
   return { status: 'tercatat', id, delta: periksa.delta };
 }
+
+/**
+ * Satu baris riwayat kas manual shift — bentuk yang layar Laci kas (K-18)
+ * tampilkan. `jumlah` selalu POSITIF dan `arah` datang dari `type`, bukan dari
+ * tanda `delta`: layar tidak menebak arah dari tanda, dan tanda tidak pernah
+ * menjadi "jumlah".
+ */
+export interface BarisKasManual {
+  id: string;
+  arah: ArahKas;
+  jumlah: bigint;
+  alasanKode: string;
+  catatan: string | null;
+  occurredAt: string;
+  createdBy: string | null;
+}
+
+/**
+ * Kas masuk/keluar SATU shift, terbaru dulu — baca-saja, dari `cash_movement`
+ * lokal.
+ *
+ * ⛔ Hanya `paid_in`/`paid_out`. Movement penjualan, refund, dan modal awal
+ * tidak masuk (spec § 9), dan yang lebih penting: daftar ini bukan sumber saldo.
+ * Saldo laci tetap `saldo_awal + SUM(delta)` di `kas/tutup.ts` dan hanya tampil
+ * di K-12 tahap review (hitungan buta FR-D2) — riwayat ini tidak menjumlahkan
+ * apa pun.
+ *
+ * ⛔ `BigInt(delta)`: driver `@powersync/web` mengembalikan INTEGER sebagai
+ * bigint, `node:sqlite` sebagai number (`fitur/baca.ts`). Galat baca sengaja
+ * TIDAK ditelan — daftar kosong yang lahir dari kegagalan terbaca sebagai
+ * "belum ada kas manual".
+ */
+export async function bacaKasManualShift(db: DbLokal, shiftId: string): Promise<BarisKasManual[]> {
+  const baris = await db.getAll<{
+    id: string;
+    type: string;
+    delta: number | bigint | string;
+    reason_code: string | null;
+    note: string | null;
+    created_by: string | null;
+    occurred_at: string;
+  }>(
+    `SELECT id, type, delta, reason_code, note, created_by, occurred_at
+       FROM cash_movement
+      WHERE shift_id = ? AND type IN ('paid_in', 'paid_out')
+      ORDER BY occurred_at DESC, hlc DESC`,
+    [shiftId]
+  );
+  return baris.map((b) => {
+    const delta = BigInt(b.delta);
+    return {
+      id: b.id,
+      arah: b.type === 'paid_in' ? 'masuk' : 'keluar',
+      jumlah: delta < 0n ? -delta : delta,
+      alasanKode: b.reason_code ?? '',
+      catatan: b.note,
+      occurredAt: b.occurred_at,
+      createdBy: b.created_by,
+    };
+  });
+}

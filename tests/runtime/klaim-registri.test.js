@@ -67,8 +67,8 @@ const KLAIM = [
   {
     id: 'pemformat-rupiah-pemakai',
     berkas: 'CLAUDE.md',
-    frasa: '37 berkas mengimpornya',
-    harap: 37,
+    frasa: '38 berkas mengimpornya',
+    harap: 38,
     // ⛔ `import`, bukan sekadar MENYEBUT nama berkasnya. Versi pertama
     // memakai `includes('uang-tampilan')` dan menghitung 36 — yang ke-36
     // adalah `packages/ds/index.ts`, yang menyebutnya di KOMENTAR (catatan
@@ -181,8 +181,8 @@ const KLAIM = [
   {
     id: 'empty-state-tanpa-antrean',
     berkas: 'docs/verifikasi/KELAS-GAGAL.md',
-    frasa: '**Ukuran: 28 dari 42 berkas ber-`<EmptyState>`**',
-    harap: '28/42',
+    frasa: '**Ukuran: 29 dari 43 berkas ber-`<EmptyState>`**',
+    harap: '29/43',
     ukur: () => {
       const semua = berkasSumber('apps', /\.tsx$/).filter((f) =>
         fs.readFileSync(f, 'utf8').includes('<EmptyState')

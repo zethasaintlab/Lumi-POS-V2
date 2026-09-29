@@ -45,7 +45,7 @@ export interface Rute {
 }
 
 /**
- * Delapan rute, tidak lebih.
+ * Sembilan rute, tidak lebih.
  *
  * K-04, K-05, K-10, K-11, dan K-16 adalah modal/dialog di IA §2.2, bukan
  * layar ber-URL. K-06 (Pembayaran), K-07 (Kembalian), K-13 (Laporan Shift),
@@ -53,16 +53,14 @@ export interface Rute {
  * Mengarang URL untuk mereka berarti memutuskan sesuatu yang belum diputuskan
  * pemilik produk, jadi mereka tidak ada di sini.
  */
-/* ⛔ Tab nav TIGA, bukan empat mockup, Task 3 kampanye Hidupkan desain
-   (26 September 2026, spec § 3). Target mockup: Kasir · Riwayat · Laci kas ·
-   Tutup shift, ikon `layout-grid`/`receipt-text`/`wallet-cards`/`calculator`.
-   `Laci kas` (`/laci`, P10(a) disetujui) menunggu Task 4: `tests/kasir/
-   rute.test.js` mengikat `TABEL_RUTE` ke `product/IA-lumi-pos-v1.md` §7, dan
-   Q9 (kewenangan menyunting `product/`) belum dijawab — lihat
-   `docs/superpowers/plans/2026-09-28-kasir-2a.md` § "Urutan bila Q9
-   terbuka". `/sync` dan `/perangkat` kehilangan `nav`: keduanya pindah ke
-   menu pengguna di header (Status sinkronisasi, Perangkat & uji cetak);
-   Sinkron tetap dapat dicapai lewat indikator sinkron (`IA:114`). */
+/* ⛔ Tab nav EMPAT, mengikuti mockup: Kasir · Riwayat · Laci kas · Tutup shift,
+   ikon `layout-grid`/`receipt-text`/`wallet-cards`/`calculator` (Task 3 dan
+   Task 4 kampanye Hidupkan desain, spec § 3 dan § 9). `Laci kas` (`/laci`,
+   K-18, P10(a) disetujui) masuk di Task 4 bersama suntingan `product/IA-lumi-
+   pos-v1.md` §2.2 dan §7 (`tests/kasir/rute.test.js` mengikat tabel ini ke IA
+   §7). `/sync` dan `/perangkat` tanpa `nav`: keduanya pindah ke menu pengguna
+   di header (Status sinkronisasi, Perangkat & uji cetak); Sinkron tetap dapat
+   dicapai lewat indikator sinkron (`IA:114`). */
 export const TABEL_RUTE: Rute[] = [
   { jalur: '/login', layar: 'K-01', nama: 'Login' },
   { jalur: '/shift/buka', layar: 'K-02', nama: 'Buka Shift' },
@@ -75,10 +73,16 @@ export const TABEL_RUTE: Rute[] = [
   },
   { jalur: '/riwayat/:orderId', layar: 'K-09', nama: 'Detail Transaksi' },
   {
+    jalur: '/laci',
+    layar: 'K-18',
+    nama: 'Laci kas',
+    nav: { urutan: 3, label: 'Laci kas', ikon: 'wallet-cards' },
+  },
+  {
     jalur: '/shift/tutup',
     layar: 'K-12',
     nama: 'Tutup Kas',
-    nav: { urutan: 3, label: 'Tutup shift', ikon: 'calculator' },
+    nav: { urutan: 4, label: 'Tutup shift', ikon: 'calculator' },
   },
   { jalur: '/sync', layar: 'K-14', nama: 'Status Sinkronisasi' },
   { jalur: '/perangkat', layar: 'K-15', nama: 'Perangkat & Uji Cetak' },

@@ -12,6 +12,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { ShellKasir } from '../ShellKasir.tsx';
 import { Kasir } from '../layar/Kasir.tsx';
 import { Riwayat } from '../layar/Riwayat.tsx';
+import { LaciKas } from '../layar/LaciKas.tsx';
 import { TutupKas } from '../layar/TutupKas.tsx';
 import { Perangkat } from '../layar/Perangkat.tsx';
 import { StatusSinkronisasi } from '../layar/StatusSinkronisasi.tsx';
@@ -99,6 +100,7 @@ const LAYAR = [
      dengan MEMBACA, dan tidak satu pun test yang ada dapat melihatnya. */
   { id: 'K-14', nama: 'Status sinkronisasi', render: () => <StatusSinkronisasi /> },
   { id: 'K-15', nama: 'Perangkat', render: () => <Perangkat /> },
+  { id: 'K-18', nama: 'Laci kas', render: () => <LaciKas /> },
   /* ⛔ TANPA shell, sama alasannya dengan K-01: halaman ini BUKAN layar
      produk — ia dokumentasi token, dan bilah nav kasir di sekelilingnya
      hanya akan membuat orang mengira token ada di layar yang sedang
@@ -182,9 +184,14 @@ export function Galeri() {
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
-  const { editItem, stokKetat, bolehNegatif } = useMemo(() => {
+  const { editItem, stokKetat, bolehNegatif, tanpaKasManual } = useMemo(() => {
     const q = new URLSearchParams(window.location.search);
-    return { editItem: q.get('editItem') === '1', stokKetat: q.get('stokKetat') === '1', bolehNegatif: q.get('negatif') === '1' };
+    return {
+      editItem: q.get('editItem') === '1',
+      stokKetat: q.get('stokKetat') === '1',
+      bolehNegatif: q.get('negatif') === '1',
+      tanpaKasManual: q.get('tanpaKasManual') === '1',
+    };
   }, []);
 
   /* ⛔ Keadaan dibangun ULANG saat skenario berubah, dan `key` di bawah
@@ -205,7 +212,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -230,7 +237,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif]);
+  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual]);
 
   return (
     <div className="galeri">

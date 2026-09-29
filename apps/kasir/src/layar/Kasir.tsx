@@ -55,8 +55,6 @@ import { Pembayaran } from './Pembayaran.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
-import { DialogNoSale } from '../komponen/DialogNoSale.tsx';
-import { DialogKasManual } from '../komponen/DialogKasManual.tsx';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
@@ -134,13 +132,6 @@ export function Kasir() {
   /* FR-E5 — penandaan habis MANUAL, terpisah dari stok terhitung. Produk
      dapat habis meski stoknya masih 10 (bahan habis, mesin rusak). */
   const [habis, setHabis] = useState<Set<string>>(new Set());
-  /* K-16 — dialog, bukan rute (`IA:66`). */
-  const [bukaLaci, setBukaLaci] = useState(false);
-  const [pesanLaci, setPesanLaci] = useState<string | null>(null);
-  /* FR-D5 — kas masuk/keluar. Dialog dengan alasan yang sama dengan K-16: ia
-     tidak punya keadaan yang berguna untuk dipulihkan lewat URL. */
-  const [dialogKas, setDialogKas] = useState(false);
-  const [pesanKas, setPesanKas] = useState<string | null>(null);
   /* KEP-21 — keranjang yang bertahan melewati muat ulang.
 
      ⛔ Penulisan baru dimulai SETELAH pemulihan selesai. Efek yang menulis
@@ -409,7 +400,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !bukaLaci && !dialogKas && !dialogManual && !dialogBatal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -637,14 +628,14 @@ export function Kasir() {
             bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
             keranjang.
 
-            ⛔ EMPAT aksi hari ini: dua TERPASANG mockup (Item manual, Diskon,
-            urutan `LABEL_TOOLBAR_MOCKUP` § 4) + dua SEMENTARA (Buka laci, Kas
-            masuk/keluar — tetap di sini sampai Task 4/Laci kas
-            mengeluarkannya, `tests/kasir-dom/k03-toolbar.test.js`). Empat
-            sisanya di mockup (Pajak, Catatan, Pelanggan, No. Meja, Batalkan,
-            Pesanan tahan) nol kode di repo ini; tombol yang tidak melakukan
-            apa-apa adalah janji kepada kasir yang produk ini tidak dapat
-            tepati — Task 5B/10/11/12 membangun sisanya (spec § 4 "Toolbar
+            ⛔ TIGA aksi hari ini, semuanya TERPASANG mockup (Item manual,
+            Diskon, Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
+            Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya pindah ke
+            layar Laci kas (K-18, `layar/LaciKas.tsx`). Lima sisanya di mockup
+            (Pajak, Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
+            repo ini; tombol yang tidak melakukan apa-apa adalah janji kepada
+            kasir yang produk ini tidak dapat tepati — Task 10/11/12
+            membangun sisanya (spec § 4 "Toolbar
             kasir delapan tombol"). */}
         <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
           {/* Item manual — P4(a), keputusan user (spec § 4 baris 1): dialog
@@ -707,53 +698,6 @@ export function Kasir() {
           {alasanBatalNonaktif !== null && (
             <span id="toolbar-batal-alasan" className="sr-only">
               {alasanBatalNonaktif}
-            </span>
-          )}
-
-          {/* K-16 — Buka laci (no-sale). `IA:102` menempatkannya di menu ⋮, tapi
-              menu itu diturunkan dari `TABEL_RUTE` dan K-16 BUKAN rute
-              (`IA:66`: "Dialog, bukan layar"). Ia di sini karena layar ini yang
-              memegang shift, konfig, dan sesi — dan "maksimal 2 tap dari K-03"
-              (`IA:104`) terpenuhi dengan satu.
-
-              ⛔ SEMENTARA (spec § 4 "Aturan tombol"): pindah ke layar Laci kas
-              begitu Task 4 selesai; sampai saat itu tetap di sini supaya
-              fungsinya tidak hilang dari kasir.
-
-              ⛔ `ghost`, bukan `primary`: membuka laci adalah pola fraud paling
-              dasar (`spec-d:229`); ia tidak boleh terlihat seperti langkah
-              biasa. */}
-          {fiturAktif(fitur, 'buka_laci_no_sale') && (
-            <Tombol
-              varian="ghost"
-              disabled={sesi === null}
-              keterangan={sesi === null ? 'toolbar-sesi-alasan' : undefined}
-              onClick={() => setBukaLaci(true)}
-            >
-              <Icon name="register" size={17} />
-              <span className="kasir-toolbar-label">Buka laci</span>
-            </Tombol>
-          )}
-
-          {/* FR-D5 — kas masuk/keluar. Ia TIDAK di balik kill switch: kill
-              switch tidak boleh menyentuh audit maupun menghentikan penjualan
-              (`spec-f:369`), dan mematikan pencatatan kas berarti uang yang
-              tetap keluar tanpa jejak, lalu muncul sebagai selisih yang menuduh
-              kasirnya.
-
-              ⛔ SEMENTARA, alasan yang sama dengan Buka laci di atas. */}
-          <Tombol
-            varian="ghost"
-            disabled={sesi === null}
-            keterangan={sesi === null ? 'toolbar-sesi-alasan' : undefined}
-            onClick={() => setDialogKas(true)}
-          >
-            <Icon name="swap" size={17} />
-            <span className="kasir-toolbar-label">Kas masuk / keluar</span>
-          </Tombol>
-          {sesi === null && (
-            <span id="toolbar-sesi-alasan" className="sr-only">
-              Sesi tidak dikenali. Masuk ulang untuk memakai aksi ini.
             </span>
           )}
         </div>
@@ -1245,70 +1189,7 @@ export function Kasir() {
         >
           Bayar
         </Tombol>
-
-        {/* ⛔ Pesan hasil TETAP di panel keranjang, tidak ikut ke bilah nav.
-            Di bilah itu ia akan mendorong tab-tab ke samping setiap kali laci
-            dibuka — tata letak navigasi yang bergerak tepat saat kasir sedang
-            membaca hasilnya. */}
-        {pesanLaci && (
-          <p className="t-caption" role="status">
-            {pesanLaci}
-          </p>
-        )}
-
-        {pesanKas && (
-          <p className="t-caption" role="status">
-            {pesanKas}
-          </p>
-        )}
       </aside>
-
-      {dialogKas && konfig && sesi && (
-        <DialogKasManual
-          shiftId={shift.id}
-          konfig={konfig}
-          sesi={sesi}
-          onBatal={() => setDialogKas(false)}
-          onSelesai={(h, arah) => {
-            setDialogKas(false);
-            /* ⛔ Kalimatnya menyebut ARAHNYA dan angkanya. `delta` bertanda,
-               dan konfirmasi yang hanya menyebut angkanya membuat kasir yang
-               salah memilih arah tidak punya cara mengetahuinya sampai tutup
-               kas. */
-            // ⛔ Nilai MUTLAK, dan arahnya dibawa KATANYA. Tandanya sudah
-            // ada di kalimat ("masuk"/"keluar"); menampilkannya lagi sebagai
-            // `− Rp 50.000` di kalimat "Kas keluar" membacakan arah yang sama
-            // dua kali, dan yang membacanya cepat menyimpulkan dua arah.
-            const nilai = rupiah(h.delta < 0n ? -h.delta : h.delta);
-            setPesanKas(
-              arah === 'masuk'
-                ? `Kas masuk ${nilai} tercatat. Saldo laci bertambah.`
-                : `Kas keluar ${nilai} tercatat. Saldo laci berkurang.`
-            );
-          }}
-        />
-      )}
-
-      {bukaLaci && konfig && sesi && (
-        <DialogNoSale
-          shiftId={shift.id}
-          konfig={konfig}
-          sesi={sesi}
-          onBatal={() => setBukaLaci(false)}
-          onSelesai={(h) => {
-            setBukaLaci(false);
-            /* ⛔ Keadaan laci DIKEMBALIKAN, bukan didiamkan. Perangkat tanpa
-               printer tidak dapat memerintahkan laci terbuka sama sekali, dan
-               kasir yang mengira sistem sudah membukanya akan menunggu di
-               depan laci yang tertutup. */
-            setPesanLaci(
-              h.laciTerbuka
-                ? `Laci dibuka (pembukaan ke-${h.urutan}). Tercatat di audit.`
-                : `Pembukaan ke-${h.urutan} tercatat. Laci harus dibuka manual — belum ada printer terpasang di perangkat ini.`
-            );
-          }}
-        />
-      )}
 
       {dialogDiskon && sesi && (
         <DialogDiskon

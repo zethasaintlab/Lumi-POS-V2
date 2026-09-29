@@ -87,19 +87,22 @@ after(async () => {
   if (server) await new Promise((r) => server.close(r));
 });
 
-/** Membuka K-18 pada viewport lebar×tinggi. `.galeri-panggung` dipaksa
-    selebar viewport: yang diukur adalah layar, bukan bingkai galeri. */
+/** Membuka K-18. Viewport SELALU 1280×800 (galeri menskalakan panggung di
+    bawah 1088 px). 1280×800: `.galeri-panggung > *` dipaksa selebar viewport.
+    1024×768: panggung BAWAAN galeri (1024×768) — pola `header.test.js`. */
 async function bukaLaci(lebar, tinggi, keadaan = 'normal', ekstra = '') {
-  const hal = await peramban.newPage({ viewport: { width: lebar, height: tinggi } });
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
   await hal.goto(`${alamat}/harness-galeri.html?layar=K-18&keadaan=${keadaan}${ekstra}`, { waitUntil: 'load' });
-  await hal.addStyleTag({
-    content:
-      '.galeri-bar,.galeri-tanya{display:none!important}' +
-      '.galeri-panggung{padding:0!important;overflow:hidden!important}' +
-      `.galeri-panggung>*{width:${lebar}px!important;height:${tinggi}px!important;border:0!important;border-radius:0!important;box-shadow:none!important}`,
-  });
+  if (lebar === 1280) {
+    await hal.addStyleTag({
+      content:
+        '.galeri-bar,.galeri-tanya{display:none!important}' +
+        '.galeri-panggung{padding:0!important;overflow:hidden!important}' +
+        `.galeri-panggung>*{width:${lebar}px!important;height:${tinggi}px!important;border:0!important;border-radius:0!important;box-shadow:none!important}`,
+    });
+  }
   /* ⛔ Galeri jatuh ke K-03 untuk id layar yang tidak dikenal. Yang ditunggu
      JUDUL layar Laci kas, bukan sembarang isi — K-03 yang menyamar tidak lolos. */
   if (keadaan !== 'error') {
@@ -119,7 +122,7 @@ async function bukaLaci(lebar, tinggi, keadaan = 'normal', ekstra = '') {
 const ukur = (hal) =>
   hal.evaluate(() => {
     const kartuDari = (judul) => {
-      const h = [...document.querySelectorAll('h2, h3')].find((e) => e.textContent.trim() === judul);
+      const h = [...document.querySelectorAll('h1, h2, h3')].find((e) => e.textContent.trim() === judul);
       return h ? h.closest('section, .card') : null;
     };
     const kiri = kartuDari('Operasional laci');
@@ -228,7 +231,7 @@ const bacaFixture = (hal) =>
 const teksLayar = (hal) => hal.evaluate(() => document.querySelector('.kasir-konten').innerText);
 const kartuRiwayat = (hal) =>
   hal.evaluate(() => {
-    const h = [...document.querySelectorAll('h2, h3')].find((e) => e.textContent.trim() === 'Riwayat shift berjalan');
+    const h = [...document.querySelectorAll('h1, h2, h3')].find((e) => e.textContent.trim() === 'Riwayat shift berjalan');
     const k = h && h.closest('section, .card');
     return k ? { teks: k.innerText, baris: k.querySelectorAll('li').length } : null;
   });
@@ -284,8 +287,10 @@ test('⛔ riwayat shift berjalan: hanya kas manual, tanpa movement penjualan', a
     fx.manual.length,
     `riwayat menampilkan ${kartu.baris} baris; fixture punya ${fx.manual.length} kas manual (dan ${fx.delta.length - fx.manual.length} movement lain) — movement penjualan/refund/modal awal bocor ke riwayat`
   );
-  for (const g of fx.delta.filter((x) => x.type === 'sale')) {
-    assert.ok(!kartu.teks.includes(Math.abs(g.delta).toLocaleString('id-ID')), `nominal penjualan ${g.delta} muncul di riwayat kas manual`);
+  const penjualan = fx.delta.filter((x) => x.type === 'sale' && x.delta > 0);
+  assert.ok(penjualan.length >= 3, 'fixture tanpa penjualan — penjaga ini tidak memeriksa apa pun');
+  for (const g of penjualan) {
+    assert.ok(!kartu.teks.includes(`Rp ${g.delta.toLocaleString('id-ID')}`), `nominal penjualan ${g.delta} muncul di riwayat kas manual`);
   }
   for (const d of fx.manual) {
     assert.ok(kartu.teks.includes(Math.abs(d).toLocaleString('id-ID')), `nominal kas manual ${d} tidak tampil di riwayat`);
@@ -341,13 +346,27 @@ test('⛔ "Buka laci tanpa transaksi" HILANG saat buka_laci_no_sale mati — kas
 });
 
 test('keadaan kosong: kalimat kosong di kartu riwayat (DS #7)', async () => {
-  const { hal, galat } = await bukaLaci(1280, 800, 'kosong');
+  const { hal, galat } = await bukaLaci(1280, 800, 'normal', '&tanpaKasManual=1');
   const kartu = await kartuRiwayat(hal);
+  const simpan = await hal.getByRole('button', { name: 'Simpan catatan' }).count();
   await hal.close();
   assert.deepEqual(galat, []);
-  assert.ok(kartu, 'kartu riwayat tidak ada pada keadaan kosong');
-  assert.equal(kartu.baris, 0, `keadaan kosong tetap menampilkan ${kartu.baris} baris`);
+  assert.ok(kartu, 'kartu riwayat tidak ada pada shift tanpa kas manual');
+  assert.equal(kartu.baris, 0, `shift tanpa kas manual tetap menampilkan ${kartu.baris} baris`);
   assert.match(kartu.teks, /Belum ada kas masuk atau kas keluar di shift ini/, `kalimat kosong tidak ada. Terbaca: ${kartu.teks}`);
+  assert.equal(simpan, 1, 'form kas manual hilang saat riwayat kosong — kosong bukan alasan menyembunyikan form');
+});
+
+test('perangkat belum terdaftar (keadaan galeri "kosong"): layar menyatakannya, bukan form yang tak dapat bekerja', async () => {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  const galat = [];
+  hal.on('pageerror', (e) => galat.push(e.message));
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-18&keadaan=kosong`, { waitUntil: 'load' });
+  await hal.getByText('Perangkat belum terdaftar').first().waitFor({ timeout: 10_000 });
+  const simpan = await hal.getByRole('button', { name: 'Simpan catatan' }).count();
+  await hal.close();
+  assert.deepEqual(galat, []);
+  assert.equal(simpan, 0, 'Simpan catatan tampil pada perangkat yang belum terdaftar');
 });
 
 test('keadaan error: pesan menyebut AKIBAT bagi kasir, bukan halaman kosong (DS #7)', async () => {
@@ -488,4 +507,23 @@ test('⛔ Buka laci tanpa transaksi dari K-18: audit tercatat, TIDAK ada cash_mo
   assert.equal(tulis.filter((t) => /INSERT INTO cash_movement/.test(t.sql)).length, 0, 'no-sale menulis cash_movement — ia tidak memindahkan uang');
   assert.ok(tulis.some((t) => /INSERT INTO audit_event/.test(t.sql)), 'no-sale tanpa audit_event');
   assert.equal(dialog, 0, 'dialog tidak tertutup sesudah tercatat');
+});
+
+test('⛔ dua klik beruntun pada Simpan catatan (dalam satu tugas) menulis SATU movement, bukan dua', async () => {
+  const { hal, galat } = await bukaLaci(1280, 800);
+  await isiKas(hal, { arah: 'keluar', jumlah: '25000', alasan: 'Bayar pemasok' });
+  /* `click()` dua kali tanpa jeda: tidak ada render di antaranya, jadi hanya
+     penjaga di dalam `jalankan` (dan tombol yang menonaktifkan diri) yang
+     berdiri di antara kasir yang gugup dan uang yang tercatat dua kali. */
+  await hal.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Simpan catatan');
+    b.click();
+    b.click();
+  });
+  await hal.getByText(/Kas keluar Rp 25\.000 tercatat/).waitFor({ timeout: 5_000 });
+  await hal.waitForTimeout(300);
+  const mov = (await tulisan(hal)).filter((t) => /INSERT INTO cash_movement/.test(t.sql));
+  await hal.close();
+  assert.deepEqual(galat, []);
+  assert.equal(mov.length, 1, `dua klik menulis ${mov.length} movement — uang yang sama tercatat dua kali`);
 });

@@ -162,6 +162,10 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` `?stokKetat=1` — K-03 normal, stok TIDAK boleh negatif: Kopi Tubruk ORIGEN ditandai
       HABIS (stok 48), Cappuccino stok 1. Dibaca `k03-stok-kartu-scan.test.js` (ketukan kartu + scan). */
   stokKetat?: boolean;
+  /** `?tanpaKasManual=1` — shift terbuka TANPA kas masuk/keluar: keadaan KOSONG kartu riwayat
+      K-18 (Task 4). Bukan keadaan galeri baru (alasan yang sama dengan `matikanFitur`); skenario
+      `kosong` sendiri berarti perangkat belum terdaftar, bukan riwayat kosong. */
+  tanpaKasManual?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -274,13 +278,45 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         variance_reason_code: null,
       },
     ],
-    cash_movement: order.map((o, i) => ({
-      id: `cm-${i}`,
-      shift_id: 'shift-galeri',
-      type: 'sale',
-      delta: o.total,
-      occurred_at: o.occurred_at,
-    })),
+    cash_movement: [
+      ...order.map((o, i) => ({
+        id: `cm-${i}`,
+        shift_id: 'shift-galeri',
+        type: 'sale',
+        delta: o.total,
+        occurred_at: o.occurred_at,
+      })),
+      /* Kas manual (Task 4, K-18): satu masuk dan dua keluar, TERBARU DULU —
+         fake `getAll` tidak mengurutkan (bukan mesin SQL kedua). Sengaja
+         bercampur dengan movement penjualan di tabel yang SAMA: riwayat yang
+         lupa menyaring `type` menampilkan movement `sale` di sini, dan
+         `laci-kas.test.js` menghitung barisnya. Nol untuk `kosong` dan `?tanpaKasManual=1`. Nominalnya
+         tidak sama dengan total order mana pun (12.500 / 25.000 / 37.500).
+
+         ⛔ Bersihnya NOL (+37.500 −25.000 −12.500): saldo K-12 di galeri tetap
+         Rp 670.500, konstanta yang `k12-hitungan.test.js` pakai untuk
+         membuktikan selisih nol dapat dicapai. Fixture yang menggeser saldo itu
+         membuat penjaga K-12 merah karena data uji, bukan karena kodenya. */
+      ...(skenario === 'kosong' || opsi.tanpaKasManual
+        ? []
+        : [
+            {
+              id: 'cm-manual-3', shift_id: 'shift-galeri', type: 'paid_out', delta: -12_500,
+              reason_code: 'lainnya', note: 'Beli es batu', created_by: 'user-galeri',
+              occurred_at: '2026-09-01T03:20:00.000Z', hlc: 30,
+            },
+            {
+              id: 'cm-manual-2', shift_id: 'shift-galeri', type: 'paid_out', delta: -25_000,
+              reason_code: 'bayar_pemasok', note: null, created_by: 'user-galeri',
+              occurred_at: '2026-09-01T03:10:00.000Z', hlc: 20,
+            },
+            {
+              id: 'cm-manual-1', shift_id: 'shift-galeri', type: 'paid_in', delta: 37_500,
+              reason_code: 'tambah_modal', note: null, created_by: 'user-galeri',
+              occurred_at: '2026-09-01T02:30:00.000Z', hlc: 10,
+            },
+          ]),
+    ],
     printer_profile: [
       {
         id: 'pp-58',
@@ -454,6 +490,10 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
      skenario yang justru ada untuk dinilai matanya. */
   let gambar: Promise<unknown[]> | null = null;
 
+  /* Hanya-baca untuk test DOM (`laci-kas.test.js` menghitung saldo fixture
+     dari sini — bukan dari angka yang diketik ulang di test). */
+  (globalThis as { __galeriTabel?: unknown }).__galeriTabel = perTabel;
+
   /* Catatan penulisan galeri — lihat `execute`. */
   const tulis: { sql: string; params: readonly unknown[]; dalam: boolean }[] = [];
   (globalThis as { __galeriTulis?: unknown }).__galeriTulis = tulis;
@@ -497,6 +537,21 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         return [{ outlet_id: 'outlet-1', device_id: 'dev-galeri', status: 'closed' }] as T[];
       }
       const baris = perTabel[tabel] ?? [];
+
+      /* ⛔ SATU bentuk lagi: `bacaKasManualShift` (`WHERE shift_id = ? AND type
+         IN ('paid_in', 'paid_out')`). Tanpanya galeri menyerahkan movement
+         PENJUALAN ke riwayat kas manual — dan yang menghilangkan filter `type`
+         di kode sungguhan tidak akan terlihat di galeri. Hanya `shift_id` dan
+         daftar `type` di literal SQL-nya; bukan mesin SQL kedua. */
+      if (tabel === 'cash_movement') {
+        const dalamDaftar = /\btype\s+IN\s*\(([^)]*)\)/i.exec(sql);
+        if (dalamDaftar && params && params.length > 0) {
+          const tipe = [...dalamDaftar[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+          return (baris as { shift_id: string; type: string }[]).filter(
+            (r) => r.shift_id === params[0] && tipe.includes(r.type)
+          ) as T[];
+        }
+      }
 
       /* ⛔ SATU bentuk saringan lagi, dan alasannya sama dengan saringan
          `failed` di bawah: tanpanya galeri MEMBANTAH DIRINYA SENDIRI. K-09
@@ -560,7 +615,21 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
           throw new Error('galeri: transaksi bersarang');
         },
       };
-      return fn(tx);
+      /* ⛔ Kas manual (Task 4) DITERAPKAN saat transaksi selesai dan DIBUANG
+         bila `fn` melempar — satu-satunya "rollback" di fake ini, dan hanya
+         untuk baris `paid_in`/`paid_out`. Tanpanya jalur GAGAL K-18 tidak dapat
+         diuji: baris yang sudah "ditulis" sebelum audit gagal tampil di
+         riwayat, dan layar yang berkata "TIDAK tercatat" akan membantah
+         daftarnya sendiri. */
+      const menunggu: unknown[] = [];
+      tertunda = menunggu;
+      try {
+        const hasil = await fn(tx);
+        for (const baris of menunggu) perTabel.cash_movement.unshift(baris);
+        return hasil;
+      } finally {
+        tertunda = null;
+      }
     },
   };
 
@@ -573,6 +642,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
      (bukan skenario baru): `__galeriGagalTulis` membuat INSERT audit_event
      melempar (perangkat gagal menulis jejak); `__galeriShiftTutup` membuat
      pembacaan status shift oleh Batalkan menjawab `closed`. */
+  /* Baris kas manual yang menunggu commit transaksi yang sedang berjalan. */
+  let tertunda: unknown[] | null = null;
+
   async function jalankan(sql: string, params: readonly unknown[] | undefined, dalam: boolean) {
     if (skenario === 'error') throw new Error('galeri: skenario error');
     if (/INSERT INTO audit_event/i.test(sql) && (globalThis as { __galeriGagalTulis?: boolean }).__galeriGagalTulis) {
@@ -580,6 +652,21 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     }
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
+    /* Urutan parameter = `catatKasManual` (`kas/manual.ts`): id, shift_id, type,
+       delta, counterpart_type, reason_code, note, created_by, occurred_at, hlc.
+       Hanya `paid_in`/`paid_out` — INSERT penjualan punya bentuk lain. */
+    if (
+      dalam &&
+      tertunda &&
+      /^INSERT INTO cash_movement/i.test(sql.trim()) &&
+      params?.length === 10 &&
+      (params[2] === 'paid_in' || params[2] === 'paid_out')
+    ) {
+      tertunda.push({
+        id: params[0], shift_id: params[1], type: params[2], delta: params[3], counterpart_type: params[4],
+        reason_code: params[5], note: params[6], created_by: params[7], occurred_at: params[8], hlc: params[9],
+      });
+    }
   }
   return db;
 }

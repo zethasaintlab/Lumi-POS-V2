@@ -101,9 +101,8 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             gerbang yang sudah dilewati mengundang kasir keluar dari shift yang
             sedang berjalan.
 
-            ⛔ TIGA tab, bukan empat mockup (Kasir · Riwayat · Tutup shift) —
-            "Laci kas" menunggu Task 4 (`rute/tabel.ts`, komentar kepala
-            `TABEL_RUTE`). `/sync` dan `/perangkat` pindah ke `MenuPengguna`. */}
+            ⛔ EMPAT tab, mengikuti mockup (Kasir · Riwayat · Laci kas · Tutup
+            shift; `rute/tabel.ts`). `/sync` dan `/perangkat` pindah ke `MenuPengguna`. */}
         <Tabs
           variant="underline"
           ariaLabel="Navigasi kasir"

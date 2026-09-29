@@ -517,17 +517,12 @@
   gap: var(--space-6);
   align-items: start;
 }
-/* `.segmented` bundle untuk pilihan yang menyangkut uang (arah kas, Fase
-   3.6): selebar dialog, tombol 56 px (DS #3). Bundle memberinya 38 px, benar
-   untuk Dine In/Takeaway dan terlalu kecil untuk "uang keluar dari laci". */
 .kasir-alasan-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: var(--space-3);
 }
 .kasir-alasan-grid > legend { grid-column: 1 / -1; }
-.kasir-segmented-kritis { display: flex; }
-.kasir-segmented-kritis button { min-height: var(--touch-critical); }
 
 /* K-12 tahap review — dua kartu (rebuild UI Fase 3.10). */
 .kasir-review-kolom {
@@ -1791,4 +1786,77 @@
     linear-gradient(transparent, var(--surface) 70%) bottom / 100% var(--space-4) no-repeat local,
     linear-gradient(var(--border), transparent) top / 100% var(--space-2) no-repeat scroll,
     linear-gradient(transparent, var(--border)) bottom / 100% var(--space-2) no-repeat scroll;
+}
+
+/* K-18 Laci kas — dua kartu berdampingan (Task 4, kampanye Hidupkan desain;
+   mockup `CashDrawer`: kolom .9fr / 1.1fr, lebar maksimum 64rem). Kartunya
+   `.card.card-pad.kasir-dialog-sel`, sama dengan K-12 review. */
+.kasir-laci {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--space-4);
+  align-items: start;
+  width: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+/* Toggle arah tampil selebar isinya (mockup 186×44), bukan selebar kartu.
+   `nowrap`: tombol `.segmented` berbasis `flex: 1 1 0%`, jadi wadah yang
+   menyusut-ke-isi mengukurnya sebesar min-content — "Kas masuk" terbungkus
+   dua baris dan toggle membengkak jadi 51 px (terukur). */
+.kasir-laci .segmented { align-self: flex-start; }
+.kasir-laci .segmented button { white-space: nowrap; }
+/* Kartu kiri memuat form + buka laci dan HARUS muat 1024×768 tanpa gulir
+   (`laci-kas.test.js`), termasuk alasan "Lainnya" yang menambah catatan. Jarak
+   antaranya dirapatkan (12 px) dan baris alasan tanpa celah baris — tiap opsi
+   tetap ≥ 44 px (`min-height` `.kasir-alasan-opsi`). */
+.kasir-laci .kasir-dialog-sel { gap: var(--space-3); }
+.kasir-laci .kasir-alasan-grid { row-gap: 0; }
+.kasir-laci-judul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.kasir-laci-nosale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.kasir-laci-riwayat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kasir-laci-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.kasir-laci-ikon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: 50%;
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+.kasir-laci-ikon[data-arah='masuk'] {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
+.kasir-laci-isi {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
 }
