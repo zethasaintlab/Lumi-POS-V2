@@ -167,6 +167,10 @@ export function keranjangDuaPuluh(): string {
    tanpa itu `lacakStok` tidak dapat ditemukan dan pemeriksaan stok tak berlaku. */
 export const EDIT_VAR_STOK_TERBATAS = 'item-americano-vHot';
 export const EDIT_VAR_HABIS = 'item-cappuccino-vRegular';
+/* `?stokKetat=1` (K-03 normal): habis dan stok tipis, keduanya BERBARCODE untuk jalur scan. */
+export const STOK_HABIS_VAR = 'item-kopi-tubruk-origen-vRegular';
+export const STOK_TIPIS_VAR = 'item-cappuccino-vRegular';
+export const KODE_BARCODE_STOK_TIPIS = '8992761111024';
 export const EDIT_VAR_MODIFIER = 'item-kopi-susu-gula-aren-vRegular';
 
 /** Empat baris: stok 3 terbagi dua baris (1 + 1), habis (qty 2), bermodifier Extra shot (qty 1), dan kembarannya tanpa modifier (qty 1). */
@@ -188,6 +192,17 @@ export function keranjangEditItem(): string {
       unitPrice: 24000,
       quantityMilli: 1000,
       modifier: [{ id: 'm-shot', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }],
+    },
+    /* ⛔ Modifier YATIM: 'm-arsip' tidak ada di daftar modifier item (diarsipkan sesudah dimasukkan). */
+    {
+      ...dasar,
+      id: 'edit-yatim',
+      variationId: 'item-cokelat-klasik-vRegular',
+      itemName: 'Cokelat Klasik',
+      variationName: 'Regular',
+      unitPrice: 26000,
+      quantityMilli: 1000,
+      modifier: [{ id: 'm-arsip', nama: 'Sirup vanila', harga: 4000, qtyMilli: 1000 }],
     },
     /* Kembaran `edit-modifier` bila Extra shot dilepas: menguji penggabungan. */
     {
@@ -324,7 +339,13 @@ export function itemUntuk(skenario: NamaSkenario): BarisItem[] {
   // adalah PERILAKU db-nya, bukan isinya. "Kopi Tubruk ORIGEN" (satu
   // variation, tanpa modifier) membawa `KODE_BARCODE_FIXTURE`.
   return MENU.map(([n, v, h]) =>
-    baris(idDariNama(n), n, v, h, n === 'Kopi Tubruk ORIGEN' ? KODE_BARCODE_FIXTURE : null)
+    baris(
+      idDariNama(n),
+      n,
+      v,
+      h,
+      n === 'Kopi Tubruk ORIGEN' ? KODE_BARCODE_FIXTURE : n === 'Cappuccino' ? KODE_BARCODE_STOK_TIPIS : null
+    )
   );
 }
 

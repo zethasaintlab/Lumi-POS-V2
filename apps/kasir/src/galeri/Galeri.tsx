@@ -182,7 +182,10 @@ export function Galeri() {
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
-  const editItem = useMemo(() => new URLSearchParams(window.location.search).get('editItem') === '1', []);
+  const { editItem, stokKetat, bolehNegatif } = useMemo(() => {
+    const q = new URLSearchParams(window.location.search);
+    return { editItem: q.get('editItem') === '1', stokKetat: q.get('stokKetat') === '1', bolehNegatif: q.get('negatif') === '1' };
+  }, []);
 
   /* ⛔ Keadaan dibangun ULANG saat skenario berubah, dan `key` di bawah
      memaksa REMOUNT. Tanpa remount, layar yang sudah memuat data skenario
@@ -202,7 +205,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -227,7 +230,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario, layarId, matikanFitur, editItem]);
+  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif]);
 
   return (
     <div className="galeri">

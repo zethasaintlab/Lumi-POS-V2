@@ -36,6 +36,22 @@ test('⛔ habis diperiksa SEBELUM stok terhitung', async () => {
   assert.equal(h2.boleh, false, 'penandaan habis dikalahkan bolehNegatif/lacakStok');
 });
 
+test('⛔ habis DAN stok kurang → kalimat HABIS, bukan "tersisa N"', async () => {
+  const { periksaTambahStok } = await import(MOD);
+  // Yang membedakan urutan periksa: stok 0/kurang saja menghasilkan kalimat stok; habis harus menang.
+  for (const stokMilli of [0, 500, 3000]) {
+    const h = periksaTambahStok(
+      dasar({ habis: new Set(['v1']), stok: new Map([['v1', stokMilli]]), dimintaMilli: 4000 })
+    );
+    assert.equal(h.boleh, false);
+    assert.equal(
+      h.pesan,
+      'Kopi Susu ditandai habis. Manajer dapat membuka kembali penandaannya.',
+      `habis diperiksa SESUDAH stok (stok ${stokMilli}): kasir membaca "tersisa N" alih-alih kalimat habis (spec-e:217)`
+    );
+  }
+});
+
 test('⛔ stok kurang + tidak boleh negatif → ditolak dengan kalimat FR-E4 berangka', async () => {
   const { periksaTambahStok } = await import(MOD);
   const h = periksaTambahStok(dasar({ dimintaMilli: 4000 }));

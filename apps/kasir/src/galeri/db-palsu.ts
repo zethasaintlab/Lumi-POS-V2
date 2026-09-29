@@ -8,6 +8,8 @@ import {
   EDIT_VAR_STOK_TERBATAS,
   keranjangDuaPuluh,
   keranjangEditItem,
+  STOK_HABIS_VAR,
+  STOK_TIPIS_VAR,
   orderUntuk,
   type NamaSkenario,
 } from './skenario.ts';
@@ -157,6 +159,11 @@ export interface OpsiDbPalsu {
       ditandai habis; empat baris keranjang bervariation NYATA di katalog;
       semua item punya satu daftar modifier. Dibaca `edit-item.test.js`. */
   editItem?: boolean;
+  /** `[EKSPLORASI]` `?stokKetat=1` — K-03 normal, stok TIDAK boleh negatif: Kopi Tubruk ORIGEN ditandai
+      HABIS (stok 48), Cappuccino stok 1. Dibaca `k03-stok-kartu-scan.test.js` (ketukan kartu + scan). */
+  stokKetat?: boolean;
+  /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
+  bolehNegatif?: boolean;
 }
 
 export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbLokal {
@@ -172,7 +179,11 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
      yang seluruhnya sehat. */
   const gerakStok = item.map((b, i) => ({
     variation_id: b.variation_id,
-    delta: opsi.editItem
+    delta: opsi.stokKetat
+      ? b.variation_id === STOK_TIPIS_VAR
+        ? 1_000
+        : 48_000
+      : opsi.editItem
       ? b.variation_id === EDIT_VAR_STOK_TERBATAS
         ? 3_000
         : 48_000
@@ -212,10 +223,10 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       : [],
     stock_movement: gerakStok,
     stock_snapshot: [],
-    sold_out_flag: opsi.editItem
+    sold_out_flag: opsi.editItem || opsi.stokKetat
       ? [
           {
-            variation_id: EDIT_VAR_HABIS,
+            variation_id: opsi.stokKetat ? STOK_HABIS_VAR : EDIT_VAR_HABIS,
             is_sold_out: 1,
             hlc: 1,
             tenant_id: 'ten-galeri',
@@ -337,7 +348,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       {
         id: 'vp-1',
         name: 'fnb',
-        allow_negative_stock: opsi.editItem ? 0 : 1,
+        allow_negative_stock: opsi.stokKetat || (opsi.editItem && !opsi.bolehNegatif) ? 0 : 1,
         is_tenant_default: 1,
         default_channel: 'takeaway',
         requires_barcode_flow: 0,

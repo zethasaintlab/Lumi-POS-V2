@@ -85,7 +85,7 @@ after(async () => {
  * modifier (qty 1); stok TIDAK boleh negatif.
  */
 async function bukaK03(opsi = {}) {
-  const { editItem = false } = opsi;
+  const { editItem = false, negatif = false } = opsi;
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
@@ -94,6 +94,7 @@ async function bukaK03(opsi = {}) {
   });
   const q = new URLSearchParams({ layar: 'K-03', keadaan: 'keranjang-penuh' });
   if (editItem) q.set('editItem', '1');
+  if (negatif) q.set('negatif', '1');
   await hal.goto(`${alamat}/harness-galeri.html?${q.toString()}`, { waitUntil: 'load' });
   await hal.waitForSelector('.kasir-baris', { timeout: 10_000 });
   return { hal, galat };
@@ -321,19 +322,75 @@ test('⛔ harga per item memakai satuanKeranjang (modifier ikut) dan subtotal ba
   await hal.close();
 });
 
-test('⛔ Edit Item tidak punya field harga, diskon, atau catatan', async () => {
+test('⛔ Edit Item tidak punya field harga, diskon, atau catatan — SATU-SATUNYA kontrol isian adalah pemilih modifier', async () => {
   const { hal } = await bukaK03({ editItem: true });
   await bukaEdit(hal, 'Kopi Susu Gula Aren');
   const isi = await hal.evaluate((sel) => {
     const d = document.querySelector(sel);
-    return {
-      teks: d.querySelectorAll('input[type="text"], input[type="number"], input:not([type]), textarea').length,
-      label: d.innerText,
-    };
+    const kontrol = [...d.querySelectorAll('input, select, textarea, [contenteditable]:not([contenteditable="false"])')];
+    // Sah: checkbox/radio DI DALAM pemilih modifier (`fieldset.kasir-alasan`). Selain itu = pelanggaran spec § 6.
+    const asing = kontrol
+      .filter((e) => !(e.tagName === 'INPUT' && ['checkbox', 'radio'].includes(e.type) && e.closest('fieldset.kasir-alasan')))
+      .map((e) => `${e.tagName.toLowerCase()}${e.type ? `[type=${e.type}]` : ''}`);
+    return { jumlah: kontrol.length, asing, label: d.innerText };
   }, DIALOG);
   await hal.close();
-  assert.equal(isi.teks, 0, 'Edit Item punya kolom teks/angka bebas (harga sementara? catatan?) — spec § 6 menolaknya');
-  assert.ok(!/diskon|catatan/i.test(isi.label), `Edit Item menyebut diskon/catatan: ${isi.label}`);
+  assert.ok(isi.jumlah >= 2, `fixture: pemilih modifier tidak terender (${isi.jumlah} kontrol) — penjaga hampa`);
+  assert.deepEqual(isi.asing, [], `Edit Item punya kontrol isian di luar pemilih modifier (${isi.asing.join(', ')}) — harga sementara/diskon/catatan ditolak spec § 6`);
+  assert.ok(!/harga|diskon|catatan/i.test(isi.label), `Edit Item menyebut harga/diskon/catatan: ${isi.label}`);
+});
+
+test('⛔ − ditekan berulang melewati 0: draf berhenti di 0, − nonaktif dengan alasan terbaca, tak ada nilai negatif', async () => {
+  const { hal } = await bukaK03({ editItem: true });
+  await bukaEdit(hal, 'Americano');
+  await hal.getByRole('button', { name: /^Hapus Americano/ }).click(); // 1 → 0
+  assert.equal(await qtyDraf(hal), '0');
+  const kurang = hal.locator(DIALOG).getByRole('button', { name: /^(Kurangi|Hapus) Americano/ });
+  assert.equal(await kurang.isDisabled(), true, 'tombol − tidak nonaktif di draf 0 — draf dapat turun ke negatif');
+  const alasanId = await kurang.getAttribute('aria-describedby');
+  const alasan = alasanId ? await hal.locator(`#${alasanId}`).innerText() : '';
+  assert.ok(alasan.trim().length > 0, 'tombol − nonaktif tanpa alasan terbaca (aria-describedby kosong)');
+  // Paksa klik berulang: tombol nonaktif tidak boleh menurunkan draf.
+  for (let i = 0; i < 3; i += 1) await kurang.click({ force: true });
+  const teks = await hal.locator(DIALOG).innerText();
+  assert.equal(await qtyDraf(hal), '0', 'draf turun di bawah 0 setelah − ditekan berulang');
+  assert.ok(!/[−-]\s?Rp|Rp\s?[−-]|[−]\d/.test(teks), `dialog menampilkan nilai negatif: ${teks}`);
+  assert.equal(await hal.getByRole('button', { name: 'Hapus dari keranjang' }).count(), 1, 'draf 0 kehilangan tombol utama "Hapus dari keranjang"');
+  await hal.close();
+});
+
+test('⛔ boleh negatif: + melewati stok DIIZINKAN dan menampilkan peringatan "Stok … tersisa N" (bukan blokir)', async () => {
+  const { hal } = await bukaK03({ editItem: true, negatif: true });
+  await bukaEdit(hal, 'Americano');
+  await hal.getByRole('button', { name: /^Tambah Americano/ }).click(); // kumulatif 3 = stok 3
+  await hal.getByRole('button', { name: /^Tambah Americano/ }).click(); // kumulatif 4 > stok 3
+  const peringatan = await hal
+    .waitForSelector(`${DIALOG} [role="status"]`, { timeout: 2000 })
+    .then((e) => e.innerText())
+    .catch(() => null);
+  assert.equal(peringatan, 'Stok Americano tersisa 3', 'peringatan stok (boleh negatif) tidak tampil di Edit Item (spec-e:146)');
+  assert.equal(await qtyDraf(hal), '3', 'peringatan stok MEMBLOKIR kenaikan qty — spec-e:146: penjualan TETAP dapat diselesaikan');
+  assert.equal(await hal.locator(`${DIALOG} [role="alert"]`).count(), 0, 'peringatan stok ditampilkan sebagai blokir (role=alert)');
+  await hal.close();
+});
+
+test('⛔ modifier YATIM (diarsipkan) dipertahankan saat modifier diubah dan disimpan — harga baris tidak turun diam-diam', async () => {
+  const { hal } = await bukaK03({ editItem: true });
+  const angka = (t) => BigInt(t.replace(/[^0-9]/g, ''));
+  await bukaEdit(hal, 'Cokelat Klasik');
+  const satuan = async () => angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  assert.equal(await satuan(), 30000n, 'fixture: Cokelat Klasik 26.000 + Sirup vanila (yatim) 4.000 — penjaga hampa bila bukan 30.000');
+  await hal.locator(DIALOG).getByLabel(/Susu oat/).check(); // mengubah modifier → jalur yang dulu membuang yatim
+  assert.equal(await satuan(), 36000n, 'modifier yatim dibuang dari harga draf saat modifier diubah (26.000 + 4.000 + 6.000 = 36.000)');
+  const tulis0 = await jumlahTulis(hal);
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await hal.waitForFunction((n) => (window.__galeriTulis ?? []).filter((t) => /INSERT INTO keranjang_lokal/.test(t.sql)).length > n, tulis0);
+  const tersimpan = (await tulisKeranjang(hal)).pop().baris.find((b) => b.id === 'edit-yatim');
+  assert.deepEqual(tersimpan.modifier.map((m) => m.id).sort(), ['m-arsip', 'm-oat'], 'modifier yatim hilang dari keranjang tersimpan — harga baris turun tanpa tanda');
+  const baris = (await barisTeks(hal)).find((t) => t.includes('Cokelat Klasik'));
+  assert.match(baris, /Sirup vanila/, 'modifier yatim tidak tampil lagi di baris keranjang');
+  assert.match(baris, /Rp\s?36\.000 per item/, `harga per item baris tidak 36.000: ${baris}`);
+  await hal.close();
 });
 
 test('scanner global mati selama Edit Item terbuka', async () => {
