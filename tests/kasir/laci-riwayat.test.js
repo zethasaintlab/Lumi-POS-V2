@@ -74,9 +74,11 @@ test('riwayat laci hanya paid_in/paid_out shift ini, terbaru dulu', async () => 
 
   const hasil = await bacaKasManualShift(db, 'A');
 
+  // Himpunan barisnya saja (urutan diuji test "urutan" tersendiri): pesan ini
+  // hanya boleh berbunyi "movement lain/shift lain" bila HIMPUNANNYA salah.
   assert.deepEqual(
-    hasil.map((b) => b.id),
-    ['m-out', 'm-in'],
+    hasil.map((b) => b.id).sort(),
+    ['m-in', 'm-out'],
     'riwayat memuat movement selain kas manual (opening_float/sale/refund) atau shift lain — ' +
       `terbaca: ${JSON.stringify(hasil.map((b) => b.id))}`
   );

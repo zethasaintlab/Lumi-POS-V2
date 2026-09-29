@@ -168,6 +168,8 @@ async function ukurHeader(hal) {
       pusatMin: Math.min(...pusat),
       pusatMax: Math.max(...pusat),
       semuaDalamHeader: kotak.every((r) => r.top >= rHeader.top - 0.5 && r.bottom <= rHeader.bottom + 0.5),
+      semuaDalamHeaderMendatar: kotak.every((r) => r.left >= rHeader.left - 0.5 && r.right <= rHeader.right + 0.5),
+      luapMendatar: { scroll: header.scrollWidth, client: header.clientWidth },
       jumlahTab: tabs.length,
       lebarTabMin: tabs.length ? Math.min(...tabs.map((t) => t.getBoundingClientRect().width)) : 0,
       labelAktifUkuran: labelAktif ? getComputedStyle(labelAktif).fontSize : null,
@@ -204,6 +206,12 @@ for (const lebar of [1024, 1280]) {
       assert.ok(
         u.semuaDalamHeader,
         `ada anak header yang keluar dari kotak header pada ${lebar}/${keadaan} — header MEMBUNGKUS.`
+      );
+      assert.ok(
+        u.semuaDalamHeaderMendatar,
+        `ada anak header yang keluar dari kotak header SECARA MENDATAR pada ${lebar}/${keadaan} ` +
+          `(scrollWidth ${u.luapMendatar.scroll} > clientWidth ${u.luapMendatar.client}) — header meluap ke samping, ` +
+          'menu pengguna terdorong ke luar layar.'
       );
       assert.ok(
         u.pusatMax - u.pusatMin <= 4,

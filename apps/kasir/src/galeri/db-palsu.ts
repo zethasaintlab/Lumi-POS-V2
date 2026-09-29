@@ -166,6 +166,10 @@ export interface OpsiDbPalsu {
       K-18 (Task 4). Bukan keadaan galeri baru (alasan yang sama dengan `matikanFitur`); skenario
       `kosong` sendiri berarti perangkat belum terdaftar, bukan riwayat kosong. */
   tanpaKasManual?: boolean;
+  /** `?gagalBacaKas=1` — MENGGAGALKAN hanya `bacaKasManualShift` (query `cash_movement … type IN`), bukan
+      pembacaan lain: keadaan `error` galeri gagal lebih awal di konfigurasi perangkat dan tidak pernah
+      mencapai riwayat. Test dapat menyetel `window.__galeriGagalBacaKas` sesudah muat untuk membaca-ulang. */
+  gagalBacaKas?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -493,6 +497,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* Hanya-baca untuk test DOM (`laci-kas.test.js` menghitung saldo fixture
      dari sini — bukan dari angka yang diketik ulang di test). */
   (globalThis as { __galeriTabel?: unknown }).__galeriTabel = perTabel;
+  (globalThis as { __galeriGagalBacaKas?: boolean }).__galeriGagalBacaKas = opsi.gagalBacaKas === true;
 
   /* Catatan penulisan galeri — lihat `execute`. */
   const tulis: { sql: string; params: readonly unknown[]; dalam: boolean }[] = [];
@@ -544,6 +549,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
          di kode sungguhan tidak akan terlihat di galeri. Hanya `shift_id` dan
          daftar `type` di literal SQL-nya; bukan mesin SQL kedua. */
       if (tabel === 'cash_movement') {
+        if (/\btype\s+IN\s*\(/i.test(sql) && (globalThis as { __galeriGagalBacaKas?: boolean }).__galeriGagalBacaKas) {
+          throw new Error('galeri: pembacaan riwayat kas manual gagal');
+        }
         const dalamDaftar = /\btype\s+IN\s*\(([^)]*)\)/i.exec(sql);
         if (dalamDaftar && params && params.length > 0) {
           const tipe = [...dalamDaftar[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]);

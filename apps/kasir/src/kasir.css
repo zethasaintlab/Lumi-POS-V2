@@ -60,7 +60,7 @@
 .kasir-header {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   height: 68px;
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border);
@@ -88,7 +88,12 @@
 .kasir-header > .tabs-underline {
   flex: none;
   min-width: 0;
-  gap: var(--space-6);
+  /* ⛔ 8 px, bukan 24: tab keempat (Laci kas, Task 4) membuat header MELUAP
+     53 px pada 1024 di keadaan `antrean-panjang` — indikator "Gagal kirim (50)
+     Coba lagi" (242 px) mendorong menu pengguna ke luar header (`overflow:
+     hidden` memotongnya). Terukur `header.test.js` (pemeriksaan MENDATAR).
+     Tiap tab tetap ≥ 76 px (`min-width`), jadi jarak antar-label tetap lapang. */
+  gap: var(--space-2);
   background: none;
   border-bottom: 0;
   /* Bilah nav pada layar sempit tetap dapat dijangkau: ia menggulung
