@@ -34,8 +34,9 @@ const LABEL_TOOLBAR_MOCKUP = [
 ];
 /** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
 const TERPASANG = new Set(['Item manual', 'Diskon', 'Batalkan']);
-/** Label NON-mockup yang masih di toolbar sampai Task 4 (Laci kas) selesai. */
-const SEMENTARA = new Set(['Buka laci', 'Kas masuk / keluar']);
+/** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
+    Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
+const SEMENTARA = new Set([]);
 
 /** `barcode` fixture — HARUS sama persis dengan `KODE_BARCODE_FIXTURE`
     (`apps/kasir/src/galeri/skenario.ts`), pada variation "Kopi Tubruk

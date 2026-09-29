@@ -211,7 +211,7 @@ for (const lebar of [1024, 1280]) {
           `${lebar}/${keadaan} (> 4px) — ada yang tidak sejajar, tanda header membungkus.`
       );
 
-      assert.equal(u.jumlahTab, 3, `header punya ${u.jumlahTab} tab, bukan 3 (Kasir · Riwayat · Tutup shift).`);
+      assert.equal(u.jumlahTab, 4, `header punya ${u.jumlahTab} tab, bukan 4 (Kasir · Riwayat · Laci kas · Tutup shift).`);
       assert.ok(u.lebarTabMin >= 76, `tab tersempit ${u.lebarTabMin}px, spec § 3 menuntut >= 76px.`);
       assert.equal(u.labelAktifUkuran, '13px', `label tab aktif ${u.labelAktifUkuran}, bukan 13px.`);
       assert.equal(u.labelAktifBobot, '600', `label tab aktif bobot ${u.labelAktifBobot}, bukan 600.`);
@@ -234,7 +234,7 @@ for (const lebar of [1024, 1280]) {
 
 // R2 (spec § 14): bila header tidak muat pada 1024, NAMA pengguna yang
 // terpotong lebih dulu — bukan tab.
-test('⛔ R2: pada 1024, nama pengguna panjang terpotong ellipsis, ketiga tab tetap utuh', async (t) => {
+test('⛔ R2: pada 1024, nama pengguna panjang terpotong ellipsis, keempat tab tetap utuh', async (t) => {
   const { hal, galat } = await buka('panjang', 1024);
   const u = await ukurHeader(hal);
   await hal.close();

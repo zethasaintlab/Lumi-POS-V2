@@ -67,8 +67,9 @@ const path = require('node:path');
 const AKAR = path.resolve(__dirname, '..', '..');
 const DIST = path.join(AKAR, 'dist-galeri');
 
-/** Kelima layar yang galeri render. Bilah navnya milik bersama. */
-const LAYAR = ['K-03', 'K-08', 'K-12', 'K-14', 'K-15'];
+/** Keenam layar ber-shell yang galeri render (K-18 Laci kas sejak Task 4).
+    Bilah navnya milik bersama. */
+const LAYAR = ['K-03', 'K-08', 'K-12', 'K-14', 'K-15', 'K-18'];
 
 function chromePath() {
   if (process.env.PLAYWRIGHT_CHROMIUM) return process.env.PLAYWRIGHT_CHROMIUM;
