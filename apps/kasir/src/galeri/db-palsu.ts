@@ -170,12 +170,16 @@ export interface OpsiDbPalsu {
       pembacaan lain: keadaan `error` galeri gagal lebih awal di konfigurasi perangkat dan tidak pernah
       mencapai riwayat. Test dapat menyetel `window.__galeriGagalBacaKas` sesudah muat untuk membaca-ulang. */
   gagalBacaKas?: boolean;
+  /** `?jumlahGagal=N` — jumlah item antrean GAGAL, menimpa skenario (`header.test.js`: "(500)"). */
+  jumlahGagal?: number;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
 
 export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbLokal {
   const antre = antreanUntuk(skenario);
+  /* `?jumlahGagal=500` — override jumlah item gagal (jalur test header: hitungan 3 digit). */
+  if (opsi.jumlahGagal !== undefined) antre.gagal = opsi.jumlahGagal;
   const item = itemUntuk(skenario);
   const order = orderUntuk(skenario);
 

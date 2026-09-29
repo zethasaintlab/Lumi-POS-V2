@@ -102,7 +102,7 @@ after(async () => {
  * `lebar === 1280` menimpa `.galeri-panggung > *` lewat CSS injeksi (pola
  * `k03-kepadatan.test.js`); `lebar === 1024` memakai nilai BAWAAN.
  */
-async function buka(keadaan, lebar) {
+async function buka(keadaan, lebar, ekstra = '') {
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
@@ -110,7 +110,7 @@ async function buka(keadaan, lebar) {
     if (m.type() === 'error' && /Failed to load resource/.test(m.text())) return;
     if (m.type() === 'error') galat.push(m.text());
   });
-  await hal.goto(`${alamat}/harness-galeri.html?layar=K-03&keadaan=${keadaan}`, { waitUntil: 'load' });
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-03&keadaan=${keadaan}${ekstra}`, { waitUntil: 'load' });
   if (lebar === 1280) {
     await hal.addStyleTag({
       content:
@@ -152,6 +152,9 @@ async function ukurHeader(hal) {
     const anak = [...header.children];
     if (anak.length === 0) return { err: '.kasir-header tidak punya anak' };
     const kotak = anak.map((a) => a.getBoundingClientRect());
+    const csH = getComputedStyle(header);
+    const isiKiri = rHeader.left + parseFloat(csH.borderLeftWidth) + parseFloat(csH.paddingLeft);
+    const isiKanan = rHeader.right - parseFloat(csH.borderRightWidth) - parseFloat(csH.paddingRight);
     const pusat = kotak.map((r) => r.top + r.height / 2);
 
     const tabs = [...header.querySelectorAll('[role="tab"]')];
@@ -168,8 +171,19 @@ async function ukurHeader(hal) {
       pusatMin: Math.min(...pusat),
       pusatMax: Math.max(...pusat),
       semuaDalamHeader: kotak.every((r) => r.top >= rHeader.top - 0.5 && r.bottom <= rHeader.bottom + 0.5),
-      semuaDalamHeaderMendatar: kotak.every((r) => r.left >= rHeader.left - 0.5 && r.right <= rHeader.right + 0.5),
+      /* ⛔ Kotak ISI (padding dikeluarkan), bukan kotak header: versi pertama
+         membandingkan dengan kotak header TERMASUK padding 16 px dan hijau pada
+         luapan 4 px (scrollWidth 1026 > 1022). `scrollWidth` diasersi juga. */
+      semuaDalamIsiHeader: kotak.every((r) => r.left >= isiKiri - 0.5 && r.right <= isiKanan + 0.5),
+      anakKeluar: anak.filter((_, i) => kotak[i].left < isiKiri - 0.5 || kotak[i].right > isiKanan + 0.5).map((a) => `${a.className.split(' ')[0]}(${Math.round(a.getBoundingClientRect().left)}–${Math.round(a.getBoundingClientRect().right)} vs isi ${Math.round(isiKiri)}–${Math.round(isiKanan)})`),
       luapMendatar: { scroll: header.scrollWidth, client: header.clientWidth },
+      tablistScroll: (() => { const tl = header.querySelector('[role="tablist"]') || header.querySelector('.tabs-underline'); return tl ? { scroll: tl.scrollWidth, client: tl.clientWidth } : null; })(),
+      indikator: (() => {
+        const ind = header.querySelector('.kasir-indikator');
+        if (!ind) return null;
+        const r = ind.getBoundingClientRect();
+        return { teks: ind.innerText.replace(/\s+/g, ' ').trim(), scroll: ind.scrollWidth, client: ind.clientWidth, kanan: Math.round(r.right), dalam: r.left >= isiKiri - 0.5 && r.right <= isiKanan + 0.5 };
+      })(),
       jumlahTab: tabs.length,
       lebarTabMin: tabs.length ? Math.min(...tabs.map((t) => t.getBoundingClientRect().width)) : 0,
       labelAktifUkuran: labelAktif ? getComputedStyle(labelAktif).fontSize : null,
@@ -208,10 +222,12 @@ for (const lebar of [1024, 1280]) {
         `ada anak header yang keluar dari kotak header pada ${lebar}/${keadaan} — header MEMBUNGKUS.`
       );
       assert.ok(
-        u.semuaDalamHeaderMendatar,
-        `ada anak header yang keluar dari kotak header SECARA MENDATAR pada ${lebar}/${keadaan} ` +
-          `(scrollWidth ${u.luapMendatar.scroll} > clientWidth ${u.luapMendatar.client}) — header meluap ke samping, ` +
-          'menu pengguna terdorong ke luar layar.'
+        u.luapMendatar.scroll <= u.luapMendatar.client,
+        `header meluap MENDATAR pada ${lebar}/${keadaan}: scrollWidth ${u.luapMendatar.scroll} > clientWidth ${u.luapMendatar.client}.`
+      );
+      assert.ok(
+        u.semuaDalamIsiHeader,
+        `anak header keluar dari kotak ISI header (padding dikeluarkan) pada ${lebar}/${keadaan}: ${u.anakKeluar.join('; ')}.`
       );
       assert.ok(
         u.pusatMax - u.pusatMin <= 4,
@@ -431,3 +447,45 @@ test('⛔ label "Cari produk" tersembunyi secara VISUAL saja: sr-only, htmlFor t
       `clip-path=${label.clipPath} — bukan sr-only.`
   );
 });
+
+// ---------------------------------------------------------------------------
+// R2 (spec § 14): "Bila tidak muat, nama pengguna dipotong lebih dulu, bukan
+// tab." Keadaan TERBERAT yang realistis: nama 21 karakter DAN antrean gagal
+// 3 digit ("Gagal kirim (500)") — keduanya sekaligus, pada 1024 dan 1280.
+// Fixture bawaan (nama 12 karakter, "(50)") muat hanya karena teksnya pendek.
+// ---------------------------------------------------------------------------
+
+const TERBERAT = '&jumlahGagal=500&namaPengguna=Rini%20Astuti%20Wulandari';
+
+for (const lebar of [1024, 1280]) {
+  test(`⛔ R2: ${lebar}, nama 21 karakter + "(500)" gagal — header tidak meluap, tab utuh ≥ 76 px, indikator utuh, NAMA yang mengalah`, async (t) => {
+    const { hal, galat } = await buka('antrean-panjang', lebar, TERBERAT);
+    const u = await ukurHeader(hal);
+    await hal.close();
+    t.diagnostic(`${lebar}: ${JSON.stringify(u)}`);
+    assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+    assert.equal(u.err, undefined, u.err);
+
+    assert.ok(u.indikator && /\(500\)/.test(u.indikator.teks), `fixture tidak memuat hitungan "(500)" di indikator: ${JSON.stringify(u.indikator)} — penjaga ini tidak memeriksa keadaan terberat`);
+    assert.match(u.teksTombolPengguna ?? '', /Rini/, `nama fixture "Rini Astuti Wulandari" tidak sampai ke tombol pengguna: "${u.teksTombolPengguna}"`);
+    assert.ok(
+      u.luapMendatar.scroll <= u.luapMendatar.client,
+      `header meluap MENDATAR pada ${lebar} (nama 21 karakter + "(500)"): scrollWidth ${u.luapMendatar.scroll} > clientWidth ${u.luapMendatar.client}.`
+    );
+    assert.ok(u.semuaDalamIsiHeader, `anak header keluar dari kotak ISI header pada ${lebar}: ${u.anakKeluar.join('; ')}.`);
+    assert.ok(u.jumlahTab === 4, `jumlah tab ${u.jumlahTab}, bukan 4`);
+    assert.ok(u.lebarTabMin >= 76, `tab tersempit ${u.lebarTabMin}px pada ${lebar} — tab tidak boleh menyusut di bawah 76 px (R2: nama yang mengalah, bukan tab).`);
+    for (const [i, x] of u.tabScroll.entries()) {
+      assert.ok(x.scroll <= x.client + 1, `tab ke-${i + 1} terpotong pada ${lebar} (scrollWidth ${x.scroll} > clientWidth ${x.client}) — R2: nama yang mengalah, bukan tab.`);
+    }
+    assert.ok(u.tablistScroll && u.tablistScroll.scroll <= u.tablistScroll.client, `bilah tab menggulir/terpotong pada ${lebar}: ${JSON.stringify(u.tablistScroll)}`);
+    assert.ok(u.indikator.dalam, `indikator sinkron keluar dari isi header pada ${lebar} (kanan ${u.indikator.kanan}).`);
+    assert.ok(u.indikator.scroll <= u.indikator.client, `teks indikator sinkron terpotong pada ${lebar} (scrollWidth ${u.indikator.scroll} > clientWidth ${u.indikator.client}) — indikator tidak boleh mengalah (FR-H8).`);
+    if (lebar === 1024) {
+      assert.ok(
+        u.namaClientWidth > 0 && u.namaClientWidth < u.namaScrollWidth,
+        `pada 1024 nama pengguna TIDAK terpotong ellipsis (scrollWidth ${u.namaScrollWidth}, clientWidth ${u.namaClientWidth}) — R2: bila tidak muat, NAMA dipotong lebih dulu.`
+      );
+    }
+  });
+}

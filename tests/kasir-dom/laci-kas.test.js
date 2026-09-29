@@ -627,3 +627,20 @@ test('⛔ galat baca-ulang riwayat SESUDAH simpan: galat bertulis, daftar lama T
   assert.doesNotMatch(kartu.teks, /Belum ada kas masuk atau kas keluar/, 'galat baca-ulang mengubah riwayat menjadi "Belum ada kas…" — nol baris yang menyamar sebagai keadaan sah');
   assert.equal(kartu.baris, sebelum, `daftar lama dikosongkan/diubah saat baca-ulang gagal (${sebelum} → ${kartu.baris} baris)`);
 });
+
+test('⛔ riwayat KOSONG lalu baca-ulang gagal sesudah simpan: HANYA galat tampil, bukan galat + "Belum ada kas…"', async () => {
+  const { hal, galat } = await bukaLaci(1280, 800, 'normal', '&tanpaKasManual=1');
+  const awal = await kartuRiwayat(hal);
+  assert.match(awal.teks, /Belum ada kas masuk atau kas keluar/, 'prasyarat: riwayat kosong harus menampilkan kalimat kosong sebelum simpan');
+  await hal.evaluate(() => { globalThis.__galeriGagalBacaKas = true; });
+  await isiKas(hal, { arah: 'keluar', jumlah: '25000', alasan: 'Bayar pemasok' });
+  await hal.getByRole('button', { name: 'Simpan catatan' }).click();
+  await tungguSelesai(hal);
+  await hal.getByText(/Kas keluar Rp 25\.000 tercatat/).waitFor();
+  const kartu = await kartuRiwayat(hal);
+  const alert = await hal.getByRole('alert').filter({ hasText: /Riwayat tidak dapat dibaca ulang/ }).count();
+  await hal.close();
+  assert.deepEqual(galat, []);
+  assert.equal(alert, 1, 'galat baca-ulang tidak tampil (role=alert "Riwayat tidak dapat dibaca ulang")');
+  assert.doesNotMatch(kartu.teks, /Belum ada kas masuk atau kas keluar/, 'galat baca-ulang dan kalimat kosong "Belum ada kas…" tampil BERSAMAAN — kalimat kosong tidak dapat dipercaya saat pembacaan gagal');
+});

@@ -160,7 +160,10 @@ export function LaciKas() {
               {galatRiwayat}
             </p>
           )}
-          {riwayat.length === 0 ? (
+          {/* ⛔ Kosong + galat baca-ulang: HANYA galatnya. Kalimat "Belum ada kas…"
+              berdampingan dengan "tidak dapat dibaca ulang" tidak dapat dipercaya —
+              kas yang baru saja tersimpan justru bisa ada di baris yang gagal dibaca. */}
+          {riwayat.length === 0 && galatRiwayat ? null : riwayat.length === 0 ? (
             <EmptyState
               title="Belum ada kas masuk atau kas keluar di shift ini"
               body="Catatan yang Anda simpan akan muncul di sini."
