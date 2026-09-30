@@ -70,7 +70,11 @@ export function DialogEditItem({
   /** Mengembalikan pesan galat, atau `null` bila berhasil. `qtySesudahMilli` = qty draf (0 = dihapus). */
   onSimpan: (baru: Keranjang, qtySesudahMilli: number) => Promise<string | null>;
 }) {
-  const [qty, setQty] = useState(baris.quantityMilli);
+  /* ⛔ Qty draf = qty keranjang HIDUP + pilihan kasir (`selisih`, kelipatan 1000), bukan nilai mutlak
+     dari `baris` yang bisa usang: scan yang mendarat saat dialog dibuka tidak boleh hilang diam-diam. */
+  const qtyHidup = keranjang.baris.find((b) => b.id === baris.id)?.quantityMilli ?? baris.quantityMilli;
+  const [selisih, setSelisih] = useState(0);
+  const qty = Math.max(0, qtyHidup + selisih);
   const [terpilih, setTerpilih] = useState<PilihanPerDaftar>(() =>
     pilihanDariBaris(daftarModifier, baris.modifier)
   );
@@ -106,13 +110,13 @@ export function DialogEditItem({
 
   const kurangi = () => {
     setPesan(null);
-    setQty((q) => Math.max(0, q - 1000));
+    setSelisih(Math.max(-qtyHidup, qty - 1000 - qtyHidup));
   };
 
   const tambahQty = () => {
     /* Kumulatif LINTAS baris: baris lain variation yang sama ikut terhitung,
        dan baris INI dihitung dari drafnya, bukan dari nilai tersimpan. */
-    const diminta = qtyDiKeranjang(keranjang, baris.variationId) - baris.quantityMilli + qty + 1000;
+    const diminta = qtyDiKeranjang(keranjang, baris.variationId) - qtyHidup + qty + 1000;
     const h = periksaTambahStok({
       namaItem: baris.itemName,
       variationId: baris.variationId,
@@ -128,7 +132,7 @@ export function DialogEditItem({
     }
     /* Peringatan TIDAK memblokir (`spec-e:146`). */
     setPesan(h.peringatan ? { teks: h.peringatan, blokir: false } : null);
-    setQty((q) => q + 1000);
+    setSelisih(qty + 1000 - qtyHidup);
   };
 
   const kirim = (baru: Keranjang) => {
@@ -165,7 +169,7 @@ export function DialogEditItem({
     if (!sedangKirim.current) onBatal();
   };
 
-  const tanpaPerubahan = qty === baris.quantityMilli && !berubahModifier;
+  const tanpaPerubahan = qty === qtyHidup && !berubahModifier;
 
   return (
     <LatarDialog label="Edit item" kelas="kasir-dialog-edit" onBatal={tutup}>
@@ -213,7 +217,7 @@ export function DialogEditItem({
         )}
       </div>
 
-      {qty < baris.quantityMilli && (
+      {qty < qtyHidup && (
         <p className="t-caption" data-uji="edit-tercatat">
           Pengurangan ini tercatat di audit: siapa, item, jumlah sebelum dan sesudah.
         </p>
