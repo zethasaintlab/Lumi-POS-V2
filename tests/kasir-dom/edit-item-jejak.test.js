@@ -1,0 +1,719 @@
+'use strict';
+
+// G-KURANG-AUDIT, sisi layar (Task 5C, kampanye "Hidupkan desain"). Edit Item
+// yang MENURUNKAN qty atau menghapus baris meninggalkan `audit_event`
+// `cart_line_reduced` + outbox, dalam SATU transaksi lokal — keputusan user
+// 28 September 2026 (issue #76, Q2). Kenaikan qty dan perubahan modifier
+// tanpa penurunan tidak dicatat.
+//
+// ## Prasyarat
+//
+//   npm run build:galeri
+
+const { test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const AKAR = path.resolve(__dirname, '..', '..');
+const DIST = path.join(AKAR, 'dist-galeri');
+
+function chromePath() {
+  if (process.env.PLAYWRIGHT_CHROMIUM) return process.env.PLAYWRIGHT_CHROMIUM;
+  const dasar = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (dasar && fs.existsSync(dasar)) {
+    const cocok = fs
+      .readdirSync(dasar)
+      .filter((d) => /^chromium-\d+$/.test(d))
+      .map((d) => path.join(dasar, d, 'chrome-linux', 'chrome'))
+      .filter((p) => fs.existsSync(p));
+    if (cocok.length > 0) return cocok[cocok.length - 1];
+  }
+  return undefined;
+}
+
+const JENIS = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.wasm': 'application/wasm',
+  '.json': 'application/json',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.svg': 'image/svg+xml',
+};
+
+let server;
+let alamat;
+let peramban;
+
+before(async () => {
+  /* ⛔ MENEGASKAN, bukan membangun. Lihat `k03-chrome.test.js`. */
+  assert.ok(
+    fs.existsSync(path.join(DIST, 'harness-galeri.html')),
+    'dist-galeri/ belum dibangun. Jalankan `npm run build:galeri` lebih dulu. ' +
+      '(`npm run test:kasir-dom` melakukannya sendiri lewat `pretest:kasir-dom`.)'
+  );
+
+  server = http.createServer((req, res) => {
+    const nama = decodeURIComponent((req.url ?? '/').split('?')[0]);
+    const berkas = path.join(DIST, nama === '/' ? 'harness-galeri.html' : nama);
+    if (!berkas.startsWith(DIST) || !fs.existsSync(berkas) || fs.statSync(berkas).isDirectory()) {
+      res.writeHead(404).end('tidak ada');
+      return;
+    }
+    res.writeHead(200, { 'content-type': JENIS[path.extname(berkas)] ?? 'application/octet-stream' });
+    fs.createReadStream(berkas).pipe(res);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  alamat = `http://127.0.0.1:${server.address().port}`;
+
+  const { chromium } = require('playwright');
+  peramban = await chromium.launch({ executablePath: chromePath() });
+});
+
+after(async () => {
+  if (peramban) await peramban.close();
+  if (server) await new Promise((r) => server.close(r));
+});
+
+
+/** `?editItem=1` — fixture Edit Item (lihat `edit-item.test.js`). */
+async function bukaK03(opsi = {}) {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  const galat = [];
+  hal.on('pageerror', (e) => galat.push(e.message));
+  hal.on('console', (m) => {
+    if (m.type() === 'error') galat.push(m.text());
+  });
+  const q = new URLSearchParams({ layar: 'K-03', keadaan: 'keranjang-penuh', editItem: '1' });
+  if (opsi.negatif) q.set('negatif', '1');
+  await hal.goto(`${alamat}/harness-galeri.html?${q.toString()}`, { waitUntil: 'load' });
+  await hal.waitForSelector('.kasir-baris', { timeout: 10_000 });
+  return { hal, galat };
+}
+
+const DIALOG = '[role="dialog"][aria-label="Edit item"]';
+
+async function bukaEdit(hal, nama) {
+  await hal.locator('.kasir-baris-tekan', { hasText: nama }).first().click();
+  await hal.waitForSelector(DIALOG, { timeout: 5000 });
+}
+
+const barisTeks = (hal) => hal.locator('.kasir-baris-tekan').allInnerTexts();
+const qtyDraf = (hal) => hal.locator(`${DIALOG} [data-uji="edit-qty"]`).innerText();
+const bacaTulis = (hal) =>
+  hal.evaluate(() => (window.__galeriTulis ?? []).map((t) => ({ sql: t.sql, params: t.params.map(String), dalam: t.dalam })));
+const audit = (tulis) => tulis.filter((t) => /INSERT INTO audit_event/.test(t.sql));
+const outbox = (tulis) => tulis.filter((t) => /INSERT INTO outbox_local/.test(t.sql));
+const jumlahSet = (hal) => hal.evaluate(() => window.__galeriKeranjangSet);
+const angka = (t) => BigInt(t.replace(/[^0-9]/g, ''));
+
+/** Tunggu penulisan pemulihan keranjang (KEP-21) berhenti — kondisi, bukan jeda. */
+async function tenang(hal) {
+  let n = (await bacaTulis(hal)).length;
+  let sama = 0;
+  while (sama < 3) {
+    await hal.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const m = (await bacaTulis(hal)).length;
+    sama = m === n ? sama + 1 : 0;
+    n = m;
+  }
+}
+
+async function tutupSetelahSimpan(hal) {
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Edit item"]'), null, { timeout: 5000 });
+}
+
+// ---------------------------------------------------------------------------
+
+test('⛔ qty turun (2 → 1) lalu Simpan: SATU audit_event cart_line_reduced, aktor staf sesi, harga = satuan di dialog, nilai = satuan × selisih / 1000', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  const set0 = await jumlahSet(hal);
+  await bukaEdit(hal, 'Cappuccino');
+  const satuan = angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  assert.equal(await qtyDraf(hal), '2', 'fixture: Cappuccino harus qty 2 — penjaga hampa');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  assert.equal(await qtyDraf(hal), '1');
+  // Belum Simpan: belum ada jejak.
+  assert.equal(audit((await bacaTulis(hal)).slice(tulis0)).length, 0, 'jejak tertulis SEBELUM Simpan');
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const set1 = await jumlahSet(hal);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(set1 - set0, 1, `jalur jejak memanggil setelKeranjang ${set1 - set0} kali — harus SATU hasil akhir`);
+  assert.equal(
+    audit(baru).length,
+    1,
+    `qty turun tetapi ${audit(baru).length} audit_event — penurunan qty tanpa jejak adalah kecurangan yang pindah cara`
+  );
+  const p = audit(baru)[0].params;
+  assert.equal(p[5], 'cart_line_reduced', `event_type ${p[5]}`);
+  assert.equal(p[4], 'user-galeri', `actor_user_id ${p[4]} != staf sesi (user-galeri)`);
+  assert.equal(p[6], 'shift-galeri', 'entity_id harus shift berjalan');
+  const after = JSON.parse(p[7]);
+  assert.equal(after.item_name, 'Cappuccino');
+  assert.equal(after.quantity_before_milli, 2000);
+  assert.equal(after.quantity_after_milli, 1000);
+  assert.equal(after.unit_price, satuan.toString(), `harga di jejak ${after.unit_price} != satuan di dialog ${satuan}`);
+  assert.equal(after.reduced_value, ((satuan * 1000n) / 1000n).toString());
+  assert.equal(typeof after.reduced_value, 'string');
+
+  const antre = outbox(baru);
+  assert.equal(antre.length, 1, 'outbox harus tepat satu');
+  assert.ok(antre[0].params.includes('cart_line_reduced'), 'entity_type outbox bukan cart_line_reduced');
+  assert.ok(antre[0].params.includes('user-galeri'), 'actor_id outbox bukan staf sesi');
+  // ⛔ Ketiganya DI DALAM transaksi (tx ≠ db di galeri).
+  assert.equal(audit(baru)[0].dalam, true, 'audit_event ditulis di LUAR transaksi');
+  assert.equal(antre[0].dalam, true, 'outbox ditulis di LUAR transaksi');
+  const keranjangDalam = baru.filter((t) => /INSERT INTO keranjang_lokal/.test(t.sql) && t.dalam);
+  assert.ok(
+    keranjangDalam.length >= 1,
+    'keranjang_lokal hasil edit tidak ditulis DI DALAM transaksi jejaknya (bocor keluar: perangkat mati di antaranya = keranjang berkurang tanpa jejak)'
+  );
+  assert.ok(
+    baru.indexOf(audit(baru)[0]) < baru.indexOf(keranjangDalam[0]),
+    'urutan penulisan: jejak harus mendahului keranjang'
+  );
+});
+
+test('⛔ baris dihapus ("Hapus dari keranjang", qty 0): SATU audit_event dengan quantity_after_milli 0 dan nilai = seluruh baris', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  const sebelum = (await barisTeks(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  const satuan = angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.getByRole('button', { name: /^Hapus Cappuccino/ }).click();
+  assert.equal(await qtyDraf(hal), '0');
+  await hal.getByRole('button', { name: 'Hapus dari keranjang', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const sesudah = (await barisTeks(hal)).length;
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(sesudah, sebelum - 1, 'baris tidak terhapus');
+  assert.equal(audit(baru).length, 1, `baris dihapus tetapi ${audit(baru).length} audit_event — penghapusan baris tanpa jejak`);
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(audit(baru)[0].params[5], 'cart_line_reduced');
+  assert.equal(after.quantity_before_milli, 2000);
+  assert.equal(after.quantity_after_milli, 0);
+  assert.equal(after.reduced_value, (satuan * 2n).toString(), 'nilai berkurang bukan seluruh baris (satuan × 2)');
+  assert.equal(outbox(baru).length, 1);
+  assert.equal(audit(baru)[0].dalam, true);
+  assert.equal(outbox(baru)[0].dalam, true);
+});
+
+test('⛔ harga di jejak = satuanKeranjang baris SEBELUM diedit, modifier ikut (Kopi Susu Gula Aren + Extra shot)', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, /Kopi Susu Gula Aren[\s\S]*Extra shot/);
+  const satuan = angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  assert.equal(satuan, 29000n, 'fixture: 24.000 + Extra shot 5.000 — penjaga hampa bila modifier tidak ikut');
+  await hal.getByRole('button', { name: /^Hapus Kopi Susu/ }).click(); // 1 → 0
+  await hal.getByRole('button', { name: 'Hapus dari keranjang', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+  assert.equal(audit(baru).length, 1);
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(after.unit_price, '29000', `harga jejak ${after.unit_price} tidak memuat modifier (harap 29000)`);
+  assert.equal(after.reduced_value, '29000');
+});
+
+test('⛔ qty NAIK, modifier saja berubah, dan penggabungan baris kembar → NOL jejak, NOL outbox', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+
+  // (1) Naik: Kopi Susu Gula Aren (Extra shot) 1 → 2.
+  await bukaEdit(hal, /Kopi Susu Gula Aren[\s\S]*Extra shot/);
+  await hal.getByRole('button', { name: /^Tambah Kopi Susu/ }).click();
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+
+  // (2) Hanya modifier: Susu oat ditambahkan, qty tetap.
+  await bukaEdit(hal, /Cokelat Klasik/);
+  await hal.locator(DIALOG).getByLabel(/Susu oat/).check();
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const sebelumGabung = (await barisTeks(hal)).filter((t) => t.includes('Kopi Susu Gula Aren')).length;
+
+  // (3) Penggabungan: lepas Extra shot hingga menyamai kembarannya; qty total TIDAK turun.
+  await bukaEdit(hal, /Kopi Susu Gula Aren[\s\S]*Extra shot/);
+  await hal.locator(DIALOG).getByLabel(/Extra shot/).uncheck();
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const sesudahGabung = (await barisTeks(hal)).filter((t) => t.includes('Kopi Susu Gula Aren')).length;
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(sebelumGabung, 2, 'fixture: penjaga hampa bila kembaran tidak ada');
+  assert.equal(sesudahGabung, 1, 'penggabungan tidak terjadi — kasus (3) tidak menguji apa pun');
+  assert.equal(audit(baru).length, 0, `qty tidak turun tetapi ada ${audit(baru).length} audit_event — jejak palsu`);
+  assert.equal(outbox(baru).length, 0, 'outbox tertulis padahal qty tidak turun');
+});
+
+test('⛔ penulisan jejak GAGAL → dialog menahan dengan galat, keranjang UTUH, nol audit/outbox, setelKeranjang tidak dipanggil', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const awal = await barisTeks(hal);
+  const set0 = await jumlahSet(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.evaluate(() => { window.__galeriGagalTulis = true; });
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  const galatDialog = await hal
+    .waitForSelector(`${DIALOG} [role="alert"]`, { timeout: 3000 })
+    .then((e) => e.innerText())
+    .catch(() => null);
+  const dialog = await hal.locator(DIALOG).count();
+  const sesudah = await barisTeks(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const set1 = await jumlahSet(hal);
+  await hal.close();
+
+  assert.equal(dialog, 1, 'dialog TERTUTUP padahal penulisan jejak gagal — keranjang berubah tanpa jejak');
+  assert.notEqual(galatDialog, null, 'dialog tidak menampilkan galat (role=alert) ketika jejak gagal ditulis');
+  assert.match(galatDialog, /TIDAK disimpan/, `galat tidak menyatakan perubahan tidak disimpan: ${galatDialog}`);
+  assert.deepEqual(sesudah, awal, 'keranjang BERUBAH padahal jejak gagal — kegagalan ditelan');
+  assert.equal(set1, set0, 'setelKeranjang dipanggil padahal jejak gagal');
+  assert.equal(audit(baru).length, 0);
+  assert.equal(outbox(baru).length, 0);
+  assert.equal(baru.filter((t) => /keranjang_lokal/.test(t.sql)).length, 0, 'keranjang_lokal ditulis padahal jejak gagal');
+});
+
+test('⛔ shift TIDAK terbuka → penurunan ditolak dan dijelaskan, keranjang UTUH, nol audit', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const awal = await barisTeks(hal);
+  const set0 = await jumlahSet(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.evaluate(() => { window.__galeriShiftTutup = true; });
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  const galatDialog = await hal
+    .waitForSelector(`${DIALOG} [role="alert"]`, { timeout: 3000 })
+    .then((e) => e.innerText())
+    .catch(() => null);
+  const dialog = await hal.locator(DIALOG).count();
+  const sesudah = await barisTeks(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const set1 = await jumlahSet(hal);
+  await hal.close();
+
+  assert.equal(dialog, 1, 'dialog tertutup padahal shift tidak terbuka — keranjang berubah tanpa jejak');
+  assert.notEqual(galatDialog, null, 'dialog tidak menjelaskan penolakan (role=alert)');
+  assert.match(galatDialog, /Shift sudah tidak terbuka\. Perubahan TIDAK disimpan/, `penolakan tidak dijelaskan: ${galatDialog}`);
+  assert.deepEqual(sesudah, awal, 'keranjang BERUBAH padahal shift tidak terbuka dan tidak ada jejak');
+  assert.equal(set1, set0, 'setelKeranjang dipanggil padahal shift tidak terbuka');
+  assert.equal(audit(baru).length, 0);
+  assert.equal(outbox(baru).length, 0);
+});
+
+test('⛔ Batal / tutup sesudah menurunkan draf → nol jejak, keranjang tidak berubah', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const awal = await barisTeks(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.getByRole('button', { name: 'Batal', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Hapus Cappuccino|^Kurangi Cappuccino/ }).click();
+  await hal.locator(DIALOG).getByRole('button', { name: 'Tutup', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const sesudah = await barisTeks(hal);
+  await hal.close();
+  assert.deepEqual(sesudah, awal, 'Batal/tutup mengubah keranjang');
+  assert.equal(audit(baru).length, 0, 'Batal/tutup menulis jejak');
+  assert.equal(outbox(baru).length, 0, 'Batal/tutup menulis outbox');
+});
+
+test('⛔ dialog menyatakan bahwa pengurangan TERCATAT — hanya saat draf lebih kecil dari qty tersimpan', async () => {
+  const { hal } = await bukaK03();
+  await bukaEdit(hal, 'Cappuccino');
+  const catatan = () => hal.locator(`${DIALOG} [data-uji="edit-tercatat"]`).count();
+  assert.equal(await catatan(), 0, 'catatan "tercatat" tampil padahal belum ada pengurangan');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  assert.equal(await catatan(), 1, 'draf turun tetapi dialog tidak menyatakan pengurangan dicatat di audit');
+  assert.match(await hal.locator(`${DIALOG} [data-uji="edit-tercatat"]`).innerText(), /tercatat di audit/i);
+  await hal.close();
+});
+
+test('⛔ Esc / klik latar / tombol Tutup SELAMA menyimpan tidak menutup dialog — galat penulisan yang gagal tetap terlihat', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const awal = await barisTeks(hal);
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.evaluate(() => { window.__galeriGagalTulis = true; window.__galeriTulisLambat = true; });
+  await hal.getByRole('button', { name: /Simpan|Mencatat/ }).click();
+  await hal.waitForSelector(`${DIALOG} button:has-text("Mencatat")`, { timeout: 2000 });
+  // Di tengah penyimpanan: Esc, klik latar, dan Tutup.
+  await hal.keyboard.press('Escape');
+  await hal.mouse.click(4, 4);
+  const adaSaatMenyimpan = await hal.locator(DIALOG).count();
+  const tutupNonaktif = await hal.evaluate(
+    (sel) => document.querySelector(`${sel} button[aria-label="Tutup"]`)?.disabled ?? null,
+    DIALOG
+  );
+  // Batal juga: nonaktif dengan alasan terbaca, dan dipaksa klik pun tidak menutup dialog.
+  const batal = await hal.evaluate((sel) => {
+    const b = [...document.querySelectorAll(`${sel} button`)].find((x) => x.textContent?.trim() === 'Batal');
+    if (!b) return null;
+    const id = b.getAttribute('aria-describedby');
+    const alasan = id ? document.getElementById(id)?.textContent?.trim() ?? '' : '';
+    return { nonaktif: b.disabled, alasan };
+  }, DIALOG);
+  await hal.evaluate((sel) => {
+    [...document.querySelectorAll(`${sel} button`)].find((x) => x.textContent?.trim() === 'Batal')?.click();
+  }, DIALOG);
+  const adaSesudahBatal = await hal.locator(DIALOG).count();
+  const galatDialog = await hal
+    .waitForSelector(`${DIALOG} [role="alert"]`, { timeout: 4000 })
+    .then((e) => e.innerText())
+    .catch(() => null);
+  const dialog = await hal.locator(DIALOG).count();
+  const sesudah = await barisTeks(hal);
+  await hal.close();
+  assert.equal(adaSaatMenyimpan, 1, 'Esc/latar menutup dialog di tengah penyimpanan — galat penulisan akan dibuang tanpa terlihat kasir');
+  assert.equal(tutupNonaktif, true, 'tombol Tutup tidak nonaktif selama menyimpan');
+  assert.notEqual(batal, null, 'tombol Batal tidak ada saat menyimpan');
+  assert.equal(batal.nonaktif, true, 'tombol Batal AKTIF selama menyimpan — melewati penjaga tutup dan membuang galat penulisan');
+  assert.ok(batal.alasan.length > 0, 'Batal nonaktif tanpa alasan terbaca (aria-describedby kosong)');
+  assert.equal(adaSesudahBatal, 1, 'klik Batal di tengah penyimpanan menutup dialog — galat penulisan yang gagal tidak akan terlihat');
+  assert.equal(dialog, 1, 'dialog hilang sesudah penulisan gagal');
+  assert.notEqual(galatDialog, null, 'galat penulisan yang gagal tidak terlihat (dialog ditutup di tengah penyimpanan)');
+  assert.match(galatDialog, /TIDAK disimpan/);
+  assert.deepEqual(sesudah, awal, 'keranjang berubah padahal penulisan gagal');
+});
+
+test('⛔ tombol utama "Mencatat…" (Simpan DAN Hapus dari keranjang) nonaktif selama menyimpan DENGAN alasan terbaca (aria-describedby)', async () => {
+  for (const hapus of [false, true]) {
+    const { hal } = await bukaK03();
+    await tenang(hal);
+    await bukaEdit(hal, 'Cappuccino');
+    await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+    if (hapus) await hal.getByRole('button', { name: /^Hapus Cappuccino|^Kurangi Cappuccino/ }).click(); // 1 → 0
+    await hal.evaluate(() => { window.__galeriGagalTulis = true; window.__galeriTulisLambat = true; });
+    await hal.getByRole('button', { name: hapus ? 'Hapus dari keranjang' : 'Simpan', exact: true }).click();
+    await hal.waitForSelector(`${DIALOG} button:has-text("Mencatat")`, { timeout: 2000 });
+    const utama = await hal.evaluate((sel) => {
+      const b = [...document.querySelectorAll(`${sel} .kasir-dialog-aksi button`)].find((x) => /Mencatat/.test(x.textContent ?? ''));
+      const id = b?.getAttribute('aria-describedby');
+      return { nonaktif: b?.disabled, alasan: id ? document.getElementById(id)?.textContent?.trim() ?? '' : '' };
+    }, DIALOG);
+    await hal.close();
+    assert.equal(utama.nonaktif, true, `tombol utama (${hapus ? 'Hapus' : 'Simpan'}) aktif selama menyimpan`);
+    assert.ok(utama.alasan.length > 0, `tombol utama (${hapus ? 'Hapus' : 'Simpan'}) nonaktif saat "Mencatat…" tanpa alasan terbaca (aria-describedby kosong)`);
+  }
+});
+
+test('⛔ klik ganda Simpan (dua klik di tugas yang sama) menulis TEPAT satu jejak dan satu outbox', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+  await hal.evaluate((sel) => {
+    const b = [...document.querySelectorAll(`${sel} button`)].find((x) => x.textContent?.trim() === 'Simpan');
+    b.click();
+    b.click();
+  }, DIALOG);
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+  assert.equal(audit(baru).length, 1, `klik ganda menulis ${audit(baru).length} jejak untuk satu penurunan — membesar-besarkan catatan kasir`);
+  assert.equal(outbox(baru).length, 1, `klik ganda menulis ${outbox(baru).length} baris outbox`);
+});
+
+test('⛔ turun qty SEKALIGUS ganti modifier dalam satu Simpan: harga jejak = satuan baris SEBELUM diedit, bukan modifier draf', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Cappuccino');
+  const satuanSebelum = angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  assert.equal(await qtyDraf(hal), '2', 'fixture: Cappuccino qty 2 — penjaga hampa');
+  await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click(); // 2 → 1
+  await hal.locator(DIALOG).getByLabel(/Susu oat/).check(); // +6.000 pada draf
+  const satuanDraf = angka(await hal.locator(`${DIALOG} [data-uji="edit-satuan"]`).innerText());
+  assert.equal(satuanDraf, satuanSebelum + 6000n, 'fixture: modifier draf harus mengubah satuan — penjaga hampa bila tidak');
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+  assert.equal(audit(baru).length, 1, 'turun qty + ganti modifier tidak menulis TEPAT satu jejak');
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(after.quantity_before_milli, 2000);
+  assert.equal(after.quantity_after_milli, 1000);
+  assert.equal(
+    after.unit_price,
+    satuanSebelum.toString(),
+    `harga jejak ${after.unit_price} berasal dari modifier DRAF (harap satuan baris SEBELUM diedit ${satuanSebelum})`
+  );
+  assert.equal(after.reduced_value, satuanSebelum.toString(), 'nilai berkurang bukan satuan sebelum × 1 item');
+});
+
+// ---------------------------------------------------------------------------
+// Tinjauan akhir PR 2A: I2 (snapshot baris usang) dan I3 (modifier wajib vs baris hasil scan).
+
+const KODE_TUBRUK = '8992761111017';
+
+/** Barcode lewat keydown pada window dalam SATU evaluate (jeda ~0, bebas jam dinding CI). */
+const pindai = (hal, kode) =>
+  hal.evaluate((k) => {
+    document.activeElement instanceof HTMLElement && document.activeElement.blur();
+    for (const ch of [...k, 'Enter']) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+    }
+  }, kode);
+
+const qtyBarisTubruk = (hal) =>
+  hal.evaluate(
+    () =>
+      [...document.querySelectorAll('.kasir-baris')]
+        .filter((b) => b.textContent.includes('Kopi Tubruk'))
+        .map((b) => b.querySelector('.kasir-baris-qty')?.textContent ?? '')
+  );
+
+async function tungguQtyTubruk(hal, teks) {
+  await hal.waitForFunction(
+    (t) =>
+      [...document.querySelectorAll('.kasir-baris')].some(
+        (b) => b.textContent.includes('Kopi Tubruk') && b.querySelector('.kasir-baris-qty')?.textContent === t
+      ),
+    teks,
+    { timeout: 5000 }
+  );
+}
+
+test('⛔ I2: scan di jendela membuka Edit Item menaikkan baris → jejak dicatat terhadap keranjang HIDUP (before=2000), bukan snapshot usang (1000)', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  // Tahan baca modifier: jendela `await bacaModifier` di `bukaEdit` dibuka lebar-lebar.
+  await hal.evaluate(() => {
+    window.__galeriTahanModifier = new Promise((r) => {
+      window.__lepasModifier = r;
+    });
+  });
+  await hal.locator('.kasir-baris-tekan', { hasText: 'Kopi Tubruk' }).first().click();
+  await pindai(hal, KODE_TUBRUK); // pemindai masih aktif: qty baris yang sama naik 1 → 2
+  await tungguQtyTubruk(hal, '2×');
+  const tulis0 = (await bacaTulis(hal)).length;
+  await hal.evaluate(() => window.__lepasModifier());
+  await hal.waitForSelector(DIALOG, { timeout: 5000 });
+
+  assert.equal(
+    await qtyDraf(hal),
+    '2',
+    'dialog menampilkan qty usang (1) padahal keranjang sudah 2 — kasir mengedit angka yang tidak ada'
+  );
+  await hal.getByRole('button', { name: /^Kurangi Kopi Tubruk/ }).click(); // 2 → 1
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const sisa = await qtyBarisTubruk(hal);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(
+    audit(baru).length,
+    1,
+    `keranjang turun 2 → 1 tetapi ${audit(baru).length} jejak — pengurangan tanpa jejak lewat snapshot usang`
+  );
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(after.quantity_before_milli, 2000, `jejak before=${after.quantity_before_milli}, keranjang hidup 2000`);
+  assert.equal(after.quantity_after_milli, 1000);
+  assert.deepEqual(sisa, ['1×'], 'qty akhir baris bukan 1');
+});
+
+test('⛔ I3: baris hasil scan dari item bermodifier WAJIB: qty 2 → 1 dapat disimpan, SATU cart_line_reduced yang benar', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '2×');
+  await hal.evaluate(() => {
+    window.__galeriModifierWajib = true;
+  });
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Kopi Tubruk');
+  assert.equal(await hal.locator(`${DIALOG} .kasir-login-galat`).count(), 0, 'kelengkapan modifier dituntut padahal modifier tidak disentuh');
+  await hal.getByRole('button', { name: /^Kurangi Kopi Tubruk/ }).click();
+  const simpan = hal.getByRole('button', { name: 'Simpan', exact: true });
+  assert.equal(
+    await simpan.isDisabled(),
+    false,
+    'Simpan nonaktif oleh modifier wajib padahal modifier tidak diubah — baris hasil scan tak dapat dikurangi'
+  );
+  await simpan.click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(audit(baru).length, 1, `${audit(baru).length} jejak untuk satu pengurangan`);
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(after.quantity_before_milli, 2000);
+  assert.equal(after.quantity_after_milli, 1000);
+});
+
+test('⛔ I3 (kontrol): modifier wajib TETAP dituntut begitu modifier diubah — tidak dilonggarkan', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  await hal.evaluate(() => {
+    window.__galeriModifierWajib = true;
+  });
+  await bukaEdit(hal, 'Kopi Tubruk');
+  // Pilih lalu lepas satu modifier: draf berubah dan daftar wajib kini kosong.
+  const kotak = hal.locator(DIALOG).getByLabel(/Extra shot/);
+  await kotak.check();
+  await kotak.uncheck();
+  const simpan = hal.getByRole('button', { name: 'Simpan', exact: true });
+  const nonaktif = await simpan.isDisabled();
+  await hal.close();
+  assert.equal(nonaktif, true, 'modifier wajib kosong setelah diubah, tetapi Simpan tetap aktif — kelengkapan tidak ditegakkan');
+});
+
+test('⛔ I2 (sisa): scan mendarat SESUDAH setEdit tetapi sebelum pemindai mati → jejak "before" = qty keranjang hidup, bukan qty dialog usang', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  await hal.evaluate(() => {
+    window.__galeriTahanModifier = new Promise((r) => {
+      window.__lepasModifier = r;
+    });
+  });
+  await hal.locator('.kasir-baris-tekan', { hasText: 'Kopi Tubruk' }).first().click();
+  const tulis0 = (await bacaTulis(hal)).length;
+  // Lepas, lalu scan di tugas makro TERPISAH (setTimeout 0): sesudah `setEdit`, sebelum efek pasif pemindai terlepas.
+  await hal.evaluate((kode) => {
+    window.__lepasModifier();
+    const scan = () => {
+      for (const ch of [...kode, 'Enter']) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+      }
+    };
+    setTimeout(scan, 0);
+  }, KODE_TUBRUK);
+  await hal.waitForSelector(DIALOG, { timeout: 5000 });
+  await tungguQtyTubruk(hal, '2×').catch(() => {});
+  const qtyHidup = (await qtyBarisTubruk(hal))[0];
+  const draf = await qtyDraf(hal);
+
+  // Kasir menurunkan apa yang dilihatnya sampai habis, lalu Hapus.
+  for (let i = Number(draf); i > 0; i -= 1) await hal.getByRole('button', { name: /^(Kurangi|Hapus) Kopi Tubruk/ }).click();
+  await hal.getByRole('button', { name: 'Hapus dari keranjang', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const sisa = await qtyBarisTubruk(hal);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(qtyHidup, '2×', 'fixture: scan tidak mendarat di jendela itu — penjaga hampa');
+  assert.deepEqual(sisa, [], 'baris masih ada sesudah Hapus');
+  assert.equal(audit(baru).length, 1, `${audit(baru).length} jejak untuk satu penghapusan`);
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(
+    after.quantity_before_milli,
+    2000,
+    `jejak before=${after.quantity_before_milli} (qty dialog usang) padahal keranjang hidup 2000 — dua unit hilang, satu tercatat`
+  );
+  assert.equal(after.quantity_after_milli, 0);
+  assert.equal(after.reduced_value, (BigInt(after.unit_price) * 2n).toString(), `reduced_value ${after.reduced_value} bukan 2 × ${after.unit_price}`);
+});
+
+// ---------------------------------------------------------------------------
+// Sisa akar I2: draf qty dialog harus mengikuti keranjang HIDUP; scan yang mendarat saat Edit Item
+// terbuka tidak boleh hilang diam-diam. Urutan: scan di setTimeout(0) sesudah lepas modifier.
+
+async function bukaDenganScanTerlambat() {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  await hal.evaluate(() => {
+    window.__galeriTahanModifier = new Promise((r) => {
+      window.__lepasModifier = r;
+    });
+  });
+  await hal.locator('.kasir-baris-tekan', { hasText: 'Kopi Tubruk' }).first().click();
+  const tulis0 = (await bacaTulis(hal)).length;
+  await hal.evaluate((kode) => {
+    window.__lepasModifier();
+    setTimeout(() => {
+      for (const ch of [...kode, 'Enter']) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+      }
+    }, 0);
+  }, KODE_TUBRUK);
+  await hal.waitForSelector(DIALOG, { timeout: 5000 });
+  await tungguQtyTubruk(hal, '2×').catch(() => {});
+  assert.deepEqual(await qtyBarisTubruk(hal), ['2×'], 'fixture: scan tidak mendarat di jendela itu — penjaga hampa');
+  return { hal, galat, tulis0 };
+}
+
+test('⛔ I2 (sisa): scan terlambat lalu kasir HANYA mengubah modifier → keranjang tetap 2×, tanpa jejak pengurangan, dialog menampilkan 2', async () => {
+  const { hal, galat, tulis0 } = await bukaDenganScanTerlambat();
+  const draf = await qtyDraf(hal);
+  await hal.locator(DIALOG).getByLabel(/Extra shot/).check();
+  const peringatan = await hal.locator(`${DIALOG} [data-uji="edit-tercatat"]`).count();
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const qtyBaris = await hal.evaluate(() =>
+    [...document.querySelectorAll('.kasir-baris')].filter((b) => b.textContent.includes('Kopi Tubruk')).map((b) => b.querySelector('.kasir-baris-qty')?.textContent)
+  );
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(draf, '2', `dialog menampilkan ${draf} padahal keranjang hidup 2 — draf mulai dari baris usang`);
+  assert.equal(peringatan, 0, 'peringatan "tercatat di audit" tampil padahal kasir tidak menurunkan qty');
+  assert.deepEqual(qtyBaris, ['2×'], `qty akhir ${JSON.stringify(qtyBaris)} — unit hasil scan hilang padahal kasir hanya mengubah modifier`);
+  assert.equal(audit(baru).length, 0, 'jejak pengurangan tertulis padahal kasir tidak mengurangi apa pun');
+});
+
+test('⛔ I2 (sisa): scan terlambat lalu kasir menekan − SEKALI → keranjang 1× (2 − 1), jejak 2000→1000, tidak ada unit hilang tanpa niat', async () => {
+  const { hal, galat, tulis0 } = await bukaDenganScanTerlambat();
+  await hal.getByRole('button', { name: /^(Kurangi|Hapus) Kopi Tubruk/ }).click();
+  const draf = await qtyDraf(hal);
+  assert.equal(draf, '1', `sesudah satu ketukan − dari keranjang 2, draf ${draf} (stale: 0 = kasir menghapus 2 unit)`);
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const sisa = await qtyBarisTubruk(hal);
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.deepEqual(sisa, ['1×'], `qty akhir ${JSON.stringify(sisa)}; kasir mengurangi SATU dari 2`);
+  assert.equal(audit(baru).length, 1);
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(`${after.quantity_before_milli}->${after.quantity_after_milli}`, '2000->1000');
+});

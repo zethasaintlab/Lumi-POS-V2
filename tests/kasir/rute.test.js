@@ -144,3 +144,23 @@ test('tabel rute cocok dengan daftar URL di IA §7', async () => {
     `IA §7 dan TABEL_RUTE berbeda (basis ${BASIS})`
   );
 });
+
+// ⛔ Setiap rute ber-`nav` HARUS punya komponen sungguhan di peta `LAYAR`
+// (`layar/index.tsx`). Galeri merender komponennya langsung dan melewati peta
+// itu, jadi rute yang lupa didaftarkan hijau di semua penjaga DOM dan di
+// aplikasi asli jatuh ke `BelumDibangun` — tab yang menuju layar kosong.
+test('⛔ setiap rute ber-nav dipetakan ke komponen sungguhan di LAYAR, bukan BelumDibangun', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { ruteNav } = await import(RUTE);
+  const isi = fs.readFileSync(path.join(__dirname, '..', '..', 'apps', 'kasir', 'src', 'layar', 'index.tsx'), 'utf8');
+  const blok = isi.slice(isi.indexOf('const LAYAR'), isi.indexOf('};', isi.indexOf('const LAYAR')));
+  const peta = new Map([...blok.matchAll(/'(K-\d+)':\s*([^\n]+?),?\s*$/gm)].map((m) => [m[1], m[2]]));
+  assert.ok(peta.size >= 5, `peta LAYAR tidak terbaca (${peta.size} entri) — penjaga ini tidak memeriksa apa pun`);
+  const nav = ruteNav();
+  assert.ok(nav.length >= 4, `hanya ${nav.length} rute ber-nav terbaca`);
+  for (const r of nav) {
+    assert.ok(peta.has(r.layar), `rute ber-nav ${r.jalur} (${r.layar}) TIDAK ada di peta LAYAR (layar/index.tsx) — di aplikasi asli tab "${r.nav.label}" jatuh ke BelumDibangun`);
+    assert.doesNotMatch(peta.get(r.layar), /BelumDibangun/, `${r.layar} dipetakan ke BelumDibangun`);
+  }
+});

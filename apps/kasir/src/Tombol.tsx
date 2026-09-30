@@ -28,11 +28,13 @@ interface Props {
   title?: string;
   /** `id` elemen yang menjelaskan tombol ini — terutama KENAPA ia nonaktif. */
   keterangan?: string;
+  /** Nama aksesibel bila teks tampilnya glyph (`−`, `+`) yang tidak menjelaskan aksinya. */
+  ariaLabel?: string;
   onClick?: () => void;
   children: React.ReactNode;
 }
 
-export function Tombol({ varian = 'secondary', kritis = false, disabled, title, keterangan, onClick, children }: Props) {
+export function Tombol({ varian = 'secondary', kritis = false, disabled, title, keterangan, ariaLabel, onClick, children }: Props) {
   const kelas = ['btn', `btn-${varian}`, kritis ? 'btn-critical' : ''].filter(Boolean).join(' ');
   return (
     <button
@@ -41,6 +43,7 @@ export function Tombol({ varian = 'secondary', kritis = false, disabled, title, 
       disabled={disabled}
       title={title}
       aria-describedby={keterangan}
+      aria-label={ariaLabel}
       onClick={onClick}
     >
       {children}

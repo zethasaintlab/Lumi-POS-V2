@@ -52,9 +52,20 @@ export async function simpanSesi(sesi: Sesi): Promise<void> {
  * yang menampilkan tombolnya. Tombol yang dinonaktifkan berdasarkan angka
  * yang dibaca beberapa detik sebelumnya akan meloloskan penjualan yang masuk
  * di antara keduanya.
+ *
+ * ⛔ `dbDisuntikkan` OPSIONAL, Task 3 (menu pengguna, header satu baris).
+ * `MenuPengguna` membaca database lewat `useKeadaanLokal()` (yang TIDAK
+ * melempar saat database belum siap — `ShellKasir` harus tetap dapat
+ * dirender di keadaan itu), bukan `useDbLokal()` yang melempar. Menerima
+ * `db` di sini membuat pemanggil itu tidak perlu menebak `lokalSekarang()`
+ * mana yang "benar": bila dikirim, `db` itu yang dipakai; bila tidak,
+ * perilaku lama (`lokalSekarang()`) dipertahankan apa adanya — pemanggil
+ * yang sudah ada (belum ada satu pun hari ini) tidak berubah.
  */
-export async function keluar(): Promise<{ berhasil: boolean; pesan: string }> {
-  const { db } = await lokalSekarang();
+export async function keluar(
+  dbDisuntikkan?: DbLokal
+): Promise<{ berhasil: boolean; pesan: string }> {
+  const db = dbDisuntikkan ?? (await lokalSekarang()).db;
   const ringkasan = await ringkasanAntrean(db);
   // `menunggu + gagal`, bukan `menunggu` saja. Item yang GAGAL terkirim tetap
   // penjualan yang hanya ada di perangkat ini — membiarkannya lolos berarti

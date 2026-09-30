@@ -73,6 +73,9 @@ export const LABEL_PERISTIWA: Record<string, string> = {
   'order.abandoned': 'Pesanan terbuka ditutup sistem',
   discount_applied: 'Diskon diberikan',
   calculation_variance: 'Selisih hitungan perangkat',
+  // Keputusan user 28 Sep 2026 (issue #76): keranjang dibatalkan kasir.
+  cart_cleared: 'Keranjang dibatalkan kasir',
+  cart_line_reduced: 'Baris keranjang dikurangi atau dihapus kasir',
   // Kas
   cash_drawer_opened: 'Laci dibuka tanpa transaksi',
   cash_variance_approved: 'Selisih kas disetujui',

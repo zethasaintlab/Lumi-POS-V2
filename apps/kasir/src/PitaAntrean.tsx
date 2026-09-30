@@ -68,14 +68,28 @@ export function PitaAntrean({ tertuaPada }: { tertuaPada: string | null }) {
     // kedua menyela pembaca layar di tengah kalimat; yang pertama menunggu
     // jeda. Aturan yang sama dengan "banner, bukan dialog", di lapisan yang
     // berbeda.
+    //
+    // ⛔ Ikon 15 px, teks `--text-small` — bentuk banner offline mockup, Task 3
+    // kampanye Hidupkan desain (26 September 2026, spec § 3 & § 14 R1).
+    // Ukurannya BUKAN keputusan estetika: dengan header 68 px + toolbar 68 px
+    // K-03, pita setinggi 61 px hari ini ("`padding: var(--space-2)
+    // var(--space-4)`", ikon 18 px) membuat grid katalog jatuh ke 8 kartu —
+    // di bawah `IA:62`. Kalimat, syarat, dan tautannya TIDAK berubah.
     <div className={`kasir-pita kasir-pita-${tingkat}`} role="status" aria-live="polite">
-      <Icon name={IKON[tingkat]} size={18} />
+      <Icon name={IKON[tingkat]} size={15} />
       <span className="t-caption grow">{pesan}</span>
       {/* Satu jalan keluar, dan ia menuju tempat yang dapat menindaklanjuti:
           K-14 memuat daftar item gagal, tombol kirim ulang, dan ekspor
           darurat. Pita yang hanya memberi tahu tanpa jalan keluar adalah
-          pita yang membuat kasir cemas tanpa alat. */}
-      <button type="button" className="btn btn-ghost" onClick={() => navigasi('/sync')}>
+          pita yang membuat kasir cemas tanpa alat.
+
+          ⛔ TAUTAN TEKS, bukan `.btn` (44 px min-height), Task 3. `.btn`
+          bundle menjadikan seluruh pita ≈61 px lagi — persis tinggi yang
+          dicoba dihindari. `.sentuh` (`packages/ds/lumi.css` § "Area sentuh
+          tak terlihat") memperluas target sentuhnya ke 44px TANPA mengubah
+          `getBoundingClientRect()`, pola yang sama dengan chip saringan K-03
+          (Task 9 Step 0). Kalimat tombolnya TIDAK berubah. */}
+      <button type="button" className="kasir-pita-tautan sentuh t-caption" onClick={() => navigasi('/sync')}>
         Lihat antrean
       </button>
     </div>

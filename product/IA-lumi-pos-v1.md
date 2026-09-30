@@ -65,6 +65,7 @@ Design system mengunci tiga konteks fisik. IA mengikutinya.
 | K-15 | Perangkat & Uji Cetak | ✅ | Manajer+ | Profil printer, halaman uji |
 | K-16 | Buka Laci (no-sale) | ✅ | Kasir + alasan | Dialog, bukan layar |
 | K-17 | Cari Produk / Scan | ✅ | Kasir+ | Listener barcode global |
+| K-18 | **Laci kas** | ✅ | Kasir+ | Tab bilah nav (`/laci`). Kas masuk/keluar (FR-D5) + buka laci tanpa transaksi (K-16) + riwayat kas manual shift berjalan. **Tanpa saldo laci** (hitungan buta FR-D2) |
 
 **Semua layar kasir offline-capable.** Tidak ada satu pun yang online-only — ini konsekuensi langsung dari posisi produk.
 
@@ -317,6 +318,7 @@ Konsisten, dapat di-bookmark, dan menyatakan konteks outlet secara eksplisit.
   /                                     layar kasir
   /riwayat
   /riwayat/:orderId
+  /laci
   /shift/tutup
   /sync
   /perangkat

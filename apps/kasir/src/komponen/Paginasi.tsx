@@ -32,6 +32,7 @@ export function Paginasi<T>({
             type="button"
             className="btn btn-ghost"
             disabled={nomor === 1}
+            aria-describedby={nomor === 1 ? 'paginasi-alasan-awal' : undefined}
             onClick={() => onPindah(nomor - 1)}
           >
             Sebelumnya
@@ -65,10 +66,17 @@ export function Paginasi<T>({
             type="button"
             className="btn btn-ghost"
             disabled={nomor === jumlahHalaman}
+            aria-describedby={nomor === jumlahHalaman ? 'paginasi-alasan-akhir' : undefined}
             onClick={() => onPindah(nomor + 1)}
           >
             Berikutnya
           </button>
+          <span id="paginasi-alasan-awal" className="sr-only">
+            Sudah di halaman pertama.
+          </span>
+          <span id="paginasi-alasan-akhir" className="sr-only">
+            Sudah di halaman terakhir.
+          </span>
         </nav>
       )}
     </div>

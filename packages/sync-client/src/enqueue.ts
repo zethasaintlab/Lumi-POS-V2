@@ -32,6 +32,12 @@ export const ENTITY_TYPES = [
   // K-15 bertanda ✅ offline (`IA:65`) — outlet yang printernya diganti saat
   // internet mati tidak menunggu jaringan untuk mencetak dengan benar.
   'peripheral',
+  // Jejak Batalkan keranjang (keputusan user 28 Sep 2026, issue #76). Dicatat
+  // di perangkat saat keranjang dikosongkan, dan harus sampai meski offline.
+  'cart_cleared',
+  // Task 5C, Q2 issue #76: penurunan qty / penghapusan satu baris keranjang —
+  // keluarga peristiwa yang sama dengan `cart_cleared`.
+  'cart_line_reduced',
 ] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 

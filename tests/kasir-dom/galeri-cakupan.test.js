@@ -148,12 +148,14 @@ test('⛔ K-07 dapat dicapai dari galeri: K-03 → Bayar → tunai → Simpan Pe
   assert.match(isi, /Transaksi Baru/);
 });
 
-test('⛔ dialog yang dipetakan dapat dibuka dari galeri: modifier, refund, kas masuk/keluar, buka laci', async () => {
+test('⛔ dialog yang dipetakan dapat dibuka dari galeri: modifier, refund, buka laci (dari Laci kas K-18)', async () => {
+  /* Task 4 (kampanye Hidupkan desain): buka laci dibuka dari `?layar=K-18`,
+     bukan dari K-03 — tombolnya keluar dari toolbar K-03. Kas masuk/keluar
+     bukan dialog lagi (kartu di K-18), jadi diperiksa di test berikutnya. */
   const jalur = [
     ['K-03', 'normal', (h) => h.locator('.kasir-grid > button', { hasText: 'pilihan' }).first().click(), /Ukuran/],
     ['K-09', 'normal', (h) => h.getByRole('button', { name: 'Kembalikan dana' }).click(), /Kembalikan dana/],
-    ['K-03', 'normal', (h) => h.getByRole('button', { name: /Kas masuk/ }).click(), /Kas masuk/],
-    ['K-03', 'normal', (h) => h.getByRole('button', { name: /Buka laci/ }).click(), /Buka laci/],
+    ['K-18', 'normal', (h) => h.getByRole('button', { name: /Buka laci/ }).click(), /Buka laci/],
   ];
   for (const [layar, keadaan, klik, harap] of jalur) {
     const { hal, galat } = await buka(layar, keadaan);
@@ -166,4 +168,23 @@ test('⛔ dialog yang dipetakan dapat dibuka dari galeri: modifier, refund, kas 
     assert.equal(n, 1, `${layar}: jumlah dialog ${n}, harus 1`);
     assert.match(isi, harap, `${layar}: dialog yang terbuka bukan yang dipetakan`);
   }
+});
+
+test('⛔ kas masuk/keluar dan buka laci hidup di K-18 (kartu), TIDAK di toolbar K-03', async () => {
+  const laci = await buka('K-18', 'normal');
+  const adaFormKas = await laci.hal.getByRole('heading', { name: 'Operasional laci' }).count();
+  const dialogTerbuka = await laci.hal.locator('[role="dialog"]').count();
+  const tombolKas = await laci.hal.getByRole('button', { name: 'Simpan catatan' }).count();
+  const tombolLaci = await laci.hal.getByRole('button', { name: /Buka laci tanpa transaksi/ }).count();
+  await laci.hal.close();
+  assert.deepEqual(laci.galat, []);
+  assert.equal(adaFormKas, 1, 'K-18 tidak memuat kartu "Operasional laci" — kas masuk/keluar tidak punya rumah');
+  assert.equal(dialogTerbuka, 0, 'kas masuk/keluar masih dialog: harus kartu di layar');
+  assert.equal(tombolKas, 1, 'K-18 tanpa tombol "Simpan catatan"');
+  assert.equal(tombolLaci, 1, 'K-18 tanpa tombol "Buka laci tanpa transaksi"');
+
+  const kasir = await buka('K-03', 'normal');
+  const dikasir = await kasir.hal.getByRole('button', { name: /Kas masuk|Buka laci/ }).count();
+  await kasir.hal.close();
+  assert.equal(dikasir, 0, `K-03 masih memuat ${dikasir} tombol Kas masuk/Buka laci — keduanya pindah ke K-18`);
 });

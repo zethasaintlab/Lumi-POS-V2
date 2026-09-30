@@ -120,5 +120,11 @@ test('⛔ bilah nav diturunkan dari TABEL_RUTE, dan gerbang tidak masuk', async 
   // Rute berparameter tidak dapat dinavigasi tanpa idnya.
   assert.ok(!jalur.some((j) => j.includes(':')), 'rute berparameter tidak boleh jadi tab');
 
-  assert.deepEqual(jalur, ['/', '/riwayat', '/shift/tutup', '/sync', '/perangkat']);
+  /* ⛔ EMPAT → TIGA → EMPAT tab, keputusan kampanye Hidupkan desain (26
+     September 2026). Task 3 (PR 2A): `/sync` dan `/perangkat` kehilangan
+     `nav` (pindah ke menu pengguna), dan `Laci kas` menunggu Task 4 —
+     tiga tab. Task 4: `/laci` (P10(a), K-18) masuk sebagai urutan 3 dan
+     `Tutup shift` menjadi urutan 4 — target mockup: Kasir · Riwayat ·
+     Laci kas · Tutup shift. */
+  assert.deepEqual(jalur, ['/', '/riwayat', '/laci', '/shift/tutup']);
 });

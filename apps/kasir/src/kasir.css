@@ -43,20 +43,30 @@
   height: 100vh;
 }
 
-.kasir-topbar {
+/* ⛔ Header SATU BARIS 68 px, Task 3 kampanye Hidupkan desain (26 September
+ * 2026, spec § 3). Menggantikan `.kasir-topbar` (61 px) + `.kasir-bilah`
+ * (45 px, bilah nav + slot aksi) — 106 px chrome per layar sebelumnya.
+ * Terukur 28 September 2026 pada 1024×768: chrome atas turun ke 68 px di
+ * setiap layar selain K-03 (yang juga punya `.kasir-toolbar` sendiri).
+ *
+ * Tinggi DIKUNCI `height`, bukan `min-height`: setiap anaknya (wordmark, tab,
+ * indikator, lonceng, tombol pengguna) harus tetap MUAT dalam satu baris —
+ * termasuk saat indikator memuat teks terpanjang ("Gagal kirim (N) · Coba
+ * lagi") — bukan mendorong header tumbuh. `overflow: hidden` mencegah anak
+ * yang kebetulan lebih tinggi (mis. label yang membungkus) diam-diam
+ * menambah tinggi tanpa satu pun test menyala; `G-HEADER` (`header.test.js`)
+ * memeriksa tinggi SEKALIGUS bahwa anaknya tidak terpotong.
+ */
+.kasir-header {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  /* ⛔ Padding vertikal `--space-2`, bukan `--space-3`. Tinggi topbar TIDAK
-     ditentukan teksnya melainkan `min-height: var(--touch-min)` pada pembungkus
-     indikator sinkron — jadi padding yang lebih besar hanya menambah ruang
-     kosong di sekeliling pil 44px itu, dan ruang itu diambil dari grid.
-     Terukur: 69px -> 61px, dan 8px itu bagian dari yang mengembalikan grid ke
-     12 kartu sesudah bilah nav berikon menaikkannya. */
-  padding: var(--space-2) var(--space-4);
+  gap: var(--space-4);
+  height: 68px;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex: none;
+  overflow: hidden;
 }
 
 /* ⛔ `.kasir-merek`/`.kasir-wordmark` (kotak aksen 28px + huruf pertama)
@@ -68,97 +78,80 @@
  * `Wordmark` ada untuk mencegah — lihat komentar kepala `Wordmark.tsx`.
  */
 
-/* Identitas outlet · perangkat — SATU BARIS dengan wordmark, bukan
- * bertingkat. Alasannya diukur, lihat komentar padding topbar di atas.
+/* Bilah navigasi kasir — `.tabs-underline` bundle, ditempatkan LANGSUNG di
+ * dalam `.kasir-header` (Task 3), bukan lagi di `.kasir-bilah` terpisah.
+ *
+ * ⛔ MODIFIER, bukan pengganti. Warna tab aktif, garis bawah aksen, dan
+ * `aria-selected` datang dari bundle — menuliskannya lagi di sini akan
+ * menyimpang dari back-office yang memakai komponen yang sama.
  */
-.kasir-wordmark-sub {
-  color: var(--ink-muted);
+.kasir-header > .tabs-underline {
+  flex: none;
   min-width: 0;
-}
-
-/* Identitas staf di kanan topbar: avatar inisial PLUS nama. */
-.kasir-staf {
-  display: flex;
-  align-items: center;
+  /* ⛔ 8 px, bukan 24: tab keempat (Laci kas, Task 4) membuat header MELUAP
+     53 px pada 1024 di keadaan `antrean-panjang` — indikator "Gagal kirim (50)
+     Coba lagi" (242 px) mendorong menu pengguna ke luar header (`overflow:
+     hidden` memotongnya). Terukur `header.test.js` (pemeriksaan MENDATAR).
+     Tiap tab tetap ≥ 76 px (`min-width`), jadi jarak antar-label tetap lapang. */
   gap: var(--space-2);
-  min-width: 0;
-  flex: none;
-}
-
-/* Bilah navigasi kasir — `.tabs-underline` bundle, ditempatkan.
- *
- * ⛔ MODIFIER, bukan pengganti. Yang diberikan di sini hanya penempatan:
- * padding sejajar topbar, latar permukaan, dan `flex: none` supaya ia tidak
- * ikut mengecil saat `.kasir-konten` menuntut ruang. Tinggi 44px, warna aksen
- * pada tab aktif, dan garis bawahnya datang dari bundle — menuliskannya lagi
- * di sini akan menyimpang dari back-office yang memakai komponen yang sama.
- *
- * `.kasir-menu` yang lama (dropdown ⋮) dihapus bersama menunya.
- */
-/* Bilah nav DAN slot aksi berbagi satu baris.
- *
- * ⛔ Baris aksi tersendiri selebar layar sudah dicoba dan diukur: 57px, dan
- * grid turun dari 12 kartu menjadi 8 — menembus `IA:62`. Ruang kosong di kanan
- * bilah ini gratis; baris kedua tidak.
- */
-.kasir-bilah {
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-4);
-  flex: none;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.kasir-bilah > .tabs-underline {
-  /* Garis bawah pindah ke `.kasir-bilah` supaya ia melintang penuh; tanpa ini
-     garisnya berhenti di ujung tab terakhir dan slot aksi menggantung. */
+  background: none;
   border-bottom: 0;
-  min-width: 0;
+  /* Bilah nav pada layar sempit tetap dapat dijangkau: ia menggulung
+     mendatar alih-alih membungkus ke baris kedua, yang akan mendorong
+     header tumbuh melampaui 68 px. */
+  overflow-x: auto;
 }
 
-/* Slot aksi: diisi layar lewat portal, kosong di layar lain. */
-.kasir-slot-aksi {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-  padding-right: var(--space-4);
-  flex: none;
-}
-
-/* Ikon DI ATAS label di dalam tab.
+/* Ikon DI ATAS label di dalam tab, dan tab ≥ 76 px lebar (spec § 3).
  *
  * ⛔ MODIFIER di atas `.tabs-underline` bundle, bukan bilah tab kedua yang
  * ditulis sendiri. Warna tab aktif, garis bawah aksen, dan `aria-selected`
  * tetap milik bundle — alasan yang sama yang membuat `.kasir-kartu` dan
  * `.kasir-chip` menjadi modifier setelah keduanya sempat ditulis dari nol.
- *
- * ⛔ Padding atas TIDAK ditambahkan. Bundle sudah memberi `padding: 0 0
- * var(--space-2)`; setiap piksel yang ditambahkan di sini diambil dari grid.
- * Terukur: +17px pada bilah ini memangkas grid dari 12 kartu menjadi 8.
  */
-.kasir-bilah .tabs-underline button {
+.kasir-header .tabs-underline button {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0;
-  line-height: var(--leading-tight);
+  min-width: 76px;
+  /* ⛔ Task 1 kampanye "Hidupkan desain" (tinggi baris, PR 2A): SEBELUMNYA
+   * `--leading-tight` (1,2) — rasio yang bukan salah satu dari empat rasio
+   * mockup (1,15/1,3/1,5/1,4), dan G-LH (longgar) menolaknya. Label tab ini
+   * memakai `--text-small` (13px, lihat `.tabs-underline button` di
+   * `lumi.css`), jadi `--leading-small` (1,4) yang benar — bukan `1.5` yang
+   * diketik ulang untuk ukuran yang bukan itu.
+   */
+  line-height: var(--leading-small);
 }
 
-.kasir-shell > .tabs-underline,
-.kasir-bilah > .tabs-underline {
-  flex: none;
-  padding: 0 var(--space-4);
-  /* ⛔ `--space-6`, bukan `--space-5`. Yang kedua TIDAK ADA — ia salah satu
-     dari delapan token hantu yang kepala berkas ini catat, dan saya
-     memakainya lagi satu jam setelah menuliskan catatannya. Penjaga
-     `token-css-ada` yang menemukannya, bukan mata. */
-  gap: var(--space-6);
-  background: var(--surface);
-  /* Bilah nav pada layar sempit tetap dapat dijangkau: ia menggulung
-     mendatar alih-alih membungkus ke baris kedua, yang akan memindahkan
-     seluruh isi layar ke bawah setiap kali satu tab ditambahkan. */
-  overflow-x: auto;
+/* ⛔ Tab AKTIF berwarna `--primary` (spec § 3: "aktif --primary + garis
+ * bawah 2px"), bukan `--ink` bawaan bundle (`ds-bundle/components.css`
+ * `.tabs-underline button[aria-selected="true"] { color: var(--ink) }`).
+ * `--accent` sudah diarahkan ke `--primary` (`packages/ds/lumi.css`), jadi
+ * garis bawahnya (`border-bottom-color: var(--accent)`) sudah benar tanpa
+ * disentuh — yang perlu ditimpa hanya warna TEKS-nya, yang lewat
+ * `stroke="currentColor"` (`packages/ds/ikon.tsx`) ikut mewarnai ikonnya. */
+.kasir-header .tabs-underline button[aria-selected='true'] {
+  color: var(--primary);
+}
+
+/* Kanan header: indikator sinkron, lonceng, tombol pengguna — SATU grup yang
+ * didorong ke ujung kanan. Pola yang sama dengan `.kasir-slot-aksi` lama. */
+.kasir-header-kanan {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  /* ⛔ R2 (spec § 14): "nama pengguna dipotong lebih dulu, bukan tab". Grup ini
+     DAPAT menyusut (`0 1 auto` + `min-width: 0`); yang menyerap tekanan adalah
+     kolom nama di tombol pengguna (ellipsis). Tab, indikator sinkron (teksnya),
+     dan lonceng `flex: none`. Sebelumnya `flex: none` di seluruh rantai: header
+     hanya muat karena teks fixture pendek, dan hitungan "(500)" atau nama 21
+     karakter mendorong grup keluar (terukur 1026/1022 dan 1043/1022). */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* `SyncIndicator` adalah entry point ke K-14 (IA §2.4), jadi ia harus dapat
@@ -171,6 +164,7 @@
    ditaruh di pembungkusnya, bukan di pil: mengubah pil akan mengubah setiap
    indikator di back-office dan HP juga. */
 .kasir-indikator {
+  flex: none;
   display: inline-flex;
   align-items: center;
   min-height: var(--touch-min);
@@ -185,6 +179,195 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-control);
+}
+
+/* P7(a) lonceng — target sentuh 44×44 (spec § 3), ghost, ikon saja. */
+.kasir-lonceng {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.kasir-lonceng:hover,
+.kasir-lonceng[aria-expanded='true'] {
+  background: var(--surface-sunk);
+  color: var(--ink);
+}
+.kasir-lonceng:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Menu pengguna: tombol (avatar 28 · nama 15/600 · baris kedua 13 outlet ·
+   perangkat · chevron) + popover role="menu" (spec § 3). Ditulis TANGAN —
+   `/ds-bundle` tidak punya komponen Menu/Dropdown. */
+.kasir-menu-pengguna {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.kasir-menu-pengguna-tombol {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  /* Selebar kolom `.kasir-menu-pengguna` yang menyusut: elemen `<button>` tanpa
+     ini menolak di bawah lebar min-content isinya (teks nama penuh), jadi
+     kolom menyusut tetapi tombolnya tetap 220 px dan meluap (terukur 1035/1022). */
+  width: 100%;
+  gap: var(--space-2);
+  min-height: var(--touch-min);
+  max-width: 220px;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.kasir-menu-pengguna-tombol:hover,
+.kasir-menu-pengguna-tombol[aria-expanded='true'] {
+  background: var(--surface-sunk);
+}
+.kasir-menu-pengguna-tombol:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Kolom nama + outlet·device — R2 (spec § 14): bila header tidak muat di
+   1024px, NAMA yang terpotong lebih dulu (`text-overflow: ellipsis`), bukan
+   tab.
+
+   ⛔ DUA syarat, dan hilangkan SALAH SATU membuat truncate diam-diam tidak
+   pernah berlaku — diukur DOM, bukan disimpulkan dari kelas `truncate`:
+   1. `min-width: 0` di sini (kolom ini, flex item baris `.kasir-menu-
+      pengguna-tombol`) — tanpanya kolom menolak menyusut di bawah lebar
+      KONTEN nama (lantai otomatis flex item, alasan yang sama dengan
+      `.kasir-grid-panel` di atas), dan `max-width: 220px` pada tombol
+      pembungkus tidak pernah tercapai.
+   2. `align-items` BAWAAN (`stretch`), BUKAN `flex-start`. Versi pertama
+      berkas ini memakai `flex-start` supaya teks rata kiri — tapi `stretch`
+      yang membuat span nama benar-benar SELEBAR kolom ini (bukan selebar
+      kontennya sendiri); tanpanya `overflow: hidden` pada span nama
+      (`truncate`, `lumi.css`) tidak punya batas untuk memotong APA PUN, dan
+      nama 59 karakter terukur 412px — meluap 255px dari tombol 220px,
+      SEMENTARA `getBoundingClientRect()` tombolnya sendiri tetap terlihat
+      220px (anak yang meluap tidak melebarkan induknya). Rata kiri tetap
+      didapat dari `text-align: left` di bawah — properti yang benar-benar
+      mengatur perataan TEKS, bukan lebar kotak. */
+.kasir-menu-pengguna-teks {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+.kasir-menu-pengguna-lokasi {
+  display: flex;
+  min-width: 0;
+}
+.kasir-menu-pengguna-lokasi > .truncate {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.kasir-menu-pengguna-device {
+  flex: none;
+  white-space: pre;
+}
+.kasir-menu-pengguna-daftar {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: var(--space-2);
+  box-shadow: var(--shadow-raised);
+}
+.kasir-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.kasir-menu-item:hover {
+  background: var(--surface-sunk);
+}
+.kasir-menu-item:disabled {
+  color: var(--ink-subtle);
+  cursor: default;
+}
+
+/* Panel "Pemberitahuan perangkat" (P7(a)) — popover di bawah lonceng, bukan
+   dialog modal: ia tidak mengambil fokus dan tidak menutupi layar. */
+.kasir-panel-pemberitahuan {
+  position: absolute;
+  z-index: 20;
+  top: 68px;
+  right: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100% - 2 * var(--space-4)));
+  padding: var(--space-4);
+  box-shadow: var(--shadow-raised);
+}
+.kasir-panel-pemberitahuan-kepala {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.kasir-panel-pemberitahuan-kepala h2 {
+  margin: 0;
+}
+.kasir-panel-pemberitahuan-tutup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.kasir-panel-pemberitahuan-tutup:hover {
+  background: var(--surface-sunk);
+}
+
+/* Bilah aksi bawah generik — layar ber-shell yang aksi utamanya harus
+   TERLIHAT tanpa menggulir (K-12 review, Task 3; Task 15 memakainya lagi).
+   SAUDARA area yang menggulir (`.kasir-grid-panel`), bukan anaknya: sebagai
+   anak `.kasir-konten` (flex column) ber-`flex: none`, ia mengambil
+   tingginya sendiri lebih dulu dan memaksa `.kasir-grid-panel` (`flex: 1;
+   min-height: 0; overflow-y: auto`) menyusut mengisi SISA ruang — bentuk
+   yang sama dengan blok Subtotal/Total/Bayar di `.kasir-keranjang` K-03. */
+.kasir-aksi-bawah {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  flex: none;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 /* ⛔ `display: flex` DITAMBAHKAN 1 September 2026, dan ketiadaannya adalah
@@ -349,6 +532,11 @@
   color: var(--ink);
 }
 
+.kasir-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
 .kasir-dialog-aksi {
   display: flex;
   justify-content: flex-end;
@@ -365,17 +553,12 @@
   gap: var(--space-6);
   align-items: start;
 }
-/* `.segmented` bundle untuk pilihan yang menyangkut uang (arah kas, Fase
-   3.6): selebar dialog, tombol 56 px (DS #3). Bundle memberinya 38 px, benar
-   untuk Dine In/Takeaway dan terlalu kecil untuk "uang keluar dari laci". */
 .kasir-alasan-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: var(--space-3);
 }
 .kasir-alasan-grid > legend { grid-column: 1 / -1; }
-.kasir-segmented-kritis { display: flex; }
-.kasir-segmented-kritis button { min-height: var(--touch-critical); }
 
 /* K-12 tahap review — dua kartu (rebuild UI Fase 3.10). */
 .kasir-review-kolom {
@@ -701,6 +884,20 @@
   padding: var(--space-4);
   flex: 1;
   min-width: 0;
+  /* ⛔ `min-height: 0` DITAMBAHKAN Task 3. Sebagai anak KOLOM langsung
+     `.kasir-konten` (K-12 review, sejak `.kasir-aksi-bawah` jadi SAUDARANYA),
+     flex item tanpa ini punya `min-height: auto` bawaan — lantai setinggi
+     KONTEN, bukan nol — dan menolak menyusut di bawah itu walau `flex: 1`
+     menyuruhnya berbagi ruang dengan saudaranya. Akibatnya `.kasir-aksi-bawah`
+     terdorong 132px di luar jendela 800px (terbukti test) alih-alih
+     `.kasir-grid-panel` yang menggulir SENDIRI secara internal. Kelas cacat
+     yang sama dengan `.kasir-konten` (komentar di bawah): `flex: 1` tanpa
+     `min-height: 0` tidak menghasilkan error, ia menghasilkan lantai yang
+     tidak pernah terlihat sampai ada saudara yang butuh ruang. Aman untuk
+     layar lain yang memakai kelas ini sendirian (K-08/K-15/dst): tanpa
+     saudara yang bersaing, `flex: 1` sudah mengambil seluruh ruang yang
+     tersisa; `min-height: 0` hanya melepas lantai yang tidak pernah teruji. */
+  min-height: 0;
   overflow-y: auto;
   /* Panel grid duduk di permukaan yang TENGGELAM, keranjang di permukaan biasa.
      Itu yang memisahkan "tempat memilih" dari "tempat menagih" tanpa satu pun
@@ -777,7 +974,17 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: 1.25;
+  /* ⛔ Task 1 kampanye "Hidupkan desain" (tinggi baris, PR 2A): SEBELUMNYA
+   * `1.25` literal di sini — nilai yang menang atas `.t-body-md` bundle
+   * (spesifisitas sama, `.kasir-kartu-nama` datang belakangan di cascade)
+   * dan membuat nama kartu 15px terukur 18,75px (rasio 1,25), bukan 1,5
+   * mockup (`docs/superpowers/specs/2026-09-28-kasir-design.md` § 10.1).
+   * `var(--leading-body)` — token bundle yang SUDAH dipakai `.t-body-md`
+   * (`ds-bundle/tokens/typography.css:39`), bukan `1.5` yang diketik ulang:
+   * tempat kedua yang memutuskan angka yang sama akan menyimpang diam-diam.
+   * Konsekuensinya terukur (spec § 10.1): kartu berfoto tumbuh 7px (148→155).
+   */
+  line-height: var(--leading-body);
 }
 
 /* ⛔ Berat, bukan warna. Menaikkan harga dengan warna akan menambah warna
@@ -1013,6 +1220,22 @@
   overflow: hidden;
 }
 
+/* Kepala keranjang: judul di kiri, ikon kosongkan di kanan (mockup). Tombolnya
+ * `.btn` bundle, jadi target sentuh tetap `--touch-min`; lebarnya disamakan
+ * supaya ikon tunggal tidak menjadi target yang lebih sempit dari 44px. */
+.kasir-keranjang-kepala {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.kasir-keranjang-kosongkan {
+  flex: none;
+  min-width: var(--touch-min);
+  padding: 0 var(--space-2);
+}
+
 .kasir-baris-daftar {
   display: flex;
   flex-direction: column;
@@ -1074,61 +1297,169 @@
     linear-gradient(transparent, var(--border)) bottom / 100% var(--space-2) no-repeat scroll;
 }
 
-/* Baris keranjang: dua tingkat, bukan satu baris berisi enam hal. */
-.kasir-baris {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
-}
+/* Baris keranjang: SATU tombol 58 px (mockup `Cart`, spec kasir § 6) —
+   lencana qty, nama + "Rp X per item" (+ modifier), subtotal di kanan.
+   Menyentuh baris membuka Edit Item; tidak ada stepper dan tidak ada tombol
+   hapus di baris. Tinggi 58 px sudah di atas target sentuh (--touch-min), jadi
+   tidak butuh `.sentuh`. `min-height`, bukan `height`: baris bermodifier
+   punya satu baris teks lagi dan tidak boleh terpotong. */
+.kasir-baris { list-style: none; }
 
-.kasir-baris-aksi {
+.kasir-baris-tekan {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  width: 100%;
+  /* 58 px = tinggi baris mockup `Cart`; tidak ada token untuk tinggi baris. */
+  min-height: 58px;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.kasir-baris-tekan:hover { background: var(--muted); }
+.kasir-baris-tekan:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-/* Harga didorong ke ujung kanan, sejajar dengan subtotal di bawahnya —
-   satu kolom angka yang dapat dipindai mata dari atas ke bawah.
-   (Sebelum 2 September 2026 ia memisahkan stepper dari tombol "Hapus";
-   tombol itu sudah tidak ada — qty turun ke nol yang menghapus.) */
-.kasir-baris-harga { margin-left: auto; }
+/* Lencana qty: kotak 36 px, teks --primary 13 px (bukan kontrol — tampilan). */
+.kasir-baris-qty {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 36 px = kotak lencana mockup; tidak ada token ukuran ikon/lencana (--space-* berhenti di 32). */
+  min-width: 36px;
+  height: 36px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-control);
+  background: var(--accent-subtle);
+  color: var(--primary);
+  font-size: var(--text-small);
+  font-weight: 600;
+  box-sizing: border-box;
+}
 
-/* --- Toolbar aksi: SATU BARIS, semua terlihat sekaligus -------------------
+.kasir-baris-isi {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.kasir-baris-nama { overflow-wrap: anywhere; }
+
+/* Harga didorong ke ujung kanan, sejajar dengan subtotal di bawahnya —
+   satu kolom angka yang dapat dipindai mata dari atas ke bawah. */
+.kasir-baris-harga { flex: none; margin-left: auto; }
+
+/* --- Edit Item (spec kasir § 6): dialog 512 px --------------------------- */
+.kasir-dialog-edit { max-width: 32rem; }
+.kasir-edit-kepala {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.kasir-edit-judul { min-width: 0; }
+.kasir-edit-judul p { margin: 0; }
+/* Tombol tutup 44×44 (DS #3). */
+.kasir-edit-tutup {
+  flex: none;
+  width: var(--touch-min);
+  min-width: var(--touch-min);
+  height: var(--touch-min);
+  padding: 0;
+}
+.kasir-edit-jumlah {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kasir-edit-jumlah p { margin: 0; }
+/* −/+ 56 px (aksi uang, DS #3): `.btn-critical` memberi tinggi; lebarnya
+   disamakan supaya glyph tunggal tidak menjadi target yang lebih sempit. */
+.kasir-edit-langkah {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.kasir-edit-langkah .btn { min-width: var(--touch-critical); }
+.kasir-edit-langkah .num { min-width: 3ch; text-align: center; }
+.kasir-edit-ringkas {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* --- Toolbar aksi: bilah 68px, tombol ikon-DI-ATAS-label ------------------
  *
- * Sebelumnya ketiga aksi ini adalah kolom tombol selebar panel, dan kolom itu
- * memakan tinggi yang diambil dari daftar item — ruang yang paling langka di
- * panel ini. Tiga tombol bertumpuk = ~150px; satu baris ikon = 56px.
+ * ⛔ Task 5, kampanye "Hidupkan desain" (spec § 4 "Toolbar kasir delapan
+ * tombol", target mockup): "bilah 68 px di atas kolom katalog saja, latar
+ * `--card`, tombol ghost min-lebar 70 px, tinggi 44 px, ikon 17 px DI ATAS
+ * label 13/600." SEBELUMNYA (Task 3) ikon dan label duduk MENDATAR — bentuk
+ * itu benar untuk tiga tombol tanpa target ukuran; mockup menuntut kolom.
+ *
+ * ⛔⛔ BILAH 68px DITOLAK, R1-c (Task 5, laporan `task-5-report.md` §
+ * Temuan) — `docs/RENCANA-HIDUPKAN-DESAIN.md` § Ledger/Utang. `.kasir-
+ * grid-panel` `overflow-y: auto` SELALU kelebihan konten (grid + "Muat
+ * lebih banyak"), jadi flexbox mengecilkan SETIAP anak yang dapat menyusut
+ * ke tinggi minimum kontennya (`min-height: auto`) — bilah ini sudah 44px
+ * di kode LAMA sekalipun (natural, dari tinggi tombol), bukan 68px yang
+ * pernah terlihat siapa pun. Memaksanya (`flex-shrink: 0` + `height: 68px`,
+ * dicoba dan DIBATALKAN) membuat G-IA62-PITA (`k03-kepadatan.test.js`,
+ * "wajib hijau tanpa disunting") MERAH: 1024×768 `gambar-antrean` turun ke
+ * 8 kartu (sisa −18px, dari +6px sebelumnya) — pelanggaran invariant
+ * `IA:62`, bukan sekadar angka mepet. Kondisi berhenti eksplisit
+ * (`RENCANA-HIDUPKAN-DESAIN.md` § Kondisi berhenti: "Invarian tidak dapat
+ * dipenuhi oleh ukuran mockup"). TIDAK ADA rekayasa tata letak untuk
+ * "menyelamatkan" angka — bilah TETAP natural (~44-46px, ikut tinggi
+ * tombol), persis pola "tolak elemen mockup, lanjutkan sisanya" (`CLAUDE.md`
+ * § Rebuild UI kasir). Ukuran TOMBOL di dalamnya (70×44, ikon 17, label
+ * 13/600) TETAP mockup — konflik hanya pada tinggi BILAH LUAR.
  *
  * ⛔ IKON TIDAK PERNAH SENDIRIAN, dan itu bukan kehati-hatian berlebihan.
  * `IA:66` menempatkan "Buka laci" satu ketukan dari layar ini, dan membuka
  * laci adalah pola fraud paling dasar (`spec-d:229`). Ikon tanpa kata menuntut
  * kasir menghafal tiga glyph yang mirip; yang salah tekan membuka laci di
- * depan pelanggan. Labelnya karena itu ikut, pada `--text-caption`.
+ * depan pelanggan. Labelnya karena itu ikut, pada `--text-small`/600
+ * (`.kasir-toolbar-label`, bukan `--text-caption` bawaan `.btn` — bobot 600
+ * hanya berlaku untuk label toolbar, bukan seluruh teks `.btn` di layar lain).
  *
- * ⛔ Target sentuh tetap `--touch-min`. Tombol yang mengecil karena ikonnya
- * kecil melanggar aturan design system #3 tanpa satu pun error.
- *
- * Nol nilai baru: seluruhnya token yang sudah ada.
+ * ⛔ Target sentuh tetap `--touch-min` (44px TINGGI persis mockup; LEBAR
+ * min 70px — keduanya di atas 44, jadi tidak ada perluasan tak terlihat yang
+ * dibutuhkan di sini, beda dari chip kategori 36px).
  */
 .kasir-toolbar {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+  background: var(--card);
 }
 
 .kasir-toolbar .btn {
-  /* ⛔ MENDATAR dan selebar isinya, bukan kolom `flex: 1`.
-     Bentuk kolom dirancang saat baris ini selebar panel keranjang; di bilah nav
-     ia duduk di samping tab yang tingginya 46px, dan kolom ikon-di-atas-label
-     akan menaikkan seluruh bilah — tinggi yang diambil dari grid. */
   flex: none;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 70px;
+  height: var(--touch-min);
+  padding: 0 var(--space-2);
   border-color: var(--border);
-  font-size: var(--text-caption);
-  line-height: var(--leading-tight);
   white-space: nowrap;
+}
+
+.kasir-toolbar-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-small);
 }
 
 /* ⛔ Pembatas hanya pada baris PERTAMA blok ringkasan.
@@ -1226,11 +1557,18 @@
    Seluruh nilai token (aturan design system #6). Tiga tingkat memakai tiga
    warna semantik yang SUDAH ada — tidak ada token warna baru, dan teksnya
    selalu ada di samping warnanya (aturan #5). */
+/* ⛔ Padding UNIFORM `--space-2` (8px setiap sisi), bukan `--space-2
+   --space-4`, Task 3 kampanye Hidupkan desain (26 September 2026, spec § 3
+   & § 14 R1: "bentuk banner offline mockup — padding 8 px, teks 13 px, ikon
+   15 px, ≈ 34 px"). Sebelumnya 8px/16px menghasilkan ≈ 61 px; dengan header
+   68 px + toolbar 68 px K-03, itu memangkas grid katalog dari 12 kartu ke 8
+   — di bawah `IA:62` (`G-IA62-PITA`, merah sejak Task 1). Kalimat, syarat,
+   dan tautannya TIDAK berubah — lihat `PitaAntrean.tsx`. */
 .kasir-pita {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2);
   border-bottom: 1px solid var(--border);
   flex: none;
 }
@@ -1244,6 +1582,26 @@
 .kasir-pita-darurat {
   background: var(--danger-soft);
   border-bottom-color: var(--danger-border);
+}
+
+/* "Lihat antrean" — TAUTAN TEKS 13px di dalam pita, bukan `.btn` (lihat
+   komentar `PitaAntrean.tsx`). `.sentuh` (className, bukan di sini) memberi
+   target sentuh 44px tak terlihat; kelas ini hanya bentuk VISUALnya. */
+.kasir-pita-tautan {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-decoration: underline;
+  /* ⛔ `font-family` SAJA, bukan shorthand `font: inherit`. Yang kedua
+     me-reset `font-size`/`line-height` juga — menimpa `.t-caption` (13px)
+     yang dipasang bersama di JSX dan mengembalikan tombol ini ke ukuran
+     bawaan tombol (15px), persis cacat yang membuat pita ≈40px, bukan
+     ≈34px seperti mockup. Ditemukan lewat pengukuran DOM, bukan membaca
+     CSS. */
+  font-family: inherit;
+  cursor: pointer;
 }
 
 /* Keadaan kosong keranjang — panel ini menempati sepertiga layar, dan satu
@@ -1464,4 +1822,77 @@
     linear-gradient(transparent, var(--surface) 70%) bottom / 100% var(--space-4) no-repeat local,
     linear-gradient(var(--border), transparent) top / 100% var(--space-2) no-repeat scroll,
     linear-gradient(transparent, var(--border)) bottom / 100% var(--space-2) no-repeat scroll;
+}
+
+/* K-18 Laci kas — dua kartu berdampingan (Task 4, kampanye Hidupkan desain;
+   mockup `CashDrawer`: kolom .9fr / 1.1fr, lebar maksimum 64rem). Kartunya
+   `.card.card-pad.kasir-dialog-sel`, sama dengan K-12 review. */
+.kasir-laci {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--space-4);
+  align-items: start;
+  width: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+/* Toggle arah tampil selebar isinya (mockup 186×44), bukan selebar kartu.
+   `nowrap`: tombol `.segmented` berbasis `flex: 1 1 0%`, jadi wadah yang
+   menyusut-ke-isi mengukurnya sebesar min-content — "Kas masuk" terbungkus
+   dua baris dan toggle membengkak jadi 51 px (terukur). */
+.kasir-laci .segmented { align-self: flex-start; }
+.kasir-laci .segmented button { white-space: nowrap; }
+/* Kartu kiri memuat form + buka laci dan HARUS muat 1024×768 tanpa gulir
+   (`laci-kas.test.js`), termasuk alasan "Lainnya" yang menambah catatan. Jarak
+   antaranya dirapatkan (12 px) dan baris alasan tanpa celah baris — tiap opsi
+   tetap ≥ 44 px (`min-height` `.kasir-alasan-opsi`). */
+.kasir-laci .kasir-dialog-sel { gap: var(--space-3); }
+.kasir-laci .kasir-alasan-grid { row-gap: 0; }
+.kasir-laci-judul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.kasir-laci-nosale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.kasir-laci-riwayat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kasir-laci-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.kasir-laci-ikon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: 50%;
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+.kasir-laci-ikon[data-arah='masuk'] {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
+.kasir-laci-isi {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
 }

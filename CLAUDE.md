@@ -177,7 +177,7 @@ Keduanya dirancang untuk basis kode yang memakai `number` untuk uang. Repo ini `
 
 ### ⛔ Pemformat rupiah: SATU, dan penjaganya melarang yang kesembilan
 
-`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 35 berkas mengimpornya (TERVERIFIKASI 2 September 2026); ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
+`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 38 berkas mengimpornya (TERVERIFIKASI 28 September 2026); ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
 
 Salinan terakhir dihapus 2 September 2026: `apps/backoffice/src/langganan/upgrade.ts` — B-29, satu-satunya layar yang angkanya berakhir di tagihan yang merchant bayar.
 
@@ -401,10 +401,12 @@ Selalu sebutkan model **secara eksplisit** saat mengirim subagen. Fable dan Haik
 | Tinjauan akhir satu branch | **Opus 5.5** |
 | Reviewer per task di jalur **uang, kas, dan sync** | **Opus 5.5** |
 | Subagen sabotase independen | **Opus 5.5** |
-| **Semua implementer**, termasuk task yang kodenya sudah lengkap di plan | **Sonnet 5** (`sonnet`) |
-| Reviewer per task di luar jalur uang, kas, dan sync | **Sonnet 5** |
+| **Semua implementer**, termasuk task yang kodenya sudah lengkap di plan | **Sonnet 5.5** (`sonnet`) |
+| Reviewer per task di luar jalur uang, kas, dan sync | **Sonnet 5.5** |
 
-⛔ Skill SDD menyebut model termurah untuk implementer yang kodenya lengkap. Di repo ini **batas bawahnya Sonnet 5** — tidak ada peran yang turun di bawahnya.
+⛔ Skill SDD menyebut model termurah untuk implementer yang kodenya lengkap. Di repo ini **batas bawahnya Sonnet 5.5** — tidak ada peran yang turun di bawahnya (keputusan user 29 September 2026, issue #76 komentar 5883887477; sebelumnya Sonnet 5).
+
+⛔ **Alias `sonnet` diverifikasi, bukan dipercaya.** Agent tool hanya menerima alias; pada 29 September 2026 `sonnet` terukur mengarah ke `claude-sonnet-5-5` (medan `model` di transkrip subagen). Controller memeriksa medan itu sesudah setiap pengiriman — bila bukan `claude-sonnet-5-5`, hentikan dan laporkan. Definisi agen di `.claude/agents/` yang memaku ID penuh tidak termuat di tengah session, jadi tidak dipakai sebagai pemaku.
 
 ### Penjaga dan sabotase dalam SDD
 

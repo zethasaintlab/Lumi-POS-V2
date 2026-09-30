@@ -169,3 +169,10 @@ node banding.mjs      # butuh `npm run build:galeri` di akar repo lebih dulu
   dipastikan apakah proyek yang sama dapat ditarik lewat `/design-sync`.
   Berkas di sini tidak bergantung pada login dan tidak hilang saat container
   berganti.
+- **Penyimpangan header kasir yang dicatat (Task 4, 29 September 2026):** jarak
+  antar-elemen header 16 px dan jarak antar-tab 8 px, mockup 20 px dan 4 px
+  (`ui_kits/kasir/index.html:96`, `gap-5`/`gap-1`). Alasan: token spasi tidak
+  punya 20 px (`--space-4` 16, `--space-6` 24), dan dengan empat tab pada 1024
+  px jarak 24 px antar-tab membuat header meluap 53 px pada keadaan antrean 50
+  gagal. R2 (spec § 14) dijaga dengan menyusutkan NAMA pengguna (ellipsis), bukan
+  tab; dijaga `tests/kasir-dom/header.test.js` (nama 21 karakter + "(500)").

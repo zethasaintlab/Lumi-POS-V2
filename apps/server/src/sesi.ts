@@ -221,6 +221,28 @@ const RUTE_TERBUKA: readonly Terbuka[] = [
   },
   {
     metode: 'POST',
+    pola: '/shifts/:shiftId/cart-cleared',
+    alasan:
+      'jalur perangkat: relay outbox. Batalkan keranjang terjadi DI KASIR, sering saat ' +
+      'perangkat offline, dan relay tidak mengirim Bearer. Tanpa baris ini SETIAP jejak ' +
+      'pembatalan yang dibuat offline dijawab 401 dan berhenti permanen di antrean — ' +
+      'jejak yang tidak pernah sampai adalah pola kecurangan yang tidak pernah terlihat ' +
+      '(keputusan user 28 Sep 2026). Yang menjaganya `assertBoleh(shift_open_close)` di handler',
+    sesiOpsional: true,
+  },
+  {
+    metode: 'POST',
+    pola: '/shifts/:shiftId/cart-line-reduced',
+    alasan:
+      'jalur perangkat: relay outbox. Pengurangan baris keranjang terjadi DI KASIR, sering saat ' +
+      'perangkat offline, dan relay tidak mengirim Bearer. Tanpa baris ini SETIAP jejak ' +
+      'pengurangan yang dibuat offline dijawab 401 dan berhenti permanen di antrean — ' +
+      'jejak yang tidak pernah sampai adalah pola kecurangan yang tidak pernah terlihat ' +
+      '(keputusan user 28 Sep 2026, Q2). Yang menjaganya `assertBoleh(shift_open_close)` di handler',
+    sesiOpsional: true,
+  },
+  {
+    metode: 'POST',
     pola: '/peripherals',
     alasan:
       'jalur perangkat: relay outbox. K-15 bertanda ✅ offline (`IA:65`) — kasir memilih ' +

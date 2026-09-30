@@ -1,13 +1,13 @@
 'use strict';
 
-// K-03 — anggaran tinggi chrome, dan aksi yang benar-benar sampai ke slotnya.
+// K-03 — anggaran tinggi chrome, dan aksi yang benar-benar berada di toolbar.
 //
 // ## ⛔ Kenapa DUA penjaga ini ada, dan kenapa keduanya DOM
 //
 // Keduanya menjaga hal yang tidak menghasilkan satu pun error saat rusak.
 //
 // 1. ANGGARAN CHROME. `IA:62` menuntut >= 12 kartu terlihat tanpa scroll. Tinggi
-//    topbar dan bilah nav adalah ruang yang diambil dari grid, dan angka itu
+//    header dan toolbar adalah ruang yang diambil dari grid, dan angka itu
 //    sudah MENABRAK DUA KALI dalam satu hari: bilah nav berikon (+17px) dan
 //    baris toolbar melintang (+57px), keduanya memangkas grid dari 12 kartu
 //    menjadi 8. Tangkapan layarnya tetap terlihat wajar — kartunya besar dan
@@ -17,12 +17,12 @@
 //    dijalankan manual saat seseorang ingat. Penjaga ini menjalankan pengukuran
 //    yang sama di dalam `test:kasir-dom`, yang CI jalankan pada setiap push.
 //
-// 2. PORTAL AKSI. Ketiga aksi K-03 dirender ke slot milik `ShellKasir` lewat
-//    `createPortal`. Kalau slotnya hilang, id-nya berubah, atau portalnya gagal
-//    mount, `PortalAksi` mengembalikan `null` — DIAM, sesuai rancangannya,
-//    supaya layar tetap dapat dirender di harness tanpa shell. Konsekuensinya
-//    ketiga tombol lenyap dari layar kasir tanpa satu pun error di konsol.
-//    Diam yang disengaja tetap menuntut penjaga yang tidak diam.
+// 2. TOOLBAR K-03. ⛔ Sejak keputusan kampanye Hidupkan desain (26 September
+//    2026, Task 3 PR 2A), `SLOT_AKSI`/`PortalAksi` DIHAPUS: toolbar kini
+//    milik `Kasir.tsx` sendiri (`.kasir-toolbar`, di atas kolom katalog
+//    saja), bukan lagi diportalkan ke slot bilah nav shell. Penjaga ini
+//    memaku bahwa ketiga aksi K-03 tetap ada, tetap di tempat yang benar
+//    (di atas KOLOM KATALOG, bukan di header, bukan menaungi keranjang).
 //
 // ## ⛔ Kenapa galeri, bukan harness K-06
 //
@@ -153,7 +153,7 @@ async function bukaK03(keadaan) {
 
 // ---------------------------------------------------------------------------
 
-test('⛔ anggaran chrome: grid tetap >= 12 kartu terlihat tanpa scroll (IA:62)', async () => {
+test('⛔ anggaran chrome: grid tetap >= 12 kartu terlihat tanpa scroll (IA:62)', async (t) => {
   const { hal, galat } = await bukaK03('normal');
   const ukur = await hal.evaluate(() => {
     const grid = document.querySelector('.kasir-grid');
@@ -170,15 +170,36 @@ test('⛔ anggaran chrome: grid tetap >= 12 kartu terlihat tanpa scroll (IA:62)'
       const e = document.querySelector(s);
       return e ? Math.round(e.getBoundingClientRect().height) : 0;
     };
+    const r = (e) => e.getBoundingClientRect();
+    const kartu = [...grid.children];
+    /* R1 (spec § 14) — baris ke-3 kartu, dikelompokkan lewat `top` bulat yang
+       sama. Sama dengan `k03-kepadatan.test.js`, diukur di sini juga supaya
+       titik ukur R1-b mencakup jalur "anggaran chrome" (header 68px + toolbar
+       68px, Task 3). */
+    const tops = [...new Set(kartu.map((k) => Math.round(r(k).top)))].sort((a, b) => a - b);
+    const yBaris3 = tops[2];
+    const barisKe3 =
+      yBaris3 === undefined
+        ? null
+        : Math.round(Math.max(...kartu.filter((k) => Math.round(r(k).top) === yBaris3).map((k) => r(k).bottom)));
     return {
-      terlihat: [...grid.children].filter((k) => k.getBoundingClientRect().bottom <= batas + 1).length,
-      total: grid.children.length,
-      topbar: t('.kasir-topbar'),
-      bilah: t('.kasir-bilah'),
-      berfoto: [...grid.children].filter((k) => k.querySelector('img')).length,
+      terlihat: kartu.filter((k) => r(k).bottom <= batas + 1).length,
+      total: kartu.length,
+      header: t('.kasir-header'),
+      toolbar: t('.kasir-toolbar'),
+      berfoto: kartu.filter((k) => k.querySelector('img')).length,
+      batas: Math.round(batas),
+      barisKe3,
     };
   });
   await hal.close();
+
+  /* R1-b (spec § 14, indeks § "Titik ukur R1") — jalur "anggaran chrome"
+     (1280×800, header 68px + toolbar 68px, Task 3). */
+  t.diagnostic(
+    `R1 1280 (anggaran chrome): baris-3=${ukur.barisKe3} batas=${ukur.batas} ` +
+      `sisa=${ukur.barisKe3 === null ? 'n/a' : ukur.batas - ukur.barisKe3} kartu=${ukur.terlihat}`
+  );
 
   assert.equal(galat.length, 0, `galat konsol saat memuat K-03: ${galat.join(' | ')}`);
   assert.ok(!ukur.err, ukur.err);
@@ -198,58 +219,82 @@ test('⛔ anggaran chrome: grid tetap >= 12 kartu terlihat tanpa scroll (IA:62)'
     ukur.terlihat >= MINIMAL_KARTU,
     `hanya ${ukur.terlihat} dari ${ukur.total} kartu terlihat tanpa scroll — ` +
       `\`IA:62\` menuntut >= ${MINIMAL_KARTU}.\n` +
-      `  topbar ${ukur.topbar}px · bilah nav ${ukur.bilah}px\n` +
+      `  header ${ukur.header}px · toolbar ${ukur.toolbar}px\n` +
       '  Tinggi chrome adalah ruang yang diambil dari grid. Yang paling sering ' +
-      'menyebabkannya: padding baru di topbar atau bilah nav, baris kontrol baru, ' +
+      'menyebabkannya: padding baru di header atau toolbar, baris kontrol baru, ' +
       'atau tinggi kartu yang bertambah.'
   );
 });
 
-test('⛔ portal aksi: ketiga tombol benar-benar mendarat di slot bilah nav', async () => {
+test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header, dan toolbar tidak menaungi keranjang', async () => {
   const { hal, galat } = await bukaK03('normal');
   const hasil = await hal.evaluate(() => {
-    const slot = document.querySelector('.kasir-slot-aksi');
-    const diSlot = slot ? [...slot.querySelectorAll('button')] : [];
+    const toolbar = document.querySelector('.kasir-toolbar');
+    const kolomKatalog = document.querySelector('.kasir-grid-panel');
+    const keranjang = document.querySelector('.kasir-keranjang');
+    const header = document.querySelector('.kasir-header');
+    const tombol = toolbar ? [...toolbar.querySelectorAll('button')] : [];
     return {
-      slotAda: !!slot,
-      label: diSlot.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
-      tinggiMin: diSlot.length ? Math.min(...diSlot.map((b) => Math.round(b.getBoundingClientRect().height))) : 0,
-      diKeranjang: document.querySelectorAll('.kasir-keranjang .kasir-toolbar button').length,
+      toolbarAda: !!toolbar,
+      label: tombol.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
+      tinggiMin: tombol.length ? Math.min(...tombol.map((b) => Math.round(b.getBoundingClientRect().height))) : 0,
+      diHeader: header && toolbar ? header.contains(toolbar) : false,
+      toolbarKanan: toolbar ? Math.round(toolbar.getBoundingClientRect().right) : 0,
+      kolomKananKatalog: kolomKatalog ? Math.round(kolomKatalog.getBoundingClientRect().right) : 0,
+      diKeranjang: keranjang && toolbar ? keranjang.contains(toolbar) : false,
     };
   });
   await hal.close();
 
   assert.equal(galat.length, 0, `galat konsol saat memuat K-03: ${galat.join(' | ')}`);
   assert.ok(
-    hasil.slotAda,
-    'elemen `.kasir-slot-aksi` tidak ada di DOM. `PortalAksi` mengembalikan `null` ' +
-      'diam-diam saat slotnya hilang, jadi ketiga tombol lenyap TANPA satu pun error.'
+    hasil.toolbarAda,
+    'elemen `.kasir-toolbar` tidak ada di DOM — `SLOT_AKSI`/`PortalAksi` dihapus ' +
+      '(keputusan kampanye 26 September 2026), toolbar kini milik `Kasir.tsx` sendiri.'
   );
 
-  /* Ketiga label disebutkan apa adanya. Perbandingan "ada tiga tombol" akan
-     tetap hijau saat salah satunya diganti tombol lain — dan tombol yang
-     tertukar di layar kasir berarti laci terbuka saat kasir bermaksud memberi
-     diskon. */
+  /* Label disebutkan apa adanya, dalam urutan MOCKUP. Perbandingan "ada N
+     tombol" akan tetap hijau saat salah satunya diganti tombol lain — dan
+     tombol yang tertukar di layar kasir berarti laci terbuka saat kasir
+     bermaksud memberi diskon.
+
+     ⛔ Sejak Task 5 (kampanye Hidupkan desain, G-TOOLBAR sebagian): "Item
+     manual" masuk lebih dulu, mengikuti urutan `LABEL_TOOLBAR_MOCKUP` di
+     `k03-toolbar.test.js`. Task 5B menambah "Batalkan" tepat sesudah
+     "Diskon". Task 4 (Laci kas) MENGELUARKAN "Buka laci" dan "Kas masuk /
+     keluar" dari toolbar ini — keduanya pindah ke layar K-18. */
   assert.deepEqual(
     hasil.label,
-    ['Diskon', 'Buka laci', 'Kas masuk / keluar'],
-    'isi slot aksi tidak sesuai. Ketiga aksi ini yang punya kode di repo; ' +
-      'lima lainnya di mockup tidak, dan tombol yang tidak melakukan apa-apa ' +
-      'tidak boleh ditambahkan ke sini.'
+    ['Item manual', 'Diskon', 'Batalkan'],
+    'isi toolbar tidak sesuai. Tiga label ini yang punya kode di repo hari ' +
+      'ini (Item manual, Diskon, Batalkan (Task 5B)); Buka laci dan Kas masuk / ' +
+      'keluar pindah ke layar Laci kas (K-18, Task 4); lima lainnya di mockup ' +
+      'belum, dan tombol yang tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
   );
 
-  /* Aturan design system #3. Tombol yang mengecil karena ia pindah ke bilah
-     yang lebih pendek melanggarnya tanpa satu pun error. */
+  /* Aturan design system #3. */
   assert.ok(
     hasil.tinggiMin >= 44,
-    `tombol terpendek di slot aksi ${hasil.tinggiMin}px — aturan design system #3 menuntut >= 44px.`
+    `tombol terpendek di toolbar ${hasil.tinggiMin}px — aturan design system #3 menuntut >= 44px.`
+  );
+
+  assert.equal(
+    hasil.diHeader,
+    false,
+    '`.kasir-toolbar` dirender di dalam `.kasir-header` — aksi K-03 bukan bagian header ' +
+      'satu baris (`spec § 4`).'
+  );
+
+  assert.ok(
+    hasil.toolbarKanan <= hasil.kolomKananKatalog + 1,
+    `toolbar berakhir di x=${hasil.toolbarKanan} sementara kolom katalog berakhir di ` +
+      `x=${hasil.kolomKananKatalog} — toolbar menaungi keranjang di sebelahnya.`
   );
 
   assert.equal(
     hasil.diKeranjang,
-    0,
-    'toolbar aksi masih dirender di dalam panel keranjang. Dua tempat yang ' +
-      'merender aksi yang sama menghasilkan layar dengan tombol ganda, dan ' +
-      'tinggi yang diambil dari daftar item justru yang pemindahan ini perbaiki.'
+    false,
+    'toolbar aksi dirender di dalam panel keranjang. Dua tempat yang merender aksi ' +
+      'yang sama menghasilkan layar dengan tombol ganda.'
   );
 });

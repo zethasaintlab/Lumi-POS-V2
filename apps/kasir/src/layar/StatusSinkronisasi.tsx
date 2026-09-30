@@ -17,7 +17,6 @@ import {
   type KonfigPerangkat,
 } from '../../../../packages/sync-client/src/perangkat.ts';
 import { pantauJangkauan, type KeadaanJangkauan } from '../lokal/keterjangkauan.ts';
-import { PortalAksi } from '../komponen/PortalAksi.tsx';
 import { Tombol } from '../Tombol.tsx';
 import { sinkronisasiSekarang, useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useAntrean } from '../konteks/useAntrean.ts';
@@ -305,18 +304,44 @@ export function StatusSinkronisasi() {
 
   return (
     <div className="kasir-sync">
-      <div className="row" style={{ gap: 'var(--space-3)' }}>
-        <span className="t-title">Status Sinkronisasi</span>
-        {/* ⛔ EMPAT keadaan, dan sebelumnya hanya tiga cabang yang ditulis:
-            `offline-only` jatuh ke "Mengantre", yang menyatakan ada yang
-            menunggu dikirim pada perangkat yang antreannya justru kosong.
+      {/* ⛔ DUA aksi pindah ke BARIS KEPALA layar (`[EKSPLORASI]`, Task 3
+          kampanye Hidupkan desain 26 September 2026), bukan lagi ke slot
+          bilah nav — `SLOT_AKSI`/`PortalAksi` dihapus, header satu baris
+          tidak lagi punya slot aksi sama sekali. `k14-tata-letak.test.js`
+          tetap batasnya: kedua kartu angka dan wilayah tabel tidak boleh
+          bergeser saat 50 baris gagal, dan header ini tidak boleh
+          membungkus/menggulirkan apa pun di luar wilayah tabelnya sendiri. */}
+      <div className="row between kasir-sync-kepala">
+        <div className="row" style={{ gap: 'var(--space-3)' }}>
+          <span className="t-title">Status Sinkronisasi</span>
+          {/* ⛔ EMPAT keadaan, dan sebelumnya hanya tiga cabang yang ditulis:
+              `offline-only` jatuh ke "Mengantre", yang menyatakan ada yang
+              menunggu dikirim pada perangkat yang antreannya justru kosong.
 
-            "Butuh koneksi" bukan kata yang dikarang di sini — ia teks yang
-            `SyncIndicator` bundle render untuk `offline-only` tanpa `reason`,
-            dan itu persis yang topbar tampilkan. Dua badge untuk satu keadaan
-            harus berbunyi sama; yang berbeda kalimat membuat kasir memutuskan
-            mana yang ia percaya. */}
-        <Badge tone={NADA_BADGE[keadaanBadge]}>{LABEL_BADGE[keadaanBadge]}</Badge>
+              "Butuh koneksi" bukan kata yang dikarang di sini — ia teks yang
+              `SyncIndicator` bundle render untuk `offline-only` tanpa `reason`,
+              dan itu persis yang topbar tampilkan. Dua badge untuk satu keadaan
+              harus berbunyi sama; yang berbeda kalimat membuat kasir memutuskan
+              mana yang ia percaya. */}
+          <Badge tone={NADA_BADGE[keadaanBadge]}>{LABEL_BADGE[keadaanBadge]}</Badge>
+        </div>
+        <div className="row" style={{ gap: 'var(--space-2)' }}>
+          <Tombol
+            varian="primary"
+            disabled={!siapKirim || mengirim}
+            title={siapKirim ? undefined : ALASAN_TAK_SIAP(terdaftar, jangkauan)}
+            keterangan={!siapKirim || mengirim ? 'sinkron-kirim-alasan' : undefined}
+            onClick={cobaKirim}
+          >
+            {mengirim ? 'Mengirim…' : 'Coba kirim sekarang'}
+          </Tombol>
+          <span id="sinkron-kirim-alasan" className="sr-only">
+            {mengirim ? 'Sedang mengirim.' : ALASAN_TAK_SIAP(terdaftar, jangkauan)}
+          </span>
+          <Tombol varian="secondary" onClick={ekspor}>
+            Ekspor darurat
+          </Tombol>
+        </div>
       </div>
 
       <p className="t-body">
@@ -355,37 +380,6 @@ export function StatusSinkronisasi() {
           </div>
         </Card>
       </div>
-
-      {/* ⛔ DUA aksi pindah ke slot bilah nav, 21 September 2026, dan yang
-          memutuskan mana yang ikut adalah GULIR — bukan kerapian.
-
-          Tabel item gagal memuat sampai 50 baris (`PER_HALAMAN`), dan sebelum
-          ini seluruh layar yang menggulir: diukur, "Coba kirim sekarang"
-          terdorong 3.272 px ke atas begitu kasir menggulir untuk membaca
-          tabelnya. `spec-h:256` menyebut ekspor darurat jaring pengaman yang
-          "selalu tersedia", dan jaring pengaman yang menuntut gulir tiga ribu
-          piksel bukan "selalu tersedia" dalam arti apa pun. Keduanya karena itu
-          ikut; keduanya juga yang ditekan saat ada masalah.
-
-          ⛔ Yang TIDAK ikut ada alasannya, dan alasannya lebar: slot menyisakan
-          734 px setelah lima tab, dan keempat tombol berjumlah ~747 px — ia
-          MEMBUNGKUS, dan bilah yang membungkus memakan isi layar. Dua yang
-          tinggal adalah yang paling jarang ditekan kasir: ekspor pemulihan
-          dibaca petugas dukungan, dan "Muat ulang angka" diagnostik yang
-          tempatnya memang di bawah bersama baris skema lokal. */}
-      <PortalAksi>
-        <Tombol
-          varian="primary"
-          disabled={!siapKirim || mengirim}
-          title={siapKirim ? undefined : ALASAN_TAK_SIAP(terdaftar, jangkauan)}
-          onClick={cobaKirim}
-        >
-          {mengirim ? 'Mengirim…' : 'Coba kirim sekarang'}
-        </Tombol>
-        <Tombol varian="secondary" onClick={ekspor}>
-          Ekspor darurat
-        </Tombol>
-      </PortalAksi>
 
       {!siapKirim && <p className="t-caption">{ALASAN_TAK_SIAP(terdaftar, jangkauan)}</p>}
 

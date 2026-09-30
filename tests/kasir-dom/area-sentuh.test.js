@@ -62,6 +62,8 @@
 // terlihat: keranjang KOSONG di keadaan `normal` (0 `.stepper`), tapi
 // `keranjang-penuh` merender tombol −/+ 28px sungguhan yang tumpang tindih
 // DAN terpotong `overflow: hidden` leluhurnya.
+// (Task 6, kampanye Hidupkan desain: stepper dihapus. Yang diukur sekarang
+// baris keranjang dan tombol −/+ Edit Item — test terakhir berkas ini.)
 //
 // **F3 — pemeriksaan tetangga (non-tumpang-tindih) kini menyampel LEBIH DARI
 // satu pasang titik di ±2px dari garis tengah celah.** Untuk setiap pasangan
@@ -605,4 +607,67 @@ test('⛔ area sentuh: ukuran ≥44/56 DAN tetangga tidak bertumpuk — setiap l
     `${pelanggaranHitungChip.length} kombinasi layar/keadaan punya \`.kasir-saring .chip.sentuh\` != ` +
       `\`.kasir-saring .chip\` (chip kehilangan kelas \`.sentuh\`):\n  ` + pelanggaranHitungChip.join('\n  ')
   );
+});
+
+/* ⛔ S8 sesudah keranjang tanpa stepper (Task 6, keputusan kampanye Hidupkan
+   desain 26 Sep 2026): area tekan BARIS keranjang >= 44 px, dan tombol −/+
+   Edit Item 56 px (menyangkut uang, DS #3) — keduanya lewat `elementFromPoint`
+   pada titik-titik di dalam kotak targetnya, dan titik di luar kotak 56 px
+   pada sumbu horizontal (celah antar tombol) tidak boleh membuka yang salah. */
+test('⛔ S8: baris keranjang >= 44 px dan tombol −/+ Edit Item 56 px — elementFromPoint', async () => {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-03&keadaan=keranjang-penuh`, { waitUntil: 'load' });
+  await hal.waitForSelector('.kasir-baris', { timeout: 10_000 });
+
+  const baris = await hal.evaluate(() => {
+    const li = document.querySelector('.kasir-baris');
+    const b = li.querySelector('button');
+    if (!b) return { error: 'baris keranjang tanpa <button> — Edit Item tidak dapat dibuka' };
+    b.scrollIntoView({ block: 'center' });
+    const r = b.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const kena = (y) => {
+      const e = document.elementFromPoint(cx, y);
+      return e === b || b.contains(e);
+    };
+    return { tinggi: r.height, atas: kena(cy - 21), bawah: kena(cy + 21) };
+  });
+  assert.equal(baris.error, undefined, baris.error);
+  assert.ok(baris.tinggi >= 44, `baris keranjang ${baris.tinggi} px < 44`);
+  assert.ok(baris.atas && baris.bawah, 'area tekan 44 px baris keranjang tidak dijawab tombolnya');
+
+  await hal.locator('.kasir-baris button').first().click();
+  await hal.waitForSelector('[role="dialog"][aria-label="Edit item"]', { timeout: 5000 }).catch(() => {});
+  const uji = await hal.evaluate(() => {
+    const dlg = document.querySelector('[role="dialog"][aria-label="Edit item"]');
+    if (!dlg) return { error: 'Edit Item tidak terbuka dari baris keranjang' };
+    const tombol = (nama) =>
+      [...dlg.querySelectorAll('button')].find((b) => {
+        const l = b.getAttribute('aria-label') ?? '';
+        // Di qty 1 label − berubah menjadi "Hapus … (jumlah menjadi 0)".
+        return nama === 'Kurangi' ? /^(Kurangi|Hapus) /.test(l) : l.startsWith(nama);
+      });
+    const hasil = {};
+    for (const nama of ['Kurangi', 'Tambah']) {
+      const b = tombol(nama);
+      if (!b) return { error: `tombol "${nama}" tidak ada di Edit Item` };
+      const r = b.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const kena = (x, y) => {
+        const e = document.elementFromPoint(x, y);
+        return e === b || b.contains(e);
+      };
+      hasil[nama] = { w: r.width, h: r.height, tengah: kena(cx, cy), atas: kena(cx, cy - 27), bawah: kena(cx, cy + 27) };
+    }
+    return hasil;
+  });
+  await hal.close();
+  assert.equal(uji.error, undefined, uji.error);
+  for (const nama of ['Kurangi', 'Tambah']) {
+    const u = uji[nama];
+    assert.ok(u.w >= 56 && u.h >= 56, `tombol ${nama} Edit Item ${u.w}×${u.h} px — aksi uang 56 px (DS #3)`);
+    assert.ok(u.tengah && u.atas && u.bawah, `tombol ${nama} Edit Item: area tekan 56 px tidak dijawab tombolnya sendiri`);
+  }
 });

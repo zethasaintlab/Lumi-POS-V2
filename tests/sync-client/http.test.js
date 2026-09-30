@@ -178,3 +178,22 @@ test('⛔ cash_movement PUNYA endpoint — kas masuk/keluar dicatat offline', as
   assert.equal(hasil.status, 201);
   assert.match(url, /\/shifts\/shift-1\/cash-movements$/);
 });
+
+// Task 5C — jejak Edit Item yang menurunkan qty naik lewat rute SAUDARA
+// `cart_cleared`, dengan Idempotency-Key dari baris dan tanpa Bearer.
+test('⛔ cart_line_reduced → POST /shifts/{shift}/cart-line-reduced, key dari baris, saudara (bukan sama dengan) cart-cleared', async () => {
+  const { buatPengirimHttp } = await import(HTTP);
+  const f = fetchPalsu(() => jawabanJson(201, {}));
+  const kirim = buatPengirimHttp({ ...KONFIG, fetchFn: f.fn });
+
+  await kirim(baris({ entity_type: 'cart_line_reduced', entity_id: 'shf-1', idempotency_key: 'k-baris' }));
+  await kirim(baris({ entity_type: 'cart_cleared', entity_id: 'shf-1', idempotency_key: 'k-batal' }));
+
+  assert.deepEqual(f.panggilan.map((p) => p.url), [
+    'http://server.lokal/shifts/shf-1/cart-line-reduced',
+    'http://server.lokal/shifts/shf-1/cart-cleared',
+  ]);
+  assert.equal(f.panggilan[0].opsi.method, 'POST');
+  assert.equal(f.panggilan[0].opsi.headers['Idempotency-Key'] ?? f.panggilan[0].opsi.headers['idempotency-key'], 'k-baris');
+  assert.equal(f.panggilan[0].opsi.headers.Authorization ?? f.panggilan[0].opsi.headers.authorization, undefined, 'relay tidak mengirim Bearer');
+});

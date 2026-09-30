@@ -11,14 +11,19 @@
 //
 // ## ⛔ Tiga penjaga, dan masing-masing menutup lubang yang berbeda
 //
-// 1. TINGGI BILAH NAV. Slot aksi milik layar yang aktif, jadi setiap layar
-//    mengisinya sendiri. Slot yang isinya terlalu lebar MEMBUNGKUS, dan bilah
-//    yang membungkus tumbuh — memakan ruang dari isi layar itu.
+// 1. TINGGI HEADER. ⛔ Sejak Task 3 (kampanye Hidupkan desain, 26 September
+//    2026) `.kasir-topbar`+`.kasir-bilah` digabung jadi satu `.kasir-header`
+//    68px, dan `SLOT_AKSI`/`PortalAksi` dihapus — aksi layar pindah ke badan
+//    layar. Isi header (wordmark, empat tab, indikator, lonceng, tombol
+//    pengguna) yang terlalu lebar MEMBUNGKUS, dan yang membungkus tumbuh
+//    tinggi — memakan ruang dari isi layar itu.
 //
 //    ⛔ `k03-chrome.test.js` TIDAK menutup ini. Ia mengukur K-03, dan tuntutan
-//    ">= 12 kartu" hanya ada di K-03. Bilah K-14 yang membungkus karena itu
+//    ">= 12 kartu" hanya ada di K-03. Header K-14 yang membungkus karena itu
 //    memakan isi K-14 tanpa satu pun penjaga menyala. Diukur di KELIMA layar,
-//    karena slotnya milik layar dan setiap layar dapat merusaknya sendiri.
+//    dan di kedua keadaan (`normal`, `antrean-panjang` — teks indikator
+//    terpanjang), karena header dipakai bersama dan setiap keadaan dapat
+//    merusaknya sendiri.
 //
 // 2. KEDUA KARTU ANGKA TIDAK BERGESER. Bentuk yang sama dengan P8 di K-06,
 //    dengan satu perbedaan yang menentukan: di K-06 isi panjangnya dibuat lewat
@@ -62,8 +67,9 @@ const path = require('node:path');
 const AKAR = path.resolve(__dirname, '..', '..');
 const DIST = path.join(AKAR, 'dist-galeri');
 
-/** Kelima layar yang galeri render. Bilah navnya milik bersama. */
-const LAYAR = ['K-03', 'K-08', 'K-12', 'K-14', 'K-15'];
+/** Keenam layar ber-shell yang galeri render (K-18 Laci kas sejak Task 4).
+    Bilah navnya milik bersama. */
+const LAYAR = ['K-03', 'K-08', 'K-12', 'K-14', 'K-15', 'K-18'];
 
 function chromePath() {
   if (process.env.PLAYWRIGHT_CHROMIUM) return process.env.PLAYWRIGHT_CHROMIUM;
@@ -146,76 +152,49 @@ async function buka(layarId, keadaan) {
   await hal.goto(`${alamat}/harness-galeri.html?layar=${layarId}&keadaan=${keadaan}`, {
     waitUntil: 'load',
   });
-  await hal.waitForSelector('.kasir-bilah', { timeout: 10_000 });
+  await hal.waitForSelector('.kasir-header', { timeout: 10_000 });
   await hal.waitForTimeout(1200);
   return { hal, galat };
 }
 
 // ---------------------------------------------------------------------------
 
-test('⛔ tinggi bilah nav SAMA di kelima layar — slot aksi tidak boleh membungkus', async () => {
+/* ⛔ Digantikan Task 3 (kampanye Hidupkan desain, 26 September 2026):
+   `.kasir-topbar` (61px) + `.kasir-bilah` (45px) digabung jadi satu
+   `.kasir-header` 68px, dan `SLOT_AKSI`/`PortalAksi` dihapus — aksi
+   layar (K-14: "Coba kirim sekarang" · "Ekspor darurat") pindah ke badan
+   layar, bukan lagi ke slot bilah nav. Yang penjaga ini masih menjaga:
+   tinggi header SAMA di setiap layar ber-shell, termasuk saat indikator
+   sinkron memuat teks TERPANJANG ("Gagal kirim (N) · Coba lagi") — teks
+   yang paling mungkin membuatnya MEMBUNGKUS ke baris kedua. */
+test('⛔ tinggi header 68 px SAMA di setiap layar ber-shell, termasuk saat indikator memuat teks terpanjang', async () => {
   const tinggi = {};
   for (const layarId of LAYAR) {
-    const { hal, galat } = await buka(layarId, layarId === 'K-14' ? 'offline' : 'normal');
-    tinggi[layarId] = await hal.evaluate(() => {
-      const b = document.querySelector('.kasir-bilah');
-      const slot = document.querySelector('.kasir-slot-aksi');
-      return {
-        bilah: Math.round(b.getBoundingClientRect().height),
-        slotLebar: slot ? Math.round(slot.getBoundingClientRect().width) : 0,
-        tombolSlot: slot ? slot.querySelectorAll('button').length : 0,
-        label: slot
-          ? [...slot.querySelectorAll('button')].map((x) => x.innerText.trim().replace(/\s+/g, ' '))
-          : [],
-      };
-    });
-    await hal.close();
-    assert.equal(galat.length, 0, `galat konsol di ${layarId}: ${galat.join(' | ')}`);
+    for (const keadaan of ['normal', 'antrean-panjang']) {
+      const { hal, galat } = await buka(layarId, keadaan);
+      tinggi[`${layarId}-${keadaan}`] = await hal.evaluate(() => {
+        const h = document.querySelector('.kasir-header');
+        return { header: Math.round(h.getBoundingClientRect().height) };
+      });
+      await hal.close();
+      assert.equal(galat.length, 0, `galat konsol di ${layarId} (${keadaan}): ${galat.join(' | ')}`);
+    }
   }
 
-  const nilai = [...new Set(LAYAR.map((l) => tinggi[l].bilah))];
+  const kunci = Object.keys(tinggi);
+  const nilai = [...new Set(kunci.map((k) => tinggi[k].header))];
   assert.equal(
     nilai.length,
     1,
-    'tinggi bilah nav berbeda antar layar: ' +
-      LAYAR.map((l) => `${l}=${tinggi[l].bilah}px (slot ${tinggi[l].slotLebar}px, ` +
-        `${tinggi[l].tombolSlot} tombol)`).join(' · ') +
-      '\n  Slot aksi yang isinya terlalu lebar MEMBUNGKUS, dan bilah yang membungkus ' +
-      'tumbuh — memakan ruang dari isi layar itu. `k03-chrome.test.js` tidak melihat ' +
-      'ini: ia mengukur K-03, dan tuntutan >= 12 kartu hanya ada di sana.'
+    'tinggi header berbeda antar layar/keadaan: ' +
+      kunci.map((k) => `${k}=${tinggi[k].header}px`).join(' · ') +
+      '\n  Header yang isinya terlalu lebar MEMBUNGKUS, dan yang membungkus ' +
+      'tumbuh tinggi — memakan ruang dari isi layar itu.'
   );
-
-  /* ⛔ SENTINEL. Kelima tinggi yang sama tidak membuktikan apa pun bila tidak
-     satu pun slot berisi tombol — nol lawan nol juga sama. */
-  const berisi = LAYAR.filter((l) => tinggi[l].tombolSlot > 0);
-  assert.ok(
-    berisi.length >= 2,
-    `hanya ${berisi.length} layar yang slot aksinya berisi tombol (${berisi.join(', ')}). ` +
-      'Penjaga ini membandingkan tinggi bilah yang MEMBAWA beban; tanpa dua layar ' +
-      'berisi, ia hijau karena hampa.'
-  );
-
-  /* ⛔ Slot milik LAYAR YANG AKTIF, dan isinya disebutkan apa adanya per layar.
-     Perbandingan "ada isinya" akan tetap hijau saat aksi K-03 bocor ke K-14 —
-     dan tombol yang tertukar di layar kasir berarti laci terbuka saat kasir
-     bermaksud mengirim ulang antrean. */
-  assert.deepEqual(
-    tinggi['K-03'].label,
-    ['Diskon', 'Buka laci', 'Kas masuk / keluar'],
-    'isi slot aksi K-03 berubah.'
-  );
-  assert.deepEqual(
-    tinggi['K-14'].label,
-    ['Coba kirim sekarang', 'Ekspor darurat'],
-    'isi slot aksi K-14 tidak sesuai. Dua aksi ini yang ikut ke bilah nav; ' +
-      '"Ekspor pemulihan (JSON)" dan "Muat ulang angka" tinggal di badan layar ' +
-      'karena keempatnya (~747 px) melampaui 734 px yang tersisa setelah lima tab.'
-  );
-  for (const layarId of ['K-08', 'K-12', 'K-15']) {
-    assert.deepEqual(
-      tinggi[layarId].label,
-      [],
-      `slot aksi ${layarId} tidak kosong — aksi milik layar lain bocor ke sini.`
+  for (const k of kunci) {
+    assert.ok(
+      Math.abs(tinggi[k].header - 68) <= 1,
+      `header ${k} tingginya ${tinggi[k].header}px, bukan 68 ± 1px (spec § 3).`
     );
   }
 });

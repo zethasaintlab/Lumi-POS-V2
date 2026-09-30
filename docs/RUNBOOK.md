@@ -506,6 +506,53 @@ manusia hanya kecepatan.
 
 ---
 
+### 8.7 Batalkan keranjang: jejak `cart_cleared` tertahan di antrean
+
+Keputusan user 28 September 2026 (issue #76): **Batalkan keranjang menulis
+`audit_event` `cart_cleared`** (aktor, jumlah baris, kuantitas, total yang
+tampil) — pembatalan keranjang sesudah barang di-scan adalah pola kecurangan
+kasir. Keranjang tetap bukan `order`; tidak ada uang yang berpindah.
+
+| Gejala | Artinya |
+|---|---|
+| Item `cart_cleared` di K-14 berhenti dengan `404` atau `401` | ⛔ **Server belum diperbarui.** Rute `POST /shifts/{id}/cart-cleared` baru; klien baru di atas server lama menghasilkan persis ini. **Urutan rilis: server dulu, klien sesudahnya** (R8, R11). Jejaknya aman di antrean lokal; setelah server diperbarui, putar ulang dengan alat di § 10.1. |
+| `SESSION_INVALID` pada item itu | Rute belum terdaftar sebagai jalur perangkat di `apps/server/src/sesi.ts` — relay tidak mengirim Bearer. Cacat kode, bukan data. |
+| Keranjang kosong tapi tidak ada jejak di B-22 | Kelompok `transaksi`, jenis `cart_cleared`. Bila perangkat masih offline, jejaknya baru tiba saat antrean terkuras — dan shift yang sudah ditutup **tetap diterima** (fakta lampau). |
+
+⛔ **Jangan menyisipkan atau menghapus `audit_event` manual** untuk
+"merapikan" hitungan pembatalan: jejaknya bertahan lima tahun dan tidak pernah
+di-`UPDATE`. `total` dicatat **sebagaimana dilaporkan perangkat** — server tidak
+pernah melihat keranjangnya.
+
+#### 8.7.1 Saudara: `cart_line_reduced` (Edit Item menurunkan qty / menghapus baris)
+
+Task 5C, keputusan user 28 September 2026 (issue #76, Q2): kalau Batalkan
+tercatat tapi menghapus baris satu per satu tidak, kecurangannya cuma pindah
+cara. **Edit Item yang menurunkan qty, atau "Hapus dari keranjang", menulis
+`audit_event` `cart_line_reduced`** (item, qty sebelum/sesudah, harga satuan,
+nilai berkurang, aktor). Kenaikan qty dan perubahan modifier tanpa penurunan
+tidak dicatat.
+
+| Gejala | Artinya |
+|---|---|
+| Item `cart_line_reduced` di K-14 berhenti dengan `404` | ⛔ **Server belum diperbarui.** Rute `POST /shifts/{id}/cart-line-reduced` baru; klien baru di atas server lama menghasilkan persis ini (`gagal-permanen`, dapat diputar ulang). **Server dulu, klien sesudahnya.** Jejaknya aman di antrean lokal; setelah server diperbarui, putar ulang dengan alat di § 10.1 (`tools/pulihkan-antrean.mjs` sudah memuat rutenya). |
+| `401 SESSION_INVALID` pada item itu | Rute belum terdaftar sebagai jalur perangkat di `apps/server/src/sesi.ts`. Cacat kode, bukan data. |
+| Kasir melihat "Shift sudah tidak terbuka. Perubahan TIDAK disimpan." | Sengaja: penurunan qty tanpa shift terbuka tidak dapat dicatat, jadi keranjang dibiarkan utuh. Buka shift, ulangi. |
+| Kasir melihat "Perubahan TIDAK disimpan: …" | Penulisan jejak lokal gagal (disk penuh, dsb.). Keranjang tetap utuh; tidak ada jejak setengah jadi. |
+
+⛔ Server **menghitung ulang** `reducedValue` (`unitPrice × (sebelum − sesudah) / 1000`,
+bigint) dan menyimpan hasil server sebagai `after.reduced_value`. Bila nilai
+perangkat berbeda, peristiwa **tetap diterima** dan ditandai: `after` memuat
+`reduced_value_client` + `variance_amount`, dan satu audit `calculation_variance`
+(entitas shift) ditulis. Selisih di B-22 berarti perangkat salah hitung atau
+diubah-ubah; bukan alasan menolak atau menghapus jejak. Jangan menyisipkan atau
+menghapus `audit_event` manual.
+
+⛔ **Batas yang diketahui:** menurunkan qty DAN melepas modifier berbayar dalam
+satu Simpan hanya mencatat bagian qty (harga satuan baris SEBELUM diedit ×
+selisih qty). Nilai modifier yang dilepas tidak tercatat; melepas modifier tanpa
+menurunkan qty memang tidak dicatat (lingkup keputusan user).
+
 ## 9. Server tidak sehat
 
 | Gejala | Periksa |
@@ -709,6 +756,17 @@ ditarik menambah tabel atau kolom lokal sebelum menjanjikan rollback.
 yang wajib segera.** Yang menaikkan tahap adalah orang. Kalau sebuah perbaikan
 keamanan harus mencapai semua merchant sekarang, naikkan tahapnya ke `penuh`
 — jangan mencari jalan lain.
+
+### 12.4 Catatan rilis: urutan SERVER dulu, klien sesudahnya (R8, PR 2A Kasir)
+
+Rilis yang memuat rute `POST /shifts/{id}/cart-cleared` (Batalkan keranjang) dan
+`POST /shifts/{id}/cart-line-reduced` (Edit Item menurunkan qty / menghapus
+baris) wajib **menerapkan server lebih dulu**, lalu menaikkan tahap klien (§ 12.1).
+Klien baru di atas server lama mengirim ke rute yang belum ada: item outbox
+berhenti `gagal-permanen` (404). Penjualan tidak terhenti dan jejaknya aman di
+antrean lokal; setelah server diperbarui, putar ulang lewat § 10.1. Gejala dan
+pemulihan: § 8.7 dan § 8.7.1. Klien lama di atas server baru aman (rute
+tambahan, tidak ada yang diubah).
 
 ---
 

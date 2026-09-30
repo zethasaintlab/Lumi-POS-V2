@@ -12,6 +12,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { ShellKasir } from '../ShellKasir.tsx';
 import { Kasir } from '../layar/Kasir.tsx';
 import { Riwayat } from '../layar/Riwayat.tsx';
+import { LaciKas } from '../layar/LaciKas.tsx';
 import { TutupKas } from '../layar/TutupKas.tsx';
 import { Perangkat } from '../layar/Perangkat.tsx';
 import { StatusSinkronisasi } from '../layar/StatusSinkronisasi.tsx';
@@ -19,6 +20,8 @@ import { Login } from '../layar/Login.tsx';
 import { BukaShift } from '../layar/BukaShift.tsx';
 import { DetailTransaksi } from '../layar/DetailTransaksi.tsx';
 import { buatDbPalsu, perangkatTerdaftarUntuk } from './db-palsu.ts';
+import { langgananKeranjang } from '../kasir/simpanan.ts';
+import { TABEL_RUTE } from '../rute/tabel.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
 import { Fondasi } from './Fondasi.tsx';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
@@ -97,6 +100,7 @@ const LAYAR = [
      dengan MEMBACA, dan tidak satu pun test yang ada dapat melihatnya. */
   { id: 'K-14', nama: 'Status sinkronisasi', render: () => <StatusSinkronisasi /> },
   { id: 'K-15', nama: 'Perangkat', render: () => <Perangkat /> },
+  { id: 'K-18', nama: 'Laci kas', render: () => <LaciKas /> },
   /* ⛔ TANPA shell, sama alasannya dengan K-01: halaman ini BUKAN layar
      produk — ia dokumentasi token, dan bilah nav kasir di sekelilingnya
      hanya akan membuat orang mengira token ada di layar yang sedang
@@ -157,6 +161,43 @@ export function Galeri() {
   const layar = LAYAR.find((l) => l.id === layarId) ?? LAYAR[0];
   const info = SKENARIO.find((s) => s.nama === skenario) ?? SKENARIO[0];
   const terdaftar = perangkatTerdaftarUntuk(skenario);
+  /* `?matikan=diskon_kasir` — kill switch dipaksa MATI TANPA menambah
+     keadaan galeri baru (`OpsiDbPalsu.matikanFitur`). Dibaca SEKALI: ini
+     jalur test (`k03-toolbar.test.js` G-TOOLBAR), bukan sesuatu yang
+     berubah lewat klik bilah galeri. */
+  const matikanFitur = useMemo(
+    () => (new URLSearchParams(window.location.search).get('matikan') ?? '').split(',').filter(Boolean),
+    []
+  );
+
+  /* ⛔ Pencatat perubahan keranjang, untuk `edit-item.test.js`: berapa kali
+     `setelKeranjang` dipanggil. Penulisan `keranjang_lokal` TIDAK dapat
+     membuktikan "satu kali" — React menggabung dua pembaruan sinkron dalam
+     satu render, jadi dua `setelKeranjang` di satu ketukan tetap menghasilkan
+     satu tulis. Hanya penghitung di sumbernya yang dapat membedakan. */
+  useEffect(() => {
+    const w = window as unknown as { __galeriKeranjangSet?: number };
+    w.__galeriKeranjangSet = 0;
+    return langgananKeranjang(() => {
+      w.__galeriKeranjangSet = (w.__galeriKeranjangSet ?? 0) + 1;
+    });
+  }, []);
+
+  /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
+  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet } = useMemo(() => {
+    const q = new URLSearchParams(window.location.search);
+    return {
+      editItem: q.get('editItem') === '1',
+      stokKetat: q.get('stokKetat') === '1',
+      bolehNegatif: q.get('negatif') === '1',
+      tanpaKasManual: q.get('tanpaKasManual') === '1',
+      gagalBacaKas: q.get('gagalBacaKas') === '1',
+      /* Jalur test header (R2): hitungan gagal 3 digit dan nama pengguna panjang. */
+      jumlahGagal: q.get('jumlahGagal') ? Number(q.get('jumlahGagal')) : undefined,
+      namaPengguna: q.get('namaPengguna') ?? undefined,
+      namaOutlet: q.get('namaOutlet') ?? undefined,
+    };
+  }, []);
 
   /* ⛔ Keadaan dibangun ULANG saat skenario berubah, dan `key` di bawah
      memaksa REMOUNT. Tanpa remount, layar yang sudah memuat data skenario
@@ -176,7 +217,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02' });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, gagalBacaKas, jumlahGagal });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -201,7 +242,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario, layarId]);
+  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, gagalBacaKas, jumlahGagal]);
 
   return (
     <div className="galeri">
@@ -253,7 +294,20 @@ export function Galeri() {
             </div>
           ) : (
             <ShellKasir
-              outlet={terdaftar ? 'ORIGEN Menteng' : 'Outlet belum dipilih'}
+              /* ⛔ `panjang` di sini ganda arti, dan itu disengaja: skenario
+                 yang sama menguji grid 120 varian (`skenario.ts`) DAN, sejak
+                 Task 3 (`header.test.js` G-HEADER/R2), nama outlet/pengguna
+                 PANJANG — keduanya "apa yang terjadi saat katalog/identitas
+                 merchant lebih besar dari asumsi layar". Sumber TUNGGAL
+                 (`keadaan galeri` ini) mencegah dua fixture "nama panjang"
+                 yang tidak pernah diuji bersamaan. */
+              outlet={
+                !terdaftar
+                  ? 'Outlet belum dipilih'
+                  : skenario === 'panjang'
+                    ? 'ORIGEN Menteng — Cabang Utama Jakarta Selatan Raya'
+                    : (namaOutlet ?? 'ORIGEN Menteng')
+              }
               device={terdaftar ? 'K1' : 'Perangkat belum terdaftar'}
               /* ⛔ Diturunkan dari skenario, bukan dipaku `true`.
 
@@ -264,8 +318,16 @@ export function Galeri() {
                  pendapat tentang keadaan itu tidak dapat terlihat di galeri yang
                  selalu menganggap perangkatnya terdaftar. */
               perangkatTerdaftar={terdaftar}
-              pengguna="Kasir Galeri"
-              ruteAktif={null}
+              pengguna={namaPengguna ?? (skenario === 'panjang' ? 'Kasir Nama Sangat Panjang Sekali Untuk Diuji Batas Header' : 'Kasir Galeri')}
+              /* ⛔ Diturunkan dari `TABEL_RUTE` lewat kode layar, bukan dipaku
+                 `null` (Task 3). Dipaku `null` berarti TIDAK ADA tab yang
+                 pernah `aria-selected="true"` di galeri — kelas cacat yang
+                 sama dengan `perangkatTerdaftar` di atas: galeri yang tidak
+                 pernah merender keadaan aktif tidak pernah membuktikan warna
+                 `--primary` tab aktif (spec § 3) benar-benar berlaku.
+                 `undefined` untuk layar tanpa rute (mis. "fondasi") jatuh ke
+                 `null` lewat `??`. */
+              ruteAktif={TABEL_RUTE.find((r) => r.layar === layarId) ?? null}
             >
               {/* ⛔ `IsiSiap` ada di sini karena aplikasi sungguhan memakainya.
                   Galeri yang merender layar TANPA pembungkus yang aplikasi

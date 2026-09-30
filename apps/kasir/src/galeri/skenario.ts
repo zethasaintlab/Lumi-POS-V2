@@ -27,7 +27,8 @@ export type NamaSkenario =
   | 'angka-besar'
   | 'gambar'
   | 'keranjang-penuh'
-  | 'antrean-panjang';
+  | 'antrean-panjang'
+  | 'gambar-antrean';
 
 export interface Skenario {
   nama: NamaSkenario;
@@ -121,6 +122,16 @@ export const SKENARIO: readonly Skenario[] = [
       'tabelnya sendiri? Tiga baris tidak pernah dapat menjawab ini — alasan yang ' +
       'sama persis dengan `keranjang-penuh` di K-03.',
   },
+  {
+    nama: 'gambar-antrean',
+    judul: 'Gambar + pita antrean (G-IA62-PITA)',
+    tanya:
+      'Kartu berfoto DAN pita antrean FR-H8 tampil sekaligus di K-03 — kombinasi ' +
+      'yang belum pernah diukur sebelum kampanye ini (`spec-h:302` § 14 R1). ' +
+      'Apakah ≥ 12 kartu masih terlihat tanpa scroll pada 1024×768 dengan KEDUANYA ' +
+      'memakan tinggi grid, atau IA:62 hanya pernah lolos karena kedua tekanan itu ' +
+      'tidak pernah diuji bersamaan?',
+  },
 ];
 
 /**
@@ -148,6 +159,63 @@ export function keranjangDuaPuluh(): string {
     quantityMilli: 1000,
     modifier: [],
   }));
+  return JSON.stringify({ baris, diskon: null });
+}
+
+/* `[EKSPLORASI]` Task 6 — fixture Edit Item (`?editItem=1`, `db-palsu.ts`).
+   Id variation MENUNJUK katalog `normal` (`baris()` → `${itemId}-v${varian}`);
+   tanpa itu `lacakStok` tidak dapat ditemukan dan pemeriksaan stok tak berlaku. */
+export const EDIT_VAR_STOK_TERBATAS = 'item-americano-vHot';
+export const EDIT_VAR_HABIS = 'item-cappuccino-vRegular';
+/* `?stokKetat=1` (K-03 normal): habis dan stok tipis, keduanya BERBARCODE untuk jalur scan. */
+export const STOK_HABIS_VAR = 'item-kopi-tubruk-origen-vRegular';
+export const STOK_TIPIS_VAR = 'item-cappuccino-vRegular';
+export const KODE_BARCODE_STOK_TIPIS = '8992761111024';
+export const EDIT_VAR_MODIFIER = 'item-kopi-susu-gula-aren-vRegular';
+
+/** Enam baris: stok 3 terbagi dua baris (1 + 1), habis (qty 2), bermodifier Extra shot (qty 1), modifier yatim (qty 1), dan kembaran tanpa modifier (qty 1). */
+export function keranjangEditItem(): string {
+  const dasar = { variationCount: 1, modifier: [] as unknown[] };
+  const baris = [
+    { ...dasar, id: 'edit-stok', variationId: EDIT_VAR_STOK_TERBATAS, itemName: 'Americano', variationName: 'Hot', unitPrice: 22000, quantityMilli: 1000 },
+    /* ⛔ Baris KEDUA variation berstok terbatas yang sama (modifier berbeda memisahkan baris, stoknya satu):
+       1 + 1 dari stok 3. + di salah satu baris harus dihitung KUMULATIF (FR-E4), bukan per baris. */
+    { ...dasar, id: 'edit-stok-shot', variationId: EDIT_VAR_STOK_TERBATAS, itemName: 'Americano', variationName: 'Hot', unitPrice: 22000, quantityMilli: 1000, modifier: [{ id: 'm-shot', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }] },
+    { ...dasar, id: 'edit-habis', variationId: EDIT_VAR_HABIS, itemName: 'Cappuccino', variationName: 'Regular', unitPrice: 28000, quantityMilli: 2000 },
+    {
+      ...dasar,
+      id: 'edit-modifier',
+      variationId: EDIT_VAR_MODIFIER,
+      itemName: 'Kopi Susu Gula Aren',
+      variationName: 'Regular',
+      variationCount: 2,
+      unitPrice: 24000,
+      quantityMilli: 1000,
+      modifier: [{ id: 'm-shot', nama: 'Extra shot', harga: 5000, qtyMilli: 1000 }],
+    },
+    /* ⛔ Modifier YATIM: 'm-arsip' tidak ada di daftar modifier item (diarsipkan sesudah dimasukkan). */
+    {
+      ...dasar,
+      id: 'edit-yatim',
+      variationId: 'item-cokelat-klasik-vRegular',
+      itemName: 'Cokelat Klasik',
+      variationName: 'Regular',
+      unitPrice: 26000,
+      quantityMilli: 1000,
+      modifier: [{ id: 'm-arsip', nama: 'Sirup vanila', harga: 4000, qtyMilli: 1000 }],
+    },
+    /* Kembaran `edit-modifier` bila Extra shot dilepas: menguji penggabungan. */
+    {
+      ...dasar,
+      id: 'edit-polos',
+      variationId: EDIT_VAR_MODIFIER,
+      itemName: 'Kopi Susu Gula Aren',
+      variationName: 'Regular',
+      variationCount: 2,
+      unitPrice: 24000,
+      quantityMilli: 1000,
+    },
+  ];
   return JSON.stringify({ baris, diskon: null });
 }
 
@@ -210,7 +278,7 @@ function idDariNama(nama: string): string {
   return 'item-' + nama.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function baris(itemId: string, nama: string, varian: string, harga: number): BarisItem {
+function baris(itemId: string, nama: string, varian: string, harga: number, barcode: string | null = null): BarisItem {
   return {
     item_id: itemId,
     item_name: nama,
@@ -222,10 +290,19 @@ function baris(itemId: string, nama: string, varian: string, harga: number): Bar
     variation_id: `${itemId}-v${varian}`,
     variation_name: varian,
     harga_dasar: harga,
-    barcode: null,
+    barcode,
     track_stock: 1,
   };
 }
+
+/** K-17/Item manual (Task 5) — SATU variation berbarcode di katalog `normal`.
+    Sebelum ini `barcode` selalu `null` di seluruh fixture galeri (tidak ada
+    satu pun tempat yang menguji jalur `cariBarcode` lewat DOM); tanpa baris
+    ini `tests/kasir-dom/k03-toolbar.test.js` tidak dapat membuktikan "kode
+    dikenal masuk lewat jalur scan" — ia hanya dapat membuktikan jalur kode
+    ASING. Nilainya bukan barcode nyata, sekadar ID stabil yang dijaga sama
+    persis dengan literal di test itu. */
+export const KODE_BARCODE_FIXTURE = '8992761111017';
 
 /** Baris `item` untuk sebuah skenario. */
 export function itemUntuk(skenario: NamaSkenario): BarisItem[] {
@@ -259,8 +336,17 @@ export function itemUntuk(skenario: NamaSkenario): BarisItem[] {
   }
 
   // normal · memuat · error · offline memakai katalog yang sama; yang berbeda
-  // adalah PERILAKU db-nya, bukan isinya.
-  return MENU.map(([n, v, h]) => baris(idDariNama(n), n, v, h));
+  // adalah PERILAKU db-nya, bukan isinya. "Kopi Tubruk ORIGEN" (satu
+  // variation, tanpa modifier) membawa `KODE_BARCODE_FIXTURE`.
+  return MENU.map(([n, v, h]) =>
+    baris(
+      idDariNama(n),
+      n,
+      v,
+      h,
+      n === 'Kopi Tubruk ORIGEN' ? KODE_BARCODE_FIXTURE : n === 'Cappuccino' ? KODE_BARCODE_STOK_TIPIS : null
+    )
+  );
 }
 
 /* --------------------------------------------------------------- gambar -- */
@@ -303,7 +389,11 @@ export interface BarisGambarPalsu {
  * keadaan dapat dibedakan mata; `normal` menanyakan apakah layarnya terbaca
  * wajar saat sebagian besar kartunya memang bergambar.
  */
-const BERGAMBAR: readonly NamaSkenario[] = ['gambar', 'normal'];
+/* ⛔ `gambar-antrean` ikut bergambar (Task 1, G-IA62-PITA): tanpa foto, kartu
+ * kembali ke 81px dan selalu muat — penjaga yang mengukur "kartu berfoto DAN
+ * pita" pada kartu polos hampa persis seperti dijelaskan di
+ * `k03-chrome.test.js`. */
+const BERGAMBAR: readonly NamaSkenario[] = ['gambar', 'normal', 'gambar-antrean'];
 
 export async function gambarUntuk(
   skenario: NamaSkenario,
@@ -382,7 +472,14 @@ async function webpPalsu(i: number): Promise<string> {
 
 /** Ringkasan antrean outbox untuk indikator sinkronisasi. */
 export function antreanUntuk(skenario: NamaSkenario): { menunggu: number; gagal: number } {
-  if (skenario === 'offline') return { menunggu: 12, gagal: 3 };
+  /* ⛔ `gambar-antrean` memakai angka yang PERSIS `offline` (bukan kebetulan):
+     baris gagal tertua di sana berumur ~4,03 jam (§ `umurAntrean` di
+     `db-palsu.ts`, `180 + (i%3)*31` menit), melewati `peringatanJam` FR-H8
+     (4 jam) dengan tipis — angka yang sama dengan pita "61 px" yang spec § 14
+     R1 catat sudah lolos hari ini. Angka baru yang tidak terikat ke formula
+     `umurAntrean` akan diam-diam gagal memicu pita, dan G-IA62-PITA akan hijau
+     karena hampa (pita tidak pernah dirender), bukan karena tata letak benar. */
+  if (skenario === 'offline' || skenario === 'gambar-antrean') return { menunggu: 12, gagal: 3 };
   /* ⛔ TEPAT 50, dan angkanya bukan karangan: `PER_HALAMAN` di
      `packages/sync-client/src/status.ts` adalah 50, jadi ini satu halaman penuh
      — isi maksimum yang K-14 dapat tampilkan sekaligus, dan karena itu tekanan

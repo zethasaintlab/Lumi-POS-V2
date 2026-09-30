@@ -250,6 +250,87 @@
  */
 .stat .t-title-lg { font-size: var(--text-display); }
 
+/* --- Tinggi baris token mockup (Task 1, PR 2A "Hidupkan desain — kasir") ---
+ *
+ * Spec § 10.1 (`docs/superpowers/specs/2026-09-28-kasir-design.md`, "Utang
+ * dari sub-proyek 1"): keempat token mockup punya `line-height` SENDIRI.
+ * Bundle memakai SATU rasio untuk ketiganya (`--leading-tight` 1.2 untuk
+ * display/title, `--leading-body` 1.5 untuk body/caption) — nama kartu K-03
+ * 15px terukur 18,75px (rasio 1,25, bukan 1,5) sebelum override ini, dan
+ * judul 20px terukur rasio 1,2, bukan 1,3 mockup.
+ *
+ * ⛔ `--leading-body` (1.5) TIDAK didefinisikan ulang di sini — `.t-body`/
+ * `.t-body-md` bundle SUDAH memakainya (`ds-bundle/tokens/typography.css:38-39`).
+ * Menyalin nilainya menciptakan tempat KEDUA yang memutuskan line-height
+ * body, pelajaran yang sama dengan kenapa `--text-display` tidak diarahkan
+ * ulang di atas.
+ *
+ * `.t-caption` DIKECUALIKAN dari warisan `--leading-body` bundle: perannya
+ * sekarang `--text-small` (13px), dan rasio mockup untuk 13px adalah 1,4 —
+ * BUKAN 1,5 milik body. Tanpa baris ini, setiap label/caption 13px merender
+ * rasio 1,5 yang SALAH secara mockup tapi lolos pemeriksaan longgar G-LH
+ * (1,5 termasuk rasio yang sah untuk UKURAN LAIN) — itulah kenapa test ini
+ * juga memeriksa KETAT untuk kelas-kelas ini (lihat `skala-teks.test.js`).
+ */
+:root {
+  --leading-display: 1.15;
+  --leading-title: 1.3;
+  --leading-small: 1.4;
+}
+
+.t-display { line-height: var(--leading-display); }
+.t-title   { line-height: var(--leading-title); }
+.t-caption { line-height: var(--leading-small); }
+
+/* ⛔ Kelas bundle LAIN yang memetakan ke 13px (`--text-caption`→
+ * `--text-small`) tanpa `line-height` sendiri — G-LH (longgar) menemukan
+ * mereka mewarisi `--leading-body` (1,5) dari `body`, yang LOLOS pemeriksaan
+ * longgar (1,5 tetap salah satu dari empat rasio sah) tapi SALAH secara
+ * mockup untuk ukuran 13px. Step 6 brief Task 1: dipetakan eksplisit ke
+ * `--leading-small`, bukan dibiarkan menang lewat warisan yang kebetulan
+ * lolos. `.tabs-underline button` dan `.chip` diarahkan ke `--text-small` di
+ * bagian "Kulit komponen" di bawah — keduanya ikut daftar ini karena
+ * pengarahan UKURAN di sana tidak membawa `line-height`.
+ *
+ * ⛔ `.badge` DIKELUARKAN dari daftar ini — regresi Task 1, ditemukan dan
+ * diputuskan Task 3 (fix round 1, sub-proyek 2 PR 2A). `tests/kasir-dom/
+ * kulit-komponen.test.js` (Step 1, sub-proyek 1) mengukur tinggi lencana
+ * mockup ~27,5px TANPA tepi pada padding 4px atas+bawah dan `--text-small`
+ * (13px) — itu HANYA tercapai pada rasio 1,5 (13 × 1,5 + 8 = 27,5), bukan
+ * 1,4 milik Task 1 (13 × 1,4 + 8 = 26,2, angka yang persis penjaga itu ukur
+ * setelah Task 1). Penjaga mockup `kulit-komponen` (sub-proyek 1) MENANG
+ * atas Step 6 brief Task 1 untuk kelas ini — 1,5 tetap salah satu dari
+ * empat rasio sah G-LH (longgar), jadi tidak ada penjaga yang dilonggarkan.
+ * `.badge` karena itu jatuh ke `--leading-body` (1,5) bawaan `body`, SAMA
+ * seperti sebelum Task 1 — lihat komentar `body` di atas untuk alasan
+ * kenapa nilainya tidak disalin ulang di sini.
+ */
+.label,
+.field-error,
+.shell-top,
+.sync,
+.table th,
+.chip,
+.tabs-underline button {
+  line-height: var(--leading-small);
+}
+
+/* ⛔ `<button>`/`<select>` mewarisi `line-height: normal` dari lembar gaya
+ * bawaan peramban (bukan dari `ds-bundle`, dan bukan token kita) — Chromium
+ * TIDAK mewariskan `line-height` numerik ke kontrol form seperti elemen
+ * teks biasa. Diukur, bukan dibaca: G-LH menemukan SETIAP tombol di galeri
+ * (delapan tombol Fondasi, chip kategori K-03, tab "Ringkasan"/"Laporan",
+ * dst) merender `line-height: normal` — pelanggaran G-LH longgar, dan bukan
+ * satu pun akibat kelas kita. `line-height: inherit` mengembalikan tombol ke
+ * rantai warisan yang sama dengan teks di sekitarnya (ujungnya `body`,
+ * rasio 1,5 — anggota rasio sah), pola standar (`normalize.css`) untuk
+ * cacat UA yang sama. Tidak mengubah tinggi tombol: `min-height` lewat
+ * `--touch-*` sudah menang atas tinggi baris di setiap kontrol ini. */
+button,
+select {
+  line-height: inherit;
+}
+
 /* --- Wordmark "LumiPOS" (Task 8, kampanye "Hidupkan desain") ---------------
  *
  * Keputusan user 26 September 2026 (spec § 8) menggantikan aturan lama "logo,
@@ -685,16 +766,12 @@
   white-space: nowrap;
 }
 
-/* Pita warna kategori di tepi kartu produk — penanda yang terbaca dari jarak
-   pandang kasir tanpa menambah satu baris teks pun ke kartu yang sudah padat.
- *
- * ⛔ TIDAK LAGI DITERAPKAN ke `product-card` K-03 sejak Task 9 Step 0
- * (kampanye "Hidupkan desain", 26 September 2026, keputusan user): mockup
- * menjadikan kartu produk netral (`--card`), tanpa pita kategori. Kelasnya
- * dipertahankan apa adanya — bukan dihapus — untuk pemakai lain yang
- * mungkin lahir kelak; menghapus token/kelas warna kategori diputuskan
- * sub-proyek 2, bukan di sini. */
-.pita-kategori { box-shadow: inset 3px 0 0 var(--chip, var(--border-strong)); }
+/* ⛔ `.pita-kategori` DIHAPUS (Task 2, sub-proyek 2, kampanye "Hidupkan
+ * desain", 28 September 2026): CSS mati sejak Task 9 Step 0 sub-proyek 1
+ * (kartu produk K-03 sudah netral, tanpa pita kategori, dan tidak ada
+ * pemakai lain). `--kat-*` dan `gayaKategori` TETAP ADA — satu-satunya
+ * pemakainya `apps/backoffice/src/katalog/Produk.tsx` (`chip-kategori`),
+ * nasibnya milik sub-proyek 3. */
 
 @media (prefers-reduced-motion: reduce) {
   /* Umpan balik tekan DIBUANG, bukan diperlambat: yang dihindari pengguna

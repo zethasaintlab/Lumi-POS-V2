@@ -28,6 +28,11 @@ const RUTE: Record<string, (entityId: string) => string> = {
   // berkali-kali sampai strukanya benar, dan setiap perubahan adalah
   // konfigurasi ulang peripheral yang sama.
   peripheral: () => '/peripherals',
+  // Batalkan keranjang. `entity_id`-nya SHIFT, pola no-sale: rutenya bersarang
+  // di bawahnya.
+  cart_cleared: (id) => `/shifts/${encodeURIComponent(id)}/cart-cleared`,
+  // Task 5C. Saudara `cart_cleared`: `entity_id` SHIFT, muatan per baris.
+  cart_line_reduced: (id) => `/shifts/${encodeURIComponent(id)}/cart-line-reduced`,
 };
 
 /**

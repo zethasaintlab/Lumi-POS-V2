@@ -632,9 +632,8 @@ export function Fondasi() {
           <h3 className="t-caption" style={{ margin: 0 }}>
             Kartu produk (K-03) — tanpa foto
           </h3>
-          {/* ⛔ Netral, sejajar Kasir.tsx (Task 9 Step 0): tanpa `pita-kategori`
-              dan tanpa style warna kategori — persis markup produk sungguhan
-              sejak Step 0. */}
+          {/* ⛔ Netral, sejajar Kasir.tsx (Task 9 Step 0): tanpa style warna
+              kategori — persis markup produk sungguhan sejak Step 0. */}
           <button
             type="button"
             className="product-card"

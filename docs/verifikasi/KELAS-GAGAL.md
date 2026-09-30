@@ -79,7 +79,7 @@ cacat** — tidak satu pun diperbaiki, dan sebagian mungkin ternyata aman.
 
 ### K1 — Empty state yang tidak dapat membedakan "tidak ada" dari "belum sampai"
 
-**Ukuran: 28 dari 42 berkas ber-`<EmptyState>`** tidak menyebut sinkronisasi
+**Ukuran: 29 dari 43 berkas ber-`<EmptyState>`** tidak menyebut sinkronisasi
 sama sekali (14 menyebut). Naik dari 27 pada 25 September 2026 tanpa perubahan
 perilaku: `DetailTransaksi.tsx` hanya menyebut "antrean" di komentar cetak
 ulangnya, dan komentar itu pindah ke `cetak/cetak-ulang.ts` (rebuild UI Fase
