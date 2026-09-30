@@ -14,7 +14,7 @@ import {
 } from '../../sync/index.ts';
 import { EVENT_BARIS_DIKURANGI } from '../../../../../../packages/domain/src/keranjang-baris.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
-import { timestampSah } from './keranjang-batal.ts';
+import { timestampSah } from './validasi.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**

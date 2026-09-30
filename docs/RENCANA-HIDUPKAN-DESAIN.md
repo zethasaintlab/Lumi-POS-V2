@@ -159,6 +159,7 @@ Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaa
   - `unitPrice` pada `cart_line_reduced` berasal dari perangkat dan tidak dicocokkan ke katalog — pemeriksaan selisih server hanya membuktikan konsistensi muatan (sub-proyek 3, laporan exception FR-G5 menghitung dari qty × harga).
   - Metrik dan alarm `cart_cleared`/`cart_line_reduced` ditunda ke sub-proyek 3 (jawaban user Q4, #76 komentar 5883887477).
   - `no-sale.ts:50` menghitung ambang PIN no-sale dari `audit_event` lokal, jadi rebuild tabel di tengah shift me-reset hitungan; `no-sale.ts:81` membaca `audit_event` langsung (pengecualian batas modul `cash`, daftar hanya boleh menyusut).
+  - Idempotensi no-sale (dicatat, tidak diperbaiki): `occurredAt` mentah di hash membuat ejaan timestamp setara (`Z` vs `+00:00`, pecahan detik) dijawab 422; key lama ber-hash `shiftId:id` dijawab 422 bila diputar ulang sesudah deploy.
   - Login/logout offline tidak meninggalkan jejak; komentar `db/local/001-initial.sql:661` mengklaim sebaliknya.
   - `calculation_variance` punya dua bentuk `after` (orders: `Number` camelCase; cart-line-reduced: string snake_case); `orders.ts` kehilangan presisi di atas 2^53.
   - Cakupan klik G-TOMBOL-HIDUP bagian 2 belum mencakup dialog dan K-06.

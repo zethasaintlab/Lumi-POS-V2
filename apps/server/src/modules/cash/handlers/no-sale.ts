@@ -14,7 +14,7 @@ import {
   insertOutboxEvent,
   IdempotencyKeyConflictError,
 } from '../../sync/index.ts';
-import { timestampSah } from './keranjang-batal.ts';
+import { timestampSah } from './validasi.ts';
 import {
   ALASAN_NO_SALE,
   EVENT_NO_SALE,
@@ -127,11 +127,16 @@ export function createNoSaleHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
       }
       // ⛔ Hash SELURUH isi yang disimpan, bukan `shiftId:id`: key sama dengan
       // isi beda dijawab 201 dari cache dan pencatatan kedua hilang diam-diam.
+      // `hlc` (metadata) dan penyetuju (baru diketahui sesudah cek ambang di
+      // transaksi; header diabaikan di bawah ambang) sengaja di luar hash.
       const requestHash = createHash('sha256')
         .update(JSON.stringify([shiftId, body.id, body.reasonCode, reasonNote, body.occurredAt ?? null]))
         .digest('hex');
 
-      const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc as string));
+      if (body.hlc !== undefined && body.hlc !== null && !(typeof body.hlc === 'string' && /^\d+$/.test(body.hlc))) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'hlc harus string bilangan bulat.');
+      }
+      const hlcValue = typeof body.hlc === 'string' ? hlc.update(BigInt(body.hlc)) : hlc.tick();
 
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         const cached = await findIdempotencyKey(client, idempotencyKey);

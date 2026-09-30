@@ -345,8 +345,9 @@ test('⛔ (a) key sama + body sama → respons sama, tepat SATU audit no-sale', 
   assert.equal(await jumlahNoSale(id), 1);
 });
 
-// Field yang DISIMPAN handler ke audit_event (`no-sale.ts`): id, reasonCode,
-// reasonNote, occurredAt, dan shiftId dari path. Satu varian per field.
+// Field isi yang masuk hash (`no-sale.ts`): id, reasonCode, reasonNote,
+// occurredAt, dan shiftId dari path. Sengaja TIDAK masuk hash, jadi tidak
+// diuji di sini: `hlc` (metadata) dan penyetuju (`X-Approver-Id`).
 for (const [nama, dasar, ubah] of [
   ['id', { id: '00000000-0000-4000-8000-000000000001' }, { id: '00000000-0000-4000-8000-000000000002' }],
   ['reasonCode', { reasonCode: 'tukar_uang' }, { reasonCode: 'periksa_laci' }],
@@ -433,4 +434,16 @@ test('⛔ lintas rute: key milik no-sale dipakai cart-cleared, dan sebaliknya �
   assert.equal(r2.statusCode, 422, `no-sale menjawab key milik cart-cleared dengan respons cart-cleared: ${r2.body}`);
   assert.equal(JSON.parse(r2.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
   assert.equal(await jumlahNoSale(id), 1);
+});
+
+test('hlc: null diterima (tick server); non-numerik → 400 VALIDATION_ERROR, bukan 500 (pola cart-cleared)', async () => {
+  const id = await shift();
+  const ok = await kirimKey(id, crypto.randomUUID(), { id: crypto.randomUUID(), hlc: null });
+  assert.equal(ok.statusCode, 201, `hlc null: ${ok.body}`);
+  for (const buruk of ['abc', '12.5', '-1', '']) {
+    const res = await kirimKey(id, crypto.randomUUID(), { id: crypto.randomUUID(), hlc: buruk });
+    assert.equal(res.statusCode, 400, `hlc ${JSON.stringify(buruk)}: ${res.statusCode} ${res.body}`);
+    assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(await jumlahNoSale(id), 1, 'hlc rusak tetap menulis baris');
 });
