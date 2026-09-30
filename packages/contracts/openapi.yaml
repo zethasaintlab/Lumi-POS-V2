@@ -6165,6 +6165,12 @@ paths:
 
 
         TIDAK menulis `cash_movement`: no-sale tidak memindahkan uang.
+
+
+        `Idempotency-Key` wajib. Pengiriman ulang dengan isi yang sama
+        mengembalikan respons asli; key yang sama dengan isi berbeda (shiftId,
+        id, reasonCode, reasonNote, atau occurredAt) dijawab 422, dan dua
+        request bersamaan dengan key yang sama dijawab 409 untuk yang kalah.
       parameters:
         - name: shiftId
           in: path
@@ -6187,7 +6193,10 @@ paths:
                   # kebenaran, dan pesannya MENYEBUT pilihan yang sah.
                 reasonNote: { type: string, nullable: true }
                 hlc: { type: string, nullable: true }
-                occurredAt: { type: string, nullable: true }
+                occurredAt:
+                  type: string
+                  nullable: true
+                  description: ISO 8601 berzona dengan tanggal nyata; selain itu 400.
       responses:
         '201':
           description: Pembukaan tercatat.
@@ -6204,7 +6213,9 @@ paths:
                     description: Pembukaan ke berapa dalam shift ini.
                   butuhPenyetuju: { type: boolean }
         '400':
-          description: Alasan tidak dikenal, atau Idempotency-Key hilang.
+          description: >-
+            Alasan tidak dikenal, Idempotency-Key hilang, atau `occurredAt`
+            bukan ISO 8601 berzona dengan tanggal nyata (VALIDATION_ERROR).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -6219,7 +6230,17 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
-          description: Shift sudah ditutup (SHIFT_NOT_OPEN), atau id sudah ada.
+          description: >-
+            Shift sudah ditutup (SHIFT_NOT_OPEN), id sudah ada, atau request
+            lain dengan Idempotency-Key yang sama sedang diproses
+            (IDEMPOTENCY_KEY_CONFLICT; coba lagi).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >-
+            Idempotency-Key sudah dipakai untuk request dengan isi berbeda,
+            atau milik rute lain (IDEMPOTENCY_KEY_HASH_MISMATCH).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

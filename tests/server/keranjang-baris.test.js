@@ -353,7 +353,7 @@ test('⛔ (b2) body beda HANYA pada satu field (id sama) tetap mismatch — SETI
     const idAudit = crypto.randomUUID();
     assert.equal((await kirim(id, { id: idAudit }, {}, key)).statusCode, 201);
     const res = await kirim(id, { id: idAudit, ...beda }, {}, key);
-    assert.equal(res.statusCode, 422, `${nama} beda tidak terdeteksi sebagai mismatch idempotensi: ${res.statusCode} ${res.body}`);
+    assert.equal(res.statusCode, 422, `${nama} beda: status ${res.statusCode}, diharapkan 422 (mismatch idempotensi): ${res.body}`);
     assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
   }
 });
@@ -379,6 +379,8 @@ test('occurredAt rusak → 400 VALIDATION_ERROR, bukan 500', async () => {
   for (const buruk of [
     'bukan-tanggal', '2026-13-45', '   ',
     '2026-02-30T00:00:00Z', '2026-04-31T10:00:00Z', '2026-09-28T03:00:00',
+    // Jam/menit/detik di luar rentang (V8 menggulirkan 24:00 dan detik 60).
+    '2026-09-28T25:00:00Z', '2026-09-28T10:60:00Z', '2026-09-28T24:00:00Z', '2026-09-28T10:59:60Z',
   ]) {
     const res = await kirim(id, { occurredAt: buruk });
     assert.equal(res.statusCode, 400, `${buruk}: ${res.statusCode} ${res.body}`);
