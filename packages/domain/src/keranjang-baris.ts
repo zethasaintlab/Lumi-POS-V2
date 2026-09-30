@@ -31,8 +31,9 @@ export interface RingkasanBarisDikurangi {
  *
  * ⛔ `unitPrice` DIBERIKAN pemanggil (`satuanKeranjang` baris SEBELUM diedit,
  * harga yang kasir lihat), bukan dihitung di sini — aritmetika kedua
- * menyimpang tanpa error. Pembagian `bigint` memotong, sama dengan
- * `subtotalKeranjang`.
+ * menyimpang tanpa error. Pembagian `bigint` memotong SEKALI pada selisih qty,
+ * jadi dapat beda ≤ Rp1 dari selisih dua `subtotalKeranjang` yang masing-masing
+ * dipotong.
  */
 export function ringkasPenguranganBaris(i: {
   variationId: string;

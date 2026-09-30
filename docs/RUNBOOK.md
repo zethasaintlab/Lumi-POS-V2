@@ -757,6 +757,17 @@ yang wajib segera.** Yang menaikkan tahap adalah orang. Kalau sebuah perbaikan
 keamanan harus mencapai semua merchant sekarang, naikkan tahapnya ke `penuh`
 — jangan mencari jalan lain.
 
+### 12.4 Catatan rilis: urutan SERVER dulu, klien sesudahnya (R8, PR 2A Kasir)
+
+Rilis yang memuat rute `POST /shifts/{id}/cart-cleared` (Batalkan keranjang) dan
+`POST /shifts/{id}/cart-line-reduced` (Edit Item menurunkan qty / menghapus
+baris) wajib **menerapkan server lebih dulu**, lalu menaikkan tahap klien (§ 12.1).
+Klien baru di atas server lama mengirim ke rute yang belum ada: item outbox
+berhenti `gagal-permanen` (404). Penjualan tidak terhenti dan jejaknya aman di
+antrean lokal; setelah server diperbarui, putar ulang lewat § 10.1. Gejala dan
+pemulihan: § 8.7 dan § 8.7.1. Klien lama di atas server baru aman (rute
+tambahan, tidak ada yang diubah).
+
 ---
 
 ## 13. Feature flag & kill switch

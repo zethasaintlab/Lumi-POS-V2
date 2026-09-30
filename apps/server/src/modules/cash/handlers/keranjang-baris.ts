@@ -34,7 +34,8 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
  * ## ⛔ Fakta lampau, bukan perintah
  *
  * Shift `closed` tetap diterima (pola `count_attempt`). Angka dicatat
- * SEBAGAIMANA DILAPORKAN perangkat — server tidak pernah melihat keranjangnya.
+ * SEBAGAIMANA DILAPORKAN perangkat (qty, harga) — server tidak pernah melihat keranjangnya.
+ * Satu pengecualian: nilai berkurang DIHITUNG ULANG (bagian berikutnya).
  *
  * ## ⛔ `reducedValue` DIHITUNG ULANG (terima, tandai, laporkan)
  *

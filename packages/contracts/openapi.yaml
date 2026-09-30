@@ -6246,6 +6246,10 @@ paths:
         dari relay yang terlambat, bukan perintah (pola `count_attempt`).
         Tidak menulis `order`, `payment`, maupun `cash_movement`.
         `Idempotency-Key` wajib; pengiriman ulang mengembalikan respons asli.
+
+
+        Klien baru di atas server lama menerima 404 dari rute ini
+        (`docs/RUNBOOK.md` § 8.7); server diperbarui lebih dulu.
       parameters:
         - name: shiftId
           in: path

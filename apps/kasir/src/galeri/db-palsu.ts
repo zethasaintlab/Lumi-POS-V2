@@ -156,7 +156,7 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` Task 6 — fixture Edit Item lewat `?editItem=1` (bukan
       keadaan galeri baru, alasan yang sama dengan `matikanFitur`): stok
       dilacak dan TIDAK boleh negatif; Americano Hot stok 3 (dua baris: 1 + 1), Cappuccino
-      ditandai habis; empat baris keranjang bervariation NYATA di katalog;
+      ditandai habis; enam baris keranjang bervariation NYATA di katalog;
       semua item punya satu daftar modifier. Dibaca `edit-item.test.js`. */
   editItem?: boolean;
   /** `[EKSPLORASI]` `?stokKetat=1` — K-03 normal, stok TIDAK boleh negatif: Kopi Tubruk ORIGEN ditandai

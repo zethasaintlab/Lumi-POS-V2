@@ -79,7 +79,7 @@ after(async () => {
 
 /**
  * `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`, `db-palsu.ts`),
- * tanpa menambah keadaan galeri baru. Empat baris keranjang bervariation NYATA
+ * tanpa menambah keadaan galeri baru. Enam baris keranjang bervariation NYATA
  * di katalog: Americano Hot (stok 3, dua baris masing-masing qty 1: polos dan Extra shot), Cappuccino (ditandai HABIS, qty
  * 2), Kopi Susu Gula Aren (Extra shot, qty 1) dan kembarannya tanpa
  * modifier (qty 1); stok TIDAK boleh negatif.
