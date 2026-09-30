@@ -367,6 +367,11 @@ test('⛔ lonceng: membuka panel "Pemberitahuan perangkat"; gagal kirim tampil s
     hasil.baris.some((b) => /\b3\b/.test(b) && /gagal/i.test(b)),
     `jumlah gagal kirim (3) tidak tampil sebagai teks di panel. Baris: ${JSON.stringify(hasil.baris)}`
   );
+  /* Antrean memuat juga jejak keranjang, kas manual, dan no-sale — bukan hanya penjualan. */
+  assert.ok(
+    hasil.baris.some((b) => /\b3 catatan gagal terkirim/.test(b)) && hasil.baris.every((b) => !/penjualan gagal/.test(b)),
+    `kalimat gagal kirim tidak jujur soal isi antrean (harus "N catatan", bukan "N penjualan"). Baris: ${JSON.stringify(hasil.baris)}`
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -487,5 +492,54 @@ for (const lebar of [1024, 1280]) {
         `pada 1024 nama pengguna TIDAK terpotong ellipsis (scrollWidth ${u.namaScrollWidth}, clientWidth ${u.namaClientWidth}) — R2: bila tidak muat, NAMA dipotong lebih dulu.`
       );
     }
+  });
+}
+
+// R2 + kode perangkat: kode perangkat = prefiks struk, jadi ia yang TIDAK boleh hilang lebih dulu.
+// Nama outlet panjang + nama pengguna panjang + hitungan gagal 3 digit, sekaligus (tinjauan akhir #42/#43).
+const OUTLET_PANJANG = '&namaOutlet=ORIGEN%20Menteng%20Cabang%20Utama%20Jakarta%20Selatan%20Raya';
+
+for (const lebar of [1024, 1280]) {
+  test(`⛔ R2: ${lebar}, outlet panjang + nama panjang + "(500)" gagal — kode perangkat "K1" tetap TERLIHAT, nama outlet yang terpotong`, async (t) => {
+    const { hal, galat } = await buka('antrean-panjang', lebar, TERBERAT + OUTLET_PANJANG);
+    const u = await hal.evaluate(() => {
+      const teks = document.querySelector('.kasir-menu-pengguna-teks');
+      const tombol = document.querySelector('.kasir-menu-pengguna-tombol');
+      if (!teks || !tombol) return { err: 'menu pengguna tidak ditemukan' };
+      const baris2 = teks.lastElementChild;
+      // Rentang pada teks "K1" itu sendiri: meluap dari kotak pemotongnya = terpotong.
+      const walker = document.createTreeWalker(baris2, NodeFilter.SHOW_TEXT);
+      let node;
+      let kode = null;
+      while ((node = walker.nextNode())) {
+        const i = node.data.lastIndexOf('K1');
+        if (i >= 0) {
+          const r = document.createRange();
+          r.setStart(node, i);
+          r.setEnd(node, i + 2);
+          kode = r.getBoundingClientRect();
+          break;
+        }
+      }
+      if (!kode) return { err: 'teks "K1" tidak ada di baris kedua menu pengguna' };
+      let batas = Infinity;
+      for (let e = /** @type {Element|null} */ (walker.currentNode.parentElement); e && e !== tombol.parentElement; e = e.parentElement) {
+        if (getComputedStyle(e).overflowX !== 'visible') batas = Math.min(batas, e.getBoundingClientRect().right);
+      }
+      const outlet = teks.lastElementChild.firstElementChild;
+      return {
+        kodeKanan: kode.right,
+        batas: Math.min(batas, tombol.getBoundingClientRect().right),
+        outletTerpotong: outlet ? outlet.scrollWidth > outlet.clientWidth : null,
+      };
+    });
+    await hal.close();
+    t.diagnostic(`${lebar}: ${JSON.stringify(u)}`);
+    assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+    assert.equal(u.err, undefined, u.err);
+    assert.ok(
+      u.kodeKanan <= u.batas + 0.5,
+      `kode perangkat "K1" terpotong pada ${lebar} (kanan ${u.kodeKanan} > batas ${u.batas}) — kode perangkat adalah prefiks struk; NAMA OUTLET yang harus mengalah.`
+    );
   });
 }

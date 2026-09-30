@@ -63,7 +63,7 @@ export async function bacaPemberitahuan(db: DbLokal, sekarang: Date): Promise<Pe
     hasil.push({
       jenis: 'gagal-kirim',
       jumlah: ringkasan.gagal,
-      kalimat: `${ringkasan.gagal} penjualan gagal terkirim ke server.`,
+      kalimat: `${ringkasan.gagal} catatan gagal terkirim ke server.`,
       tujuan: '/sync',
     });
   }

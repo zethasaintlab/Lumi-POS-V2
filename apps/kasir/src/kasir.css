@@ -262,11 +262,23 @@
       220px (anak yang meluap tidak melebarkan induknya). Rata kiri tetap
       didapat dari `text-align: left` di bawah — properti yang benar-benar
       mengatur perataan TEKS, bukan lebar kotak. */
-  .kasir-menu-pengguna-teks {
+.kasir-menu-pengguna-teks {
   display: flex;
   flex-direction: column;
   min-width: 0;
   text-align: left;
+}
+.kasir-menu-pengguna-lokasi {
+  display: flex;
+  min-width: 0;
+}
+.kasir-menu-pengguna-lokasi > .truncate {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.kasir-menu-pengguna-device {
+  flex: none;
+  white-space: pre;
 }
 .kasir-menu-pengguna-daftar {
   position: absolute;
@@ -520,6 +532,11 @@
   color: var(--ink);
 }
 
+.kasir-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
 .kasir-dialog-aksi {
   display: flex;
   justify-content: flex-end;
@@ -1433,7 +1450,7 @@
   justify-content: center;
   gap: var(--space-1);
   min-width: 70px;
-  height: 44px;
+  height: var(--touch-min);
   padding: 0 var(--space-2);
   border-color: var(--border);
   white-space: nowrap;

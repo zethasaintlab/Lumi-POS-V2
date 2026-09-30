@@ -127,8 +127,10 @@ export function MenuPengguna({
         <Avatar name={pengguna} size={32} />
         <span className="kasir-menu-pengguna-teks">
           <span className="t-body-md truncate">{pengguna}</span>
-          <span className="t-caption truncate">
-            {outlet} · {device}
+          {/* Kode perangkat = prefiks struk: span sendiri yang tidak menyusut, NAMA OUTLET yang terpotong. */}
+          <span className="t-caption kasir-menu-pengguna-lokasi">
+            <span className="truncate">{outlet}</span>
+            <span className="kasir-menu-pengguna-device"> · {device}</span>
           </span>
         </span>
         <Icon name="chevron-down" size={18} />

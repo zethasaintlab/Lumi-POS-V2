@@ -184,7 +184,7 @@ export function Galeri() {
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
-  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, gagalBacaKas, jumlahGagal, namaPengguna } = useMemo(() => {
+  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet } = useMemo(() => {
     const q = new URLSearchParams(window.location.search);
     return {
       editItem: q.get('editItem') === '1',
@@ -195,6 +195,7 @@ export function Galeri() {
       /* Jalur test header (R2): hitungan gagal 3 digit dan nama pengguna panjang. */
       jumlahGagal: q.get('jumlahGagal') ? Number(q.get('jumlahGagal')) : undefined,
       namaPengguna: q.get('namaPengguna') ?? undefined,
+      namaOutlet: q.get('namaOutlet') ?? undefined,
     };
   }, []);
 
@@ -305,7 +306,7 @@ export function Galeri() {
                   ? 'Outlet belum dipilih'
                   : skenario === 'panjang'
                     ? 'ORIGEN Menteng — Cabang Utama Jakarta Selatan Raya'
-                    : 'ORIGEN Menteng'
+                    : (namaOutlet ?? 'ORIGEN Menteng')
               }
               device={terdaftar ? 'K1' : 'Perangkat belum terdaftar'}
               /* ⛔ Diturunkan dari skenario, bukan dipaku `true`.
