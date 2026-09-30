@@ -545,6 +545,19 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       ) {
         return [{ outlet_id: 'outlet-1', device_id: 'dev-galeri', status: 'closed' }] as T[];
       }
+      /* Kait uji Edit Item (I2/I3 tinjauan akhir): `__galeriTahanModifier` menahan baca daftar modifier
+         sampai test melepasnya; `__galeriModifierWajib` menjadikan daftarnya wajib (min 1). */
+      if (tabel === 'modifier_list') {
+        const g = globalThis as { __galeriTahanModifier?: Promise<void>; __galeriModifierWajib?: boolean };
+        if (g.__galeriTahanModifier) await g.__galeriTahanModifier;
+        if (g.__galeriModifierWajib) {
+          return (perTabel[tabel] as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            is_required: 1,
+            min_selections: 1,
+          })) as T[];
+        }
+      }
       const baris = perTabel[tabel] ?? [];
 
       /* ⛔ SATU bentuk lagi: `bacaKasManualShift` (`WHERE shift_id = ? AND type

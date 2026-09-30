@@ -450,3 +450,131 @@ test('⛔ turun qty SEKALIGUS ganti modifier dalam satu Simpan: harga jejak = sa
   );
   assert.equal(after.reduced_value, satuanSebelum.toString(), 'nilai berkurang bukan satuan sebelum × 1 item');
 });
+
+// ---------------------------------------------------------------------------
+// Tinjauan akhir PR 2A: I2 (snapshot baris usang) dan I3 (modifier wajib vs baris hasil scan).
+
+const KODE_TUBRUK = '8992761111017';
+
+/** Barcode lewat keydown pada window dalam SATU evaluate (jeda ~0, bebas jam dinding CI). */
+const pindai = (hal, kode) =>
+  hal.evaluate((k) => {
+    document.activeElement instanceof HTMLElement && document.activeElement.blur();
+    for (const ch of [...k, 'Enter']) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+    }
+  }, kode);
+
+const qtyBarisTubruk = (hal) =>
+  hal.evaluate(
+    () =>
+      [...document.querySelectorAll('.kasir-baris')]
+        .filter((b) => b.textContent.includes('Kopi Tubruk'))
+        .map((b) => b.querySelector('.kasir-baris-qty')?.textContent ?? '')
+  );
+
+async function tungguQtyTubruk(hal, teks) {
+  await hal.waitForFunction(
+    (t) =>
+      [...document.querySelectorAll('.kasir-baris')].some(
+        (b) => b.textContent.includes('Kopi Tubruk') && b.querySelector('.kasir-baris-qty')?.textContent === t
+      ),
+    teks,
+    { timeout: 5000 }
+  );
+}
+
+test('⛔ I2: scan di jendela membuka Edit Item menaikkan baris → jejak dicatat terhadap keranjang HIDUP (before=2000), bukan snapshot usang (1000)', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  // Tahan baca modifier: jendela `await bacaModifier` di `bukaEdit` dibuka lebar-lebar.
+  await hal.evaluate(() => {
+    window.__galeriTahanModifier = new Promise((r) => {
+      window.__lepasModifier = r;
+    });
+  });
+  await hal.locator('.kasir-baris-tekan', { hasText: 'Kopi Tubruk' }).first().click();
+  await pindai(hal, KODE_TUBRUK); // pemindai masih aktif: qty baris yang sama naik 1 → 2
+  await tungguQtyTubruk(hal, '2×');
+  const tulis0 = (await bacaTulis(hal)).length;
+  await hal.evaluate(() => window.__lepasModifier());
+  await hal.waitForSelector(DIALOG, { timeout: 5000 });
+
+  assert.equal(
+    await qtyDraf(hal),
+    '2',
+    'dialog menampilkan qty usang (1) padahal keranjang sudah 2 — kasir mengedit angka yang tidak ada'
+  );
+  await hal.getByRole('button', { name: /^Kurangi Kopi Tubruk/ }).click(); // 2 → 1
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const sisa = await qtyBarisTubruk(hal);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(
+    audit(baru).length,
+    1,
+    `keranjang turun 2 → 1 tetapi ${audit(baru).length} jejak — pengurangan tanpa jejak lewat snapshot usang`
+  );
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(after.quantity_before_milli, 2000, `jejak before=${after.quantity_before_milli}, keranjang hidup 2000`);
+  assert.equal(after.quantity_after_milli, 1000);
+  assert.deepEqual(sisa, ['1×'], 'qty akhir baris bukan 1');
+});
+
+test('⛔ I3: baris hasil scan dari item bermodifier WAJIB: qty 2 → 1 dapat disimpan, SATU cart_line_reduced yang benar', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '2×');
+  await hal.evaluate(() => {
+    window.__galeriModifierWajib = true;
+  });
+  const tulis0 = (await bacaTulis(hal)).length;
+  await bukaEdit(hal, 'Kopi Tubruk');
+  assert.equal(await hal.locator(`${DIALOG} .kasir-login-galat`).count(), 0, 'kelengkapan modifier dituntut padahal modifier tidak disentuh');
+  await hal.getByRole('button', { name: /^Kurangi Kopi Tubruk/ }).click();
+  const simpan = hal.getByRole('button', { name: 'Simpan', exact: true });
+  assert.equal(
+    await simpan.isDisabled(),
+    false,
+    'Simpan nonaktif oleh modifier wajib padahal modifier tidak diubah — baris hasil scan tak dapat dikurangi'
+  );
+  await simpan.click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(audit(baru).length, 1, `${audit(baru).length} jejak untuk satu pengurangan`);
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(after.quantity_before_milli, 2000);
+  assert.equal(after.quantity_after_milli, 1000);
+});
+
+test('⛔ I3 (kontrol): modifier wajib TETAP dituntut begitu modifier diubah — tidak dilonggarkan', async () => {
+  const { hal } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  await hal.evaluate(() => {
+    window.__galeriModifierWajib = true;
+  });
+  await bukaEdit(hal, 'Kopi Tubruk');
+  // Pilih lalu lepas satu modifier: draf berubah dan daftar wajib kini kosong.
+  const kotak = hal.locator(DIALOG).getByLabel(/Extra shot/);
+  await kotak.check();
+  await kotak.uncheck();
+  const simpan = hal.getByRole('button', { name: 'Simpan', exact: true });
+  const nonaktif = await simpan.isDisabled();
+  await hal.close();
+  assert.equal(nonaktif, true, 'modifier wajib kosong setelah diubah, tetapi Simpan tetap aktif — kelengkapan tidak ditegakkan');
+});

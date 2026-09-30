@@ -604,7 +604,11 @@ export function Kasir() {
         setPesanStok('Pilihan modifier item ini tidak dapat dibaca. Jumlah tetap dapat diubah.');
       }
     }
-    setEdit({ baris, daftar, lacakStok: variation?.lacakStok ?? false });
+    /* ⛔ Baris diambil ULANG dari keranjang hidup: scan selama `await` di atas dapat menaikkan
+       qty-nya, dan snapshot usang membuat pengurangan berikutnya tercatat dengan angka yang salah. */
+    const hidup = keranjangSekarang().baris.find((b) => b.id === baris.id);
+    if (!hidup) return;
+    setEdit({ baris: hidup, daftar, lacakStok: variation?.lacakStok ?? false });
   };
 
   const ketuk = async (item: ItemKatalog) => {

@@ -82,7 +82,9 @@ export function DialogEditItem({
   const sedangKirim = useRef(false);
   const [galatSimpan, setGalatSimpan] = useState<string | null>(null);
 
-  const kurang = pesanKurangSemua(daftarModifier, terpilih);
+  /* Kelengkapan modifier hanya dituntut bila kasir MENGUBAH modifier: baris hasil scan masuk tanpa
+     modifier dan tetap harus dapat dikurangi qty-nya. */
+  const kurang = berubahModifier ? pesanKurangSemua(daftarModifier, terpilih) : [];
 
   /* ⛔ Modifier di baris yang TIDAK ada di daftar (diarsipkan sesudah
      dimasukkan) tidak dapat dipilih ulang — dipertahankan apa adanya, bukan
