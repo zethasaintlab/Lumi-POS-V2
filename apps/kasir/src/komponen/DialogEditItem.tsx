@@ -221,7 +221,7 @@ export function DialogEditItem({
 
       {menyimpan && (
         <p className="t-caption" id="edit-menyimpan-alasan">
-          Sedang mencatat perubahan. Batal dan Tutup nonaktif sampai selesai.
+          Sedang mencatat perubahan. Simpan, Batal, dan Tutup nonaktif sampai selesai.
         </p>
       )}
 

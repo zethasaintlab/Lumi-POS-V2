@@ -340,9 +340,12 @@ export function Kasir() {
      keranjang berkurang tanpa jejak adalah persis yang fitur ini cegah. */
   const sedangSimpanEdit = useRef(false);
   const simpanEdit = async (baru: typeof keranjang, qtySesudahMilli: number): Promise<string | null> => {
-    const asal = edit?.baris;
-    if (!asal) return 'Baris tidak dikenali. Perubahan TIDAK disimpan.';
+    if (!edit) return 'Baris tidak dikenali. Perubahan TIDAK disimpan.';
     if (sedangSimpanEdit.current) return null;
+    /* ⛔ `before` jejak = qty keranjang HIDUP: scan yang mendarat sebelum pemindai mati membuat
+       `edit.baris` usang, dan yang dikurangi adalah keranjang hidup (`baru` dihitung dari sana). */
+    const asal = keranjangSekarang().baris.find((b) => b.id === edit.baris.id);
+    if (!asal) return 'Baris ini sudah tidak ada di keranjang. Perubahan TIDAK disimpan.';
     sedangSimpanEdit.current = true;
     try {
       return await simpanEditAman(asal, baru, qtySesudahMilli);

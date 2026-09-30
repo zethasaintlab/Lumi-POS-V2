@@ -599,3 +599,53 @@ test('⛔ I3 (kontrol): modifier wajib TETAP dituntut begitu modifier diubah —
   await hal.close();
   assert.equal(nonaktif, true, 'modifier wajib kosong setelah diubah, tetapi Simpan tetap aktif — kelengkapan tidak ditegakkan');
 });
+
+test('⛔ I2 (sisa): scan mendarat SESUDAH setEdit tetapi sebelum pemindai mati → jejak "before" = qty keranjang hidup, bukan qty dialog usang', async () => {
+  const { hal, galat } = await bukaK03();
+  await tenang(hal);
+  await pindai(hal, KODE_TUBRUK);
+  await tungguQtyTubruk(hal, '1×');
+  await hal.evaluate(() => {
+    window.__galeriTahanModifier = new Promise((r) => {
+      window.__lepasModifier = r;
+    });
+  });
+  await hal.locator('.kasir-baris-tekan', { hasText: 'Kopi Tubruk' }).first().click();
+  const tulis0 = (await bacaTulis(hal)).length;
+  // Lepas, lalu scan di tugas makro TERPISAH (setTimeout 0): sesudah `setEdit`, sebelum efek pasif pemindai terlepas.
+  await hal.evaluate((kode) => {
+    window.__lepasModifier();
+    const scan = () => {
+      for (const ch of [...kode, 'Enter']) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+      }
+    };
+    setTimeout(scan, 0);
+  }, KODE_TUBRUK);
+  await hal.waitForSelector(DIALOG, { timeout: 5000 });
+  await tungguQtyTubruk(hal, '2×').catch(() => {});
+  const qtyHidup = (await qtyBarisTubruk(hal))[0];
+  const draf = await qtyDraf(hal);
+
+  // Kasir menurunkan apa yang dilihatnya sampai habis, lalu Hapus.
+  for (let i = Number(draf); i > 0; i -= 1) await hal.getByRole('button', { name: /^(Kurangi|Hapus) Kopi Tubruk/ }).click();
+  await hal.getByRole('button', { name: 'Hapus dari keranjang', exact: true }).click();
+  await tutupSetelahSimpan(hal);
+  await tenang(hal);
+  const baru = (await bacaTulis(hal)).slice(tulis0);
+  const sisa = await qtyBarisTubruk(hal);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(qtyHidup, '2×', 'fixture: scan tidak mendarat di jendela itu — penjaga hampa');
+  assert.deepEqual(sisa, [], 'baris masih ada sesudah Hapus');
+  assert.equal(audit(baru).length, 1, `${audit(baru).length} jejak untuk satu penghapusan`);
+  const after = JSON.parse(audit(baru)[0].params[7]);
+  assert.equal(
+    after.quantity_before_milli,
+    2000,
+    `jejak before=${after.quantity_before_milli} (qty dialog usang) padahal keranjang hidup 2000 — dua unit hilang, satu tercatat`
+  );
+  assert.equal(after.quantity_after_milli, 0);
+  assert.equal(after.reduced_value, (BigInt(after.unit_price) * 2n).toString(), `reduced_value ${after.reduced_value} bukan 2 × ${after.unit_price}`);
+});
