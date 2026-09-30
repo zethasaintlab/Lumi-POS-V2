@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
@@ -12,7 +12,9 @@ import {
   claimIdempotencyKey,
   completeIdempotencyKey,
   insertOutboxEvent,
+  IdempotencyKeyConflictError,
 } from '../../sync/index.ts';
+import { timestampSah } from './keranjang-batal.ts';
 import {
   ALASAN_NO_SALE,
   EVENT_NO_SALE,
@@ -114,12 +116,34 @@ export function createNoSaleHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
         throw new HttpError(400, 'VALIDATION_ERROR', 'id wajib diisi klien (ULID/UUIDv7).');
       }
 
+      // ⛔ `occurredAt` rusak dijawab 400, bukan 500 dari `timestamptz`, dan
+      // tanggal mustahil tidak digulirkan diam-diam (pola `cart-cleared`).
+      if (body.occurredAt !== undefined && body.occurredAt !== null && !timestampSah(body.occurredAt)) {
+        throw new HttpError(
+          400,
+          'VALIDATION_ERROR',
+          'occurredAt harus timestamp ISO 8601 bertanggal nyata dan berzona (mis. 2026-09-28T03:00:00Z).'
+        );
+      }
+      // ⛔ Hash SELURUH isi yang disimpan, bukan `shiftId:id`: key sama dengan
+      // isi beda dijawab 201 dari cache dan pencatatan kedua hilang diam-diam.
+      const requestHash = createHash('sha256')
+        .update(JSON.stringify([shiftId, body.id, body.reasonCode, reasonNote, body.occurredAt ?? null]))
+        .digest('hex');
+
       const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc as string));
 
       const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
         const cached = await findIdempotencyKey(client, idempotencyKey);
-        if (cached !== null && cached.completed) {
-          return { kind: 'cached' as const, record: cached };
+        if (cached !== null) {
+          if (cached.requestHash !== requestHash) {
+            throw new HttpError(
+              422,
+              'IDEMPOTENCY_KEY_HASH_MISMATCH',
+              `Idempotency-Key ${idempotencyKey} sudah dipakai untuk request dengan body yang berbeda.`
+            );
+          }
+          if (cached.completed) return { kind: 'cached' as const, record: cached };
         }
         await assertUserVisible(client, actorId);
         // ⛔ Dijaga DI SINI, bukan lewat `PETA_PERAN` — lihat alasannya di
@@ -172,11 +196,18 @@ export function createNoSaleHandlers(pool: Pool, hlc: Hlc): Record<string, unkno
           await assertApproverVisible(client, penyetuju);
         }
 
-        await claimIdempotencyKey(client, {
-          key: idempotencyKey,
-          tenantId,
-          requestHash: `${shiftId}:${body.id}`,
-        });
+        try {
+          await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
+        } catch (err) {
+          if (err instanceof IdempotencyKeyConflictError) {
+            throw new HttpError(
+              409,
+              'IDEMPOTENCY_KEY_CONFLICT',
+              `Request dengan Idempotency-Key ${idempotencyKey} sedang diproses request lain, coba lagi.`
+            );
+          }
+          throw err;
+        }
 
         await recordAuditEvent(client, {
           id: body.id,

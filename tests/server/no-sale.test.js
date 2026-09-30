@@ -314,3 +314,123 @@ test('kasir BOLEH membuka laci — itu jalur normalnya', async () => {
   const res = await noSale(id, {}, { authorization: `Bearer ${token}` });
   assert.equal(res.statusCode, 201, res.body);
 });
+
+// ---------------------------------------------------------------------------
+// Idempotensi (pola cart-cleared, `keranjang-batal.ts`): key sama + isi beda
+// harus 422, bukan respons pertama; balapan key sama 409, bukan 500.
+
+const kirimKey = (shiftId, key, payload = {}) =>
+  app.inject({
+    method: 'POST',
+    url: `/shifts/${shiftId}/no-sale`,
+    headers: { 'idempotency-key': key, ...hdr() },
+    payload: { reasonCode: 'tukar_uang', ...payload },
+  });
+
+const jumlahNoSale = async (shiftId) =>
+  (await query(
+    `SELECT id FROM audit_event WHERE event_type = 'cash_drawer_opened' AND entity_id = $1`,
+    [shiftId]
+  )).length;
+
+test('⛔ (a) key sama + body sama → respons sama, tepat SATU audit no-sale', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const payload = { id: crypto.randomUUID(), reasonNote: 'ke brankas', occurredAt: '2026-09-30T03:00:00.000Z' };
+  const satu = await kirimKey(id, key, payload);
+  const dua = await kirimKey(id, key, payload);
+  assert.equal(satu.statusCode, 201, satu.body);
+  assert.equal(dua.statusCode, 201, dua.body);
+  assert.deepEqual(JSON.parse(dua.body), JSON.parse(satu.body));
+  assert.equal(await jumlahNoSale(id), 1);
+});
+
+// Field yang DISIMPAN handler ke audit_event (`no-sale.ts`): id, reasonCode,
+// reasonNote, occurredAt, dan shiftId dari path. Satu varian per field.
+for (const [nama, dasar, ubah] of [
+  ['id', { id: '00000000-0000-4000-8000-000000000001' }, { id: '00000000-0000-4000-8000-000000000002' }],
+  ['reasonCode', { reasonCode: 'tukar_uang' }, { reasonCode: 'periksa_laci' }],
+  ['reasonNote', { reasonNote: 'a' }, { reasonNote: 'b' }],
+  ['occurredAt', { occurredAt: '2026-09-30T03:00:00.000Z' }, { occurredAt: '2026-09-30T04:00:00.000Z' }],
+]) {
+  test(`⛔ (b) key sama + body beda HANYA pada ${nama} → 422 IDEMPOTENCY_KEY_HASH_MISMATCH, nol baris kedua`, async () => {
+    const id = await shift();
+    const key = crypto.randomUUID();
+    const isi = { id: crypto.randomUUID(), reasonNote: 'x', occurredAt: '2026-09-30T03:00:00.000Z', ...dasar };
+    assert.equal((await kirimKey(id, key, isi)).statusCode, 201);
+    const res = await kirimKey(id, key, { ...isi, ...ubah });
+    assert.equal(res.statusCode, 422, `${nama} beda tidak terdeteksi sebagai mismatch idempotensi: ${res.body}`);
+    assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+    assert.equal(await jumlahNoSale(id), 1, 'pencatatan kedua tertulis atau hilang diam-diam');
+  });
+}
+
+test('⛔ (b) key sama + body sama tetapi SHIFT beda → 422 (shiftId ada di hash)', async () => {
+  const s1 = await shift();
+  // Shift kedua ditutup: satu perangkat hanya boleh punya satu shift terbuka.
+  // Mismatch dijawab SEBELUM shift dibaca, jadi status-nya tidak berpengaruh.
+  const s2 = await shift({ status: 'closed' });
+  const key = crypto.randomUUID();
+  const isi = { id: crypto.randomUUID() };
+  assert.equal((await kirimKey(s1, key, isi)).statusCode, 201);
+  const res = await kirimKey(s2, key, isi);
+  assert.equal(res.statusCode, 422, res.body);
+  assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+  assert.equal(await jumlahNoSale(s2), 0);
+});
+
+test('⛔ (c) dua request BERSAMAAN, key sama → satu 201 dan satu 409 IDEMPOTENCY_KEY_CONFLICT, bukan 500', async () => {
+  const id = await shift();
+  const key = crypto.randomUUID();
+  const payload = { id: crypto.randomUUID() };
+  // Pool dipanaskan supaya keduanya sungguh bersamaan.
+  await Promise.all([
+    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: hdr() }),
+    app.inject({ method: 'GET', url: `/orders/${crypto.randomUUID()}`, headers: hdr() }),
+  ]);
+  const [a, b] = await Promise.all([kirimKey(id, key, payload), kirimKey(id, key, payload)]);
+  const status = [a.statusCode, b.statusCode].sort();
+  assert.deepEqual(status, [201, 409], `dapat ${JSON.stringify(status)}: ${a.body} | ${b.body}`);
+  const kalah = a.statusCode === 409 ? a : b;
+  assert.equal(JSON.parse(kalah.body).error.code, 'IDEMPOTENCY_KEY_CONFLICT');
+  assert.equal(await jumlahNoSale(id), 1);
+});
+
+test('(d) occurredAt mustahil / tanpa zona → 400 VALIDATION_ERROR, bukan 500, nol baris', async () => {
+  const id = await shift();
+  for (const buruk of [
+    'bukan-tanggal', '2026-13-45', '   ',
+    '2026-02-30T00:00:00Z', '2026-04-31T10:00:00Z', '2026-09-28T03:00:00',
+  ]) {
+    const res = await kirimKey(id, crypto.randomUUID(), { id: crypto.randomUUID(), occurredAt: buruk });
+    assert.equal(res.statusCode, 400, `${buruk}: ${res.statusCode} ${res.body}`);
+    assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal(await jumlahNoSale(id), 0);
+});
+
+test('⛔ lintas rute: key milik no-sale dipakai cart-cleared, dan sebaliknya → 422', async () => {
+  const id = await shift();
+  const cart = (key, idAudit) =>
+    app.inject({
+      method: 'POST',
+      url: `/shifts/${id}/cart-cleared`,
+      headers: { 'idempotency-key': key, ...hdr() },
+      payload: { id: idAudit, lineCount: 1, quantityMilli: 1000, total: '1000' },
+    });
+
+  const k1 = crypto.randomUUID();
+  const idA = crypto.randomUUID();
+  assert.equal((await kirimKey(id, k1, { id: idA })).statusCode, 201);
+  const r1 = await cart(k1, idA);
+  assert.equal(r1.statusCode, 422, r1.body);
+  assert.equal(JSON.parse(r1.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+
+  const k2 = crypto.randomUUID();
+  const idB = crypto.randomUUID();
+  assert.equal((await cart(k2, idB)).statusCode, 201);
+  const r2 = await kirimKey(id, k2, { id: idB });
+  assert.equal(r2.statusCode, 422, `no-sale menjawab key milik cart-cleared dengan respons cart-cleared: ${r2.body}`);
+  assert.equal(JSON.parse(r2.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+  assert.equal(await jumlahNoSale(id), 1);
+});
