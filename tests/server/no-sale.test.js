@@ -360,7 +360,7 @@ for (const [nama, dasar, ubah] of [
     const isi = { id: crypto.randomUUID(), reasonNote: 'x', occurredAt: '2026-09-30T03:00:00.000Z', ...dasar };
     assert.equal((await kirimKey(id, key, isi)).statusCode, 201);
     const res = await kirimKey(id, key, { ...isi, ...ubah });
-    assert.equal(res.statusCode, 422, `${nama} beda tidak terdeteksi sebagai mismatch idempotensi: ${res.body}`);
+    assert.equal(res.statusCode, 422, `${nama} beda: status ${res.statusCode}, diharapkan 422 (mismatch idempotensi): ${res.body}`);
     assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
     assert.equal(await jumlahNoSale(id), 1, 'pencatatan kedua tertulis atau hilang diam-diam');
   });
@@ -402,6 +402,8 @@ test('(d) occurredAt mustahil / tanpa zona → 400 VALIDATION_ERROR, bukan 500, 
   for (const buruk of [
     'bukan-tanggal', '2026-13-45', '   ',
     '2026-02-30T00:00:00Z', '2026-04-31T10:00:00Z', '2026-09-28T03:00:00',
+    // Jam/menit/detik di luar rentang (V8 menggulirkan 24:00 dan detik 60).
+    '2026-09-28T25:00:00Z', '2026-09-28T10:60:00Z', '2026-09-28T24:00:00Z', '2026-09-28T10:59:60Z',
   ]) {
     const res = await kirimKey(id, crypto.randomUUID(), { id: crypto.randomUUID(), occurredAt: buruk });
     assert.equal(res.statusCode, 400, `${buruk}: ${res.statusCode} ${res.body}`);

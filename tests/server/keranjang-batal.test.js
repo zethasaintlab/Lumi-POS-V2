@@ -329,6 +329,8 @@ test('occurredAt rusak → 400 VALIDATION_ERROR, bukan 500', async () => {
     // Tanggal yang TIDAK ADA (V8 menggulirkannya ke 2 Maret) dan tanpa zona
     // (ditafsirkan zona server) — keduanya mengubah `occurred_at` diam-diam.
     '2026-02-30T00:00:00Z', '2026-04-31T10:00:00Z', '2026-09-28T03:00:00',
+    // Jam/menit/detik di luar rentang (V8 menggulirkan 24:00 dan detik 60).
+    '2026-09-28T25:00:00Z', '2026-09-28T10:60:00Z', '2026-09-28T24:00:00Z', '2026-09-28T10:59:60Z',
   ]) {
     const res = await kirim(id, { occurredAt: buruk });
     assert.equal(res.statusCode, 400, `${buruk}: ${res.statusCode} ${res.body}`);
@@ -343,7 +345,7 @@ test('⛔ (b3) key sama + body beda HANYA pada occurredAt → 422 (occurredAt ad
   const idAudit = crypto.randomUUID();
   assert.equal((await kirim(id, { id: idAudit, occurredAt: '2026-09-28T03:00:00.000Z' }, {}, key)).statusCode, 201);
   const res = await kirim(id, { id: idAudit, occurredAt: '2026-09-28T04:00:00.000Z' }, {}, key);
-  assert.equal(res.statusCode, 422, `occurredAt beda tidak terdeteksi sebagai mismatch idempotensi: ${res.body}`);
+  assert.equal(res.statusCode, 422, `occurredAt beda: status ${res.statusCode}, diharapkan 422 (mismatch idempotensi): ${res.body}`);
   assert.equal(JSON.parse(res.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
 });
 
