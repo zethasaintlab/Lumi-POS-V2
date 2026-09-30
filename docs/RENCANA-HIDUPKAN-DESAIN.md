@@ -155,6 +155,16 @@ Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaa
 - **Kulit `.shell-link` mockup belum diikuti.** `packages/ds/lumi.css` hanya menyentuh tinggi (`min-height: 44px`, target sentuh); warna TIDAK aktif (`--muted-foreground-strong`) dan latar hover (`--background`) masih bawaan bundle (`--ink-muted`/`--surface-alt`). Ditunda ke sub-proyek 3 — `.shell-link` dipakai navigasi sidebar back-office, layar yang sub-proyek 3 kerjakan, bukan token/kulit komponen generik milik sub-proyek 1.
 - **Nama ganda `AppShell` disembunyikan CSS, belum ada penjaga CI** (Task 8, `--shell-brand > .wordmark + .t-body-md.truncate`). `AppShell` bundle merender `brand.logo` DAN `brand.name` sebagai teks terpisah tanpa syarat; span kedua disembunyikan lewat selektor CSS supaya nama "LumiPOS" tidak tampil dua kali di sidebar. Diperiksa manual di DOM saat Task 8, tapi belum ada test yang menegakkannya di CI — akan dijaga oleh harness DOM back-office sub-proyek 3, yang sudah membuka layar bersidebar untuk keperluan lain.
 
+- **Utang PR 2A dari tinjauan akhir (DEFER, 29–30 September 2026).** Daftar lengkap ada di tinjauan akhir; yang paling berbobot:
+  - `unitPrice` pada `cart_line_reduced` berasal dari perangkat dan tidak dicocokkan ke katalog — pemeriksaan selisih server hanya membuktikan konsistensi muatan (sub-proyek 3, laporan exception FR-G5 menghitung dari qty × harga).
+  - Metrik dan alarm `cart_cleared`/`cart_line_reduced` ditunda ke sub-proyek 3 (jawaban user Q4, #76 komentar 5883887477).
+  - `no-sale.ts:50` menghitung ambang PIN no-sale dari `audit_event` lokal, jadi rebuild tabel di tengah shift me-reset hitungan; `no-sale.ts:81` membaca `audit_event` langsung (pengecualian batas modul `cash`, daftar hanya boleh menyusut).
+  - Idempotensi handler no-sale: kunci sama + isi beda dijawab 201, konflik bersamaan 500 — PR kecil terpisah sebelum PR 2B (jawaban user Q3).
+  - Login/logout offline tidak meninggalkan jejak; komentar `db/local/001-initial.sql:661` mengklaim sebaliknya.
+  - `calculation_variance` punya dua bentuk `after` (orders: `Number` camelCase; cart-line-reduced: string snake_case); `orders.ts` kehilangan presisi di atas 2^53.
+  - Cakupan klik G-TOMBOL-HIDUP bagian 2 belum mencakup dialog dan K-06.
+  - Dokumen produk basi: `product/IA-lumi-pos-v1.md:264` masih "K-01…K-17", `CLAUDE.md` masih "52 layar" — di luar batas Q9 (hanya mencatat keputusan yang disetujui).
+
 ## Ledger
 
 Cerminan `.superpowers/sdd/progress.md`, diisi per task. Satu baris per task:
@@ -189,3 +199,4 @@ sub-proyek, task, status, commit, reviewer, sabotase.
 - **Login/logout offline tidak meninggalkan jejak**: komentar `db/local/001-initial.sql:657` mengklaim `audit_event` login/logout naik, tetapi tidak ada penulisnya di `apps/kasir/src`; server hanya mencatat logout online (`identity/handlers/auth.ts:255`).
 - **Melepas modifier berbayar bersamaan dengan penurunan qty hanya mencatat bagian qty** (RUNBOOK § 8.7.1); melepas modifier saja tidak dicatat (lingkup keputusan user).
 - **Pelanggaran invariant #4 yang sudah ada di `modules/cash` (ditemukan penjaga baru `tests/server/batas-modul-cash.test.js`, Task 5C fix round 2, TIDAK diperbaiki):** `handlers/no-sale.ts:81` membaca tabel `audit_event` (milik `audit`) langsung untuk menghitung ambang no-sale per shift. Tercatat di `PELANGGARAN_LAMA` penjaga (hanya boleh menyusut).
+| 2 Kasir (PR 2A) | Tinjauan akhir satu branch (Opus) — needs fixes: 3 Important (test scan bergantung jam dinding; snapshot baris usang menyembunyikan penurunan qty; baris hasil scan dengan modifier wajib tak dapat diturunkan) + 18 SHOULD; satu gelombang perbaikan `e264442`..`a349011`, lalu dua perbaikan tambahan akar sama (`e0bc418` qty "sebelum" dari keranjang hidup, `05c7c51` draf = keranjang hidup + selisih kasir). Tiga tinjauan ulang Opus; terakhir bersih. Seluruh suite berurutan hijau di `05c7c51` | ✔ | `41db82c..05c7c51` | Opus | penjaga merah dulu + sabotase per perbaikan |
