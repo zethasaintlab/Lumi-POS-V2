@@ -113,8 +113,13 @@ const pesanStok = (hal, teks) =>
 async function pindai(hal, kode) {
   // Fokus bukan di kolom teks, lalu ketik cepat + Enter (pola `usePemindaiGlobal`).
   await hal.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
-  for (const c of kode) await hal.keyboard.type(c, { delay: 1 });
-  await hal.keyboard.press('Enter');
+  /* SATU evaluate: jeda antar karakter ~0, jauh di bawah JEDA_MAKS_MS (50 ms), tanpa
+     bergantung pada latensi round-trip CDP di runner yang sibuk (pola k03-toolbar). */
+  await hal.evaluate((k) => {
+    for (const ch of [...k, 'Enter']) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+    }
+  }, kode);
 }
 
 test('⛔ ketukan kartu: produk ditandai HABIS ditolak dengan kalimat habis, keranjang tidak bertambah', async () => {
