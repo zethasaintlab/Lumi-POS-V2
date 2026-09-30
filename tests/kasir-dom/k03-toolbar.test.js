@@ -235,6 +235,14 @@ test('⛔ Diskon HILANG (bukan nonaktif) saat diskon_kasir mati', async () => {
   );
 });
 
+test('⛔ Diskon mati + keranjang kosong: teks alasan Diskon ikut HILANG (tidak ada sr-only yatim)', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal', matikan: ['diskon_kasir'] });
+  const yatim = await hal.locator('#toolbar-diskon-alasan').count();
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(yatim, 0, 'teks alasan Diskon masih ada di DOM padahal tombolnya hilang — pembaca layar membacakan alasan untuk tombol yang tidak ada');
+});
+
 test('tombol yang tidak berlaku NONAKTIF dengan alasan terbaca: keranjang kosong → Diskon disabled + aria-describedby', async () => {
   const { hal, galat } = await bukaK03({ keadaan: 'normal' });
   const hasil = await hal.evaluate(() => {
@@ -315,6 +323,24 @@ test('⛔ Item manual: kode dikenal masuk lewat jalur scan; kode asing → "Barc
       `pesan kode asing tidak ditemukan. Terbaca: ${isi.slice(0, 300)}`
     );
   }
+});
+
+test('⛔ Item manual: kolom kode langsung terfokus dan Enter menambahkan (tanpa mouse)', async () => {
+  const { hal, galat } = await bukaK03();
+  await hal.getByRole('button', { name: 'Item manual' }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  const sebelum = await hal.locator('.kasir-baris').count();
+  const terfokus = await hal.evaluate(() => document.activeElement?.tagName === 'INPUT' && document.activeElement.closest('[role="dialog"]') !== null);
+  await hal.keyboard.type(KODE_BARCODE_FIXTURE);
+  await hal.keyboard.press('Enter');
+  await hal
+    .waitForFunction((n) => document.querySelectorAll('.kasir-baris').length > n, sebelum, { timeout: 3000 })
+    .catch(() => {});
+  const sesudah = await hal.locator('.kasir-baris').count();
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(terfokus, 'kolom Kode barang tidak terfokus saat dialog Item manual terbuka — scanner HID mengetik ke ruang kosong');
+  assert.ok(sesudah > sebelum, `Enter di kolom kode tidak menambahkan barang (${sebelum} → ${sesudah})`);
 });
 
 test('⛔ scanner global mati selama dialog toolbar terbuka', async () => {

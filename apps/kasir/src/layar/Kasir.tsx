@@ -723,22 +723,25 @@ export function Kasir() {
               teks alasan yang sungguh berubah menurut sebabnya, bukan satu
               kalimat generik untuk kedua kasus. */}
           {fiturAktif(fitur, 'diskon_kasir') && (
-            <Tombol
-              varian="ghost"
-              disabled={keranjang.baris.length === 0 || sesi === null}
-              keterangan={alasanDiskonNonaktif !== null ? 'toolbar-diskon-alasan' : undefined}
-              onClick={() => setDialogDiskon(true)}
-            >
-              <Icon name="calculator" size={17} />
-              <span className="kasir-toolbar-label">
-                {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
-              </span>
-            </Tombol>
-          )}
-          {alasanDiskonNonaktif !== null && (
-            <span id="toolbar-diskon-alasan" className="sr-only">
-              {alasanDiskonNonaktif}
-            </span>
+            <>
+              <Tombol
+                varian="ghost"
+                disabled={keranjang.baris.length === 0 || sesi === null}
+                keterangan={alasanDiskonNonaktif !== null ? 'toolbar-diskon-alasan' : undefined}
+                onClick={() => setDialogDiskon(true)}
+              >
+                <Icon name="calculator" size={17} />
+                <span className="kasir-toolbar-label">
+                  {keranjang.diskon === null ? 'Diskon' : 'Ubah diskon'}
+                </span>
+              </Tombol>
+              {/* Di dalam blok kill switch: tanpa tombol, alasannya tidak ada yang dibacakan. */}
+              {alasanDiskonNonaktif !== null && (
+                <span id="toolbar-diskon-alasan" className="sr-only">
+                  {alasanDiskonNonaktif}
+                </span>
+              )}
+            </>
           )}
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan

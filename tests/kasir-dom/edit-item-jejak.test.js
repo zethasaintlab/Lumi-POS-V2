@@ -405,6 +405,27 @@ test('⛔ Esc / klik latar / tombol Tutup SELAMA menyimpan tidak menutup dialog 
   assert.deepEqual(sesudah, awal, 'keranjang berubah padahal penulisan gagal');
 });
 
+test('⛔ tombol utama "Mencatat…" (Simpan DAN Hapus dari keranjang) nonaktif selama menyimpan DENGAN alasan terbaca (aria-describedby)', async () => {
+  for (const hapus of [false, true]) {
+    const { hal } = await bukaK03();
+    await tenang(hal);
+    await bukaEdit(hal, 'Cappuccino');
+    await hal.getByRole('button', { name: /^Kurangi Cappuccino/ }).click();
+    if (hapus) await hal.getByRole('button', { name: /^Hapus Cappuccino|^Kurangi Cappuccino/ }).click(); // 1 → 0
+    await hal.evaluate(() => { window.__galeriGagalTulis = true; window.__galeriTulisLambat = true; });
+    await hal.getByRole('button', { name: hapus ? 'Hapus dari keranjang' : 'Simpan', exact: true }).click();
+    await hal.waitForSelector(`${DIALOG} button:has-text("Mencatat")`, { timeout: 2000 });
+    const utama = await hal.evaluate((sel) => {
+      const b = [...document.querySelectorAll(`${sel} .kasir-dialog-aksi button`)].find((x) => /Mencatat/.test(x.textContent ?? ''));
+      const id = b?.getAttribute('aria-describedby');
+      return { nonaktif: b?.disabled, alasan: id ? document.getElementById(id)?.textContent?.trim() ?? '' : '' };
+    }, DIALOG);
+    await hal.close();
+    assert.equal(utama.nonaktif, true, `tombol utama (${hapus ? 'Hapus' : 'Simpan'}) aktif selama menyimpan`);
+    assert.ok(utama.alasan.length > 0, `tombol utama (${hapus ? 'Hapus' : 'Simpan'}) nonaktif saat "Mencatat…" tanpa alasan terbaca (aria-describedby kosong)`);
+  }
+});
+
 test('⛔ klik ganda Simpan (dua klik di tugas yang sama) menulis TEPAT satu jejak dan satu outbox', async () => {
   const { hal } = await bukaK03();
   await tenang(hal);

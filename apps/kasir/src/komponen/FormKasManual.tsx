@@ -175,6 +175,7 @@ export function FormKasManual({ shiftId, konfig, sesi, onTercatat }: Props) {
           className="sentuh-uang"
           aria-pressed={arah === 'masuk'}
           disabled={menyimpan}
+          aria-describedby={menyimpan ? 'kas-simpan-alasan' : undefined}
           onClick={() => gantiArah('masuk')}
         >
           Kas masuk
@@ -184,6 +185,7 @@ export function FormKasManual({ shiftId, konfig, sesi, onTercatat }: Props) {
           className="sentuh-uang"
           aria-pressed={arah === 'keluar'}
           disabled={menyimpan}
+          aria-describedby={menyimpan ? 'kas-simpan-alasan' : undefined}
           onClick={() => gantiArah('keluar')}
         >
           Kas keluar
@@ -213,6 +215,7 @@ export function FormKasManual({ shiftId, konfig, sesi, onTercatat }: Props) {
               name="alasan-kas"
               checked={kode === a}
               disabled={menyimpan}
+              aria-describedby={menyimpan ? 'kas-simpan-alasan' : undefined}
               onChange={() => {
                 setKode(a);
                 setPesan(null);
@@ -245,7 +248,7 @@ export function FormKasManual({ shiftId, konfig, sesi, onTercatat }: Props) {
         </p>
       )}
 
-      {/* SATU baris keterangan di bawah tombol: saat Simpan nonaktif ia
+      {/* SATU baris keterangan DI ATAS tombol: saat Simpan nonaktif ia
           menyatakan KENAPA (`aria-describedby`), saat siap ia menyatakan
           jejaknya. Dua paragraf terpisah membuat kartu ini menggulir pada
           1024×768 (terukur) — tinggi kartu bukan selera, ia batas layar. */}

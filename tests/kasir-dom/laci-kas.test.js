@@ -569,6 +569,29 @@ test('⛔ Buka laci tanpa transaksi dari K-18: audit tercatat, TIDAK ada cash_mo
   assert.equal(dialog, 0, 'dialog tidak tertutup sesudah tercatat');
 });
 
+test('⛔ selama menyimpan, toggle arah dan radio alasan nonaktif DENGAN alasan terbaca (aria-describedby)', async () => {
+  const { hal } = await bukaLaci(1280, 800);
+  await isiKas(hal, { arah: 'keluar', jumlah: '25000', alasan: 'Bayar pemasok' });
+  await hal.evaluate(() => { globalThis.__galeriGagalTulis = true; globalThis.__galeriTulisLambat = true; });
+  await hal.getByRole('button', { name: 'Simpan catatan' }).click();
+  await hal.waitForFunction(() => [...document.querySelectorAll('button')].some((x) => x.textContent.trim() === 'Mencatat…'), null, { timeout: 2000 });
+  const u = await hal.evaluate(() => {
+    const alasan = (el) => {
+      const id = el.getAttribute('aria-describedby');
+      return id ? document.getElementById(id)?.textContent?.trim() ?? '' : '';
+    };
+    const toggle = [...document.querySelectorAll('.segmented button')].map((b) => ({ nonaktif: b.disabled, alasan: alasan(b) }));
+    const radio = [...document.querySelectorAll('input[name="alasan-kas"]')].map((r) => ({ nonaktif: r.disabled, alasan: alasan(r) }));
+    return { toggle, radio };
+  });
+  await hal.close();
+  assert.ok(u.toggle.length === 2 && u.radio.length > 0, 'fixture: toggle dan radio harus ada — penjaga hampa bila tidak');
+  for (const x of [...u.toggle, ...u.radio]) {
+    assert.equal(x.nonaktif, true, 'kontrol form aktif selama menyimpan');
+    assert.ok(x.alasan.length > 0, 'kontrol nonaktif saat menyimpan tanpa alasan terbaca (aria-describedby kosong)');
+  }
+});
+
 test('⛔ dua klik beruntun pada Simpan catatan (dalam satu tugas) menulis SATU movement, bukan dua', async () => {
   const { hal, galat } = await bukaLaci(1280, 800);
   await isiKas(hal, { arah: 'keluar', jumlah: '25000', alasan: 'Bayar pemasok' });

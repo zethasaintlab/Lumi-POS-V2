@@ -267,7 +267,13 @@ export function DialogEditItem({
           Batal
         </Tombol>
         {qty === 0 ? (
-          <Tombol varian="danger" kritis disabled={menyimpan} onClick={simpan}>
+          <Tombol
+            varian="danger"
+            kritis
+            disabled={menyimpan}
+            keterangan={menyimpan ? 'edit-menyimpan-alasan' : undefined}
+            onClick={simpan}
+          >
             {menyimpan ? 'Mencatat…' : 'Hapus dari keranjang'}
           </Tombol>
         ) : (
@@ -275,7 +281,7 @@ export function DialogEditItem({
             varian="primary"
             kritis
             disabled={kurang.length > 0 || menyimpan}
-            keterangan={kurang.length > 0 ? 'edit-kurang' : undefined}
+            keterangan={menyimpan ? 'edit-menyimpan-alasan' : kurang.length > 0 ? 'edit-kurang' : undefined}
             onClick={tanpaPerubahan ? onBatal : simpan}
           >
             {menyimpan ? 'Mencatat…' : 'Simpan'}
