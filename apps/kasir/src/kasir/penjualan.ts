@@ -12,10 +12,12 @@ import {
 } from '../../../../packages/domain/src/pembayaran-campuran.ts';
 import { ambangDari } from '../../../../packages/domain/src/diskon.ts';
 import {
+  PROVIDER_TRANSFER,
   dikonfirmasiManual,
   periksaApprovalCode,
   periksaCardLast4,
   periksaReferensi,
+  periksaTransfer,
   type GalatBayar,
   type KodeGalatBayar,
 } from '../../../../packages/domain/src/pembayaran-manual.ts';
@@ -74,7 +76,7 @@ import type { Keranjang } from './keranjang.ts';
  * Tiga sisanya berfungsi tanpa jaringan, dan itu sengaja: merchant yang
  * internetnya mati tetap dapat menerima ketiganya.
  */
-export type MetodeBayar = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc';
+export type MetodeBayar = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc' | 'other';
 
 /**
  * FR-C3 — identitas yang SUDAH dicadangkan dan sudah dikirim ke server
@@ -144,11 +146,29 @@ export interface PembayaranQrisDinamis {
   nominal?: bigint;
 }
 
+/**
+ * Transfer bank, dikonfirmasi kasir (keputusan user P1/P2, 28 September 2026):
+ * `method = 'other'` + `provider = 'bank_transfer'`, tanpa migrasi. Berfungsi
+ * offline, dan seperti QRIS statis tidak ada sistem yang memverifikasinya —
+ * karena itu referensi WAJIB (`periksaTransfer`).
+ */
+export interface PembayaranTransfer {
+  metode: 'other';
+  provider: typeof PROVIDER_TRANSFER;
+  /** WAJIB. Satu-satunya jejak yang dapat dicocokkan dengan mutasi rekening. */
+  referensi: string;
+  /** Bank pengirim/penerima; opsional, tersimpan di kolom `acquirer`. */
+  bank?: string | null;
+  /** Lihat `PembayaranQrisStatis.nominal`. */
+  nominal?: bigint;
+}
+
 export type Pembayaran =
   | PembayaranTunai
   | PembayaranQrisDinamis
   | PembayaranQrisStatis
-  | PembayaranEdc;
+  | PembayaranEdc
+  | PembayaranTransfer;
 
 export type HasilPenjualan =
   | {
@@ -244,6 +264,7 @@ async function urutanBerikutnya(
 /** `null` bila sah. Aturannya milik `packages/domain`. */
 function periksaPembayaran(p: Pembayaran): GalatBayar | null {
   if (p.metode === 'qris_static') return periksaReferensi(p.referensi);
+  if (p.metode === 'other') return periksaTransfer(p.referensi, p.bank);
   if (p.metode === 'card_edc') {
     const galat = periksaApprovalCode(p.approvalCode);
     if (galat !== null) return galat;
@@ -276,6 +297,19 @@ function muatanPembayaran(
       method: 'qris_static',
       amount: Number(nominal),
       reference: p.referensi.trim(),
+    };
+  }
+  if (p.metode === 'other') {
+    // ⛔ `provider` ikut: tanpanya server menolak `other` (daftar tertutup),
+    // dan penjualan yang sudah tersimpan berhenti `gagal-permanen`. Tanpa
+    // `tenderedAmount` -- uang bank tidak pernah "diserahkan".
+    return {
+      id: paymentId,
+      method: 'other',
+      amount: Number(nominal),
+      provider: p.provider,
+      reference: p.referensi.trim(),
+      ...(p.bank && p.bank.trim() !== '' ? { acquirer: p.bank.trim() } : {}),
     };
   }
   if (p.metode === 'qris_dynamic') {
@@ -860,8 +894,9 @@ export async function simpanPenjualan({
     // merchant, atau struk terminal EDC.
     //
     // `confirmed_manually` menandai bahwa tidak ada SISTEM yang
-    // memverifikasinya, dan hanya QRIS statis yang mendapatkannya: EDC punya
-    // kode approval dari acquirer, bukti yang dapat dicocokkan.
+    // memverifikasinya: QRIS statis dan Transfer (`other`) mendapatkannya, EDC
+    // tidak -- ia punya kode approval dari acquirer, bukti yang dapat
+    // dicocokkan.
     //
     // ⛔ SATU BARIS PER BAGIAN (FR-C1). `order` 1:N `payment`, dan
     // menggabungkan dua metode menjadi satu baris membuat rekonsiliasi
@@ -874,19 +909,25 @@ export async function simpanPenjualan({
         `INSERT INTO payment
            (id, order_id, check_id, method, amount, tendered_amount, change_amount, status,
             provider_reference, approval_code, card_last4, acquirer, terminal_reference,
-            confirmed_manually, tendered_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?)`,
+            confirmed_manually, tendered_at, provider)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           paymentIds[i], orderId, checkId, b.metode, Number(nominalBagian[i]),
           tunaiBagian && tendered !== null ? Number(tendered) : null,
           tunaiBagian ? Number(kembalian) : null,
-          b.metode === 'qris_static' ? b.referensi.trim() : null,
+          b.metode === 'qris_static' || b.metode === 'other' ? b.referensi.trim() : null,
           b.metode === 'card_edc' ? b.approvalCode.trim() : null,
           b.metode === 'card_edc' ? (b.cardLast4 ?? null) : null,
-          b.metode === 'card_edc' ? (b.acquirer ?? null) : null,
+          b.metode === 'card_edc'
+            ? (b.acquirer ?? null)
+            : b.metode === 'other' && b.bank && b.bank.trim() !== ''
+              ? b.bank.trim()
+              : null,
           b.metode === 'card_edc' ? (b.terminalReference ?? null) : null,
           dikonfirmasiManual(b.metode) ? 1 : 0,
           occurredAt,
+          // Indeks TERAKHIR sengaja: indeks bind yang ada tidak bergeser.
+          b.metode === 'other' ? b.provider : null,
         ]
       );
     }
@@ -1086,7 +1127,7 @@ export async function simpanPenjualan({
       // `amount_due` sebagai "Tunai" pada struk berkembalian membuat baris
       // pembayaran dan baris kembalian tidak konsisten satu sama lain.
       pembayaran: bagian.map((b, i) => ({
-        nama: labelMetode(b.metode),
+        nama: labelMetode(b.metode, b.metode === 'other' ? b.provider : null),
         // Untuk tunai yang dicetak adalah uang yang DISERAHKAN (bersama
         // kembaliannya di baris berikutnya); untuk metode lain, nominal
         // bagiannya. Mencetak nominal tunai pada struk berkembalian membuat

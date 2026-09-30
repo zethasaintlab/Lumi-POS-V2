@@ -144,3 +144,12 @@ test('⛔ kosakata kunci SAMA dengan yang dipakai alat operator', async () => {
     );
   }
 });
+
+test('⛔ pembayaran_transfer ada, menyala secara bawaan, dan dapat dimatikan per merchant', async () => {
+  const { FITUR, bawaanFitur, resolusiFitur } = await import(MOD);
+  assert.ok(FITUR.some((f) => f.kunci === 'pembayaran_transfer'), 'kill switch Transfer hilang');
+  assert.equal(bawaanFitur('pembayaran_transfer'), true, 'Transfer harus menyala bila tidak ada penyimpangan');
+  const mati = [{ kunci: 'pembayaran_transfer', tenantId: T1, aktif: false }];
+  assert.equal(resolusiFitur(mati, 'pembayaran_transfer', T1), false, 'kill switch tidak mematikan Transfer');
+  assert.equal(resolusiFitur(mati, 'pembayaran_transfer', T2), true, 'kill switch bocor ke merchant lain');
+});

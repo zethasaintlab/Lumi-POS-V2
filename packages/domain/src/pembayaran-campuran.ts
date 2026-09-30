@@ -34,8 +34,12 @@ import { computeCashRounding, type RoundingMode } from './money.ts';
  * ini berarti aritmetika campuran punya lubang berbentuk metode: hari ada yang
  * menggabungnya, `sisaTagihan` tidak menghitungnya dan kasir menagih tunai
  * sebesar SELURUH total untuk transaksi yang separuhnya sudah dibayar.
+ *
+ * `other` adalah Transfer (`provider = 'bank_transfer'`, PR 2B Task 7): uang
+ * bank, non-tunai, sehingga kelebihan bayarnya ditolak dan ia tidak pernah
+ * dibulatkan — aturannya sama dengan `qris_static` tanpa cabang tambahan.
  */
-export type MetodeCampuran = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc';
+export type MetodeCampuran = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc' | 'other';
 
 export interface BagianBayar {
   metode: MetodeCampuran;

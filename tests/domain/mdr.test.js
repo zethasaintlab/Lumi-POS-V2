@@ -97,3 +97,9 @@ test('⛔ tarif tidak pernah float — jalur uang tidak menyentuhnya', async () 
     assert.equal(typeof t, 'bigint', `tarif ${kategori} bukan bigint`);
   }
 });
+
+test('other tidak punya perkiraan MDR (transfer bank tidak dipotong lewat MDR)', async () => {
+  const { metodePunyaPerkiraanMdr, perkiraanMdr } = await import(MDR);
+  assert.equal(metodePunyaPerkiraanMdr('other'), false, 'other (transfer) tidak boleh punya perkiraan MDR');
+  assert.equal(perkiraanMdr({ kategori: 'ume', method: 'other', amount: 100_000n }), null);
+});

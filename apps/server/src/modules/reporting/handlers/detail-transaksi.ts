@@ -57,6 +57,11 @@ export interface BarisDetail {
 export interface PembayaranDetail {
   id: string;
   method: string;
+  /**
+   * Aditif (PR 2B Task 7). `bank_transfer` + `method: other` = Transfer;
+   * klien menampilkannya lewat `labelMetode(method, provider)`.
+   */
+  provider: string | null;
   amount: string;
   /** `null` untuk metode non-tunai — tidak ada uang yang diserahkan. */
   tenderedAmount: string | null;
@@ -226,7 +231,7 @@ export async function ambilDetail(
   }
 
   const { rows: payRows } = await client.query(
-    `SELECT id, method, amount, tendered_amount, change_amount, status,
+    `SELECT id, method, provider, amount, tendered_amount, change_amount, status,
             confirmed_manually, card_last4, occurred_at
        FROM payment
       WHERE order_id = $1
@@ -298,6 +303,7 @@ export async function ambilDetail(
     payments: payRows.map((p) => ({
       id: p.id as string,
       method: p.method as string,
+      provider: (p.provider as string | null) ?? null,
       amount: teks(p.amount),
       // ⛔ `null` DIPERTAHANKAN, tidak dijadikan `'0'`. QRIS tidak punya uang
       // yang diserahkan, dan "Tunai diterima: Rp 0" adalah pernyataan yang

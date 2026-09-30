@@ -548,3 +548,42 @@ test('⛔ `opening_float` TIDAK menjadi baris rincian — ia sudah `saldoAwal`',
     'modal awal muncul dua kali: sebagai `saldoAwal` DAN sebagai baris rincian.'
   );
 });
+
+// ---------------------------------------------------------------------------
+// Transfer (`other` + `bank_transfer`) -- PR 2B Task 7, syarat user atas P1
+// ---------------------------------------------------------------------------
+
+const PEMBAYARAN_TRANSFER = [
+  { method: 'cash', amount: 100000 },
+  { method: 'other', provider: 'bank_transfer', amount: 40000 },
+  { method: 'other', provider: 'bank_transfer', amount: 15000 },
+  { method: 'other', provider: null, amount: 5000 },
+  { method: 'qris_static', provider: null, amount: 20000 },
+];
+
+test('⛔ transfer tampil sebagai kelompok transfer, bukan other (ringkasan K-12)', async () => {
+  const { ringkasanSebelumHitung } = await import(MOD);
+  const r = await ringkasanSebelumHitung(dbPalsu({ order: PEMBAYARAN_TRANSFER }), 's1');
+
+  const peta = Object.fromEntries(r.perMetode.map((m) => [m.metode, m]));
+  assert.ok(peta.transfer, `K-12 tidak memuat kelompok transfer: ${JSON.stringify(r.perMetode.map((m) => m.metode))}`);
+  assert.equal(peta.transfer.total, 55000, 'uang transfer tidak terjumlah utuh');
+  assert.equal(peta.transfer.jumlah, 2);
+  assert.equal(peta.other.total, 5000, 'other tanpa provider tercampur dengan transfer');
+  // Uang bank tidak masuk laci: total non-tunai tetap tampil, tunai tetap disembunyikan.
+  assert.equal(peta.cash.total, null);
+  // Tidak ada uang yang hilang dari pengelompokan.
+  const bank = r.perMetode.filter((m) => m.metode !== 'cash').reduce((t, m) => t + m.total, 0);
+  assert.equal(bank, 80000);
+});
+
+test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan shift K-13)', async () => {
+  const { laporanShift } = await import(MOD);
+  const l = await laporanShift(dbPalsu({ order: PEMBAYARAN_TRANSFER }), 's1');
+
+  const peta = Object.fromEntries(l.perMetode.map((m) => [m.metode, m]));
+  assert.equal(peta.transfer?.total, 55000, 'laporan shift tidak memuat kelompok transfer');
+  assert.equal(peta.transfer?.jumlah, 2);
+  assert.equal(peta.other?.total, 5000);
+  assert.equal(l.perMetode.reduce((t, m) => t + m.total, 0), 180000, 'uang hilang dari pengelompokan');
+});

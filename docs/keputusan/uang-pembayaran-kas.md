@@ -281,3 +281,12 @@ menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
 
 Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
 
+
+### Transfer sebagai metode keempat (PR 2B Task 7, 30 September 2026)
+
+Keputusan user P1 dan P2 (issue #76, komentar `5862870577`, 28 September 2026): Transfer disimpan sebagai `method = 'other'` + `provider = 'bank_transfer'` tanpa migrasi (`spec-c:244`), `confirmed_manually = true`.
+
+- Aturan validasi Transfer (referensi wajib ≥ 3 karakter, tidak berbentuk nomor kartu, berlaku juga untuk field bank) hidup di `packages/domain/src/pembayaran-manual.ts` (`periksaTransfer`), dan server memakainya juga — pesan galatnya sama dengan yang tampil di perangkat.
+- Daftar `provider` untuk `other` tertutup (`bank_transfer`); nilai lain ditolak 400 `VALIDATION_ERROR`. Kill switch `pembayaran_transfer` hanya menyembunyikan tab; server tetap menerima Transfer yang sudah tersimpan di perangkat.
+- Idempotensi jalur manual kini men-hash seluruh isi yang disimpan (422 `IDEMPOTENCY_KEY_HASH_MISMATCH` bila key sama dengan isi beda); baris lama berhash `orderId:paymentId` tetap dikenali sebagai request yang sama.
+- Struk Transfer hanya mencetak "Transfer" (tanpa referensi, Q5 terbuka); nama "Transfer" dieja di `metode-tampilan.ts` saja.

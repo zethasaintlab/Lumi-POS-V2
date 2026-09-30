@@ -142,6 +142,8 @@ export interface BarisDetail {
 export interface PembayaranDetail {
   id: string;
   metode: string;
+  /** `bank_transfer` + `metode: other` = Transfer (`labelMetode(metode, provider)`). */
+  provider: string | null;
   jumlah: number;
   diterima: number | null;
   kembalian: number | null;
@@ -218,10 +220,10 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
       [orderId]
     ),
     db.getAll<{
-      id: string; method: string; amount: number; tendered_amount: number | null;
-      change_amount: number | null; status: string;
+      id: string; method: string; provider: string | null; amount: number;
+      tendered_amount: number | null; change_amount: number | null; status: string;
     }>(
-      `SELECT id, method, amount, tendered_amount, change_amount, status
+      `SELECT id, method, provider, amount, tendered_amount, change_amount, status
          FROM payment WHERE order_id = ?`,
       [orderId]
     ),
@@ -292,6 +294,7 @@ export async function bacaDetail(db: DbLokal, orderId: string): Promise<DetailOr
     pembayaran: payments.map((p) => ({
       id: p.id,
       metode: p.method,
+      provider: p.provider ?? null,
       jumlah: p.amount,
       diterima: p.tendered_amount,
       kembalian: p.change_amount,

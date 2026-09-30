@@ -1,6 +1,7 @@
 /**
- * Validasi pembayaran yang dikonfirmasi ORANG — QRIS statis (FR-C2) dan EDC
- * (FR-C4).
+ * Validasi pembayaran yang dikonfirmasi ORANG — QRIS statis (FR-C2), EDC
+ * (FR-C4), dan Transfer (`method = 'other'` + `provider = 'bank_transfer'`,
+ * keputusan user P1, 28 September 2026).
  *
  * ## ⛔ Kenapa di domain
  *
@@ -90,6 +91,36 @@ export function periksaApprovalCode(nilai: unknown): GalatBayar | null {
 }
 
 /**
+ * Transfer bank direkam sebagai `method = 'other'` + `provider = 'bank_transfer'`
+ * (`spec-c:244`, tanpa migrasi). Satu-satunya tempat kata itu dieja.
+ */
+export const PROVIDER_TRANSFER = 'bank_transfer';
+
+/**
+ * Transfer. Referensi WAJIB; bank (`acquirer`) opsional.
+ *
+ * ⛔ Sama beratnya dengan QRIS statis: tidak ada sistem yang memverifikasi
+ * transfer, jadi referensi adalah satu-satunya jejak yang dapat dicocokkan
+ * dengan mutasi rekening. Nomor rekening (10 digit) dan referensi bank (12
+ * digit) sah; 13–19 digit ditolak di KEDUA field, karena field bebas mana pun
+ * dapat menjadi tempat nomor kartu diketik (FR-C5).
+ */
+export function periksaTransfer(referensi: unknown, bank: unknown): GalatBayar | null {
+  if (typeof referensi !== 'string' || referensi.trim().length < MIN_PANJANG_REFERENSI) {
+    return {
+      kode: 'VALIDATION_ERROR',
+      pesan: `Nomor referensi transfer wajib (minimal ${MIN_PANJANG_REFERENSI} karakter).`,
+    };
+  }
+  const galatReferensi = periksaBukanNomorKartu(referensi, 'reference');
+  if (galatReferensi !== null) return galatReferensi;
+  if (typeof bank === 'string' && bank.trim().length > 0) {
+    return periksaBukanNomorKartu(bank, 'acquirer');
+  }
+  return null;
+}
+
+/**
  * Empat digit terakhir kartu — maksimal 4 DIGIT.
  *
  * ⛔ Menuntut DIGIT, bukan sekadar panjang. Database sudah punya
@@ -108,15 +139,16 @@ export function periksaCardLast4(nilai: unknown): GalatBayar | null {
 }
 
 /**
- * ⛔ `confirmed_manually` HANYA untuk QRIS statis.
+ * ⛔ `confirmed_manually` untuk metode yang TIDAK diverifikasi sistem mana pun:
+ * QRIS statis dan Transfer (`other`, keputusan user P2).
  *
- * Ia menandai bahwa tidak ada SISTEM yang memverifikasi pembayaran, dan
  * FR-G5 memakainya untuk laporan exception. EDC punya struk terminal dan kode
  * approval dari acquirer — bukti fisik yang dapat dicocokkan — sementara QRIS
- * statis tidak punya apa pun selain kalimat kasir.
+ * statis dan transfer tidak punya apa pun selain kalimat kasir. `other`
+ * seluruhnya dikonfirmasi orang; tidak ada gateway di baliknya.
  */
 export function dikonfirmasiManual(metode: string): boolean {
-  return metode === 'qris_static';
+  return metode === 'qris_static' || metode === 'other';
 }
 
 /**

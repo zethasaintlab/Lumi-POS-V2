@@ -4,6 +4,7 @@ import { useSesi } from '../../../../packages/klien-api/src/sesi.tsx';
 import { GalatHttp } from '../../../../packages/klien-api/src/http.ts';
 import { Tombol } from '../Tombol.tsx';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 import { RentangTanggal, hariIni, type Outlet } from './RentangTanggal.tsx';
 import { rentangSiap, type Rentang } from './b16.ts';
 
@@ -66,15 +67,6 @@ type Keadaan =
   | { jenis: 'memuat' }
   | { jenis: 'siap'; hasil: HasilLaporan }
   | { jenis: 'galat'; pesan: string };
-
-/** Nama metode yang dibaca merchant, bukan nilai kolom. */
-const LABEL_METODE: Record<string, string> = {
-  cash: 'Tunai',
-  qris_dynamic: 'QRIS (dinamis)',
-  qris_static: 'QRIS (statis)',
-  card_edc: 'Kartu / EDC',
-  other: 'Lainnya',
-};
 
 export function PembayaranLayar() {
   const { api } = useSesi();
@@ -212,7 +204,7 @@ export function PembayaranLayar() {
                   { key: 'settle', header: 'Perkiraan diterima', align: 'right' },
                 ]}
                 rows={keadaan.hasil.metode.map((m) => ({
-                  metode: LABEL_METODE[m.method] ?? m.method,
+                  metode: labelMetode(m.method),
                   jumlah: <span className="num">{m.jumlahTransaksi}</span>,
                   total: <span className="num">{rupiah(m.totalDiterima)}</span>,
                   // ⛔ Tanda hubung, bukan "Rp 0" — lihat catatan kepala berkas.

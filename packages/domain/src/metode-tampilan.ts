@@ -16,6 +16,8 @@
  * Murni: tanpa I/O.
  */
 
+import { PROVIDER_TRANSFER } from './pembayaran-manual.ts';
+
 /** Metode pembayaran, dalam kata yang merchant pakai. */
 export const LABEL_METODE: Record<string, string> = {
   cash: 'Tunai',
@@ -23,7 +25,22 @@ export const LABEL_METODE: Record<string, string> = {
   qris_static: 'QRIS (statis)',
   card_edc: 'Kartu / EDC',
   other: 'Lainnya',
+  /** Kode LAPORAN, bukan nilai kolom: `other` + `bank_transfer` (lihat `kodeLaporanMetode`). */
+  transfer: 'Transfer',
 };
+
+/**
+ * ⛔ Satu-satunya tempat aturan lipat `(method, provider)` → kode laporan.
+ *
+ * Transfer disimpan sebagai `other` + `bank_transfer` (tanpa migrasi), tetapi
+ * setiap laporan per metode harus menyebutnya "Transfer", tidak pernah
+ * "Lainnya" (syarat user atas P1: uang bank tidak boleh tersembunyi dari
+ * pemilik). Query mengambil `provider` di samping `method` dan melipat di
+ * TypeScript lewat fungsi ini; SQL tidak menulis `CASE` padanannya.
+ */
+export function kodeLaporanMetode(method: string, provider?: string | null): string {
+  return method === 'other' && provider === PROVIDER_TRANSFER ? 'transfer' : method;
+}
 
 /**
  * Status pembayaran.
@@ -39,8 +56,13 @@ export const LABEL_STATUS_BAYAR: Record<string, string> = {
   voided: 'Dibatalkan',
 };
 
-export function labelMetode(kode: string): string {
-  return LABEL_METODE[kode] ?? kode;
+/**
+ * Tanpa `provider` perilakunya tidak berubah; `labelMetode('transfer')` juga
+ * "Transfer" supaya respons laporan yang sudah terlipat terbaca benar.
+ */
+export function labelMetode(kode: string, provider?: string | null): string {
+  const laporan = kodeLaporanMetode(kode, provider);
+  return LABEL_METODE[laporan] ?? laporan;
 }
 
 export function labelStatusBayar(kode: string): string {

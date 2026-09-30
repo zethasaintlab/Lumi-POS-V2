@@ -43,6 +43,8 @@ export interface BarisDetail {
 export interface PembayaranDetail {
   id: string;
   method: string;
+  /** Aditif: `bank_transfer` + `method: other` = Transfer. Server lama tidak mengirimnya. */
+  provider?: string | null;
   amount: string;
   tenderedAmount: string | null;
   changeAmount: string | null;

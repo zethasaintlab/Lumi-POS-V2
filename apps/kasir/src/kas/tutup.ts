@@ -2,6 +2,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { PeristiwaAudit } from '../../../../packages/domain/src/audit-peristiwa.ts';
+import { kodeLaporanMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 
 /** Diperiksa TypeScript terhadap kosakata tertutup `PERISTIWA_AUDIT`. */
 const PERISTIWA: PeristiwaAudit = 'shift_count_attempt';
@@ -89,6 +90,8 @@ interface BarisShift {
 
 interface BarisPembayaran {
   method: string;
+  /** Untuk melipat Transfer (`other` + `bank_transfer`) — `kodeLaporanMetode`. */
+  provider?: string | null;
   amount: number;
 }
 
@@ -125,7 +128,7 @@ async function ambilShift(db: DbLokal, shiftId: string): Promise<BarisShift | nu
  */
 async function pembayaranTunai(db: DbLokal, shiftId: string): Promise<BarisPembayaran[]> {
   return db.getAll<BarisPembayaran>(
-    `SELECT p.method, p.amount
+    `SELECT p.method, p.provider, p.amount
        FROM payment p
        JOIN "order" o ON o.id = p.order_id
       WHERE o.shift_id = ?
@@ -179,10 +182,13 @@ function agregasiPerMetode(
 ): { metode: string; jumlah: number; total: number }[] {
   const per = new Map<string, { jumlah: number; total: number }>();
   for (const b of bayar) {
-    const kini = per.get(b.method) ?? { jumlah: 0, total: 0 };
+    // ⛔ Kunci = KODE LAPORAN: transfer (other + bank_transfer) terpisah dari
+    // `other`. Uang bank tidak boleh tersembunyi di "Lainnya" (syarat user P1).
+    const kode = kodeLaporanMetode(b.method, b.provider);
+    const kini = per.get(kode) ?? { jumlah: 0, total: 0 };
     kini.jumlah += 1;
     kini.total += b.amount;
-    per.set(b.method, kini);
+    per.set(kode, kini);
   }
   return [...per].map(([metode, v]) => ({ metode, jumlah: v.jumlah, total: v.total }));
 }

@@ -63,20 +63,15 @@ test('ringkasan menghitung berapa shift yang selisihnya bermasalah', async () =>
 });
 
 test('metode dan tipe gerakan terbaca merchant', async () => {
-  const { labelMetode, labelGerak } = await import(B04);
+  const { labelGerak } = await import(B04);
+  // Nama metode dieja di SATU tempat (domain); G-LABEL menjaga b04.ts tidak
+  // menyimpan salinannya lagi.
+  const { labelMetode } = await import('../../packages/domain/src/metode-tampilan.ts');
   assert.equal(labelMetode('cash'), 'Tunai');
   assert.equal(labelGerak('bank_deposit'), 'Setoran bank');
   // Kode tak dikenal tampil apa adanya, bukan kosong.
   assert.equal(labelMetode('metode_baru'), 'metode_baru');
   assert.equal(labelGerak('tipe_baru'), 'tipe_baru');
-});
-
-test('⛔ label metode SEPAKAT dengan B-03', async () => {
-  // Dua layar yang menamai metode yang sama dengan kata berbeda membuat
-  // merchant mengira keduanya hal yang berbeda.
-  const { LABEL_METODE } = await import(B04);
-  const { LABEL_METODE: b03 } = await import('../../packages/domain/src/metode-tampilan.ts');
-  assert.deepEqual(LABEL_METODE, b03);
 });
 
 test('⛔ kosong menyebut SEBABNYA — shift berjalan disembunyikan', async () => {

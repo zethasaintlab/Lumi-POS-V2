@@ -172,3 +172,11 @@ test('detail siap → tidak ada pesan', async () => {
   const { pesanDetail } = await import(B03);
   assert.equal(pesanDetail({ jenis: 'siap', detail: DASAR }), null);
 });
+
+test('⛔ Transfer (other + bank_transfer) terbaca "Transfer", tidak pernah "Lainnya"', async () => {
+  const { labelMetode } = await import(METODE);
+  assert.equal(labelMetode('other', 'bank_transfer'), 'Transfer');
+  assert.equal(labelMetode('transfer'), 'Transfer', 'kode laporan yang sudah terlipat');
+  assert.equal(labelMetode('other', null), 'Lainnya');
+  assert.equal(labelMetode('other'), 'Lainnya');
+});

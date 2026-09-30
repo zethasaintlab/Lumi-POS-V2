@@ -275,3 +275,21 @@ test('⛔ ketiga bentuk snapshot hidup berdampingan dalam satu order', async () 
   assert.deepEqual(d.baris[1].modifier, d.baris[2].modifier);
   assert.deepEqual(d.baris[2].modifier, ['Sirup ×3']);
 });
+
+test('⛔ detail riwayat membawa provider pembayaran (transfer = other + bank_transfer)', async () => {
+  const { bacaDetail } = await import(MOD);
+  const db = dbPalsu({
+    order: [ORDER],
+    order_line: [],
+    payment: [
+      { id: 'p1', order_id: 'o1', method: 'other', provider: 'bank_transfer', amount: 16500,
+        tendered_amount: null, change_amount: null, status: 'confirmed' },
+      { id: 'p2', order_id: 'o1', method: 'other', amount: 100,
+        tendered_amount: null, change_amount: null, status: 'confirmed' },
+    ],
+    refund: [],
+  });
+  const d = await bacaDetail(db, 'o1');
+  assert.equal(d.pembayaran[0].provider, 'bank_transfer', 'provider hilang -- layar menyebutnya Lainnya');
+  assert.equal(d.pembayaran[1].provider, null, 'provider yang tidak ada harus null, bukan undefined');
+});

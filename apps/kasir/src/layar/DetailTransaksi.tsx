@@ -13,6 +13,10 @@ import { rencanaPembatalan } from '../kasir/pembatalan.ts';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import {
+  kodeLaporanMetode,
+  labelMetode as labelMetodeDomain,
+} from '../../../../packages/domain/src/metode-tampilan.ts';
 
 /* K-09 — Detail Transaksi (IA §2.2).
 
@@ -193,7 +197,12 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
         <ul className="kasir-baris-daftar">
           {pembayaran.map((p) => (
             <li key={p.id} className="kasir-baris">
-              <span className="grow t-body-md">{METODE[p.metode] ?? p.metode}</span>
+              <span className="grow t-body-md">
+                {/* Kode laporan dulu (transfer = other + bank_transfer), lalu peta
+                    layar ini, lalu peta domain -- tidak pernah kode mentah. */}
+                {METODE[kodeLaporanMetode(p.metode, p.provider)] ??
+                  labelMetodeDomain(p.metode, p.provider)}
+              </span>
               {p.diterima !== null && (
                 <span className="t-caption num">diterima {rupiah(p.diterima)}</span>
               )}

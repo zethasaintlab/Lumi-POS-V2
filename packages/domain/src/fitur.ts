@@ -51,6 +51,15 @@ export const FITUR: readonly Fitur[] = [
       'untuk satu merchant tanpa menunggu rilis.',
   },
   {
+    kunci: 'pembayaran_transfer',
+    bawaan: true,
+    keterangan:
+      'Transfer bank dengan konfirmasi manual kasir (method other + provider ' +
+      'bank_transfer). Seperti QRIS statis, tidak ada sistem yang memverifikasinya ' +
+      'dan berfungsi offline — dimatikan berarti tab Transfer hilang dari layar ' +
+      'bayar untuk satu merchant tanpa menunggu rilis.',
+  },
+  {
     kunci: 'diskon_kasir',
     bawaan: true,
     keterangan:
