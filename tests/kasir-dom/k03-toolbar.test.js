@@ -273,7 +273,10 @@ test('⛔ Item manual: kode dikenal masuk lewat jalur scan; kode asing → "Barc
     const sebelum = await hal.locator('.kasir-baris').count();
     await hal.getByLabel('Kode barang').fill(KODE_BARCODE_FIXTURE);
     await hal.getByRole('button', { name: 'Tambah', exact: true }).click();
-    await hal.waitForTimeout(300);
+    // Kondisi, bukan jeda tetap; timeout dibiarkan lewat supaya assert di bawah yang menjelaskan.
+    await hal
+      .waitForFunction((n) => document.querySelectorAll('.kasir-baris').length > n, sebelum, { timeout: 3000 })
+      .catch(() => {});
     const sesudah = await hal.locator('.kasir-baris').count();
     const dialogTertutup = (await hal.locator('[role="dialog"]').count()) === 0;
     await hal.close();
@@ -294,7 +297,11 @@ test('⛔ Item manual: kode dikenal masuk lewat jalur scan; kode asing → "Barc
     const sebelum = await hal.locator('.kasir-baris').count();
     await hal.getByLabel('Kode barang').fill(kodeAsing);
     await hal.getByRole('button', { name: 'Tambah', exact: true }).click();
-    await hal.waitForTimeout(300);
+    await hal
+      .waitForFunction((k) => document.body.innerText.includes(`Barcode ${k} tidak dikenali`), kodeAsing, {
+        timeout: 3000,
+      })
+      .catch(() => {});
     const sesudah = await hal.locator('.kasir-baris').count();
     const isi = await hal.evaluate(() => document.body.innerText);
     await hal.close();
@@ -366,7 +373,7 @@ async function pastikanTombol(hal, nama, keterangan) {
  * harus gagal dengan kalimat yang menyebut konfirmasinya, bukan timeout 30 dtk.
  */
 async function pastikanKonfirmasi(hal, sebelum, pemicu) {
-  await hal.waitForTimeout(400);
+  await hal.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
   const sesudah = await keadaanKeranjang(hal);
   const dialog = await hal.locator('[role="dialog"]').count();
   assert.equal(
@@ -386,7 +393,7 @@ async function keadaanKeranjang(hal) {
   return hal.evaluate(() => ({
     baris: document.querySelectorAll('.kasir-baris').length,
     total: document.querySelector('.kasir-total .num')?.textContent ?? null,
-    // Lencana qty `2x` (Task 6: keranjang tanpa stepper).
+    // Lencana qty `2×` (Task 6: keranjang tanpa stepper).
     qty: [...document.querySelectorAll('.kasir-baris .kasir-baris-qty')].reduce(
       (n, el) => n + Number((el.textContent ?? '0').replace('×', '').replace(',', '.')),
       0
@@ -455,7 +462,7 @@ test('⛔ batal di konfirmasi → keranjang utuh, nol audit', async () => {
   await hal.getByRole('button', { name: 'Batalkan', exact: true }).click();
   await pastikanKonfirmasi(hal, sebelum, 'tombol Batalkan');
   await hal.getByRole('button', { name: 'Batal', exact: true }).click();
-  await hal.waitForTimeout(300);
+  await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 3000 }).catch(() => {});
   const sesudah = await keadaanKeranjang(hal);
   const tulis = await bacaTulis(hal);
   const dialogTertutup = (await hal.locator('[role="dialog"]').count()) === 0;
