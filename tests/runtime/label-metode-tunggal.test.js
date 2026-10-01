@@ -19,9 +19,9 @@ const AKAR = path.resolve(__dirname, '..', '..');
 const DIPINDAI = ['apps/backoffice/src', 'apps/hp/src', 'apps/kasir/src'];
 // Satu-satunya pengecualian: label PENDEK struk 32 kolom (`LABEL_METODE` ringkas
 // "Tunai/QRIS/Kartu/Lainnya"). "Transfer" tetap datang dari domain di dalamnya.
-// SEMENTARA: `layar/Pembayaran.tsx` (K-06) masih punya NAMA_METODE tanpa Transfer;
-// Task 8 menambah tab Transfer dan WAJIB menghapus baris ini bersama petanya.
-const PENGECUALIAN = new Set(['apps/kasir/src/cetak/metode.ts', 'apps/kasir/src/layar/Pembayaran.tsx']);
+// `layar/Pembayaran.tsx` (K-06) tidak lagi pengecualian (Task 8): `NAMA_METODE` dihapus,
+// nama bagian dari `labelMetode` domain.
+const PENGECUALIAN = new Set(['apps/kasir/src/cetak/metode.ts']);
 
 function berkas(dir) {
   const hasil = [];
