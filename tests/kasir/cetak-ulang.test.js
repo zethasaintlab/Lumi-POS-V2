@@ -155,6 +155,19 @@ test('modifier dan pembayaran ikut terbangun ulang', async () => {
   assert.ok(out.includes('Kembali'), 'kembalian hilang');
 });
 
+test('⛔ cetak ulang struk transfer menyebut "Transfer", bukan "Lainnya"', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(`DELETE FROM payment`);
+  db.sqlite.exec(`
+    INSERT INTO payment (id, order_id, check_id, method, amount, status, provider, provider_reference, tendered_at)
+    VALUES ('pay-t','ord-1','chk','other',55000,'confirmed','bank_transfer','TRF-0042','2026-07-26T14:32:00Z')
+  `);
+  const out = await cetak(db);
+  assert.match(out, /Transfer/, 'transfer tidak disebut di struk cetak ulang');
+  assert.doesNotMatch(out, /Lainnya/, 'transfer tercetak "Lainnya" di cetak ulang');
+});
+
 test('order yang TIDAK ADA menjawab null, bukan melempar', async () => {
   // Riwayat lokal hanya memuat jendela 90 hari; order yang lebih tua bukan
   // kesalahan, dan layar riwayat tidak boleh jatuh karenanya.
