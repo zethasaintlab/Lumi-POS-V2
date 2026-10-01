@@ -636,11 +636,106 @@
  * yang sama sudah ditulis di `.kasir-baris-daftar`, dan ia berlaku lagi di
  * sini karena alasan yang sama.
  */
-.kasir-bayar {
-  align-items: stretch;
-  justify-content: flex-start;
+/* ⛔ K-06 sebagai HALAMAN di dalam `.kasir-konten` (Task 8, spec § 7
+ * "Wadah"). `.kasir-bayar-halaman` mengambil sisa tinggi shell (`flex: 1`,
+ * `min-height: 0`), kolomnya 728 px (lebar kartu mockup, dijaga
+ * `k06-tata-letak.test.js`), dan kartunya `flex: 0 1 auto` + `min-height: 0`
+ * supaya menyusut ke tinggi yang tersedia — yang membuat `.kasir-bayar-isi`
+ * menggulir dan blok aksi tidak pernah bergeser (P8). */
+.kasir-bayar-halaman {
+  display: flex;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
+}
+
+.kasir-bayar-kolom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(45.5rem, 100%);
   min-height: 0;
 }
+
+.kasir-bayar-atas {
+  display: flex;
+  flex: none;
+}
+
+.kasir-bayar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-6);
+}
+
+/* Blok total di atas kartu: label 13 px kapital, nilai 32/700 (`.t-display`). */
+.kasir-bayar-total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.kasir-bayar-total-label {
+  text-transform: uppercase;
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink-muted);
+}
+
+/* Segmented empat tab: tinggi 40 px dalam wadah `--secondary` (mockup). Area
+ * tekan 44 px lewat `.sentuh` di markup, bukan dengan menebalkan tampilannya. */
+.kasir-tab-bayar {
+  display: flex;
+  gap: var(--space-1);
+  height: 2.5rem;
+  padding: var(--space-1);
+  background: var(--secondary);
+  border-radius: var(--radius-control);
+  flex: none;
+}
+.kasir-tab-bayar [role='tab'] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: var(--text-body);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.kasir-tab-bayar [role='tab'][aria-selected='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-card);
+}
+.kasir-tab-bayar [role='tab'][aria-disabled='true'] { cursor: not-allowed; }
+.kasir-tab-bayar [role='tab'][aria-disabled='true'][aria-selected='false'] { color: var(--ink-subtle); }
+
+/* Isi metode: minimal 355 px (mockup), supaya kartu tidak melompat tingginya
+ * antar tab. */
+.kasir-bayar-metode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 22.2rem;
+}
+
+/* Tiga pintasan tunai persis mockup: tampil 44 px (`.btn`), area tekan 56 px
+ * lewat `.sentuh-uang`. */
+.kasir-pintasan {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.kasir-sub-qris { align-self: flex-start; }
+.kasir-sub-qris button { min-height: var(--touch-min); }
+.kasir-sub-qris button:disabled { cursor: not-allowed; }
+.kasir-tautan-campuran { align-self: flex-start; }
 
 .kasir-bayar-isi {
   display: flex;
@@ -818,15 +913,6 @@
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
-}
-
-/* K-06: pemilih metode SATU baris (rebuild UI Fase 3.2, mockup: segmented
-   satu baris). Tetap `.kasir-pecahan` — P1/P5 `k06-penjaga` membaca tombol
-   metode lewat kelas itu. Kolomnya `auto-fit`, bukan 4 tetap: QRIS statis dapat
-   dimatikan lewat kill switch, dan tiga metode harus mengisi barisnya. */
-.kasir-metode {
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-  align-items: start;
 }
 
 /* K-06: baris aksi — aksi sekunder di kiri, aksi utama di kanan (mockup:

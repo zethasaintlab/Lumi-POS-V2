@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Icon, SyncIndicator, Tabs, Wordmark, type IconName } from 'ds';
 import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
 import { ruteNav, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
+import { kunciNavSekarang, langgananKunciNav } from './rute/kunci-nav.ts';
 import { useAntrean } from './konteks/useAntrean.ts';
 import { useKeadaanLokal } from './konteks/DbLokalProvider.tsx';
 import { PitaAntrean } from './PitaAntrean.tsx';
@@ -54,6 +55,26 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
   const { lokal } = useKeadaanLokal();
   const [panelTerbuka, setPanelTerbuka] = useState(false);
 
+  /* ⛔ Kunci tab nav (Task 8, spec § 7 "Wadah"): selama QRIS menunggu atau
+     penjualan disimpan, K-06 memasang alasannya di `kunci-nav.ts`. Dikunci di
+     DUA tempat — penjaga di `onChange` (yang membuat klik buatan tidak
+     menavigasi) dan atribut `aria-disabled` + kalimat alasan. `Tabs` bundle
+     tidak menerima `disabled`, dan `ds-bundle/` tidak disunting. */
+  const kunciNav = useSyncExternalStore(langgananKunciNav, kunciNavSekarang, kunciNavSekarang);
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const tabNav = headerRef.current?.querySelectorAll<HTMLElement>('[aria-label="Navigasi kasir"] [role="tab"]') ?? [];
+    for (const t of tabNav) {
+      if (kunciNav !== null) {
+        t.setAttribute('aria-disabled', 'true');
+        t.setAttribute('aria-describedby', 'kunci-nav-alasan');
+      } else {
+        t.removeAttribute('aria-disabled');
+        t.removeAttribute('aria-describedby');
+      }
+    }
+  }, [kunciNav, nav.length]);
+
   /* ⛔ `siap` saja TIDAK cukup, dan selisih antara keduanya adalah cacat yang
      hidup di sini sampai 21 September 2026.
 
@@ -76,7 +97,7 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
 
   return (
     <div className="kasir-shell">
-      <header className="kasir-header">
+      <header ref={headerRef} className="kasir-header">
         {/* Wordmark "LumiPOS" — komponen SATU-SATUNYA (Task 8, keputusan user
             26 September 2026), dipakai identik di ShellKasir, `AppShell`
             back-office, dan kedua layar masuk. Menuliskan bentuk merek
@@ -107,7 +128,10 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
           variant="underline"
           ariaLabel="Navigasi kasir"
           value={ruteAktif?.jalur ?? ''}
-          onChange={(jalur) => navigasi(jalur)}
+          onChange={(jalur) => {
+            if (kunciNavSekarang() !== null) return;
+            navigasi(jalur);
+          }}
           tabs={nav.map((r) => ({
             value: r.jalur,
             /* ⛔ `label` menerima ReactNode — `Tabs` bundle merendernya apa
@@ -122,6 +146,11 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             ),
           }))}
         />
+        {kunciNav !== null && (
+          <p id="kunci-nav-alasan" className="sr-only">
+            {kunciNav}
+          </p>
+        )}
 
         {/* Kanan header: indikator sinkron, lonceng, tombol pengguna — SATU
             grup yang didorong ke ujung kanan (`margin-left: auto`), sama

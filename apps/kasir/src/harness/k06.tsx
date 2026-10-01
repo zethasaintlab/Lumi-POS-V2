@@ -12,6 +12,8 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
 import { buatDbPalsu } from '../galeri/db-palsu.ts';
 import { Pembayaran } from '../layar/Pembayaran.tsx';
+import { ShellKasir } from '../ShellKasir.tsx';
+import { TABEL_RUTE } from '../rute/tabel.ts';
 import { PanelQris } from '../komponen/PanelQris.tsx';
 import { setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
@@ -58,7 +60,14 @@ let dbAktif: DbLokal | null = null;
 const delegasi: DbLokal = {
   getAll: (sql, params) => dbAktif!.getAll(sql, params),
   execute: (sql, params) => dbAktif!.execute(sql, params),
-  transaction: (fn) => dbAktif!.transaction(fn),
+  /* `window.__tahanTransaksi` (`{ promise }`) menahan SETIAP transaksi sampai
+     test melepasnya — dipakai penjaga "tab nav terkunci selama penjualan
+     disimpan" untuk membuat jendela menyimpan terlihat tanpa berpacu timer. */
+  transaction: async (fn) => {
+    const tahan = (window as unknown as { __tahanTransaksi?: { promise: Promise<void> } }).__tahanTransaksi;
+    if (tahan) await tahan.promise;
+    return dbAktif!.transaction(fn);
+  },
 };
 pasangLokalPalsu({
   db: delegasi,
@@ -66,7 +75,11 @@ pasangLokalPalsu({
   keputusanMigrasi: { tindakan: 'tidak-ada' } as never,
   pemberitahu: buatPemberitahu(),
 });
-dbAktif = buatDbPalsu('normal');
+/* `?matikan=a,b` — kunci fitur yang dipaksa mati (kill switch), pola yang sama
+   dengan `?matikanFitur=` galeri (`OpsiDbPalsu.matikanFitur`). */
+dbAktif = buatDbPalsu('normal', {
+  matikanFitur: (new URLSearchParams(window.location.search).get('matikan') ?? '').split(',').filter(Boolean),
+});
 
 const q = new URLSearchParams(window.location.search);
 
@@ -163,32 +176,27 @@ function Akar() {
     },
   } as unknown as KeadaanLokal;
 
-  /* ⛔ Pembungkus overlay DISALIN dari `Kasir.tsx:511-513`, kata demi kata, dan
-     ia bukan hiasan.
-
-     Sampai 16 September 2026 harness ini memasang `<Pembayaran>` TELANJANG ke
-     `#k06`. Ia cukup untuk penjaga yang membaca teks dan keberadaan tombol —
-     dan diam-diam salah untuk apa pun yang mengukur TATA LETAK: seluruh batas
-     tinggi K-06 datang dari `.kasir-overlay-lebar` (`max-height: 100%` di
-     dalam `.overlay` yang `position: fixed; inset: 0`). Tanpa pembungkus itu
-     layarnya tumbuh setinggi isinya, tidak pernah menggulir, dan blok aksi
-     yang menempel di aplikasi terukur BERGESER di sini.
-
-     Terukur sebelum diperbaiki: blok aksi bergeser 177,0 px antara isi pendek
-     dan isi panjang, dan `.kasir-bayar-isi` melaporkan `scrollHeight ===
-     clientHeight` — penggulungnya tidak pernah menyala.
-
-     Harness yang berbeda bentuk dari aplikasinya adalah salinan, dan penjaga
-     yang menjaga salinan tidak menjaga apa pun. */
+  /* ⛔ Pembungkus = `ShellKasir` ASLI + `Pembayaran` sebagai anaknya, bukan
+     lagi overlay. Keputusan kampanye Hidupkan desain (26 September 2026, spec
+     § 7 "Wadah"): K-06 adalah halaman di dalam `kasir-konten`, header tetap
+     terlihat, dan tab nav dikunci selama QRIS menunggu. Penjaga yang mengukur
+     tinggi blok aksi dan kunci tab nav hanya benar bila pohonnya sama dengan
+     aplikasi (`.kasir-shell` memberi `height: 100vh`, `.kasir-konten` yang
+     menggulir). Harness yang berbeda bentuk dari aplikasinya adalah salinan,
+     dan penjaga yang menjaga salinan tidak menjaga apa pun. */
   return (
     <DbLokalPalsuProvider keadaan={keadaan}>
-      <IsiSiap>
-        <div className="overlay kasir-overlay-bayar" role="dialog" aria-modal="true" aria-label="Pembayaran">
-          <div className="dialog kasir-overlay-lebar">
-            <Pembayaran onKembali={() => undefined} />
-          </div>
-        </div>
-      </IsiSiap>
+      <ShellKasir
+        outlet="Outlet Uji"
+        device="K1"
+        pengguna="Kasir Uji"
+        perangkatTerdaftar
+        ruteAktif={TABEL_RUTE.find((r) => r.layar === 'K-03') ?? null}
+      >
+        <IsiSiap>
+          <Pembayaran onKembali={() => undefined} />
+        </IsiSiap>
+      </ShellKasir>
     </DbLokalPalsuProvider>
   );
 }
