@@ -774,3 +774,247 @@ test('⛔ P9: Total tampil di blok ATAS kartu 32/700, dan nilainya total yang ja
     await hal.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// PENJAGA BARU — Task 8, kartu pembayaran bertoggle (kampanye Hidupkan desain)
+// ---------------------------------------------------------------------------
+
+/** Catatan penulisan db palsu harness (`__galeriTulis`), disaring per SQL. */
+const tulisan = (hal, pola) =>
+  hal.evaluate(
+    (src) => (window.__galeriTulis ?? []).filter((t) => new RegExp(src, 'i').test(t.sql)).map((t) => ({ sql: t.sql, params: t.params.map(String) })),
+    pola.source
+  );
+
+/** Teks alasan yang dirujuk `aria-describedby` tombol. */
+const alasanTombol = (tombol) =>
+  tombol.evaluate((e) => {
+    const id = e.getAttribute('aria-describedby');
+    return id ? (document.getElementById(id)?.textContent.trim() ?? '') : '';
+  });
+
+test('⛔ Transfer: tanpa referensi "Konfirmasi bayar" menolak dengan pesan periksaTransfer; tab HILANG saat pembayaran_transfer mati', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    await tab(hal, 'Transfer').click();
+    assert.equal(await hal.getByLabel('Bank tujuan').count(), 1, 'field "Bank tujuan" tidak dirender di tab Transfer');
+    assert.equal(await hal.getByLabel('Nomor referensi').count(), 1, 'field "Nomor referensi" tidak dirender di tab Transfer');
+
+    const konfirmasi = hal.getByRole('button', { name: 'Konfirmasi bayar' });
+    // Referensi kosong: menolak, dengan kalimat `periksaTransfer` (satu sumber).
+    assert.equal(await konfirmasi.isDisabled(), true, 'Konfirmasi bayar AKTIF tanpa referensi transfer');
+    assert.match(await alasanTombol(konfirmasi), /Nomor referensi transfer wajib/, 'alasan bukan kalimat periksaTransfer');
+
+    // ⛔ Nomor kartu di referensi — juga berpemisah spasi — ditolak.
+    await hal.getByLabel('Nomor referensi').fill('4111 1111 1111 1111');
+    assert.equal(await konfirmasi.isDisabled(), true, 'nomor kartu di referensi diterima');
+    assert.match(await alasanTombol(konfirmasi), /nomor kartu/i);
+
+    // ⛔ Review Focus 2: nomor kartu di field BANK, bukan hanya di referensi.
+    await hal.getByLabel('Nomor referensi').fill('TRF-0001');
+    await hal.getByLabel('Bank tujuan').fill('4111-1111-1111-1111');
+    assert.equal(await konfirmasi.isDisabled(), true, 'nomor kartu di field Bank tujuan diterima');
+    assert.match(await alasanTombol(konfirmasi), /nomor kartu/i);
+
+    // Sah: referensi + bank biasa → tersimpan sebagai other/bank_transfer, tanpa cash_movement.
+    await hal.getByLabel('Bank tujuan').fill('BCA');
+    assert.equal(await konfirmasi.isDisabled(), false, 'Konfirmasi bayar tetap mati padahal transfer sah');
+    await konfirmasi.click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    const bayar = await tulisan(hal, /INSERT INTO payment/);
+    assert.equal(bayar.length, 1, `baris payment: ${bayar.length}`);
+    assert.ok(bayar[0].params.includes('other') && bayar[0].params.includes('bank_transfer'), `payment bukan other/bank_transfer: ${JSON.stringify(bayar[0].params)}`);
+    assert.equal((await tulisan(hal, /INSERT INTO cash_movement/)).length, 0, 'Transfer menulis cash_movement — uang bank tidak pernah masuk laci');
+  } finally {
+    await hal.close();
+  }
+
+  // Kill switch: pembayaran_transfer mati → tab HILANG (bukan nonaktif).
+  const mati = await buka('render=k06&baris=2&matikan=pembayaran_transfer');
+  try {
+    assert.deepEqual(await metodeTerlihat(mati), ['Tunai', 'QRIS', 'Kartu'], 'tab Transfer masih ada padahal pembayaran_transfer mati');
+  } finally {
+    await mati.close();
+  }
+});
+
+test('⛔ pintasan MENETAPKAN, tidak menambah: Rp 50.000 lalu Rp 20.000 → kolom berisi 20.000', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    const kolom = hal.getByLabel('Nominal diterima');
+    await hal.getByRole('button', { name: 'Rp 50.000', exact: true }).click();
+    assert.equal(await kolom.inputValue(), '50.000', 'pintasan Rp 50.000 tidak menulis 50.000');
+    await hal.getByRole('button', { name: 'Rp 20.000', exact: true }).click();
+    assert.equal(await kolom.inputValue(), '20.000', `pintasan MENAMBAH, bukan menetapkan: kolom berisi ${await kolom.inputValue()}`);
+    await hal.getByRole('button', { name: 'Rp 100.000', exact: true }).click();
+    assert.equal(await kolom.inputValue(), '100.000');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ tiga pintasan persis mockup: Rp 20.000 · Rp 50.000 · Rp 100.000, tampil 44 px dengan area >= 56 (.sentuh-uang)', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    const pintasan = await hal.$$eval('.kasir-bayar-metode .sentuh-uang', (n) =>
+      n.map((e) => {
+        const r = e.getBoundingClientRect();
+        return { nama: e.textContent.trim(), tinggi: Math.round(r.height), x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })
+    );
+    assert.deepEqual(pintasan.map((p) => p.nama), ['Rp 20.000', 'Rp 50.000', 'Rp 100.000'], `pintasan tunai: ${JSON.stringify(pintasan.map((p) => p.nama))}`);
+    for (const p of pintasan) assert.equal(p.tinggi, 44, `pintasan "${p.nama}" tampil ${p.tinggi} px — mockup 44`);
+    // Area TEKAN >= 56: titik 27 px di atas/bawah pusat masih dijawab tombolnya sendiri.
+    for (const p of pintasan) {
+      for (const dy of [-27, 27]) {
+        const jawab = await hal.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.textContent.trim() ?? null, [p.x, p.y + dy]);
+        assert.equal(jawab, p.nama, `titik ${dy} px dari pusat "${p.nama}" dijawab "${jawab}" — area tekan < 56`);
+      }
+    }
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ kolom Nominal diterima kosong → Konfirmasi bayar nonaktif dengan alasan, tidak pernah menyimpan tendered 0', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    const kolom = hal.getByLabel('Nominal diterima');
+    const konfirmasi = hal.getByRole('button', { name: 'Konfirmasi bayar' });
+    // Keadaan awal (kosong) DAN sesudah diisi lalu dikosongkan (Review Focus 4).
+    assert.equal(await konfirmasi.isDisabled(), true, 'Konfirmasi bayar aktif dengan kolom kosong');
+    assert.match(await alasanTombol(konfirmasi), /Isi nominal yang diterima/, 'tombol mati TANPA alasan tertulis');
+    await kolom.fill('50.000');
+    assert.equal(await konfirmasi.isDisabled(), false, 'Konfirmasi bayar mati padahal nominal sah');
+    await kolom.fill('');
+    assert.equal(await konfirmasi.isDisabled(), true, 'Konfirmasi bayar aktif sesudah kolom dikosongkan');
+    assert.match(await alasanTombol(konfirmasi), /Isi nominal yang diterima/);
+    // Klik buatan melewati `disabled`: tidak ada penjualan yang ditulis.
+    await konfirmasi.evaluate((e) => e.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await hal.waitForTimeout(300);
+    assert.equal((await tulisan(hal, /INSERT INTO payment/)).length, 0, 'kolom kosong menulis baris payment (tendered 0?)');
+    assert.ok(!(await teks(hal)).includes('Transaksi selesai'), 'penjualan selesai dengan kolom nominal kosong');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ header tetap terlihat selama K-06 (halaman di dalam shell, bukan overlay)', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    const u = await hal.evaluate(() => {
+      const kartu = document.querySelector('.kasir-bayar');
+      const header = document.querySelector('.kasir-header');
+      return {
+        header: header ? Math.round(header.getBoundingClientRect().height) : null,
+        grid: document.querySelectorAll('.kasir-grid').length,
+        diKonten: kartu?.closest('.kasir-konten') !== null,
+        diOverlay: kartu?.closest('.overlay') !== null,
+      };
+    });
+    assert.equal(u.header, 68, `header tidak terlihat/68 px selama K-06: ${u.header}`);
+    assert.equal(u.grid, 0, 'grid K-03 ada di DOM selama K-06');
+    assert.equal(u.diKonten, true, 'kartu K-06 tidak berada di dalam .kasir-konten');
+    assert.equal(u.diOverlay, false, 'kartu K-06 masih dirender di dalam overlay');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ tab nav terkunci selama penjualan disimpan, terbuka lagi sesudahnya', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    const nav = () =>
+      hal.$$eval('[aria-label="Navigasi kasir"] [role="tab"]', (n) =>
+        n.map((e) => ({ terkunci: e.getAttribute('aria-disabled') === 'true', alasan: document.getElementById(e.getAttribute('aria-describedby') ?? '')?.textContent.trim() ?? '' }))
+      );
+    assert.ok((await nav()).every((t) => !t.terkunci), 'tab nav terkunci SEBELUM menyimpan');
+    // Tahan transaksi: jendela "sedang menyimpan" menjadi terlihat tanpa berpacu timer.
+    await hal.evaluate(() => {
+      const g = {};
+      g.promise = new Promise((r) => (g.lepas = r));
+      window.__tahanTransaksi = g;
+    });
+    await hal.getByLabel('Nominal diterima').fill('600.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForFunction(() => document.querySelector('[aria-label="Navigasi kasir"] [role="tab"]')?.getAttribute('aria-disabled') === 'true', null, { timeout: 5000 }).catch(() => undefined);
+    const selamaSimpan = await nav();
+    assert.ok(selamaSimpan.length >= 4 && selamaSimpan.every((t) => t.terkunci), `tab nav TIDAK terkunci selama penjualan disimpan: ${JSON.stringify(selamaSimpan)}`);
+    assert.ok(selamaSimpan.every((t) => t.alasan.length > 0), 'tab nav terkunci tanpa alasan tertulis');
+    await hal.evaluate(() => window.__tahanTransaksi.lepas());
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    const sesudah = await nav();
+    assert.ok(sesudah.every((t) => !t.terkunci), `tab nav tetap terkunci sesudah penjualan selesai: ${JSON.stringify(sesudah)}`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ ketukan ganda "Konfirmasi bayar" menyimpan SATU penjualan (Review Focus 1)', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    await hal.getByLabel('Nominal diterima').fill('600.000');
+    // Tahan transaksi supaya ketukan kedua jatuh SELAGI yang pertama berjalan.
+    await hal.evaluate(() => {
+      const g = {};
+      g.promise = new Promise((r) => (g.lepas = r));
+      window.__tahanTransaksi = g;
+    });
+    await hal.evaluate(() => {
+      const b = [...document.querySelectorAll('.kasir-bayar-aksi .btn-primary')][0];
+      b.click();
+      b.click();
+      // Bahkan klik buatan yang melewati `disabled`.
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await hal.evaluate(() => window.__tahanTransaksi.lepas());
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    await hal.waitForTimeout(300);
+    const order = await tulisan(hal, /INSERT INTO "order"/);
+    const bayar = await tulisan(hal, /INSERT INTO payment/);
+    assert.equal(order.length, 1, `ketukan ganda menyimpan ${order.length} baris order`);
+    assert.equal(bayar.length, 1, `ketukan ganda menyimpan ${bayar.length} baris payment`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ qris_static dan card_edc di jalur TAMPILAN: masing-masing sampai K-07 dengan label benar', async () => {
+  // Fixture #3 `uang-pembayaran-kas.md`: teruji di jalur DATA, belum di TAMPILAN.
+  const kasus = [
+    {
+      nama: 'QRIS (statis)',
+      isi: async (hal) => {
+        await tab(hal, 'QRIS').click();
+        await hal.getByRole('button', { name: 'QRIS statis', exact: true }).click();
+        await bidang(hal, /Referensi pembayaran/).fill('44400-4321');
+      },
+      metode: 'qris_static',
+    },
+    {
+      nama: 'Kartu / EDC',
+      isi: async (hal) => {
+        await tab(hal, 'Kartu').click();
+        await bidang(hal, /Kode approval/).fill('APP123');
+      },
+      metode: 'card_edc',
+    },
+  ];
+  for (const k of kasus) {
+    const hal = await buka('render=k06&baris=2');
+    try {
+      await bukaCampuran(hal);
+      await k.isi(hal);
+      // Label bagian dari `labelMetode` domain, di daftar bagian kartu.
+      await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
+      const daftar = await hal.$$eval('.kasir-bayar .kasir-baris-daftar .kasir-subtotal', (n) => n.map((e) => e.textContent.trim()));
+      assert.ok(daftar.some((t) => t.includes(k.nama)), `bagian ${k.metode} tidak berlabel "${k.nama}": ${JSON.stringify(daftar)}`);
+      await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+      await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+      const bayar = await tulisan(hal, /INSERT INTO payment/);
+      assert.ok(bayar[0].params.includes(k.metode), `${k.metode} tidak sampai ke baris payment: ${JSON.stringify(bayar[0]?.params)}`);
+    } finally {
+      await hal.close();
+    }
+  }
+});
