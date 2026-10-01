@@ -1223,6 +1223,49 @@ test('⛔ G-TRF-KAS perangkat: property — cash_movement hanya sebesar bagian t
   assert.equal(kasus, 12);
 });
 
+test('⛔ property: satu baris payment per bagian, tiap metode di barisnya sendiri dengan nominalnya', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  let kasus = 0;
+  for (const harga of [9_000, 20_000, 50_000]) {
+    const baris = [{ ...BARIS[0], unitPrice: harga }];
+    const total = (await simpanPenjualan({
+      db: dbPalsu(), ...args({ keranjang: { baris, diskon: null }, pembayaran: { ...TRF } }),
+    })).total;
+    const rencana = {
+      'transfer + tunai': [
+        { ...TRF, nominal: total / 2n },
+        { metode: 'cash', tendered: Number(total) * 2 },
+      ],
+      'transfer + qris_static': [
+        { ...TRF, nominal: total / 4n },
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: total - total / 4n },
+      ],
+    };
+    for (const [nama, pembayaran] of Object.entries(rencana)) {
+      const db = dbPalsu();
+      const hasil = await simpanPenjualan({
+        db, ...args({ keranjang: { baris, diskon: null }, pembayaran }),
+      });
+      assert.equal(hasil.status, 'tersimpan', `${nama} @ ${harga}`);
+      const rows = db.state.tulis.filter((t) => /INSERT INTO payment/.test(t.sql));
+      assert.equal(rows.length, pembayaran.length, `${nama} @ ${harga}: ${rows.length} baris payment untuk ${pembayaran.length} bagian (digabung)`);
+      const metode = rows.map((r) => r.params[3]).sort();
+      assert.deepEqual(metode, pembayaran.map((p) => p.metode === 'other' ? 'other' : p.metode).sort(), `${nama} @ ${harga}: metode per baris`);
+      const trf = rows.find((r) => r.params[3] === 'other');
+      assert.equal(trf.params[4], Number(pembayaran[0].nominal), `${nama} @ ${harga}: nominal transfer`);
+      assert.equal(trf.params[14], 'bank_transfer', `${nama} @ ${harga}: provider transfer`);
+      const lain = rows.find((r) => r.params[3] !== 'other');
+      assert.notEqual(lain.params[14], 'bank_transfer', `${nama} @ ${harga}: bagian lain membawa provider transfer`);
+      assert.equal(
+        rows.reduce((a, r) => a + r.params[4], 0), Number(hasil.amountDue),
+        `${nama} @ ${harga}: Σ baris ≠ amountDue`
+      );
+      kasus++;
+    }
+  }
+  assert.equal(kasus, 6);
+});
+
 test('payment lokal transfer: method other, provider bank_transfer, provider_reference, acquirer, confirmed_manually 1', async () => {
   const { simpanPenjualan } = await import(MOD);
   const fs = require('node:fs');
