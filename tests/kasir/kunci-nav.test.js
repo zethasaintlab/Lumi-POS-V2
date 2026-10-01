@@ -40,3 +40,35 @@ test('⛔ kunci nav: pelanggan diberi tahu, berhenti setelah berhenti berlanggan
   assert.deepEqual([a, b], [1, 2]);
   setelKunciNav(null);
 });
+
+test('⛔ kunci nav: `navigasi()` — pintu SEMUA jalan keluar (tab, indikator, pita, lonceng, menu) — tidak menavigasi saat terkunci, berfungsi lagi sesudah dibuka', async () => {
+  // Fix round 1 Task 8: kunci yang hanya menutup tab nav meninggalkan indikator
+  // sinkron, pita antrean, panel pemberitahuan, dan menu pengguna sebagai jalan keluar.
+  const dorongan = [];
+  const awal = globalThis.window;
+  globalThis.window = {
+    location: { pathname: '/' },
+    history: { pushState: (_s, _t, j) => { dorongan.push(j); globalThis.window.location.pathname = j; } },
+    dispatchEvent: () => true,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  try {
+    const { setelKunciNav } = await import(MOD);
+    const { navigasi } = await import('../../apps/kasir/src/rute/navigasi.ts');
+    setelKunciNav('QRIS menunggu');
+    navigasi('/sync');
+    navigasi('/perangkat');
+    assert.deepEqual(dorongan, [], `navigasi() menembus kunci: ${JSON.stringify(dorongan)}`);
+    setelKunciNav(null);
+    navigasi('/sync');
+    assert.deepEqual(dorongan, ['/sync'], 'navigasi() tetap tertutup sesudah kunci dilepas');
+  } finally {
+    setelKunciNav_reset();
+    if (awal === undefined) delete globalThis.window;
+    else globalThis.window = awal;
+  }
+  async function setelKunciNav_reset() {
+    (await import(MOD)).setelKunciNav(null);
+  }
+});

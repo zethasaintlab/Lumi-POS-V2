@@ -1018,3 +1018,52 @@ test('⛔ qris_static dan card_edc di jalur TAMPILAN: masing-masing sampai K-07 
     }
   }
 });
+
+test('⛔ P1b: selama penjualan disimpan setiap jalan keluar header (tab, indikator sinkron, menu pengguna: Status, Perangkat, Keluar) TIDAK menavigasi; terbuka kembali sesudahnya', async () => {
+  /* Fix round 1 Task 8: kunci yang hanya menutup tab nav meninggalkan jalan
+     keluar lain — yang meninggalkan K-06 menghapus nominal yang sudah diketik,
+     dan Keluar mengakhiri sesi di tengah pembayaran. Klik buatan melewati
+     atribut aria-disabled. */
+  const hal = await buka('render=k06&baris=2');
+  try {
+    const lokasi = () => hal.evaluate(() => window.location.pathname);
+    const awal = await lokasi();
+    await hal.evaluate(() => {
+      const g = {};
+      g.promise = new Promise((r) => (g.lepas = r));
+      window.__tahanTransaksi = g;
+    });
+    await hal.getByLabel('Nominal diterima').fill('600.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForFunction(() => document.querySelector('[aria-label="Navigasi kasir"] [role="tab"]')?.getAttribute('aria-disabled') === 'true', null, { timeout: 5000 });
+
+    const klik = (sel, nama) =>
+      hal.evaluate(([s, n]) => {
+        const el = [...document.querySelectorAll(s)].find((e) => !n || e.textContent.trim().includes(n));
+        if (!el) return false;
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return true;
+      }, [sel, nama]);
+
+    assert.equal(await klik('[aria-label="Navigasi kasir"] [role="tab"]', 'Riwayat'), true, 'tab nav Riwayat tidak ada');
+    assert.equal(await klik('.kasir-indikator'), true, 'indikator sinkron tidak ada');
+    await hal.evaluate(() => document.querySelector('.kasir-menu-pengguna button')?.click());
+    assert.equal(await klik('[role="menuitem"]', 'Status sinkronisasi'), true, 'menu: Status sinkronisasi tidak ada');
+    await hal.evaluate(() => document.querySelector('.kasir-menu-pengguna button')?.click());
+    assert.equal(await klik('[role="menuitem"]', 'Perangkat'), true, 'menu: Perangkat tidak ada');
+    await hal.evaluate(() => document.querySelector('.kasir-menu-pengguna button')?.click());
+    assert.equal(await klik('[role="menuitem"]', 'Keluar'), true, 'menu: Keluar tidak ada');
+    await hal.waitForTimeout(400);
+    assert.equal(await lokasi(), awal, `jalan keluar header MENAVIGASI selagi menyimpan: ${awal} → ${await lokasi()}`);
+    assert.equal(await hal.locator('[data-keluar="selesai"]').count(), 0, 'Keluar berjalan selagi penjualan disimpan — sesi berakhir di tengah pembayaran');
+
+    // Terbuka kembali: jalan keluar yang sama berfungsi (kunci tidak membekukan navigasi).
+    await hal.evaluate(() => window.__tahanTransaksi.lepas());
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    assert.equal(await klik('.kasir-indikator'), true);
+    await hal.waitForFunction(() => window.location.pathname === '/sync', null, { timeout: 5000 }).catch(() => undefined);
+    assert.equal(await lokasi(), '/sync', 'indikator sinkron tidak menavigasi sesudah kunci dilepas');
+  } finally {
+    await hal.close();
+  }
+});
