@@ -667,9 +667,9 @@
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
-  gap: var(--space-4);
+  gap: var(--space-3);
   min-height: 0;
-  padding: var(--space-6);
+  padding: var(--space-4);
 }
 
 /* Blok total di atas kartu: label 13 px kapital, nilai 32/700 (`.t-display`). */
@@ -715,13 +715,14 @@
 .kasir-tab-bayar [role='tab'][aria-disabled='true'] { cursor: not-allowed; }
 .kasir-tab-bayar [role='tab'][aria-disabled='true'][aria-selected='false'] { color: var(--ink-subtle); }
 
-/* Isi metode: minimal 355 px (mockup), supaya kartu tidak melompat tingginya
- * antar tab. */
+/* Isi metode. ⛔ TANPA `min-height`: kotak setinggi 355 px mendorong tautan
+ * pembayaran campuran ke bawah lipatan pada 1024×768 (terukur: bawah 779 vs
+ * blok aksi mulai 558). Yang dijaga `k06-tata-letak` adalah tautannya
+ * terlihat tanpa gulir, bukan tinggi kotak. */
 .kasir-bayar-metode {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  min-height: 22.2rem;
 }
 
 /* Tiga pintasan tunai persis mockup: tampil 44 px (`.btn`), area tekan 56 px
