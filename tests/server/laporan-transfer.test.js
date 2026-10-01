@@ -204,6 +204,12 @@ test('⛔ dua grup SQL yang terlipat ke SATU kode dijumlahkan, bukan salah satun
   assert.equal(qd[0].perkiraanMdr, '350', 'mdr grup terlipat');
   assert.equal(qd[0].tanpaPerkiraan, 1, 'tanpa_mdr grup terlipat');
   assert.equal(totalDiterima, String(JUMLAH_SEMUA + 50000));
+  // Property yang sama dengan di atas, kini pada data yang MELIPAT dua grup SQL.
+  assert.equal(
+    metode.reduce((t, m) => t + BigInt(m.totalDiterima), 0n),
+    BigInt(JUMLAH_SEMUA + 50000),
+    'jumlah baris metode ≠ SUM pembayaran ketika dua grup terlipat'
+  );
   assert.equal(totalPerkiraanMdr, '350');
   // Urutan: total DESC, seri diurutkan kode: qris_dynamic sebelum qris_static.
   assert.deepEqual(
