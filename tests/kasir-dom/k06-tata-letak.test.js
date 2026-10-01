@@ -6,7 +6,7 @@
 // ⛔ DIGANTI keputusan kampanye Hidupkan desain (26 September 2026, spec § 7
 // "Target mockup"): K-06 kini HALAMAN di dalam `kasir-konten` (header tetap),
 // bukan overlay. Total di blok ATAS (32/700), segmented empat tab 40 px di
-// wadah `--secondary`, isi metode >= 355 px, "Konfirmasi bayar" 56 px kanan
+// wadah `--secondary`, tautan campuran terlihat tanpa gulir, "Konfirmasi bayar" 56 px kanan
 // bawah, "Kembali ke kasir" di atas kartu. Catatan 1-4 di bawah adalah riwayat
 // Fase 3.2 yang digantikan.
 //
@@ -141,6 +141,10 @@ async function ukur(hal) {
     const primer = aksi.querySelector('.btn-primary');
     const kembali = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Kembali ke kasir'));
     const metode = document.querySelector('.kasir-bayar-metode');
+    const tautan = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Bayar dengan lebih dari satu metode');
+    const tr = tautan?.getBoundingClientRect();
+    const titik = tr ? document.elementFromPoint(tr.left + tr.width / 2, tr.top + tr.height / 2) : null;
+    const lihat = document.querySelector('.galeri-panggung > *').getBoundingClientRect();
     const probe = document.createElement('div');
     probe.style.background = 'var(--secondary)';
     document.body.appendChild(probe);
@@ -159,6 +163,9 @@ async function ukur(hal) {
       totalNilai: gaya(tot?.querySelector('.num')),
       total: tot ? r(tot) : null,
       metode: metode ? r(metode) : null,
+      tautan: tautan ? r(tautan) : null,
+      tautanTerlihat: tautan ? titik === tautan || tautan.contains(titik) : false,
+      panggungBawah: Math.round(lihat.bottom),
       aksi: r(aksi),
       primer: primer && { teks: primer.textContent.trim(), ...r(primer) },
       kembali: kembali && r(kembali),
@@ -169,7 +176,7 @@ async function ukur(hal) {
 // ---------------------------------------------------------------------------
 
 for (const lebar of [1024, 1280]) {
-  test(`⛔ ${lebar}: kartu pembayaran ${LEBAR_MOCKUP} px di dalam shell, segmented empat tab 40 px di wadah --secondary, isi metode >= 355`, async (t) => {
+  test(`⛔ ${lebar}: kartu pembayaran ${LEBAR_MOCKUP} px di dalam shell, segmented empat tab 40 px di wadah --secondary, tautan campuran terlihat TANPA gulir`, async (t) => {
     const { hal, galat } = await bukaK06(lebar);
     const u = await ukur(hal);
     await hal.close();
@@ -191,7 +198,17 @@ for (const lebar of [1024, 1280]) {
     assert.equal(puncak.size, 1, `segmented ${puncak.size} baris — mockup satu baris`);
     assert.equal(u.daftarTab.h, 40, `segmented ${u.daftarTab.h} px — mockup 40`);
     assert.equal(u.daftarTab.latar, u.secondary, `wadah segmented ${u.daftarTab.latar}, bukan --secondary (${u.secondary})`);
-    assert.ok(u.metode !== null && u.metode.h >= 355, `isi metode ${u.metode?.h} px — mockup min 355`);
+    /* ⛔ Yang diukur AREA TERLIHAT, bukan kotak `min-height`: tautan pembayaran
+       campuran (di bawah isi metode, di dalam `.kasir-bayar-isi` yang menggulir)
+       harus terlihat tanpa gulir dan tidak tertutup blok aksi. Versi lama
+       mengukur tinggi kotak >= 355 dan hijau selagi tautannya jatuh di bawah
+       lipatan (1024×768: atas 735 vs terlihat sampai 542). */
+    assert.ok(u.tautan, 'tautan "Bayar dengan lebih dari satu metode" tidak ada');
+    assert.ok(
+      u.tautan.b <= u.aksi.t && u.tautan.b <= u.panggungBawah,
+      `tautan campuran DI BAWAH LIPATAN: bawah ${u.tautan.b}, blok aksi mulai ${u.aksi.t}, panggung berakhir ${u.panggungBawah}`
+    );
+    assert.equal(u.tautanTerlihat, true, 'titik tengah tautan campuran dijawab elemen lain (tertutup blok aksi?) — elementFromPoint');
     // "Kembali ke kasir" DI ATAS kartu.
     assert.ok(u.kembali, 'tautan "Kembali ke kasir" tidak ada');
     assert.ok(u.kembali.b <= u.kartu.t, `"Kembali ke kasir" (bawah ${u.kembali.b}) tidak di atas kartu (atas ${u.kartu.t})`);
