@@ -540,6 +540,11 @@ test('⛔ perangkat mati di tengah: penjualan bertransfer tersimpan di disk loka
     await disk.execute(`UPDATE outbox_local SET payload = ?, entity_id = ? WHERE id = ?`, [
       JSON.stringify(muatan), orderId, antre.id,
     ]);
+    // ⛔ Order lokal memakai device/shift palsu dan DITOLAK server; yang ada di server
+    // adalah order dari API. Baris order dibuang dan dependensinya dilepas supaya
+    // hasilnya tidak bergantung pada urutan acak (created_at sama, id UUID acak).
+    await disk.execute(`DELETE FROM outbox_local WHERE entity_type <> 'payment'`, []);
+    await disk.execute(`UPDATE outbox_local SET depends_on = NULL WHERE id = ?`, [antre.id]);
 
     // 2. Proses mati sebelum satu byte pun terkirim: pengirim dibuang, koneksi ditutup.
     disk.tutup();
