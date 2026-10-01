@@ -455,6 +455,25 @@ test('⛔ G-TRF-KAS server: transfer TIDAK menulis cash_movement', async () => {
   assert.equal(kas.length, 0, 'transfer menulis cash_movement ke laci');
 });
 
+test('⛔ FR-C9 tidak menyentuh transfer: total tak bulat dilunasi apa adanya, rounding_adjustment 0', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 20050);
+  const res = await bayar(order.id, {
+    method: 'other', provider: 'bank_transfer', amount: Number(order.total), reference: 'TRF-0050',
+  });
+  assert.equal(res.statusCode, 201, res.body);
+  const [o] = await query(
+    `SELECT status, total, amount_due, rounding_adjustment FROM "order" WHERE id = $1`,
+    [order.id]
+  );
+  assert.equal(o.status, 'closed');
+  assert.notEqual(Number(o.total) % 100, 0, 'fixture harus tak bulat agar uji ini bermakna');
+  assert.equal(Number(o.rounding_adjustment), 0, 'transfer menyebabkan pembulatan FR-C9');
+  assert.equal(Number(o.amount_due), Number(o.total), 'amount_due ≠ total pada transfer');
+  const [p] = await query(`SELECT amount FROM payment WHERE order_id = $1`, [order.id]);
+  assert.equal(Number(p.amount), Number(o.total));
+});
+
 test('transfer sebagian tidak menutup order dan menyisakan tagihan', async () => {
   const fx = await setupDeviceAndShift();
   const order = await buatOrder(fx, 20000);
