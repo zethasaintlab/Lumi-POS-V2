@@ -199,6 +199,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     let hidup = true;
     void pulihkanDraf(db, shift.id).then((d) => {
       if (!hidup || d === null || d.qrString === null) return;
+      setTab('qris');
       setPanelQris({
         qrString: d.qrString,
         paymentId: d.paymentId,
@@ -285,6 +286,18 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      Angka kembalian memakai `--text-display` (aturan design system: angka
      terbesar di layar), karena itu satu-satunya angka yang kasir dan
      pelanggan baca bersamaan. */
+  /* Tab metode terkunci selama QRIS menunggu atau penjualan disimpan. */
+  const terkunciMetode = menyimpan || panelQris !== null;
+  const pilihTab = (t: TabBayar) => {
+    /* ⛔ Penjaga di HANDLER, bukan hanya atribut `aria-disabled`. Tab terkunci
+       dapat dibuka oleh cacat keadaan React yang tidak akan pernah terjadi pada
+       kontrol yang tidak dirender (spec § 14 R3); P1 mengirim klik buatan
+       yang melewati atributnya — juga selama panel QRIS aktif. */
+    if (terkunciMetode) return;
+    setTab(t);
+    setGalat(null);
+  };
+
   /* Tab yang tampil. Kill switch mematikan tab SEKALIAN (bukan menonaktifkan):
      `pembayaran_transfer` mati → tab Transfer hilang, tunai tetap ada. QRIS
      statis yang mati hanya menghilangkan sub-pilihannya (`ARCH:358`). */
@@ -306,7 +319,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       <HalamanBayar terkunci onKembali={onKembali}>
         <div className="kasir-bayar-isi">
           <BlokTotal total={hitungan?.totals.total ?? panelQris.nominal} />
-          <PemilihTab tab="qris" tabTampil={tabTampil} terkunci onPilih={() => undefined} />
+          <PemilihTab tab={tab} tabTampil={tabTampil} terkunci onPilih={pilihTab} />
           <p id="bayar-kunci-alasan" className="t-caption kasir-login-sub">
             {alasanKunci}
           </p>
@@ -740,17 +753,6 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         sedangMenyimpan.current = false;
         setMenyimpan(false);
       });
-  };
-
-  const terkunciMetode = menyimpan;
-  const pilihTab = (t: TabBayar) => {
-    /* ⛔ Penjaga di HANDLER, bukan hanya atribut `aria-disabled`. Tab terkunci
-       dapat dibuka oleh cacat keadaan React yang tidak akan pernah terjadi pada
-       kontrol yang tidak dirender (spec § 14 R3); P1 mengirim klik buatan
-       yang melewati atributnya. */
-    if (terkunciMetode) return;
-    setTab(t);
-    setGalat(null);
   };
 
   return (
