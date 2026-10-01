@@ -45,7 +45,7 @@ import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, subtotalKeranjang } from '../kasir/keranjang.ts';
 import { nilaiDiskon } from '../../../../packages/domain/src/diskon.ts';
 import { Tombol } from '../Tombol.tsx';
-import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { bacaRupiah, rupiah, rupiahTanpaAwalan } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-06 Pembayaran + K-07 Konfirmasi & Kembalian (IA §2.2).
 
@@ -60,8 +60,8 @@ import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampila
    `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya
    jalan penutupan (KEP-21, belum dibangun).
 
-   Metode online-only dinonaktifkan saat offline (FR-C3) — belum relevan:
-   ketiga metode yang ada semuanya berfungsi tanpa jaringan. */
+   Metode online-only (QRIS dinamis) nonaktif saat offline (FR-C3); tunai, QRIS
+   statis, kartu, dan transfer berfungsi tanpa jaringan. */
 
 /** Bentuk layar → bentuk domain. Tunai tidak pernah masuk daftar `bagian`. */
 function keBagianDomain(p: Pembayaran): BagianBayar {
@@ -111,10 +111,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      0, dan 0 yang lahir dari kolom kosong adalah penjualan yang menyimpan
      tendered 0. */
   const [nominalTunai, setNominalTunai] = useState('');
-  /* FR-C1 — metode pembayaran. Ketiganya BERFUNGSI OFFLINE, dan itu yang
-     membuat daftarnya berhenti di sini: QRIS dinamis menuntut gateway
-     menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di
-     server — sementara jalur penjualan ini menulis lokal lebih dulu. */
+  /* FR-C1 — tab metode; metode aktif diturunkan dari tab + sub-pilihan QRIS.
+     QRIS dinamis lewat `mulaiQris` (gateway lebih dulu, `spec-c:320`). */
   const [tab, setTab] = useState<TabBayar>('tunai');
   const [subQris, setSubQris] = useState<'qris_dynamic' | 'qris_static' | null>(null);
   const [bankTujuan, setBankTujuan] = useState('');
@@ -133,10 +131,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      yang SAMA yang `simpanPenjualan` pakai. Menghitungnya sendiri di layar
      berarti kasir membagi angka yang berbeda dari angka yang tersimpan. */
   const [total, setTotal] = useState<bigint | null>(null);
-  /* ⛔ Hitungan LENGKAP, untuk baris pajak dan Total di blok aksi. `total` di
-     atas sengaja dibiarkan apa adanya: ia dibaca jalur pembayaran, dan
-     menurunkannya dari state kedua berarti dua tempat yang memutuskan angka
-     yang ditagihkan. Yang di bawah ini hanya dibaca layar. */
+  /* ⛔ Hitungan LENGKAP, untuk blok Total (atas) dan baris pajak. `total` di
+     atas dibaca jalur pembayaran; yang ini hanya dibaca layar. */
   const [hitungan, setHitungan] = useState<HitunganKeranjang | null>(null);
   /* `ARCH:358` — QRIS statis adalah satu-satunya metode digital yang berfungsi
      offline dan satu-satunya yang tidak diverifikasi sistem mana pun. Ia
@@ -213,11 +209,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     };
   }, [db, shift, total, panelQris]);
 
-  /* ⛔ Kunci tab nav header + tab metode selama QRIS menunggu atau penjualan
-     disimpan: meninggalkan layar di tengahnya menghapus nominal yang sudah
-     diketik, dan untuk QRIS melepas layar yang sedang ditunggu pelanggan.
-     Dilepas saat layar ini dilepas — kunci yang tertinggal membekukan seluruh
-     navigasi kasir. Hook ini di ATAS return awal, aturan hook. */
+  /* ⛔ Kunci jalan keluar header + tab metode selama QRIS menunggu/menyimpan
+     (`rute/kunci-nav.ts`), dilepas saat layar dilepas. Di ATAS return awal. */
   const alasanKunci: string | null =
     panelQris !== null
       ? 'Pembayaran QRIS sedang menunggu. Metode tidak dapat diganti dan layar tidak dapat ditinggalkan sampai pelanggan membayar atau transaksi dibatalkan.'
@@ -281,18 +274,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     return <GagalBaca akibat="Pembayaran tidak dapat diselesaikan di perangkat ini; jangan terima uang sebelum masalahnya selesai." pesan={gagalMuat} />;
   }
 
-  /* K-07 — konfirmasi & kembalian.
-
-     Angka kembalian memakai `--text-display` (aturan design system: angka
-     terbesar di layar), karena itu satu-satunya angka yang kasir dan
-     pelanggan baca bersamaan. */
   /* Tab metode terkunci selama QRIS menunggu atau penjualan disimpan. */
   const terkunciMetode = menyimpan || panelQris !== null;
   const pilihTab = (t: TabBayar) => {
-    /* ⛔ Penjaga di HANDLER, bukan hanya atribut `aria-disabled`. Tab terkunci
-       dapat dibuka oleh cacat keadaan React yang tidak akan pernah terjadi pada
-       kontrol yang tidak dirender (spec § 14 R3); P1 mengirim klik buatan
-       yang melewati atributnya — juga selama panel QRIS aktif. */
+    /* ⛔ Guard di HANDLER, bukan hanya `aria-disabled` (spec § 14 R3): P1
+       mengirim klik buatan yang melewati atributnya. */
     if (terkunciMetode) return;
     setTab(t);
     setGalat(null);
@@ -305,15 +291,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     (t) => t.tab !== 'transfer' || fiturAktif(fitur, 'pembayaran_transfer')
   ).map((t) => t.tab);
 
-  /* FR-C14 — panel tunggu QRIS di DALAM kartu. ⛔ Keputusan kampanye Hidupkan
-     desain (26 September 2026, spec § 7): menggantikan "panel mengganti layar
-     penuh" — pemilih metode TETAP ada tetapi setiap tab terkunci dengan
-     alasan; "Kembali ke kasir" dan tautan campuran TIDAK dirender; tombol
-     utama tampil di tempat yang sama, nonaktif, "Menunggu pembayaran…" —
-     konfirmasi hanya datang dari gateway (`spec-c:320`), tidak ada jalur
-     ketukan yang menandai lunas. Kasir tidak boleh dapat mengubah keranjang
-     atau metode sementara pelanggan memindai QR untuk nominal yang sudah
-     dikirim ke gateway. */
+  /* FR-C14 — panel QRIS di dalam kartu (spec § 7): tab terkunci dengan alasan,
+     tanpa "Kembali ke kasir"/tautan campuran, tombol utama nonaktif; lunas
+     hanya dari gateway (`spec-c:320`). */
   if (panelQris && konfig && sesi) {
     return (
       <HalamanBayar terkunci onKembali={onKembali}>
@@ -547,7 +527,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     if (metode === 'cash') {
       if (nominalTunai.trim() === '') return 'Isi nominal yang diterima.';
       if (tenderedBaca === null) return 'Nominal harus rupiah utuh, tanpa desimal (mis. 50.000).';
-      if (tenderedBaca <= 0) return 'Nominal yang diterima harus lebih dari nol.';
+      if (BigInt(tenderedBaca) <= 0n) return 'Nominal yang diterima harus lebih dari nol.';
       return null;
     }
     if (metode === 'qris_static') {
@@ -828,6 +808,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                 awalan="Rp"
                 inputMode="numeric"
                 value={nominalTunai}
+                disabled={menyimpan}
                 onChange={(v) => {
                   setNominalTunai(v);
                   setGalat(null);
@@ -849,7 +830,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                       /* ⛔ MENETAPKAN, bukan `t + p`: pintasan yang menambah
                          membuat dua ketukan meleset menjadi nominal yang tidak
                          diserahkan pelanggan. */
-                      setNominalTunai(rupiah(p).replace(/^Rp\s*/, ''));
+                      setNominalTunai(rupiahTanpaAwalan(p));
                       setGalat(null);
                     }}
                   >
@@ -908,6 +889,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                   <Bidang
                     label="Referensi pembayaran"
                     value={referensi}
+                    disabled={menyimpan}
                     onChange={(v) => {
                       setReferensi(v);
                       setGalat(null);
@@ -926,6 +908,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               <Bidang
                 label="Kode approval"
                 value={approvalCode}
+                disabled={menyimpan}
                 onChange={(v) => {
                   setApprovalCode(v);
                   setGalat(null);
@@ -937,6 +920,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                 label="4 digit terakhir kartu (opsional)"
                 inputMode="numeric"
                 value={cardLast4}
+                disabled={menyimpan}
                 onChange={(v) => {
                   // ⛔ Dipotong DI SINI, di titik masuknya. Kolomnya bernama
                   // `card_last4` dan larangan nomor kartu di repo ini permanen —
@@ -958,6 +942,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               <Bidang
                 label="Bank tujuan"
                 value={bankTujuan}
+                disabled={menyimpan}
                 onChange={(v) => {
                   setBankTujuan(v);
                   setGalat(null);
@@ -967,6 +952,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               <Bidang
                 label="Nomor referensi"
                 value={referensi}
+                disabled={menyimpan}
                 onChange={(v) => {
                   setReferensi(v);
                   setGalat(null);
@@ -985,6 +971,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               label="Nominal bagian ini (kosongkan untuk seluruh sisa)"
               inputMode="numeric"
               value={nominalBagian}
+              disabled={menyimpan}
               onChange={(v) => {
                 setNominalBagian(v.replace(/\D/g, ''));
                 setGalat(null);
@@ -998,11 +985,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
             tampilan bawaan. Hilang bila sudah ada bagian — membukanya kembali
             tidak bermakna dan menutupnya menyembunyikan bagian yang ada. */}
         {!campuran ? (
-          <button type="button" className="btn btn-ghost kasir-tautan-campuran" onClick={() => setCampuran(true)}>
+          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} onClick={() => setCampuran(true)}>
             Bayar dengan lebih dari satu metode
           </button>
         ) : bagian.length === 0 ? (
-          <button type="button" className="btn btn-ghost kasir-tautan-campuran" onClick={() => setCampuran(false)}>
+          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} onClick={() => setCampuran(false)}>
             Bayar dengan satu metode saja
           </button>
         ) : null}

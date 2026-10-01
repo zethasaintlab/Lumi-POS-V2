@@ -176,14 +176,8 @@ function Akar() {
     },
   } as unknown as KeadaanLokal;
 
-  /* ⛔ Pembungkus = `ShellKasir` ASLI + `Pembayaran` sebagai anaknya, bukan
-     lagi overlay. Keputusan kampanye Hidupkan desain (26 September 2026, spec
-     § 7 "Wadah"): K-06 adalah halaman di dalam `kasir-konten`, header tetap
-     terlihat, dan tab nav dikunci selama QRIS menunggu. Penjaga yang mengukur
-     tinggi blok aksi dan kunci tab nav hanya benar bila pohonnya sama dengan
-     aplikasi (`.kasir-shell` memberi `height: 100vh`, `.kasir-konten` yang
-     menggulir). Harness yang berbeda bentuk dari aplikasinya adalah salinan,
-     dan penjaga yang menjaga salinan tidak menjaga apa pun. */
+  /* Pembungkus = `ShellKasir` ASLI (spec § 7): K-06 halaman di `kasir-konten`,
+     bukan overlay; harness yang berbeda bentuk dari aplikasi hanya salinan. */
   return (
     <DbLokalPalsuProvider keadaan={keadaan}>
       <ShellKasir

@@ -629,20 +629,9 @@ export function Kasir() {
     setPilihan({ item, daftar });
   };
 
-  /* ⛔ K-06 dirender sebagai HALAMAN di dalam `kasir-konten` (keputusan
-     kampanye Hidupkan desain, 26 September 2026, spec § 7 "Wadah"):
-     header tetap terlihat seperti mockup, bukan overlay `kasir-overlay-bayar`
-     (keputusan rebuild UI 2 September 2026, `TEMUAN.md` A6 — digantikan).
-     Selama QRIS menunggu atau penjualan disimpan, tab nav header dikunci
-     (`rute/kunci-nav.ts`) — meninggalkan layar di tengahnya menghapus nominal
-     yang sudah diketik.
-
-     ⛔ K-03 tetap di-unmount di baliknya, jadi keranjang TIDAK terlihat dan
-     `usePemindaiGlobal` mati: scan yang masuk saat kasir mengetik nominal
-     tunai akan menambah barang ke pesanan yang angkanya sudah disebutkan ke
-     pelanggan. Itu perubahan perilaku, bukan perubahan tampilan.
-
-     K-07 (tahap selesai `Pembayaran`) masih overlay 536 px sampai PR 2D. */
+  /* K-06 = HALAMAN di dalam `kasir-konten` (kampanye Hidupkan desain, spec § 7),
+     bukan overlay; K-03 di-unmount (pemindai mati selama pembayaran). Tab nav
+     dan jalan keluar header terkunci saat QRIS menunggu/menyimpan (`kunci-nav`). */
   if (membayar) {
     return <Pembayaran onKembali={() => setMembayar(false)} />;
   }

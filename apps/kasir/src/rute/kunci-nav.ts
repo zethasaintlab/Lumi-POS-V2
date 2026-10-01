@@ -1,12 +1,6 @@
-/* Kunci tab navigasi header — murni, tanpa React.
-
-   Selama QRIS dinamis menunggu atau penjualan sedang disimpan, meninggalkan K-06
-   menghapus nominal yang sudah diketik dan, untuk QRIS, melepas layar yang
-   sedang ditunggu pelanggan. Pembayaran memasang alasannya di sini; `ShellKasir`
-   membacanya dan mengunci setiap tab (spec § 7 "Wadah", keputusan otonom § 12).
-
-   Pola `kasir/simpanan.ts`: modul memori + langganan, supaya dua komponen yang
-   tidak saling mengenal tetap sepakat. `null` = tidak terkunci. */
+/* Kunci jalan keluar header — murni. K-06 memasang alasan selama QRIS menunggu
+   atau penjualan disimpan; `navigasi()`, Keluar, dan `ShellKasir` membacanya.
+   Pola `kasir/simpanan.ts`; `null` = tidak terkunci. */
 
 let alasanKini: string | null = null;
 const pelanggan = new Set<() => void>();

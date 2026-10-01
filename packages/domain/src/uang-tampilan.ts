@@ -107,3 +107,11 @@ export function bacaRupiah(teks: string): number | null {
 
   return Number.parseInt(bersih.replace(/\./g, ''), 10);
 }
+
+/**
+ * Angka rupiah berpemisah titik TANPA awalan `Rp`, untuk mengisi kolom masukan
+ * (`20.000`). Turunan `rupiah` — format tetap satu sumber.
+ */
+export function rupiahTanpaAwalan(nilai: number | bigint | string): string {
+  return rupiah(nilai).replace(/^Rp\s*/, '');
+}

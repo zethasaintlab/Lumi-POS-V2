@@ -90,6 +90,8 @@ interface Props {
   placeholder?: string;
   /** Fokus saat dirender — dialog masukan tunggal (scanner HID mengetik ke sini). */
   autoFokus?: boolean;
+  /** Dikunci selama penyimpanan berjalan (K-06). */
+  disabled?: boolean;
 }
 
 export function Bidang({
@@ -105,6 +107,7 @@ export function Bidang({
   onChange,
   placeholder,
   autoFokus = false,
+  disabled = false,
 }: Props) {
   /* ⛔ Dipanggil TANPA SYARAT, juga saat `id` dikirim. Hook di balik cabang
      melanggar rules-of-hooks, dan pemanggil yang mulai/berhenti mengirim `id`
@@ -121,6 +124,7 @@ export function Bidang({
       value={value}
       placeholder={placeholder}
       autoFocus={autoFokus}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
     />
   );

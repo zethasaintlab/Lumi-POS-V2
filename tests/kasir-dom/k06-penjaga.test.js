@@ -941,6 +941,9 @@ test('⛔ tab nav terkunci selama penjualan disimpan, terbuka lagi sesudahnya', 
     const selamaSimpan = await nav();
     assert.ok(selamaSimpan.length >= 4 && selamaSimpan.every((t) => t.terkunci), `tab nav TIDAK terkunci selama penjualan disimpan: ${JSON.stringify(selamaSimpan)}`);
     assert.ok(selamaSimpan.every((t) => t.alasan.length > 0), 'tab nav terkunci tanpa alasan tertulis');
+    // Kolom dan tautan campuran ikut terkunci selama menyimpan (fix round 1).
+    assert.equal(await hal.getByLabel('Nominal diterima').isDisabled(), true, 'Nominal diterima masih dapat diubah selama menyimpan');
+    assert.equal(await hal.getByRole('button', { name: 'Bayar dengan lebih dari satu metode' }).isDisabled(), true, 'tautan campuran aktif selama menyimpan');
     await hal.evaluate(() => window.__tahanTransaksi.lepas());
     await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
     const sesudah = await nav();
