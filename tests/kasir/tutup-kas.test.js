@@ -575,3 +575,29 @@ test('⛔ transfer tampil sebagai kelompok transfer, bukan other (K-12, syarat u
     'jumlah kelompok non-tunai kehilangan uang'
   );
 });
+
+test('⛔ SELECT K-12 membaca kolom provider dari SQLite SUNGGUHAN (bukan fixture yang mengabaikan daftar kolom)', async () => {
+  const { ringkasanSebelumHitung } = await import(MOD);
+  const { buatDb } = require('../sync-client/helpers/db');
+  const db = buatDb();
+  const asli = db.getAll;
+  db.getAll = async (sql, params) => {
+    if (/FROM cash_drawer_shift/.test(sql)) {
+      return [{ id: 's1', business_date: '2026-08-22', opening_float: 0, status: 'open' }];
+    }
+    return asli(sql, params);
+  };
+  await db.execute(
+    `INSERT INTO "order" (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+       status, subtotal, total, amount_due, created_by, occurred_at, hlc)
+     VALUES ('o1','t','ou','d','s1','K1-1','2026-08-22',1,'closed',70000,70000,70000,'u','2026-08-22T07:00:00Z',1)`
+  );
+  await db.execute(
+    `INSERT INTO payment (id, order_id, check_id, method, amount, status, provider, tendered_at)
+     VALUES ('p1','o1','c1','other',70000,'confirmed','bank_transfer','2026-08-22T07:00:00Z')`
+  );
+  const r = await ringkasanSebelumHitung(db, 's1');
+  assert.deepEqual(r.perMetode.map((m) => m.metode), ['transfer'], 'SELECT tidak membawa provider: transfer terbaca other');
+  assert.equal(r.perMetode[0].total, 70000);
+  db.tutup();
+});

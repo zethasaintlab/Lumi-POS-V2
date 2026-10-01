@@ -290,3 +290,21 @@ test('⛔ detail membawa provider pembayaran, sehingga transfer terbaca "Transfe
   assert.equal(d.pembayaran[0].provider, 'bank_transfer');
   assert.equal(labelMetode(d.pembayaran[0].metode, d.pembayaran[0].provider), 'Transfer');
 });
+
+test('⛔ SELECT K-09 membaca kolom provider dari SQLite SUNGGUHAN', async () => {
+  const { bacaDetail } = await import(MOD);
+  const { buatDb } = require('../sync-client/helpers/db');
+  const db = buatDb();
+  await db.execute(
+    `INSERT INTO "order" (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+       status, subtotal, total, amount_due, created_by, occurred_at, hlc)
+     VALUES ('o1','t','ou','d','s1','K1-1','2026-08-22',1,'closed',16500,16500,16500,'u','2026-08-22T07:00:00Z',1)`
+  );
+  await db.execute(
+    `INSERT INTO payment (id, order_id, check_id, method, amount, status, provider, tendered_at)
+     VALUES ('p1','o1','c1','other',16500,'confirmed','bank_transfer','2026-08-22T07:00:00Z')`
+  );
+  const d = await bacaDetail(db, 'o1');
+  assert.equal(d.pembayaran[0].provider, 'bank_transfer', 'SELECT tidak membawa provider');
+  db.tutup();
+});
