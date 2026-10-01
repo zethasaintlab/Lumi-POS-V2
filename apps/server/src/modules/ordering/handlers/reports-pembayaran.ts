@@ -92,10 +92,8 @@ export async function ambilPembayaran(
     [from, to, outletId]
   );
 
-  // ⛔ Dilipat di TypeScript lewat `kodeLaporanMetode` (keputusan user P1):
-  // Transfer (`other` + `bank_transfer`) tampil "transfer", tidak pernah
-  // "other". SQL tidak menulis `CASE` padanannya — dua tempat yang memutuskan
-  // aturan lipat akan menyimpang. Baris berkode sama dijumlahkan.
+  // ⛔ Dilipat lewat `kodeLaporanMetode` (keputusan user P1), bukan `CASE`
+  // SQL: dua tempat aturan lipat akan menyimpang. Kode sama dijumlahkan.
   const terlipat = new Map<string, BarisDb>();
   for (const r of barisSql) {
     const kode = kodeLaporanMetode(r.method, r.provider);

@@ -46,10 +46,9 @@ export const LABEL_STATUS_BAYAR: Record<string, string> = {
 /**
  * ⛔ SATU-SATUNYA tempat aturan lipat `(method, provider)` → kode laporan.
  *
- * Transfer disimpan sebagai `other` + `bank_transfer` (tanpa migrasi, P1), tapi
- * setiap laporan per metode harus menyebutnya "Transfer", tidak pernah
- * "Lainnya": uang bank tidak boleh tersembunyi dari pemilik. SQL tidak menulis
- * `CASE` padanannya — ia mengambil `provider` dan melipat di sini.
+ * Transfer disimpan `other` + `bank_transfer` (P1) tapi dilaporkan "Transfer",
+ * tidak pernah "Lainnya": uang bank tidak boleh tersembunyi dari pemilik.
+ * SQL tidak punya `CASE` padanannya.
  */
 export function kodeLaporanMetode(method: string, provider?: string | null): string {
   return method === 'other' && provider === PROVIDER_TRANSFER ? 'transfer' : method;

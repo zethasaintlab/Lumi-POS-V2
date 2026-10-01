@@ -2,10 +2,10 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { PeristiwaAudit } from '../../../../packages/domain/src/audit-peristiwa.ts';
+import { kodeLaporanMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 
 /** Diperiksa TypeScript terhadap kosakata tertutup `PERISTIWA_AUDIT`. */
 const PERISTIWA: PeristiwaAudit = 'shift_count_attempt';
-import { kodeLaporanMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import {

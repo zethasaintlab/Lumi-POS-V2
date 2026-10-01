@@ -1169,11 +1169,15 @@ test('⛔ transfer tanpa referensi ditolak di perangkat SEBELUM tersimpan', asyn
 test('⛔ G-TRF-KAS perangkat: property — cash_movement hanya sebesar bagian tunai', async () => {
   const { simpanPenjualan } = await import(MOD);
   let kasus = 0;
-  // Total harga = pajak 10% eksklusif: 9.950 → 10.945, dst. Yang diuji
-  // hubungan, bukan angkanya.
   for (const harga of [9_000, 20_000, 50_000]) {
     const baris = [{ ...BARIS[0], unitPrice: harga }];
-    const total = BigInt(Math.round(harga * 1.1));
+    // Total diambil dari hasil simpan, bukan dihitung ulang di test.
+    const probe = await simpanPenjualan({
+      db: dbPalsu(),
+      ...args({ keranjang: { baris, diskon: null }, pembayaran: { ...TRF } }),
+    });
+    assert.equal(probe.status, 'tersimpan', `probe @ ${harga}: ${probe.status}`);
+    const total = probe.total;
     const rencana = {
       'transfer penuh': () => [{ ...TRF }],
       'transfer + tunai': () => [
@@ -1204,10 +1208,14 @@ test('⛔ G-TRF-KAS perangkat: property — cash_movement hanya sebesar bagian t
         assert.equal(kas.length, 0, `${nama} @ ${harga}: transfer/non-tunai menulis cash_movement`);
       } else {
         assert.equal(kas.length, 1, `${nama} @ ${harga}`);
-        const bayarTunai = db.state.tulis
-          .filter((t) => /INSERT INTO payment/.test(t.sql))
-          .find((t) => t.params[3] === 'cash');
-        assert.equal(Number(kas[0].params[2]), bayarTunai.params[4], `${nama} @ ${harga}: delta ≠ bagian tunai`);
+        const nonTunai = pembayaran
+          .filter((p) => p.metode !== 'cash')
+          .reduce((a, p) => a + p.nominal, 0n);
+        assert.equal(
+          BigInt(kas[0].params[2]),
+          hasil.amountDue - nonTunai,
+          `${nama} @ ${harga}: delta laci ≠ amountDue − Σ non-tunai`
+        );
       }
       kasus++;
     }

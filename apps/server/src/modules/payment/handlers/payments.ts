@@ -482,11 +482,8 @@ const INSERT_MANUAL_PAYMENT_SQL = `
  * bahwa tidak ada sistem yang memverifikasi, dan FR-G5 memakainya untuk
  * laporan exception per kasir.
  *
- * `provider` tetap NULL untuk QRIS statis dan EDC: tidak ada penyedia yang
- * terlibat. Untuk Transfer (`other`) ia menyebut SALURAN (`bank_transfer`),
- * BUKAN pemverifikasi -- tanda "tidak diverifikasi sistem" adalah
- * `confirmed_manually`, dan tidak satu pun query laporan menafsirkan
- * `provider` sebagai bukti verifikasi.
+ * `provider`: NULL untuk QRIS statis/EDC; untuk Transfer ia SALURAN
+ * (`bank_transfer`), bukan pemverifikasi -- itu tugas `confirmed_manually`.
  */
 async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   const { pool, hlc } = deps;
@@ -602,7 +599,7 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
       aggregateType: 'payment',
       aggregateId: paymentRow.id,
       eventType: 'payment.recorded',
-      payload: { orderId, amount: amount.toString(), method },
+      payload: { orderId, amount: amount.toString(), method, provider },
     });
 
     const responseBody = {

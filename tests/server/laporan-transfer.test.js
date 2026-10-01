@@ -36,7 +36,7 @@ after(async () => {
 
 let n = 0;
 
-async function jual(method, provider, total) {
+async function jual(method, provider, total, mdr = null) {
   const id = crypto.randomUUID();
   n += 1;
   await appSetup.query(
@@ -59,10 +59,10 @@ async function jual(method, provider, total) {
   );
   await appSetup.query(
     `INSERT INTO payment (id,tenant_id,outlet_id,device_id,order_id,check_id,method,provider,amount,status,
-       confirmed_manually,occurred_at,tendered_at,hlc,created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'confirmed',$10,'2026-08-10T10:00:00Z','2026-08-10T10:00:00Z',$11::bigint,$12)`,
+       confirmed_manually,occurred_at,tendered_at,hlc,created_by,mdr_estimated)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'confirmed',$10,'2026-08-10T10:00:00Z','2026-08-10T10:00:00Z',$11::bigint,$12,$13)`,
     [crypto.randomUUID(), tenant.id, base.outlet.id, device, id, `c-${id}`, method, provider, total,
-     method !== 'cash', n, base.user.id]
+     method !== 'cash', n, base.user.id, mdr]
   );
   return id;
 }
@@ -183,4 +183,31 @@ test('⛔ property: di setiap laporan, jumlah seluruh baris metode = SUM pembaya
   const sh = (await get(`/reports/shifts/${shift}`)).json();
   assert.equal(sh.perMetode.reduce((t, m) => t + BigInt(m.total), 0n), BigInt(JUMLAH_SEMUA), 'detail shift kehilangan uang');
   assert.equal(sh.totalDiterima, String(JUMLAH_SEMUA));
+});
+
+test('⛔ dua grup SQL yang terlipat ke SATU kode dijumlahkan, bukan salah satunya dibuang', async () => {
+  // qris_dynamic dengan provider 'midtrans' dan NULL = dua grup GROUP BY
+  // (method, provider) yang kodenya sama setelah dilipat.
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await jual('qris_dynamic', 'midtrans', 20000, 350);
+  await jual('qris_dynamic', null, 30000, null);
+  await appSetup.query('COMMIT');
+
+  const res = await get(`/reports/payments?${RENTANG}`);
+  assert.equal(res.statusCode, 200, res.body);
+  const { metode, totalDiterima, totalPerkiraanMdr } = res.json();
+  const qd = metode.filter((m) => m.method === 'qris_dynamic');
+  assert.equal(qd.length, 1, `qris_dynamic muncul ${qd.length} baris, harus satu`);
+  assert.equal(qd[0].jumlahTransaksi, 2, 'jumlah transaksi grup terlipat');
+  assert.equal(qd[0].totalDiterima, '50000', 'total grup terlipat');
+  assert.equal(qd[0].perkiraanMdr, '350', 'mdr grup terlipat');
+  assert.equal(qd[0].tanpaPerkiraan, 1, 'tanpa_mdr grup terlipat');
+  assert.equal(totalDiterima, String(JUMLAH_SEMUA + 50000));
+  assert.equal(totalPerkiraanMdr, '350');
+  // Urutan: total DESC, seri diurutkan kode: qris_dynamic sebelum qris_static.
+  assert.deepEqual(
+    metode.map((m) => m.method),
+    ['cash', 'transfer', 'qris_dynamic', 'qris_static', 'other']
+  );
 });

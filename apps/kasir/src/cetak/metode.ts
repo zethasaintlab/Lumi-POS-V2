@@ -28,11 +28,8 @@ export const LABEL_METODE: Record<string, string> = {
 };
 
 /**
- * Kode yang tidak dikenal dicetak apa adanya, bukan dihilangkan.
- *
- * ⛔ "Transfer" TIDAK dieja di sini: ia datang dari `LABEL_METODE.transfer` di
- * domain (sudah pendek, 8 kolom), lewat `kodeLaporanMetode`. `other` tanpa
- * provider tetap "Lainnya".
+ * Kode tak dikenal dicetak apa adanya. ⛔ "Transfer" tidak dieja di sini:
+ * datang dari domain lewat `kodeLaporanMetode`; `other` tanpa provider tetap "Lainnya".
  */
 export function labelMetode(metode: string, provider?: string | null): string {
   const kode = kodeLaporanMetode(metode, provider);

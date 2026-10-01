@@ -479,23 +479,86 @@ test('⛔ retry berulang DAN respons hilang tidak menghasilkan baris ganda', asy
   assert.equal(ev.length, 1, `retry menghasilkan ${ev.length} event payment.recorded`);
 });
 
-test('⛔ perangkat mati di tengah: penjualan bertransfer tersimpan lokal lalu terkirim sesudah hidup lagi', async () => {
+test('⛔ perangkat mati di tengah: penjualan bertransfer tersimpan di disk lokal lalu terkirim oleh pengirim BARU', async () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { buatDbBerkas } = require('../sync-client/helpers/db');
+  const { kirimBatch } = await import('../../packages/sync-client/src/relay.ts');
   const { orderId, total } = await orderTerbuka(9);
-  // Penjualan sudah tersimpan lokal (muatan outbox ada); proses pengirim
-  // pertama mati sebelum satu byte pun terkirim, tidak ada yang mendarat.
-  const [muatan] = await muatanDariPerangkat(
-    { metode: 'other', provider: 'bank_transfer', referensi: 'TRF-0009' },
-    orderId,
-    total
-  );
-  const baris = barisOutbox(orderId, muatan);
-  const { rows: sebelum } = await kueriTenant(`SELECT id FROM payment WHERE order_id = $1`, [orderId]);
-  assert.equal(sebelum.length, 0, 'belum ada yang boleh mendarat sebelum pengirim hidup');
 
-  // Pengirim BARU atas baris outbox yang sama (idempotency_key sama).
-  const hasil = await relay()(baris);
-  assert.equal(klasifikasi(hasil), 'terkirim', `${hasil.status}`);
-  const { rows } = await kueriTenant(`SELECT method FROM payment WHERE order_id = $1`, [orderId]);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].method, 'other');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-mati-'));
+  const berkas = path.join(dir, 'lokal.db');
+  try {
+    // 1. Perangkat menyimpan penjualan; outbox_local ditulis ke DISK.
+    const disk = buatDbBerkas(berkas);
+    const lokal = {
+      ...disk,
+      async getAll(sql, params) {
+        if (/FROM outlet/.test(sql)) {
+          return [{
+            name: 'Outlet', timezone: 'Asia/Jakarta', business_day_ends_at: '04:00:00',
+            rounding_increment: 100, rounding_mode: 'half_up', service_charge_rate: 0,
+            discount_threshold_percent: null, discount_threshold_amount: null,
+          }];
+        }
+        if (/FROM device_config/.test(sql)) return [{ receipt_sequence: 0, sequence_business_date: null }];
+        if (/FROM outbox_local/.test(sql)) return disk.getAll(sql, params);
+        return [];
+      },
+      // Hanya outbox_local yang diteruskan ke disk; tabel lain bukan objek uji.
+      async execute(sql, params = []) {
+        if (/outbox_local/.test(sql)) await disk.execute(sql, params);
+      },
+      async transaction(fn) { return fn(lokal); },
+    };
+    const { simpanPenjualan } = await import('../../apps/kasir/src/kasir/penjualan.ts');
+    const hasilSimpan = await simpanPenjualan({
+      db: lokal,
+      konfig: { deviceId: 'd1', deviceCode: 'K9', tenantId: tenant.id, outletId: base.outlet.id },
+      sesi: { userId: base.user.id, nama: 'Sari', peran: ['cashier'], masukPada: '', wajibGantiPin: false },
+      shift: { id: 's1', businessDate: '2026-08-22', openingFloat: 0 },
+      keranjang: {
+        baris: [{
+          id: crypto.randomUUID(), variationId: 'v1', itemName: 'Kopi', variationName: 'Regular',
+          unitPrice: Number(total), quantityMilli: 1000, modifier: [],
+        }],
+        diskon: null,
+      },
+      pembayaran: { metode: 'other', provider: 'bank_transfer', referensi: 'TRF-0009' },
+      waktu: () => new Date('2026-08-22T07:00:00Z'),
+      idBaru: () => crypto.randomUUID(),
+      hlc: () => 1n,
+    });
+    assert.equal(hasilSimpan.status, 'tersimpan');
+    // Order-nya sudah ada di server lewat API; hanya milik pembayaran yang dipinjam.
+    const [antre] = await disk.getAll(
+      `SELECT id, payload FROM outbox_local WHERE entity_type = 'payment'`
+    );
+    assert.ok(antre, 'penjualan tersimpan tetapi tidak ada payment di outbox_local');
+    const muatan = { ...JSON.parse(antre.payload), orderId };
+    await disk.execute(`UPDATE outbox_local SET payload = ?, entity_id = ? WHERE id = ?`, [
+      JSON.stringify(muatan), orderId, antre.id,
+    ]);
+
+    // 2. Proses mati sebelum satu byte pun terkirim: pengirim dibuang, koneksi ditutup.
+    disk.tutup();
+    const { rows: sebelum } = await kueriTenant(`SELECT id FROM payment WHERE order_id = $1`, [orderId]);
+    assert.equal(sebelum.length, 0, 'belum ada yang boleh mendarat sebelum pengirim hidup');
+
+    // 3. Proses BARU membuka berkas yang sama dan mengirim apa yang dibacanya.
+    const hidup = buatDbBerkas(berkas);
+    const kirim = relay();
+    const hasil = await kirimBatch({ db: hidup, now: () => Date.now(), kirim });
+    assert.equal(hasil.terkirim, 1, `pengirim baru tidak membaca outbox lokal: ${JSON.stringify(hasil)}`);
+    const { rows } = await kueriTenant(`SELECT method, provider FROM payment WHERE order_id = $1`, [orderId]);
+    assert.equal(rows.length, 1, `mendarat ${rows.length} kali, bukan tepat satu`);
+    assert.equal(rows[0].method, 'other');
+    assert.equal(rows[0].provider, 'bank_transfer');
+    const [akhir] = await hidup.getAll(`SELECT status FROM outbox_local WHERE id = ?`, [antre.id]);
+    assert.equal(akhir.status, 'sent');
+    hidup.tutup();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
