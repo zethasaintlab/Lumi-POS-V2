@@ -148,7 +148,12 @@ test('⛔ setiap Bidang yang dirender terhubung ke inputnya dan dapat ditemukan 
      saja. */
   const hal = await buka('render=k06&baris=2');
   try {
-    await hal.getByRole('button', { name: 'QRIS statis' }).click();
+    /* Kartu bertoggle (Task 8, keputusan kampanye Hidupkan desain): QRIS
+       statis = tab QRIS + sub-pilihan; "Nominal bagian ini" hanya muncul di
+       pembayaran campuran (tautan kecil di kartu). */
+    await hal.getByRole('button', { name: 'Bayar dengan lebih dari satu metode' }).click();
+    await hal.getByRole('tab', { name: 'QRIS', exact: true }).click();
+    await hal.getByRole('button', { name: 'QRIS statis', exact: true }).click();
 
     const bidang = await bidangTerender(hal);
 
@@ -222,7 +227,7 @@ test('⛔ Bidang yang muncul belakangan ikut terhubung, bukan hanya yang ada saa
      instance baru, bukan yang sama dengan label yang berganti. */
   const hal = await buka('render=k06&baris=2');
   try {
-    await hal.getByRole('button', { name: 'Kartu (EDC)' }).click();
+    await hal.getByRole('tab', { name: 'Kartu', exact: true }).click();
 
     const bidang = await bidangTerender(hal);
     assert.ok(
