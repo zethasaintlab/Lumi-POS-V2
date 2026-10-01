@@ -119,8 +119,8 @@ async function bukaK07(lebar) {
   await hal.waitForTimeout(800);
   await hal.getByRole('button', { name: 'Bayar', exact: true }).click();
   await hal.waitForTimeout(500);
-  for (let i = 0; i < 6; i += 1) await hal.getByRole('button', { name: '+ Rp 100.000' }).click();
-  await hal.getByRole('button', { name: 'Simpan Penjualan' }).click();
+  await hal.getByLabel('Nominal diterima').fill('600.000');
+  await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
   await hal.waitForSelector('text=Transaksi Baru', { timeout: 10_000 });
   await hal.waitForTimeout(400);
   return { hal, galat };

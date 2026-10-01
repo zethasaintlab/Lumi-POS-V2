@@ -3,6 +3,13 @@
 // K-06 — tata letak kartu pembayaran menurut mockup, di bawah sembilan
 // penjaga `k06-penjaga.test.js`.
 //
+// ⛔ DIGANTI keputusan kampanye Hidupkan desain (26 September 2026, spec § 7
+// "Target mockup"): K-06 kini HALAMAN di dalam `kasir-konten` (header tetap),
+// bukan overlay. Total di blok ATAS (32/700), segmented empat tab 40 px di
+// wadah `--secondary`, isi metode >= 355 px, "Konfirmasi bayar" 56 px kanan
+// bawah, "Kembali ke kasir" di atas kartu. Catatan 1-4 di bawah adalah riwayat
+// Fase 3.2 yang digantikan.
+//
 // Fase 3.2 rebuild UI kasir (`docs/RENCANA-REBUILD-UI.md`). Selisih "dapat
 // dikejar" di `docs/referensi-visual/BANDING.md` § K-06, diukur di DOM galeri
 // (overlay sungguhan di atas K-03, bukan harness tanpa shell):
@@ -123,22 +130,35 @@ async function ukur(hal) {
   return hal.evaluate(() => {
     const r = (e) => {
       const x = e.getBoundingClientRect();
-      return { l: Math.round(x.left), t: Math.round(x.top), r: Math.round(x.right), w: Math.round(x.width), h: Math.round(x.height) };
+      return { l: Math.round(x.left), t: Math.round(x.top), r: Math.round(x.right), b: Math.round(x.bottom), w: Math.round(x.width), h: Math.round(x.height) };
     };
     const panggung = r(document.querySelector('.galeri-panggung > *'));
-    const dialog = document.querySelector('.overlay .dialog');
+    const kartu = document.querySelector('.kasir-bayar');
     const aksi = document.querySelector('.kasir-bayar-aksi');
-    const metode = [...document.querySelectorAll('.kasir-bayar-isi .kasir-pecahan')][0];
-    const tot = aksi.querySelector('.kasir-total');
+    const daftarTab = document.querySelector('[role="tablist"][aria-label="Metode pembayaran"]');
+    const tot = document.querySelector('.kasir-bayar-total');
     const gaya = (e) => (e ? `${getComputedStyle(e).fontSize}/${getComputedStyle(e).fontWeight}` : null);
     const primer = aksi.querySelector('.btn-primary');
-    const kembali = [...aksi.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Kembali');
+    const kembali = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Kembali ke kasir'));
+    const metode = document.querySelector('.kasir-bayar-metode');
+    const probe = document.createElement('div');
+    probe.style.background = 'var(--secondary)';
+    document.body.appendChild(probe);
+    const secondary = getComputedStyle(probe).backgroundColor;
+    probe.remove();
     return {
       panggung,
-      dialog: r(dialog),
-      metode: [...metode.querySelectorAll('.btn')].map((b) => ({ nama: b.textContent.trim(), ...r(b) })),
-      totalLabel: gaya(tot?.firstElementChild),
+      kartu: r(kartu),
+      header: document.querySelector('.kasir-header') ? r(document.querySelector('.kasir-header')) : null,
+      grid: document.querySelectorAll('.kasir-grid').length,
+      overlay: document.querySelectorAll('.kasir-overlay-bayar').length,
+      daftarTab: { ...r(daftarTab), latar: getComputedStyle(daftarTab).backgroundColor },
+      secondary,
+      tab: [...daftarTab.querySelectorAll('[role="tab"]')].map((b) => ({ nama: b.textContent.trim(), ...r(b) })),
+      totalLabel: tot?.firstElementChild ? gaya(tot.firstElementChild) : null,
       totalNilai: gaya(tot?.querySelector('.num')),
+      total: tot ? r(tot) : null,
+      metode: metode ? r(metode) : null,
       aksi: r(aksi),
       primer: primer && { teks: primer.textContent.trim(), ...r(primer) },
       kembali: kembali && r(kembali),
@@ -149,40 +169,46 @@ async function ukur(hal) {
 // ---------------------------------------------------------------------------
 
 for (const lebar of [1024, 1280]) {
-  test(`⛔ ${lebar}: kartu pembayaran ${LEBAR_MOCKUP} px, metode SATU baris 56 px`, async (t) => {
+  test(`⛔ ${lebar}: kartu pembayaran ${LEBAR_MOCKUP} px di dalam shell, segmented empat tab 40 px di wadah --secondary, isi metode >= 355`, async (t) => {
     const { hal, galat } = await bukaK06(lebar);
     const u = await ukur(hal);
     await hal.close();
     t.diagnostic(JSON.stringify(u));
     assert.deepEqual(galat, []);
-    /* SENTINEL: panggung selebar yang diklaim, dan keempat metode dirender. */
+    /* SENTINEL: panggung selebar yang diklaim, dan keempat tab dirender. */
     assert.equal(u.panggung.w, lebar);
     assert.deepEqual(
-      u.metode.map((m) => m.nama),
-      ['Tunai', 'QRIS', 'QRIS statis', 'Kartu (EDC)'],
-      'pemilih metode tidak memuat keempat metode'
+      u.tab.map((m) => m.nama),
+      ['Tunai', 'QRIS', 'Kartu', 'Transfer'],
+      'segmented tidak memuat keempat tab'
     );
-    assert.equal(u.dialog.w, Math.min(LEBAR_MOCKUP, lebar), `kartu pembayaran ${u.dialog.w} px — mockup ${LEBAR_MOCKUP}`);
-    const puncak = new Set(u.metode.map((m) => m.t));
-    assert.equal(puncak.size, 1, `pemilih metode ${puncak.size} baris — mockup satu baris`);
-    for (const m of u.metode) {
-      assert.ok(m.h >= 56, `tombol metode "${m.nama}" ${m.h} px — aksi uang 56 px (DS #3)`);
-    }
+    assert.ok(u.header !== null && u.header.h === 68, `header tidak terlihat selama K-06: ${JSON.stringify(u.header)}`);
+    assert.equal(u.grid, 0, 'grid K-03 masih di DOM selama K-06');
+    assert.equal(u.overlay, 0, 'K-06 masih dirender sebagai overlay, bukan halaman di dalam shell');
+    assert.ok(Math.abs(u.kartu.w - Math.min(LEBAR_MOCKUP, lebar)) <= 2, `kartu pembayaran ${u.kartu.w} px — mockup ${LEBAR_MOCKUP} (±2)`);
+    assert.ok(u.kartu.t >= u.header.b, `kartu (atas ${u.kartu.t}) menimpa header (bawah ${u.header.b})`);
+    const puncak = new Set(u.tab.map((m) => m.t));
+    assert.equal(puncak.size, 1, `segmented ${puncak.size} baris — mockup satu baris`);
+    assert.equal(u.daftarTab.h, 40, `segmented ${u.daftarTab.h} px — mockup 40`);
+    assert.equal(u.daftarTab.latar, u.secondary, `wadah segmented ${u.daftarTab.latar}, bukan --secondary (${u.secondary})`);
+    assert.ok(u.metode !== null && u.metode.h >= 355, `isi metode ${u.metode?.h} px — mockup min 355`);
+    // "Kembali ke kasir" DI ATAS kartu.
+    assert.ok(u.kembali, 'tautan "Kembali ke kasir" tidak ada');
+    assert.ok(u.kembali.b <= u.kartu.t, `"Kembali ke kasir" (bawah ${u.kembali.b}) tidak di atas kartu (atas ${u.kartu.t})`);
   });
 
-  test(`⛔ ${lebar}: Total 32 px di blok aksi; aksi utama di kanan bawah, sebaris dengan Kembali`, async () => {
+  test(`⛔ ${lebar}: Total 32 px di blok ATAS; "Konfirmasi bayar" 56 px di kanan bawah`, async () => {
     const { hal, galat } = await bukaK06(lebar);
     const u = await ukur(hal);
     await hal.close();
     assert.deepEqual(galat, []);
     assert.equal(u.totalNilai, '32px/700', `nilai Total ${u.totalNilai} — mockup 32 px, bobot 700 (skala 32/20/15/13)`);
-    assert.equal(u.totalLabel, '20px/600', `label Total ${u.totalLabel} (skala 32/20/15/13)`);
-    assert.ok(u.primer && u.primer.teks === 'Simpan Penjualan', 'aksi utama tidak ditemukan di blok aksi');
+    assert.ok(u.totalLabel?.startsWith('13px'), `label Total ${u.totalLabel} — mockup 13 px (skala 32/20/15/13)`);
+    assert.ok(u.total.b <= u.daftarTab.t, `blok Total (bawah ${u.total.b}) tidak di atas tab (atas ${u.daftarTab.t})`);
+    assert.ok(u.primer && u.primer.teks === 'Konfirmasi bayar', `aksi utama: ${u.primer?.teks}`);
     assert.ok(u.primer.h >= 56, `aksi utama ${u.primer.h} px — 56 px (DS #3)`);
     assert.equal(u.primer.r, u.aksi.r, 'aksi utama tidak menempel di tepi kanan blok aksi');
     assert.ok(u.primer.w < u.aksi.w / 2, `aksi utama ${u.primer.w} px dari ${u.aksi.w} — mockup tidak selebar kartu`);
-    assert.ok(u.kembali, 'tombol Kembali hilang');
-    assert.equal(u.kembali.t, u.primer.t, 'Kembali tidak sebaris dengan aksi utama');
-    assert.ok(u.kembali.l < u.primer.l, 'Kembali tidak di kiri aksi utama');
+    assert.ok(u.primer.b >= u.kartu.b - 40, `aksi utama (bawah ${u.primer.b}) tidak di bawah kartu (bawah ${u.kartu.b})`);
   });
 }

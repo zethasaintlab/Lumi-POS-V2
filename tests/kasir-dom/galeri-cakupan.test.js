@@ -132,12 +132,13 @@ test('⛔ K-09 menampilkan baris dan pembayaran MILIK order-nya sendiri', async 
   assert.equal(bayar, 1, `K-09 menampilkan ${bayar} pembayaran untuk order yang dibayar sekali — WHERE order_id diabaikan`);
 });
 
-test('⛔ K-07 dapat dicapai dari galeri: K-03 → Bayar → tunai → Simpan Penjualan', async () => {
+test('⛔ K-07 dapat dicapai dari galeri: K-03 → Bayar → Tunai → ketik nominal → Konfirmasi bayar', async () => {
   const { hal, galat } = await buka('K-03', 'keranjang-penuh');
   await hal.getByRole('button', { name: 'Bayar', exact: true }).click();
   await hal.waitForTimeout(600);
-  for (let i = 0; i < 6; i += 1) await hal.getByRole('button', { name: '+ Rp 100.000' }).click();
-  await hal.getByRole('button', { name: 'Simpan Penjualan' }).click();
+  await hal.getByRole('tab', { name: 'Tunai', exact: true }).click();
+  await hal.getByLabel('Nominal diterima').fill('600.000');
+  await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
   await hal.waitForTimeout(2500);
   const isi = await teks(hal);
   await hal.close();
