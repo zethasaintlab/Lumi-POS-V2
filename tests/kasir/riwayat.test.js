@@ -275,3 +275,18 @@ test('⛔ ketiga bentuk snapshot hidup berdampingan dalam satu order', async () 
   assert.deepEqual(d.baris[1].modifier, d.baris[2].modifier);
   assert.deepEqual(d.baris[2].modifier, ['Sirup ×3']);
 });
+
+test('⛔ detail membawa provider pembayaran, sehingga transfer terbaca "Transfer" di K-09', async () => {
+  const { bacaDetail } = await import(MOD);
+  const { labelMetode } = await import('../../packages/domain/src/metode-tampilan.ts');
+  const db = dbPalsu({
+    order: [ORDER],
+    payment: [{
+      id: 'p1', order_id: 'o1', method: 'other', provider: 'bank_transfer', amount: 16500,
+      tendered_amount: null, change_amount: null, status: 'confirmed',
+    }],
+  });
+  const d = await bacaDetail(db, 'o1');
+  assert.equal(d.pembayaran[0].provider, 'bank_transfer');
+  assert.equal(labelMetode(d.pembayaran[0].metode, d.pembayaran[0].provider), 'Transfer');
+});

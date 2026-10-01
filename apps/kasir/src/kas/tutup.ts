@@ -5,6 +5,7 @@ import type { PeristiwaAudit } from '../../../../packages/domain/src/audit-peris
 
 /** Diperiksa TypeScript terhadap kosakata tertutup `PERISTIWA_AUDIT`. */
 const PERISTIWA: PeristiwaAudit = 'shift_count_attempt';
+import { kodeLaporanMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 import { enqueue } from '../../../../packages/sync-client/src/enqueue.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import {
@@ -89,6 +90,7 @@ interface BarisShift {
 
 interface BarisPembayaran {
   method: string;
+  provider: string | null;
   amount: number;
 }
 
@@ -125,7 +127,7 @@ async function ambilShift(db: DbLokal, shiftId: string): Promise<BarisShift | nu
  */
 async function pembayaranTunai(db: DbLokal, shiftId: string): Promise<BarisPembayaran[]> {
   return db.getAll<BarisPembayaran>(
-    `SELECT p.method, p.amount
+    `SELECT p.method, p.provider, p.amount
        FROM payment p
        JOIN "order" o ON o.id = p.order_id
       WHERE o.shift_id = ?
@@ -179,10 +181,12 @@ function agregasiPerMetode(
 ): { metode: string; jumlah: number; total: number }[] {
   const per = new Map<string, { jumlah: number; total: number }>();
   for (const b of bayar) {
-    const kini = per.get(b.method) ?? { jumlah: 0, total: 0 };
+    // ⛔ Dikunci kode LAPORAN: Transfer tampil "transfer", bukan "other".
+    const kode = kodeLaporanMetode(b.method, b.provider);
+    const kini = per.get(kode) ?? { jumlah: 0, total: 0 };
     kini.jumlah += 1;
     kini.total += b.amount;
-    per.set(b.method, kini);
+    per.set(kode, kini);
   }
   return [...per].map(([metode, v]) => ({ metode, jumlah: v.jumlah, total: v.total }));
 }

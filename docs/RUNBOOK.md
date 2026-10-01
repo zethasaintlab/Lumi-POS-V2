@@ -36,6 +36,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Stok minus padahal barang ada" | §4 stok & oversell |
 | "Sudah bayar QRIS tapi order belum lunas" | §5 pembayaran gateway |
 | "Uang yang masuk rekening kurang dari yang tercatat" | §5.5 potongan MDR |
+| "Pembayaran Transfer tidak pernah sampai ke server" · `PAYMENT_METHOD_UNSUPPORTED` | §5.7 Transfer, server belum diperbarui |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
@@ -359,6 +360,23 @@ plus diskon, service charge, dan pembulatan. Periode dan tanggal dibuat ada
 | Total berbeda dari Laporan Penjualan | ⛔ **Tidak boleh terjadi** — keduanya memakai fungsi yang sama, dan ada test yang membandingkannya. Eskalasi. |
 
 ---
+
+### 5.7 Transfer berhenti di antrean dengan `PAYMENT_METHOD_UNSUPPORTED`
+
+Transfer bank (spec-c:244; keputusan user P1/P2, 28 September 2026) disimpan
+sebagai `method = 'other'` + `provider = 'bank_transfer'`, tanpa migrasi. Ia
+dikonfirmasi kasir dari bukti di ponsel pelanggan (`confirmed_manually`),
+berfungsi offline, dan tidak pernah menulis `cash_movement`.
+
+| Gejala | Artinya |
+|---|---|
+| Item `payment` Transfer di K-14 berhenti `gagal-permanen` dengan `400 PAYMENT_METHOD_UNSUPPORTED` | ⛔ **Server belum diperbarui.** Server lama menolak `other`. **Urutan rilis: server dulu, klien sesudahnya** (R8, § 12.4). Penjualan sudah tersimpan di perangkat dan uangnya diterima; setelah server diperbarui, putar ulang dengan alat di § 10.1. |
+| `400 VALIDATION_ERROR` "Nomor referensi transfer wajib" | Muatan tanpa `reference` (>= 3 karakter) atau `provider` di luar daftar tertutup (`bank_transfer`). Perangkat memakai aturan domain yang sama, jadi ini berarti klien lama atau muatan diubah-ubah. |
+| `400 POSSIBLE_CARD_NUMBER` | Referensi atau bank berbentuk 13-19 digit (nomor kartu). Tidak boleh masuk POS; minta kasir mengetik nomor referensi transfer, bukan nomor kartu. |
+| Laporan menampilkan "Lainnya" untuk uang transfer | Tidak seharusnya: setiap laporan per metode melipat `other` + `bank_transfer` menjadi "Transfer". Klien lama menampilkan kode mentah `transfer`, tidak pernah "Lainnya". "Lainnya" hanya untuk `other` tanpa provider. |
+
+Mematikan Transfer untuk satu merchant tanpa rilis: kill switch
+`pembayaran_transfer` (§ 13). Tunai tetap ada, penjualan tidak berhenti.
 
 ## 6. Langganan & kuota
 

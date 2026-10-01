@@ -548,3 +548,30 @@ test('⛔ `opening_float` TIDAK menjadi baris rincian — ia sudah `saldoAwal`',
     'modal awal muncul dua kali: sebagai `saldoAwal` DAN sebagai baris rincian.'
   );
 });
+
+test('⛔ transfer tampil sebagai kelompok transfer, bukan other (K-12, syarat user P1)', async () => {
+  const { ringkasanSebelumHitung } = await import(MOD);
+  const { labelMetode } = await import('../../packages/domain/src/metode-tampilan.ts');
+  const db = dbPalsu({
+    order: [
+      { method: 'cash', provider: null, amount: 100000 },
+      { method: 'other', provider: 'bank_transfer', amount: 70000 },
+      { method: 'other', provider: 'bank_transfer', amount: 5000 },
+      { method: 'other', provider: null, amount: 30000 },
+    ],
+  });
+  const r = await ringkasanSebelumHitung(db, 's1');
+  const kode = r.perMetode.map((m) => m.metode).sort();
+  assert.deepEqual(kode, ['cash', 'other', 'transfer']);
+  const trf = r.perMetode.find((m) => m.metode === 'transfer');
+  assert.equal(trf.total, 75000);
+  assert.equal(trf.jumlah, 2);
+  assert.equal(labelMetode(trf.metode), 'Transfer');
+  assert.equal(r.perMetode.find((m) => m.metode === 'other').total, 30000, 'other tanpa provider harus terpisah');
+  // Total tunai disembunyikan (FR-D2); yang non-tunai harus utuh: 75.000 + 30.000.
+  assert.equal(
+    r.perMetode.reduce((t, m) => t + (m.total ?? 0), 0),
+    105000,
+    'jumlah kelompok non-tunai kehilangan uang'
+  );
+});

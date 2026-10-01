@@ -144,3 +144,15 @@ test('⛔ kosakata kunci SAMA dengan yang dipakai alat operator', async () => {
     );
   }
 });
+
+test('⛔ `pembayaran_transfer` terdaftar, menyala bawaan, dan mati bila dimatikan operator', async () => {
+  const { FITUR, resolusiFitur } = await import(MOD);
+  const f = FITUR.find((x) => x.kunci === 'pembayaran_transfer');
+  assert.ok(f, 'kunci pembayaran_transfer tidak ada');
+  assert.equal(f.bawaan, true);
+  assert.equal(resolusiFitur([], 'pembayaran_transfer', T1), true);
+  assert.equal(
+    resolusiFitur([{ kunci: 'pembayaran_transfer', tenantId: null, aktif: false }], 'pembayaran_transfer', T1),
+    false
+  );
+});

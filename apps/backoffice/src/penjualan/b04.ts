@@ -61,19 +61,6 @@ export function besaranSelisih(selisih: string | null): string {
   }
 }
 
-/** Metode pembayaran dalam kata merchant — sejajar dengan B-03. */
-export const LABEL_METODE: Record<string, string> = {
-  cash: 'Tunai',
-  qris_dynamic: 'QRIS (dinamis)',
-  qris_static: 'QRIS (statis)',
-  card_edc: 'Kartu / EDC',
-  other: 'Lainnya',
-};
-
-export function labelMetode(kode: string): string {
-  return LABEL_METODE[kode] ?? kode;
-}
-
 /** Tipe pergerakan kas non-penjualan. */
 export const LABEL_GERAK: Record<string, string> = {
   paid_in: 'Uang masuk',

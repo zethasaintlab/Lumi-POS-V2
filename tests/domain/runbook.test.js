@@ -55,6 +55,8 @@ const KODE_ERROR = [
   'SESSION_INVALID',
   'PLAN_NOT_AN_UPGRADE',
   'IDEMPOTENCY_KEY_REUSED',
+  // §5.7 — Transfer ditolak server yang belum diperbarui (R8).
+  'PAYMENT_METHOD_UNSUPPORTED',
 ];
 
 test('⛔ setiap kode error yang runbook sebut BENAR-BENAR ada di kode', () => {

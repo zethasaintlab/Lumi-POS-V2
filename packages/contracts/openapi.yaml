@@ -4005,11 +4005,10 @@ paths:
                 id: { type: string }
                 method:
                   type: string
-                  # Daftar TERTUTUP. `other` (voucher fisik, transfer) belum
-                  # dibangun -- FR-C2 menuntut catatan wajib untuknya, dan
-                  # menerimanya sebelum itu ada berarti membangun separuh
-                  # FR-C2 tanpa pengaman yang menyertainya.
-                  enum: [cash, qris_dynamic, qris_static, card_edc]
+                  # Daftar TERTUTUP. `other` HANYA untuk Transfer bank
+                  # (`provider = bank_transfer`, spec-c:244, keputusan user
+                  # P1 28 September 2026); voucher fisik belum dibangun.
+                  enum: [cash, qris_dynamic, qris_static, card_edc, other]
                   default: cash
                 # tenderedAmount = uang yang DISERAHKAN pelanggan (tunai
                 # saja), bukan yang terpakai. Server yang menghitung amount
@@ -4032,6 +4031,14 @@ paths:
                 # Ditolak bila memuat 13-19 digit berurutan (AC FR-C5 keempat)
                 # -- itu bentuk nomor kartu.
                 reference: { type: string, nullable: true }
+                # --- Transfer bank (`method: other`) ---
+                # WAJIB `bank_transfer` (daftar tertutup; selain itu 400
+                # VALIDATION_ERROR). `reference` = nomor referensi bukti
+                # transfer (wajib, >= 3 karakter); `acquirer` = bank tujuan
+                # (opsional). Keduanya ditolak bila memuat 13-19 digit
+                # (POSSIBLE_CARD_NUMBER). Dikonfirmasi manual, tanpa
+                # cash_movement.
+                provider: { type: string, nullable: true }
                 # --- EDC (FR-C4) ---
                 # approvalCode WAJIB; cardLast4 opsional dan maksimal 4 DIGIT.
                 # Tidak ada field mana pun di kontrak ini yang menerima nomor
@@ -7079,6 +7086,7 @@ components:
             type: object
             required: [method, jumlahTransaksi, total]
             properties:
+              # KODE LAPORAN: `transfer` untuk other + bank_transfer.
               method: { type: string }
               jumlahTransaksi: { type: integer }
               total: { type: string }
@@ -7401,6 +7409,9 @@ components:
             properties:
               id: { type: string }
               method: { type: string }
+              # `bank_transfer` untuk Transfer (`method: other`); klien
+              # menampilkan "Transfer" lewat labelMetode(method, provider).
+              provider: { type: string, nullable: true }
               amount: { type: string }
               tenderedAmount: { type: string, nullable: true }
               changeAmount: { type: string, nullable: true }
@@ -7566,7 +7577,9 @@ components:
             properties:
               method:
                 type: string
-                enum: [cash, qris_dynamic, qris_static, card_edc, other]
+                # KODE LAPORAN (`kodeLaporanMetode`): `transfer` untuk
+                # other + bank_transfer; `other` hanya untuk yang tanpa provider.
+                enum: [cash, qris_dynamic, qris_static, card_edc, other, transfer]
               jumlahTransaksi: { type: integer }
               totalDiterima: { type: string }
               perkiraanMdr:
@@ -7635,7 +7648,8 @@ components:
                 properties:
                   method:
                     type: string
-                    enum: [cash, qris_dynamic, qris_static, card_edc, other]
+                    # KODE LAPORAN: `transfer` untuk other + bank_transfer.
+                    enum: [cash, qris_dynamic, qris_static, card_edc, other, transfer]
                   jumlahTransaksi: { type: integer }
                   totalDiterima: { type: string }
                   perkiraanMdr:
@@ -7800,7 +7814,9 @@ components:
         changeAmount: { type: integer, nullable: true }
         status: { type: string }
         confirmedManually: { type: boolean }
-        # Terisi hanya untuk metode yang lewat gateway (QRIS dinamis).
+        # Terisi untuk metode yang lewat gateway (QRIS dinamis: nama adapter)
+        # dan untuk Transfer (`bank_transfer`: menyebut SALURAN, bukan
+        # pemverifikasi; tanda tak-terverifikasi adalah `confirmedManually`).
         # `providerReference` bisa NULL walau provider terisi: payment ditulis
         # SEBELUM gateway dipanggil, supaya ia tetap ada bila gateway tidak
         # menjawab (FR-C14).

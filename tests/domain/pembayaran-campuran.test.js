@@ -178,3 +178,40 @@ test('sisa tagihan terhitung meski masukannya belum lengkap', async () => {
   // ditolak di tempat lain hanya membingungkan.
   assert.equal(sisaTagihan(50_000n, [{ metode: 'qris_static', nominal: 80_000n }]), 0n);
 });
+
+test('property G-TRF-KAS: transfer + tunai menutup tagihan tepat; pembulatan hanya pada sisa tunai', async () => {
+  const { rencanakanPembayaran } = await import(MOD);
+  let kasus = 0;
+  for (const total of [9_950n, 64_120n, 93_555n]) {
+    for (const trf of [0n, 1n, total / 2n, total - 1n, total]) {
+      for (const increment of [1n, 100n, 500n]) {
+        if (trf === 0n) {
+          // Tanpa bagian transfer: hanya tunai; tetap dihitung sebagai kasus.
+          kasus++;
+          continue;
+        }
+        const bagian = [{ metode: 'other', nominal: trf }];
+        if (trf < total) bagian.push({ metode: 'cash', tendered: total * 2n });
+        const h = rencanakanPembayaran({
+          total,
+          bagian,
+          roundingIncrement: increment,
+          roundingMode: 'half_up',
+        });
+        assert.equal(h.ok, true, h.ok ? '' : h.pesan);
+        assert.equal(h.rencana.amountDue, trf + h.rencana.tunaiDitagih, `total ${total} trf ${trf} inc ${increment}`);
+        assert.equal(h.rencana.tunaiDitagih % increment, 0n, 'pembulatan hanya pada sisa tunai');
+        if (trf === total) assert.equal(h.rencana.tunaiDitagih, 0n);
+        kasus++;
+      }
+    }
+  }
+  assert.equal(kasus, 45);
+});
+
+test('⛔ kelebihan bayar transfer ditolak', async () => {
+  const { rencanakanPembayaran } = await import(MOD);
+  const h = rencanakanPembayaran(rencana(50_000n, [{ metode: 'other', nominal: 50_001n }]));
+  assert.equal(h.ok, false);
+  assert.equal(h.kode, 'KELEBIHAN_NON_TUNAI');
+});

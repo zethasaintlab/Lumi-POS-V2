@@ -157,6 +157,16 @@ test('⛔ label metode SAMA dengan yang back-office pakai', async () => {
   assert.equal(baris[1].label, LABEL_METODE.qris_dynamic);
 });
 
+test('⛔ transfer tampil "Transfer" di M-01, tidak pernah "Lainnya"', async () => {
+  const { barisMetode } = await import(M01);
+  const baris = barisMetode([
+    { metode: 'transfer', total: '70000', jumlah: 1 },
+    { metode: 'other', total: '30000', jumlah: 1 },
+  ]);
+  assert.equal(baris[0].label, 'Transfer');
+  assert.equal(baris[1].label, 'Lainnya');
+});
+
 test('⛔ jumlah transaksi SELALU disertai katanya', async () => {
   const { barisMetode } = await import(M01);
   const baris = barisMetode([

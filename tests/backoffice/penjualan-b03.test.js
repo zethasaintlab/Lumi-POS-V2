@@ -136,6 +136,13 @@ test('metode dan status pembayaran terbaca merchant', async () => {
   assert.equal(labelStatusBayar('confirmed'), 'Terkonfirmasi');
 });
 
+test('⛔ transfer (other + bank_transfer) terbaca "Transfer", bukan "Lainnya"', async () => {
+  const { labelMetode } = await import(METODE);
+  assert.equal(labelMetode('other', 'bank_transfer'), 'Transfer');
+  assert.equal(labelMetode('transfer'), 'Transfer');
+  assert.equal(labelMetode('other', null), 'Lainnya');
+});
+
 test('⛔ pending TIDAK disebut gagal maupun lunas', async () => {
   // Ia keadaan ketiga yang nyata: QRIS yang QR-nya sudah diminta tapi gateway
   // belum menjawab, sementara pelanggan mungkin sudah membayar (FR-C14).

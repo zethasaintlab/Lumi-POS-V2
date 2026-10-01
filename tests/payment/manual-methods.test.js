@@ -362,3 +362,146 @@ test('QRIS statis tidak dapat dicek statusnya ke gateway', async () => {
   assert.equal(cek.statusCode, 409, cek.body);
   assert.equal(JSON.parse(cek.body).error.code, 'PAYMENT_NOT_GATEWAY');
 });
+
+// ============================================================
+// Transfer bank -- `other` + `bank_transfer` (spec kasir § 5, P1/P2)
+// ============================================================
+
+test('⛔ transfer dengan referensi -> confirmed, method other, provider bank_transfer, confirmed_manually true, order CLOSED', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 27000);
+
+  const res = await bayar(order.id, {
+    method: 'other', provider: 'bank_transfer', amount: 27000,
+    reference: 'TRF-20260807-0042', acquirer: 'BCA',
+  });
+  assert.equal(res.statusCode, 201, res.body);
+  const body = JSON.parse(res.body);
+  assert.equal(body.payment.status, 'confirmed');
+  assert.equal(body.payment.confirmedManually, true);
+  assert.equal(body.payment.provider, 'bank_transfer');
+  assert.equal(body.order.status, 'closed');
+
+  const rows = await query(
+    'SELECT method, provider, provider_reference, acquirer, confirmed_manually, tendered_amount FROM payment'
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].method, 'other');
+  assert.equal(rows[0].provider, 'bank_transfer');
+  assert.equal(rows[0].provider_reference, 'TRF-20260807-0042');
+  assert.equal(rows[0].acquirer, 'BCA');
+  assert.equal(rows[0].confirmed_manually, true);
+  assert.equal(rows[0].tendered_amount, null);
+});
+
+test('⛔ G-TRF: transfer TANPA referensi ditolak dengan pesan yang SAMA dengan domain', async () => {
+  const { periksaTransfer } = await import('../../packages/domain/src/pembayaran-manual.ts');
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx);
+
+  for (const reference of [undefined, null, '', '   ', 'ab']) {
+    const res = await bayar(order.id, {
+      method: 'other', provider: 'bank_transfer', amount: 20000, reference,
+    });
+    assert.equal(res.statusCode, 400, `${JSON.stringify(reference)}: ${res.body}`);
+    const err = JSON.parse(res.body).error;
+    assert.equal(err.code, 'VALIDATION_ERROR');
+    assert.equal(err.message, periksaTransfer(reference, null).pesan);
+  }
+  assert.equal((await query('SELECT id FROM payment')).length, 0);
+});
+
+test('provider di luar daftar tertutup ditolak', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx);
+
+  for (const provider of [undefined, null, '', 'voucher', 'BANK_TRANSFER', 'midtrans']) {
+    const res = await bayar(order.id, {
+      method: 'other', provider, amount: 20000, reference: 'TRF-0001',
+    });
+    assert.equal(res.statusCode, 400, `${JSON.stringify(provider)}: ${res.body}`);
+    assert.equal(JSON.parse(res.body).error.code, 'VALIDATION_ERROR');
+  }
+  assert.equal((await query('SELECT id FROM payment')).length, 0);
+});
+
+test('⛔ referensi atau bank berbentuk nomor kartu ditolak POSSIBLE_CARD_NUMBER', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx);
+
+  for (const [reference, acquirer] of [
+    ['4111 1111 1111 1111', undefined],
+    ['4111-1111-1111-1111', undefined],
+    ['TRF-0001', '4111111111111111'],
+  ]) {
+    const res = await bayar(order.id, {
+      method: 'other', provider: 'bank_transfer', amount: 20000, reference, acquirer,
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.equal(JSON.parse(res.body).error.code, 'POSSIBLE_CARD_NUMBER');
+  }
+  assert.equal((await query('SELECT id FROM payment')).length, 0);
+});
+
+test('⛔ G-TRF-KAS server: transfer TIDAK menulis cash_movement', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 27000);
+  const res = await bayar(order.id, {
+    method: 'other', provider: 'bank_transfer', amount: 27000, reference: 'TRF-0042',
+  });
+  assert.equal(res.statusCode, 201, res.body);
+
+  const kas = await query('SELECT id FROM cash_movement WHERE order_id = $1', [order.id]);
+  assert.equal(kas.length, 0, 'transfer menulis cash_movement ke laci');
+});
+
+test('transfer sebagian tidak menutup order dan menyisakan tagihan', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 20000);
+
+  const sebagian = await bayar(order.id, {
+    method: 'other', provider: 'bank_transfer', amount: 5000, reference: 'TRF-0001',
+  });
+  assert.equal(sebagian.statusCode, 201, sebagian.body);
+  assert.notEqual(JSON.parse(sebagian.body).order.status, 'closed');
+  assert.equal(JSON.parse(sebagian.body).outstanding, 15000);
+});
+
+test('audit: payment.recorded untuk transfer membawa aktor dan metodenya', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 27000);
+  const res = await bayar(order.id, {
+    method: 'other', provider: 'bank_transfer', amount: 27000, reference: 'TRF-0042',
+  });
+  assert.equal(res.statusCode, 201, res.body);
+
+  const pay = await query('SELECT id, created_by FROM payment');
+  assert.equal(pay[0].created_by, base.user.id, 'aktor tidak tercatat di baris payment');
+
+  const ev = await query(
+    `SELECT payload FROM outbox WHERE event_type = 'payment.recorded' AND aggregate_id = $1`,
+    [pay[0].id]
+  );
+  assert.equal(ev.length, 1);
+  const payload = typeof ev[0].payload === 'string' ? JSON.parse(ev[0].payload) : ev[0].payload;
+  assert.equal(payload.method, 'other');
+  assert.equal(payload.orderId, order.id);
+});
+
+test('isolasi tenant: transfer tenant A tidak terbaca tenant B', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 27000);
+  const res = await bayar(order.id, {
+    method: 'other', provider: 'bank_transfer', amount: 27000, reference: 'TRF-0042',
+  });
+  assert.equal(res.statusCode, 201, res.body);
+
+  const b = await seedTenantBase(appSetup, { suffix: 'ManualPayB' });
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [b.tenant.id]);
+  const { rows } = await appSetup.query(`SELECT id FROM payment WHERE method = 'other'`);
+  await appSetup.query('COMMIT');
+  assert.equal(rows.length, 0, 'tenant B membaca transfer tenant A');
+
+  assert.equal((await query(`SELECT id FROM payment WHERE method = 'other'`)).length, 1);
+});

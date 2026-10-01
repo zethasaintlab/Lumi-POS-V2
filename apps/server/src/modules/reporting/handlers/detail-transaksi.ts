@@ -226,7 +226,7 @@ export async function ambilDetail(
   }
 
   const { rows: payRows } = await client.query(
-    `SELECT id, method, amount, tendered_amount, change_amount, status,
+    `SELECT id, method, provider, amount, tendered_amount, change_amount, status,
             confirmed_manually, card_last4, occurred_at
        FROM payment
       WHERE order_id = $1
@@ -298,6 +298,9 @@ export async function ambilDetail(
     payments: payRows.map((p) => ({
       id: p.id as string,
       method: p.method as string,
+      // Aditif: pembeda Transfer (`other` + `bank_transfer`) dari `other`
+      // lain; klien memakainya lewat `labelMetode(method, provider)`.
+      provider: (p.provider as string | null) ?? null,
       amount: teks(p.amount),
       // ⛔ `null` DIPERTAHANKAN, tidak dijadikan `'0'`. QRIS tidak punya uang
       // yang diserahkan, dan "Tunai diterima: Rp 0" adalah pernyataan yang

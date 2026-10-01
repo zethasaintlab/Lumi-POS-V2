@@ -108,15 +108,46 @@ export function periksaCardLast4(nilai: unknown): GalatBayar | null {
 }
 
 /**
- * ⛔ `confirmed_manually` HANYA untuk QRIS statis.
+ * `provider` Transfer — menyebut SALURAN, bukan pemverifikasi (spec kasir § 5).
+ *
+ * Satu-satunya nilai yang diterima server hari ini (daftar tertutup). Tanda
+ * "tidak diverifikasi sistem" adalah `confirmed_manually`, bukan `provider`.
+ */
+export const PROVIDER_TRANSFER = 'bank_transfer';
+
+/**
+ * Transfer bank (`other` + `bank_transfer`, spec-c:244): referensi dari bukti
+ * transfer WAJIB, bank tujuan opsional. Keduanya diperiksa terhadap nomor
+ * kartu (FR-C5 AC keempat) — nomor rekening 10 digit lolos, 13–19 digit tidak.
+ *
+ * ⛔ Kalimat galatnya satu, dipakai perangkat dan server (diuji sama persis).
+ */
+export function periksaTransfer(referensi: unknown, bank: unknown): GalatBayar | null {
+  if (typeof referensi !== 'string' || referensi.trim().length < MIN_PANJANG_REFERENSI) {
+    return {
+      kode: 'VALIDATION_ERROR',
+      pesan: `Nomor referensi transfer wajib (minimal ${MIN_PANJANG_REFERENSI} karakter).`,
+    };
+  }
+  const kartuRef = periksaBukanNomorKartu(referensi, 'reference');
+  if (kartuRef) return kartuRef;
+  if (typeof bank === 'string' && bank.length > 0) {
+    return periksaBukanNomorKartu(bank, 'acquirer');
+  }
+  return null;
+}
+
+/**
+ * ⛔ `confirmed_manually` untuk metode yang dikonfirmasi ORANG: QRIS statis dan
+ * Transfer (`other`, P2 keputusan user).
  *
  * Ia menandai bahwa tidak ada SISTEM yang memverifikasi pembayaran, dan
  * FR-G5 memakainya untuk laporan exception. EDC punya struk terminal dan kode
  * approval dari acquirer — bukti fisik yang dapat dicocokkan — sementara QRIS
- * statis tidak punya apa pun selain kalimat kasir.
+ * statis dan transfer tidak punya apa pun selain kalimat kasir.
  */
 export function dikonfirmasiManual(metode: string): boolean {
-  return metode === 'qris_static';
+  return metode === 'qris_static' || metode === 'other';
 }
 
 /**

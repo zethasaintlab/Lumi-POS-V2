@@ -1134,3 +1134,154 @@ test('penjualan TANPA draf tetap mengisi outbox dan menaikkan counter', async ()
     'jalur normal harus tetap menaikkan counter'
   );
 });
+
+// ---------------------------------------------------------------------------
+// Transfer bank (`other` + `bank_transfer`) — spec kasir § 5
+// ---------------------------------------------------------------------------
+
+const TRF = { metode: 'other', provider: 'bank_transfer', referensi: 'TRF-0042', bank: 'BCA' };
+
+test('⛔ transfer tanpa referensi ditolak di perangkat SEBELUM tersimpan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { periksaTransfer } = await import('../../packages/domain/src/pembayaran-manual.ts');
+  for (const referensi of ['', '  ', 'ab']) {
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({
+      db,
+      ...args({ pembayaran: { ...TRF, referensi } }),
+    });
+    assert.equal(hasil.status, 'pembayaran_tidak_sah', `${JSON.stringify(referensi)} → ${hasil.status}`);
+    assert.equal(hasil.kode, 'VALIDATION_ERROR');
+    assert.equal(hasil.pesan, periksaTransfer(referensi, null).pesan);
+    assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
+  }
+  // Nomor kartu di field BANK ditolak juga, dengan kode sendiri.
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ pembayaran: { ...TRF, bank: '4111 1111 1111 1111' } }),
+  });
+  assert.equal(hasil.status, 'pembayaran_tidak_sah');
+  assert.equal(hasil.kode, 'POSSIBLE_CARD_NUMBER');
+  assert.equal(db.state.tulis.length, 0);
+});
+
+test('⛔ G-TRF-KAS perangkat: property — cash_movement hanya sebesar bagian tunai', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  let kasus = 0;
+  // Total harga = pajak 10% eksklusif: 9.950 → 10.945, dst. Yang diuji
+  // hubungan, bukan angkanya.
+  for (const harga of [9_000, 20_000, 50_000]) {
+    const baris = [{ ...BARIS[0], unitPrice: harga }];
+    const total = BigInt(Math.round(harga * 1.1));
+    const rencana = {
+      'transfer penuh': () => [{ ...TRF }],
+      'transfer + tunai': () => [
+        { ...TRF, nominal: total / 2n },
+        { metode: 'cash', tendered: Number(total) * 2 },
+      ],
+      'qris_static + transfer + tunai': () => [
+        { metode: 'qris_static', referensi: 'ref 4821', nominal: total / 4n },
+        { ...TRF, nominal: total / 4n },
+        { metode: 'cash', tendered: Number(total) * 2 },
+      ],
+      'edc + transfer': () => [
+        { metode: 'card_edc', approvalCode: 'A12345', nominal: total / 2n },
+        { ...TRF, nominal: total - total / 2n },
+      ],
+    };
+    for (const [nama, bangun] of Object.entries(rencana)) {
+      const db = dbPalsu();
+      const pembayaran = bangun();
+      const hasil = await simpanPenjualan({
+        db,
+        ...args({ keranjang: { baris, diskon: null }, pembayaran }),
+      });
+      assert.equal(hasil.status, 'tersimpan', `${nama} @ ${harga}: ${hasil.status}`);
+      const adaTunai = pembayaran.some((p) => p.metode === 'cash');
+      const kas = cashMovement(db);
+      if (!adaTunai) {
+        assert.equal(kas.length, 0, `${nama} @ ${harga}: transfer/non-tunai menulis cash_movement`);
+      } else {
+        assert.equal(kas.length, 1, `${nama} @ ${harga}`);
+        const bayarTunai = db.state.tulis
+          .filter((t) => /INSERT INTO payment/.test(t.sql))
+          .find((t) => t.params[3] === 'cash');
+        assert.equal(Number(kas[0].params[2]), bayarTunai.params[4], `${nama} @ ${harga}: delta ≠ bagian tunai`);
+      }
+      kasus++;
+    }
+  }
+  assert.equal(kasus, 12);
+});
+
+test('payment lokal transfer: method other, provider bank_transfer, provider_reference, acquirer, confirmed_manually 1', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const fs = require('node:fs');
+  const { DatabaseSync } = require('node:sqlite');
+  const db = dbPalsu();
+  // SQL LENGKAP direkam (fake memotongnya ke baris pertama), lalu dijalankan
+  // di SQLite sungguhan atas DDL `payment` lokal: jumlah kolom dan placeholder
+  // yang tidak sepakat, atau kolom yang tidak ada, gagal di sini.
+  const penuh = [];
+  const asli = db.execute;
+  db.execute = async (sql, params = []) => {
+    penuh.push({ sql, params });
+    return asli(sql, params);
+  };
+  const hasil = await simpanPenjualan({ db, ...args({ pembayaran: TRF }) });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  const ins = penuh.find((t) => /INSERT INTO payment/.test(t.sql));
+  const ddl = fs.readFileSync('db/local/001-initial.sql', 'utf8').match(/CREATE TABLE payment \([\s\S]*?\n\);/)[0];
+  const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(ddl);
+  sqlite.prepare(ins.sql).run(...ins.params);
+  const baris = sqlite.prepare('SELECT * FROM payment').all();
+  assert.equal(baris.length, 1);
+  assert.equal(baris[0].method, 'other');
+  assert.equal(baris[0].provider, 'bank_transfer');
+  assert.equal(baris[0].provider_reference, 'TRF-0042');
+  assert.equal(baris[0].acquirer, 'BCA');
+  assert.equal(baris[0].confirmed_manually, 1);
+  assert.equal(baris[0].tendered_amount, null, 'tendered_amount terisi untuk transfer');
+  assert.equal(baris[0].change_amount, null, 'change_amount terisi untuk transfer');
+  assert.equal(baris[0].amount, 22000);
+});
+
+test('muatan outbox transfer: provider dan reference ikut, tendered tidak', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args({ pembayaran: TRF }) });
+  const bayar = db.state.tulis
+    .filter((t) => /INSERT INTO outbox_local/.test(t.sql))
+    .find((t) => t.params.includes('payment'));
+  const m = JSON.parse(bayar.params.find((p) => typeof p === 'string' && p.startsWith('{')));
+  assert.equal(m.method, 'other');
+  assert.equal(m.provider, 'bank_transfer');
+  assert.equal(m.reference, 'TRF-0042');
+  assert.equal(m.acquirer, 'BCA');
+  assert.equal(m.amount, 22000);
+  assert.equal(m.tenderedAmount, undefined);
+});
+
+test('struk transfer menyebut "Transfer", bukan "Lainnya"', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ pembayaran: TRF }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.match(teks, /Transfer/);
+  assert.equal(/Lainnya/.test(teks), false);
+});

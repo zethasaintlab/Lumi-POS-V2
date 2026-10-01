@@ -189,7 +189,7 @@ export function DetailTransaksiModal({ orderId, onTutup }: Props) {
               rows={d.payments.map((p) => ({
                 metode: (
                   <span className="stack" style={{ gap: 0 }}>
-                    <span>{labelMetode(p.method)}</span>
+                    <span>{labelMetode(p.method, p.provider)}</span>
                     {p.cardLast4 !== null ? (
                       <span className="t-caption num">•••• {p.cardLast4}</span>
                     ) : null}

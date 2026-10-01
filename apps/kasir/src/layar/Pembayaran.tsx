@@ -404,6 +404,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     // ditulis `selesaikanQris` dengan `paymentId` dari server. Cabang ini ada
     // supaya tipenya lengkap, bukan supaya ia dapat dipakai.
     if (metode === 'qris_dynamic') return null;
+    // Transfer (`other`) belum punya tab di K-06 — Task 8 (kartu bertoggle).
+    if (metode === 'other') return null;
     return { metode, approvalCode, cardLast4: cardLast4 || null, nominal };
   };
 

@@ -14,6 +14,11 @@
  * Nama sengaja PENDEK — struk 58 mm hanya 32 kolom, dan nama metode berbagi
  * baris dengan nominalnya.
  */
+import {
+  kodeLaporanMetode,
+  LABEL_METODE as LABEL_METODE_LAYAR,
+} from '../../../../packages/domain/src/metode-tampilan.ts';
+
 export const LABEL_METODE: Record<string, string> = {
   cash: 'Tunai',
   qris_dynamic: 'QRIS',
@@ -22,7 +27,15 @@ export const LABEL_METODE: Record<string, string> = {
   other: 'Lainnya',
 };
 
-/** Kode yang tidak dikenal dicetak apa adanya, bukan dihilangkan. */
-export function labelMetode(metode: string): string {
+/**
+ * Kode yang tidak dikenal dicetak apa adanya, bukan dihilangkan.
+ *
+ * ⛔ "Transfer" TIDAK dieja di sini: ia datang dari `LABEL_METODE.transfer` di
+ * domain (sudah pendek, 8 kolom), lewat `kodeLaporanMetode`. `other` tanpa
+ * provider tetap "Lainnya".
+ */
+export function labelMetode(metode: string, provider?: string | null): string {
+  const kode = kodeLaporanMetode(metode, provider);
+  if (kode === 'transfer') return LABEL_METODE_LAYAR.transfer;
   return LABEL_METODE[metode] ?? metode;
 }

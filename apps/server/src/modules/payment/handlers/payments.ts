@@ -20,6 +20,9 @@ import {
   periksaBukanNomorKartu,
   periksaCardLast4,
   periksaReferensi,
+  periksaTransfer,
+  dikonfirmasiManual,
+  PROVIDER_TRANSFER,
   type GalatBayar,
 } from '../../../../../../packages/domain/src/pembayaran-manual.ts';
 import { perkiraanMdr, metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/mdr.ts';
@@ -90,7 +93,7 @@ function toPayment(row: PaymentRow) {
 // (FR-C2: field referensi, confirmed_manually, penanda di struk, laporan
 // exception) dan QRIS dinamis butuh gateway -- keduanya C-2. Menerimanya
 // sekarang berarti membangun separuh FR-C2 tanpa kontrol yang menyertainya.
-const SUPPORTED_METHODS = new Set(['cash', 'qris_dynamic', 'qris_static', 'card_edc']);
+const SUPPORTED_METHODS = new Set(['cash', 'qris_dynamic', 'qris_static', 'card_edc', 'other']);
 
 // QRIS dinamis tidak menerima `tenderedAmount` -- tidak ada uang yang
 // diserahkan di tangan. Yang dikirim klien adalah `amount`, nominal yang
@@ -100,7 +103,10 @@ const GATEWAY_METHODS = new Set(['qris_dynamic']);
 // Metode yang dikonfirmasi MANUSIA, bukan sistem. Tidak ada gateway yang
 // ditanyai -- kontrol wajibnya (referensi untuk QRIS statis, approval code
 // untuk EDC) adalah satu-satunya yang berdiri di sana.
-const MANUAL_METHODS = new Set(['qris_static', 'card_edc']);
+const MANUAL_METHODS = new Set(['qris_static', 'card_edc', 'other']);
+
+// `other` hanya sah sebagai Transfer bank di v1; daftar TERTUTUP (spec kasir § 5).
+const PROVIDER_MANUAL_SAH = new Set([PROVIDER_TRANSFER]);
 
 function assertMethodSupported(method: string): void {
   if (!SUPPORTED_METHODS.has(method)) {
@@ -451,12 +457,12 @@ const INSERT_MANUAL_PAYMENT_SQL = `
     id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
     status, confirmed_manually, provider_reference, approval_code, card_last4,
     acquirer, terminal_reference, tendered_at, created_by, occurred_at, hlc,
-    mdr_estimated
+    mdr_estimated, provider
   )
   SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
          'confirmed', $6, $7, $8, $9,
          $10, $11, now(), $12, COALESCE($13::timestamptz, now()), $14,
-         $16
+         $16, $17
     FROM "order" o WHERE o.id = $15
   RETURNING *
 `;
@@ -476,8 +482,11 @@ const INSERT_MANUAL_PAYMENT_SQL = `
  * bahwa tidak ada sistem yang memverifikasi, dan FR-G5 memakainya untuk
  * laporan exception per kasir.
  *
- * `provider` sengaja dibiarkan NULL: tidak ada penyedia yang terlibat.
- * Mengisinya akan membuat laporan mengira transaksi ini pernah diverifikasi.
+ * `provider` tetap NULL untuk QRIS statis dan EDC: tidak ada penyedia yang
+ * terlibat. Untuk Transfer (`other`) ia menyebut SALURAN (`bank_transfer`),
+ * BUKAN pemverifikasi -- tanda "tidak diverifikasi sistem" adalah
+ * `confirmed_manually`, dan tidak satu pun query laporan menafsirkan
+ * `provider` sebagai bukti verifikasi.
  */
 async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   const { pool, hlc } = deps;
@@ -489,6 +498,7 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     cardLast4?: unknown;
     acquirer?: unknown;
     terminalReference?: unknown;
+    provider?: unknown;
   };
 
   assertGatewayAmountValid(body.amount);
@@ -496,8 +506,21 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   let reference: string | null = null;
   let approvalCode: string | null = null;
   let cardLast4: string | null = null;
+  let provider: string | null = null;
 
-  if (method === 'qris_static') {
+  if (method === 'other') {
+    if (typeof body.provider !== 'string' || !PROVIDER_MANUAL_SAH.has(body.provider)) {
+      throw new HttpError(
+        400,
+        'VALIDATION_ERROR',
+        `provider wajib salah satu dari: ${[...PROVIDER_MANUAL_SAH].join(', ')} (metode "other").`
+      );
+    }
+    provider = body.provider;
+    // ⛔ Kalimat galat dari domain, sama persis dengan yang perangkat tampilkan.
+    lempar(periksaTransfer(body.reference, body.acquirer));
+    reference = (body.reference as string).trim();
+  } else if (method === 'qris_static') {
     assertReferenceValid(body.reference);
     reference = body.reference.trim();
   } else {
@@ -549,9 +572,9 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     try {
       const { rows } = await client.query<PaymentRow>(INSERT_MANUAL_PAYMENT_SQL, [
         body.id, tenantId, order.check_id, method, amount.toString(),
-        method === 'qris_static', reference, approvalCode, cardLast4,
+        dikonfirmasiManual(method), reference, approvalCode, cardLast4,
         acquirer, terminalReference, actorId, body.occurredAt ?? null, hlcValue.toString(), orderId,
-        mdr,
+        mdr, provider,
       ]);
       paymentRow = rows[0];
     } catch (err) {
@@ -585,7 +608,7 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     const responseBody = {
       payment: {
         ...toPayment(paymentRow),
-        provider: null,
+        provider,
         providerReference: reference,
       },
       order: {

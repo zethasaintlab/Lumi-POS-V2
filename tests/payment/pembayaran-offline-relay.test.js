@@ -370,3 +370,132 @@ test('⛔ SABOTASE: tunai yang mendarat lebih dulu MENOLAK bagian berikutnya', a
   );
   assert.equal(Number(rows[0].delta), Number(total));
 });
+
+// ---------------------------------------------------------------------------
+// Transfer bank (`other` + `bank_transfer`) — G-TRF-RELAY
+// ---------------------------------------------------------------------------
+
+test('⛔ transfer dari perangkat MENDARAT di server', async () => {
+  const { orderId, total } = await orderTerbuka(6);
+  const [muatan] = await muatanDariPerangkat(
+    { metode: 'other', provider: 'bank_transfer', referensi: 'TRF-0042', bank: 'BCA' },
+    orderId,
+    total
+  );
+  assert.equal(muatan.method, 'other');
+  assert.equal(muatan.provider, 'bank_transfer');
+
+  const hasil = await relay()(barisOutbox(orderId, muatan));
+  assert.equal(
+    klasifikasi(hasil),
+    'terkirim',
+    `transfer berhenti di antrean: ${hasil.status} ${JSON.stringify(hasil.body ?? {})}`
+  );
+
+  const { rows } = await kueriTenant(
+    `SELECT method, provider, provider_reference, acquirer, confirmed_manually, tendered_amount
+       FROM payment WHERE order_id = $1`,
+    [orderId]
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].method, 'other');
+  assert.equal(rows[0].provider, 'bank_transfer');
+  assert.equal(rows[0].provider_reference, 'TRF-0042');
+  assert.equal(rows[0].acquirer, 'BCA');
+  assert.equal(rows[0].confirmed_manually, true);
+  assert.equal(rows[0].tendered_amount, null);
+  const { rows: ord } = await kueriTenant(`SELECT status FROM "order" WHERE id = $1`, [orderId]);
+  assert.equal(ord[0].status, 'closed');
+});
+
+test('⛔ transfer + tunai: bagian tunai dikirim TERAKHIR lewat depends_on dan keduanya mendarat', async () => {
+  const { orderId, total } = await orderTerbuka(7);
+  const muatan = await muatanDariPerangkat(
+    [
+      { metode: 'cash', tendered: 20000 },
+      { metode: 'other', provider: 'bank_transfer', referensi: 'TRF-0007', nominal: 10_000n },
+    ],
+    orderId,
+    total
+  );
+  assert.equal(muatan.length, 2);
+  assert.equal(muatan[0].method, 'other', 'transfer harus lebih dulu');
+  assert.equal(muatan[1].method, 'cash', 'tunai harus TERAKHIR');
+
+  for (const m of muatan) {
+    const hasil = await relay()(barisOutbox(orderId, m));
+    assert.equal(klasifikasi(hasil), 'terkirim', `bagian ${m.method} berhenti: ${hasil.status}`);
+  }
+
+  const { rows } = await kueriTenant(
+    `SELECT method, provider, amount FROM payment WHERE order_id = $1 ORDER BY method`,
+    [orderId]
+  );
+  assert.equal(rows.length, 2, 'transfer + tunai tidak mendarat utuh');
+  const { rows: ord } = await kueriTenant(`SELECT status FROM "order" WHERE id = $1`, [orderId]);
+  assert.equal(ord[0].status, 'closed');
+  const { rows: kas } = await kueriTenant(
+    `SELECT delta FROM cash_movement WHERE order_id = $1`,
+    [orderId]
+  );
+  assert.equal(kas.length, 1);
+  assert.equal(Number(kas[0].delta), Number(total) - 10000, 'laci hanya menerima bagian tunai');
+});
+
+test('⛔ retry berulang DAN respons hilang tidak menghasilkan baris ganda', async () => {
+  const { orderId, total } = await orderTerbuka(8);
+  const [muatan] = await muatanDariPerangkat(
+    { metode: 'other', provider: 'bank_transfer', referensi: 'TRF-0008' },
+    orderId,
+    total
+  );
+  const baris = barisOutbox(orderId, muatan);
+
+  // Kiriman pertama mendarat, tetapi responsnya DIBUANG sebelum dibaca:
+  // perangkat tidak tahu bahwa ia sudah berhasil dan mengirim ulang.
+  const hilang = buatPengirimHttp({
+    baseUrl: 'http://server.uji',
+    tenantId: tenant.id,
+    actorId: base.user.id,
+    fetchFn: async (url, opts) => {
+      await app.inject({
+        method: opts.method, url: new URL(url).pathname, payload: opts.body, headers: opts.headers,
+      });
+      throw new TypeError('fetch failed');
+    },
+  });
+  const h1 = await hilang(baris);
+  assert.notEqual(klasifikasi(h1), 'terkirim', 'respons yang hilang dianggap terkirim');
+
+  assert.equal(klasifikasi(await relay()(baris)), 'terkirim');
+  assert.equal(klasifikasi(await relay()(baris)), 'terkirim');
+
+  const { rows } = await kueriTenant(`SELECT id FROM payment WHERE order_id = $1`, [orderId]);
+  assert.equal(rows.length, 1, `retry menghasilkan ${rows.length} baris payment`);
+  const { rows: ev } = await kueriTenant(
+    `SELECT id FROM outbox WHERE event_type = 'payment.recorded' AND aggregate_id = $1`,
+    [rows[0].id]
+  );
+  assert.equal(ev.length, 1, `retry menghasilkan ${ev.length} event payment.recorded`);
+});
+
+test('⛔ perangkat mati di tengah: penjualan bertransfer tersimpan lokal lalu terkirim sesudah hidup lagi', async () => {
+  const { orderId, total } = await orderTerbuka(9);
+  // Penjualan sudah tersimpan lokal (muatan outbox ada); proses pengirim
+  // pertama mati sebelum satu byte pun terkirim, tidak ada yang mendarat.
+  const [muatan] = await muatanDariPerangkat(
+    { metode: 'other', provider: 'bank_transfer', referensi: 'TRF-0009' },
+    orderId,
+    total
+  );
+  const baris = barisOutbox(orderId, muatan);
+  const { rows: sebelum } = await kueriTenant(`SELECT id FROM payment WHERE order_id = $1`, [orderId]);
+  assert.equal(sebelum.length, 0, 'belum ada yang boleh mendarat sebelum pengirim hidup');
+
+  // Pengirim BARU atas baris outbox yang sama (idempotency_key sama).
+  const hasil = await relay()(baris);
+  assert.equal(klasifikasi(hasil), 'terkirim', `${hasil.status}`);
+  const { rows } = await kueriTenant(`SELECT method FROM payment WHERE order_id = $1`, [orderId]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].method, 'other');
+});

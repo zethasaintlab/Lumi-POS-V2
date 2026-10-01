@@ -6,6 +6,7 @@ import { assertUserVisible } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { assertRentang } from './rentang.ts';
 import { metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/mdr.ts';
+import { kodeLaporanMetode } from '../../../../../../packages/domain/src/metode-tampilan.ts';
 
 /**
  * `GET /reports/payments` — FR-G1, uang masuk per METODE pembayaran.
@@ -57,6 +58,7 @@ import { metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/m
 
 interface BarisDb {
   method: string;
+  provider: string | null;
   jumlah: string;
   total: string;
   mdr: string | null;
@@ -69,8 +71,8 @@ export async function ambilPembayaran(
   client: import('../../../db.ts').PoolClient,
   { from, to, outletId }: { from: string; to: string; outletId: string | null }
 ) {
-        const { rows } = await client.query<BarisDb>(
-    `SELECT p.method,
+  const { rows: barisSql } = await client.query<BarisDb>(
+    `SELECT p.method, p.provider,
             COUNT(*)::text                                        AS jumlah,
             SUM(p.amount)::text                                   AS total,
             SUM(COALESCE(p.mdr_estimated, 0))::text               AS mdr,
@@ -86,10 +88,33 @@ export async function ambilPembayaran(
         AND NOT EXISTS (
           SELECT 1 FROM "order" v WHERE v.voided_by_order_id = o.id
         )
-      GROUP BY p.method
-      ORDER BY SUM(p.amount) DESC, p.method ASC`,
+      GROUP BY p.method, p.provider`,
     [from, to, outletId]
   );
+
+  // ⛔ Dilipat di TypeScript lewat `kodeLaporanMetode` (keputusan user P1):
+  // Transfer (`other` + `bank_transfer`) tampil "transfer", tidak pernah
+  // "other". SQL tidak menulis `CASE` padanannya — dua tempat yang memutuskan
+  // aturan lipat akan menyimpang. Baris berkode sama dijumlahkan.
+  const terlipat = new Map<string, BarisDb>();
+  for (const r of barisSql) {
+    const kode = kodeLaporanMetode(r.method, r.provider);
+    const kini = terlipat.get(kode);
+    if (!kini) {
+      terlipat.set(kode, { ...r, method: kode });
+      continue;
+    }
+    kini.jumlah = (BigInt(kini.jumlah) + BigInt(r.jumlah)).toString();
+    kini.total = (BigInt(kini.total) + BigInt(r.total)).toString();
+    kini.mdr = (BigInt(kini.mdr ?? '0') + BigInt(r.mdr ?? '0')).toString();
+    kini.tanpa_mdr = (BigInt(kini.tanpa_mdr) + BigInt(r.tanpa_mdr)).toString();
+  }
+  // Urutan sama dengan yang dulu di SQL: nilai terbesar dulu, lalu kode.
+  const rows = [...terlipat.values()].sort((a, b) => {
+    const sel = BigInt(b.total) - BigInt(a.total);
+    if (sel !== 0n) return sel > 0n ? 1 : -1;
+    return a.method < b.method ? -1 : a.method > b.method ? 1 : 0;
+  });
 
   // ⛔ STRING. `pg` mengembalikan `bigint` sebagai string, dan
   // mengubahnya ke `number` membuang presisi di atas 2^53.

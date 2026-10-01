@@ -43,6 +43,8 @@ export interface BarisDetail {
 export interface PembayaranDetail {
   id: string;
   method: string;
+  /** `bank_transfer` untuk Transfer; pembeda dari `other` lain. Aditif (N-1). */
+  provider?: string | null;
   amount: string;
   tenderedAmount: string | null;
   changeAmount: string | null;

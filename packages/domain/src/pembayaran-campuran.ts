@@ -35,7 +35,7 @@ import { computeCashRounding, type RoundingMode } from './money.ts';
  * menggabungnya, `sisaTagihan` tidak menghitungnya dan kasir menagih tunai
  * sebesar SELURUH total untuk transaksi yang separuhnya sudah dibayar.
  */
-export type MetodeCampuran = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc';
+export type MetodeCampuran = 'cash' | 'qris_dynamic' | 'qris_static' | 'card_edc' | 'other';
 
 export interface BagianBayar {
   metode: MetodeCampuran;

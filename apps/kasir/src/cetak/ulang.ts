@@ -143,8 +143,8 @@ export async function bangunUlangStruk(
     perBaris.set(m.order_line_id, daftar);
   }
 
-  const payment = await db.getAll<{ method: string; amount: number; change_amount: number | null }>(
-    `SELECT method, amount, change_amount FROM payment WHERE order_id = ?`,
+  const payment = await db.getAll<{ method: string; provider: string | null; amount: number; change_amount: number | null }>(
+    `SELECT method, provider, amount, change_amount FROM payment WHERE order_id = ?`,
     [orderId]
   );
 
@@ -184,7 +184,7 @@ export async function bangunUlangStruk(
     pembulatan: Number(order.rounding_adjustment),
     total: Number(order.amount_due),
     pembayaran: payment.map((p) => ({
-      nama: labelMetode(p.method),
+      nama: labelMetode(p.method, p.provider),
       jumlah: Number(p.amount),
     })),
     kembalian: payment.reduce((t, p) => t + Number(p.change_amount ?? 0), 0),

@@ -281,3 +281,11 @@ menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
 
 Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
 
+
+**Transfer bank sebagai metode keempat, 1 Oktober 2026 (kampanye Hidupkan desain, sub-proyek 2, Task 7; keputusan user P1/P2, 28 September 2026).** Transfer disimpan sebagai `payment.method = 'other'` + `provider = 'bank_transfer'` (spec-c:244), tanpa migrasi; `provider_reference` = nomor referensi dari bukti transfer (wajib), `acquirer` = bank tujuan (opsional).
+
+- Aturan validasi Transfer (`periksaTransfer`: referensi >= 3 karakter, dan tidak ada 13-19 digit di referensi maupun bank) juga hidup di `packages/domain/src/pembayaran-manual.ts`, dipakai perangkat dan server dengan kalimat galat yang sama persis.
+- `dikonfirmasiManual` benar untuk `qris_static` dan `other` (P2): `confirmed_manually = true`. Server menerima `other` hanya dengan `provider` dari daftar tertutup (`bank_transfer`); selain itu `400 VALIDATION_ERROR`.
+- Transfer tidak pernah menulis `cash_movement` (perangkat: hanya bagian tunai; server: hanya cabang tunai), tidak dibulatkan (FR-C9), tidak punya perkiraan MDR, dan kelebihan bayarnya ditolak aturan non-tunai di `rencanakanPembayaran`. Pada pembayaran campuran ia dikirim sebelum bagian tunai lewat rantai `depends_on` yang sama.
+- Batas yang dinyatakan: handler server untuk metode konfirmasi-manual (QRIS statis, EDC, Transfer) tidak menolak kelebihan bayar non-tunai; penolakannya hanya di perangkat (`rencanakanPembayaran`). Tidak diubah di task ini.
+- Kill switch `pembayaran_transfer` (bawaan menyala) sejajar `pembayaran_qris_statis`; tidak menyentuh audit dan tidak menghentikan penjualan.

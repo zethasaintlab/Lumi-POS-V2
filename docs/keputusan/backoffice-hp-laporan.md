@@ -307,3 +307,9 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 
 - ⛔ **`RentangTanggal` punya prop `sumbu`.** Ia menyatakan "tanggal bisnis" di setiap layar yang memakainya; benar sepuluh kali dan salah sekali — B-22 menyaring `occurred_at`, karena sebagian besar peristiwa audit tidak menempel pada order mana pun.
 
+
+**Transfer di setiap laporan per metode, 1 Oktober 2026 (syarat user P1, 28 September 2026).** Transfer disimpan `other` + `bank_transfer`, tetapi setiap laporan, ekspor, dan layar yang mengelompokkan per metode menampilkan "Transfer", tidak pernah "Lainnya": uang bank tidak boleh tersembunyi dari pemilik.
+
+- Aturan lipat `(method, provider)` → kode laporan hanya ditulis di `kodeLaporanMetode` (`packages/domain/src/metode-tampilan.ts`); SQL mengambil `provider` dan melipat di TypeScript, tidak menulis `CASE` padanannya. `labelMetode(kode, provider?)` menerima kode laporan `transfer` maupun pasangan `other` + `bank_transfer`.
+- Field `method` pada respons laporan agregat (`/reports/payments`, ekspor CSV, `/reports/daily-summary`, detail shift, rekap) membawa KODE LAPORAN (`transfer`); detail transaksi B-04 membawa `provider` (aditif). Klien N-1 menampilkan kode mentah `transfer`, tidak pernah "Lainnya".
+- `other` tanpa provider tetap kelompok `other` ("Lainnya") terpisah dari transfer. Peta label metode hanya satu, di domain; penjaganya `tests/runtime/label-metode-tunggal.test.js`.
