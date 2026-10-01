@@ -55,11 +55,9 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
   const { lokal } = useKeadaanLokal();
   const [panelTerbuka, setPanelTerbuka] = useState(false);
 
-  /* ⛔ Kunci tab nav (Task 8, spec § 7 "Wadah"): selama QRIS menunggu atau
-     penjualan disimpan, K-06 memasang alasannya di `kunci-nav.ts`. Dikunci di
-     DUA tempat — penjaga di `onChange` (yang membuat klik buatan tidak
-     menavigasi) dan atribut `aria-disabled` + kalimat alasan. `Tabs` bundle
-     tidak menerima `disabled`, dan `ds-bundle/` tidak disunting. */
+  /* ⛔ Kunci jalan keluar (Task 8): K-06 memasang alasannya di `kunci-nav.ts`;
+     `navigasi()` yang menolak, atribut di sini hanya menyatakannya. `Tabs`
+     bundle tak menerima `disabled` dan `ds-bundle/` tak disunting. */
   const kunciNav = useSyncExternalStore(langgananKunciNav, kunciNavSekarang, kunciNavSekarang);
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -128,10 +126,7 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
           variant="underline"
           ariaLabel="Navigasi kasir"
           value={ruteAktif?.jalur ?? ''}
-          onChange={(jalur) => {
-            if (kunciNavSekarang() !== null) return;
-            navigasi(jalur);
-          }}
+          onChange={(jalur) => navigasi(jalur)}
           tabs={nav.map((r) => ({
             value: r.jalur,
             /* ⛔ `label` menerima ReactNode — `Tabs` bundle merendernya apa
@@ -173,6 +168,8 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             tabIndex={0}
             className="kasir-indikator"
             aria-label="Buka Status Sinkronisasi"
+            aria-disabled={kunciNav !== null ? true : undefined}
+            aria-describedby={kunciNav !== null ? 'kunci-nav-alasan' : undefined}
             onClick={() => navigasi('/sync')}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {

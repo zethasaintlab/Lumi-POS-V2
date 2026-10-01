@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { Avatar, Icon } from 'ds';
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { navigasi } from '../rute/navigasi.ts';
+import { kunciNavSekarang, langgananKunciNav } from '../rute/kunci-nav.ts';
 import { keluar } from '../konteks/useSesi.ts';
 
 /**
@@ -72,12 +73,17 @@ export function MenuPengguna({
     };
   }, [terbuka]);
 
+  const kunci = useSyncExternalStore(langgananKunciNav, kunciNavSekarang, kunciNavSekarang);
+  const gayaKunci = kunci !== null ? ({ 'aria-disabled': true, 'aria-describedby': 'kunci-nav-alasan' } as const) : {};
+
   const tuju = (jalur: string) => {
     setTerbuka(false);
     navigasi(jalur);
   };
 
   const lakukanKeluar = () => {
+    // Keluar mengakhiri sesi: tidak boleh di tengah QRIS menunggu/menyimpan.
+    if (kunciNavSekarang() !== null) return;
     setSibuk(true);
     setPesan(null);
     void keluar(db ?? undefined)
@@ -143,13 +149,14 @@ export function MenuPengguna({
           aria-label="Menu pengguna"
           className="kasir-menu-pengguna-daftar card"
         >
-          <button type="button" role="menuitem" className="kasir-menu-item" onClick={() => tuju('/sync')}>
+          <button type="button" role="menuitem" className="kasir-menu-item" {...gayaKunci} onClick={() => tuju('/sync')}>
             Status sinkronisasi
           </button>
           <button
             type="button"
             role="menuitem"
             className="kasir-menu-item"
+            {...gayaKunci}
             onClick={() => tuju('/perangkat')}
           >
             Perangkat &amp; uji cetak
@@ -159,6 +166,7 @@ export function MenuPengguna({
             role="menuitem"
             className="kasir-menu-item"
             disabled={sibuk}
+            {...gayaKunci}
             onClick={lakukanKeluar}
           >
             {sibuk ? 'Memeriksa…' : 'Keluar'}
