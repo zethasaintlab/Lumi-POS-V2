@@ -152,6 +152,8 @@ async function kueriTenant(sql, params) {
  * Muatan yang benar-benar disusun `simpanPenjualan` — bukan yang ditulis
  * tangan di sini. Itu seluruh gunanya test ini.
  */
+const META = new WeakMap();
+
 async function muatanDariPerangkat(pembayaran, orderId, amountDue) {
   const { simpanPenjualan } = await import('../../apps/kasir/src/kasir/penjualan.ts');
   const tulis = [];
@@ -202,11 +204,15 @@ async function muatanDariPerangkat(pembayaran, orderId, amountDue) {
   // dan menagih lebih, lalu bagian QRIS berikutnya ditolak sebagai kelebihan
   // bayar non-tunai. Test yang menyusun ulang urutannya sendiri tidak dapat
   // menangkap itu.
+  const idOrderOutbox = outbox.find((t) => t.params.includes('order'))?.params[0];
   return bayar.map((t) => {
     const muatan = JSON.parse(t.params.find((p) => typeof p === 'string' && p.startsWith('{')));
     // Order-nya sudah ada di server lewat jalur di atas; hanya muatannya yang
     // dipinjam dari perangkat.
-    return { ...muatan, id: crypto.randomUUID(), orderId };
+    const hasil = { ...muatan, id: crypto.randomUUID(), orderId };
+    // params outbox_local: [id, tipe, entity_id, op, payload, idem, created_at, depends_on, ...]
+    META.set(hasil, { outboxId: t.params[0], dependsOn: t.params[7], idOrderOutbox });
+    return hasil;
   });
 }
 
@@ -421,6 +427,11 @@ test('⛔ transfer + tunai: bagian tunai dikirim TERAKHIR lewat depends_on dan k
   assert.equal(muatan.length, 2);
   assert.equal(muatan[0].method, 'other', 'transfer harus lebih dulu');
   assert.equal(muatan[1].method, 'cash', 'tunai harus TERAKHIR');
+  // ⛔ Judulnya mengklaim depends_on; urutan batch saja tidak membuktikannya.
+  const [mTrf, mTunai] = muatan.map((m) => META.get(m));
+  assert.ok(mTrf.idOrderOutbox, 'baris outbox order tidak ditemukan');
+  assert.equal(mTrf.dependsOn, mTrf.idOrderOutbox, 'transfer harus bergantung pada order');
+  assert.equal(mTunai.dependsOn, mTrf.outboxId, 'tunai harus bergantung pada bagian transfer (rantai depends_on)');
 
   for (const m of muatan) {
     const hasil = await relay()(barisOutbox(orderId, m));
