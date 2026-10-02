@@ -446,13 +446,15 @@ test('⛔ S5d: gateway -- key sama + isi beda = 422 (baris selesai MAUPUN belum 
   // `provider` = nama gateway dari konfigurasi server, bukan isi request.
   const PETA = {
     id: 'id', tenant_id: null, outlet_id: null, device_id: null, order_id: null, check_id: null,
-    method: 'method', amount: 'amount', status: null, provider: null, confirmed_manually: null,
+    // `method` ada di hash tetapi TIDAK divariasikan: {} (satu nilai per jalur) / metode tersirat dari medan tersimpan
+    // (lihat provider/reference/approvalCode), jadi variasinya sudah berubah lewat medan lain. Dinyatakan, tidak dihitung teruji.
+    method: null, amount: 'amount', status: null, provider: null, confirmed_manually: null,
     tendered_at: null, created_by: null, occurred_at: 'occurredAt', hlc: null, mdr_estimated: null,
   };
   for (const k of kolom) assert.ok(k in PETA, `kolom INSERT gateway baru '${k}' belum dipetakan ke medan hash idempotensi`);
   const variasi = { amount: 5000, occurredAt: '2026-08-07T04:00:00.000Z' };
   for (const m of new Set(kolom.map((k) => PETA[k]).filter(Boolean))) {
-    assert.ok(m in variasi || m === 'id' || m === 'method', `medan '${m}' tidak punya variasi di test hash gateway`);
+    assert.ok(m in variasi || m === 'id', `medan '${m}' tidak punya variasi di test hash gateway`);
   }
 
   const fx = await setupDeviceAndShift();
@@ -496,4 +498,24 @@ test('retry gateway atas baris idempotensi berhash LAMA (orderId:id) tetap dijaw
   await appSetup.query('COMMIT');
   const b = await bayarQris(order.id, body, { 'idempotency-key': key });
   assert.equal(b.statusCode, 201, b.body);
+});
+
+test('⛔ N1: gateway -- baris berhash LAMA + payment id/order lain (key sama) = 422, tidak ada payment baru', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx);
+  const order2 = await buatOrder(fx);
+  const key = crypto.randomUUID();
+  const idA = crypto.randomUUID();
+  const a = await bayarQris(order.id, { id: idA, amount: order.total }, { 'idempotency-key': key });
+  assert.equal(a.statusCode, 201, a.body);
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query('UPDATE idempotency_key SET request_hash = $2 WHERE key = $1', [key, `${order.id}:${idA}`]);
+  await appSetup.query('COMMIT');
+  const b = await bayarQris(order.id, { id: crypto.randomUUID(), amount: order.total }, { 'idempotency-key': key });
+  assert.equal(b.statusCode, 422, `id lain atas baris lama dijawab ${b.statusCode}: ${b.body}`);
+  assert.equal(JSON.parse(b.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+  const c = await bayarQris(order2.id, { id: idA, amount: order2.total }, { 'idempotency-key': key });
+  assert.equal(c.statusCode, 422, `order lain atas baris lama dijawab ${c.statusCode}: ${c.body}`);
+  assert.equal((await query('SELECT id FROM payment')).length, 1);
 });

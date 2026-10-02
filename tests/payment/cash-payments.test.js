@@ -451,14 +451,16 @@ test('⛔ S5c: tunai -- key sama + isi beda = 422 per medan, tanpa payment/cash_
   // null = diturunkan server / metadata di luar hash (`hlc`).
   const PETA = {
     id: 'id', tenant_id: null, outlet_id: null, device_id: null, order_id: null, check_id: null,
-    method: 'method', amount: null, tendered_amount: 'tenderedAmount', change_amount: null,
+    // `method` ada di hash tetapi TIDAK divariasikan: {} (satu nilai per jalur) / metode tersirat dari medan tersimpan
+    // (lihat provider/reference/approvalCode), jadi variasinya sudah berubah lewat medan lain. Dinyatakan, tidak dihitung teruji.
+    method: null, amount: null, tendered_amount: 'tenderedAmount', change_amount: null,
     status: null, confirmed_manually: null, tendered_at: null, created_by: null,
     occurred_at: 'occurredAt', hlc: null,
   };
   for (const k of kolom) assert.ok(k in PETA, `kolom INSERT tunai baru '${k}' belum dipetakan ke medan hash idempotensi`);
   const variasi = { tenderedAmount: 90000, occurredAt: '2026-08-07T04:00:00.000Z' };
   for (const m of new Set(kolom.map((k) => PETA[k]).filter(Boolean))) {
-    assert.ok(m in variasi || m === 'id' || m === 'method', `medan '${m}' tidak punya variasi di test hash tunai`);
+    assert.ok(m in variasi || m === 'id', `medan '${m}' tidak punya variasi di test hash tunai`);
   }
 
   await akhiriTarifSeed();
@@ -477,6 +479,8 @@ test('⛔ S5c: tunai -- key sama + isi beda = 422 per medan, tanpa payment/cash_
   assert.equal(c.statusCode, 201, c.body);
   assert.deepEqual(JSON.parse(c.body), JSON.parse(a.body));
   assert.equal(await hitungPayment(order.id), 1);
+  // N2: 422 tidak boleh meninggalkan cash_movement baru (laci menyimpang dari uang yang diterima).
+  assert.equal((await movementShift(fx.shiftId)).length, 1, 'cash_movement bertambah/berkurang padahal semua jawaban 422');
 });
 
 test('retry tunai atas baris idempotensi berhash LAMA (orderId:id) tetap dijawab dari cache, bukan 422', async () => {
@@ -494,4 +498,57 @@ test('retry tunai atas baris idempotensi berhash LAMA (orderId:id) tetap dijawab
   const b = await req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key });
   assert.equal(b.statusCode, 201, b.body);
   assert.deepEqual(JSON.parse(b.body), JSON.parse(a.body));
+});
+
+// N1: toleransi hash LAMA hanya untuk orderId DAN id yang sama. Baris lama + id lain
+// (atau order lain) di bawah key yang sama = pembayaran KEDUA yang sungguhan -> 422.
+test('⛔ N1: tunai -- baris berhash LAMA + payment id/order lain (key sama) = 422, tidak ada payment atau cash_movement baru', async () => {
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, await buatVariation(25000));
+  const order2 = await buatOrder(fx, await buatVariation(25000));
+  const key = crypto.randomUUID();
+  const idA = crypto.randomUUID();
+  const a = await req('POST', `/orders/${order.id}/payments`, { id: idA, method: 'cash', tenderedAmount: 25000 }, { 'idempotency-key': key });
+  assert.equal(a.statusCode, 201, a.body);
+  await owner.query('BEGIN');
+  await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await owner.query('UPDATE idempotency_key SET request_hash = $2 WHERE key = $1', [key, `${order.id}:${idA}`]);
+  await owner.query('COMMIT');
+
+  const idB = await req('POST', `/orders/${order.id}/payments`, { id: crypto.randomUUID(), method: 'cash', tenderedAmount: 25000 }, { 'idempotency-key': key });
+  assert.equal(idB.statusCode, 422, `id lain atas baris lama dijawab ${idB.statusCode}: ${idB.body}`);
+  assert.equal(JSON.parse(idB.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+  const ordB = await req('POST', `/orders/${order2.id}/payments`, { id: idA, method: 'cash', tenderedAmount: 25000 }, { 'idempotency-key': key });
+  assert.equal(ordB.statusCode, 422, `order lain atas baris lama dijawab ${ordB.statusCode}: ${ordB.body}`);
+  assert.equal(await hitungPayment(order.id), 1);
+  assert.equal(await hitungPayment(order2.id), 0);
+  assert.equal((await movementShift(fx.shiftId)).length, 1, 'cash_movement baru tertulis');
+});
+
+// s13: dua request tunai BERSAMAAN dengan key sama -> tidak pernah 500; yang kalah 409.
+test('⛔ konkurensi tunai: dua request BERSAMAAN key sama -> 201/409 (tidak pernah 500), tepat satu payment dan satu cash_movement', async () => {
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, await buatVariation(25000));
+  const key = crypto.randomUUID();
+  // Kurang bayar: order TETAP terbuka sesudah yang menang commit, jadi yang kalah sampai ke klaim key
+  // (bukan berhenti di ORDER_NOT_PAYABLE) dan 409 yang diuji benar-benar IDEMPOTENCY_KEY_CONFLICT.
+  const body = { id: crypto.randomUUID(), method: 'cash', tenderedAmount: 10000 };
+  // Pool dipanaskan ke DUA koneksi (lihat tests/ordering/idempotency.test.js T11).
+  await Promise.all([
+    req('GET', `/orders/${crypto.randomUUID()}`),
+    req('GET', `/orders/${crypto.randomUUID()}`),
+  ]);
+  const [a, b] = await Promise.all([
+    req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key }),
+    req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key }),
+  ]);
+  const kode = [a.statusCode, b.statusCode].sort();
+  assert.ok(kode.every((k) => k === 201 || k === 409), `status tak terduga ${kode}: ${a.body} ${b.body}`);
+  assert.ok(kode.includes(201), 'tidak satu pun request berhasil');
+  const kalah = [a, b].find((r) => r.statusCode === 409);
+  if (kalah) assert.equal(JSON.parse(kalah.body).error.code, 'IDEMPOTENCY_KEY_CONFLICT');
+  assert.equal(await hitungPayment(order.id), 1, 'payment ganda');
+  assert.equal((await movementShift(fx.shiftId)).length, 1, 'cash_movement ganda');
 });

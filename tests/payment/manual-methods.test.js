@@ -726,7 +726,9 @@ test('⛔ S5b: hash idempotensi mencakup SETIAP medan INSERT_MANUAL_PAYMENT_SQL 
   // (diturunkan server / metadata yang sengaja di luar hash).
   const PETA = {
     id: 'id', tenant_id: null, outlet_id: null, device_id: null, order_id: null, check_id: null,
-    method: 'method', amount: 'amount', status: null, confirmed_manually: null,
+    // `method` ada di hash tetapi TIDAK divariasikan: {} (satu nilai per jalur) / metode tersirat dari medan tersimpan
+    // (lihat provider/reference/approvalCode), jadi variasinya sudah berubah lewat medan lain. Dinyatakan, tidak dihitung teruji.
+    method: null, amount: 'amount', status: null, confirmed_manually: null,
     provider_reference: 'reference', approval_code: 'approvalCode', card_last4: 'cardLast4',
     acquirer: 'acquirer', terminal_reference: 'terminalReference', tendered_at: null, created_by: null,
     // `provider` ada di hash tetapi TIDAK divariasikan di bawah: daftar tertutupnya satu nilai,
@@ -754,7 +756,7 @@ test('⛔ S5b: hash idempotensi mencakup SETIAP medan INSERT_MANUAL_PAYMENT_SQL 
   ];
   // Setiap medan yang dipetakan dari kolom INSERT harus tercakup variasinya.
   const medanTerpetakan = new Set(kolom.map((k) => PETA[k]).filter(Boolean));
-  const medanDiuji = new Set(kasus.flatMap((k) => Object.keys(k.ubah)).concat('id', 'method'));
+  const medanDiuji = new Set(kasus.flatMap((k) => Object.keys(k.ubah)).concat('id'));
   for (const m of medanTerpetakan) assert.ok(medanDiuji.has(m), `medan '${m}' tidak punya variasi di test hash`);
 
   for (const { isi, ubah } of kasus) {
@@ -819,4 +821,24 @@ test('⛔ S9b: respons manual mencerminkan rounding_adjustment/amount_due BARIS 
   assert.equal(o.ra, '-50', 'transfer menyentuh rounding_adjustment');
   assert.equal(body.order.roundingAdjustment, -50, 'respons menulis literal, bukan nilai baris order');
   assert.equal(body.order.amountDue, Number(o.due));
+});
+
+test('⛔ N1: manual -- baris berhash LAMA + payment id/order lain (key sama) = 422, tidak ada payment baru', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 16000);
+  const order2 = await buatOrder(fx, 16000);
+  const key = crypto.randomUUID();
+  const asli = { id: crypto.randomUUID(), ...TRANSFER, amount: 16000, reference: 'TRF-N1' };
+  const a = await req('POST', `/orders/${order.id}/payments`, asli, { 'idempotency-key': key });
+  assert.equal(a.statusCode, 201, a.body);
+  await owner.query('BEGIN');
+  await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await owner.query('UPDATE idempotency_key SET request_hash = $2 WHERE key = $1', [key, `${order.id}:${asli.id}`]);
+  await owner.query('COMMIT');
+  const b = await req('POST', `/orders/${order.id}/payments`, { ...asli, id: crypto.randomUUID() }, { 'idempotency-key': key });
+  assert.equal(b.statusCode, 422, `id lain atas baris lama dijawab ${b.statusCode}: ${b.body}`);
+  assert.equal(JSON.parse(b.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
+  const c = await req('POST', `/orders/${order2.id}/payments`, asli, { 'idempotency-key': key });
+  assert.equal(c.statusCode, 422, `order lain atas baris lama dijawab ${c.statusCode}: ${c.body}`);
+  assert.equal((await query('SELECT id FROM payment')).length, 1);
 });
