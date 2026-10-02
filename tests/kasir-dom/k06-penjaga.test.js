@@ -206,7 +206,7 @@ const kotak = (hal, sel) =>
   });
 
 // ---------------------------------------------------------------------------
-// PENJAGA 1 — panel QRIS mengganti SELURUH layar
+// PENJAGA 1 — selama QRIS menunggu: kartu tetap, pemilih terkunci, QR di dalam kartu
 // ---------------------------------------------------------------------------
 
 test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disabled dengan alasan; "Kembali ke kasir" dan tautan campuran TIDAK ADA; tombol utama nonaktif "Menunggu pembayaran…"; tab nav terkunci', async () => {

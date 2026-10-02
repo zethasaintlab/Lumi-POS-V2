@@ -137,6 +137,18 @@ async function ukur(hal) {
       return v;
     };
     const kartu = document.querySelector('.kasir-bayar-kartu');
+    // Hit-test 26 px dari tengah (tampil 40 → tepi 20; area tekan 56 → tepi 28):
+    // ketukan di pita tak terlihat harus jatuh ke tab itu sendiri.
+    const hit = (b) => {
+      const q = b.getBoundingClientRect();
+      const x = q.left + q.width / 2;
+      const y = q.top + q.height / 2;
+      const kena = (yy) => {
+        const e = document.elementFromPoint(x, yy);
+        return e === b || b.contains(e);
+      };
+      return { hitAtas: kena(y - 26), hitBawah: kena(y + 26) };
+    };
     const tab = document.querySelector('.kasir-bayar-tab');
     const isi = document.querySelector('.kasir-bayar-isi');
     const aksi = document.querySelector('.kasir-bayar-aksi');
@@ -146,7 +158,7 @@ async function ukur(hal) {
       panggung: r(document.querySelector('.galeri-panggung > *')),
       kartu: kartu && r(kartu),
       tab: tab && { ...r(tab), latar: getComputedStyle(tab).backgroundColor },
-      tombolTab: tab ? [...tab.querySelectorAll('button')].map((b) => ({ nama: b.textContent.trim(), sentuh: b.classList.contains('sentuh-uang'), ...r(b) })) : [],
+      tombolTab: tab ? [...tab.querySelectorAll('button')].map((b) => ({ nama: b.textContent.trim(), sentuh: b.classList.contains('sentuh-uang'), ...hit(b), ...r(b) })) : [],
       isi: isi && { ...r(isi), gulir: isi.scrollHeight },
       aksi: aksi && r(aksi),
       primer: primer && { teks: primer.textContent.trim(), ...r(primer) },
@@ -200,6 +212,8 @@ for (const lebar of [1024, 1280]) {
     for (const m of u.tombolTab) {
       assert.ok(Math.abs(m.h - 40) <= 1, `tab "${m.nama}" ${m.h} px — mockup 40`);
       assert.equal(m.sentuh, true, `tab "${m.nama}" tanpa .sentuh-uang — area tekan 56 px (DS #3, aksi uang)`);
+      assert.equal(m.hitAtas, true, `tab "${m.nama}": ketukan 26 px di ATAS tengah tidak mengenai tab — area tekan 56 px tidak berlaku`);
+      assert.equal(m.hitBawah, true, `tab "${m.nama}": ketukan 26 px di BAWAH tengah tidak mengenai tab — area tekan 56 px tidak berlaku`);
     }
     assert.equal(u.tab.latar, u.secondary, `wadah segmented ${u.tab.latar}, bukan --secondary (${u.secondary})`);
     assert.ok(u.isi.h >= 355, `isi metode ${u.isi.h} px — mockup min 355`);
