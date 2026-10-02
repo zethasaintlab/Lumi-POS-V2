@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { pantauJangkauan, type KeadaanJangkauan } from '../lokal/keterjangkauan.ts';
 import { alasanNonaktif, periksaTransfer, PROVIDER_TRANSFER } from '../../../../packages/domain/src/pembayaran-manual.ts';
 import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
@@ -9,8 +9,11 @@ import { buatPemanggilApi } from '../lokal/api.ts';
 import {
   cadangkanNomor,
   bersihkanDraf,
+  drafCocokKeranjang,
   mintaQr,
+  nominalDraf,
   pulihkanDraf,
+  type DrafTersimpan,
 } from '../kasir/qris-dinamis.ts';
 import type { DrafTerkirim } from '../kasir/penjualan.ts';
 import { EmptyState, Icon } from 'ds';
@@ -116,6 +119,17 @@ const namaBagian = (b: Pembayaran): string => labelMetode(b.metode, b.metode ===
    membuang awalannya; kolom sudah punya awalan "Rp" sendiri. */
 const teksNominal = (n: number): string => rupiah(BigInt(n)).replace(/^Rp\s*/, '');
 
+/* Panel dari draf yang dipulihkan: nominal dari muatan DRAF (yang ditagih gateway), bukan keranjang saat ini. */
+function panelDari(d: DrafTersimpan) {
+  return {
+    qrString: d.qrString ?? '',
+    paymentId: d.paymentId,
+    orderId: d.orderId,
+    draf: d.draf,
+    nominal: nominalDraf(d) ?? 0n,
+  };
+}
+
 export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const { db, pemberitahu } = useDbLokal();
   const { sesi } = useSesi();
@@ -202,38 +216,33 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     };
   }, [konfig]);
 
-  /* FR-C14 (`spec-c:328`) — draf yang tertinggal DIPULIHKAN saat layar dibuka.
+  /* FR-C14 (`spec-c:328`) — draf QRIS yang tertinggal DIPULIHKAN saat layar dibuka.
      "Aplikasi mati di tengah polling → setelah restart, payment masih
      `pending_confirmation` dan polling dilanjutkan."
 
-     ⛔ Tanpa ini, tab yang ter-refresh membuat kasir kehilangan seluruh jejak
-     transaksi yang pelanggannya mungkin SUDAH bayar — dan satu-satunya yang
-     tahu adalah server. */
-  /* ⛔ SEKALI per pemasangan layar. Tanpa penjaga ini "Tutup layar" (draf
-     sengaja dibiarkan hidup) mengosongkan `panelQris`, efek jalan lagi, dan
-     panel dibuka kembali seketika — kasir tak punya jalan keluar dari QR yang
-     ditinggalkan pelanggan. */
-  const sudahPulih = useRef(false);
+     ⛔ Draf ber-QR yang MASIH HIDUP (`drafTertunda`) adalah satu-satunya jejak lokal uang
+     yang pelanggannya mungkin sudah bayar. Selama ia ada kartu TIDAK menawarkan "Tampilkan
+     kode QR" (QR kedua = tagih ganda, `spec-c:291`); yang ditawarkan membuka kembali panel
+     draf itu. Tombol meminta QR juga mati sampai pembacaan draf selesai (`pemulihanSelesai`),
+     dan `mintaQr` menolak sendiri bila draf lain masih hidup (pagar kedua, di domain). */
+  const [drafTertunda, setDrafTertunda] = useState<DrafTersimpan | null>(null);
+  const [pemulihanSelesai, setPemulihanSelesai] = useState(false);
+  const sudahBuka = useRef(false);
+  const muatDraf = useCallback(async () => {
+    if (!shift) return;
+    setPemulihanSelesai(false);
+    try {
+      const d = await pulihkanDraf(db, shift.id);
+      setDrafTertunda(d !== null && d.qrString !== null ? d : null);
+      setPemulihanSelesai(true);
+    } catch (e) {
+      // Gagal baca = draf TIDAK DIKETAHUI: tombol meminta QR tetap mati, bukan dianggap kosong.
+      setGalat(`Pembayaran QRIS tertunda tidak dapat diperiksa: ${(e as Error).message}`);
+    }
+  }, [db, shift]);
   useEffect(() => {
-    if (panelQris !== null) sudahPulih.current = true;
-    if (sudahPulih.current || !shift || panelQris !== null || total === null) return;
-    let hidup = true;
-    void pulihkanDraf(db, shift.id).then((d) => {
-      if (!hidup) return;
-      sudahPulih.current = true;
-      if (d === null || d.qrString === null) return;
-      setPanelQris({
-        qrString: d.qrString,
-        paymentId: d.paymentId,
-        orderId: d.orderId,
-        draf: d.draf,
-        nominal: total,
-      });
-    });
-    return () => {
-      hidup = false;
-    };
-  }, [db, shift, total, panelQris]);
+    void muatDraf();
+  }, [muatDraf]);
 
   /* ⛔ Kunci tab metode dan tab nav header selama QRIS menunggu atau penjualan
      disimpan. Diturunkan dari state, bukan dipanggil di tiap jalur: yang lupa
@@ -251,6 +260,20 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
 
   const keranjang = keranjangSekarang();
   const subtotal = subtotalKeranjang(keranjang);
+  /* Draf yang tertunda ditagih dengan total dan isi KERANJANG LAMA. Penjualan lokal hanya
+     boleh ditulis dari keranjang yang cocok dengannya. */
+  const drafCocok = drafTertunda === null || drafCocokKeranjang(drafTertunda, keranjang, total);
+
+  /* Sekali per pemasangan layar, sesudah draf dibaca dan keranjang dihitung: cocok → panel
+     dibuka seketika; berbeda → kartu QRIS menampilkan peringatan, panel TIDAK dibuka. */
+  useEffect(() => {
+    if (!pemulihanSelesai || !siap || sudahBuka.current) return;
+    sudahBuka.current = true;
+    if (drafTertunda === null) return;
+    setTab('qris');
+    setSubQris('qris_dynamic');
+    if (drafCocok) setPanelQris(panelDari(drafTertunda));
+  }, [pemulihanSelesai, siap, drafTertunda, drafCocok]);
 
   useEffect(() => {
     let hidup = true;
@@ -535,7 +558,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     : menyimpan
       ? 'Sedang menyimpan penjualan.'
       : metode === 'qris_dynamic'
-        ? (alasanDinamis ??
+        ? ((drafTertunda !== null
+            ? 'Ada pembayaran QRIS tertunda; tekan Lanjutkan pembayaran QRIS tertunda.'
+            : !pemulihanSelesai
+              ? 'Memeriksa pembayaran QRIS yang tertunda…'
+              : alasanDinamis) ??
           (bagian.length > 0
             ? 'QRIS dinamis tidak dapat digabung dengan bagian pembayaran lain.'
             : 'Tekan Tampilkan kode QR; penjualan lunas hanya setelah gateway mengonfirmasi.'))
@@ -560,6 +587,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      punya cara mengetahui pelanggan sudah membayar. */
   const mulaiQris = () => {
     if (!konfig || !shift || !sesi || total === null) return;
+    // ⛔ Pagar UI: draf belum dibaca, atau masih ada draf ber-QR — tidak ada QR kedua.
+    if (!pemulihanSelesai || drafTertunda !== null) return;
     if (sibuk.current) return;
     sibuk.current = true;
     setMenyimpan(true);
@@ -598,6 +627,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           idBaru: () => crypto.randomUUID(),
           sekarang: d.occurredAt,
         });
+        if (hasil.status === 'tertunda') {
+          setGalat(hasil.pesan);
+          await muatDraf();
+          return;
+        }
         if (hasil.status !== 'qr') {
           setGalat(
             `${hasil.pesan} Penjualan BELUM tersimpan; nomor struk ${receiptNumber} sudah ` +
@@ -646,6 +680,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     })
       .then(async (hasil) => {
         await bersihkanDraf(db);
+        setDrafTertunda(null);
         pemberitahu.beritahu();
         if (hasil.status === 'tersimpan') {
           setPanelQris(null);
@@ -985,11 +1020,23 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               nominal={panelQris.nominal}
               onSelesai={(h) => {
                 if (h.status === 'lunas') {
+                  /* ⛔ Gateway menagih total DRAF. Keranjang yang berubah sejak itu tidak boleh
+                     menjadi penjualan lokal: uang dan barang tidak akan cocok. Drafnya tetap
+                     hidup; mengembalikan keranjang membuat pemulihan berikutnya menulisnya. */
+                  if (drafTertunda !== null && drafTertunda.paymentId === panelQris.paymentId && !drafCocok) {
+                    setPanelQris(null);
+                    setGalat(
+                      `Pembayaran QRIS ${rupiah(panelQris.nominal)} sudah LUNAS di server, tetapi isi keranjang berbeda dari ` +
+                        'yang ditagih. Penjualan TIDAK ditulis. Kembalikan keranjang ke isi semula, lalu buka Pembayaran lagi.'
+                    );
+                    return;
+                  }
                   selesaikanQris(panelQris.draf);
                   return;
                 }
                 if (h.status === 'batal') {
                   void bersihkanDraf(db);
+                  setDrafTertunda(null);
                   setPanelQris(null);
                   setGalat(
                     h.baru
@@ -1004,38 +1051,56 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                    kehilangan tombol "Cek status" untuk uang yang mungkin sudah
                    masuk. */
                 setPanelQris(null);
+                void muatDraf();
                 setGalat(
-                  'Pembayaran QRIS masih menunggu konfirmasi. Ia tetap tercatat di server dan ' +
-                    'dapat dicek lagi.'
+                  'Pembayaran QRIS masih menunggu konfirmasi. Ia tetap tercatat di server; tekan ' +
+                    '"Lanjutkan pembayaran QRIS tertunda" untuk mengeceknya lagi.'
                 );
               }}
             />
           )}
 
-          {/* P3(b): QR baru diminta saat "Tampilkan kode QR" ditekan, bukan saat
-              tab dipilih. Sebelum itu kartu hanya menampilkan nominal. */}
+          {/* P3(b): QR baru diminta saat "Tampilkan kode QR" ditekan, bukan saat tab dipilih.
+              ⛔ Selama draf ber-QR masih hidup tombol itu TIDAK ADA (fix round Task 9, C1):
+              yang ditawarkan membuka kembali panel draf yang sama. */}
           {!panelQris && metode === 'qris_dynamic' && (
             <div className="kasir-qris">
-              {menyimpan ? (
-                <KerangkaQr />
+              {drafTertunda !== null ? (
+                <>
+                  <p className="t-title num">{rupiah(nominalDraf(drafTertunda) ?? 0n)}</p>
+                  <p className="t-body-md">
+                    {drafCocok
+                      ? 'Ada pembayaran QRIS yang tertunda. Pelanggan mungkin sudah membayar; periksa statusnya sebelum menagih ulang.'
+                      : 'Ada pembayaran QRIS tertunda yang isinya berbeda dari keranjang ini. Penjualan tidak ditulis dari keranjang yang berbeda; kembalikan keranjang ke isi semula atau periksa statusnya.'}
+                  </p>
+                  <Tombol varian="secondary" kritis onClick={() => setPanelQris(panelDari(drafTertunda))}>
+                    Lanjutkan pembayaran QRIS tertunda
+                  </Tombol>
+                </>
               ) : (
                 <>
-                  {total !== null && <p className="t-title num">{rupiah(total)}</p>}
-                  <p className="t-body-md">
-                    Pelanggan memindai kode QR dari layar ini. Pembayaran lunas hanya setelah gateway
-                    mengonfirmasi.
-                  </p>
+                  {menyimpan ? (
+                    <KerangkaQr />
+                  ) : (
+                    <>
+                      {total !== null && <p className="t-title num">{rupiah(total)}</p>}
+                      <p className="t-body-md">
+                        Pelanggan memindai kode QR dari layar ini. Pembayaran lunas hanya setelah gateway
+                        mengonfirmasi.
+                      </p>
+                    </>
+                  )}
+                  <Tombol
+                    varian="secondary"
+                    kritis
+                    disabled={menyimpan || !pemulihanSelesai || alasanDinamis !== null || bagian.length > 0}
+                    keterangan={menyimpan || !pemulihanSelesai || alasanDinamis !== null || bagian.length > 0 ? idAlasanAksi : undefined}
+                    onClick={mulaiQris}
+                  >
+                    {menyimpan ? 'Meminta kode QR…' : 'Tampilkan kode QR'}
+                  </Tombol>
                 </>
               )}
-              <Tombol
-                varian="secondary"
-                kritis
-                disabled={menyimpan || alasanDinamis !== null || bagian.length > 0}
-                keterangan={menyimpan || alasanDinamis !== null || bagian.length > 0 ? idAlasanAksi : undefined}
-                onClick={mulaiQris}
-              >
-                {menyimpan ? 'Meminta kode QR…' : 'Tampilkan kode QR'}
-              </Tombol>
             </div>
           )}
 

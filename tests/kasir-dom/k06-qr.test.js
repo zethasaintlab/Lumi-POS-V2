@@ -94,6 +94,9 @@ const navTerkunci = (hal) => hal.$$eval('.kasir-header [role="tab"]', (b) => b.m
 const QRIS_PANJANG =
   '00020101021226590014ID.CO.QRIS.WWW0118ID1023456789012340210ID10234567890303UMI51440014ID.CO.QRIS.WWW0215ID20234567890120303UMI5204581253033605802ID5913Kopi  Lumi Uji6007Jakarta61051234062070703A0163041A2B';
 const QRIS_BERSPASI = `  ${QRIS_PANJANG}  `;
+// ⛔ Non-ASCII: byte UTF-8 (é = C3 A9), bukan potongan 8-bit (E9). Dibandingkan sebagai BYTE:
+// decoder bisa menebak latin1 untuk byte tak sah dan menghasilkan string yang tampak benar.
+const QRIS_NON_ASCII = '000201010212265913Kopi Café Uji6007Jakarta630412AB';
 const QRIS_KHUSUS = '00020101021226"Kopi & Roti" <Uji> 5303360540510000 6304ABCD';
 
 const rutePenuh = (qrString, status = 'pending_confirmation') => ({
@@ -151,22 +154,22 @@ function dekode(hal, skala, rusak = false) {
         c.fillRect(lebar * 0.3, tinggi * 0.3, lebar * 0.4, tinggi * 0.4);
       }
       const px = c.getImageData(0, 0, lebar, tinggi);
-      // Zona tenang: seluruh piksel di tepi kanvas harus terang (latar), tidak ada modul gelap.
+      // ⛔ Zona tenang: pita selebar 4 MODUL (spesifikasi QR) di keempat sisi harus terang — bukan
+      // sebaris piksel di tepi, yang lolos walau zona tenangnya hanya 1 modul.
+      const vb = svg.viewBox.baseVal.width;
+      const pita = Math.max(1, Math.floor((4 * lebar) / vb) - 1);
       let tepiGelap = 0;
       const gelap = (x, y) => {
         const i = (y * lebar + x) * 4;
         return px.data[i] + px.data[i + 1] + px.data[i + 2] < 384 && px.data[i + 3] > 128;
       };
-      for (let x = 0; x < lebar; x++) {
-        if (gelap(x, 0)) tepiGelap++;
-        if (gelap(x, tinggi - 1)) tepiGelap++;
-      }
       for (let y = 0; y < tinggi; y++) {
-        if (gelap(0, y)) tepiGelap++;
-        if (gelap(lebar - 1, y)) tepiGelap++;
+        for (let x = 0; x < lebar; x++) {
+          if ((x < pita || x >= lebar - pita || y < pita || y >= tinggi - pita) && gelap(x, y)) tepiGelap++;
+        }
       }
       const hasil = globalThis.jsQR(px.data, lebar, tinggi, { inversionAttempts: 'dontInvert' });
-      return { data: hasil ? hasil.data : null, lebar, tinggi, tampilLebar: r.width, tampilTinggi: r.height, tepiGelap };
+      return { data: hasil ? hasil.data : null, bita: hasil ? Array.from(hasil.binaryData) : null, pita, lebar, tinggi, tampilLebar: r.width, tampilTinggi: r.height, tepiGelap };
     },
     { skala, rusak }
   );
@@ -178,6 +181,7 @@ for (const [nama, qr] of [
   ['string QRIS EMVCo panjang', QRIS_PANJANG],
   ['string berspasi di ujung dan di dalam', QRIS_BERSPASI],
   ['string memuat " & < >', QRIS_KHUSUS],
+  ['string non-ASCII "Kopi Café" (byte UTF-8)', QRIS_NON_ASCII],
 ]) {
   test(`⛔ G-QR: QR yang dirender (${nama}) di-decode di peramban dan hasilnya SAMA PERSIS dengan qrString — ukuran tampil dan 4×`, async () => {
     const hal = await buka('render=k06&baris=2', { rute: rutePenuh(qr) });
@@ -193,7 +197,8 @@ for (const [nama, qr] of [
         }
         assert.notEqual(h.data, null, `G-QR: gambar QR ${skala}× TIDAK dapat dipindai (decoder tidak menemukan kode) — gambar yang tidak dapat dipindai lebih buruk daripada tidak ada`);
         assert.equal(h.data, qr, `G-QR: QR ${skala}× terdekode ${JSON.stringify(h.data)}, harapan qrString dari gateway ${JSON.stringify(qr)} — pelanggan membayar ke kode yang bukan milik transaksi ini`);
-        assert.equal(h.tepiGelap, 0, `G-QR: zona tenang QR ${skala}× dilanggar — ${h.tepiGelap} piksel gelap menempel di tepi gambar`);
+        assert.deepEqual(h.bita, Array.from(new TextEncoder().encode(qr)), `G-QR: QR ${skala}× membawa BYTE yang berbeda dari UTF-8 qrString — pelanggan membayar ke kode yang bukan milik transaksi ini`);
+        assert.equal(h.tepiGelap, 0, `G-QR: zona tenang QR ${skala}× dilanggar — ${h.tepiGelap} piksel gelap di dalam pita 4 modul (${h.pita}px) di tepi gambar`);
       }
     } finally {
       await hal.close();
@@ -344,16 +349,25 @@ test('⛔ tidak ada jalur ketukan yang menandai lunas: selama pending, setiap bu
   const pembanding = await buka('render=k06&baris=2', { rute: rutePenuh(QRIS_PANJANG, 'confirmed') });
   try {
     await mulaiQr(hal);
-    const diklik = await hal.evaluate(() => {
-      const nama = [];
-      for (const b of document.querySelectorAll('button')) {
-        if (b.disabled || b.getAttribute('aria-disabled') === 'true') continue;
-        if (b.textContent.trim() === 'Tutup layar') continue;
-        nama.push(b.textContent.trim());
-        b.click();
-      }
-      return nama;
-    });
+    // ⛔ Klik BERGELOMBANG: tombol yang baru muncul sesudah satu klik juga ditekan, sampai tidak
+    // ada tombol aktif baru. Satu sapuan sinkron tidak melihat tombol yang dimunculkan klik pertama.
+    const diklik = [];
+    for (let putaran = 0; putaran < 6; putaran++) {
+      const baru = await hal.evaluate(() => {
+        const nama = [];
+        for (const b of document.querySelectorAll('button')) {
+          if (b.disabled || b.getAttribute('aria-disabled') === 'true' || b.dataset.sudahDiklik) continue;
+          if (b.textContent.trim() === 'Tutup layar') continue;
+          b.dataset.sudahDiklik = '1';
+          nama.push(b.textContent.trim());
+          b.click();
+        }
+        return nama;
+      });
+      if (baru.length === 0) break;
+      diklik.push(...baru);
+      await hal.waitForTimeout(150);
+    }
     assert.ok(diklik.length >= 1, 'tidak ada button aktif untuk diklik — penjaga hampa');
     await hal.waitForTimeout(900);
     assert.equal(await jumlahOrder(hal), 0, `mengetuk ${JSON.stringify(diklik)} selama pending menulis order lokal — ada jalur ketukan yang menandai lunas tanpa konfirmasi gateway`);
@@ -525,7 +539,8 @@ test('⛔ [C1a] keranjang diubah selagi QRIS tertunda: pemulihan TIDAK menulis p
     await beda.waitForSelector('.kasir-bayar-kartu', { timeout: 10_000 });
     await beda.waitForTimeout(800);
     const lanjut = beda.getByRole('button', { name: TOMBOL_LANJUT });
-    if (await lanjut.count()) await lanjut.click();
+    assert.equal(await lanjut.count(), 1, `keranjang berbeda: kartu tidak menawarkan "${TOMBOL_LANJUT}" — pembanding hampa (tanpa klik, tidak ada yang bisa menulis penjualan)`);
+    await lanjut.click();
     await beda.waitForTimeout(1200);
     assert.equal(await jumlahOrder(beda), 0, 'penjualan lokal ditulis dari keranjang yang BERBEDA dari yang ditagih gateway — uang dan barang tidak cocok');
     assert.equal((await barisPayment(beda)).length, 0, 'payment lokal ditulis dari keranjang berbeda');
