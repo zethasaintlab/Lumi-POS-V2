@@ -76,7 +76,14 @@ const matikan = (new URLSearchParams(window.location.search).get('matikan') ?? '
 /* `?skenario=gambar-antrean` memunculkan pita antrean menua dan indikator
    `failed` — jalan keluar header yang dijaga kunci nav. Default tetap `normal`. */
 const skenarioUji = (new URLSearchParams(window.location.search).get('skenario') ?? 'normal') as Parameters<typeof buatDbPalsu>[0];
-dbAktif = buatDbPalsu(skenarioUji, { matikanFitur: matikan });
+/* `?pembulatan=500&modePembulatan=up` — outlet dengan pembulatan selain bawaan (100, half_up). */
+const pembulatanUji = Number(new URLSearchParams(window.location.search).get('pembulatan') ?? '') || undefined;
+const modeUji = new URLSearchParams(window.location.search).get('modePembulatan') as 'half_up' | 'up' | 'down' | null;
+dbAktif = buatDbPalsu(skenarioUji, {
+  matikanFitur: matikan,
+  pembulatan: pembulatanUji,
+  modePembulatan: modeUji ?? undefined,
+});
 
 const q = new URLSearchParams(window.location.search);
 
@@ -88,7 +95,7 @@ const q = new URLSearchParams(window.location.search);
  * saja menghasilkan layar "Keranjang kosong" dan penjaga yang hijau karena
  * tidak melihat apa pun.
  */
-function keranjangUji(jumlahBaris: number): Keranjang {
+function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
   if (jumlahBaris === 0) return keranjangKosong();
   return {
     ...keranjangKosong(),
@@ -98,14 +105,15 @@ function keranjangUji(jumlahBaris: number): Keranjang {
       itemName: `Item Uji ${i + 1}`,
       variationName: 'Regular',
       variationCount: 1,
-      unitPrice: 20000,
+      unitPrice: harga,
       quantityMilli: 1000,
       modifier: [],
     })),
   };
 }
 
-setelKeranjang(keranjangUji(Number(q.get('baris') ?? '2')));
+/* `?harga=85000` — harga satuan baris uji (bawaan 20.000), supaya total tidak bulat. */
+setelKeranjang(keranjangUji(Number(q.get('baris') ?? '2'), Number(q.get('harga') ?? '20000')));
 
 /**
  * `kirim` palsu untuk `PanelQris`.

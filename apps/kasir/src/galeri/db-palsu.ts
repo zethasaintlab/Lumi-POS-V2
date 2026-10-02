@@ -174,6 +174,11 @@ export interface OpsiDbPalsu {
   gagalBacaKas?: boolean;
   /** `?jumlahGagal=N` — jumlah item antrean GAGAL, menimpa skenario (`header.test.js`: "(500)"). */
   jumlahGagal?: number;
+  /** `[EKSPLORASI]` `?pembulatan=500` — `outlet.rounding_increment` (bawaan 100), supaya penjaga K-06 dapat
+      memakai pembulatan yang BUKAN bawaan. Dibaca `k06-penjaga.test.js` (P3, kembalian K-06 = tersimpan). */
+  pembulatan?: number;
+  /** `[EKSPLORASI]` `?modePembulatan=up` — `outlet.rounding_mode` (bawaan half_up). */
+  modePembulatan?: 'half_up' | 'up' | 'down';
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -352,11 +357,11 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
            Sampai 25 September 2026 nilainya 0 — nilai yang `simpanPenjualan`
            TOLAK ("roundingIncrement harus lebih besar dari 0"), jadi K-07
            tidak pernah dapat dicapai dari galeri. */
-        rounding_increment: 100,
+        rounding_increment: opsi.pembulatan ?? 100,
         /* `half_up` — kosakata `outlet.rounding_mode` adalah half_up/up/down.
            `'nearest'` yang sempat di sini tidak dikenal `simpanPenjualan`, dan
            kegagalannya baru terlihat saat K-07 dicoba dari galeri. */
-        rounding_mode: 'half_up',
+        rounding_mode: opsi.modePembulatan ?? 'half_up',
         service_charge_rate: 0,
         vertical_profile_id: 'vp-1',
         discount_threshold_percent: 2000,

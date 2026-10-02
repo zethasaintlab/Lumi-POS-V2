@@ -334,89 +334,141 @@ test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disable
 // PENJAGA 2 — angka yang DIBULATKAN tidak muncul sebelum disimpan
 // ---------------------------------------------------------------------------
 
-test('⛔ P2: K-06 tidak pernah merender amount_due bulat maupun pembulatan', async () => {
-  /* FR-C9 membulatkan `amount_due`, bukan `total`, dan hanya pada SISA TUNAI
-     sesudah bagian non-tunai (`spec-c:181`). Menghitungnya sebelum rencana
-     pembayaran lengkap menghasilkan angka yang SALAH: `CLAUDE.md:716` mencatat
-     contohnya — total 93.555 dengan QRIS 50.020 menagih tunai 43.500, sementara
-     membulatkan total lebih dulu menagih 43.580. Delapan puluh rupiah per
-     transaksi, tanpa satu pun error.
-
-     Karena itu satu-satunya tempat pembulatan boleh terlihat adalah K-07,
-     SESUDAH `simpanPenjualan` menghasilkan rencananya. */
-  const hal = await buka('render=k06&baris=2');
-  try {
-    const isi = await teks(hal);
-    assert.match(isi, /Sisa tagihan/, 'layar tidak merender sisa tagihan — halaman salah?');
-
-    /* ⛔ Yang dicari BARIS pembulatan, bukan KATA "pembulatan".
-       Versi pertama penjaga ini memakai `/Pembulatan/i` dan langsung merah —
-       yang ditandainya adalah kalimat yang justru menyatakan aturannya:
-       *"pajak dan pembulatan dihitung saat disimpan"* (`Pembayaran.tsx:585`).
-       Penjaga yang menuduh kode yang benar akan dimatikan, dan yang
-       mematikannya benar. Bentuk K-07-nya `Pembulatan +Rp…` / `−Rp…`. */
+test('⛔ P2: pembulatan satu sumber — K-06 hanya memakai rencanaBayarKeranjang', async () => {
+  /* Keputusan user 28 September 2026 (issue #76 komentar 5862870577) MEMBALIK
+     aturan lama ("pembulatan hanya tampil di K-07"): K-06 menampilkan kembalian
+     dan tagihan tunai, tetapi angkanya datang dari SATU fungsi
+     (`rencanaBayarKeranjang`) yang juga dipanggil `simpanPenjualan`. Yang
+     dilarang bergeser dari "jangan tampilkan" menjadi "jangan hitung sendiri":
+     aritmetika kedua menyimpang tepat di bawaan pembulatan dan pembayaran
+     campuran — 80 rupiah per transaksi, tanpa satu pun error
+     (`uang-pembayaran-kas.md` § Pembayaran campuran). */
+  const sumber = fs.readFileSync(path.join(AKAR, 'apps/kasir/src/layar/Pembayaran.tsx'), 'utf8');
+  for (const dilarang of ['computeCashRounding', 'rencanakanPembayaran', 'roundingIncrement', 'rounding_increment']) {
     assert.ok(
-      !/Pembulatan\s*[+−-]/.test(isi),
-      `K-06 merender baris pembulatan sebelum penjualan disimpan: ${isi}`
+      !sumber.includes(dilarang),
+      `Pembayaran.tsx memakai \`${dilarang}\` — K-06 menghitung pembulatan sendiri, bukan lewat rencanaBayarKeranjang`
     );
-
-    /* ⛔ Bukti kedua, dan ia yang sulit dilanggar tanpa ketahuan: angka yang
-       tampil harus angka MENTAH. Outlet galeri memakai `rounding_increment`
-       0, jadi membandingkan angka tidak membuktikan apa pun di sana — yang
-       dibandingkan karena itu BENTUK kodenya: K-06 tidak boleh memanggil
-       satu pun fungsi pembulatan. */
-    const sumber = fs.readFileSync(
-      path.join(AKAR, 'apps/kasir/src/layar/Pembayaran.tsx'),
-      'utf8'
-    );
-    for (const dilarang of ['computeCashRounding', 'roundingAdjustment', 'rencanakanPembayaran']) {
-      const dipakaiDiK06 = sumber
-        .slice(0, sumber.indexOf('if (selesai) {'))
-        .includes(dilarang);
-      assert.ok(
-        !dipakaiDiK06,
-        `Pembayaran.tsx memakai \`${dilarang}\` SEBELUM cabang K-07 — pembulatan bocor ke layar yang belum punya rencana pembayaran`
-      );
-    }
-  } finally {
-    await hal.close();
   }
+  assert.ok(
+    sumber.includes('rencanaBayarKeranjang'),
+    'Pembayaran.tsx tidak memanggil rencanaBayarKeranjang — kembalian K-06 tidak datang dari rencana yang sama dengan simpanPenjualan'
+  );
+
+  // Pemanggil `rencanakanPembayaran(` di apps/kasir/src: TEPAT SATU, di dalam rencanaBayarKeranjang.
+  const berkas = [];
+  const telusur = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) telusur(f);
+      else if (/\.(ts|tsx)$/.test(e.name)) berkas.push(f);
+    }
+  };
+  telusur(path.join(AKAR, 'apps/kasir/src'));
+  const pemanggil = [];
+  for (const f of berkas) {
+    const isi = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const n = (isi.match(/\brencanakanPembayaran\s*\(/g) ?? []).length;
+    for (let k = 0; k < n; k++) pemanggil.push(path.relative(AKAR, f));
+  }
+  assert.deepEqual(
+    pemanggil,
+    ['apps/kasir/src/kasir/penjualan.ts'],
+    `rencanakanPembayaran( dipanggil ${pemanggil.length}× di apps/kasir/src (${pemanggil.join(', ')}) — harus TEPAT SATU, di penjualan.ts`
+  );
+  const penjualan = fs.readFileSync(path.join(AKAR, 'apps/kasir/src/kasir/penjualan.ts'), 'utf8');
+  const awalFn = penjualan.indexOf('export function rencanaBayarKeranjang');
+  assert.ok(awalFn >= 0, 'rencanaBayarKeranjang tidak diekspor dari kasir/penjualan.ts');
+  const badanFn = penjualan.slice(awalFn, penjualan.indexOf('\n}\n', awalFn));
+  assert.ok(
+    /\brencanakanPembayaran\s*\(/.test(badanFn),
+    'pemanggil rencanakanPembayaran bukan di dalam badan rencanaBayarKeranjang'
+  );
+  const awalSimpan = penjualan.indexOf('export async function simpanPenjualan');
+  const badanSimpan = penjualan.slice(awalSimpan);
+  assert.ok(
+    /\brencanaBayarKeranjang\s*\(/.test(badanSimpan),
+    'simpanPenjualan tidak memanggil rencanaBayarKeranjang — jalur penulisan punya pembulatannya sendiri'
+  );
 });
 
 // ---------------------------------------------------------------------------
-// PENJAGA 3 — kembalian HANYA di K-07
+// PENJAGA 3 — kembalian di K-06 SAMA PERSIS dengan yang tersimpan
 // ---------------------------------------------------------------------------
 
-test('⛔ P3: kata "Kembalian" tidak pernah dirender di K-06, dalam keadaan mana pun', async () => {
-  /* Kembalian adalah selisih antara uang yang diserahkan dan `amount_due`
-     yang SUDAH dibulatkan. Menampilkannya di K-06 menuntut pembulatan yang
-     P2 larang, dan angkanya akan berbeda dari yang tercetak di struk.
+/* Lima kasus yang MEMBEDAKAN jalur: total tidak bulat, sisa tunai bukan
+   kelipatan increment, sehingga kembalian dari `diterima − sisa` (aritmetika
+   kedua) berbeda dari kembalian dari rencana (`diterima − tunaiDitagih`).
+   Total = harga × 1,11 (PPN galeri 11% eksklusif). */
+const KASUS_KEMBALIAN = [
+  { nama: 'a: increment 100, tunai saja', kueri: 'baris=1&harga=85000&pembulatan=100', non: null, diterima: '100.000' },
+  { nama: 'b: increment 500, tunai saja', kueri: 'baris=1&harga=85000&pembulatan=500', non: null, diterima: '100.000' },
+  { nama: 'c: increment 1.000, pintasan Rp 50.000', kueri: 'baris=1&harga=40500&pembulatan=1000', non: null, diterima: 'pintasan-50000' },
+  { nama: 'd: increment 500, QRIS statis 50.020 + tunai', kueri: 'baris=1&harga=84000&pembulatan=500', non: { jenis: 'qris', nominal: '50020' }, diterima: '50.000' },
+  { nama: 'e: increment 500, Transfer 30.000 + tunai', kueri: 'baris=1&harga=84000&pembulatan=500', non: { jenis: 'transfer', nominal: '30000' }, diterima: '100.000' },
+];
 
-     Diuji pada BEBERAPA keadaan, bukan satu: keadaan yang tidak diuji adalah
-     tempat kata itu akan muncul kembali. */
-  for (const kueri of [
-    'render=k06&baris=2',
-    'render=k06&baris=1',
-    'render=k06&baris=20',
-  ]) {
-    const hal = await buka(kueri);
+test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.change_amount tersimpan', async () => {
+  assert.equal(KASUS_KEMBALIAN.length, 5, 'jumlah kasus P3 berubah — penjaga ini harus tetap mencakup kelima kasus');
+  for (const k of KASUS_KEMBALIAN) {
+    const hal = await buka(`render=k06&${k.kueri}`);
     try {
-      // Uang diterima diisi supaya keadaan "berkembalian" benar-benar tercapai:
-      // tanpa ini kembalian memang tidak ada karena tidak ada uang sama sekali.
-      // Langkah MASUKAN saja yang berubah (keputusan kampanye, Task 8): pecahan
-      // yang menambah sudah tidak ada; nominal diketik di "Nominal diterima".
-      await hal.getByLabel('Nominal diterima').fill('200.000');
-      const isi = await teks(hal);
-      assert.match(isi, /Nominal diterima/, `layar tunai tidak dirender untuk ${kueri}`);
-      assert.equal(
-        await hal.getByLabel('Nominal diterima').inputValue(),
-        '200.000',
-        'nominal diterima tidak terisi — keadaan berkembalian tidak tercapai'
-      );
+      if (k.non?.jenis === 'qris') {
+        await bukaCampuran(hal);
+        await pilihQrisStatis(hal);
+        await bidang(hal, /Nominal bagian ini/).fill(k.non.nominal);
+        await bidang(hal, /Referensi pembayaran/).fill('REF-KMB-1');
+        await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
+      } else if (k.non?.jenis === 'transfer') {
+        await bukaCampuran(hal);
+        await hal.getByRole('button', { name: 'Transfer', exact: true }).click();
+        await bidang(hal, /Nominal bagian ini/).fill(k.non.nominal);
+        await bidang(hal, 'Bank tujuan').fill('BCA');
+        await bidang(hal, 'Nomor referensi').fill('TRF-KMB-001');
+        await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
+        await hal.getByRole('button', { name: 'Tunai', exact: true }).click();
+      }
+      if (k.diterima.startsWith('pintasan-')) {
+        await hal.getByRole('button', { name: `Rp ${Number(k.diterima.slice(9)).toLocaleString('id-ID')}`, exact: true }).click();
+      } else {
+        await hal.getByLabel('Nominal diterima').fill(k.diterima);
+      }
+
+      // HASIL lebih dulu (prasyarat panel sesudahnya): angka Kembalian K-06.
+      const kotakKembalian = hal.locator('.kasir-bayar-kembalian');
       assert.ok(
-        !/Kembalian/i.test(isi),
-        `K-06 merender "Kembalian" pada ${kueri} — ia hanya sah di K-07, sesudah penjualan tersimpan`
+        (await kotakKembalian.count()) > 0,
+        `kasus ${k.nama}: K-06 tidak merender kotak Kembalian — kembalian hanya muncul sesudah simpan`
       );
+      const angkaK06 = bacaRupiah(await kotakKembalian.locator('.num').first().textContent());
+      assert.notEqual(angkaK06, null, `kasus ${k.nama}: Kembalian K-06 "Rp —" untuk nominal yang cukup`);
+
+      await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+      await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+      const angkaK07 = bacaRupiah(await hal.locator('.kasir-k07-kembalian .num').textContent());
+      const tunai = (await barisPayment(hal)).find((b) => b.params[3] === 'cash');
+      assert.ok(tunai, `kasus ${k.nama}: baris payment tunai tidak ditulis`);
+      const tersimpan = BigInt(tunai.params[6]);
+
+      assert.equal(
+        angkaK06,
+        angkaK07,
+        `kasus ${k.nama}: kembalian K-06 ${angkaK06} ≠ K-07 ${angkaK07} — dua jalan menghitung kembalian`
+      );
+      assert.equal(
+        angkaK06,
+        tersimpan,
+        `kasus ${k.nama}: kembalian K-06 ${angkaK06} ≠ payment.change_amount tersimpan ${tersimpan}`
+      );
+
+      // Pembanding anti-hampa: pembulatan sungguh terjadi pada kasus ini.
+      {
+        assert.match(
+          await teks(hal),
+          /Pembulatan\s*[+−-]/,
+          `kasus ${k.nama}: roundingAdjustment tersimpan 0 — fixture tidak membedakan jalur`
+        );
+      }
     } finally {
       await hal.close();
     }
