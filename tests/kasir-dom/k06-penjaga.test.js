@@ -467,6 +467,7 @@ async function tersimpan(hal) {
   const tunai = payment.find((t) => t.params[3] === 'cash');
   assert.ok(tunai, 'tidak ada baris payment tunai yang tersimpan');
   return {
+    subtotal: BigInt(order.params[9]),
     pajak: BigInt(order.params[11]),
     pembulatan: BigInt(order.params[12]),
     total: BigInt(order.params[13]),
@@ -552,7 +553,7 @@ test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.ch
          datang dari aritmetika layar sendiri tidak ada di himpunan ini. */
       const sisa = simpan.total - simpan.nonTunai.reduce((a, b) => a + b, 0n);
       const dijelaskan = new Set([
-        simpan.total, simpan.pajak, simpan.amountDue, simpan.tunaiDitagih, simpan.diterima, simpan.changeAmount, sisa,
+        simpan.total, simpan.subtotal, simpan.pajak, simpan.amountDue, simpan.tunaiDitagih, simpan.diterima, simpan.changeAmount, sisa,
         20_000n, 50_000n, 100_000n, // pintasan tunai
         ...simpan.nominalPayment,
       ]);
@@ -612,7 +613,7 @@ test('⛔ G-NOMINAL: uang kurang → Kembalian Rp — dan alasan TANPA angka hit
     // Tak satu pun nominal di layar adalah hasil hitungan layar (mis. kurangnya).
     const total = await nilaiTotalAtas(hal);
     const subtotal = 40_000n; // fixture harness: 2 baris × Rp 20.000
-    const dijelaskan = new Set([total, total - subtotal, 1_000n, 20_000n, 50_000n, 100_000n]);
+    const dijelaskan = new Set([total, subtotal, total - subtotal, 1_000n, 20_000n, 50_000n, 100_000n]);
     for (const n of semuaNominal(await teks(hal))) {
       assert.ok(dijelaskan.has(n), `nominal Rp ${n} di K-06 tidak dijelaskan (total ${total}) — kurang yang dihitung layar?`);
     }
@@ -913,9 +914,16 @@ test('⛔ P8: blok aksi tidak bergeser antara isi pendek dan isi panjang', async
 
     /* ⛔ Galat tetap DI ATAS bilah aksi, di dalam blok aksi yang menempel
        (keputusan kampanye: kalimat yang muncul tidak boleh menggeser tombol
-       ke arah yang berbeda dari tempat mata kasir sudah menunggu). Galatnya
-       dipancing dengan nominal tunai yang kurang dari sisa tagihan. */
-    await hal.getByLabel('Nominal diterima').fill('1.000');
+       ke arah yang berbeda dari tempat mata kasir sudah menunggu).
+
+       ⛔ Galatnya dipancing dengan GAGAL SIMPAN (`__gagalTransaksi`), bukan
+       lagi dengan uang kurang: sejak keputusan user 28 September 2026 (#76)
+       K-06 menonaktifkan "Konfirmasi bayar" untuk uang kurang SEBELUM ditekan,
+       jadi galat `Kurang Rp …` tidak lagi dapat terjadi dari ketukan. */
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await hal.evaluate(() => {
+      window.__gagalTransaksi = { masuk: 0 };
+    });
     await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
     await hal.waitForSelector('.kasir-bayar-aksi [role="alert"]', { timeout: 10_000 });
     const galat = await kotak(hal, '.kasir-bayar-aksi [role="alert"]');
