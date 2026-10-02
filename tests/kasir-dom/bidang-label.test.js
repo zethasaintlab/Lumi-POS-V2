@@ -148,7 +148,12 @@ test('⛔ setiap Bidang yang dirender terhubung ke inputnya dan dapat ditemukan 
      saja. */
   const hal = await buka('render=k06&baris=2');
   try {
-    await hal.getByRole('button', { name: 'QRIS statis' }).click();
+    /* Langkah masukan K-06 baru (Task 8): pembayaran campuran dibuka lebih
+       dulu supaya "Nominal bagian ini" ikut dirender, lalu tab QRIS dan
+       sub-pilihan statis. */
+    await hal.getByRole('button', { name: 'Bayar dengan lebih dari satu metode' }).click();
+    await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
+    await hal.getByRole('button', { name: 'QRIS statis', exact: true }).click();
 
     const bidang = await bidangTerender(hal);
 
@@ -222,7 +227,7 @@ test('⛔ Bidang yang muncul belakangan ikut terhubung, bukan hanya yang ada saa
      instance baru, bukan yang sama dengan label yang berganti. */
   const hal = await buka('render=k06&baris=2');
   try {
-    await hal.getByRole('button', { name: 'Kartu (EDC)' }).click();
+    await hal.getByRole('button', { name: 'Kartu', exact: true }).click();
 
     const bidang = await bidangTerender(hal);
     assert.ok(

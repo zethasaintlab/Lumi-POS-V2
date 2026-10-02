@@ -137,9 +137,9 @@ async function buka(kueri, { terjangkau = true, rute = {}, tinggi = 1000 } = {})
   return hal;
 }
 
-/** Label tombol metode yang benar-benar ada di DOM. */
+/** Label tab metode yang benar-benar ada di DOM (segmented K-06, spec § 7). */
 const metodeTerlihat = (hal) =>
-  hal.$$eval('.kasir-pecahan .btn', (b) => b.map((e) => e.textContent.trim()));
+  hal.$$eval('.kasir-bayar-tab button', (b) => b.map((e) => e.textContent.trim()));
 
 const teks = (hal) => hal.locator('body').innerText();
 
@@ -160,21 +160,40 @@ function bacaRupiah(teksAngka) {
   return negatif ? -BigInt(digit) : BigInt(digit);
 }
 
-/** Nilai baris ringkasan yang labelnya cocok — `.kasir-subtotal`/`.kasir-total`. */
-async function nilaiBaris(hal, label) {
-  const baris = await hal.$$eval('.kasir-bayar-aksi .kasir-subtotal, .kasir-bayar-aksi .kasir-total', (n) =>
+/** Nilai "Total" di blok ATAS kartu (spec § 7) — `.kasir-bayar-total`. */
+async function nilaiTotal(hal) {
+  const t = await hal.$eval('.kasir-bayar-atas .kasir-bayar-total .num', (e) => e.textContent.trim()).catch(() => null);
+  return t === null ? null : bacaRupiah(t);
+}
+
+/** Nilai baris "Sisa tagihan" di blok atas — `.kasir-subtotal`. */
+async function nilaiSisa(hal) {
+  const baris = await hal.$$eval('.kasir-bayar-atas .kasir-subtotal', (n) =>
     n.map((e) => ({
       label: e.firstElementChild?.textContent.trim() ?? '',
       nilai: e.querySelector('.num')?.textContent.trim() ?? '',
     }))
   );
-  const cocok = baris.find((b) => b.label === label);
+  const cocok = baris.find((b) => b.label === 'Sisa tagihan');
   return cocok === undefined ? null : bacaRupiah(cocok.nilai);
+}
+
+/** Membuka tautan "Bayar dengan lebih dari satu metode" bila belum terbuka. */
+async function bukaCampuran(hal) {
+  const tautan = hal.getByRole('button', { name: 'Bayar dengan lebih dari satu metode' });
+  if ((await tautan.count()) > 0) await tautan.click();
+}
+
+/** Memilih QRIS statis: tab QRIS, lalu sub-pilihan "QRIS statis". */
+async function pilihQrisStatis(hal) {
+  await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
+  await hal.getByRole('button', { name: 'QRIS statis', exact: true }).click();
 }
 
 /** Menambah satu bagian QRIS statis bernilai `nominal` rupiah. */
 async function tambahBagianQris(hal, nominal, referensi) {
-  await hal.getByRole('button', { name: 'QRIS statis' }).click();
+  await bukaCampuran(hal);
+  await pilihQrisStatis(hal);
   await bidang(hal, /Nominal bagian ini/).fill(String(nominal));
   await bidang(hal, /Referensi pembayaran/).fill(referensi);
   await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
@@ -190,15 +209,20 @@ const kotak = (hal, sel) =>
 // PENJAGA 1 — panel QRIS mengganti SELURUH layar
 // ---------------------------------------------------------------------------
 
-test('⛔ P1: panel QRIS aktif → pemilih metode dan kontrol keranjang TIDAK ADA di DOM', async () => {
-  /* Alasannya tertulis di `Pembayaran.tsx:240`: kasir tidak boleh dapat
-     mengubah keranjang atau metode selagi pelanggan memindai QR untuk nominal
-     yang SUDAH dikirim ke gateway. Nominal yang berubah sesudah QR terbit
-     berarti pelanggan membayar angka yang bukan tagihannya.
+test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disabled dengan alasan; "Kembali ke kasir" dan tautan campuran TIDAK ADA; tombol utama nonaktif "Menunggu pembayaran…"; tab nav terkunci', async () => {
+  /* Alasannya tertulis di `Pembayaran.tsx`: kasir tidak boleh dapat mengubah
+     keranjang atau metode selagi pelanggan memindai QR untuk nominal yang
+     SUDAH dikirim ke gateway. Nominal yang berubah sesudah QR terbit berarti
+     pelanggan membayar angka yang bukan tagihannya.
 
-     ⛔ Ini penjaga terpenting di berkas ini. Pola "QR di dalam kartu yang sama
-     bersama pemilih metode" terlihat seperti peningkatan tata letak, dan ia
-     membatalkan keputusan ini tanpa satu pun error. */
+     ⛔ Keputusan kampanye (spec § 7, 28 September 2026): "Selama QRIS
+     menunggu, toggle metode dan keranjang terkunci" MENGGANTIKAN "pemilih
+     metode tidak ada di DOM". Yang dijaga tetap sama — metode tidak dapat
+     diganti — tetapi caranya kini terkunci-dan-terlihat, bukan hilang.
+
+     ⛔ R3: `disabled` saja belum bukti. Klik yang DIPAKSA lewat
+     `dispatchEvent` pada setiap tab yang terkunci (dan pada tab nav header)
+     tidak boleh mengubah metode, nominal, maupun `location`. */
   const hal = await buka('render=k06&baris=2', {
     rute: {
       '**/orders': { id: 'ord-uji' },
@@ -207,27 +231,92 @@ test('⛔ P1: panel QRIS aktif → pemilih metode dan kontrol keranjang TIDAK AD
   });
   try {
     // Keadaan AWAL dibuktikan lebih dulu: pemilih metode memang ada di sana.
-    // Tanpa ini, penjaga hijau juga pada halaman yang gagal memuat sama sekali.
     const sebelum = await metodeTerlihat(hal);
-    assert.ok(sebelum.includes('QRIS'), `pemilih metode tidak dirender: ${JSON.stringify(sebelum)}`);
+    assert.deepEqual(sebelum, ['Tunai', 'QRIS', 'Kartu', 'Transfer'], `pemilih metode tidak dirender: ${JSON.stringify(sebelum)}`);
+    assert.ok(
+      (await hal.getByRole('button', { name: 'Kembali ke kasir' }).count()) > 0,
+      '"Kembali ke kasir" tidak ada SEBELUM QRIS menunggu — pembanding penjaga ini hampa'
+    );
 
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
-    await hal.getByRole('button', { name: 'Simpan Penjualan' }).click();
+    await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
     await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
 
     const isi = await teks(hal);
     assert.match(isi, /Pindai untuk membayar/, 'panel QRIS tidak muncul');
 
-    // ⛔ Yang diperiksa KETIADAAN, dan ketiadaannya diperiksa per kontrol —
-    // bukan lewat satu assertion atas seluruh teks. Satu kontrol yang bocor
+    // Pemilih metode TETAP ADA, dan setiap tab terkunci DENGAN alasannya.
+    const tab = await hal.$$eval('.kasir-bayar-tab button, .kasir-bayar-sub button', (b) =>
+      b.map((e) => ({
+        nama: e.textContent.trim(),
+        mati: e.disabled || e.getAttribute('aria-disabled') === 'true',
+        alasan: (e.getAttribute('aria-describedby') ?? '')
+          .split(' ')
+          .map((id) => document.getElementById(id)?.textContent.trim() ?? '')
+          .join(' ')
+          .trim(),
+      }))
+    );
+    assert.ok(tab.length >= 5, `pemilih metode tidak dirender selagi QRIS menunggu: ${JSON.stringify(tab)}`);
+    for (const t of tab) {
+      assert.equal(t.mati, true, `tab "${t.nama}" masih aktif selagi QRIS menunggu — kasir dapat mengubah metode`);
+      assert.ok(t.alasan.length > 0, `tab "${t.nama}" terkunci TANPA kalimat alasan (aria-describedby kosong)`);
+    }
+
+    // ⛔ Yang diperiksa KETIADAAN, per kontrol — satu kontrol yang bocor
     // kembali ke layar adalah satu jalan bagi kasir mengubah nominal.
-    for (const dilarang of ['Tunai', 'QRIS statis', 'Kartu (EDC)', 'Simpan Penjualan', 'Kembali']) {
+    for (const dilarang of ['Kembali ke kasir', 'Bayar dengan lebih dari satu metode', 'Konfirmasi bayar']) {
       assert.ok(
         !isi.includes(dilarang),
         `"${dilarang}" masih ada di DOM selagi panel QRIS aktif — kasir dapat mengubah pembayaran yang nominalnya sudah dikirim ke gateway`
       );
     }
-    assert.equal((await metodeTerlihat(hal)).length, 0, 'pemilih metode masih di DOM');
+    const utama = hal.locator('.kasir-bayar-aksi .btn-primary');
+    assert.equal((await utama.textContent()).trim(), 'Menunggu pembayaran…');
+    assert.equal(await utama.isDisabled(), true, 'tombol utama aktif selagi QRIS menunggu');
+
+    // Tab nav header terkunci: aria-disabled + alasan.
+    const nav = await hal.$$eval('.kasir-header [role="tab"]', (b) =>
+      b.map((e) => ({
+        nama: e.textContent.trim(),
+        mati: e.getAttribute('aria-disabled') === 'true',
+        alasan: (e.getAttribute('aria-describedby') ?? '')
+          .split(' ')
+          .map((id) => document.getElementById(id)?.textContent.trim() ?? '')
+          .join(' ')
+          .trim(),
+      }))
+    );
+    assert.ok(nav.length >= 4, `tab nav tidak dirender: ${JSON.stringify(nav)}`);
+    for (const n of nav) {
+      assert.equal(n.mati, true, `tab nav "${n.nama}" tidak terkunci selagi QRIS menunggu`);
+      assert.ok(n.alasan.length > 0, `tab nav "${n.nama}" terkunci tanpa kalimat alasan`);
+    }
+
+    // ⛔ R3 — klik paksa. Metode aktif, nominal, dan location tidak berubah.
+    const sebelumPaksa = await hal.evaluate(() => ({
+      aktif: [...document.querySelectorAll('.kasir-bayar-tab button')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent.trim()),
+      nominal: document.querySelector('.kasir-bayar-isi .num')?.textContent.trim() ?? null,
+      lokasi: location.pathname + location.search,
+    }));
+    assert.deepEqual(sebelumPaksa.aktif, ['QRIS'], `tab aktif bukan QRIS: ${JSON.stringify(sebelumPaksa)}`);
+    await hal.evaluate(() => {
+      for (const el of document.querySelectorAll('.kasir-bayar-tab button, .kasir-bayar-sub button, .kasir-header [role="tab"]')) {
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    });
+    await hal.waitForTimeout(200);
+    const sesudahPaksa = await hal.evaluate(() => ({
+      aktif: [...document.querySelectorAll('.kasir-bayar-tab button')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent.trim()),
+      nominal: document.querySelector('.kasir-bayar-isi .num')?.textContent.trim() ?? null,
+      lokasi: location.pathname + location.search,
+    }));
+    assert.deepEqual(
+      sesudahPaksa,
+      sebelumPaksa,
+      `klik paksa pada tab terkunci mengubah keadaan: metode/nominal/location ${JSON.stringify(sebelumPaksa)} → ${JSON.stringify(sesudahPaksa)}`
+    );
+    assert.match(await teks(hal), /Pindai untuk membayar/, 'panel QRIS hilang sesudah klik paksa');
   } finally {
     await hal.close();
   }
@@ -306,11 +395,16 @@ test('⛔ P3: kata "Kembalian" tidak pernah dirender di K-06, dalam keadaan mana
     try {
       // Uang diterima diisi supaya keadaan "berkembalian" benar-benar tercapai:
       // tanpa ini kembalian memang tidak ada karena tidak ada uang sama sekali.
-      await hal.getByRole('button', { name: '+ Rp 100.000' }).click();
-      await hal.getByRole('button', { name: '+ Rp 100.000' }).click();
+      // Langkah MASUKAN saja yang berubah (keputusan kampanye, Task 8): pecahan
+      // yang menambah sudah tidak ada; nominal diketik di "Nominal diterima".
+      await hal.getByLabel('Nominal diterima').fill('200.000');
       const isi = await teks(hal);
-      assert.match(isi, /Uang diterima/, `layar tunai tidak dirender untuk ${kueri}`);
-      assert.match(isi, /Rp 200\.000/, 'uang diterima tidak bertambah — keadaan berkembalian tidak tercapai');
+      assert.match(isi, /Nominal diterima/, `layar tunai tidak dirender untuk ${kueri}`);
+      assert.equal(
+        await hal.getByLabel('Nominal diterima').inputValue(),
+        '200.000',
+        'nominal diterima tidak terisi — keadaan berkembalian tidak tercapai'
+      );
       assert.ok(
         !/Kembalian/i.test(isi),
         `K-06 merender "Kembalian" pada ${kueri} — ia hanya sah di K-07, sesudah penjualan tersimpan`
@@ -325,7 +419,7 @@ test('⛔ P3: kata "Kembalian" tidak pernah dirender di K-06, dalam keadaan mana
 // PENJAGA 5 — metode yang dinonaktifkan MEMBAWA alasannya
 // ---------------------------------------------------------------------------
 
-test('⛔ P5: metode online-only saat tak terjangkau → tetap terlihat, DENGAN kalimat alasannya', async () => {
+test('⛔ P5: QRIS dinamis di dalam tab QRIS saat tak terjangkau → tetap terlihat, nonaktif, DENGAN kalimat alasannya; tab QRIS tidak hilang', async () => {
   /* `spec-c:272`, dikutip di `packages/domain/src/pembayaran-manual.ts:179`:
      metode online-only TIDAK disembunyikan — kasir harus tahu metode itu ada
      dan mengapa tidak bisa dipakai. Daftar yang memendek diam-diam terbaca
@@ -337,25 +431,30 @@ test('⛔ P5: metode online-only saat tak terjangkau → tetap terlihat, DENGAN 
      rusak — lalu ia berhenti mempercayai layar ini. */
   const hal = await buka('render=k06&baris=2', { terjangkau: false });
   try {
+    /* Tab QRIS sendiri TIDAK hilang (QRIS statis tetap berfungsi offline);
+       yang nonaktif adalah sub-pilihan "QRIS dinamis" DI DALAMNYA. */
     const nama = await metodeTerlihat(hal);
-    assert.ok(nama.includes('QRIS'), `QRIS dinamis HILANG dari pemilih: ${JSON.stringify(nama)}`);
+    assert.ok(nama.includes('QRIS'), `tab QRIS HILANG dari pemilih: ${JSON.stringify(nama)}`);
+    await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
 
-    const tombol = hal.getByRole('button', { name: 'QRIS', exact: true });
+    const tombol = hal.getByRole('button', { name: 'QRIS dinamis', exact: true });
+    assert.equal(await tombol.count(), 1, 'sub-pilihan QRIS dinamis HILANG dari tab QRIS');
     assert.equal(await tombol.isDisabled(), true, 'QRIS dinamis aktif padahal server tak terjangkau');
 
     const isi = await teks(hal);
-    assert.match(isi, /Perlu internet/, 'tombol mati TANPA kalimat alasan');
+    assert.match(isi, /Perlu internet/, 'sub-pilihan mati TANPA kalimat alasan');
 
-    /* ⛔ Pembanding: saat terjangkau, kalimat itu HILANG dan tombolnya hidup.
-       Tanpa pembanding ini penjaga hijau juga pada layar yang SELALU
+    /* ⛔ Pembanding: saat terjangkau, kalimat itu HILANG dan sub-pilihannya
+       hidup. Tanpa pembanding ini penjaga hijau juga pada layar yang SELALU
        menampilkan "Perlu internet" — bentuk kekosongan yang paling mudah
        lolos. */
     const hal2 = await buka('render=k06&baris=2', { terjangkau: true });
     try {
+      await hal2.getByRole('button', { name: 'QRIS', exact: true }).click();
       const isi2 = await teks(hal2);
       assert.ok(!/Perlu internet/.test(isi2), 'kalimat alasan tetap muncul saat server terjangkau');
       assert.equal(
-        await hal2.getByRole('button', { name: 'QRIS', exact: true }).isDisabled(),
+        await hal2.getByRole('button', { name: 'QRIS dinamis', exact: true }).isDisabled(),
         false,
         'QRIS dinamis tetap mati padahal server terjangkau'
       );
@@ -428,14 +527,16 @@ test('⛔ P7: dua bagian metode berbeda tampil sebagai daftar ber-Hapus, diserta
      yang tidak ada di skema mana pun. */
   const hal = await buka('render=k06&baris=2');
   try {
-    // Bagian 1 — QRIS statis, dengan referensi wajibnya.
-    await hal.getByRole('button', { name: 'QRIS statis' }).click();
+    // Bagian 1 — QRIS statis (tab QRIS → sub-pilihan statis), dengan referensi
+    // wajibnya. Pembayaran campuran dibuka lewat tautan di bawah isi metode.
+    await bukaCampuran(hal);
+    await pilihQrisStatis(hal);
     await bidang(hal, /Nominal bagian ini/).fill('10000');
     await bidang(hal, /Referensi pembayaran/).fill('10000-4321');
     await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
 
     // Bagian 2 — kartu EDC, dengan kode approval wajibnya.
-    await hal.getByRole('button', { name: 'Kartu (EDC)' }).click();
+    await hal.getByRole('button', { name: 'Kartu', exact: true }).click();
     await bidang(hal, /Nominal bagian ini/).fill('5000');
     await bidang(hal, /Kode approval/).fill('APP123');
     await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
@@ -446,9 +547,17 @@ test('⛔ P7: dua bagian metode berbeda tampil sebagai daftar ber-Hapus, diserta
     assert.equal(baris.length, 2, `daftar bagian tidak memuat dua baris: ${JSON.stringify(baris)}`);
 
     const isi = await teks(hal);
-    assert.match(isi, /QRIS statis/, 'nama metode bagian pertama tidak dirender');
-    assert.match(isi, /Kartu \(EDC\)/, 'nama metode bagian kedua tidak dirender');
+    /* Nama bagian dari SATU peta (`metode-tampilan.ts`), bukan peta lokal layar
+       (G-LABEL) — jadi bentuknya "QRIS (statis)" / "Kartu / EDC". */
+    const namaBagian = baris.join(' | ');
+    assert.match(namaBagian, /QRIS \(statis\)/, `nama metode bagian pertama tidak dirender: ${namaBagian}`);
+    assert.match(namaBagian, /Kartu \/ EDC/, `nama metode bagian kedua tidak dirender: ${namaBagian}`);
     assert.match(isi, /Sisa tagihan/, 'sisa tagihan tidak terlihat — FR-C1 AC kedua');
+    assert.equal(
+      (await hal.$$('.kasir-bayar-kartu .kasir-baris-daftar')).length,
+      1,
+      'daftar bagian tidak berada DI DALAM kartu yang sama (spec § 7, P7)'
+    );
 
     // Setiap bagian punya aksinya sendiri; satu tombol Hapus untuk dua bagian
     // menghapus yang salah.
@@ -571,10 +680,11 @@ test('⛔ P8: blok aksi tidak bergeser antara isi pendek dan isi panjang', async
 // PENJAGA 9 — TOTAL tampil, dan ia angka yang jalur pembayaran pakai
 // ---------------------------------------------------------------------------
 
-test('⛔ P9: Total tampil di K-06, dan nilainya total yang jalur pembayaran hitung', async () => {
+test('⛔ P9: Total tampil di blok ATAS kartu, 32/700, dan nilainya total yang jalur pembayaran hitung', async () => {
   /* K-06 menampilkan "Subtotal" dan "Sisa tagihan" dan TIDAK PERNAH
      menampilkan Total — kasir menagih angka ketiga yang tidak ada di manapun
-     di hadapannya.
+     di hadapannya. Sejak Task 8 (spec § 7, mockup `Payment`) ia duduk di blok
+     atas kartu: "TOTAL BELANJA" 13 px kapital, nilai 32/700.
 
      ⛔ Yang dijaga bukan keberadaan kata "Total", melainkan bahwa angkanya
      angka yang SAMA yang jalur pembayaran pakai. Baris Total yang dihitung
@@ -582,15 +692,41 @@ test('⛔ P9: Total tampil di K-06, dan nilainya total yang jalur pembayaran hit
      pajak inklusif. */
   const hal = await buka('render=k06&baris=2');
   try {
-    const total = await nilaiBaris(hal, 'Total');
-    assert.notEqual(total, null, 'baris Total tidak dirender di blok aksi K-06');
+    const total = await nilaiTotal(hal);
+    assert.notEqual(total, null, 'Total tidak dirender di blok atas kartu K-06');
+
+    const gaya = await hal.$eval('.kasir-bayar-atas .kasir-bayar-total', (e) => ({
+      label: e.firstElementChild?.textContent.trim() ?? '',
+      labelUkuran: getComputedStyle(e.firstElementChild).fontSize,
+      nilaiUkuran: `${getComputedStyle(e.querySelector('.num')).fontSize}/${getComputedStyle(e.querySelector('.num')).fontWeight}`,
+      atasKartu: e.closest('.kasir-bayar-kartu') !== null,
+    }));
+    assert.equal(gaya.nilaiUkuran, '32px/700', `nilai Total ${gaya.nilaiUkuran} — mockup 32 px, bobot 700`);
+    assert.equal(gaya.labelUkuran, '13px', `label Total ${gaya.labelUkuran} — mockup 13 px`);
+    assert.match(gaya.label, /^total belanja$/i);
+    assert.equal(gaya.atasKartu, true, 'Total tidak berada di dalam kartu pembayaran');
+
+    // Blok atas BENAR-BENAR di atas pemilih metode dan isinya.
+    const letak = await hal.evaluate(() => {
+      const t = document.querySelector('.kasir-bayar-atas').getBoundingClientRect();
+      const tab = document.querySelector('.kasir-bayar-tab').getBoundingClientRect();
+      const aksi = document.querySelector('.kasir-bayar-aksi').getBoundingClientRect();
+      return { totalBawah: t.bottom, tabAtas: tab.top, aksiAtas: aksi.top };
+    });
+    assert.ok(letak.totalBawah <= letak.tabAtas + 1, `Total (bawah ${letak.totalBawah}) tidak di atas pemilih metode (${letak.tabAtas})`);
+    assert.ok(letak.totalBawah < letak.aksiAtas, 'Total berada di blok aksi bawah, bukan di atas kartu');
+    assert.equal(
+      await hal.locator('.kasir-bayar-aksi .kasir-bayar-total, .kasir-bayar-aksi .kasir-total').count(),
+      0,
+      'Total masih diduplikasi di blok aksi bawah'
+    );
 
     /* ⛔ Ikatan ke jalur pembayaran, dan ia yang membuat penjaga ini bukan
        sekadar pemeriksaan teks. `sisaTagihan(total, [])` adalah `total` itu
        sendiri, dan `sisa` dihitung dari state `total` yang `bayar()` pakai —
-       state yang BERBEDA dari `hitungan` yang merender baris Total. Keduanya
-       sama hanya bila keduanya benar-benar berasal dari `hitungKeranjang`. */
-    const sisaAwal = await nilaiBaris(hal, 'Sisa tagihan');
+       state yang BERBEDA dari `hitungan` yang merender Total. Keduanya sama
+       hanya bila keduanya benar-benar berasal dari `hitungKeranjang`. */
+    const sisaAwal = await nilaiSisa(hal);
     assert.equal(
       sisaAwal,
       total,
@@ -600,31 +736,32 @@ test('⛔ P9: Total tampil di K-06, dan nilainya total yang jalur pembayaran hit
     /* ⛔ Subtotal BERBEDA dari Total, dan ini yang menolak "Total" yang
        diam-diam merender subtotal. Fixture galeri memakai PPN 11% eksklusif
        (`tax-ppn`), jadi keduanya tidak mungkin sama. */
-    const subtotal = await hal.$eval('.kasir-bayar-isi', (e) => {
-      const p = [...e.querySelectorAll('p')].find((x) => x.textContent.startsWith('Subtotal'));
-      return p?.querySelector('.num')?.textContent.trim() ?? '';
-    });
-    const nilaiSubtotal = bacaRupiah(subtotal);
-    assert.notEqual(nilaiSubtotal, null, 'baris Subtotal hilang dari isi K-06');
+    const butir = await hal.$$eval('.kasir-bayar-atas .kasir-ringkas-butir', (n) =>
+      n.map((e) => ({
+        label: e.firstElementChild?.textContent.trim() ?? '',
+        nilai: e.querySelector('.num')?.textContent.trim() ?? '',
+      }))
+    );
+    const subtotal = butir.find((b) => b.label === 'Subtotal');
+    assert.ok(subtotal, `butir Subtotal hilang dari blok atas K-06: ${JSON.stringify(butir)}`);
+    const nilaiSubtotal = bacaRupiah(subtotal.nilai);
     assert.notEqual(
       total,
       nilaiSubtotal,
       `Total (${total}) sama persis dengan Subtotal (${nilaiSubtotal}) — pajak tidak masuk hitungan`
     );
 
-    /* ⛔ Baris pajak memakai NAMA TARIF, bukan kata "Pajak" (`spec-c:404`).
+    /* ⛔ Butir pajak memakai NAMA TARIF, bukan kata "Pajak" (`spec-c:404`).
        Layar yang menyebutnya berbeda dari struk membuat kasir yang mencocokkan
        keduanya menyimpulkan salah satunya salah. */
-    const labelPajak = await hal.$$eval('.kasir-bayar-aksi .kasir-subtotal', (n) =>
-      n.map((e) => e.firstElementChild?.textContent.trim() ?? '')
-    );
+    const labelPajak = butir.map((b) => b.label);
     assert.ok(
       labelPajak.includes('PPN 11%'),
-      `baris pajak tidak memakai nama tarif: ${JSON.stringify(labelPajak)}`
+      `butir pajak tidak memakai nama tarif: ${JSON.stringify(labelPajak)}`
     );
     assert.ok(
       !labelPajak.includes('Pajak'),
-      `baris pajak memakai kata generik "Pajak", yang \`spec-c:404\` larang: ${JSON.stringify(labelPajak)}`
+      `butir pajak memakai kata generik "Pajak", yang \`spec-c:404\` larang: ${JSON.stringify(labelPajak)}`
     );
 
     /* ⛔ Dan Total tetap Total saat bagian masuk: yang berkurang SISA, bukan
@@ -632,8 +769,8 @@ test('⛔ P9: Total tampil di K-06, dan nilainya total yang jalur pembayaran hit
        arah kebergantungan yang terbalik, dan struk yang menyebut angka lebih
        kecil daripada yang pelanggan bayar. */
     await tambahBagianQris(hal, 10000, '10000-4321');
-    const totalSesudah = await nilaiBaris(hal, 'Total');
-    const sisaSesudah = await nilaiBaris(hal, 'Sisa tagihan');
+    const totalSesudah = await nilaiTotal(hal);
+    const sisaSesudah = await nilaiSisa(hal);
     assert.equal(totalSesudah, total, `Total berubah setelah satu bagian masuk: ${total} → ${totalSesudah}`);
     assert.equal(
       sisaSesudah,
