@@ -38,6 +38,12 @@ const SEMUA = DIPINDAI.flatMap(berkas).filter((r) => !PENGECUALIAN.has(r));
 // Posisi KUNCI objek (awal baris, sesudah `{` atau `,`), bukan ternary `? 'card_edc' : 'x'`.
 // Kunci bertanda kutip termasuk: `{ 'card_edc': 'Kartu' }` lolos dari pola tanpa kutip.
 const PETA_LOKAL = /(?:^|[{,])\s*['"]?\b(?:card_edc|qris_static)\b['"]?\s*:\s*['"`]/m;
+// Peta berbentuk `switch`/`case` dan `Map` — sabotase independen S16b: salinan yang sama
+// persis, tetapi bukan objek literal, lolos dari PETA_LOKAL. Diikat pada KODE metode yang
+// langsung diikuti string tampilan (`case 'card_edc': return 'Kartu'`), bukan pada `switch`
+// apa pun: switch atas kode metode untuk perilaku (mis. `return null`/ekspresi) tidak ditandai.
+const PETA_SWITCH = /\bcase\s+['"]\b(?:card_edc|qris_static)\b['"]\s*:\s*(?:\{\s*)?return\s+['"`]/;
+const PETA_MAP = /\[\s*['"]\b(?:card_edc|qris_static)\b['"]\s*,\s*['"`]/;
 const DEKLARASI = /(?:\b(?:const|let|var)\s+LABEL_METODE\b|\bfunction\s+labelMetode\b|\b(?:const|let|var)\s+labelMetode\s*=)/;
 
 test('⛔ G-LABEL: tidak ada peta label metode lokal di apps/backoffice, apps/hp, apps/kasir', () => {
@@ -46,6 +52,8 @@ test('⛔ G-LABEL: tidak ada peta label metode lokal di apps/backoffice, apps/hp
   for (const rel of SEMUA) {
     const teks = fs.readFileSync(path.join(AKAR, rel), 'utf8');
     if (PETA_LOKAL.test(teks)) pelanggar.push(`${rel}: objek literal label metode (card_edc:/qris_static: bernilai string)`);
+    if (PETA_SWITCH.test(teks)) pelanggar.push(`${rel}: peta label metode berbentuk switch/case (case 'card_edc': return '…')`);
+    if (PETA_MAP.test(teks)) pelanggar.push(`${rel}: peta label metode berbentuk Map (['card_edc', '…'])`);
     if (DEKLARASI.test(teks)) pelanggar.push(`${rel}: deklarasi LABEL_METODE/labelMetode — impor dari packages/domain/src/metode-tampilan.ts`);
   }
   assert.deepEqual(pelanggar, [], `salinan peta label metode:\n${pelanggar.join('\n')}`);
@@ -59,6 +67,15 @@ test('pindaian G-LABEL benar-benar menangkap pola yang dilarang (penjaga tidak h
   assert.equal(PETA_LOKAL.test('m.card_edc === 1'), false);
   assert.equal(PETA_LOKAL.test("const m = k ? 'card_edc' : 'other';"), false, 'ternary bukan peta label');
   assert.ok(PETA_LOKAL.test("const x = {\n  'qris_static': 'QRIS',\n}"), 'kunci di baris sendiri lolos');
+  assert.ok(PETA_SWITCH.test("switch (m) { case 'card_edc': return 'Kartu / EDC'; default: return 'x'; }"), 'peta switch/case lolos dari pindaian (S16b)');
+  assert.ok(PETA_SWITCH.test("case 'qris_static':\n    return \"QRIS\";"), 'case dengan return di baris berikutnya lolos');
+  assert.ok(PETA_SWITCH.test("case 'qris_static': { return `QRIS`; }"), 'case berkurung kurawal lolos');
+  assert.ok(PETA_MAP.test("new Map([['card_edc', 'Kartu'], ['other', 'Lainnya']])"), 'peta Map lolos dari pindaian');
+  // Bukan label: switch untuk PERILAKU atas kode yang sama tidak boleh ditandai.
+  assert.equal(PETA_SWITCH.test("switch (m) { case 'card_edc': return approvalCode.length > 0; }"), false, 'switch perilaku ditandai');
+  assert.equal(PETA_SWITCH.test("case 'card_edc': return null;"), false, 'return non-string ditandai');
+  assert.equal(PETA_SWITCH.test("case 'cash': return 'Tunai';"), false, 'kode lain ditandai (pindaian dipaku pada card_edc/qris_static seperti PETA_LOKAL)');
+  assert.equal(PETA_MAP.test("m.get(['card_edc', x])"), false, 'pembacaan Map ditandai');
   assert.ok(DEKLARASI.test('export const LABEL_METODE: Record<string, string> = {'));
   assert.ok(DEKLARASI.test('export function labelMetode(kode: string) {'));
   assert.equal(DEKLARASI.test("import { labelMetode } from 'x'"), false);

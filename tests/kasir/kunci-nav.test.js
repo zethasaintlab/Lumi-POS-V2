@@ -64,7 +64,7 @@ test('⛔ kunci nav: `navigasi()` — pintu SEMUA jalan keluar (tab, indikator, 
     navigasi('/sync');
     assert.deepEqual(dorongan, ['/sync'], 'navigasi() tetap tertutup sesudah kunci dilepas');
   } finally {
-    setelKunciNav_reset();
+    await setelKunciNav_reset();
     if (awal === undefined) delete globalThis.window;
     else globalThis.window = awal;
   }

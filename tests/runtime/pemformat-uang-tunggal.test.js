@@ -114,11 +114,42 @@ function relatif(p) {
   return path.relative(AKAR, p).split(path.sep).join('/');
 }
 
+/**
+ * Nama pemformat/pembaca rupiah yang dikenal. `rupiahTanpaAwalan` dan `bacaRupiah` ikut
+ * (sabotase independen S17): Task 8 memperkenalkan yang pertama, dan salinan lokalnya
+ * (`BigInt(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')`) lolos karena namanya
+ * tidak ada di daftar. Bentuk deklarasi: `function x`, `const x = (…)`/`function`, dan
+ * panah tanpa kurung (`const x = n =>`), dengan atau tanpa `async`.
+ */
+const NAMA_UANG = 'rupiah|formatRupiah|uang|formatUang|rupiahTanpaAwalan|bacaRupiah';
+const POLA_DEKLARASI = new RegExp(
+  `(?:^|\\s)(?:export\\s+)?(?:async\\s+)?function\\s+(${NAMA_UANG})\\b|(?:const|let)\\s+(${NAMA_UANG})\\s*=\\s*(?:async\\s*)?(?:\\(|function\\b|[A-Za-z_$][\\w$]*\\s*=>)`,
+  'g'
+);
+
+/**
+ * Format uang berpemisah titik yang DIRAKIT tanpa memanggil `rupiah`, di luar berkas yang
+ * dikecualikan (sabotase independen S17/S17b):
+ *   - regex pemisah ribuan `\B(?=(\d{3})+(?!\d))`;
+ *   - `Number(...)`/`BigInt(...)` langsung diikuti `.toLocaleString('id-ID')` — selain
+ *     berformat sendiri, `Number(bigint)` adalah float di jalur uang;
+ *   - `.toLocaleString('id-ID')` pada peubah yang namanya uang (harga, total, nominal, …);
+ *   - `Intl.NumberFormat('id-ID', { style: 'currency' … })`.
+ * `toLocaleString('id-ID')` atas tanggal dan jumlah baris tetap lolos (bukan uang).
+ */
+const NAMA_NILAI_UANG = '(?:harga|total|nominal|uang|rupiah|kembali|saldo|omzet|tendered|amount|price|cost|biaya|pajak|tagihan|selisih)';
+const POLA_FORMAT_RAKITAN = [
+  { nama: 'regex pemisah ribuan', pola: /\\B\(\?=\(\\d\{3\}\)/ },
+  { nama: 'Number()/BigInt() lalu toLocaleString("id-ID")', pola: /\b(?:Number|BigInt)\([^)]*\)\s*\.toLocaleString\(\s*['"]id-ID['"]/ },
+  { nama: 'toLocaleString("id-ID") pada peubah uang', pola: new RegExp(`\\b\\w*${NAMA_NILAI_UANG}\\w*(?:\\([^)]*\\))?\\s*\\.toLocaleString\\(\\s*['"]id-ID['"]`, 'i') },
+  { nama: 'Intl.NumberFormat id-ID bermata uang', pola: /Intl\.NumberFormat\(\s*['"]id-ID['"][^)]*currency/ },
+];
+
 test('⛔ hanya SATU deklarasi pemformat rupiah di seluruh repo', () => {
   // Nama yang dipakai salinan-salinan sebelumnya: `rupiah`, `formatRupiah`,
   // `uang`, `formatUang`. Deklarasi, bukan pemanggilan — `rupiah(total)` di 34
   // berkas justru bukti penjaga ini bekerja.
-  const pola = /(?:^|\s)(?:export\s+)?(?:async\s+)?function\s+(rupiah|formatRupiah|uang|formatUang)\b|(?:const|let)\s+(rupiah|formatRupiah|uang|formatUang)\s*=\s*(?:\(|function\b)/g;
+  const pola = POLA_DEKLARASI;
 
   const temuan = [];
   for (const p of berkasSumber()) {
@@ -167,6 +198,58 @@ test('⛔ tidak ada string `Rp` yang dirakit tangan', () => {
       '`packages/domain/src/uang-tampilan.ts`.\n  ' +
       temuan.join('\n  ')
   );
+});
+
+test('⛔ tidak ada format uang berpemisah titik yang dirakit di luar pemformat tunggal', () => {
+  const temuan = [];
+  for (const p of berkasSumber()) {
+    const rel = relatif(p);
+    if (DIKECUALIKAN.has(rel)) continue;
+    const isi = tanpaKomentar(fs.readFileSync(p, 'utf8'));
+    for (const { nama, pola } of POLA_FORMAT_RAKITAN) {
+      const m = pola.exec(isi);
+      if (m) temuan.push(`${rel}:${isi.slice(0, m.index).split('\n').length} — ${nama}`);
+    }
+  }
+  assert.deepEqual(
+    temuan,
+    [],
+    'Format uang dirakit sendiri. Pakai `rupiah()`/`rupiahTanpaAwalan()` dari ' +
+      '`packages/domain/src/uang-tampilan.ts`.\n  ' +
+      temuan.join('\n  ')
+  );
+});
+
+test('pola penjaga anti-salinan benar-benar menangkap bentuk yang dilarang, dan tidak menandai yang sah (penjaga tidak hampa)', () => {
+  const kena = (teks) => {
+    POLA_DEKLARASI.lastIndex = 0;
+    return POLA_DEKLARASI.test(teks);
+  };
+  // Deklarasi: nama baru + bentuk panah tanpa kurung.
+  assert.ok(kena('function rupiahTanpaAwalan(n) { return n; }'), 'rupiahTanpaAwalan sebagai function lolos');
+  assert.ok(kena('const rupiahTanpaAwalan = (n) => n;'), 'rupiahTanpaAwalan panah berkurung lolos');
+  assert.ok(kena('const rupiahTanpaAwalan = n => n;'), 'rupiahTanpaAwalan panah tanpa kurung lolos');
+  assert.ok(kena('export const bacaRupiah = async (t) => t;'), 'bacaRupiah async lolos');
+  assert.ok(kena('function formatRupiah(n) {}'), 'nama lama tidak lagi tertangkap');
+  assert.equal(kena("import { rupiahTanpaAwalan } from './uang-tampilan.ts';"), false, 'impor ditandai');
+  assert.equal(kena('const x = rupiahTanpaAwalan(p);'), false, 'pemanggilan ditandai');
+  // Rakitan.
+  const cocok = (nama, teks) => POLA_FORMAT_RAKITAN.find((q) => q.nama === nama).pola.test(teks);
+  const ribuan = 'BigInt(n).toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ".")';
+  assert.ok(cocok('regex pemisah ribuan', ribuan), 'regex pemisah ribuan lolos (S17)');
+  assert.ok(cocok('Number()/BigInt() lalu toLocaleString("id-ID")', "Number(n).toLocaleString('id-ID')"), 'Number().toLocaleString lolos (S17b)');
+  assert.ok(cocok('Number()/BigInt() lalu toLocaleString("id-ID")', "BigInt(n).toLocaleString(\"id-ID\")"), 'BigInt().toLocaleString lolos');
+  assert.ok(cocok('toLocaleString("id-ID") pada peubah uang', "hasil.totalBayar.toLocaleString('id-ID')"), 'peubah uang lolos');
+  assert.ok(cocok('toLocaleString("id-ID") pada peubah uang', "kembalian.toLocaleString('id-ID')"), 'kembalian lolos');
+  assert.ok(cocok('Intl.NumberFormat id-ID bermata uang', "new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' })"), 'NumberFormat bermata uang lolos');
+  // Yang sah: jumlah baris dan tanggal.
+  for (const sah of ["baris.terpakai.toLocaleString('id-ID')", "hasil.masalah.length.toLocaleString('id-ID')", "new Date(t).toLocaleDateString('id-ID')", "hasil.diimpor.toLocaleString('id-ID')"]) {
+    assert.equal(
+      POLA_FORMAT_RAKITAN.some((q) => q.pola.test(sah)),
+      false,
+      `bentuk sah ditandai sebagai format uang: ${sah}`
+    );
+  }
 });
 
 test('penjaga ini benar-benar memindai sesuatu', () => {
