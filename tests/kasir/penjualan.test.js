@@ -34,7 +34,7 @@ const TARIF = [{
   effective_from: '2026-01-01T00:00:00Z', effective_to: null,
 }];
 
-function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = { v1: 1 } } = {}) {
+function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = { v1: 1 }, outlet = OUTLET } = {}) {
   const state = {
     tulis: [], transaksi: 0, diDalamTransaksi: false,
     device_config: { receipt_sequence: urutan, sequence_business_date: tanggalUrutan },
@@ -43,7 +43,7 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = 
     state,
     async getAll(sql) {
       if (/FROM tax_rate/.test(sql)) return tarif;
-      if (/FROM outlet/.test(sql)) return [OUTLET];
+      if (/FROM outlet/.test(sql)) return [outlet];
       if (/FROM device_config/.test(sql)) return [state.device_config];
       // FR-E2: `sale` hanya untuk variation ber-`track_stock = true`. Nilainya
       // dibaca dari katalog SAAT MENULIS, bukan dari keranjang — keranjang
@@ -1376,4 +1376,85 @@ test('struk menyebut "Transfer" dan tidak menyebut "Lainnya"; tanpa referensi te
   assert.equal(/Lainnya/.test(teks), false, 'transfer tercetak sebagai Lainnya');
   assert.equal(/TRF-RAHASIA-77/.test(teks), false, '[Q5] struk transfer tidak mencetak "Ref:"');
   assert.equal(/Kembali\s/.test(teks), false, 'baris kembalian tercetak untuk transfer');
+});
+
+// ---------------------------------------------------------------------------
+// G-KEMBALIAN -- K-06 dan simpanPenjualan memakai SATU rencana (Task 8B)
+// ---------------------------------------------------------------------------
+
+test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = payment.change_amount', async () => {
+  const { simpanPenjualan, hitungKeranjang, rencanaBayarKeranjang } = await import(MOD);
+  assert.equal(typeof rencanaBayarKeranjang, 'function', 'rencanaBayarKeranjang tidak diekspor dari kasir/penjualan.ts');
+
+  let kasus = 0;
+  let adaPembulatan = 0;
+  for (const total of [9_950n, 64_120n, 93_555n]) {
+    for (const inc of [100, 500, 1000]) {
+      for (const mode of ['half_up', 'up', 'down']) {
+        const outlet = { ...OUTLET, rounding_increment: inc, rounding_mode: mode };
+        const keranjang = { baris: [{ ...BARIS[0], unitPrice: Number(total) }], diskon: null };
+        const hitungan = await hitungKeranjang({
+          db: dbPalsu({ tarif: [], outlet }), konfig: KONFIG, keranjang, shift: SHIFT, waktu: JAM,
+        });
+        assert.equal(hitungan.totals.total, total, 'fixture: total keranjang bukan yang dimaksud');
+
+        const bentuk = {
+          'tunai saja': [],
+          'qris_static 50% + tunai': [{ metode: 'qris_static', referensi: 'REF-KMB', nominal: total / 2n }],
+          'transfer 1 + tunai': [{ metode: 'other', provider: 'bank_transfer', referensi: 'TRF-KMB', bank: null, nominal: 1n }],
+        };
+        for (const [namaBentuk, non] of Object.entries(bentuk)) {
+          // Tagihan tunai dicari dulu dengan uang berlebih, lalu tiga nominal diuji di sekitarnya.
+          const dasar = rencanaBayarKeranjang(hitungan, [...non, { metode: 'cash', tendered: 1_000_000n }]);
+          assert.equal(dasar.ok, true, `dasar tidak ok: ${JSON.stringify(dasar)}`);
+          const ditagih = dasar.rencana.tunaiDitagih;
+          for (const diterima of new Set([ditagih, ditagih + 1n, 100_000n])) {
+            if (diterima < ditagih) continue;
+            const bagian = [...non, { metode: 'cash', tendered: diterima }];
+            const ket = `total=${total} inc=${inc} mode=${mode} ${namaBentuk} diterima=${diterima}`;
+            const rencana = rencanaBayarKeranjang(hitungan, bagian);
+            assert.equal(rencana.ok, true, `${ket}: ${JSON.stringify(rencana)}`);
+
+            const db = dbPalsu({ tarif: [], outlet });
+            const hasil = await simpanPenjualan({ db, ...args({ keranjang, pembayaran: bagian }) });
+            assert.equal(hasil.status, 'tersimpan', `${ket}: ${hasil.status}`);
+            assert.equal(hasil.kembalian, rencana.rencana.kembalian, `${ket}: kembalian simpan ≠ rencana`);
+            assert.equal(hasil.roundingAdjustment, rencana.rencana.roundingAdjustment, `${ket}: pembulatan simpan ≠ rencana`);
+            assert.equal(hasil.amountDue, rencana.rencana.amountDue, `${ket}: amountDue simpan ≠ rencana`);
+            const tunai = db.state.tulis.find((t) => /INSERT INTO payment/.test(t.sql) && t.params[3] === 'cash');
+            assert.ok(tunai, `${ket}: baris payment tunai tidak ditulis`);
+            assert.equal(BigInt(tunai.params[6]), rencana.rencana.kembalian, `${ket}: payment.change_amount ≠ kembalian rencana`);
+            if (rencana.rencana.roundingAdjustment !== 0n) adaPembulatan += 1;
+            kasus += 1;
+          }
+        }
+      }
+    }
+  }
+  assert.ok(kasus >= 162, `hanya ${kasus} kasus — enumerasi menyempit diam-diam`);
+  assert.ok(adaPembulatan >= kasus / 3, `hanya ${adaPembulatan}/${kasus} kasus yang benar-benar membulatkan — fixture tidak membedakan jalur`);
+});
+
+test('rencanaBayarKeranjang: non-tunai tanpa nominal = seluruh total; increment dan mode dari outlet; bawaan 100/half_up', async () => {
+  const { hitungKeranjang, rencanaBayarKeranjang } = await import(MOD);
+  const keranjang = { baris: [{ ...BARIS[0], unitPrice: 20050 }], diskon: null };
+  const hitung = (outlet) => hitungKeranjang({ db: dbPalsu({ tarif: [], outlet }), konfig: KONFIG, keranjang, shift: SHIFT, waktu: JAM });
+
+  // Tanpa nominal: QRIS statis menutup seluruh total, tidak ada tunai yang ditagih.
+  const h = await hitung(OUTLET);
+  const qris = rencanaBayarKeranjang(h, [{ metode: 'qris_static', referensi: 'REF-1' }]);
+  assert.equal(qris.ok, true);
+  assert.equal(qris.rencana.amountDue, 20050n);
+  assert.equal(qris.rencana.roundingAdjustment, 0n);
+
+  // Outlet tanpa pengaturan pembulatan memakai bawaan 100 / half_up.
+  const tanpa = await hitung({ ...OUTLET, rounding_increment: null, rounding_mode: null });
+  const r = rencanaBayarKeranjang(tanpa, [{ metode: 'cash', tendered: 30000n }]);
+  assert.equal(r.ok, true);
+  assert.equal(r.rencana.amountDue, 20100n, '20.050 half_up pada increment 100');
+
+  // Kurang bayar: kode KURANG_BAYAR, bukan angka dari layar.
+  const kurang = rencanaBayarKeranjang(h, [{ metode: 'cash', tendered: 10000n }]);
+  assert.equal(kurang.ok, false);
+  assert.equal(kurang.kode, 'KURANG_BAYAR');
 });
