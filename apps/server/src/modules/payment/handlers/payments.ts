@@ -100,8 +100,11 @@ function hashIsiPembayaran(medan: unknown[]): string {
   return createHash('sha256').update(JSON.stringify(medan)).digest('hex');
 }
 
-// Toleransi hash LAMA (`orderId:id`) TIDAK dibatasi waktu: tidak ada purge
-// `idempotency_key`. Ia tetap aman karena sama kuatnya dengan perilaku sebelum
+// Toleransi hash LAMA (`orderId:id`) TIDAK dibatasi waktu. Diperiksa (rg seluruh repo,
+// di luar tests/): `expires_at` (30 hari) hanya DITULIS (modules/sync/index.ts:121) dan
+// diindeks (db/migrations/0013_server_only.sql:16); tidak ada job, SQL, atau cron yang
+// menghapus baris menurut `expires_at`, dan pembacaan (sync/index.ts:54) tidak
+// menyaringnya. Ia tetap aman karena sama kuatnya dengan perilaku sebelum
 // perbaikan -- hanya meloloskan orderId DAN payment id yang sama, dan pembayaran
 // kedua yang sungguhan selalu membawa id baru. Jalur yang belum dimigrasi juga
 // tidak menulis format lama lagi: semuanya kini memakai hash isi.

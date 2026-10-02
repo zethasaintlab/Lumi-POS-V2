@@ -521,34 +521,63 @@ test('⛔ N1: tunai -- baris berhash LAMA + payment id/order lain (key sama) = 4
   assert.equal(JSON.parse(idB.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
   const ordB = await req('POST', `/orders/${order2.id}/payments`, { id: idA, method: 'cash', tenderedAmount: 25000 }, { 'idempotency-key': key });
   assert.equal(ordB.statusCode, 422, `order lain atas baris lama dijawab ${ordB.statusCode}: ${ordB.body}`);
+  assert.equal(JSON.parse(ordB.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
   assert.equal(await hitungPayment(order.id), 1);
   assert.equal(await hitungPayment(order2.id), 0);
   assert.equal((await movementShift(fx.shiftId)).length, 1, 'cash_movement baru tertulis');
 });
 
-// s13: dua request tunai BERSAMAAN dengan key sama -> tidak pernah 500; yang kalah 409.
-test('⛔ konkurensi tunai: dua request BERSAMAAN key sama -> 201/409 (tidak pernah 500), tepat satu payment dan satu cash_movement', async () => {
+// s13: dua request tunai BERSAMAAN dengan key sama -> yang menang 201, yang kalah 409 (bukan 500).
+// DETERMINISTIK: koneksi owner menahan `FOR UPDATE` pada baris order, kedua request dikirim,
+// dan test menunggu sampai KEDUANYA terblokir di kunci itu sebelum COMMIT
+// (pg_stat_activity menyembunyikan wait_event backend role lain dari owner; pg_locks terbuka,
+// jadi yang dihitung backend berbeda dengan kunci belum diberikan). Dengan begitu
+// keduanya sudah melewati pemeriksaan key (null) dan balapan klaim benar-benar terjadi;
+// tanpa ini request bisa berjalan berurutan ([201,201] dari cache) dan penjaga hampa.
+test('⛔ konkurensi tunai: dua request BERSAMAAN key sama -> tepat [201, 409 IDEMPOTENCY_KEY_CONFLICT], satu payment, satu cash_movement', async () => {
   await akhiriTarifSeed();
   const fx = await setupDeviceAndShift();
   const order = await buatOrder(fx, await buatVariation(25000));
   const key = crypto.randomUUID();
-  // Kurang bayar: order TETAP terbuka sesudah yang menang commit, jadi yang kalah sampai ke klaim key
-  // (bukan berhenti di ORDER_NOT_PAYABLE) dan 409 yang diuji benar-benar IDEMPOTENCY_KEY_CONFLICT.
+  // Kurang bayar: order TETAP terbuka sesudah yang menang commit, jadi yang kalah sampai ke klaim
+  // key (bukan berhenti di ORDER_NOT_PAYABLE).
   const body = { id: crypto.randomUUID(), method: 'cash', tenderedAmount: 10000 };
-  // Pool dipanaskan ke DUA koneksi (lihat tests/ordering/idempotency.test.js T11).
   await Promise.all([
     req('GET', `/orders/${crypto.randomUUID()}`),
     req('GET', `/orders/${crypto.randomUUID()}`),
   ]);
-  const [a, b] = await Promise.all([
-    req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key }),
-    req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key }),
-  ]);
-  const kode = [a.statusCode, b.statusCode].sort();
-  assert.ok(kode.every((k) => k === 201 || k === 409), `status tak terduga ${kode}: ${a.body} ${b.body}`);
-  assert.ok(kode.includes(201), 'tidak satu pun request berhasil');
+
+  await owner.query('BEGIN');
+  let terkunci = true;
+  let hasil;
+  try {
+    await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+    await owner.query(`SELECT id FROM "order" WHERE id = $1 FOR UPDATE`, [order.id]);
+    const kirim = () => req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key });
+    const janji = Promise.all([kirim(), kirim()]);
+
+    const batas = Date.now() + 10_000;
+    let menunggu = 0;
+    while (Date.now() < batas) {
+      const { rows } = await owner.query(
+        `SELECT count(DISTINCT pid)::int AS n FROM pg_locks WHERE NOT granted AND pid <> pg_backend_pid()`
+      );
+      menunggu = rows[0].n;
+      if (menunggu >= 2) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    assert.ok(menunggu >= 2, `hanya ${menunggu} backend menunggu kunci (pg_locks NOT granted) dalam 10 detik -- kedua request tidak bersamaan`);
+    await owner.query('COMMIT');
+    terkunci = false;
+    hasil = await janji;
+  } finally {
+    if (terkunci) await owner.query('ROLLBACK');
+  }
+
+  const [a, b] = hasil;
+  assert.deepEqual([a.statusCode, b.statusCode].sort(), [201, 409], `${a.body} ${b.body}`);
   const kalah = [a, b].find((r) => r.statusCode === 409);
-  if (kalah) assert.equal(JSON.parse(kalah.body).error.code, 'IDEMPOTENCY_KEY_CONFLICT');
+  assert.equal(JSON.parse(kalah.body).error.code, 'IDEMPOTENCY_KEY_CONFLICT');
   assert.equal(await hitungPayment(order.id), 1, 'payment ganda');
   assert.equal((await movementShift(fx.shiftId)).length, 1, 'cash_movement ganda');
 });

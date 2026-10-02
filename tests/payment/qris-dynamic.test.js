@@ -517,5 +517,7 @@ test('⛔ N1: gateway -- baris berhash LAMA + payment id/order lain (key sama) =
   assert.equal(JSON.parse(b.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
   const c = await bayarQris(order2.id, { id: idA, amount: order2.total }, { 'idempotency-key': key });
   assert.equal(c.statusCode, 422, `order lain atas baris lama dijawab ${c.statusCode}: ${c.body}`);
+  assert.equal(JSON.parse(c.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH');
   assert.equal((await query('SELECT id FROM payment')).length, 1);
+  assert.equal((await query("SELECT id FROM cash_movement WHERE type = 'sale'")).length, 0, 'cash_movement tertulis untuk non-tunai');
 });
