@@ -166,6 +166,8 @@ export interface OpsiDbPalsu {
       K-18 (Task 4). Bukan keadaan galeri baru (alasan yang sama dengan `matikanFitur`); skenario
       `kosong` sendiri berarti perangkat belum terdaftar, bukan riwayat kosong. */
   tanpaKasManual?: boolean;
+  /** `?transfer=1` — pembayaran `ord-1` menjadi Transfer (`other` + `bank_transfer`), untuk penjaga label K-09. */
+  transfer?: boolean;
   /** `?gagalBacaKas=1` — MENGGAGALKAN hanya `bacaKasManualShift` (query `cash_movement … type IN`), bukan
       pembacaan lain: keadaan `error` galeri gagal lebih awal di konfigurasi perangkat dan tidak pernah
       mencapai riwayat. Test dapat menyetel `window.__galeriGagalBacaKas` sesudah muat untuk membaca-ulang. */
@@ -256,12 +258,13 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       .map((o, i) => ({
         order_id: o.id,
         id: `pay-${o.id}`,
-        method: i % 3 === 1 ? 'qris_static' : 'cash',
+        method: opsi.transfer && o.id === 'ord-1' ? 'other' : i % 3 === 1 ? 'qris_static' : 'cash',
+        provider: opsi.transfer && o.id === 'ord-1' ? 'bank_transfer' : null,
         amount: o.total,
         /* Uang yang diserahkan dibulatkan ke atas pecahan Rp 50.000 — bentuk
            yang kasir lihat sehari-hari. Non-tunai NULL (`spec-d:201`). */
-        tendered_amount: i % 3 === 1 ? null : Math.ceil(o.total / 50_000) * 50_000,
-        change_amount: i % 3 === 1 ? null : Math.ceil(o.total / 50_000) * 50_000 - o.total,
+        tendered_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000,
+        change_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000 - o.total,
         status: 'confirmed',
       })),
     refund: [],

@@ -89,22 +89,25 @@ function toPayment(row: PaymentRow) {
   };
 }
 
-// Sub-project C-1 hanya tunai. QRIS statis butuh kontrol anti-fraud wajib
-// (FR-C2: field referensi, confirmed_manually, penanda di struk, laporan
-// exception) dan QRIS dinamis butuh gateway -- keduanya C-2. Menerimanya
-// sekarang berarti membangun separuh FR-C2 tanpa kontrol yang menyertainya.
-const SUPPORTED_METHODS = new Set(['cash', 'qris_dynamic', 'qris_static', 'card_edc', 'other']);
+// Satu daftar per jalur, dan SUPPORTED diturunkan dari ketiganya: metode yang
+// lolos validasi tetapi tak punya jalur akan jatuh ke cabang tunai (kas naik
+// oleh uang bank -- tinjauan Opus I-3). QRIS statis/EDC/Transfer (`other`) butuh kontrol
+// FR-C2 yang menyertainya; QRIS dinamis butuh gateway.
+const METODE_TUNAI = ['cash'] as const;
+const METODE_GATEWAY = ['qris_dynamic'] as const;
+const METODE_MANUAL = ['qris_static', 'card_edc', 'other'] as const;
+const SUPPORTED_METHODS = new Set<string>([...METODE_TUNAI, ...METODE_GATEWAY, ...METODE_MANUAL]);
 
 // QRIS dinamis tidak menerima `tenderedAmount` -- tidak ada uang yang
 // diserahkan di tangan. Yang dikirim klien adalah `amount`, nominal yang
 // diminta ke gateway.
-const GATEWAY_METHODS = new Set(['qris_dynamic']);
+const GATEWAY_METHODS = new Set<string>(METODE_GATEWAY);
 
 // Metode yang dikonfirmasi MANUSIA, bukan sistem. Tidak ada gateway yang
 // ditanyai -- kontrol wajibnya (referensi untuk QRIS statis, approval code
 // untuk EDC, referensi untuk Transfer) adalah satu-satunya yang berdiri di sana.
 // `other` di sini SELALU Transfer: `provider` di luar daftar tertutup ditolak.
-const MANUAL_METHODS = new Set(['qris_static', 'card_edc', 'other']);
+const MANUAL_METHODS = new Set<string>(METODE_MANUAL);
 
 // Daftar TERTUTUP `provider` untuk `method = 'other'`. Menambah satu berarti
 // keputusan produk baru, bukan sekadar string.
@@ -921,6 +924,16 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: Payme
         return await recordManualPayment(
           { pool, hlc },
           { req, reply, tenantId, actorId, idempotencyKey, orderId, method }
+        );
+      }
+
+      // Pagar kedua: hanya tunai yang boleh sampai ke cabang yang menulis
+      // `cash_movement`. Metode yang didukung tetapi tak berjalur = cacat server.
+      if (method !== 'cash') {
+        throw new HttpError(
+          500,
+          'PAYMENT_METHOD_UNROUTED',
+          `Metode "${method}" didukung tetapi tidak punya jalur pembayaran.`
         );
       }
 

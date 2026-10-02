@@ -545,6 +545,38 @@ test('⛔ idempotensi transfer: key sama + isi berbeda (per medan) = 422; retry 
   assert.equal((await query('SELECT id FROM payment')).length, 1, 'retry menghasilkan baris ganda');
 });
 
+// PERUBAHAN PERILAKU (PR 2B Task 7): hash isi idempotensi kini berlaku untuk SEMUA
+// metode manual, bukan hanya Transfer. Sebelumnya QRIS statis/EDC dengan key sama
+// dan isi berbeda dijawab dari cache; sekarang 422.
+test('⛔ idempotensi qris_static dan card_edc: key sama + isi berbeda = 422 IDEMPOTENCY_KEY_HASH_MISMATCH', async () => {
+  const fx = await setupDeviceAndShift();
+  const kasus = [
+    { method: 'qris_static', amount: 21000, reference: 'QRS-IDEM', ubah: { reference: 'QRS-LAIN' } },
+    { method: 'card_edc', amount: 22000, approvalCode: '654321', ubah: { approvalCode: '111222' } },
+  ];
+  for (const { ubah, ...isi } of kasus) {
+    const order = await buatOrder(fx, isi.amount);
+    const key = crypto.randomUUID();
+    const asli = { id: crypto.randomUUID(), ...isi };
+    const a = await req('POST', `/orders/${order.id}/payments`, asli, { 'idempotency-key': key });
+    assert.equal(a.statusCode, 201, a.body);
+    const b = await req('POST', `/orders/${order.id}/payments`, { ...asli, ...ubah }, { 'idempotency-key': key });
+    assert.equal(b.statusCode, 422, `${isi.method}: isi berbeda dijawab ${b.statusCode}: ${b.body}`);
+    assert.equal(JSON.parse(b.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH', isi.method);
+  }
+});
+
+test('⛔ other + tenderedAmount TIDAK PERNAH menjadi pembayaran tunai atau menulis cash_movement', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 30000);
+  const res = await bayar(order.id, { ...TRANSFER, amount: 30000, reference: 'TRF-TND', tenderedAmount: 50000 });
+  assert.ok(res.statusCode < 500, `other + tenderedAmount menjatuhkan server: ${res.statusCode} ${res.body}`);
+  const tunai = await query(`SELECT id FROM payment WHERE method = 'cash'`);
+  assert.equal(tunai.length, 0, 'transfer tercatat sebagai pembayaran TUNAI');
+  const kas = await query(`SELECT id FROM cash_movement WHERE type = 'sale'`);
+  assert.equal(kas.length, 0, 'transfer menulis cash_movement -- laci naik oleh uang bank');
+});
+
 test('⛔ isolasi tenant: transfer tenant A tidak terbaca dan tidak dapat dibayar tenant B', async () => {
   const fx = await setupDeviceAndShift();
   const order = await buatOrder(fx, 25000);

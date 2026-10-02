@@ -165,6 +165,8 @@ Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaa
   - Cakupan klik G-TOMBOL-HIDUP bagian 2 belum mencakup dialog dan K-06.
   - Dokumen produk basi: `product/IA-lumi-pos-v1.md:264` masih "K-01…K-17", `CLAUDE.md` masih "52 layar" — di luar batas Q9 (hanya mencatat keputusan yang disetujui).
 
+- **Utang PR 2B Task 7 dari tinjauan Opus (DEFER, 2 Oktober 2026).** M-4 dan M-5 dicatat saja (isi di laporan tinjauan Task 7). Pertanyaan terbuka ke user, TIDAK dibangun: kelebihan bayar non-tunai di server (Transfer/QRIS statis/EDC) dan `audit_event` untuk pembayaran manual. Perubahan perilaku yang disengaja: hash isi idempotensi kini berlaku untuk SEMUA metode manual (`qris_static`, `card_edc`, `other`), jadi key sama + isi berbeda dijawab 422 (dijaga `tests/payment/manual-methods.test.js`).
+
 ## Ledger
 
 Cerminan `.superpowers/sdd/progress.md`, diisi per task. Satu baris per task:

@@ -553,6 +553,14 @@ test('⛔ `opening_float` TIDAK menjadi baris rincian — ia sudah `saldoAwal`',
 // Transfer (`other` + `bank_transfer`) -- PR 2B Task 7, syarat user atas P1
 // ---------------------------------------------------------------------------
 
+// ⛔ Di atas SQLite sungguhan, bukan `dbPalsu`: fake mengembalikan baris
+// fixture lengkap untuk SQL apa pun, jadi SELECT yang lupa `p.provider`
+// tetap lulus -- penjaga yang hampa (tinjauan Opus, I-1).
+const { DatabaseSync } = require('node:sqlite');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const SKEMA = join(__dirname, '..', '..', 'db', 'local', '001-initial.sql');
+
 const PEMBAYARAN_TRANSFER = [
   { method: 'cash', amount: 100000 },
   { method: 'other', provider: 'bank_transfer', amount: 40000 },
@@ -561,12 +569,42 @@ const PEMBAYARAN_TRANSFER = [
   { method: 'qris_static', provider: null, amount: 20000 },
 ];
 
+function dbTransferSungguhan() {
+  const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(readFileSync(SKEMA, 'utf8'));
+  const db = {
+    sqlite,
+    async getAll(sql, params = []) { return sqlite.prepare(sql).all(...params); },
+    async execute(sql, params = []) { sqlite.prepare(sql).run(...params); return { rowsAffected: 1 }; },
+    async transaction(fn) { return fn(db); },
+  };
+  sqlite.exec(`
+    INSERT INTO cash_drawer_shift
+      (id, tenant_id, outlet_id, device_id, business_date, status, opening_float, opened_by, opened_at)
+    VALUES ('s1','t1','o1','d1','2026-08-13','open',500000,'u-sari','2026-08-13T07:00:00Z')`);
+  PEMBAYARAN_TRANSFER.forEach((b, i) => {
+    sqlite.exec(`
+      INSERT INTO "order"
+        (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+         status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
+         rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
+      VALUES ('o${i}','t1','o1','d1','s1','K1-${i}','2026-08-13',${i + 1},
+              'closed','takeaway',${b.amount},0,0,0,0,${b.amount},${b.amount},'u-sari',
+              '2026-08-13T10:00:00Z',${i + 1})`);
+    sqlite.exec(`INSERT INTO "check" (id, order_id, subtotal, total) VALUES ('c${i}','o${i}',${b.amount},${b.amount})`);
+    sqlite.exec(`
+      INSERT INTO payment (id, order_id, check_id, method, provider, amount, status, tendered_at)
+      VALUES ('p${i}','o${i}','c${i}','${b.method}',${b.provider ? `'${b.provider}'` : 'NULL'},${b.amount},'confirmed','2026-08-13T10:00:00Z')`);
+  });
+  return db;
+}
+
 test('⛔ transfer tampil sebagai kelompok transfer, bukan other (ringkasan K-12)', async () => {
   const { ringkasanSebelumHitung } = await import(MOD);
-  const r = await ringkasanSebelumHitung(dbPalsu({ order: PEMBAYARAN_TRANSFER }), 's1');
+  const r = await ringkasanSebelumHitung(dbTransferSungguhan(), 's1');
 
   const peta = Object.fromEntries(r.perMetode.map((m) => [m.metode, m]));
-  assert.ok(peta.transfer, `K-12 tidak memuat kelompok transfer: ${JSON.stringify(r.perMetode.map((m) => m.metode))}`);
+  assert.ok(peta.transfer, `K-12 tidak memuat kelompok transfer (transfer jatuh ke 'other'/Lainnya?): ${JSON.stringify(r.perMetode.map((m) => m.metode))}`);
   assert.equal(peta.transfer.total, 55000, 'uang transfer tidak terjumlah utuh');
   assert.equal(peta.transfer.jumlah, 2);
   assert.equal(peta.other.total, 5000, 'other tanpa provider tercampur dengan transfer');
@@ -579,10 +617,10 @@ test('⛔ transfer tampil sebagai kelompok transfer, bukan other (ringkasan K-12
 
 test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan shift K-13)', async () => {
   const { laporanShift } = await import(MOD);
-  const l = await laporanShift(dbPalsu({ order: PEMBAYARAN_TRANSFER }), 's1');
+  const l = await laporanShift(dbTransferSungguhan(), 's1');
 
   const peta = Object.fromEntries(l.perMetode.map((m) => [m.metode, m]));
-  assert.equal(peta.transfer?.total, 55000, 'laporan shift tidak memuat kelompok transfer');
+  assert.equal(peta.transfer?.total, 55000, `laporan shift tidak memuat kelompok transfer (jatuh ke 'other'/Lainnya?): ${JSON.stringify(l.perMetode.map((m) => m.metode))}`);
   assert.equal(peta.transfer?.jumlah, 2);
   assert.equal(peta.other?.total, 5000);
   assert.equal(l.perMetode.reduce((t, m) => t + m.total, 0), 180000, 'uang hilang dari pengelompokan');

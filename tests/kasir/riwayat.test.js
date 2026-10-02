@@ -277,19 +277,33 @@ test('⛔ ketiga bentuk snapshot hidup berdampingan dalam satu order', async () 
 });
 
 test('⛔ detail riwayat membawa provider pembayaran (transfer = other + bank_transfer)', async () => {
+  // SQLite sungguhan, bukan `dbPalsu`: fake mengembalikan baris fixture utuh untuk
+  // SQL apa pun, jadi SELECT tanpa `provider` tetap lulus (tinjauan Opus, I-2).
+  const { DatabaseSync } = require('node:sqlite');
+  const { readFileSync } = require('node:fs');
+  const { join } = require('node:path');
   const { bacaDetail } = await import(MOD);
-  const db = dbPalsu({
-    order: [ORDER],
-    order_line: [],
-    payment: [
-      { id: 'p1', order_id: 'o1', method: 'other', provider: 'bank_transfer', amount: 16500,
-        tendered_amount: null, change_amount: null, status: 'confirmed' },
-      { id: 'p2', order_id: 'o1', method: 'other', amount: 100,
-        tendered_amount: null, change_amount: null, status: 'confirmed' },
-    ],
-    refund: [],
-  });
+  const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(readFileSync(join(__dirname, '..', '..', 'db', 'local', '001-initial.sql'), 'utf8'));
+  const db = {
+    async getAll(sql, params = []) { return sqlite.prepare(sql).all(...params); },
+    async execute(sql, params = []) { sqlite.prepare(sql).run(...params); return { rowsAffected: 1 }; },
+    async transaction(fn) { return fn(db); },
+  };
+  sqlite.exec(`
+    INSERT INTO "order"
+      (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+       status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
+       rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
+    VALUES ('o1','t1','o1','d1','s1','K1-20260813-0001','2026-08-13',1,
+            'closed','takeaway',16500,0,0,0,0,16500,16500,'u-sari','2026-08-13T07:00:00Z',1)`);
+  sqlite.exec(`INSERT INTO "check" (id, order_id, subtotal, total) VALUES ('c1','o1',16500,16500)`);
+  sqlite.exec(`
+    INSERT INTO payment (id, order_id, check_id, method, provider, amount, status, tendered_at) VALUES
+      ('p1','o1','c1','other','bank_transfer',16500,'confirmed','2026-08-13T07:00:00Z'),
+      ('p2','o1','c1','other',NULL,100,'confirmed','2026-08-13T07:00:00Z')`);
   const d = await bacaDetail(db, 'o1');
-  assert.equal(d.pembayaran[0].provider, 'bank_transfer', 'provider hilang -- layar menyebutnya Lainnya');
-  assert.equal(d.pembayaran[1].provider, null, 'provider yang tidak ada harus null, bukan undefined');
+  const peta = Object.fromEntries(d.pembayaran.map((p) => [p.id, p]));
+  assert.equal(peta.p1.provider, 'bank_transfer', 'provider hilang -- layar menyebutnya Lainnya');
+  assert.equal(peta.p2.provider, null, 'provider yang tidak ada harus null, bukan undefined');
 });
