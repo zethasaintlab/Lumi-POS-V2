@@ -4106,6 +4106,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            Idempotency-Key sudah dipakai untuk body yang berbeda
+            (IDEMPOTENCY_KEY_HASH_MISMATCH)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /tax-rates:
     post:
       operationId: createTaxRate
