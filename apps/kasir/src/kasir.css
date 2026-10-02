@@ -735,6 +735,19 @@
   gap: var(--space-3);
 }
 
+/* Kembalian hidup K-06 (keputusan user 28 September 2026): panel `--accent-subtle`,
+ * angka 32/700 `--primary`, persis mockup. Aksen di sini nilai informasi, bukan
+ * aksi — satu-satunya aksi utama layar tetap "Konfirmasi bayar". */
+.kasir-kembalian {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--accent-subtle);
+}
+.kasir-kembalian-nilai { color: var(--primary); }
+
 .kasir-sub-qris { align-self: flex-start; }
 .kasir-sub-qris button { min-height: var(--touch-min); }
 .kasir-sub-qris button:disabled { cursor: not-allowed; }

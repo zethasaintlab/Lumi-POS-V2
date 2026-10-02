@@ -27,6 +27,7 @@ import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
 import {
   hitungKeranjang,
   type HitunganKeranjang,
+  rencanaBayarKeranjang,
   simpanPenjualan,
   type HasilPenjualan,
   type MetodeBayar,
@@ -577,6 +578,18 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
   /* Lunas tanpa tunai: seluruh tagihan sudah tertutup bagian non-tunai. */
   const lunasTanpaTunai = sisa !== null && sisa === 0n && bagian.length > 0;
 
+  /* ⛔ Rencana tunai untuk kotak Kembalian — dari `rencanaBayarKeranjang`, FUNGSI
+     YANG SAMA dengan yang dipanggil `simpanPenjualan` (keputusan user 28
+     September 2026, #76). Layar tidak menghitung kembalian, tagihan tunai,
+     maupun pembulatan sendiri; ia hanya membaca hasilnya. `null` selama masukan
+     belum terbaca (kolom kosong/cacat, total belum terbaca) — itu "nilai hilang",
+     bukan nol. Bagian non-tunai yang sudah masuk ikut, jadi pembulatan jatuh
+     pada SISA tunai persis seperti yang tersimpan. */
+  const rencanaTunai =
+    tab !== 'tunai' || lunasTanpaTunai || hitungan === null || tenderedBaca === null
+      ? null
+      : rencanaBayarKeranjang(hitungan, [...bagian, { metode: 'cash', tendered: tenderedBaca }]);
+
   /* ⛔ Alasan "belum dapat dikonfirmasi" DITULIS di layar, dan
      `aria-describedby` tombol menunjuk ke sana. Tombol mati tanpa penjelasan
      membuat kasir menyimpulkan aplikasinya rusak. Yang di sini BUKAN validasi
@@ -588,6 +601,9 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
       if (nominalTunai.trim() === '') return 'Isi nominal yang diterima.';
       if (tenderedBaca === null) return 'Nominal harus rupiah utuh, tanpa desimal (mis. 50.000).';
       if (BigInt(tenderedBaca) <= 0n) return 'Nominal yang diterima harus lebih dari nol.';
+      if (rencanaTunai === null) return 'Total belum terbaca. Tunggu sebentar.';
+      /* Kalimat KURANG_BAYAR TANPA angka: kurangnya tidak dihitung di layar. */
+      if (!rencanaTunai.ok) return rencanaTunai.kode === 'KURANG_BAYAR' ? 'Uang diterima kurang dari tagihan tunai.' : rencanaTunai.pesan;
       return null;
     }
     if (metode === 'qris_static') {
@@ -774,8 +790,7 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
           </p>
         )}
         <p className="t-body-md kasir-login-sub">
-          Subtotal <span className="num">{rupiah(subtotal)}</span> · pajak dan pembulatan dihitung saat
-          disimpan
+          Subtotal <span className="num">{rupiah(subtotal)}</span> · pajak dihitung saat disimpan
         </p>
 
         {/* FR-B8 — potongan ikut terlihat di layar yang menyebut uang diterima.
@@ -820,8 +835,7 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
             <>
               {/* "Nominal diterima": awalan Rp, rata kanan, dibaca `bacaRupiah`
                   (pola K-12). Tiga pintasan MENETAPKAN nilainya (keputusan
-                  user 28 September 2026). Kembalian dan pembulatan TIDAK
-                  dirender di sini — Task 8B. */}
+                  user 28 September 2026). */}
               <Bidang
                 label="Nominal diterima"
                 ukuran="lg"
@@ -858,6 +872,20 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
                     {rupiah(p)}
                   </button>
                 ))}
+              </div>
+              {/* Kembalian hidup (keputusan user 28 September 2026): angkanya
+                  `rencana.kembalian` — nilai yang akan tersimpan. `Rp —` bila
+                  masukan hilang atau rencana menolak; tidak pernah nol tebakan. */}
+              <div className="kasir-kembalian" role="status">
+                <p className="t-body-md">Kembalian</p>
+                <p className="t-display num kasir-kembalian-nilai">
+                  {rencanaTunai?.ok ? rupiah(rencanaTunai.rencana.kembalian) : 'Rp —'}
+                </p>
+                {rencanaTunai?.ok && rencanaTunai.rencana.roundingAdjustment !== 0n && (
+                  <p className="t-caption kasir-kembalian-tagihan">
+                    Tagihan tunai dibulatkan menjadi <span className="num">{rupiah(rencanaTunai.rencana.tunaiDitagih)}</span>
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -1028,10 +1056,11 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
             ⛔ Baris bernilai NOL tetap tampil (`spec-c:405`): pajak 0% adalah
             keputusan merchant yang auditor perlu lihat, bukan ketiadaan.
 
-            ⛔ PEMBULATAN TIDAK ADA DI SINI (sampai Task 8B). FR-C9 membulatkan
-            `amount_due`, bukan `total`, dan hanya pada SISA TUNAI sesudah
-            bagian non-tunai — perhitungan yang baru lengkap di dalam
-            `simpanPenjualan`. Penjaga P2 menolak kebocorannya ke sini. */}
+            ⛔ Pembulatan TIDAK dihitung di sini. FR-C9 membulatkan `amount_due`,
+            bukan `total`, dan hanya pada SISA TUNAI sesudah bagian non-tunai;
+            yang tampil di kotak Kembalian adalah hasil `rencanaBayarKeranjang`,
+            fungsi yang sama dengan `simpanPenjualan`. Penjaga P2 menolak
+            aritmetika kedua di berkas ini. */}
         {hitungan?.pajak.lines.map((t) => (
           <div className="kasir-subtotal" key={t.taxRateId}>
             <span className="t-body-md">{t.name}</span>

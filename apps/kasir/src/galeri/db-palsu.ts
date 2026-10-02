@@ -177,6 +177,9 @@ export interface OpsiDbPalsu {
   jumlahGagal?: number;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
+  /** `[EKSPLORASI]` Task 8B — `outlet.rounding_increment` (bawaan 100): harness K-06 `&pembulatan=500`/`1000`,
+      supaya penjaga kembalian K-06 = tersimpan menguji pembulatan yang BUKAN kebetulan nol. */
+  pembulatan?: number;
 }
 
 export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbLokal {
@@ -352,7 +355,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
            Sampai 25 September 2026 nilainya 0 — nilai yang `simpanPenjualan`
            TOLAK ("roundingIncrement harus lebih besar dari 0"), jadi K-07
            tidak pernah dapat dicapai dari galeri. */
-        rounding_increment: 100,
+        rounding_increment: opsi.pembulatan ?? 100,
         /* `half_up` — kosakata `outlet.rounding_mode` adalah half_up/up/down.
            `'nearest'` yang sempat di sini tidak dikenal `simpanPenjualan`, dan
            kegagalannya baru terlihat saat K-07 dicoba dari galeri. */

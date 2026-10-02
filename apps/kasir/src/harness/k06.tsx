@@ -96,8 +96,14 @@ pasangLokalPalsu({
 });
 /* `?matikan=a,b` — kunci fitur yang dipaksa mati (kill switch), pola yang sama
    dengan `?matikanFitur=` galeri (`OpsiDbPalsu.matikanFitur`). */
+/* `?pembulatan=500` — `outlet.rounding_increment` (bawaan 100); `?harga=20050` — harga satuan tiap baris
+   (bawaan 20000). `[EKSPLORASI]` Task 8B: dengan keduanya total fixture dapat dipilih supaya SISA TUNAI
+   bukan kelipatan increment (penjaga kembalian K-06 = tersimpan tidak boleh hijau karena pembulatan nol). */
+const kueriAwal = new URLSearchParams(window.location.search);
+const pembulatanUji = Number(kueriAwal.get('pembulatan') ?? '');
 dbAktif = buatDbPalsu('normal', {
-  matikanFitur: (new URLSearchParams(window.location.search).get('matikan') ?? '').split(',').filter(Boolean),
+  matikanFitur: (kueriAwal.get('matikan') ?? '').split(',').filter(Boolean),
+  ...(Number.isInteger(pembulatanUji) && pembulatanUji > 0 ? { pembulatan: pembulatanUji } : {}),
 });
 
 const q = new URLSearchParams(window.location.search);
@@ -120,7 +126,7 @@ function keranjangUji(jumlahBaris: number): Keranjang {
       itemName: `Item Uji ${i + 1}`,
       variationName: 'Regular',
       variationCount: 1,
-      unitPrice: 20000,
+      unitPrice: Number(q.get('harga') ?? '20000'),
       quantityMilli: 1000,
       modifier: [],
     })),
