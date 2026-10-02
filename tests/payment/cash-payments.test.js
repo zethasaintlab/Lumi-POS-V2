@@ -437,3 +437,61 @@ test('⛔ retry idempoten tidak menggandakan movement', async () => {
   const m = await movementShift(fx.shiftId);
   assert.equal(m.length, 1, 'retry menghasilkan movement kedua');
 });
+
+// S5c: hash idempotensi jalur TUNAI mencakup setiap medan yang disimpan
+// INSERT_CASH_PAYMENT_SQL. Key sama + isi beda yang dijawab dari cache membuat
+// pembayaran kedua hilang DAN `cash_movement`-nya tidak tertulis (laci menyimpang).
+test('⛔ S5c: tunai -- key sama + isi beda = 422 per medan, tanpa payment/cash_movement baru; kolom INSERT terpetakan', async () => {
+  const fs = require('node:fs');
+  const sumber = fs.readFileSync(
+    require('node:path').join(__dirname, '..', '..', 'apps/server/src/modules/payment/handlers/payments.ts'), 'utf8'
+  );
+  const kolom = /const INSERT_CASH_PAYMENT_SQL = `\s*INSERT INTO payment \(([^)]*)\)/.exec(sumber)[1]
+    .split(',').map((k) => k.trim());
+  // null = diturunkan server / metadata di luar hash (`hlc`).
+  const PETA = {
+    id: 'id', tenant_id: null, outlet_id: null, device_id: null, order_id: null, check_id: null,
+    method: 'method', amount: null, tendered_amount: 'tenderedAmount', change_amount: null,
+    status: null, confirmed_manually: null, tendered_at: null, created_by: null,
+    occurred_at: 'occurredAt', hlc: null,
+  };
+  for (const k of kolom) assert.ok(k in PETA, `kolom INSERT tunai baru '${k}' belum dipetakan ke medan hash idempotensi`);
+  const variasi = { tenderedAmount: 90000, occurredAt: '2026-08-07T04:00:00.000Z' };
+  for (const m of new Set(kolom.map((k) => PETA[k]).filter(Boolean))) {
+    assert.ok(m in variasi || m === 'id' || m === 'method', `medan '${m}' tidak punya variasi di test hash tunai`);
+  }
+
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, await buatVariation(25000));
+  const key = crypto.randomUUID();
+  const asli = { id: crypto.randomUUID(), method: 'cash', tenderedAmount: 30000, occurredAt: '2026-08-07T03:00:00.000Z' };
+  const a = await req('POST', `/orders/${order.id}/payments`, asli, { 'idempotency-key': key });
+  assert.equal(a.statusCode, 201, a.body);
+  for (const [medan, nilai] of Object.entries({ ...variasi, id: crypto.randomUUID() })) {
+    const b = await req('POST', `/orders/${order.id}/payments`, { ...asli, [medan]: nilai }, { 'idempotency-key': key });
+    assert.equal(b.statusCode, 422, `tunai: medan ${medan} diubah (key sama) tetapi dijawab ${b.statusCode}: ${b.body}`);
+    assert.equal(JSON.parse(b.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH', medan);
+  }
+  const c = await req('POST', `/orders/${order.id}/payments`, asli, { 'idempotency-key': key });
+  assert.equal(c.statusCode, 201, c.body);
+  assert.deepEqual(JSON.parse(c.body), JSON.parse(a.body));
+  assert.equal(await hitungPayment(order.id), 1);
+});
+
+test('retry tunai atas baris idempotensi berhash LAMA (orderId:id) tetap dijawab dari cache, bukan 422', async () => {
+  await akhiriTarifSeed();
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, await buatVariation(25000));
+  const key = crypto.randomUUID();
+  const body = { id: crypto.randomUUID(), method: 'cash', tenderedAmount: 25000 };
+  const a = await req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key });
+  assert.equal(a.statusCode, 201, a.body);
+  await owner.query('BEGIN');
+  await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await owner.query('UPDATE idempotency_key SET request_hash = $2 WHERE key = $1', [key, `${order.id}:${body.id}`]);
+  await owner.query('COMMIT');
+  const b = await req('POST', `/orders/${order.id}/payments`, body, { 'idempotency-key': key });
+  assert.equal(b.statusCode, 201, b.body);
+  assert.deepEqual(JSON.parse(b.body), JSON.parse(a.body));
+});

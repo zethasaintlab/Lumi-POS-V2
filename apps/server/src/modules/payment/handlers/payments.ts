@@ -91,6 +91,35 @@ function toPayment(row: PaymentRow) {
   };
 }
 
+// ⛔ Hash isi request untuk idempotensi, SATU fungsi untuk ketiga jalur (tunai,
+// gateway, manual). Key sama + isi beda harus 422, bukan dijawab dari cache:
+// pembayaran kedua (dan `cash_movement`-nya, di jalur tunai) hilang diam-diam.
+// `hlc` (metadata) sengaja di luar hash. Setiap jalur menyebut medan yang ia
+// SIMPAN; penjaga S5b/S5c/S5d mengunci daftar itu terhadap kolom INSERT-nya.
+function hashIsiPembayaran(medan: unknown[]): string {
+  return createHash('sha256').update(JSON.stringify(medan)).digest('hex');
+}
+
+// Toleransi hash LAMA (`orderId:id`) TIDAK dibatasi waktu: tidak ada purge
+// `idempotency_key`. Ia tetap aman karena sama kuatnya dengan perilaku sebelum
+// perbaikan -- hanya meloloskan orderId DAN payment id yang sama, dan pembayaran
+// kedua yang sungguhan selalu membawa id baru. Jalur yang belum dimigrasi juga
+// tidak menulis format lama lagi: semuanya kini memakai hash isi.
+function periksaHashIdempotensi(
+  existing: { requestHash: string } | null,
+  requestHash: string,
+  hashLama: string,
+  key: string
+): void {
+  if (existing !== null && existing.requestHash !== requestHash && existing.requestHash !== hashLama) {
+    throw new HttpError(
+      422,
+      'IDEMPOTENCY_KEY_HASH_MISMATCH',
+      `Idempotency-Key ${key} sudah dipakai untuk request dengan body yang berbeda.`
+    );
+  }
+}
+
 // Satu daftar per jalur; SUPPORTED diturunkan dari ketiganya. Metode yang lolos
 // validasi tetapi tak punya jalur akan jatuh ke cabang tunai (kas naik oleh uang bank).
 const METODE_TUNAI = ['cash'] as const;
@@ -541,31 +570,16 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   const amount = BigInt(body.amount);
   const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc));
 
-  // Hash SELURUH isi yang disimpan, bukan `orderId:id`: key sama + isi beda
-  // dijawab dari cache dan pembayaran kedua hilang diam-diam. `hlc` (metadata)
-  // di luar hash. Baris lama (`orderId:id`) tetap dianggap request yang sama.
-  const requestHash = createHash('sha256')
-    .update(
-      JSON.stringify([
-        orderId, body.id, method, amount.toString(), reference, approvalCode, cardLast4,
-        acquirer, terminalReference, provider, body.occurredAt ?? null,
-      ])
-    )
-    .digest('hex');
+  const requestHash = hashIsiPembayaran([
+    orderId, body.id, method, amount.toString(), reference, approvalCode, cardLast4,
+    acquirer, terminalReference, provider, body.occurredAt ?? null,
+  ]);
   const hashLama = `${orderId}:${body.id}`;
 
   const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
     const existing = await findIdempotencyKey(client, idempotencyKey);
-    if (existing !== null) {
-      if (existing.requestHash !== requestHash && existing.requestHash !== hashLama) {
-        throw new HttpError(
-          422,
-          'IDEMPOTENCY_KEY_HASH_MISMATCH',
-          `Idempotency-Key ${idempotencyKey} sudah dipakai untuk request dengan body yang berbeda.`
-        );
-      }
-      if (existing.completed) return { kind: 'cached' as const, record: existing };
-    }
+    periksaHashIdempotensi(existing, requestHash, hashLama, idempotencyKey);
+    if (existing !== null && existing.completed) return { kind: 'cached' as const, record: existing };
     await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
 
     const { rows: orderRows } = await client.query<OrderStateRow>(
@@ -685,6 +699,19 @@ interface GatewayCtx {
   method: string;
 }
 
+const INSERT_CASH_PAYMENT_SQL = `
+  INSERT INTO payment (
+    id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
+    tendered_amount, change_amount, status, confirmed_manually,
+    tendered_at, created_by, occurred_at, hlc
+  )
+  SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
+         $6, $7, 'confirmed', false,
+         now(), $8, COALESCE($9::timestamptz, now()), $10
+    FROM "order" o WHERE o.id = $11
+  RETURNING *
+`;
+
 const INSERT_GATEWAY_PAYMENT_SQL = `
   INSERT INTO payment (
     id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
@@ -745,15 +772,19 @@ async function initiateGatewayPayment(deps: GatewayDeps, ctx: GatewayCtx) {
   assertGatewayAmountValid(body.amount);
   const amount = BigInt(body.amount);
   const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc));
+  const requestHash = hashIsiPembayaran([orderId, body.id, method, amount.toString(), body.occurredAt ?? null]);
+  const hashLama = `${orderId}:${body.id}`;
 
   // --- transaksi 1: klaim key + tulis payment pending_confirmation ---
   const awal = await withTenantTransaction(pool, tenantId, async (client) => {
     const existing = await findIdempotencyKey(client, idempotencyKey);
+    // 422 SEBELUM cabang cache, juga untuk baris yang belum selesai.
+    periksaHashIdempotensi(existing, requestHash, hashLama, idempotencyKey);
     if (existing !== null && existing.completed) {
       return { kind: 'cached' as const, record: existing };
     }
     if (existing === null) {
-      await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash: `${orderId}:${body.id}` });
+      await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
     }
 
     const { rows: orderRows } = await client.query<OrderStateRow>(
@@ -930,7 +961,7 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: Payme
       }
 
       // Pagar kedua: hanya tunai boleh sampai ke cabang yang menulis `cash_movement`.
-      if (method !== 'cash') {
+      if (!(METODE_TUNAI as readonly string[]).includes(method)) {
         throw new HttpError(
           500,
           'PAYMENT_METHOD_UNROUTED',
@@ -942,12 +973,18 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: Payme
 
       const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc));
 
+      const requestHash = hashIsiPembayaran([
+        orderId, body.id, method, String(body.tenderedAmount), body.occurredAt ?? null,
+      ]);
+      const hashLama = `${orderId}:${body.id}`;
+
       const result = await withTenantTransaction(pool, tenantId, async (client) => {
         // Idempotency di-CLAIM lebih dulu, sama alasannya dengan createOrder
         // (lihat sync/index.ts): kalau key ditulis terakhir, PK milik payment
         // sendiri yang memenangkan balapan dan klien menerima
         // ID_ALREADY_EXISTS alih-alih respons asli.
         const existing = await findIdempotencyKey(client, idempotencyKey);
+        periksaHashIdempotensi(existing, requestHash, hashLama, idempotencyKey);
         if (existing !== null) {
           return { kind: 'cached' as const, record: existing };
         }
@@ -995,21 +1032,12 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: Payme
         const amount = melunasi ? roundedOutstanding : tendered;
         const change = melunasi ? tendered - roundedOutstanding : 0n;
 
-        await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash: `${orderId}:${body.id}` });
+        await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
 
         let paymentRow: PaymentRow;
         try {
           const { rows } = await client.query<PaymentRow>(
-            `INSERT INTO payment (
-               id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
-               tendered_amount, change_amount, status, confirmed_manually,
-               tendered_at, created_by, occurred_at, hlc
-             )
-             SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
-                    $6, $7, 'confirmed', false,
-                    now(), $8, COALESCE($9::timestamptz, now()), $10
-               FROM "order" o WHERE o.id = $11
-             RETURNING *`,
+            INSERT_CASH_PAYMENT_SQL,
             [
               body.id, tenantId, order.check_id, method, amount.toString(),
               tendered.toString(), change.toString(), actorId,

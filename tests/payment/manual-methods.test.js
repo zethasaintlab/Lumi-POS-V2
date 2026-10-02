@@ -729,7 +729,9 @@ test('⛔ S5b: hash idempotensi mencakup SETIAP medan INSERT_MANUAL_PAYMENT_SQL 
     method: 'method', amount: 'amount', status: null, confirmed_manually: null,
     provider_reference: 'reference', approval_code: 'approvalCode', card_last4: 'cardLast4',
     acquirer: 'acquirer', terminal_reference: 'terminalReference', tendered_at: null, created_by: null,
-    occurred_at: 'occurredAt', hlc: null, mdr_estimated: null, provider: 'provider',
+    // `provider` ada di hash tetapi TIDAK divariasikan di bawah: daftar tertutupnya satu nilai,
+    // variasinya ditolak 400 sebelum hash. Dinyatakan di sini, tidak dihitung "teruji".
+    occurred_at: 'occurredAt', hlc: null, mdr_estimated: null, provider: null,
   };
   for (const k of kolom) {
     assert.ok(k in PETA, `kolom INSERT baru '${k}' belum dipetakan ke medan hash idempotensi`);
@@ -752,7 +754,7 @@ test('⛔ S5b: hash idempotensi mencakup SETIAP medan INSERT_MANUAL_PAYMENT_SQL 
   ];
   // Setiap medan yang dipetakan dari kolom INSERT harus tercakup variasinya.
   const medanTerpetakan = new Set(kolom.map((k) => PETA[k]).filter(Boolean));
-  const medanDiuji = new Set(kasus.flatMap((k) => Object.keys(k.ubah)).concat('id', 'method', 'provider'));
+  const medanDiuji = new Set(kasus.flatMap((k) => Object.keys(k.ubah)).concat('id', 'method'));
   for (const m of medanTerpetakan) assert.ok(medanDiuji.has(m), `medan '${m}' tidak punya variasi di test hash`);
 
   for (const { isi, ubah } of kasus) {
@@ -799,3 +801,22 @@ test('⛔ S9: transfer penuh atas total 35.050 (rounding_increment 100) menutup 
   assert.equal((await query('SELECT amount::text AS a FROM payment WHERE order_id = $1', [order.id]))[0].a, '35050');
 });
 
+// M3: asersi respons S9 lulus juga terhadap literal 0 (baris memang 0/total). Di sini baris
+// DISEMAI nilai tak-nol (keadaan buatan) supaya respons yang menulis literal terungkap.
+test('⛔ S9b: respons manual mencerminkan rounding_adjustment/amount_due BARIS order, bukan literal 0', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 30000);
+  await owner.query('BEGIN');
+  await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  const semai = await owner.query(`UPDATE "order" SET rounding_adjustment = -50 WHERE id = $1`, [order.id]);
+  await owner.query('COMMIT');
+  assert.equal(semai.rowCount, 1, 'fixture tidak tersemai (RLS?)');
+  // Sebagian: order tetap terbuka, baris tidak disentuh (FR-C9 hanya pada sisa tunai).
+  const res = await bayar(order.id, { ...TRANSFER, amount: 10000, reference: 'TRF-S9B' });
+  assert.equal(res.statusCode, 201, res.body);
+  const body = JSON.parse(res.body);
+  const [o] = await query(`SELECT rounding_adjustment::text AS ra, amount_due::text AS due FROM "order" WHERE id = $1`, [order.id]);
+  assert.equal(o.ra, '-50', 'transfer menyentuh rounding_adjustment');
+  assert.equal(body.order.roundingAdjustment, -50, 'respons menulis literal, bukan nilai baris order');
+  assert.equal(body.order.amountDue, Number(o.due));
+});

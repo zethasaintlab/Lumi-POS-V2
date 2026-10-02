@@ -432,3 +432,68 @@ test('⛔ balapan tidak pernah menghasilkan DUA QR berbeda untuk satu order', as
   assert.equal(rows.length, 1);
   assert.ok(qr[0].includes(rows[0].provider_reference), `QR di respons tidak cocok dengan yang tersimpan`);
 });
+
+// S5d: hash idempotensi jalur GATEWAY mencakup setiap medan yang disimpan
+// INSERT_GATEWAY_PAYMENT_SQL, dan diperiksa SEBELUM cabang cache DAN sebelum
+// melanjutkan baris yang belum selesai.
+test('⛔ S5d: gateway -- key sama + isi beda = 422 (baris selesai MAUPUN belum selesai); kolom INSERT terpetakan', async () => {
+  const fs = require('node:fs');
+  const sumber = fs.readFileSync(
+    require('node:path').join(__dirname, '..', '..', 'apps/server/src/modules/payment/handlers/payments.ts'), 'utf8'
+  );
+  const kolom = /const INSERT_GATEWAY_PAYMENT_SQL = `\s*INSERT INTO payment \(([^)]*)\)/.exec(sumber)[1]
+    .split(',').map((k) => k.trim());
+  // `provider` = nama gateway dari konfigurasi server, bukan isi request.
+  const PETA = {
+    id: 'id', tenant_id: null, outlet_id: null, device_id: null, order_id: null, check_id: null,
+    method: 'method', amount: 'amount', status: null, provider: null, confirmed_manually: null,
+    tendered_at: null, created_by: null, occurred_at: 'occurredAt', hlc: null, mdr_estimated: null,
+  };
+  for (const k of kolom) assert.ok(k in PETA, `kolom INSERT gateway baru '${k}' belum dipetakan ke medan hash idempotensi`);
+  const variasi = { amount: 5000, occurredAt: '2026-08-07T04:00:00.000Z' };
+  for (const m of new Set(kolom.map((k) => PETA[k]).filter(Boolean))) {
+    assert.ok(m in variasi || m === 'id' || m === 'method', `medan '${m}' tidak punya variasi di test hash gateway`);
+  }
+
+  const fx = await setupDeviceAndShift();
+  // (1) baris SELESAI
+  const order = await buatOrder(fx);
+  const key = crypto.randomUUID();
+  const asli = { id: crypto.randomUUID(), amount: order.total, occurredAt: '2026-08-07T03:00:00.000Z' };
+  const a = await bayarQris(order.id, asli, { 'idempotency-key': key });
+  assert.equal(a.statusCode, 201, a.body);
+  for (const [medan, nilai] of Object.entries({ ...variasi, id: crypto.randomUUID() })) {
+    const b = await bayarQris(order.id, { ...asli, [medan]: nilai }, { 'idempotency-key': key });
+    assert.equal(b.statusCode, 422, `gateway: medan ${medan} diubah (key sama) tetapi dijawab ${b.statusCode}: ${b.body}`);
+    assert.equal(JSON.parse(b.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH', medan);
+  }
+  assert.equal((await query('SELECT id FROM payment')).length, 1);
+
+  // (2) baris BELUM selesai (gateway tak terjangkau): body lain tidak boleh melanjutkannya
+  const order2 = await buatOrder(fx);
+  const key2 = crypto.randomUUID();
+  const asli2 = { id: crypto.randomUUID(), amount: order2.total };
+  fake.failNextInitiate(new Error('ETIMEDOUT'));
+  const c = await bayarQris(order2.id, asli2, { 'idempotency-key': key2 });
+  assert.equal(JSON.parse(c.body).gatewayReachable, false);
+  const d = await bayarQris(order2.id, { ...asli2, amount: 5000 }, { 'idempotency-key': key2 });
+  assert.equal(d.statusCode, 422, `baris belum selesai dilanjutkan oleh body lain: ${d.statusCode} ${d.body}`);
+  const e = await bayarQris(order2.id, asli2, { 'idempotency-key': key2 });
+  assert.equal(e.statusCode, 201, e.body);
+  assert.equal(JSON.parse(e.body).gatewayReachable, true);
+});
+
+test('retry gateway atas baris idempotensi berhash LAMA (orderId:id) tetap dijawab, bukan 422', async () => {
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx);
+  const key = crypto.randomUUID();
+  const body = { id: crypto.randomUUID(), amount: order.total };
+  const a = await bayarQris(order.id, body, { 'idempotency-key': key });
+  assert.equal(a.statusCode, 201, a.body);
+  await appSetup.query('BEGIN');
+  await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await appSetup.query('UPDATE idempotency_key SET request_hash = $2 WHERE key = $1', [key, `${order.id}:${body.id}`]);
+  await appSetup.query('COMMIT');
+  const b = await bayarQris(order.id, body, { 'idempotency-key': key });
+  assert.equal(b.statusCode, 201, b.body);
+});
