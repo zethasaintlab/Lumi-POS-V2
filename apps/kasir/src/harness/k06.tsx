@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { StrictMode, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import 'ds/styles.css';
 import '../kasir.css';
@@ -17,6 +17,7 @@ import { PanelQris } from '../komponen/PanelQris.tsx';
 import { setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
 import type { StatusBayar } from '../kasir/qris-dinamis.ts';
+import { jalurSekarang, langgananJalur, navigasi } from '../rute/navigasi.ts';
 
 /**
  * Harness DOM untuk K-06 Pembayaran dan panel QRIS — HANYA untuk test.
@@ -127,8 +128,25 @@ function keServer(s: StatusBayar): string {
   return 'pending_confirmation';
 }
 
+/* `?rute=1` — K-06 hidup di jalur `/bayar` dengan satu entri riwayat sebelumnya
+   (`/kasir`), dan hanya terpasang selama `jalurSekarang() === '/bayar'`, persis
+   seperti `App.tsx`. Tanpa ini tombol Kembali peramban tidak punya tempat
+   mendarat dan tidak ada yang dapat meng-unmount layar. Default: tanpa rute. */
+const pakaiRute = q.get('rute') === '1';
+if (pakaiRute) {
+  window.history.replaceState({}, '', '/kasir');
+  window.history.pushState({}, '', '/bayar');
+  /* Navigasi yang MENGABAIKAN kunci: mensimulasikan unmount yang bukan lewat tab
+     nav (sesi habis, pemulihan), untuk menguji cleanup kunci. */
+  (window as unknown as { __paksaKeluar: () => void }).__paksaKeluar = () => {
+    window.history.pushState({}, '', '/kasir');
+    window.dispatchEvent(new Event('lumi:navigasi'));
+  };
+}
+
 function Akar() {
   const render = q.get('render') ?? 'k06';
+  const jalur = useSyncExternalStore(langgananJalur, jalurSekarang, () => '/');
 
   if (render === 'panel') {
     const status = (q.get('status') ?? 'pending') as StatusBayar;
@@ -185,7 +203,11 @@ function Akar() {
     <DbLokalPalsuProvider keadaan={keadaan}>
       <IsiSiap>
         <ShellKasir outlet="Outlet uji" device="K1" perangkatTerdaftar pengguna="Kasir uji" ruteAktif={null}>
-          <Pembayaran onKembali={() => undefined} />
+          {pakaiRute && jalur !== '/bayar' ? (
+            <p id="layar-lain">Layar lain: {jalur}</p>
+          ) : (
+            <Pembayaran onKembali={() => (pakaiRute ? navigasi('/kasir') : undefined)} />
+          )}
         </ShellKasir>
       </IsiSiap>
     </DbLokalPalsuProvider>
