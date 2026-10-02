@@ -72,7 +72,10 @@ pasangLokalPalsu({
 const matikan = (new URLSearchParams(window.location.search).get('matikan') ?? '')
   .split(',')
   .filter((k) => k !== '');
-dbAktif = buatDbPalsu('normal', { matikanFitur: matikan });
+/* `?skenario=gambar-antrean` memunculkan pita antrean menua dan indikator
+   `failed` — jalan keluar header yang dijaga kunci nav. Default tetap `normal`. */
+const skenarioUji = (new URLSearchParams(window.location.search).get('skenario') ?? 'normal') as Parameters<typeof buatDbPalsu>[0];
+dbAktif = buatDbPalsu(skenarioUji, { matikanFitur: matikan });
 
 const q = new URLSearchParams(window.location.search);
 

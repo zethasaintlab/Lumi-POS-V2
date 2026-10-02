@@ -1057,3 +1057,117 @@ for (const [nama, masuk, harap] of [
     }
   });
 }
+
+// ---------------------------------------------------------------------------
+// Kunci nav menutup SEMUA jalan keluar header, bukan hanya empat tab (I-1)
+// ---------------------------------------------------------------------------
+
+/** Klik paksa pada setiap jalan keluar header; kembalikan yang ditemukan. */
+async function paksaJalanKeluar(hal) {
+  const ada = await hal.evaluate(() => ({
+    indikator: document.querySelectorAll('.kasir-indikator').length,
+    coba: document.querySelectorAll('.kasir-indikator button').length,
+    pita: document.querySelectorAll('.kasir-pita-tautan').length,
+  }));
+  assert.ok(ada.indikator > 0, 'indikator sinkron tidak dirender — pembanding penjaga ini hampa');
+  assert.ok(ada.pita > 0, 'tautan pita antrean tidak dirender (skenario gambar-antrean?) — pembanding hampa');
+  // Pengamat: kata "Memeriksa…" pada item Keluar berarti `keluar()` sempat dijalankan.
+  await hal.evaluate(() => {
+    globalThis.__keluarJalan = false;
+    new MutationObserver(() => {
+      if (/Memeriksa/.test(document.querySelector('.kasir-menu-pengguna-daftar')?.textContent ?? '')) globalThis.__keluarJalan = true;
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
+  await hal.evaluate(() => {
+    for (const el of document.querySelectorAll('.kasir-indikator, .kasir-indikator button, .kasir-pita-tautan')) {
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+  });
+  const butir = await hal.locator('.kasir-menu-pengguna-tombol').count();
+  assert.equal(butir, 1, 'tombol menu pengguna tidak dirender');
+  const item = [];
+  for (let i = 0; i < 3; i++) {
+    if ((await hal.locator('.kasir-menu-pengguna-daftar').count()) === 0) await hal.locator('.kasir-menu-pengguna-tombol').click();
+    const m = hal.locator('.kasir-menu-pengguna-daftar [role="menuitem"]').nth(i);
+    item.push({
+      nama: (await m.textContent()).trim(),
+      mati: (await m.getAttribute('aria-disabled')) === 'true' || (await m.isDisabled()),
+    });
+    await m.evaluate((e) => e.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  }
+  await hal.waitForTimeout(250);
+  return item;
+}
+
+async function pastikanTetap(hal, lokasiAwal, item, konteks) {
+  assert.equal(
+    await hal.evaluate(() => location.pathname + location.search),
+    lokasiAwal,
+    `${konteks}: klik paksa pada jalan keluar header mengubah location`
+  );
+  assert.ok(
+    (await hal.locator('.kasir-bayar-kartu').count()) > 0,
+    `${konteks}: K-06 ter-unmount oleh klik pada jalan keluar header`
+  );
+  assert.equal(item.length, 3, `${konteks}: menu pengguna tidak memuat tiga item`);
+  for (const i of item) assert.equal(i.mati, true, `${konteks}: item menu "${i.nama}" tidak terkunci (aria-disabled)`);
+  assert.equal(await hal.evaluate(() => globalThis.__keluarJalan), false, `${konteks}: Keluar menjalankan keluar() selagi terkunci`);
+}
+
+test('⛔ kunci nav menutup indikator sinkron, tautan pita, dan menu pengguna selama penjualan disimpan', async () => {
+  const hal = await buka('render=k06&baris=2&skenario=gambar-antrean');
+  try {
+    await hal.waitForSelector('.kasir-pita-tautan', { timeout: 10_000 });
+    await hal.evaluate(() => {
+      globalThis.__galeriTahanPenjualan = new Promise((r) => { globalThis.__lepasPenjualan = r; });
+    });
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForFunction(() => document.querySelector('.kasir-header [role="tab"]')?.getAttribute('aria-disabled') === 'true', null, { timeout: 5_000 });
+    const lokasiAwal = await hal.evaluate(() => location.pathname + location.search);
+    const item = await paksaJalanKeluar(hal);
+    await pastikanTetap(hal, lokasiAwal, item, 'menyimpan');
+    // Penjualan yang sedang disimpan SELESAI di layar yang sama (tidak yatim).
+    await hal.evaluate(() => globalThis.__lepasPenjualan());
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ kunci nav menutup indikator sinkron, tautan pita, dan menu pengguna selama QRIS menunggu', async () => {
+  const hal = await buka('render=k06&baris=2&skenario=gambar-antrean', {
+    rute: {
+      '**/orders': { id: 'ord-uji' },
+      '**/orders/*/payments': { qrString: '00020101021226590014ID.CO.QRIS.UJI' },
+    },
+  });
+  try {
+    await hal.waitForSelector('.kasir-pita-tautan', { timeout: 10_000 });
+    await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
+    await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
+    await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+    const lokasiAwal = await hal.evaluate(() => location.pathname + location.search);
+    const item = await paksaJalanKeluar(hal);
+    await pastikanTetap(hal, lokasiAwal, item, 'QRIS menunggu');
+    assert.match(await teks(hal), /Pindai untuk membayar/, 'panel QRIS hilang sesudah klik pada jalan keluar header');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ Transfer + campuran terbuka + referensi kosong: "Tambah pembayaran lain" nonaktif DENGAN alasan yang ada di DOM', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    await hal.getByRole('button', { name: 'Transfer', exact: true }).click();
+    await bukaCampuran(hal);
+    const tambah = hal.getByRole('button', { name: 'Tambah pembayaran lain' });
+    await pastikanAda(hal, tambah, 'tombol "Tambah pembayaran lain" tidak dirender di Transfer + campuran');
+    assert.equal(await tambah.isDisabled(), true, 'pembanding hampa: tombol aktif padahal referensi kosong');
+    const alasan = await alasanDari(hal, tambah);
+    assert.ok(alasan.length > 0, 'tombol nonaktif tanpa alasan: aria-describedby menunjuk elemen yang tidak dirender');
+    assert.match(alasan, /referensi/i, `alasan bukan milik periksaTransfer: "${alasan}"`);
+  } finally {
+    await hal.close();
+  }
+});
