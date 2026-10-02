@@ -1336,3 +1336,113 @@ test('struk transfer menyebut "Transfer", bukan "Lainnya"', async () => {
   assert.match(teks, /Transfer/);
   assert.equal(/Lainnya/.test(teks), false);
 });
+
+// ---- Diporting dari jalur B (PR 2B Task 7): penjaga di SQLite sungguhan ----
+const { buatDb } = require('../sync-client/helpers/db.js');
+
+/** SQLite SUNGGUHAN dengan skema perangkat -- bukan fake yang tidak menegakkan apa pun. */
+async function dbSqlite() {
+  const db = buatDb();
+  await db.execute(
+    `INSERT INTO outlet (id, tenant_id, name, timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate)
+     VALUES ('o1', 't1', 'Outlet Pusat', 'Asia/Jakarta', '04:00:00', 100, 'half_up', 0)`
+  );
+  await db.execute(
+    `INSERT INTO device_config (id, device_id, device_code, tenant_id, outlet_id, base_url, receipt_sequence)
+     VALUES (1, 'd1', 'K1', 't1', 'o1', 'http://server', 0)`
+  );
+  return db;
+}
+
+const TRFB = (extra = {}) => ({ metode: 'other', provider: 'bank_transfer', referensi: 'TRF-8891', ...extra });
+
+test('⛔ muatan outbox transfer (SQLite sungguhan): provider dan reference ikut, tendered tidak', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = await dbSqlite();
+  await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: { baris: [{ ...BARIS[0], unitPrice: 30000 }], diskon: null },
+      pembayaran: [TRFB({ bank: 'BCA', nominal: 10_000n }), { metode: 'cash', tendered: 50000 }],
+    }),
+  });
+  const bayar = await db.getAll(
+    `SELECT payload, depends_on, id FROM outbox_local WHERE entity_type = 'payment' ORDER BY rowid`
+  );
+  assert.equal(bayar.length, 2);
+  const transfer = JSON.parse(bayar[0].payload);
+  assert.equal(transfer.method, 'other');
+  assert.equal(transfer.provider, 'bank_transfer');
+  assert.equal(transfer.reference, 'TRF-8891');
+  assert.equal(transfer.acquirer, 'BCA');
+  assert.equal(transfer.amount, 10000);
+  assert.equal(transfer.tenderedAmount, undefined, 'tenderedAmount ikut terkirim untuk transfer');
+  assert.equal(transfer.approvalCode, undefined);
+  // Tunai TERAKHIR dan bergantung pada transfer.
+  const tunai = JSON.parse(bayar[1].payload);
+  assert.equal(tunai.method, 'cash');
+  assert.equal(bayar[1].depends_on, bayar[0].id, 'bagian tunai tidak menunggu transfer');
+  db.tutup();
+});
+
+
+test('⛔ transfer dengan referensi berbentuk nomor kartu ditolak POSSIBLE_CARD_NUMBER, tanpa menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  for (const p of [
+    TRFB({ referensi: '4111 1111 1111 1111' }),
+    TRFB({ referensi: 'TRF-1', bank: '4111-1111-1111-1111' }),
+  ]) {
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({ db, ...args({ pembayaran: p }) });
+    assert.equal(hasil.status, 'pembayaran_tidak_sah');
+    assert.equal(hasil.kode, 'POSSIBLE_CARD_NUMBER');
+    assert.equal(db.state.tulis.length, 0);
+  }
+});
+
+test('⛔ SATU transaksi untuk penjualan transfer: COMMIT gagal tidak meninggalkan satu baris pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const raw = await dbSqlite();
+  // `tx` SENGAJA objek berbeda dari `db`: penulisan lewat `db` di dalam
+  // transaksi (bukan lewat `tx`) tidak ikut di-rollback, dan itu terlihat.
+  const tx = { getAll: raw.getAll, execute: raw.execute };
+  let dalam = false;
+  const db = {
+    getAll: (...a) => raw.getAll(...a),
+    execute: async (...a) => {
+      assert.equal(dalam, false, 'penulisan lewat db (bukan tx) di dalam transaksi');
+      return raw.execute(...a);
+    },
+    async transaction(fn) {
+      await raw.execute('BEGIN IMMEDIATE');
+      dalam = true;
+      try {
+        await fn(tx);
+        throw new Error('COMMIT gagal (disuntik)');
+      } catch (e) {
+        await raw.execute('ROLLBACK');
+        throw e;
+      } finally {
+        dalam = false;
+      }
+    },
+  };
+  await assert.rejects(
+    () => simpanPenjualan({
+      db,
+      ...args({
+        keranjang: { baris: [{ ...BARIS[0], unitPrice: 30000 }], diskon: null },
+        pembayaran: [TRFB({ nominal: 10_000n }), { metode: 'cash', tendered: 50000 }],
+      }),
+    }),
+    /COMMIT gagal/
+  );
+  for (const tabel of ['"order"', 'payment', 'order_line', 'cash_movement', 'outbox_local']) {
+    const n = (await raw.getAll(`SELECT count(*) AS n FROM ${tabel}`))[0].n;
+    assert.equal(n, 0, `${tabel} berisi ${n} baris sesudah COMMIT gagal -- penjualan tersimpan setengah`);
+  }
+  const cfg = (await raw.getAll('SELECT receipt_sequence FROM device_config'))[0];
+  assert.equal(cfg.receipt_sequence, 0, 'counter nomor struk maju meski penjualan tidak tersimpan');
+  raw.tutup();
+});
+

@@ -35,7 +35,9 @@ function berkas(dir) {
 
 const SEMUA = DIPINDAI.flatMap(berkas).filter((r) => !PENGECUALIAN.has(r));
 
-const PETA_LOKAL = /(?:\bcard_edc|\bqris_static)\s*:\s*['"`]/;
+// Posisi KUNCI objek (awal baris, sesudah `{` atau `,`), bukan ternary `? 'card_edc' : 'x'`.
+// Kunci bertanda kutip termasuk: `{ 'card_edc': 'Kartu' }` lolos dari pola tanpa kutip.
+const PETA_LOKAL = /(?:^|[{,])\s*['"]?\b(?:card_edc|qris_static)\b['"]?\s*:\s*['"`]/m;
 const DEKLARASI = /(?:\b(?:const|let|var)\s+LABEL_METODE\b|\bfunction\s+labelMetode\b|\b(?:const|let|var)\s+labelMetode\s*=)/;
 
 test('⛔ G-LABEL: tidak ada peta label metode lokal di apps/backoffice, apps/hp, apps/kasir', () => {
@@ -47,4 +49,28 @@ test('⛔ G-LABEL: tidak ada peta label metode lokal di apps/backoffice, apps/hp
     if (DEKLARASI.test(teks)) pelanggar.push(`${rel}: deklarasi LABEL_METODE/labelMetode — impor dari packages/domain/src/metode-tampilan.ts`);
   }
   assert.deepEqual(pelanggar, [], `salinan peta label metode:\n${pelanggar.join('\n')}`);
+});
+
+test('pindaian G-LABEL benar-benar menangkap pola yang dilarang (penjaga tidak hampa)', () => {
+  assert.ok(PETA_LOKAL.test("const x = { card_edc: 'Kartu' }"));
+  assert.ok(PETA_LOKAL.test('{ qris_static: "QRIS" }'));
+  assert.ok(PETA_LOKAL.test("{ 'card_edc': 'Kartu' }"), 'kunci bertanda kutip tunggal lolos dari pindaian');
+  assert.ok(PETA_LOKAL.test('{ "qris_static": "QRIS" }'), 'kunci bertanda kutip ganda lolos dari pindaian');
+  assert.equal(PETA_LOKAL.test('m.card_edc === 1'), false);
+  assert.equal(PETA_LOKAL.test("const m = k ? 'card_edc' : 'other';"), false, 'ternary bukan peta label');
+  assert.ok(PETA_LOKAL.test("const x = {\n  'qris_static': 'QRIS',\n}"), 'kunci di baris sendiri lolos');
+  assert.ok(DEKLARASI.test('export const LABEL_METODE: Record<string, string> = {'));
+  assert.ok(DEKLARASI.test('export function labelMetode(kode: string) {'));
+  assert.equal(DEKLARASI.test("import { labelMetode } from 'x'"), false);
+});
+
+test('⛔ layar yang menampilkan SATU baris payment meneruskan provider ke labelMetode', () => {
+  // B-03 (Detail.tsx) menampilkan `payments[]` per baris, bukan agregat yang sudah
+  // dilipat server; tanpa `provider`, transfer terbaca "Lainnya".
+  const teks = fs.readFileSync(path.join(AKAR, 'apps/backoffice/src/penjualan/Detail.tsx'), 'utf8');
+  assert.match(
+    teks,
+    /labelMetode\(\s*p\.method\s*,\s*p\.provider\s*\)/,
+    'Detail.tsx tidak meneruskan p.provider ke labelMetode -- transfer tampil sebagai Lainnya'
+  );
 });

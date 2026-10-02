@@ -140,6 +140,25 @@ test('⛔ ekspor CSV memuat baris pembayaran,transfer,…', async () => {
   assert.match(rekap.body, /pembayaran","?transfer/i, 'ekspor rekap tidak memuat pembayaran,transfer');
 });
 
+test('⛔ rekapitulasi FR-C13 memuat transfer terpisah dari other (JSON dan CSV payments tertutup jumlahnya)', async () => {
+  const res = await get(`/reports/recap?${RENTANG}`);
+  assert.equal(res.statusCode, 200, res.body);
+  const rekap = res.json().rekap.pembayaran;
+  const peta = Object.fromEntries(rekap.map((m) => [m.method, m]));
+  assert.equal(peta.transfer?.totalDiterima, String(NILAI.transfer), 'rekap tidak memuat transfer');
+  assert.equal(peta.other?.totalDiterima, String(NILAI.other), 'rekap: other tercampur dengan transfer');
+  assert.equal(
+    rekap.reduce((t, m) => t + BigInt(m.totalDiterima), 0n),
+    BigInt(JUMLAH_SEMUA),
+    'rekap FR-C13 kehilangan uang'
+  );
+
+  const csv = (await get(`/reports/export?type=payments&${RENTANG}`)).body;
+  const dariCsv = csv.split('\n').slice(1).filter((l) => l.trim() !== '')
+    .reduce((t, l) => t + BigInt(l.split(',')[2].replace(/"/g, '')), 0n);
+  assert.equal(dariCsv, BigInt(JUMLAH_SEMUA), 'CSV payments kehilangan uang');
+});
+
 test('⛔ ringkasan HP M-01: perMetode memuat transfer', async () => {
   const res = await get(`/reports/daily-summary?date=${TANGGAL}`);
   assert.equal(res.statusCode, 200, res.body);

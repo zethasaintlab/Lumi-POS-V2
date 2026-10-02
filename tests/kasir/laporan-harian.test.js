@@ -351,17 +351,21 @@ test('⛔ payment pending dan failed TIDAK dihitung di ringkasan per metode', as
   assert.equal(hasil.perMetode[0].total, 25000n);
 });
 
-test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan harian, syarat user P1)', async () => {
+test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan harian)', async () => {
   const { laporanHarian } = await import(MOD);
   const db = dbSungguhan();
-  jual(db, { id: 'o1', baris: [{ ...KOPI, unitPrice: 50000, qty: 1 }] });
-  jual(db, { id: 'o2', baris: [{ ...KOPI, unitPrice: 70000, qty: 1 }], metode: 'other', provider: 'bank_transfer' });
-  jual(db, { id: 'o3', baris: [{ ...ROTI, unitPrice: 30000, qty: 1 }], metode: 'other' });
+  jual(db, { id: 'o1', baris: [{ ...KOPI, unitPrice: 25000, qty: 1 }], metode: 'cash' });
+  jual(db, { id: 'o2', baris: [{ ...KOPI, unitPrice: 40000, qty: 1 }], metode: 'other', provider: 'bank_transfer' });
+  jual(db, { id: 'o3', baris: [{ ...KOPI, unitPrice: 15000, qty: 1 }], metode: 'other', provider: 'bank_transfer' });
+  jual(db, { id: 'o4', baris: [{ ...KOPI, unitPrice: 5000, qty: 1 }], metode: 'other' });
 
   const l = await laporanHarian(db, { businessDate: TANGGAL });
-  const kode = l.perMetode.map((m) => m.metode).sort();
-  assert.deepEqual(kode, ['cash', 'other', 'transfer']);
-  assert.equal(l.perMetode.find((m) => m.metode === 'transfer').total, 70000n);
-  assert.equal(l.perMetode.find((m) => m.metode === 'other').total, 30000n);
-  assert.equal(l.perMetode.reduce((t, m) => t + m.total, 0n), 150000n, 'tidak ada uang yang hilang dari pengelompokan');
+  const peta = Object.fromEntries(l.perMetode.map((m) => [m.metode, m]));
+  assert.ok(peta.transfer, `laporan harian tidak memuat transfer: ${JSON.stringify(l.perMetode.map((m) => m.metode))}`);
+  assert.equal(peta.transfer.total, 55000n);
+  assert.equal(peta.transfer.jumlah, 2);
+  assert.equal(peta.other.total, 5000n, 'other tanpa provider tercampur dengan transfer');
+  assert.equal(l.perMetode.reduce((t, m) => t + m.total, 0n), 85000n, 'uang hilang dari pengelompokan');
+  // Urutan tetap: total menurun, lalu kode.
+  assert.deepEqual(l.perMetode.map((m) => m.metode), ['transfer', 'cash', 'other']);
 });
