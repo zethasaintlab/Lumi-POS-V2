@@ -161,6 +161,7 @@ Sisa Modul B: tidak ada yang belum digarap. **FR-B11 ditutup** bersama antrean `
 - ⛔ **Satu baris `payment` per bagian.** Menggabungkan dua metode menjadi satu baris membuat rekonsiliasi FR-C12 tidak dapat memisahkan uang bank dari uang laci — dua saluran yang settlement-nya berbeda hari.
 - ⛔ **Kelebihan bayar non-tunai DITOLAK** (`spec-c:225`), dengan angkanya. Hanya SATU bagian tunai per transaksi.
 - ⛔ **`hitungKeranjang` adalah satu fungsi untuk layar dan jalur penulisan.** K-06 harus menampilkan TOTAL sebelum kasir membaginya, dan subtotal belum kena pajak.
+- ⛔ **`rencanaBayarKeranjang` adalah satu fungsi untuk kembalian di K-06 dan jalur penulisan** (keputusan user 28 September 2026, issue #76 komentar 5862870577). K-06 menampilkan kembalian sebelum simpan; angka yang dihitung layar dengan jalannya sendiri akan menyimpang dari yang tersimpan tepat di bawaan pembulatan dan pembayaran campuran.
 - **Penjualan tetap ditulis hanya saat LUNAS.** Order `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21).
 
 **Modul C selesai. FR-C3 + QRIS dinamis di kasir ditutup 24 Agustus 2026** lewat jalur penjualan **ONLINE-FIRST** — satu-satunya jalur di repo ini yang menulis ke server lebih dulu.

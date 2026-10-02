@@ -25,7 +25,7 @@ Pelanggaran = cacat, bukan preferensi gaya. Tolak di review.
 
 Aturan saja, tanpa riwayat — riwayat dan alasan lengkap ada di `docs/keputusan/*.md`. Subagen yang menyentuh jalur uang tidak boleh bergantung pada mengikuti rujukan; daftar ini wajib cukup sendiri.
 
-- Pembulatan FR-C9 hanya pada SISA TUNAI sesudah bagian non-tunai, tidak pernah pada `total`. Di perangkat hanya dihitung di `simpanPenjualan` dan hanya tampil di K-07, tidak pernah di K-06; di server hanya di handler `payments` (`computeCashRounding`).
+- Pembulatan FR-C9 hanya pada SISA TUNAI sesudah bagian non-tunai, tidak pernah pada `total`. Di perangkat dihitung hanya lewat `rencanaBayarKeranjang` — satu fungsi, dipanggil `simpanPenjualan` dan K-06; K-06 menampilkan kembalian dan tagihan tunai hasil fungsi itu, tidak pernah aritmetika kedua (keputusan user 28 September 2026, issue #76 komentar 5862870577); di server hanya di handler `payments` (`computeCashRounding`).
 - Pembayaran campuran: bagian TUNAI dikirim TERAKHIR (rantai `depends_on` eksplisit); server menghitungnya dari `total − SUM(confirmed)`.
 - Satu baris `payment` per bagian pembayaran. Tidak pernah digabung jadi satu baris.
 - Kelebihan bayar NON-TUNAI ditolak. Hanya satu bagian tunai per transaksi.
@@ -456,7 +456,7 @@ Urutan ini digantikan oleh keputusan kampanye Hidupkan desain, 26 September 2026
 |---|---|
 | Hitungan buta K-12: rincian saldo hanya di tahap `review` | `tests/kasir-dom/k12-hitungan-buta.test.js` |
 | QRIS mengganti layar penuh saat panelnya aktif | `k06-penjaga.test.js` P1 |
-| Pembulatan FR-C9 hanya di `simpanPenjualan`, hanya tampil di K-07 | `k06-penjaga.test.js` P2 + `tests/kasir/penjualan.test.js` |
+| Pembulatan FR-C9 satu sumber (`rencanaBayarKeranjang`); kembalian K-06 sama persis dengan yang tersimpan (keputusan user 28 Sep 2026) | `k06-penjaga.test.js` P2 + P3 + `tests/kasir/penjualan.test.js` |
 | Target sentuh ≥ 44px; aksi utama kasir 56px | sebagian: `k03-chrome`, `k06-penjaga`, `k12-aksi-slot`. **Belum ada penjaga umum lintas layar** |
 | K-03: ≥ 12 kartu tanpa scroll pada 1024×768 | `k03-chrome.test.js` (IA:62) |
 | K-03: Bayar di posisi sama untuk 0, 3, 20 item | `k03-bayar-tetap.test.js` |

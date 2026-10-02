@@ -54,6 +54,7 @@ Menggantikan aturan lama di `CLAUDE.md` yang bertentangan:
   keranjang terkunci.
 - **Pembulatan FR-C9** hanya di `simpanPenjualan`. **Total** dari
   `totals.total`.
+  - *Catatan 28 September 2026 (keputusan user, issue #76 komentar 5862870577):* butir ini diperluas — pembulatan dihitung hanya lewat `rencanaBayarKeranjang`, dipanggil `simpanPenjualan` dan K-06; K-06 menampilkan kembalian dan tagihan tunai dari fungsi yang sama (Task 8B).
 - **Target sentuh:** elemen yang di mockup lebih kecil dari 44px tampil persis
   ukuran mockup, dengan area sentuh diperluas tanpa terlihat ke 44px, dan
   56px untuk aksi uang.
