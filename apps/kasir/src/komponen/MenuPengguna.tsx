@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Avatar, Icon } from 'ds';
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
+import { usePakaiKunciNav } from '../rute/pakai-kunci-nav.ts';
 import { navigasi } from '../rute/navigasi.ts';
 import { keluar } from '../konteks/useSesi.ts';
 
@@ -54,6 +55,12 @@ export function MenuPengguna({
      menuntut Galeri.tsx berpindah layar: dicatat di laporan task. */
   const [keluarSelesai, setKeluarSelesai] = useState(false);
   const idMenu = useId();
+  // Kunci K-06 (`rute/kunci-nav.ts`): item menu tampil terkunci, dan handler-nya menolak.
+  const alasanKunci = usePakaiKunciNav();
+  const terkunci = alasanKunci !== null;
+  const kunciAttr = terkunci
+    ? ({ 'aria-disabled': true, 'aria-describedby': 'nav-kunci-alasan' } as const)
+    : {};
   const bungkus = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,11 +80,13 @@ export function MenuPengguna({
   }, [terbuka]);
 
   const tuju = (jalur: string) => {
+    if (terkunci) return;
     setTerbuka(false);
     navigasi(jalur);
   };
 
   const lakukanKeluar = () => {
+    if (terkunci) return;
     setSibuk(true);
     setPesan(null);
     void keluar(db ?? undefined)
@@ -143,13 +152,14 @@ export function MenuPengguna({
           aria-label="Menu pengguna"
           className="kasir-menu-pengguna-daftar card"
         >
-          <button type="button" role="menuitem" className="kasir-menu-item" onClick={() => tuju('/sync')}>
+          <button type="button" role="menuitem" className="kasir-menu-item" {...kunciAttr} onClick={() => tuju('/sync')}>
             Status sinkronisasi
           </button>
           <button
             type="button"
             role="menuitem"
             className="kasir-menu-item"
+            {...kunciAttr}
             onClick={() => tuju('/perangkat')}
           >
             Perangkat &amp; uji cetak
@@ -159,6 +169,7 @@ export function MenuPengguna({
             role="menuitem"
             className="kasir-menu-item"
             disabled={sibuk}
+            {...kunciAttr}
             onClick={lakukanKeluar}
           >
             {sibuk ? 'Memeriksa…' : 'Keluar'}

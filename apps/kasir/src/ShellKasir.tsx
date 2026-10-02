@@ -1,9 +1,9 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useState } from 'react';
 import { Icon, SyncIndicator, Tabs, Wordmark, type IconName } from 'ds';
 import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
 import { ruteNav, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
-import { kunciNavSekarang, langgananKunciNav } from './rute/kunci-nav.ts';
+import { usePakaiKunciNav } from './rute/pakai-kunci-nav.ts';
 import { useAntrean } from './konteks/useAntrean.ts';
 import { useKeadaanLokal } from './konteks/DbLokalProvider.tsx';
 import { PitaAntrean } from './PitaAntrean.tsx';
@@ -56,7 +56,7 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
   const [panelTerbuka, setPanelTerbuka] = useState(false);
   /* ⛔ Kunci nav dari K-06 (`rute/kunci-nav.ts`): QRIS menunggu atau penjualan
      sedang disimpan. `null` = bebas. */
-  const alasanKunci = useSyncExternalStore(langgananKunciNav, kunciNavSekarang, kunciNavSekarang);
+  const alasanKunci = usePakaiKunciNav();
 
   /* ⛔ `siap` saja TIDAK cukup, dan selisih antara keduanya adalah cacat yang
      hidup di sini sampai 21 September 2026.
@@ -178,6 +178,8 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
             tabIndex={0}
             className="kasir-indikator"
             aria-label="Buka Status Sinkronisasi"
+            aria-disabled={alasanKunci !== null ? true : undefined}
+            aria-describedby={alasanKunci !== null ? 'nav-kunci-alasan' : undefined}
             onClick={() => navigasi('/sync')}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -193,7 +195,7 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
                 // `spec-h:216` menuliskan teks gagal utuh: "Gagal kirim (2) ·
                 // Coba lagi". Bagian "Coba lagi" hanya muncul bila `onRetry`
                 // diberikan -- ia tombol di dalam komponen, bukan label.
-                onRetry={indikator.state === 'failed' ? () => navigasi('/sync') : undefined}
+                onRetry={indikator.state === 'failed' && alasanKunci === null ? () => navigasi('/sync') : undefined}
               />
             ) : (
               <SyncIndicator state="offline-only" reason="Antrean belum dapat dibaca" />

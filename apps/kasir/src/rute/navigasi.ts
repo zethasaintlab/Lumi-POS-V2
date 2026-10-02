@@ -5,6 +5,8 @@
 // bagian yang menyentuh `window`. Pemisahan itu yang membuat logika rute dapat
 // diuji di `node --test`.
 
+import { kunciNavSekarang } from './kunci-nav.ts';
+
 const PERISTIWA = 'lumi:navigasi';
 
 /** Pathname saat ini. Di luar browser (test, SSR) selalu akar. */
@@ -22,6 +24,10 @@ export function jalurSekarang(): string {
  */
 export function navigasi(jalur: string): void {
   if (typeof window === 'undefined') return;
+  /* ⛔ Pagar di SATU pintu, bukan di tiap tombol: setiap jalan keluar header
+     (tab, indikator, pita, menu, lonceng) lewat sini. Tombol baru yang lupa
+     tampil terkunci tetap tidak dapat meninggalkan K-06 (`kunci-nav.ts`). */
+  if (kunciNavSekarang() !== null) return;
   if (window.location.pathname === jalur) return;
   window.history.pushState({}, '', jalur);
   window.dispatchEvent(new Event(PERISTIWA));

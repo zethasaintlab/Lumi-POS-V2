@@ -152,12 +152,24 @@ async function ukur(hal) {
       primer: primer && { teks: primer.textContent.trim(), ...r(primer) },
       kembali: kembali && r(kembali),
       secondary: probe('--secondary'),
-      /* ⛔ TERLIHAT, bukan sekadar ada di DOM: overlay lama `position: fixed`
-         menutup header yang tetap ter-mount di bawahnya, jadi header dihitung
-         "terlihat" hanya bila TIDAK ADA `.overlay` di dokumen. (Titik tengah
-         header tidak dapat dipakai: pada panggung 1024 bilah galeri menutupnya
-         dan `elementsFromPoint` tidak menjangkaunya.) */
-      header: !!document.querySelector('.kasir-header') && !document.querySelector('.overlay'),
+      /* ⛔ TERLIHAT, bukan sekadar ada di DOM. Tanpa `elementFromPoint` (bilah
+         galeri menutup titik tengah header pada panggung 1024): header
+         dihitung terlihat bila ada, tanpa `.overlay`, dan TIDAK ada elemen
+         `position: fixed` di luar galeri yang persegi-nya memotong header —
+         menangkap overlay penuh-layar selain `.overlay`. BATAS: elemen
+         `absolute` yang menutup header tidak terjangkau pengukuran ini. */
+      header: (() => {
+        const h = document.querySelector('.kasir-header');
+        if (!h || document.querySelector('.overlay')) return false;
+        const hr = h.getBoundingClientRect();
+        for (const e of document.body.querySelectorAll('*')) {
+          if (e.contains(h) || h.contains(e) || String(e.className).includes('galeri')) continue;
+          if (getComputedStyle(e).position !== 'fixed') continue;
+          const r = e.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0 && r.left < hr.right && r.right > hr.left && r.top < hr.bottom && r.bottom > hr.top) return false;
+        }
+        return true;
+      })(),
       dalamOverlay: !!kartu?.closest('.overlay'),
       gridK03: !!document.querySelector('.kasir-grid'),
     };

@@ -300,11 +300,13 @@ test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disable
       lokasi: location.pathname + location.search,
     }));
     assert.deepEqual(sebelumPaksa.aktif, ['QRIS'], `tab aktif bukan QRIS: ${JSON.stringify(sebelumPaksa)}`);
-    /* ⛔ `dispatchEvent` pada `<button disabled>` DITELAN peramban (terukur:
-       sabotase "handler tanpa pagar" tetap hijau), jadi atribut `disabled`
-       dicopot lebih dulu — yang diuji pagar HANDLER-nya sendiri, yang berdiri
-       sendiri dari atribut. Tab nav memakai `aria-disabled` dan menerima klik
-       paksa apa adanya. */
+    /* ⛔ BATAS pengukuran, dinyatakan: React tidak memasang `onClick` pada
+       `<button disabled>`, jadi atribut `disabled` dicopot lebih dulu supaya
+       klik paksa sampai ke elemen. Di keadaan ini tab sudah dipaksa QRIS oleh
+       state turunan, sehingga pagar handler `pilihTab`/`pilihSub` TIDAK teramati
+       di sini (sabotasenya tetap hijau); yang teramati: metode/nominal/location
+       tidak berubah dan tab nav tidak menavigasi. Pagar `navigasi()` dijaga test
+       jalan-keluar-header di akhir berkas. */
     await hal.evaluate(() => {
       for (const el of document.querySelectorAll('.kasir-bayar-tab button, .kasir-bayar-sub button, .kasir-header [role="tab"]')) {
         el.removeAttribute('disabled');

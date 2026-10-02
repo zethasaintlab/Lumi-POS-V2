@@ -1990,3 +1990,12 @@
   flex-direction: column;
   min-width: 0;
 }
+
+/* Jalan keluar header yang dikunci K-06 (`rute/kunci-nav.ts`): isyarat visual
+   selain `aria-disabled`; kalimat alasannya terlihat di K-06 sendiri (DS #5). */
+.kasir-indikator[aria-disabled="true"],
+.kasir-pita-tautan[aria-disabled="true"],
+.kasir-menu-item[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -56,8 +56,9 @@ import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampila
    `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya
    jalan penutupan (KEP-21, belum dibangun).
 
-   Metode online-only dinonaktifkan saat offline (FR-C3) — belum relevan:
-   ketiga metode yang ada semuanya berfungsi tanpa jaringan. */
+   Hanya QRIS dinamis yang online-only (FR-C3): ia dinonaktifkan bersama
+   alasannya saat server tak terjangkau; tunai, kartu, transfer, dan QRIS
+   statis berfungsi tanpa jaringan. */
 
 /** Bentuk layar → bentuk domain. Tunai tidak pernah masuk daftar `bagian`. */
 function keBagianDomain(p: Pembayaran): BagianBayar {
@@ -106,10 +107,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      mengembalikan `null` untuk kosong/cacat — bukan 0, karena 0 yang lahir
      dari kolom kosong adalah uang yang tidak pernah diserahkan. */
   const [nominalTeks, setNominalTeks] = useState('');
-  /* FR-C1 — metode pembayaran. Ketiganya BERFUNGSI OFFLINE, dan itu yang
-     membuat daftarnya berhenti di sini: QRIS dinamis menuntut gateway
-     menjawab sebelum lunas (`spec-c:320`), jadi ordernya harus sudah ada di
-     server — sementara jalur penjualan ini menulis lokal lebih dulu. */
+  /* FR-C1 — empat tab: Tunai, QRIS, Kartu, Transfer. QRIS dinamis (`subQris`)
+     online-only: gateway harus menjawab sebelum lunas (`spec-c:320`), jadi
+     ordernya sudah ada di server; yang lain menulis lokal lebih dulu. */
   const [tab, setTab] = useState<TabBayar>('tunai');
   const [subQris, setSubQris] = useState<'qris_dynamic' | 'qris_static'>('qris_dynamic');
   const [bank, setBank] = useState('');
@@ -131,7 +131,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      yang SAMA yang `simpanPenjualan` pakai. Menghitungnya sendiri di layar
      berarti kasir membagi angka yang berbeda dari angka yang tersimpan. */
   const [total, setTotal] = useState<bigint | null>(null);
-  /* ⛔ Hitungan LENGKAP, untuk baris pajak dan Total di blok aksi. `total` di
+  /* ⛔ Hitungan LENGKAP, untuk baris pajak dan Total di blok ATAS kartu. `total` di
      atas sengaja dibiarkan apa adanya: ia dibaca jalur pembayaran, dan
      menurunkannya dari state kedua berarti dua tempat yang memutuskan angka
      yang ditagihkan. Yang di bawah ini hanya dibaca layar. */
@@ -475,7 +475,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           : approvalCode.trim().length > 0;
   /* "Tambah pembayaran lain" lebih ketat untuk Transfer: bagian yang ditolak
      `periksaTransfer` tidak boleh masuk daftar. Aturannya tetap SATU, dipanggil. */
-  const bisaTambah = metode === 'other' ? periksaTransfer(referensi, bank) === null : formLengkap;
+  const galatTambahTransfer = metode === 'other' ? periksaTransfer(referensi, bank) : null;
+  const bisaTambah = metode === 'other' ? galatTambahTransfer === null : formLengkap;
 
   /* Lunas tanpa tunai: seluruh tagihan sudah tertutup bagian non-tunai. */
   const lunasTanpaTunai = sisa !== null && sisa === 0n && bagian.length > 0;
@@ -499,6 +500,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
             : metode === 'qris_static'
               ? `Isi referensi pembayaran QRIS (minimal ${MIN_PANJANG_REFERENSI} karakter).`
               : 'Isi kode approval dari struk mesin EDC.';
+
+  /* Alasan "Tambah pembayaran lain" nonaktif: pesan `periksaTransfer` apa adanya (Transfer
+     "selalu lengkap" untuk tombol utama, jadi `alasanAksi` null di sana); metode lain sudah
+     punya `alasanAksi`. Tanpa elemen ini `aria-describedby` menunjuk ke ketiadaan. */
+  const alasanTambah = !bisaTambah ? (galatTambahTransfer?.pesan ?? alasanAksi) : null;
 
   /* FR-C3 — jalur ONLINE-FIRST untuk QRIS dinamis.
 
@@ -675,6 +681,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
 
   const idKunci = 'bayar-kunci-alasan';
   const idAlasanAksi = 'bayar-alasan';
+  const idAlasanTambah = 'bayar-tambah-alasan';
   const idAlasanDinamis = 'bayar-dinamis-alasan';
 
   /* ⛔ Pagar kedua di handler, bukan hanya `disabled`: klik yang dipaksa
@@ -1070,6 +1077,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               {alasanAksi}
             </p>
           )}
+          {alasanTambah !== null && alasanTambah !== alasanAksi && (
+            <p id={idAlasanTambah} className="t-caption kasir-bayar-alasan">
+              {alasanTambah}
+            </p>
+          )}
           <div className="kasir-bayar-baris">
             {/* ⛔ `ghost`: aksi utama layar ini tetap Konfirmasi bayar.
                 Menambah bagian adalah langkah antara, bukan tujuannya. */}
@@ -1078,7 +1090,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                 varian="ghost"
                 kritis
                 disabled={menyimpan || !bisaTambah}
-                keterangan={!bisaTambah ? idAlasanAksi : undefined}
+                keterangan={alasanTambah === null ? undefined : alasanTambah === alasanAksi ? idAlasanAksi : idAlasanTambah}
                 onClick={tambahBagian}
               >
                 Tambah pembayaran lain
