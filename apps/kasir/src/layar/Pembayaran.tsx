@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { pantauJangkauan, type KeadaanJangkauan } from '../lokal/keterjangkauan.ts';
 import {
   alasanNonaktif,
@@ -426,7 +426,7 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
             aksen adalah warna AKSI (DS #2) — ia bersaing dengan Transaksi Baru.
             Yang dikejar panelnya, dari token yang sudah ada. */}
         <div className="kasir-k07-kembalian">
-          <p className="t-body-md">Kembalian</p>
+          <p className="t-caption kasir-kembalian-label">Kembalian</p>
           <p className="t-display num">{rupiah(selesai.kembalian)}</p>
         </div>
 
@@ -770,6 +770,23 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
       });
   };
 
+  /* Pembayaran campuran (keputusan bawaan #4): tautan kecil, bukan tampilan
+     bawaan. Hilang bila sudah ada bagian — membukanya kembali tidak bermakna dan
+     menutupnya menyembunyikan bagian yang ada.
+
+     ⛔ Duduk di BARIS TOTAL (kanan), bukan di bawah isi metode: kotak Kembalian
+     (Task 8B, tinggi mockup ±95 px) mendorong tautan di bawah lipatan 1024×768,
+     dan `k06-tata-letak` menuntutnya terlihat tanpa gulir. */
+  const tautanCampuran = !campuran ? (
+    <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} aria-describedby={menyimpan ? 'bayar-kunci-alasan' : undefined} onClick={() => setCampuran(true)}>
+      Bayar dengan lebih dari satu metode
+    </button>
+  ) : bagian.length === 0 ? (
+    <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} aria-describedby={menyimpan ? 'bayar-kunci-alasan' : undefined} onClick={() => setCampuran(false)}>
+      Bayar dengan satu metode saja
+    </button>
+  ) : null;
+
   return (
     <HalamanBayar terkunci={terkunciMetode} onKembali={onKembali}>
       {/* ⛔ Isi yang MENGGULIR. Semua yang kasir baca dan ketik ada di sini;
@@ -781,7 +798,7 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
       <div className="kasir-bayar-isi">
         {/* Total dari `hitungan.totals.total` — `hitungKeranjang`, fungsi yang
             SAMA yang `simpanPenjualan` pakai. Tidak pernah dibulatkan. */}
-        <BlokTotal total={hitungan?.totals.total ?? null} />
+        <BlokTotal total={hitungan?.totals.total ?? null} aksi={tautanCampuran} />
 
         <PemilihTab tab={tab} tabTampil={tabTampil} terkunci={terkunciMetode} onPilih={pilihTab} />
         {terkunciMetode && (
@@ -1031,18 +1048,6 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
           )}
         </div>
 
-        {/* Pembayaran campuran (keputusan bawaan #4): tautan kecil, bukan
-            tampilan bawaan. Hilang bila sudah ada bagian — membukanya kembali
-            tidak bermakna dan menutupnya menyembunyikan bagian yang ada. */}
-        {!campuran ? (
-          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} aria-describedby={menyimpan ? 'bayar-kunci-alasan' : undefined} onClick={() => setCampuran(true)}>
-            Bayar dengan lebih dari satu metode
-          </button>
-        ) : bagian.length === 0 ? (
-          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} aria-describedby={menyimpan ? 'bayar-kunci-alasan' : undefined} onClick={() => setCampuran(false)}>
-            Bayar dengan satu metode saja
-          </button>
-        ) : null}
       </div>
 
       {/* ⛔ Blok aksi yang MENEMPEL. Angka yang ditagih dan tombol yang
@@ -1150,11 +1155,14 @@ function HalamanBayar({
 }
 
 /* Blok total di ATAS kartu: "TOTAL BELANJA" 13 px kapital, nilai 32/700. */
-function BlokTotal({ total }: { total: bigint | null }) {
+function BlokTotal({ total, aksi }: { total: bigint | null; aksi?: ReactNode }) {
   return (
-    <div className="kasir-bayar-total">
-      <p className="t-caption kasir-bayar-total-label">Total belanja</p>
-      <p className="t-display num">{total === null ? 'Rp —' : rupiah(total)}</p>
+    <div className="kasir-bayar-total-baris">
+      <div className="kasir-bayar-total">
+        <p className="t-caption kasir-bayar-total-label">Total belanja</p>
+        <p className="t-display num">{total === null ? 'Rp —' : rupiah(total)}</p>
+      </div>
+      {aksi}
     </div>
   );
 }

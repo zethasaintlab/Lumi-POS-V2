@@ -673,6 +673,15 @@
   padding: var(--space-4);
 }
 
+/* Baris total: nilai total di kiri, tautan pembayaran campuran di kanan. */
+.kasir-bayar-total-baris {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
 /* Blok total di atas kartu: label 13 px kapital, nilai 32/700 (`.t-display`). */
 .kasir-bayar-total {
   display: flex;
@@ -746,12 +755,12 @@
   border-radius: var(--radius-card);
   background: var(--accent-subtle);
 }
+.kasir-kembalian-label { color: var(--ink-muted); }
 .kasir-kembalian-nilai { color: var(--primary); }
 
 .kasir-sub-qris { align-self: flex-start; }
 .kasir-sub-qris button { min-height: var(--touch-min); }
 .kasir-sub-qris button:disabled { cursor: not-allowed; }
-.kasir-tautan-campuran { align-self: flex-start; }
 
 .kasir-bayar-isi {
   display: flex;
