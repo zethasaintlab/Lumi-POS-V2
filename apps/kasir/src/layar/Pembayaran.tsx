@@ -4,6 +4,7 @@ import { alasanNonaktif, periksaTransfer, PROVIDER_TRANSFER } from '../../../../
 import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 import { setelKunciNav } from '../rute/kunci-nav.ts';
 import { PanelQris } from '../komponen/PanelQris.tsx';
+import { KerangkaQr } from '../komponen/GambarQr.tsx';
 import { buatPemanggilApi } from '../lokal/api.ts';
 import {
   cadangkanNomor,
@@ -208,11 +209,19 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      ⛔ Tanpa ini, tab yang ter-refresh membuat kasir kehilangan seluruh jejak
      transaksi yang pelanggannya mungkin SUDAH bayar — dan satu-satunya yang
      tahu adalah server. */
+  /* ⛔ SEKALI per pemasangan layar. Tanpa penjaga ini "Tutup layar" (draf
+     sengaja dibiarkan hidup) mengosongkan `panelQris`, efek jalan lagi, dan
+     panel dibuka kembali seketika — kasir tak punya jalan keluar dari QR yang
+     ditinggalkan pelanggan. */
+  const sudahPulih = useRef(false);
   useEffect(() => {
-    if (!shift || panelQris !== null || total === null) return;
+    if (panelQris !== null) sudahPulih.current = true;
+    if (sudahPulih.current || !shift || panelQris !== null || total === null) return;
     let hidup = true;
     void pulihkanDraf(db, shift.id).then((d) => {
-      if (!hidup || d === null || d.qrString === null) return;
+      if (!hidup) return;
+      sudahPulih.current = true;
+      if (d === null || d.qrString === null) return;
       setPanelQris({
         qrString: d.qrString,
         paymentId: d.paymentId,
@@ -527,7 +536,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       ? 'Sedang menyimpan penjualan.'
       : metode === 'qris_dynamic'
         ? (alasanDinamis ??
-          (bagian.length > 0 ? 'QRIS dinamis tidak dapat digabung dengan bagian pembayaran lain.' : null))
+          (bagian.length > 0
+            ? 'QRIS dinamis tidak dapat digabung dengan bagian pembayaran lain.'
+            : 'Tekan Tampilkan kode QR; penjualan lunas hanya setelah gateway mengonfirmasi.'))
         : masukanLengkap
           ? alasanRencana
           : metode === 'cash'
@@ -739,9 +750,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       ? metode === 'qris_dynamic'
         ? 'Meminta QR…'
         : 'Menyimpan…'
-      : metode === 'qris_dynamic'
-        ? 'Tampilkan QR'
-        : 'Konfirmasi bayar';
+      : 'Konfirmasi bayar';
 
   return (
     <div className="kasir-bayar-halaman">
@@ -982,7 +991,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                 if (h.status === 'batal') {
                   void bersihkanDraf(db);
                   setPanelQris(null);
-                  setGalat('Transaksi dibatalkan. Stok sudah dikembalikan.');
+                  setGalat(
+                    h.baru
+                      ? 'Kode lama dibatalkan dan stok dikembalikan. Tekan Tampilkan kode QR untuk membuat kode baru.'
+                      : 'Transaksi dibatalkan. Stok sudah dikembalikan.'
+                  );
                   return;
                 }
                 /* ⛔ "Ditunda" TIDAK membersihkan draf lokal. Ia satu-satunya
@@ -999,11 +1012,31 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
             />
           )}
 
+          {/* P3(b): QR baru diminta saat "Tampilkan kode QR" ditekan, bukan saat
+              tab dipilih. Sebelum itu kartu hanya menampilkan nominal. */}
           {!panelQris && metode === 'qris_dynamic' && (
-            <p className="t-body-md">
-              Pelanggan memindai QR yang tampil di layar berikutnya. Pembayaran lunas hanya setelah
-              gateway mengonfirmasi.
-            </p>
+            <div className="kasir-qris">
+              {menyimpan ? (
+                <KerangkaQr />
+              ) : (
+                <>
+                  {total !== null && <p className="t-title num">{rupiah(total)}</p>}
+                  <p className="t-body-md">
+                    Pelanggan memindai kode QR dari layar ini. Pembayaran lunas hanya setelah gateway
+                    mengonfirmasi.
+                  </p>
+                </>
+              )}
+              <Tombol
+                varian="secondary"
+                kritis
+                disabled={menyimpan || alasanDinamis !== null || bagian.length > 0}
+                keterangan={menyimpan || alasanDinamis !== null || bagian.length > 0 ? idAlasanAksi : undefined}
+                onClick={mulaiQris}
+              >
+                {menyimpan ? 'Meminta kode QR…' : 'Tampilkan kode QR'}
+              </Tombol>
+            </div>
           )}
 
           {/* Nominal bagian — hanya di pembayaran campuran; kosong berarti
@@ -1153,7 +1186,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               kritis
               disabled={alasanAksi !== null}
               keterangan={alasanAksi !== null ? idAlasanAksi : undefined}
-              onClick={metode === 'qris_dynamic' ? mulaiQris : bayar}
+              onClick={bayar}
             >
               <Icon name="check" size={19} />
               {labelUtama}

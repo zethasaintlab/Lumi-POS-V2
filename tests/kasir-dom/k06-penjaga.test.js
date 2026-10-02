@@ -239,11 +239,11 @@ test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disable
     );
 
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
-    await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
-    await tunggu(hal, () => /Pindai untuk membayar/.test(document.body.innerText), 'panel QRIS tidak muncul sesudah "Tampilkan QR" — kunci dan larangan di bawah tidak teramati', null, 10_000);
+    await hal.getByRole('button', { name: 'Tampilkan kode QR' }).click();
+    await tunggu(hal, () => /Pindai QRIS untuk membayar/.test(document.body.innerText), 'panel QRIS tidak muncul sesudah "Tampilkan kode QR" — kunci dan larangan di bawah tidak teramati', null, 10_000);
 
     const isi = await teks(hal);
-    assert.match(isi, /Pindai untuk membayar/, 'panel QRIS tidak muncul');
+    assert.match(isi, /Pindai QRIS untuk membayar/, 'panel QRIS tidak muncul');
 
     // Pemilih metode TETAP ADA, dan setiap tab terkunci DENGAN alasannya.
     const tab = await hal.$$eval('.kasir-bayar-tab button, .kasir-bayar-sub button', (b) =>
@@ -324,7 +324,7 @@ test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disable
       sebelumPaksa,
       `klik paksa pada tab terkunci mengubah keadaan: metode/nominal/location ${JSON.stringify(sebelumPaksa)} → ${JSON.stringify(sesudahPaksa)}`
     );
-    assert.match(await teks(hal), /Pindai untuk membayar/, 'panel QRIS hilang sesudah klik paksa');
+    assert.match(await teks(hal), /Pindai QRIS untuk membayar/, 'panel QRIS hilang sesudah klik paksa');
   } finally {
     await hal.close();
   }
@@ -1237,12 +1237,12 @@ test('⛔ kunci nav menutup indikator sinkron, tautan pita, dan menu pengguna se
   try {
     await hal.waitForSelector('.kasir-pita-tautan', { timeout: 10_000 });
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
-    await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
-    await tunggu(hal, () => /Pindai untuk membayar/.test(document.body.innerText), 'panel QRIS tidak muncul sesudah "Tampilkan QR" — penjaga jalan keluar tidak teramati', null, 10_000);
+    await hal.getByRole('button', { name: 'Tampilkan kode QR' }).click();
+    await tunggu(hal, () => /Pindai QRIS untuk membayar/.test(document.body.innerText), 'panel QRIS tidak muncul sesudah "Tampilkan kode QR" — penjaga jalan keluar tidak teramati', null, 10_000);
     const lokasiAwal = await hal.evaluate(() => location.pathname + location.search);
     const item = await paksaJalanKeluar(hal);
     await pastikanTetap(hal, lokasiAwal, item, 'QRIS menunggu');
-    assert.match(await teks(hal), /Pindai untuk membayar/, 'panel QRIS hilang sesudah klik pada jalan keluar header');
+    assert.match(await teks(hal), /Pindai QRIS untuk membayar/, 'panel QRIS hilang sesudah klik pada jalan keluar header');
   } finally {
     await hal.close();
   }
@@ -1278,7 +1278,7 @@ async function tunggu(hal, fn, pesan, arg = null, timeout = 5_000) {
 }
 const navTerkunci = (hal) =>
   hal.$$eval('.kasir-header [role="tab"]', (b) => b.map((e) => e.getAttribute('aria-disabled') === 'true'));
-const adaPanel = (hal) => hal.locator('text=Pindai untuk membayar').count();
+const adaPanel = (hal) => hal.locator('text=Pindai QRIS untuk membayar').count();
 const tahanPenjualan = (hal) =>
   hal.evaluate(() => {
     globalThis.__galeriTahanPenjualan = new Promise((r) => { globalThis.__lepasPenjualan = r; });
@@ -1297,8 +1297,8 @@ const RUTE_QR = {
 };
 async function mulaiQrisDinamis(hal) {
   await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
-  await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
-  await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+  await hal.getByRole('button', { name: 'Tampilkan kode QR' }).click();
+  await hal.waitForSelector('text=Pindai QRIS untuk membayar', { timeout: 10_000 });
 }
 const barisPayment = async (hal) => (await tulisan(hal)).filter((t) => /^INSERT INTO payment/i.test(t.sql));
 
@@ -1456,16 +1456,16 @@ for (const [nama, pasang] of [
   ['POST /orders/*/payments dijawab 500', (hal) => hal.route('**/orders/*/payments', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }))],
   ['POST /orders terputus (jaringan)', (hal) => hal.route('**/orders', (r) => r.abort())],
 ]) {
-  test(`⛔ permintaan QR gagal (${nama}): kunci nav terbuka lagi, galat tampil, "Tampilkan QR" aktif lagi`, async () => {
+  test(`⛔ permintaan QR gagal (${nama}): kunci nav terbuka lagi, galat tampil, "Tampilkan kode QR" aktif lagi`, async () => {
     const hal = await buka('render=k06&baris=2', { rute: RUTE_QR });
     try {
       await pasang(hal);
       await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
-      await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
+      await hal.getByRole('button', { name: 'Tampilkan kode QR' }).click();
       await tunggu(hal, () => (document.querySelector('[role="alert"]')?.textContent ?? '').length > 0, 'permintaan QR yang gagal tidak menampilkan galat apa pun');
       assert.deepEqual((await navTerkunci(hal)).filter(Boolean), [], 'permintaan QR gagal tetapi tab nav tetap terkunci (kunci menempel)');
       assert.equal(await adaPanel(hal), 0, 'panel QR tampil padahal permintaan QR gagal');
-      assert.equal(await hal.getByRole('button', { name: 'Tampilkan QR' }).isDisabled(), false, 'permintaan QR gagal tetapi "Tampilkan QR" tetap mati');
+      assert.equal(await hal.getByRole('button', { name: 'Tampilkan kode QR' }).isDisabled(), false, 'permintaan QR gagal tetapi "Tampilkan kode QR" tetap mati');
       assert.equal(await jumlahOrder(hal), 0, 'order lokal tertulis padahal QR tidak pernah terbit');
     } finally {
       await hal.close();
@@ -1501,9 +1501,9 @@ test('⛔ campuran QRIS statis + kartu + tunai sampai K-07: TIGA baris payment, 
   }
 });
 
-// --- E. Ketukan ganda "Tampilkan QR" ---
+// --- E. Ketukan ganda "Tampilkan kode QR" ---
 
-test('⛔ dua klik sinkron pada "Tampilkan QR" → TEPAT SATU POST /orders/*/payments dan satu nomor struk dicadangkan', async () => {
+test('⛔ dua klik sinkron pada "Tampilkan kode QR" → TEPAT SATU POST /orders/*/payments dan satu nomor struk dicadangkan', async () => {
   const hal = await buka('render=k06&baris=2', { rute: RUTE_QR });
   try {
     const permintaan = [];
@@ -1511,13 +1511,13 @@ test('⛔ dua klik sinkron pada "Tampilkan QR" → TEPAT SATU POST /orders/*/pay
       if (r.method() === 'POST' && /\/orders(\/[^/]+\/payments)?$/.test(new URL(r.url()).pathname)) permintaan.push(new URL(r.url()).pathname);
     });
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
-    await pastikanAda(hal, hal.getByRole('button', { name: 'Tampilkan QR' }), 'tombol "Tampilkan QR" tidak ada — pembanding hampa');
+    await pastikanAda(hal, hal.getByRole('button', { name: 'Tampilkan kode QR' }), 'tombol "Tampilkan kode QR" tidak ada — pembanding hampa');
     await hal.evaluate(() => {
-      const b = [...document.querySelectorAll('.kasir-bayar-aksi button')].find((e) => e.textContent.trim() === 'Tampilkan QR');
+      const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === 'Tampilkan kode QR');
       b.click();
       b.click();
     });
-    await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+    await hal.waitForSelector('text=Pindai QRIS untuk membayar', { timeout: 10_000 });
     await hal.waitForTimeout(400);
     const bayar = permintaan.filter((p) => /payments$/.test(p));
     assert.equal(bayar.length, 1, `${bayar.length} POST /orders/*/payments untuk satu ketukan ganda — dua QR untuk satu pembayaran`);
@@ -1568,20 +1568,20 @@ test('⛔ daftar campuran K-06: bagian Transfer (other + bank_transfer) berlabel
 
 // --- G. QRIS dinamis tidak dapat digabung dengan bagian lain ---
 
-test('⛔ QRIS dinamis sesudah ada bagian terisi: "Tampilkan QR" nonaktif DENGAN alasan "tidak dapat digabung", dan klik paksa tidak meminta QR', async () => {
+test('⛔ QRIS dinamis sesudah ada bagian terisi: "Tampilkan kode QR" nonaktif DENGAN alasan "tidak dapat digabung", dan klik paksa tidak meminta QR', async () => {
   const hal = await buka('render=k06&baris=2', { rute: RUTE_QR });
   try {
     const permintaan = [];
     hal.on('request', (r) => { if (r.method() === 'POST') permintaan.push(new URL(r.url()).pathname); });
     await tambahBagianQris(hal, 10000, 'REF-AAAA-1');
     await hal.getByRole('button', { name: 'QRIS dinamis', exact: true }).click();
-    const utama = hal.getByRole('button', { name: 'Tampilkan QR' });
-    await pastikanAda(hal, utama, '"Tampilkan QR" tidak tampil setelah memilih QRIS dinamis — pembanding hampa');
-    assert.equal(await utama.isDisabled(), true, '"Tampilkan QR" AKTIF padahal sudah ada bagian terisi — QR senilai TOTAL akan menghapus bagian sebelumnya');
+    const utama = hal.getByRole('button', { name: 'Tampilkan kode QR' });
+    await pastikanAda(hal, utama, '"Tampilkan kode QR" tidak tampil setelah memilih QRIS dinamis — pembanding hampa');
+    assert.equal(await utama.isDisabled(), true, '"Tampilkan kode QR" AKTIF padahal sudah ada bagian terisi — QR senilai TOTAL akan menghapus bagian sebelumnya');
     assert.match(await alasanDari(hal, utama), /tidak dapat digabung/, 'tombol mati TANPA alasan "tidak dapat digabung"');
     // Klik paksa (disabled dicopot): pagar di handler, bukan hanya atribut.
     await hal.evaluate(() => {
-      const b = [...document.querySelectorAll('.kasir-bayar-aksi button')].find((e) => e.textContent.trim() === 'Tampilkan QR');
+      const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === 'Tampilkan kode QR');
       b.removeAttribute('disabled');
       b.removeAttribute('aria-disabled');
       b.click();
@@ -1611,15 +1611,15 @@ test('⛔ kolom Nominal diterima "0" → Konfirmasi bayar nonaktif dengan alasan
   }
 });
 
-test('⛔ QRIS dinamis tak terjangkau dan QRIS statis dimatikan: "Tampilkan QR" nonaktif DENGAN alasan "Perlu internet", tidak meminta QR', async () => {
+test('⛔ QRIS dinamis tak terjangkau dan QRIS statis dimatikan: "Tampilkan kode QR" nonaktif DENGAN alasan "Perlu internet", tidak meminta QR', async () => {
   const hal = await buka('render=k06&baris=2&matikan=pembayaran_qris_statis', { terjangkau: false, rute: RUTE_QR });
   try {
     const permintaan = [];
     hal.on('request', (r) => { if (r.method() === 'POST') permintaan.push(new URL(r.url()).pathname); });
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
-    const utama = hal.getByRole('button', { name: 'Tampilkan QR' });
-    await pastikanAda(hal, utama, '"Tampilkan QR" tidak tampil di tab QRIS offline tanpa statis — pembanding hampa');
-    assert.equal(await utama.isDisabled(), true, '"Tampilkan QR" AKTIF padahal server tak terjangkau — gagal tepat di depan pelanggan');
+    const utama = hal.getByRole('button', { name: 'Tampilkan kode QR' });
+    await pastikanAda(hal, utama, '"Tampilkan kode QR" tidak tampil di tab QRIS offline tanpa statis — pembanding hampa');
+    assert.equal(await utama.isDisabled(), true, '"Tampilkan kode QR" AKTIF padahal server tak terjangkau — gagal tepat di depan pelanggan');
     assert.match(await alasanDari(hal, utama), /Perlu internet/, 'tombol utama mati TANPA alasan "Perlu internet"');
     assert.deepEqual(permintaan.filter((p) => /\/orders/.test(p)), [], 'QR diminta saat server tak terjangkau');
   } finally {

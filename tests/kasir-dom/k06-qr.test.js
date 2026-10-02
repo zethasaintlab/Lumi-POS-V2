@@ -359,6 +359,26 @@ test('⛔ tidak ada jalur ketukan yang menandai lunas: selama pending, setiap bu
   }
 });
 
+test('⛔ "Tutup layar" benar-benar menutup panel dan TETAP tertutup (draf tidak memulihkan panel seketika); kunci nav terbuka, draf lokal tetap hidup', async () => {
+  const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    await mulaiQr(hal);
+    await hal.getByRole('button', { name: 'Tutup layar' }).click();
+    await hal.waitForTimeout(1200);
+    assert.equal(
+      await hal.locator('svg[role="img"][aria-label="Kode QRIS"]').count(),
+      0,
+      '"Tutup layar" tidak menutup panel: pemulihan draf membukanya lagi seketika — kasir tidak punya jalan keluar dari QR yang ditinggalkan pelanggan'
+    );
+    assert.deepEqual((await navTerkunci(hal)).filter(Boolean), [], 'panel ditutup tetapi tab nav tetap terkunci');
+    assert.match(await teks(hal), /masih menunggu konfirmasi/, 'sesudah "Tutup layar" kalimat "masih menunggu konfirmasi" tidak tampil');
+    const draf = await hal.evaluate(() => globalThis.__galeriTabel.draf_qris_lokal.length);
+    assert.equal(draf, 1, 'draf QRIS lokal hilang sesudah "Tutup layar" — jejak satu-satunya untuk Cek status');
+  } finally {
+    await hal.close();
+  }
+});
+
 test('⛔ pemulihan draf membuka tab QRIS dalam keadaan menunggu, TERKUNCI (tab metode, tab nav, tombol utama), dengan QR yang sama', async () => {
   const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
   try {
@@ -366,7 +386,7 @@ test('⛔ pemulihan draf membuka tab QRIS dalam keadaan menunggu, TERKUNCI (tab 
     await mulaiQr(hal);
     // Tutup layar: draf lokal SENGAJA tetap hidup; lalu K-06 dilepas dan dipasang lagi.
     await hal.getByRole('button', { name: 'Tutup layar' }).click();
-    await tunggu(hal, () => document.querySelector('svg[role="img"][aria-label="Kode QRIS"]') === null, '"Tutup layar" tidak menutup panel — pembanding hampa');
+    await tunggu(hal, () => document.querySelector('svg[role="img"][aria-label="Kode QRIS"]') === null, '"Tutup layar" tidak menutup panel (panel dipulihkan lagi seketika dari draf)');
     assert.deepEqual((await navTerkunci(hal)).filter(Boolean), [], 'pembanding hampa: tab nav terkunci padahal panel sudah ditutup');
     await hal.evaluate(() => window.__paksaKeluar());
     await tunggu(hal, () => document.querySelector('#layar-lain') !== null, 'K-06 tidak ter-unmount — pembanding hampa');

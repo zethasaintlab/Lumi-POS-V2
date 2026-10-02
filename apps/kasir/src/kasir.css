@@ -753,6 +753,26 @@
   overflow: visible;
   background: none;
 }
+/* QRIS dinamis di dalam kartu (Task 9, spec § 7). Gambar 192 px dari atribut
+   `width`/`height` `GambarQr`; warnanya token, bukan nilai di dalam SVG. */
+.kasir-qris { display: flex; flex-direction: column; gap: var(--space-4); align-items: flex-start; }
+.kasir-qris-baris { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6); }
+.kasir-qris-info { display: flex; flex-direction: column; gap: var(--space-2); flex: 1 1 12rem; min-width: 0; }
+.kasir-qris-info p, .kasir-qris-info h2, .kasir-qris > p, .kasir-qris > h2 { margin: 0; }
+.kasir-qr { flex: none; display: block; border-radius: var(--radius-control); }
+.kasir-qr-latar { fill: var(--card); }
+.kasir-qr-modul { fill: var(--foreground); }
+.kasir-qris-teks { margin: 0; color: var(--ink-muted); user-select: text; }
+.kasir-qris-centang {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
 .kasir-bayar-kunci { margin: 0; color: var(--ink-muted); }
 .kasir-bayar-sub { align-self: flex-start; }
 .kasir-bayar-sub button { white-space: nowrap; }
