@@ -399,6 +399,15 @@ test('⛔ P2: pembulatan satu sumber — K-06 hanya memakai rencanaBayarKeranjan
     null,
     `Pembayaran.tsx mengalikan/membagi dengan literal bigint (\`${aritmetika?.[0]}\`) — aritmetika pembulatan kedua`
   );
+  /* Pengurangan antar-besaran (`diterima - total` — bentuk sabotase S1): kembalian
+     adalah `rencana.kembalian`, tidak pernah selisih yang dihitung layar. Satu-
+     satunya `-` berspasi yang sah di berkas ini adalah indeks (`daftar.length - 1`). */
+  const selisih = k06.match(/\b(?!length\b)[A-Za-z_]\w*(?:\([^()]*\))?\s-\s*[\w(]/);
+  assert.equal(
+    selisih,
+    null,
+    `Pembayaran.tsx mengurangkan besaran (\`${selisih?.[0]}\`) — kembalian/tagihan datang dari rencanaBayarKeranjang, bukan selisih yang dihitung layar`
+  );
   const salinan = k06.match(/\b(?:const|let|var)\s+(?:kembalian|tunaiDitagih|roundingAdjustment|amountDue|roundedOutstanding)\b/);
   assert.equal(
     salinan,
@@ -496,13 +505,16 @@ async function tambahBagianTransfer(hal, nominal, referensi) {
 }
 
 /* Total fixture dipilih supaya SISA TUNAI bukan kelipatan increment:
-   `harga=20050` × 1 baris + PPN 11% → ≈ 22.256; `harga=84285` → ≈ 93.556. */
+   `harga=20050` × 1 baris + PPN 11% → ≈ 22.256; `harga=84285` → ≈ 93.556.
+   Nominal non-tunai d/e (50.300, 30.300) dipilih supaya membulatkan TOTAL lebih dulu
+   memberi tagihan tunai yang BERBEDA dari membulatkan SISA (increment 500: 43.500 vs
+   43.000, 63.500 vs 63.000) — `uang-pembayaran-kas.md` § Pembayaran campuran. */
 const KASUS_KEMBALIAN = [
   { nama: 'a: increment 100, tunai 100.000', kueri: 'render=k06&baris=1&harga=20050&pembulatan=100', diterima: '100.000' },
   { nama: 'b: increment 500, tunai 100.000', kueri: 'render=k06&baris=1&harga=20050&pembulatan=500', diterima: '100.000' },
   { nama: 'c: increment 1.000, pintasan 50.000', kueri: 'render=k06&baris=1&harga=20050&pembulatan=1000', pintasan: 'Rp 50.000' },
-  { nama: 'd: increment 500, QRIS statis 50.020 + tunai 50.000', kueri: 'render=k06&baris=1&harga=84285&pembulatan=500', diterima: '50.000', siap: (hal) => tambahBagianQris(hal, 50020, 'REF-QRIS-8841') },
-  { nama: 'e: increment 500, Transfer 30.000 + tunai 100.000', kueri: 'render=k06&baris=1&harga=84285&pembulatan=500', diterima: '100.000', siap: (hal) => tambahBagianTransfer(hal, 30000, 'TRF-77120') },
+  { nama: 'd: increment 500, QRIS statis 50.300 + tunai 50.000', kueri: 'render=k06&baris=1&harga=84285&pembulatan=500', diterima: '50.000', siap: (hal) => tambahBagianQris(hal, 50300, 'REF-QRIS-8841') },
+  { nama: 'e: increment 500, Transfer 30.300 + tunai 100.000', kueri: 'render=k06&baris=1&harga=84285&pembulatan=500', diterima: '100.000', siap: (hal) => tambahBagianTransfer(hal, 30300, 'TRF-77120') },
 ];
 
 test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.change_amount tersimpan', async () => {
@@ -534,7 +546,21 @@ test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.ch
       assert.notEqual(
         simpan.pembulatan,
         0n,
-        `${k.nama}: pembulatan tersimpan 0 — penjaga akan hijau karena pembulatan KEBETULAN nol (fixture/harness tidak memakai increment ${k.kueri})`
+        `${k.nama}: pembulatan tersimpan 0 — pembulatan tidak terjadi: fixture tidak memakai increment (${k.kueri}) atau rencana membulatkan di tempat yang salah; penjaga ini tidak membuktikan apa pun`
+      );
+      /* ⛔ Oracle INDEPENDEN untuk aturan FR-C9 — satu-satunya tempat di berkas ini
+         yang memakai fungsi domain: K-06 dan K-07 sama-sama dari rencana yang sama,
+         jadi kesalahan DI DALAM rencana (membulatkan total, bukan sisa tunai) tidak
+         terlihat oleh perbandingan K-06 vs tersimpan. Yang dibandingkan: tagihan tunai
+         tersimpan = pembulatan atas `total − Σ non-tunai`. */
+      const incr = BigInt(new URLSearchParams(k.kueri).get('pembulatan'));
+      const sisaTunai = simpan.total - simpan.nonTunai.reduce((a, b) => a + b, 0n);
+      const { computeCashRounding } = await import('../../packages/domain/src/money.ts');
+      const seharusnya = computeCashRounding({ outstanding: sisaTunai, roundingIncrement: incr, roundingMode: 'half_up' }).roundedOutstanding;
+      assert.equal(
+        simpan.tunaiDitagih,
+        seharusnya,
+        `${k.nama}: tagihan tunai tersimpan ${simpan.tunaiDitagih}, seharusnya ${seharusnya} (pembulatan atas SISA tunai ${sisaTunai}, bukan atas total)`
       );
       assert.equal(
         nilaiK06,
@@ -581,6 +607,7 @@ test('⛔ G-NOMINAL: kolom kosong / "25.5" / "abc" → Kembalian Rp —, Konfirm
     for (const isi of ['', '25.5', 'abc']) {
       await hal.getByLabel('Nominal diterima').fill(isi);
       const label = `nominal diterima ${JSON.stringify(isi)}`;
+      assert.deepEqual(galatHalaman, [], `${label}: halaman melempar (masukan cacat tidak ditutup bacaRupiah → null): ${galatHalaman.join(' | ')}`);
       const kembalian = await kembalianK06(hal);
       assert.equal(kembalian, 'Rp —', `${label}: kembalian "${kembalian}", bukan "Rp —" (nilai hilang, bukan nol)`);
       assert.ok(!/Rp\s0(?!\d)/.test(await teks(hal)), `${label}: "Rp 0" muncul di K-06 — kolom kosong/cacat terbaca sebagai nol`);
@@ -592,6 +619,13 @@ test('⛔ G-NOMINAL: kolom kosong / "25.5" / "abc" → Kembalian Rp —, Konfirm
       /* Kolom kosong/cacat BUKAN "uang kurang": 0 yang lahir dari kolom kosong
          akan jatuh ke KURANG_BAYAR dan membawa kalimat itu. */
       assert.ok(!/kurang/i.test(alasan), `${label}: alasan "${alasan}" memperlakukan masukan hilang sebagai uang kurang`);
+      /* Kosong → "Isi nominal"; cacat → "rupiah utuh". Alasan "harus lebih dari nol" berarti
+         masukan hilang dibaca 0 (`?? 0`) — nol yang lahir dari kolom kosong/cacat. */
+      assert.match(
+        alasan,
+        isi === '' ? /Isi nominal yang diterima/ : /rupiah utuh/,
+        `${label}: alasan "${alasan}" — masukan hilang/cacat terbaca sebagai angka (mis. 0), bukan sebagai hilang`
+      );
     }
     assert.deepEqual(galatHalaman, [], `masukan cacat membuat halaman melempar: ${galatHalaman.join(' | ')}`);
   } finally {
@@ -653,6 +687,25 @@ test('baris "Tagihan tunai dibulatkan menjadi" tampil HANYA bila pembulatan ≠ 
     assert.equal((await tersimpan(b)).pembulatan, 0n, 'fixture b: pembulatan tersimpan ≠ 0 — kasus tidak membuktikan "tanpa baris"');
   } finally {
     await b.close();
+  }
+});
+
+test('angka Kembalian terlihat PENUH di atas blok aksi pada 1024×768 (tidak tertutup, tidak perlu gulir)', async () => {
+  const hal = await buka('render=k06&baris=2', { tinggi: 768 });
+  try {
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await kembalianK06(hal);
+    const u = await hal.evaluate(() => {
+      const nilai = document.querySelector('.kasir-kembalian .kasir-kembalian-nilai');
+      const r = nilai.getBoundingClientRect();
+      const aksi = document.querySelector('.kasir-bayar-aksi').getBoundingClientRect();
+      const titik = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      return { bawah: r.bottom, aksiAtas: aksi.top, terlihat: titik === nilai || nilai.contains(titik) };
+    });
+    assert.ok(u.bawah <= u.aksiAtas, `angka Kembalian berakhir di ${u.bawah}, blok aksi mulai ${u.aksiAtas} — tertutup`);
+    assert.equal(u.terlihat, true, 'titik tengah angka Kembalian dijawab elemen lain (tertutup blok aksi?)');
+  } finally {
+    await hal.close();
   }
 });
 

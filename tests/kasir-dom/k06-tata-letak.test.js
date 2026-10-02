@@ -123,6 +123,14 @@ async function bukaK06(lebar) {
   await hal.getByRole('button', { name: 'Bayar', exact: true }).click();
   await hal.waitForSelector('.kasir-bayar-aksi', { timeout: 10_000 });
   await hal.waitForTimeout(600);
+  /* Task 8B: tautan campuran pindah ke baris Total (kanan atas kartu). Klik "Bayar" menggulir
+     `.galeri-panggung` ke bawah pada panggung 1024, sehingga bagian atas kartu terpotong di
+     bawah `.galeri-tanya` (chrome galeri) dan `elementFromPoint` menjawab chrome itu. Gulir
+     dikembalikan ke atas: yang diukur tata letak aplikasi, bukan posisi gulir chrome. */
+  await hal.evaluate(() => {
+    const g = document.querySelector('.galeri-panggung');
+    if (g) g.scrollTop = 0;
+  });
   return { hal, galat };
 }
 
