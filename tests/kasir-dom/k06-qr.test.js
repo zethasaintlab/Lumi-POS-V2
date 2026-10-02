@@ -285,6 +285,18 @@ test('⛔ P6/G-QR: kedaluwarsa, ditolak penerbit, dan habis waktu berkalimat BER
     const tHabis = await teks(habis);
     assert.ok(!/Kode QR kedaluwarsa/.test(tHabis) && !/ditolak penerbit/.test(tHabis), 'habis waktu memakai kalimat kedaluwarsa atau penolakan — kasir menagih ulang pelanggan yang mungkin sudah membayar');
 
+    // ⛔ Kalimat PERINGATAN (role=alert) sendiri, bukan teks halaman: judul dan tombol yang
+    // berbeda tidak boleh menutupi kalimat yang sama.
+    const alert = (h) => h.$$eval('[role="alert"]', (e) => e.map((x) => x.textContent.trim()).join(' | '));
+    const aKed = await alert(kedaluwarsa);
+    const aTol = await alert(ditolak);
+    const aHabis = await alert(habis);
+    assert.match(aKed, /kedaluwarsa/, `peringatan kedaluwarsa tidak menyebut kedaluwarsa: "${aKed}"`);
+    assert.ok(!/ditolak penerbit/.test(aKed), `peringatan kedaluwarsa memakai kalimat penolakan penerbit: "${aKed}"`);
+    assert.match(aTol, /ditolak penerbit/, `peringatan ditolak tidak menyebut penerbit: "${aTol}"`);
+    assert.ok(!/kedaluwarsa/.test(aTol), `peringatan ditolak penerbit memakai kalimat kedaluwarsa: "${aTol}"`);
+    assert.ok(aKed !== aTol && aKed !== aHabis && aTol !== aHabis, 'dua dari tiga kalimat peringatan (kedaluwarsa, ditolak, habis waktu) sama persis');
+
     assert.match(tKed, /tidak terdebit/);
     assert.match(tTol, /tidak terdebit/);
     assert.notEqual(tKed, tTol, 'kedaluwarsa dan ditolak penerbit merender teks yang sama persis');
@@ -314,11 +326,11 @@ test('⛔ [P3] QR TIDAK diminta sebelum "Tampilkan kode QR" ditekan: nol POST se
     });
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
     const tombol = hal.getByRole('button', { name: 'Tampilkan kode QR' });
-    assert.equal(await tombol.count(), 1, 'kartu QRIS dinamis tidak punya tombol "Tampilkan kode QR" — pembanding hampa');
     await hal.waitForTimeout(600);
     assert.equal(permintaan.length, 0, `${permintaan.length} permintaan ke server sebelum "Tampilkan kode QR" ditekan: ${permintaan.join(', ')} — QR diminta tanpa kasir menyuruhnya`);
     assert.equal(await hal.locator('svg[role="img"][aria-label="Kode QRIS"]').count(), 0, 'gambar QR tampil sebelum diminta');
     assert.equal(await hal.evaluate(() => (globalThis.__galeriTulis ?? []).filter((t) => /draf_qris_lokal|UPDATE device_config/i.test(t.sql)).length), 0, 'draf atau nomor struk dicadangkan sebelum "Tampilkan kode QR" ditekan');
+    assert.equal(await tombol.count(), 1, 'kartu QRIS dinamis tidak punya tombol "Tampilkan kode QR" — pembanding hampa');
     await tombol.click();
     await hal.waitForSelector('svg[role="img"][aria-label="Kode QRIS"]', { timeout: 10_000 });
     assert.equal(permintaan.filter((p) => /payments$/.test(p)).length, 1, 'sesudah menekan, POST payments tidak tepat satu');
