@@ -26,6 +26,7 @@ import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { simpanHlc } from '../lokal/hlc.ts';
 import { bersihkanKeranjangDi } from './keranjang-simpan.ts';
+import { hapusDrafQrisDi } from './draf-qris-tabel.ts';
 import { bangunDokumenStruk } from '../cetak/dokumen.ts';
 import { labelMetode } from '../cetak/metode.ts';
 import { type HasilCetak, type PeripheralPort } from '../cetak/port.ts';
@@ -1055,6 +1056,12 @@ export async function simpanPenjualan({
     //
     // Bentuk yang sama persis dengan alasan `simpanHlc` ada di sini.
     await bersihkanKeranjangDi(tx);
+
+    /* ⛔ Draf QRIS ikut dihapus DI SINI, bukan oleh pemanggil sesudah commit: draf yang
+       tertinggal (pembersihan terpisah gagal) dipulihkan pada pembayaran berikutnya di shift
+       yang sama sebagai panel QR lama berisi keranjang pelanggan BARU, dan simpannya gagal pada
+       PK order. COMMIT gagal mengembalikan baris ini — "Cek status" tetap dapat mengulang. */
+    if (draf !== undefined) await hapusDrafQrisDi(tx);
 
     return { receiptNumber, sequence };
   });

@@ -3,6 +3,7 @@ import type { KonfigPerangkat } from '../../../../packages/sync-client/src/peran
 import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
 import type { Keranjang } from './keranjang.ts';
+import { KUNCI_DRAF_QRIS, hapusDrafQrisDi } from './draf-qris-tabel.ts';
 
 /**
  * FR-C3 + FR-C14 — jalur penjualan ONLINE-FIRST untuk QRIS dinamis.
@@ -48,7 +49,7 @@ import type { Keranjang } from './keranjang.ts';
  */
 
 /** Satu perangkat menunggu paling banyak satu QR. Lihat DDL. */
-const KUNCI = 'kini';
+const KUNCI = KUNCI_DRAF_QRIS;
 
 /** Batas polling `spec-c:300` — 2 detik, maksimum 5 menit. */
 export const JEDA_POLLING_MS = 2_000;
@@ -129,7 +130,7 @@ export async function simpanDraf(db: DbLokal, d: DrafTersimpan, sekarang: string
 }
 
 export async function bersihkanDraf(db: DbLokal): Promise<void> {
-  await db.execute('DELETE FROM draf_qris_lokal WHERE id = ?', [KUNCI]);
+  await hapusDrafQrisDi(db);
 }
 
 /**

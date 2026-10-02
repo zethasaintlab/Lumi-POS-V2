@@ -1446,3 +1446,71 @@ test('⛔ SATU transaksi untuk penjualan transfer: COMMIT gagal tidak meninggalk
   raw.tutup();
 });
 
+
+// ---- Fix round 3 Task 8: draf QRIS dihapus DI DALAM transaksi penjualan ----
+
+async function semaiDraf(db, orderId = 'ord-draf') {
+  await db.execute(
+    `INSERT INTO draf_qris_lokal (id, order_id, payment_id, shift_id, draf, muatan, qr_string, dibuat_pada)
+     VALUES ('kini', ?, 'pay-draf', 'shift-1', '{}', '{}', 'QR', '2026-08-24T10:00:00.000Z')`,
+    [orderId]
+  );
+}
+const jumlahDraf = async (db) => (await db.getAll('SELECT count(*) AS n FROM draf_qris_lokal'))[0].n;
+
+test('⛔ penjualan berdraf yang tersimpan TIDAK PERNAH meninggalkan draf — walau pembersihan terpisah akan melempar', async () => {
+  /* Draf yang tertinggal (pembersihan terpisah gagal) dipulihkan `pulihkanDraf` pada pembayaran
+     BERIKUTNYA di shift yang sama: panel QR lama membawa keranjang pelanggan BARU, simpannya
+     gagal pada PK order, dan kasir terkunci tanpa Batalkan/Tutup. Menghapusnya di dalam
+     transaksi penjualan (pola KEP-21) menutup jendelanya. */
+  const { simpanPenjualan } = await import(MOD);
+  const raw = await dbSqlite();
+  await semaiDraf(raw);
+  const tx = { getAll: raw.getAll, execute: raw.execute };
+  const db = {
+    getAll: (...a) => raw.getAll(...a),
+    // Penulisan di LUAR transaksi (pembersihan terpisah) melempar.
+    execute: async () => {
+      throw new Error('pembersihan terpisah gagal (disuntik)');
+    },
+    async transaction(fn) {
+      await raw.execute('BEGIN IMMEDIATE');
+      try {
+        const h = await fn(tx);
+        await raw.execute('COMMIT');
+        return h;
+      } catch (e) {
+        await raw.execute('ROLLBACK');
+        throw e;
+      }
+    },
+  };
+  const hasil = await simpanPenjualan({ db, ...argDraf() });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  assert.equal(await jumlahDraf(raw), 0, 'draf QRIS tertinggal sesudah penjualan tersimpan');
+  raw.tutup();
+});
+
+test('⛔ COMMIT gagal pada penjualan berdraf MEMPERTAHANKAN draf (penghapusan ikut rollback)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const raw = await dbSqlite();
+  await semaiDraf(raw);
+  const tx = { getAll: raw.getAll, execute: raw.execute };
+  const db = {
+    getAll: (...a) => raw.getAll(...a),
+    execute: (...a) => raw.execute(...a),
+    async transaction(fn) {
+      await raw.execute('BEGIN IMMEDIATE');
+      try {
+        await fn(tx);
+        throw new Error('COMMIT gagal (disuntik)');
+      } catch (e) {
+        await raw.execute('ROLLBACK');
+        throw e;
+      }
+    },
+  };
+  await assert.rejects(() => simpanPenjualan({ db, ...argDraf() }), /COMMIT gagal/);
+  assert.equal(await jumlahDraf(raw), 1, 'draf hilang padahal penjualan tidak tersimpan — "Cek status" tak dapat mengulang');
+  raw.tutup();
+});

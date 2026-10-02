@@ -305,9 +305,9 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
           setPanelQris(null);
           setSelesai(hasil);
           pemberitahu.beritahu();
-          /* ⛔ Penjualan SUDAH tertulis: gagal membersihkan draf tidak boleh berubah menjadi
-             "TIDAK tersimpan". Draf yang tertinggal tidak berbahaya (id order sama, dan
-             `pulihkanDraf` membuangnya bila bukan milik shift ini). */
+          /* ⛔ Penjualan SUDAH tertulis, dan `simpanPenjualan` sudah menghapus drafnya di dalam
+             transaksi yang sama — pembersihan ini hanya sabuk pengaman; gagalnya tidak boleh
+             berubah menjadi "TIDAK tersimpan". */
           await bersihkanDraf(db).catch(() => undefined);
           return;
         }
