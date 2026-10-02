@@ -536,8 +536,9 @@ test('⛔ [C1a] keranjang diubah selagi QRIS tertunda: pemulihan TIDAK menulis p
     // Keranjang BERBEDA (3 baris, total lain).
     await beda.evaluate(() => window.__ubahKeranjang(3, 20000));
     await ulangPasang(beda);
-    await beda.waitForSelector('.kasir-bayar-kartu', { timeout: 10_000 });
-    await beda.waitForTimeout(800);
+    await beda.waitForSelector('.kasir-bayar-kartu, .kasir-k07', { timeout: 10_000 });
+    await beda.waitForTimeout(2500);
+    assert.equal(await jumlahOrder(beda), 0, 'pemulihan menulis penjualan lokal dari keranjang yang BERBEDA dari yang ditagih gateway — uang dan barang tidak cocok');
     const lanjut = beda.getByRole('button', { name: TOMBOL_LANJUT });
     assert.equal(await lanjut.count(), 1, `keranjang berbeda: kartu tidak menawarkan "${TOMBOL_LANJUT}" — pembanding hampa (tanpa klik, tidak ada yang bisa menulis penjualan)`);
     await lanjut.click();
@@ -550,6 +551,24 @@ test('⛔ [C1a] keranjang diubah selagi QRIS tertunda: pemulihan TIDAK menulis p
   } finally {
     await sama.close();
     await beda.close();
+  }
+});
+
+test('⛔ [C1a] panel yang dipulihkan menampilkan nominal DRAF (yang ditagih gateway), bukan total keranjang yang sudah berubah', async () => {
+  const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    await mulaiQr(hal);
+    const nominal = (await hal.locator('.kasir-qris .t-title.num').first().textContent()).trim();
+    assert.match(nominal, /^Rp /, `pembanding hampa: nominal panel "${nominal}"`);
+    await tutupLayar(hal);
+    await hal.evaluate(() => window.__ubahKeranjang(3, 20000));
+    await ulangPasang(hal);
+    await hal.getByRole('button', { name: TOMBOL_LANJUT }).click();
+    await tunggu(hal, () => document.querySelector('svg[role="img"][aria-label="Kode QRIS"]') !== null, 'panel tidak terbuka');
+    const sesudah = (await hal.locator('.kasir-qris .t-title.num').first().textContent()).trim();
+    assert.equal(sesudah, nominal, `panel pemulihan menampilkan ${sesudah}, yang ditagih gateway ${nominal} — nominal bukan dari draf`);
+  } finally {
+    await hal.close();
   }
 });
 
