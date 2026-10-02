@@ -392,6 +392,43 @@ test('⛔ P2: pembulatan satu sumber — K-06 hanya memakai rencanaBayarKeranjan
   );
 });
 
+test('⛔ P2b: pembulatan tunai TIDAK dihitung di berkas kasir mana pun selain kasir/penjualan.ts (aritmetika kedua)', async () => {
+  /* P2 hanya menjaga Pembayaran.tsx. Berkas BARU yang memanggil `computeCashRounding` dengan mode
+     dipaku (mis. `kembalian-layar.ts`) lolos dari P2 dan menyimpang diam-diam di mode up/down. */
+  const berkas = [];
+  const telusur = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) telusur(f);
+      else if (/\.(ts|tsx)$/.test(e.name)) berkas.push(f);
+    }
+  };
+  telusur(path.join(AKAR, 'apps/kasir/src'));
+  const DIPERBOLEHKAN = new Set(['apps/kasir/src/kasir/penjualan.ts']);
+  const bukanJalurUang = (rel) => rel.startsWith('apps/kasir/src/galeri/') || rel.startsWith('apps/kasir/src/harness/');
+  const bocor = [];
+  for (const f of berkas) {
+    const rel = path.relative(AKAR, f).split(path.sep).join('/');
+    if (DIPERBOLEHKAN.has(rel) || bukanJalurUang(rel)) continue;
+    const isi = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const kata of ['computeCashRounding', 'roundingIncrement', 'roundingMode', 'rounding_increment', 'rounding_mode']) {
+      if (isi.includes(kata)) bocor.push(`${rel}: ${kata}`);
+    }
+  }
+  assert.deepEqual(
+    bocor,
+    [],
+    `pembulatan tunai muncul di luar kasir/penjualan.ts (rencanaBayarKeranjang) — aritmetika kedua: ${bocor.join('; ')}`
+  );
+  const layar = fs.readFileSync(path.join(AKAR, 'apps/kasir/src/layar/Pembayaran.tsx'), 'utf8');
+  const impor = [...layar.matchAll(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/kasir\/penjualan\.ts'/g)].map((m) => m[1]).join(',');
+  assert.match(
+    impor,
+    /\brencanaBayarKeranjang\b/,
+    'Pembayaran.tsx tidak mengimpor rencanaBayarKeranjang dari kasir/penjualan.ts'
+  );
+});
+
 // ---------------------------------------------------------------------------
 // PENJAGA 3 — kembalian di K-06 SAMA PERSIS dengan yang tersimpan
 // ---------------------------------------------------------------------------
