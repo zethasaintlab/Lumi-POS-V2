@@ -156,7 +156,8 @@ function dekode(hal, skala, rusak = false) {
       c.drawImage(img, 0, 0, lebar, tinggi);
       if (rusak) {
         c.fillStyle = '#ffffff';
-        c.fillRect(lebar * 0.3, tinggi * 0.3, lebar * 0.4, tinggi * 0.4);
+        const sisi = rusak === true ? 0.4 : rusak;
+        c.fillRect(lebar * ((1 - sisi) / 2), tinggi * ((1 - sisi) / 2), lebar * sisi, tinggi * sisi);
       }
       const px = c.getImageData(0, 0, lebar, tinggi);
       // ⛔ Zona tenang: pita selebar 4 MODUL (spesifikasi QR) di keempat sisi harus terang — bukan
@@ -221,6 +222,18 @@ test('⛔ G-QR anti-hampa: pusat gambar ditimpa → decoder TIDAK mengembalikan 
     assert.equal(utuh.data, QRIS_PANJANG, 'pembanding hampa: gambar utuh tidak terdekode, rusak-tidaknya tidak bermakna');
     const rusak = await dekode(hal, 4, true);
     assert.notEqual(rusak.data, QRIS_PANJANG, 'decoder mengembalikan qrString dari gambar yang pusatnya dihapus — penjaga G-QR buta terhadap isi gambar');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ G-QR toleransi: kotak ±8% area di pusat ditimpa → MASIH terdekode persis (koreksi galat level M, bukan L)', async () => {
+  const hal = await buka('render=k06&baris=2', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    await suntikJsqr(hal);
+    await mulaiQr(hal);
+    const h = await dekode(hal, 4, 0.28);
+    assert.equal(h.data, QRIS_PANJANG, `QR dengan ±8% area pusat rusak terdekode ${JSON.stringify(h.data)} — tingkat koreksi galat di bawah M (layar kasir dipindai dalam keadaan tergores/silau)`);
   } finally {
     await hal.close();
   }
