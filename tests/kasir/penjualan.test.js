@@ -1428,6 +1428,11 @@ test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = 
             const tunai = db.state.tulis.find((t) => /INSERT INTO payment/.test(t.sql) && t.params[3] === 'cash');
             assert.ok(tunai, `${ket}: baris payment tunai tidak ditulis`);
             assert.equal(BigInt(tunai.params[6]), rencana.rencana.kembalian, `${ket}: payment.change_amount ≠ kembalian rencana`);
+            // Bagian tunai tersimpan = tagihan tunai rencana = delta kas `sale` (satu angka, tiga tempat).
+            assert.equal(BigInt(tunai.params[4]), rencana.rencana.tunaiDitagih, `${ket}: payment.amount tunai ≠ tunaiDitagih rencana`);
+            const kas = db.state.tulis.find((t) => /INSERT INTO cash_movement/.test(t.sql));
+            assert.ok(kas, `${ket}: cash_movement sale tidak ditulis`);
+            assert.equal(BigInt(kas.params[2]), rencana.rencana.tunaiDitagih, `${ket}: delta cash_movement sale ≠ tunaiDitagih rencana`);
             if (rencana.rencana.roundingAdjustment !== 0n) adaPembulatan += 1;
             kasus += 1;
           }
@@ -1441,24 +1446,52 @@ test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = 
 
 test('rencanaBayarKeranjang: non-tunai tanpa nominal = seluruh total; increment dan mode dari outlet; bawaan 100/half_up', async () => {
   const { hitungKeranjang, rencanaBayarKeranjang } = await import(MOD);
-  const keranjang = { baris: [{ ...BARIS[0], unitPrice: 20050 }], diskon: null };
+  const keranjang = { baris: [{ ...BARIS[0], unitPrice: 20020 }], diskon: null };
   const hitung = (outlet) => hitungKeranjang({ db: dbPalsu({ tarif: [], outlet }), konfig: KONFIG, keranjang, shift: SHIFT, waktu: JAM });
 
   // Tanpa nominal: QRIS statis menutup seluruh total, tidak ada tunai yang ditagih.
   const h = await hitung(OUTLET);
   const qris = rencanaBayarKeranjang(h, [{ metode: 'qris_static', referensi: 'REF-1' }]);
   assert.equal(qris.ok, true);
-  assert.equal(qris.rencana.amountDue, 20050n);
+  assert.equal(qris.rencana.amountDue, 20020n);
   assert.equal(qris.rencana.roundingAdjustment, 0n);
 
   // Outlet tanpa pengaturan pembulatan memakai bawaan 100 / half_up.
   const tanpa = await hitung({ ...OUTLET, rounding_increment: null, rounding_mode: null });
   const r = rencanaBayarKeranjang(tanpa, [{ metode: 'cash', tendered: 30000n }]);
   assert.equal(r.ok, true);
-  assert.equal(r.rencana.amountDue, 20100n, '20.050 half_up pada increment 100');
+  assert.equal(r.rencana.amountDue, 20000n, '20.020 half_up pada increment 100 → 20.000 (mode up akan 20.100)');
+  assert.equal(r.rencana.roundingAdjustment, -20n);
+  assert.equal(r.rencana.kembalian, 10000n);
 
   // Kurang bayar: kode KURANG_BAYAR, bukan angka dari layar.
   const kurang = rencanaBayarKeranjang(h, [{ metode: 'cash', tendered: 10000n }]);
   assert.equal(kurang.ok, false);
   assert.equal(kurang.kode, 'KURANG_BAYAR');
+});
+
+test('⛔ rencanaBayarKeranjang: mode pembulatan outlet (half_up/up/down) menentukan tagihan tunai — nilai ABSOLUT tulis tangan', async () => {
+  /* Increment 500, tanpa pajak. 20.220 (sisa 220 < setengah): half_up=down=20.000, up=20.500.
+     20.320 (sisa 320 ≥ setengah): half_up=up=20.500, down=20.000. Kedua total BERSAMA membedakan
+     ketiga mode; mode yang dipaku (half_up / bawaan 'up') salah di salah satunya. Angka ditulis
+     tangan, bukan dari fungsi yang diuji. */
+  const { hitungKeranjang, rencanaBayarKeranjang } = await import(MOD);
+  const HARAPAN = {
+    20220: { half_up: [20000n, -220n, 10000n], up: [20500n, 280n, 9500n], down: [20000n, -220n, 10000n] },
+    20320: { half_up: [20500n, 180n, 9500n], up: [20500n, 180n, 9500n], down: [20000n, -320n, 10000n] },
+  };
+  for (const [total, perMode] of Object.entries(HARAPAN)) {
+    for (const [mode, [ditagih, penyesuaian, kembalian]] of Object.entries(perMode)) {
+      const outlet = { ...OUTLET, rounding_increment: 500, rounding_mode: mode };
+      const keranjang = { baris: [{ ...BARIS[0], unitPrice: Number(total) }], diskon: null };
+      const h = await hitungKeranjang({ db: dbPalsu({ tarif: [], outlet }), konfig: KONFIG, keranjang, shift: SHIFT, waktu: JAM });
+      assert.equal(h.totals.total, BigInt(total), 'fixture: total keranjang bukan yang dimaksud');
+      const r = rencanaBayarKeranjang(h, [{ metode: 'cash', tendered: 30000n }]);
+      assert.equal(r.ok, true);
+      const ket = `total ${total}, increment 500, mode ${mode}`;
+      assert.equal(r.rencana.tunaiDitagih, ditagih, `${ket}: tagihan tunai — mode outlet tidak dipakai`);
+      assert.equal(r.rencana.roundingAdjustment, penyesuaian, `${ket}: pembulatan`);
+      assert.equal(r.rencana.kembalian, kembalian, `${ket}: kembalian`);
+    }
+  }
 });
