@@ -1380,6 +1380,9 @@ test('struk menyebut "Transfer" dan tidak menyebut "Lainnya"; tanpa referensi te
 
 // ---------------------------------------------------------------------------
 // G-KEMBALIAN -- K-06 dan simpanPenjualan memakai SATU rencana (Task 8B)
+// Penjaga KESEPAKATAN K-06<->simpan, sirkular terhadap kebenaran FR-C9 (kedua sisi memanggil
+// fungsi yang sama); kebenaran nilainya dijaga test nilai-absolut di sini dan di domain. Memakai
+// dbPalsu, bukan SQLite sungguhan.
 // ---------------------------------------------------------------------------
 
 test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = payment.change_amount', async () => {
