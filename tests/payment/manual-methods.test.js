@@ -644,3 +644,96 @@ test('retry atas baris idempotensi berhash LAMA (sebelum PR 2B) tetap dijawab da
   assert.deepEqual(JSON.parse(b.body), JSON.parse(a.body));
   assert.equal((await query('SELECT id FROM payment')).length, 1);
 });
+
+// ============================================================
+// Penjaga yang sebelumnya HAMPA (sabotase independen Opus, PR 2B Task 7)
+// ============================================================
+
+// S5b: hash idempotensi harus mencakup SETIAP medan yang ditulis
+// INSERT_MANUAL_PAYMENT_SQL. Medan yang terbuang dari hash membuat key sama +
+// isi beda dijawab dari cache dan pembayaran kedua hilang diam-diam.
+// Tabel di bawah dikunci terhadap SQL-nya: kolom baru di INSERT tanpa baris di
+// sini membuat test ini merah (bukan diam).
+test('⛔ S5b: hash idempotensi mencakup SETIAP medan INSERT_MANUAL_PAYMENT_SQL (per metode, satu medan per kali)', async () => {
+  const fs = require('node:fs');
+  const sumber = fs.readFileSync(
+    require('node:path').join(__dirname, '..', '..', 'apps/server/src/modules/payment/handlers/payments.ts'), 'utf8'
+  );
+  const kolom = /const INSERT_MANUAL_PAYMENT_SQL = `\s*INSERT INTO payment \(([^)]*)\)/.exec(sumber)[1]
+    .split(',').map((k) => k.trim());
+  // Kolom -> medan body yang memengaruhinya. `null` = bukan isi request
+  // (diturunkan server / metadata yang sengaja di luar hash).
+  const PETA = {
+    id: 'id', tenant_id: null, outlet_id: null, device_id: null, order_id: null, check_id: null,
+    method: 'method', amount: 'amount', status: null, confirmed_manually: null,
+    provider_reference: 'reference', approval_code: 'approvalCode', card_last4: 'cardLast4',
+    acquirer: 'acquirer', terminal_reference: 'terminalReference', tendered_at: null, created_by: null,
+    occurred_at: 'occurredAt', hlc: null, mdr_estimated: null, provider: 'provider',
+  };
+  for (const k of kolom) {
+    assert.ok(k in PETA, `kolom INSERT baru '${k}' belum dipetakan ke medan hash idempotensi`);
+  }
+
+  const fx = await setupDeviceAndShift();
+  const kasus = [
+    {
+      isi: { ...TRANSFER, amount: 31000, reference: 'TRF-H1', acquirer: 'BCA', terminalReference: 'T-1', occurredAt: '2026-08-07T03:00:00.000Z' },
+      ubah: { reference: 'TRF-H2', acquirer: 'BNI', terminalReference: 'T-2', occurredAt: '2026-08-07T04:00:00.000Z', amount: 30000 },
+    },
+    {
+      isi: { method: 'card_edc', amount: 32000, approvalCode: '654321', cardLast4: '1234', acquirer: 'BCA', terminalReference: 'T-1', occurredAt: '2026-08-07T03:00:00.000Z' },
+      ubah: { approvalCode: '111222', cardLast4: '9876', acquirer: 'BNI', terminalReference: 'T-2', occurredAt: '2026-08-07T04:00:00.000Z', amount: 31000 },
+    },
+    {
+      isi: { method: 'qris_static', amount: 33000, reference: 'QRS-H1', acquirer: 'BCA', terminalReference: 'T-1', occurredAt: '2026-08-07T03:00:00.000Z' },
+      ubah: { reference: 'QRS-H2', acquirer: 'BNI', terminalReference: 'T-2', occurredAt: '2026-08-07T04:00:00.000Z', amount: 32000 },
+    },
+  ];
+  // Setiap medan yang dipetakan dari kolom INSERT harus tercakup variasinya.
+  const medanTerpetakan = new Set(kolom.map((k) => PETA[k]).filter(Boolean));
+  const medanDiuji = new Set(kasus.flatMap((k) => Object.keys(k.ubah)).concat('id', 'method', 'provider'));
+  for (const m of medanTerpetakan) assert.ok(medanDiuji.has(m), `medan '${m}' tidak punya variasi di test hash`);
+
+  for (const { isi, ubah } of kasus) {
+    const order = await buatOrder(fx, isi.amount);
+    const key = crypto.randomUUID();
+    const asli = { id: crypto.randomUUID(), ...isi };
+    const a = await req('POST', `/orders/${order.id}/payments`, asli, { 'idempotency-key': key });
+    assert.equal(a.statusCode, 201, a.body);
+    for (const [medan, nilai] of Object.entries(ubah)) {
+      const b = await req('POST', `/orders/${order.id}/payments`, { ...asli, [medan]: nilai }, { 'idempotency-key': key });
+      assert.equal(b.statusCode, 422, `${isi.method}: medan ${medan} diubah (key sama) tetapi dijawab ${b.statusCode}: ${b.body}`);
+      assert.equal(JSON.parse(b.body).error.code, 'IDEMPOTENCY_KEY_HASH_MISMATCH', `${isi.method}/${medan}`);
+    }
+    const c = await req('POST', `/orders/${order.id}/payments`, asli, { 'idempotency-key': key });
+    assert.equal(c.statusCode, 201, `${isi.method}: retry identik harus dijawab dari cache: ${c.body}`);
+  }
+});
+
+// S9: pembulatan FR-C9 hanya pada SISA TUNAI. Pembayaran Transfer tidak pernah
+// membulatkan -- dibuktikan dari BARIS order di database (bukan dari respons,
+// yang dulu menulis literal 0 dan karena itu tidak dapat mengungkap apa-apa).
+// Total 35.050 bukan kelipatan 100, jadi bila transfer ikut membulatkan,
+// rounding_adjustment/amount_due menyimpang dari 0/total.
+test('⛔ S9: transfer penuh atas total 35.050 (rounding_increment 100) menutup order dengan rounding_adjustment 0 dan amount_due = total, dibaca dari DB', async () => {
+  await owner.query(`UPDATE outlet SET rounding_increment = 100 WHERE id = $1`, [base.outlet.id]);
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, 35050);
+
+  const res = await bayar(order.id, { ...TRANSFER, amount: 35050, reference: 'TRF-RND', acquirer: 'BCA' });
+  assert.equal(res.statusCode, 201, res.body);
+  const body = JSON.parse(res.body);
+
+  const [o] = await query(
+    `SELECT status, total::text AS total, rounding_adjustment::text AS ra, amount_due::text AS due FROM "order" WHERE id = $1`,
+    [order.id]
+  );
+  assert.equal(o.status, 'closed');
+  assert.equal(o.total, '35050');
+  assert.equal(o.ra, '0', 'transfer membulatkan order (rounding_adjustment != 0) -- FR-C9 hanya untuk sisa TUNAI');
+  assert.equal(o.due, o.total, 'amount_due != total pada order lunas via transfer');
+  // Respons harus mencerminkan baris, bukan literal.
+  assert.equal(body.order.roundingAdjustment, Number(o.ra));
+  assert.equal(body.order.amountDue, Number(o.due));
+  assert.equal((await query('SELECT amount::text AS a FROM payment WHERE order_id = $1', [order.id]))[0].a, '35050');
+});

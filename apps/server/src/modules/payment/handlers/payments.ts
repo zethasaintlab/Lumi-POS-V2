@@ -61,6 +61,8 @@ interface OrderStateRow {
   total: string;
   tax_amount: string;
   outlet_id: string;
+  rounding_adjustment: string;
+  amount_due: string;
 }
 
 interface PaymentInput {
@@ -578,7 +580,8 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
 
     const { rows: orderRows } = await client.query<OrderStateRow>(
-      `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id, c.id AS check_id
+      `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id,
+            o.rounding_adjustment, o.amount_due, c.id AS check_id
          FROM "order" o JOIN "check" c ON c.order_id = o.id
         WHERE o.id = $1 FOR UPDATE OF o`,
       [orderId]
@@ -616,13 +619,21 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     const total = BigInt(order.total);
     const sudahDibayar = await sumConfirmed(client, orderId);
     let statusBaru = order.status;
+    let pembulatan = order.rounding_adjustment;
+    let sisaTagihan = order.amount_due;
     if (sudahDibayar >= total) {
       assertTransition(order.status, 'paid');
       assertTransition('paid', 'closed');
       // rounding_adjustment TIDAK disentuh: pembulatan FR-C9 hanya berlaku
       // pada sisa yang dibayar TUNAI, dan tidak ada tunai di sini.
-      await client.query(`UPDATE "order" SET status = 'closed', amount_due = total WHERE id = $1`, [orderId]);
+      const { rows: tutup } = await client.query<{ rounding_adjustment: string; amount_due: string }>(
+        `UPDATE "order" SET status = 'closed', amount_due = total WHERE id = $1
+         RETURNING rounding_adjustment, amount_due`,
+        [orderId]
+      );
       statusBaru = 'closed';
+      pembulatan = tutup[0].rounding_adjustment;
+      sisaTagihan = tutup[0].amount_due;
     }
 
     await insertOutboxEvent(client, {
@@ -645,8 +656,10 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
         status: statusBaru,
         total: Number(total),
         taxAmount: Number(order.tax_amount),
-        roundingAdjustment: 0,
-        amountDue: Number(total),
+        // Dibaca dari baris order, bukan literal: respons yang menulis `0`
+        // sendiri tidak dapat mengungkap baris yang menyimpang.
+        roundingAdjustment: Number(pembulatan),
+        amountDue: Number(sisaTagihan),
       },
       outstanding: Number(sudahDibayar >= total ? 0n : total - sudahDibayar),
     };
