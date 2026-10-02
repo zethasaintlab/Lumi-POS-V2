@@ -525,6 +525,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       // berpacu dengan timer.
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
       const tabel = tabelDari(sql);
+      /* `__galeriTahanDraf`: menahan BACA draf QRIS sampai test melepasnya, supaya jendela
+         "pemulihan draf belum selesai" dapat diukur tanpa timer (fix round Task 9, C1c). */
+      if (tabel === 'draf_qris_lokal') await (globalThis as { __galeriTahanDraf?: Promise<void> }).__galeriTahanDraf;
 
       /* ⛔ `error` menolak setiap pembacaan KECUALI identitas perangkat.
 

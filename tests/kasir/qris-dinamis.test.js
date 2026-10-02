@@ -384,3 +384,51 @@ test('⛔ pembatalan yang GAGAL dilaporkan false, tidak melempar', async () => {
   };
   assert.equal(await tinggalkanDraf(meledak, 'o', 'x'), false);
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Tagih ganda (`spec-c:291`, `spec-c:326`) — fix round Task 9, temuan C1
+// ---------------------------------------------------------------------------
+
+test('⛔ mintaQr MENOLAK bila draf ber-QR dengan payment_id LAIN masih hidup: nol permintaan, draf utuh', async () => {
+  const { mintaQr, pulihkanDraf } = await import(MOD);
+  const d = db();
+  const kirim1 = pengirim({ '/payments': { status: 201, body: { qrString: 'QR-PERTAMA' } } });
+  const pertama = await mintaQr(argMinta(draf(), { db: d, kirim: kirim1 }));
+  assert.equal(pertama.status, 'qr', 'pembanding hampa: permintaan pertama tidak menghasilkan QR');
+
+  const kirim2 = pengirim({ '/payments': { status: 201, body: { qrString: 'QR-KEDUA' } } });
+  const kedua = await mintaQr(
+    argMinta(draf({ orderId: 'ord-2', checkId: 'chk-2', paymentIds: ['pay-2'] }), { db: d, kirim: kirim2 })
+  );
+  assert.equal(kedua.status, 'tertunda', `permintaan kedua berstatus "${kedua.status}", harapan "tertunda" — QR kedua diminta untuk uang yang mungkin sudah dibayar`);
+  assert.equal(kirim2.dikirim.length, 0, `${kirim2.dikirim.length} permintaan ke server sementara draf pay-1 masih hidup — risiko tagih ganda`);
+  const sisa = await pulihkanDraf(d, 's1');
+  assert.equal(sisa.paymentId, 'pay-1', 'draf pay-1 ditimpa: jejak lokal payment pertama hilang');
+  assert.equal(sisa.qrString, 'QR-PERTAMA');
+});
+
+test('mintaQr atas draf dengan payment_id YANG SAMA (retry) tetap jalan — kunci idempotensi sama, bukan QR kedua', async () => {
+  const { mintaQr } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const ulang = await mintaQr(argMinta(draf(), { db: d, kirim }));
+  assert.equal(ulang.status, 'qr', 'retry draf yang sama ditolak — pagar terlalu lebar');
+});
+
+test('⛔ drafCocokKeranjang: keranjang yang sama cocok; qty, harga, baris tambahan, atau total berbeda TIDAK cocok', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, 22000n), true, 'pembanding hampa: keranjang yang SAMA dianggap berbeda');
+  const baris0 = KERANJANG.baris[0];
+  const ubah = (o) => ({ ...KERANJANG, baris: [{ ...baris0, ...o }] });
+  assert.equal(drafCocokKeranjang(tersimpan, ubah({ quantityMilli: 2000 }), 22000n), false, 'qty berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, ubah({ unitPrice: 25000 }), 22000n), false, 'harga berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, ubah({ variationId: 'v9' }), 22000n), false, 'produk berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, baris: [baris0, { ...baris0, id: 'b2' }] }, 22000n), false, 'baris tambahan dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, 23000n), false, 'total berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, null), false, 'total tak diketahui dianggap cocok');
+});

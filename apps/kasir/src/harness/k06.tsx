@@ -151,6 +151,9 @@ if (pakaiRute) {
     window.history.pushState({}, '', '/kasir');
     window.dispatchEvent(new Event('lumi:navigasi'));
   };
+  /* Kasir mengubah keranjang di K-03 selagi QRIS tertunda (fix round Task 9, C1a). */
+  (window as unknown as { __ubahKeranjang: (n: number, harga?: number) => void }).__ubahKeranjang = (n, harga) =>
+    setelKeranjang(keranjangUji(n, harga));
   /* Kebalikannya: K-06 dipasang lagi (pemulihan draf QRIS) tanpa membuka database baru. */
   (window as unknown as { __paksaMasuk: () => void }).__paksaMasuk = () => {
     window.history.pushState({}, '', '/bayar');

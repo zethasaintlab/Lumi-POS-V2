@@ -418,3 +418,174 @@ test('⛔ pemulihan draf membuka tab QRIS dalam keadaan menunggu, TERKUNCI (tab 
     await hal.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Tagih ganda sesudah "Tutup layar" — fix round Task 9, temuan C1 (spec-c:291, spec-c:326)
+// ---------------------------------------------------------------------------
+
+const TOMBOL_MINTA = 'Tampilkan kode QR';
+const TOMBOL_LANJUT = 'Lanjutkan pembayaran QRIS tertunda';
+const adaQr = (hal) => hal.locator('svg[role="img"][aria-label="Kode QRIS"]').count();
+const drafLokal = (hal) => hal.evaluate(() => globalThis.__galeriTabel.draf_qris_lokal.map((b) => ({ order: b.order_id, payment: b.payment_id, qr: b.qr_string })));
+function catatPost(hal) {
+  const p = [];
+  hal.on('request', (r) => {
+    if (r.method() === 'POST' && /\/orders(\/[^/]+\/payments)?$/.test(new URL(r.url()).pathname)) p.push(new URL(r.url()).pathname);
+  });
+  return p;
+}
+async function tutupLayar(hal) {
+  await hal.getByRole('button', { name: 'Tutup layar' }).click();
+  await tunggu(hal, () => document.querySelector('svg[role="img"][aria-label="Kode QRIS"]') === null, '"Tutup layar" tidak menutup panel');
+}
+async function ulangPasang(hal) {
+  await hal.evaluate(() => window.__paksaKeluar());
+  await tunggu(hal, () => document.querySelector('#layar-lain') !== null, 'K-06 tidak ter-unmount — pembanding hampa');
+  await hal.evaluate(() => window.__paksaMasuk());
+}
+const klikTeksTombol = (hal, nama) =>
+  hal.evaluate((n) => {
+    // Hanya tombol yang AKTIF: yang nonaktif tidak dapat ditekan kasir, dan menghitungnya membuat penjaga hijau.
+    const b = [...document.querySelectorAll('button')].filter((e) => e.textContent.trim() === n && !e.disabled && e.getAttribute('aria-disabled') !== 'true');
+    b.forEach((e) => e.click());
+    return b.length;
+  }, nama);
+
+test(`⛔ [C1] sesudah "Tutup layar" kartu TIDAK menawarkan "${TOMBOL_MINTA}": nol POST baru, payment_id draf tetap (QR kedua = tagih ganda)`, async () => {
+  const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    const post = catatPost(hal);
+    await mulaiQr(hal);
+    const sebelum = await drafLokal(hal);
+    assert.equal(sebelum.length, 1, 'pembanding hampa: tidak ada draf sesudah QR diminta');
+    const jumlahPost = post.length;
+    assert.equal(jumlahPost, 2, `pembanding hampa: permintaan pertama = ${jumlahPost} POST, harapan 2 (order + payment)`);
+    await tutupLayar(hal);
+    const ditekan = await klikTeksTombol(hal, TOMBOL_MINTA);
+    await hal.waitForTimeout(800);
+    assert.equal(ditekan, 0, `sesudah "Tutup layar" tombol "${TOMBOL_MINTA}" masih ada (${ditekan}) — kasir dapat meminta QR kedua untuk draf yang pelanggannya mungkin sudah membayar`);
+    assert.equal(post.length, jumlahPost, `${post.length - jumlahPost} POST baru sesudah "Tutup layar": ${post.slice(jumlahPost).join(', ')} — QR kedua diminta`);
+    const sesudah = await drafLokal(hal);
+    assert.deepEqual(sesudah, sebelum, 'draf lokal berubah sesudah "Tutup layar": jejak payment pertama ditimpa');
+    assert.equal(await hal.getByRole('button', { name: TOMBOL_LANJUT }).count(), 1, `kartu tidak menawarkan "${TOMBOL_LANJUT}" — kasir tidak punya jalan kembali ke pembayaran tertunda`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test(`⛔ [C1] "${TOMBOL_LANJUT}" membuka kembali panel draf yang SAMA (QR sama, polling lanjut) tanpa POST order/payment baru`, async () => {
+  const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    await suntikJsqr(hal);
+    const post = catatPost(hal);
+    let cek = 0;
+    await hal.route('**/payments/*/check-status', (r) => {
+      cek++;
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'pending_confirmation' }) });
+    });
+    await mulaiQr(hal);
+    const draf0 = await drafLokal(hal);
+    await tutupLayar(hal);
+    const cek0 = cek;
+    const post0 = post.length;
+    assert.equal(await hal.getByRole('button', { name: TOMBOL_LANJUT }).count(), 1, `kartu tidak menawarkan "${TOMBOL_LANJUT}" sesudah "Tutup layar"`);
+    await hal.getByRole('button', { name: TOMBOL_LANJUT }).click();
+    await tunggu(hal, () => document.querySelector('svg[role="img"][aria-label="Kode QRIS"]') !== null, `"${TOMBOL_LANJUT}" tidak membuka panel QR`);
+    assert.equal((await dekode(hal, 1)).data, QRIS_PANJANG, 'QR panel yang dibuka kembali bukan qrString draf');
+    await hal.waitForTimeout(700);
+    assert.ok(cek > cek0, 'panel dibuka kembali tetapi polling status tidak berlanjut');
+    assert.equal(post.length, post0, 'membuka kembali panel mengirim POST order/payment baru');
+    assert.deepEqual(await drafLokal(hal), draf0, 'membuka kembali panel mengubah draf');
+    const nav = await navTerkunci(hal);
+    assert.ok(nav.length >= 4 && nav.every(Boolean), 'panel dibuka kembali tetapi tab nav tidak terkunci');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ [C1a] keranjang diubah selagi QRIS tertunda: pemulihan TIDAK menulis penjualan dari keranjang berbeda; keranjang yang sama menulisnya (pembanding)', async () => {
+  const buatHal = async () => {
+    const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+    await mulaiQr(hal);
+    await tutupLayar(hal);
+    await hal.route('**/payments/*/check-status', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'confirmed' }) }));
+    return hal;
+  };
+  const sama = await buatHal();
+  const beda = await buatHal();
+  try {
+    // Pembanding positif: keranjang SAMA + confirmed → penjualan ditulis dari draf.
+    await ulangPasang(sama);
+    await sama.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    assert.equal(await jumlahOrder(sama), 1, 'pembanding hampa: keranjang sama + confirmed tidak menulis order');
+
+    // Keranjang BERBEDA (3 baris, total lain).
+    await beda.evaluate(() => window.__ubahKeranjang(3, 20000));
+    await ulangPasang(beda);
+    await beda.waitForSelector('.kasir-bayar-kartu', { timeout: 10_000 });
+    await beda.waitForTimeout(800);
+    const lanjut = beda.getByRole('button', { name: TOMBOL_LANJUT });
+    if (await lanjut.count()) await lanjut.click();
+    await beda.waitForTimeout(1200);
+    assert.equal(await jumlahOrder(beda), 0, 'penjualan lokal ditulis dari keranjang yang BERBEDA dari yang ditagih gateway — uang dan barang tidak cocok');
+    assert.equal((await barisPayment(beda)).length, 0, 'payment lokal ditulis dari keranjang berbeda');
+    assert.ok(!/Transaksi selesai/.test(await teks(beda)), 'keranjang berbeda sampai ke K-07');
+    assert.match(await teks(beda), /berbeda dari keranjang/, 'tidak ada pesan yang menyebut keranjang berbeda dari pembayaran tertunda');
+    assert.equal((await drafLokal(beda)).length, 1, 'draf dihapus padahal belum ditulis sebagai penjualan');
+  } finally {
+    await sama.close();
+    await beda.close();
+  }
+});
+
+test(`⛔ [C1c] selama pemulihan draf belum selesai "${TOMBOL_MINTA}" TIDAK dapat ditekan (nol POST); sesudah selesai tidak ada QR kedua`, async () => {
+  const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    const post = catatPost(hal);
+    await mulaiQr(hal);
+    await tutupLayar(hal);
+    await hal.evaluate(() => window.__paksaKeluar());
+    await tunggu(hal, () => document.querySelector('#layar-lain') !== null, 'K-06 tidak ter-unmount — pembanding hampa');
+    await hal.evaluate(() => {
+      globalThis.__galeriTahanDraf = new Promise((r) => { globalThis.__lepasDraf = r; });
+    });
+    const post0 = post.length;
+    await hal.evaluate(() => window.__paksaMasuk());
+    await hal.waitForSelector('.kasir-bayar-kartu', { timeout: 10_000 });
+    await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
+    const ditekan = await klikTeksTombol(hal, TOMBOL_MINTA);
+    await hal.waitForTimeout(600);
+    assert.equal(ditekan, 0, `"${TOMBOL_MINTA}" AKTIF selagi pemulihan draf belum selesai (${ditekan} tombol aktif ditekan) — balapan: QR kedua dapat diminta sebelum draf diketahui`);
+    assert.equal(await hal.getByRole('button', { name: /^Meminta (kode )?QR/ }).count(), 0, 'permintaan QR berjalan selagi pemulihan draf belum selesai');
+    assert.equal(post.length, post0, `${post.length - post0} POST terkirim saat pemulihan draf masih berjalan (klik ${ditekan}× pada tombol)`);
+    await hal.evaluate(() => globalThis.__lepasDraf());
+    await tunggu(hal, () => document.querySelector('svg[role="img"][aria-label="Kode QRIS"]') !== null, 'sesudah pemulihan selesai panel draf tidak terbuka');
+    assert.equal(post.length, post0, 'pemulihan selesai tetapi ada POST baru');
+  } finally {
+    await hal.close();
+  }
+});
+
+for (const keadaan of ['menunggu', 'pemulihan']) {
+  test(`⛔ [I1] tombol Kembali PERAMBAN selama QRIS ${keadaan === 'menunggu' ? 'menunggu' : 'dalam keadaan pemulihan draf'} tidak meninggalkan K-06 dan panel tetap`, async () => {
+    const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+    try {
+      await mulaiQr(hal);
+      if (keadaan === 'pemulihan') {
+        await tutupLayar(hal);
+        await ulangPasang(hal);
+        await tunggu(hal, () => document.querySelector('svg[role="img"][aria-label="Kode QRIS"]') !== null, 'pembanding hampa: pemulihan tidak membuka panel');
+      }
+      assert.equal(await hal.evaluate(() => location.pathname), '/bayar', 'pembanding hampa: K-06 tidak di /bayar');
+      await hal.evaluate(() => history.back());
+      await hal.waitForTimeout(500);
+      assert.equal(await hal.locator('#layar-lain').count(), 0, 'tombol Kembali peramban me-unmount K-06 selama QRIS menunggu — jejak QR yang sedang dipindai hilang dari layar');
+      assert.equal(await hal.evaluate(() => location.pathname), '/bayar', 'jalur tidak dikembalikan ke /bayar sesudah popstate');
+      assert.equal(await adaQr(hal), 1, 'panel QR hilang sesudah tombol Kembali peramban');
+      const nav = await navTerkunci(hal);
+      assert.ok(nav.length >= 4 && nav.every(Boolean), 'tab nav tidak terkunci sesudah popstate');
+    } finally {
+      await hal.close();
+    }
+  });
+}
