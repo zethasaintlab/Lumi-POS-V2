@@ -1223,11 +1223,13 @@ for (const [status, kalimat] of [
     const hal = await buka('render=k06&baris=2', { rute: { ...RUTE_QR, '**/payments/*/check-status': { status } } });
     try {
       await mulaiQrisDinamis(hal);
-      await tunggu(hal, (k) => new RegExp(k).test(document.body.innerText), `jawaban "${status}" tidak sampai ke panel QRIS — pembanding hampa`, kalimat.source);
-      await hal.waitForTimeout(400);
+      // Invarian dulu (order/payment/K-07), pembanding panel sesudahnya: jawaban yang
+      // salah dibaca lunas membuat panel hilang, dan pembanding akan menutupi sebabnya.
+      await hal.waitForTimeout(900);
       assert.equal(await jumlahOrder(hal), 0, `status gateway "${status}" menulis order lokal — uang yang TIDAK dikonfirmasi gateway tercatat lunas`);
       assert.equal((await barisPayment(hal)).length, 0, `status gateway "${status}" menulis baris payment`);
       assert.equal(/Transaksi selesai/.test(await teks(hal)), false, `status gateway "${status}" sampai ke K-07`);
+      assert.match(await teks(hal), kalimat, `jawaban "${status}" tidak sampai ke panel QRIS — pembanding hampa`);
     } finally {
       await hal.close();
     }
@@ -1239,10 +1241,11 @@ test('⛔ QRIS dinamis: pending lalu "Tutup layar" (ditunda) → NOL order lokal
   try {
     await mulaiQrisDinamis(hal);
     await hal.getByRole('button', { name: 'Tutup layar' }).click();
-    await tunggu(hal, () => /masih menunggu konfirmasi/.test(document.body.innerText), 'sesudah "Tutup layar" kalimat "masih menunggu konfirmasi" tidak tampil');
+    await hal.waitForTimeout(700);
     assert.equal(await jumlahOrder(hal), 0, '"Ditunda" menulis order lokal sebagai lunas — pelanggan belum tentu membayar');
     assert.equal((await barisPayment(hal)).length, 0, '"Ditunda" menulis payment qris_dynamic');
     assert.equal(/Transaksi selesai/.test(await teks(hal)), false, '"Ditunda" sampai ke K-07');
+    assert.match(await teks(hal), /masih menunggu konfirmasi/, 'sesudah "Tutup layar" kalimat "masih menunggu konfirmasi" tidak tampil');
   } finally {
     await hal.close();
   }
@@ -1263,6 +1266,7 @@ test('⛔ QRIS dinamis: confirmed dari gateway → TEPAT SATU order dan satu pay
     const bayar = await barisPayment(hal);
     assert.equal(bayar.length, 1, `${bayar.length} baris payment untuk satu QRIS dinamis`);
     assert.equal(bayar[0].params[3], 'qris_dynamic', `metode tersimpan ${bayar[0].params[3]}, harapan qris_dynamic`);
+    assert.deepEqual((await navTerkunci(hal)).filter(Boolean), [], 'sampai K-07 lewat QRIS dinamis tetapi tab nav tetap terkunci (menyimpan tidak pernah dilepas)');
   } finally {
     await hal.close();
   }
@@ -1512,6 +1516,22 @@ test('⛔ kolom Nominal diterima "0" → Konfirmasi bayar nonaktif dengan alasan
     assert.equal(await aksi.isDisabled(), true, 'Konfirmasi bayar aktif untuk nominal "0" — uang yang tidak pernah diserahkan');
     assert.match(await alasanDari(hal, aksi), /Isi nominal yang diterima/, 'tombol mati TANPA alasan untuk nominal "0"');
     assert.equal(await jumlahOrder(hal), 0);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ QRIS dinamis tak terjangkau dan QRIS statis dimatikan: "Tampilkan QR" nonaktif DENGAN alasan "Perlu internet", tidak meminta QR', async () => {
+  const hal = await buka('render=k06&baris=2&matikan=pembayaran_qris_statis', { terjangkau: false, rute: RUTE_QR });
+  try {
+    const permintaan = [];
+    hal.on('request', (r) => { if (r.method() === 'POST') permintaan.push(new URL(r.url()).pathname); });
+    await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
+    const utama = hal.getByRole('button', { name: 'Tampilkan QR' });
+    await pastikanAda(hal, utama, '"Tampilkan QR" tidak tampil di tab QRIS offline tanpa statis — pembanding hampa');
+    assert.equal(await utama.isDisabled(), true, '"Tampilkan QR" AKTIF padahal server tak terjangkau — gagal tepat di depan pelanggan');
+    assert.match(await alasanDari(hal, utama), /Perlu internet/, 'tombol utama mati TANPA alasan "Perlu internet"');
+    assert.deepEqual(permintaan.filter((p) => /\/orders/.test(p)), [], 'QR diminta saat server tak terjangkau');
   } finally {
     await hal.close();
   }
