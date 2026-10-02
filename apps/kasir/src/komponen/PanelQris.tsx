@@ -84,9 +84,15 @@ export function PanelQris({
     };
   }, [kirim, paymentId, jeda, batas]);
 
+  /* ⛔ `onSelesai` lewat ref, efeknya hanya bergantung pada `status`: induk
+     membuatnya baru di tiap render, dan `menyimpan=true` setelah panggilan
+     pertama merender ulang — efek yang bergantung padanya menulis penjualan
+     LUNAS GANDA untuk satu konfirmasi gateway. */
+  const selesaiRef = useRef(onSelesai);
+  selesaiRef.current = onSelesai;
   useEffect(() => {
-    if (status === 'confirmed') onSelesai({ status: 'lunas' });
-  }, [status, onSelesai]);
+    if (status === 'confirmed') selesaiRef.current({ status: 'lunas' });
+  }, [status]);
 
   const batalkan = () => {
     setSibuk(true);

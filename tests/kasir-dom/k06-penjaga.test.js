@@ -240,7 +240,7 @@ test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disable
 
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
     await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
-    await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+    await tunggu(hal, () => /Pindai untuk membayar/.test(document.body.innerText), 'panel QRIS tidak muncul sesudah "Tampilkan QR" — kunci dan larangan di bawah tidak teramati', null, 10_000);
 
     const isi = await teks(hal);
     assert.match(isi, /Pindai untuk membayar/, 'panel QRIS tidak muncul');
@@ -962,7 +962,7 @@ test('⛔ tab nav terkunci selama penjualan disimpan, dan terbuka lagi sesudahny
     await pastikanAda(hal, hal.getByLabel('Nominal diterima'), 'kolom "Nominal diterima" tidak ada di tab Tunai');
     await hal.getByLabel('Nominal diterima').fill('100.000');
     await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
-    await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-header [role="tab"]')].every((e) => e.getAttribute('aria-disabled') === 'true'), null, { timeout: 5_000 }).catch(() => {});
+    await tunggu(hal, () => [...document.querySelectorAll('.kasir-header [role="tab"]')].every((e) => e.getAttribute('aria-disabled') === 'true'), 'tab nav tidak terkunci selama penjualan disimpan (kunci nav tidak terpasang)');
     const selamaSimpan = await navKunci();
     assert.ok(selamaSimpan.every(Boolean), `tab nav tidak terkunci selama penjualan disimpan: ${JSON.stringify(selamaSimpan)}`);
 
@@ -1125,7 +1125,7 @@ test('⛔ kunci nav menutup indikator sinkron, tautan pita, dan menu pengguna se
     });
     await hal.getByLabel('Nominal diterima').fill('100.000');
     await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
-    await hal.waitForFunction(() => document.querySelector('.kasir-header [role="tab"]')?.getAttribute('aria-disabled') === 'true', null, { timeout: 5_000 });
+    await tunggu(hal, () => document.querySelector('.kasir-header [role="tab"]')?.getAttribute('aria-disabled') === 'true', 'tab nav tidak terkunci selama penjualan disimpan (kunci nav tidak terpasang)');
     const lokasiAwal = await hal.evaluate(() => location.pathname + location.search);
     const item = await paksaJalanKeluar(hal);
     await pastikanTetap(hal, lokasiAwal, item, 'menyimpan');
@@ -1148,7 +1148,7 @@ test('⛔ kunci nav menutup indikator sinkron, tautan pita, dan menu pengguna se
     await hal.waitForSelector('.kasir-pita-tautan', { timeout: 10_000 });
     await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
     await hal.getByRole('button', { name: 'Tampilkan QR' }).click();
-    await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+    await tunggu(hal, () => /Pindai untuk membayar/.test(document.body.innerText), 'panel QRIS tidak muncul sesudah "Tampilkan QR" — penjaga jalan keluar tidak teramati', null, 10_000);
     const lokasiAwal = await hal.evaluate(() => location.pathname + location.search);
     const item = await paksaJalanKeluar(hal);
     await pastikanTetap(hal, lokasiAwal, item, 'QRIS menunggu');
