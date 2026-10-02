@@ -494,6 +494,8 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
           ]
         : [],
     print_job: [],
+    // Draf QRIS dinamis (`qris-dinamis.ts`): satu baris, diisi/dihapus di `jalankan`.
+    draf_qris_lokal: [],
     fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),
     telemetry_local: [],
     // Diisi di `getAll` — WebP-nya di-encode kanvas, dan itu async.
@@ -692,6 +694,16 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     if (tahan && /^INSERT INTO "order"/i.test(sql.trim())) await tahan;
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
+    /* Draf QRIS ([EKSPLORASI] Task 9): urutan kolom = `simpanDraf`. Hanya agar
+       pemulihan draf (`pulihkanDraf`) dapat dirender ulang di harness. */
+    if (/^INSERT INTO draf_qris_lokal/i.test(sql.trim()) && params?.length === 8) {
+      perTabel.draf_qris_lokal.length = 0;
+      perTabel.draf_qris_lokal.push({
+        id: params[0], order_id: params[1], payment_id: params[2], shift_id: params[3],
+        draf: params[4], muatan: params[5], qr_string: params[6], dibuat_pada: params[7],
+      });
+    }
+    if (/^DELETE FROM draf_qris_lokal/i.test(sql.trim())) perTabel.draf_qris_lokal.length = 0;
     /* Urutan parameter = `catatKasManual` (`kas/manual.ts`): id, shift_id, type,
        delta, counterpart_type, reason_code, note, created_by, occurred_at, hlc.
        Hanya `paid_in`/`paid_out` — INSERT penjualan punya bentuk lain. */

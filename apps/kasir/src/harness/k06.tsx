@@ -151,6 +151,11 @@ if (pakaiRute) {
     window.history.pushState({}, '', '/kasir');
     window.dispatchEvent(new Event('lumi:navigasi'));
   };
+  /* Kebalikannya: K-06 dipasang lagi (pemulihan draf QRIS) tanpa membuka database baru. */
+  (window as unknown as { __paksaMasuk: () => void }).__paksaMasuk = () => {
+    window.history.pushState({}, '', '/bayar');
+    window.dispatchEvent(new Event('lumi:navigasi'));
+  };
 }
 
 function Akar() {
@@ -165,12 +170,14 @@ function Akar() {
     return (
       <PanelQris
         kirim={kirimPalsu(status) as never}
-        qrString="00020101021226590014ID.CO.QRIS.WWW0118UJI0303UMI"
+        qrString={q.get('qr') ?? '00020101021226590014ID.CO.QRIS.WWW0118UJI0303UMI'}
         paymentId="pay-uji"
         orderId="ord-uji"
         nominal={123456n}
         jeda={50}
-        batas={habisWaktu ? 0 : 60_000}
+        batas={habisWaktu ? 0 : Number(q.get('batas') ?? '60000')}
+        /* `?jam=1` — jam suntikan: test menggeser `window.__jam` (ms), bukan menunggu. */
+        sekarang={q.get('jam') === '1' ? () => (window as unknown as { __jam?: number }).__jam ?? Date.now() : undefined}
         onSelesai={(h) => {
           // Hasil ditulis ke DOM, bukan ke konsol: penjaga membacanya dari
           // halaman, dan konsol tidak bertahan melewati navigasi.
