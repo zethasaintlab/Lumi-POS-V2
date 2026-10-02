@@ -173,6 +173,8 @@ Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaa
   - Dokumen produk basi: `product/IA-lumi-pos-v1.md:264` masih "K-01…K-17", `CLAUDE.md` masih "52 layar" — di luar batas Q9 (hanya mencatat keputusan yang disetujui).
 
 - **Kunci nav belum menutup `popstate` (tombol Kembali peramban / gestur Android)** (Task 8, tinjauan Opus Minor 2). `dengarNavigasi` (`apps/kasir/src/rute/navigasi.ts`) tetap mengganti rute selagi QRIS menunggu atau penjualan disimpan; bukan regresi (overlay lama sama) tetapi "setiap jalan keluar" belum benar. Tidak dibangun di PR 2B (keputusan controller); butuh keputusan perilaku (tahan riwayat? konfirmasi?) dan uji di perangkat — kandidat `docs/BELUM-TERUJI-PERANGKAT.md`.
+- **`PanelQris` memulai ulang polling pada setiap render `Pembayaran`** (Task 8 tinjauan ulang, dicatat tidak diperbaiki): `kirim={buatPemanggilApi(...)}` berganti identitas tiap render sehingga efek polling (`PanelQris.tsx`, dependensi `kirim`) berhenti dan mulai lagi serta menembak `cekStatus`. Perbaikan lunas-sekali (fix round 2) TIDAK menyelesaikannya — ia hanya mencegah laporan ganda, bukan polling berlebih. Pra-ada; perbaikan: stabilkan `kirim` (`useMemo` atas `konfig`/`sesi.userId`) di `Pembayaran`.
+- **Cabang panel QRIS memakai `shift!`/`hlc!` tanpa pemeriksaan** (Task 8 tinjauan ulang, pra-ada): cabang hanya memeriksa `konfig && sesi`; `selesaikanQris` memakai non-null assertion. Dalam praktik `shift` sudah ada (draf dipulihkan per shift), tetapi tidak dijaga.
 
 ## Ledger
 

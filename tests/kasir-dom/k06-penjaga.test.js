@@ -1226,3 +1226,105 @@ test('⛔ K-06 dilepas selagi terkunci (menyimpan) MELEPAS kunci nav — kunci m
     await hal.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// PENJAGA — fix round 2 Task 8 (tinjauan ulang: siklus simpan ulang di jalur lunas QRIS, "Cek status")
+// ---------------------------------------------------------------------------
+
+/** Membuka K-06, memunculkan panel QRIS dinamis, dan menyerahkan kendali jawaban `check-status`. */
+async function bukaPanelQris() {
+  const hal = await buka('render=k06&baris=2', { rute: RUTE_QRIS });
+  const galatHalaman = [];
+  hal.on('pageerror', (e) => galatHalaman.push(e.message));
+  const gateway = { jawab: 'pending_confirmation', permintaan: 0 };
+  await hal.route('**/payments/*/check-status', async (r) => {
+    gateway.permintaan += 1;
+    await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: gateway.jawab }) });
+  });
+  await tab(hal, 'QRIS').click();
+  await hal.getByRole('button', { name: 'Tampilkan kode QR' }).click();
+  await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+  return { hal, gateway, galatHalaman };
+}
+
+const tungguBeberapaRender = async (hal, n = 8) => {
+  for (let i = 0; i < n; i += 1) await tungguRender(hal);
+};
+
+test('⛔ gagal simpan di jalur lunas QRIS: SATU percobaan (bukan siklus), pesan jujur, dan "Cek status" dapat mengulang secara sadar', async () => {
+  /* Tinjauan ulang Opus: sesudah perbaikan TDZ jalur ini hidup. Bila simpan gagal panel tetap
+     `confirmed`; `finally` melepas kunci, induk render ulang, `onSelesai` inline berganti
+     identitas dan efek PanelQris menembak lagi — simpan diulang tanpa batas. */
+  const { hal, gateway, galatHalaman } = await bukaPanelQris();
+  try {
+    await hal.evaluate(() => {
+      window.__gagalTransaksi = { masuk: 0 };
+    });
+    gateway.jawab = 'confirmed';
+    // Poll berikutnya (jeda 2 dtk) atau Cek status membawa `confirmed`; tekan Cek status agar cepat.
+    await hal.getByRole('button', { name: 'Cek status' }).click();
+    await hal.waitForFunction(() => (window.__gagalTransaksi?.masuk ?? 0) >= 1, null, { timeout: 5000 });
+    await tungguBeberapaRender(hal);
+    assert.deepEqual(galatHalaman, [], `halaman melempar: ${galatHalaman.join(' | ')}`);
+    const percobaan = await hal.evaluate(() => window.__gagalTransaksi.masuk);
+    assert.equal(percobaan, 1, `gagal simpan diulang ${percobaan}× tanpa campur tangan kasir — siklus simpan ulang`);
+    const isi = await teks(hal);
+    assert.match(isi, /Penjualan TIDAK tersimpan/, 'layar tidak mengatakan penjualan belum tersimpan');
+    assert.match(isi, /lunas di server/, 'layar tidak mengatakan pembayaran SUDAH lunas di server');
+    assert.ok(!isi.includes('Transaksi selesai'), 'layar mengaku selesai padahal simpan gagal');
+
+    // Ulang SADAR: simpan pulih, kasir menekan Cek status → tepat satu penjualan.
+    await hal.evaluate(() => {
+      window.__gagalTransaksi = undefined;
+    });
+    await hal.getByRole('button', { name: 'Cek status' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    assert.equal((await tulisan(hal, /INSERT INTO "order"/)).length, 1, 'ulang manual tidak menulis tepat SATU baris order');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ bersihkanDraf gagal SESUDAH penjualan tertulis: layar tidak berkata "TIDAK tersimpan"; baris order tepat satu', async () => {
+  const { hal, gateway, galatHalaman } = await bukaPanelQris();
+  try {
+    await hal.evaluate(() => {
+      window.__gagalSql = 'DELETE FROM draf_qris_lokal';
+    });
+    gateway.jawab = 'confirmed';
+    await hal.getByRole('button', { name: 'Cek status' }).click();
+    await hal.waitForFunction(() => document.body.innerText.includes('Transaksi selesai') || document.body.innerText.includes('TIDAK tersimpan'), null, { timeout: 10_000 });
+    await tungguBeberapaRender(hal);
+    const isi = await teks(hal);
+    assert.deepEqual(galatHalaman, [], `halaman melempar: ${galatHalaman.join(' | ')}`);
+    assert.ok(!isi.includes('TIDAK tersimpan'), 'layar berkata penjualan TIDAK tersimpan padahal baris order sudah tertulis (hanya pembersihan draf yang gagal)');
+    assert.ok(isi.includes('Transaksi selesai'), 'K-07 tidak tercapai sesudah penjualan tertulis');
+    assert.equal((await tulisan(hal, /INSERT INTO "order"/)).length, 1, 'baris order tidak tepat satu');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ "Cek status" yang dijawab gateway `confirmed` menyimpan SATU penjualan (jalur spec-c:291 "pelanggan sudah bayar, POS tidak tahu")', async () => {
+  /* Tombol ini satu-satunya jalan kasir menolong dirinya sendiri sesudah timeout atau tab
+     tertutup. Jawaban `confirmed` HANYA datang sekali (permintaan pertama sesudah dipersenjatai),
+     jadi polling berkala tidak dapat menutupi handler yang membuang hasilnya. */
+  const { hal, galatHalaman } = await bukaPanelQris();
+  try {
+    let sisa = 1;
+    await hal.unroute('**/payments/*/check-status');
+    await hal.route('**/payments/*/check-status', async (r) => {
+      const status = sisa > 0 ? 'confirmed' : 'pending_confirmation';
+      sisa -= 1;
+      await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status }) });
+    });
+    sisa = 1;
+    await hal.getByRole('button', { name: 'Cek status' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 1500 }).catch(() => undefined);
+    assert.deepEqual(galatHalaman, [], `halaman melempar: ${galatHalaman.join(' | ')}`);
+    assert.ok((await teks(hal)).includes('Transaksi selesai'), '"Cek status" dijawab confirmed tetapi penjualan tidak ditulis — hasilnya dibuang');
+    assert.equal((await tulisan(hal, /INSERT INTO "order"/)).length, 1, 'Cek status menulis bukan tepat SATU baris order');
+  } finally {
+    await hal.close();
+  }
+});

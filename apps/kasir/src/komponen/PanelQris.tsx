@@ -84,9 +84,24 @@ export function PanelQris({
     };
   }, [kirim, paymentId, jeda, batas]);
 
+  /* ⛔ `lunas` dilaporkan SEKALI per transisi ke `confirmed`. Efek lama bergantung pada
+     identitas `onSelesai` (prop inline yang berganti tiap render induk): bila penyimpanan
+     gagal, `menyimpan` kembali false, induk render ulang, efek menembak lagi, dan simpan
+     diulang tanpa batas. Callback terbaru dibaca lewat ref (identitasnya tak lagi
+     memicu apa pun), dan `dilaporkan` mencegah laporan ganda; "Cek status" membukanya
+     kembali supaya kasir dapat mengulang SECARA SADAR sesudah gagal simpan. */
+  const onSelesaiTerbaru = useRef(onSelesai);
+  onSelesaiTerbaru.current = onSelesai;
+  const dilaporkan = useRef(false);
+  const laporLunas = () => {
+    if (dilaporkan.current) return;
+    dilaporkan.current = true;
+    onSelesaiTerbaru.current({ status: 'lunas' });
+  };
   useEffect(() => {
-    if (status === 'confirmed') onSelesai({ status: 'lunas' });
-  }, [status, onSelesai]);
+    if (status === 'confirmed') laporLunas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- laporLunas hanya membaca ref
+  }, [status]);
 
   const batalkan = () => {
     setSibuk(true);
@@ -146,7 +161,11 @@ export function PanelQris({
           onClick={() => {
             setHabisWaktu(false);
             mulai.current = Date.now();
-            void cekStatus(kirim, paymentId).then(setStatus);
+            dilaporkan.current = false;
+            void cekStatus(kirim, paymentId).then((h) => {
+              setStatus(h);
+              if (h === 'confirmed') laporLunas();
+            });
           }}
         >
           Cek status

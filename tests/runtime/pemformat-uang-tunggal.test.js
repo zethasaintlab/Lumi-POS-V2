@@ -137,11 +137,13 @@ const POLA_DEKLARASI = new RegExp(
  *   - `Intl.NumberFormat('id-ID', { style: 'currency' … })`.
  * `toLocaleString('id-ID')` atas tanggal dan jumlah baris tetap lolos (bukan uang).
  */
-const NAMA_NILAI_UANG = '(?:harga|total|nominal|uang|rupiah|kembali|saldo|omzet|tendered|amount|price|cost|biaya|pajak|tagihan|selisih)';
+const NAMA_NILAI_UANG = '(?:harga|total|nominal|uang|rupiah|kembali|saldo|omzet|tendered|amount|price|cost|biaya|pajak|tagihan|selisih|jumlah)';
+// Peubah HITUNGAN bernama mirip uang (`totalBaris`, `jumlahItem`) bukan uang.
+const AKHIRAN_HITUNGAN = '(?:baris|item|produk|count|qty|kuantitas|varian|outlet|perangkat)';
 const POLA_FORMAT_RAKITAN = [
   { nama: 'regex pemisah ribuan', pola: /\\B\(\?=\(\\d\{3\}\)/ },
   { nama: 'Number()/BigInt() lalu toLocaleString("id-ID")', pola: /\b(?:Number|BigInt)\([^)]*\)\s*\.toLocaleString\(\s*['"]id-ID['"]/ },
-  { nama: 'toLocaleString("id-ID") pada peubah uang', pola: new RegExp(`\\b\\w*${NAMA_NILAI_UANG}\\w*(?:\\([^)]*\\))?\\s*\\.toLocaleString\\(\\s*['"]id-ID['"]`, 'i') },
+  { nama: 'toLocaleString("id-ID") pada peubah uang', pola: new RegExp(`(?<![\\w$])(?!\\w*${AKHIRAN_HITUNGAN}(?![a-z]))\\w*${NAMA_NILAI_UANG}\\w*(?:\\([^)]*\\))?\\s*\\.toLocaleString\\(\\s*['"]id-ID['"]`, 'i') },
   { nama: 'Intl.NumberFormat id-ID bermata uang', pola: /Intl\.NumberFormat\(\s*['"]id-ID['"][^)]*currency/ },
 ];
 
@@ -242,8 +244,10 @@ test('pola penjaga anti-salinan benar-benar menangkap bentuk yang dilarang, dan 
   assert.ok(cocok('toLocaleString("id-ID") pada peubah uang', "hasil.totalBayar.toLocaleString('id-ID')"), 'peubah uang lolos');
   assert.ok(cocok('toLocaleString("id-ID") pada peubah uang', "kembalian.toLocaleString('id-ID')"), 'kembalian lolos');
   assert.ok(cocok('Intl.NumberFormat id-ID bermata uang', "new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' })"), 'NumberFormat bermata uang lolos');
+  assert.ok(cocok('toLocaleString("id-ID") pada peubah uang', "jumlah.toLocaleString('id-ID')"), 'jumlah (kas manual) lolos');
+  assert.ok(cocok('toLocaleString("id-ID") pada peubah uang', "form.jumlah.toLocaleString('id-ID')"), 'form.jumlah lolos');
   // Yang sah: jumlah baris dan tanggal.
-  for (const sah of ["baris.terpakai.toLocaleString('id-ID')", "hasil.masalah.length.toLocaleString('id-ID')", "new Date(t).toLocaleDateString('id-ID')", "hasil.diimpor.toLocaleString('id-ID')"]) {
+  for (const sah of ["totalBaris.toLocaleString('id-ID')", "jumlahItem.toLocaleString('id-ID')", "hasil.jumlahBaris.toLocaleString('id-ID')", "baris.terpakai.toLocaleString('id-ID')", "hasil.masalah.length.toLocaleString('id-ID')", "new Date(t).toLocaleDateString('id-ID')", "hasil.diimpor.toLocaleString('id-ID')"]) {
     assert.equal(
       POLA_FORMAT_RAKITAN.some((q) => q.pola.test(sah)),
       false,

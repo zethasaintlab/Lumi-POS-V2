@@ -60,11 +60,24 @@ import type { StatusBayar } from '../kasir/qris-dinamis.ts';
 let dbAktif: DbLokal | null = null;
 const delegasi: DbLokal = {
   getAll: (sql, params) => dbAktif!.getAll(sql, params),
-  execute: (sql, params) => dbAktif!.execute(sql, params),
+  execute: (sql, params) => {
+    /* `window.__gagalSql` (sumber regex): UPDATE/DELETE yang cocok melempar — dipakai penjaga
+       "bersihkanDraf gagal sesudah penjualan tertulis". */
+    const gagal = (window as unknown as { __gagalSql?: string }).__gagalSql;
+    if (gagal && new RegExp(gagal, 'i').test(sql)) return Promise.reject(new Error('galeri: execute gagal'));
+    return dbAktif!.execute(sql, params);
+  },
   /* `window.__tahanTransaksi` (`{ promise }`) menahan SETIAP transaksi sampai
      test melepasnya — dipakai penjaga "tab nav terkunci selama penjualan
      disimpan" untuk membuat jendela menyimpan terlihat tanpa berpacu timer. */
   transaction: async (fn) => {
+    /* `window.__gagalTransaksi` ({ masuk }): setiap transaksi melempar dan dihitung — penjaga
+       "gagal simpan di jalur lunas QRIS tidak diulang tanpa batas". */
+    const gagal = (window as unknown as { __gagalTransaksi?: { masuk: number } }).__gagalTransaksi;
+    if (gagal) {
+      gagal.masuk += 1;
+      throw new Error('galeri: simpan gagal');
+    }
     const tahan = (window as unknown as { __tahanTransaksi?: { promise: Promise<void>; masuk?: number } }).__tahanTransaksi;
     if (tahan) {
       // `masuk` = berapa transaksi yang sudah tiba di gerbang; test menunggunya

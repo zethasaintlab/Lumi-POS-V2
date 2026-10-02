@@ -226,6 +226,7 @@ for (const lebar of [1024, 1280]) {
     assert.ok(u.primer.h >= 56, `aksi utama ${u.primer.h} px — 56 px (DS #3)`);
     assert.equal(u.primer.r, u.aksi.r, 'aksi utama tidak menempel di tepi kanan blok aksi');
     assert.ok(u.primer.w < u.aksi.w / 2, `aksi utama ${u.primer.w} px dari ${u.aksi.w} — mockup tidak selebar kartu`);
-    assert.ok(u.primer.b >= u.kartu.b - 40, `aksi utama (bawah ${u.primer.b}) tidak di bawah kartu (bawah ${u.kartu.b})`);
+    // 18 = padding kartu (`--space-4`, 16 px) + 2 px pembulatan: tombol utama menempel di dasar kartu.
+    assert.ok(u.primer.b >= u.kartu.b - 18, `aksi utama (bawah ${u.primer.b}) tidak di bawah kartu (bawah ${u.kartu.b})`);
   });
 }

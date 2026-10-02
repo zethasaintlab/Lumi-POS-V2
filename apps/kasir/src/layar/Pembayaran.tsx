@@ -301,16 +301,22 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
       draf,
     })
       .then(async (hasil) => {
-        await bersihkanDraf(db);
-        pemberitahu.beritahu();
         if (hasil.status === 'tersimpan') {
           setPanelQris(null);
           setSelesai(hasil);
+          pemberitahu.beritahu();
+          /* ⛔ Penjualan SUDAH tertulis: gagal membersihkan draf tidak boleh berubah menjadi
+             "TIDAK tersimpan". Draf yang tertinggal tidak berbahaya (id order sama, dan
+             `pulihkanDraf` membuangnya bila bukan milik shift ini). */
+          await bersihkanDraf(db).catch(() => undefined);
           return;
         }
-        setGalat('Pembayaran lunas di server, tetapi penjualan gagal ditulis di perangkat.');
+        // Draf SENGAJA dipertahankan: tanpanya "Cek status" tidak dapat mengulang penyimpanan.
+        setGalat('Pembayaran lunas di server, tetapi penjualan gagal ditulis di perangkat. Tekan Cek status untuk mengulang.');
       })
-      .catch((e: Error) => setGalat(`Penjualan TIDAK tersimpan: ${e.message}`))
+      .catch((e: Error) =>
+        setGalat(`Penjualan TIDAK tersimpan: ${e.message}. Pembayaran sudah lunas di server; tekan Cek status untuk mengulang.`)
+      )
       .finally(() => {
         sedangMenyimpan.current = false;
         setMenyimpan(false);
@@ -352,6 +358,11 @@ export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => 
           <p id="bayar-kunci-alasan" className="t-caption kasir-login-sub">
             {alasanKunci}
           </p>
+          {galat && (
+            <p className="t-body-md kasir-login-galat" role="alert">
+              {galat}
+            </p>
+          )}
           <div className="kasir-bayar-metode">
             <PanelQris
               kirim={buatPemanggilApi(konfig, sesi.userId)}

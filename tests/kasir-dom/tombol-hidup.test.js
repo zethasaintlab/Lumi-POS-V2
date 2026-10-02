@@ -106,7 +106,7 @@ const PENGECUALIAN_DIAM = [
       '`cekStatus` (`PanelQris.tsx`) menembak gateway lewat server, yang di galeri tidak ada ' +
       '(`BASE_URL_TAK_TERJANGKAU`): jawabannya selalu `pending`, sama dengan keadaan sebelum ' +
       'ditekan, jadi React tidak menyentuh node DOM apa pun. Pada server sungguhan, hasil ' +
-      'berbeda (lunas / ditolak / kedaluwarsa) MENGUBAH layar — dijaga `k06-penjaga` P6.',
+      'berbeda (lunas / ditolak / kedaluwarsa) MENGUBAH layar. Handler-nya dijaga `k06-penjaga` "Cek status yang dijawab gateway confirmed menyimpan SATU penjualan" (P6 hanya membaca teks panel, tidak menekan tombol).',
   },
 ];
 
