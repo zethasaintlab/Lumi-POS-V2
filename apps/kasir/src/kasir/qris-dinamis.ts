@@ -318,14 +318,33 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
   if (total === null || nominalDraf(d) !== total) return false;
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
+  /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,
+     dan `confirmed` menulis penjualan dari KERANJANG, bukan dari muatan draf. */
+  const diskon = d.muatan.discount as { tipe?: unknown; nilai?: unknown } | undefined;
+  const dk = keranjang.diskon;
+  if (dk === null ? diskon !== undefined : diskon?.tipe !== dk.minta.tipe || diskon?.nilai !== Number(dk.minta.nilai)) {
+    return false;
+  }
+  if ((d.muatan.discountReasonCode ?? null) !== (dk?.alasanKode ?? null)) return false;
   return keranjang.baris.every((b, i) => {
     const l = baris[i] as Record<string, unknown> | undefined;
+    if (
+      l === undefined ||
+      l.id !== b.id ||
+      l.variationId !== b.variationId ||
+      l.quantityMilli !== b.quantityMilli ||
+      l.unitPrice !== b.unitPrice
+    ) {
+      return false;
+    }
+    const mods = l.modifiers;
     return (
-      l !== undefined &&
-      l.id === b.id &&
-      l.variationId === b.variationId &&
-      l.quantityMilli === b.quantityMilli &&
-      l.unitPrice === b.unitPrice
+      Array.isArray(mods) &&
+      mods.length === b.modifier.length &&
+      b.modifier.every((m, j) => {
+        const x = mods[j] as Record<string, unknown> | undefined;
+        return x !== undefined && x.modifierId === m.id && x.price === m.harga && x.quantityMilli === m.qtyMilli;
+      })
     );
   });
 }

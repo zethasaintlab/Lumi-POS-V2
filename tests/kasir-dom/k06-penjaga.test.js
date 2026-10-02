@@ -1298,7 +1298,15 @@ const RUTE_QR = {
 async function mulaiQrisDinamis(hal) {
   await hal.getByRole('button', { name: 'QRIS', exact: true }).click();
   await hal.getByRole('button', { name: 'Tampilkan kode QR' }).click();
-  await hal.waitForSelector('text=Pindai QRIS untuk membayar', { timeout: 10_000 });
+  // ⛔ Panel ATAU kalimat statusnya: jawaban gateway pertama (expired/failed) langsung menggantikan
+  // judul "Pindai", dan menunggu judul itu saja membuat penjaga merah-hijau acak (race).
+  await tunggu(
+    hal,
+    () => /Pindai QRIS untuk membayar|Kode QR kedaluwarsa|ditolak penerbit|Menunggu pembayaran pelanggan/.test(document.body.innerText),
+    'sesudah "Tampilkan kode QR" panel QRIS tidak muncul (tidak ada judul "Pindai", kalimat kedaluwarsa, ditolak, maupun menunggu)',
+    null,
+    10_000
+  );
 }
 const barisPayment = async (hal) => (await tulisan(hal)).filter((t) => /^INSERT INTO payment/i.test(t.sql));
 
