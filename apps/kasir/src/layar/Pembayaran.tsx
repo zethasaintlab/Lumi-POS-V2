@@ -33,6 +33,7 @@ import { MIN_PANJANG_REFERENSI } from '../../../../packages/domain/src/pembayara
 import {
   sisaTagihan,
   type BagianBayar,
+  type HasilRencanaBayar,
 } from '../../../../packages/domain/src/pembayaran-campuran.ts';
 import { Bidang } from '../Bidang.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
@@ -62,6 +63,24 @@ import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampila
    statis berfungsi tanpa jaringan. */
 
 /** Bentuk layar → bentuk domain. Tunai tidak pernah masuk daftar `bagian`. */
+/* `rencanaBayarKeranjang` jalan saat render: increment ≤ 0 atau mode tak dikenal MELEMPAR
+   (`money.ts`), dan render yang melempar mematikan seluruh aplikasi kasir. Dijadikan galat. */
+function hitungRencanaAman(
+  hitungan: HitunganKeranjang,
+  bagian: readonly Pembayaran[]
+): HasilRencanaBayar {
+  try {
+    return rencanaBayarKeranjang(hitungan, bagian);
+  } catch {
+    return { ok: false, kode: 'NOMINAL_TIDAK_SAH', pesan: 'Pengaturan pembulatan outlet tidak valid. Hubungi pemilik.' };
+  }
+}
+
+/* Kalimat tunggal untuk galat rencana — dipakai kotak Kembalian DAN alasan tombol (satu kalimat). */
+function kalimatRencana(r: Extract<HasilRencanaBayar, { ok: false }>): string {
+  return r.kode === 'KURANG_BAYAR' ? 'Uang diterima kurang dari tagihan tunai.' : r.pesan;
+}
+
 function keBagianDomain(p: Pembayaran): BagianBayar {
   return {
     metode: p.metode,
@@ -489,10 +508,14 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      Tidak ada aritmetika di layar: kolom kosong/cacat → `null` → `Rp —`, bukan
      kembalian dari Rp 0; `KURANG_BAYAR` dan galat lain memakai kodenya, tanpa
      angka kurang yang dihitung sendiri. */
-  const rencanaTunai =
+  const rencanaTunai: HasilRencanaBayar | null =
     tabAktif === 'tunai' && !lunasTanpaTunai && hitungan !== null && tenderedBaca !== null
-      ? rencanaBayarKeranjang(hitungan, [...bagian, { metode: 'cash', tendered: tenderedBaca }])
+      ? hitungRencanaAman(hitungan, [...bagian, { metode: 'cash', tendered: tenderedBaca }])
       : null;
+  /* Rencana yang menolak (kurang bayar, galat lain) menonaktifkan tombol utama dengan
+     kalimatnya — tanpa angka kurang kedua, dan tanpa order ditulis (I-1, 2 Okt 2026). */
+  const alasanRencana: string | null =
+    rencanaTunai !== null && !rencanaTunai.ok ? kalimatRencana(rencanaTunai) : null;
 
   const terkunci = alasanKunci !== null;
 
@@ -506,7 +529,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         ? (alasanDinamis ??
           (bagian.length > 0 ? 'QRIS dinamis tidak dapat digabung dengan bagian pembayaran lain.' : null))
         : masukanLengkap
-          ? null
+          ? alasanRencana
           : metode === 'cash'
             ? 'Isi nominal yang diterima.'
             : metode === 'qris_static'
@@ -660,7 +683,8 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           return;
         }
         if (hasil.status === 'kurang_bayar') {
-          setGalat(`Kurang ${rupiah(hasil.kurang)}. Total ${rupiah(hasil.amountDue)}.`);
+          // Tombol sudah nonaktif untuk tunai kurang; jalur ini cadangan, TANPA angka kurang (satu sumber: rencana).
+          setGalat('Uang diterima kurang dari tagihan tunai. Penjualan belum tersimpan.');
           return;
         }
         if (hasil.status === 'pembayaran_tidak_sah') {
@@ -883,14 +907,14 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
               </div>
               {/* Kotak Kembalian (mockup): 32/700 aksen di panel `--accent-subtle`.
                   `rupiah('')` = `Rp —`, jalur nilai-hilang pemformat tunggal. */}
-              <div className="kasir-bayar-kembalian" role="status">
+              <div className="kasir-bayar-kembalian">
                 <p className="t-caption">Kembalian</p>
-                <p className="t-display num">
+                <p className="t-display num" role="status" aria-live="polite">
                   {rencanaTunai !== null && rencanaTunai.ok ? rupiah(rencanaTunai.rencana.kembalian) : rupiah('')}
                 </p>
                 {rencanaTunai !== null && !rencanaTunai.ok && (
                   <p className="t-caption">
-                    {rencanaTunai.kode === 'KURANG_BAYAR' ? 'Uang diterima kurang dari tagihan tunai.' : rencanaTunai.pesan}
+                    {kalimatRencana(rencanaTunai)}
                   </p>
                 )}
                 {rencanaTunai !== null && rencanaTunai.ok && rencanaTunai.rencana.roundingAdjustment !== 0n && (
