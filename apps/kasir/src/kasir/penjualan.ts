@@ -9,6 +9,7 @@ import {
 import {
   rencanakanPembayaran,
   sisaTagihan,
+  type HasilRencanaBayar,
 } from '../../../../packages/domain/src/pembayaran-campuran.ts';
 import { ambangDari } from '../../../../packages/domain/src/diskon.ts';
 import {
@@ -516,6 +517,31 @@ export async function hitungKeranjang({
 
 
 /**
+ * Rencana pembayaran sebuah keranjang — SATU fungsi untuk K-06 dan `simpanPenjualan`.
+ *
+ * ⛔ Satu-satunya pemanggil `rencanakanPembayaran` di `apps/kasir`. K-06 menampilkan
+ * kembalian dan tagihan tunai dari sini (keputusan user 28 September 2026, issue #76);
+ * pemetaan yang disalin ke layar menyimpang tepat di bawaan pembulatan (100, half_up),
+ * di `nominal ?? total` bagian non-tunai, dan di pembayaran campuran.
+ * `uang-pembayaran-kas.md` § Pembayaran campuran.
+ */
+export function rencanaBayarKeranjang(
+  { outlet, totals }: Pick<HitunganKeranjang, 'outlet' | 'totals'>,
+  bagian: readonly Pembayaran[]
+): HasilRencanaBayar {
+  return rencanakanPembayaran({
+    total: totals.total,
+    bagian: bagian.map((b) => ({
+      metode: b.metode,
+      nominal: b.metode === 'cash' ? undefined : (b.nominal ?? totals.total),
+      tendered: b.metode === 'cash' ? BigInt(b.tendered) : undefined,
+    })),
+    roundingIncrement: BigInt(outlet?.rounding_increment ?? 100),
+    roundingMode: (outlet?.rounding_mode ?? 'half_up') as RoundingMode,
+  });
+}
+
+/**
  * Muatan `POST /orders` — SATU tempat, dipakai jalur outbox dan jalur
  * online-first (FR-C3).
  *
@@ -716,16 +742,7 @@ export async function simpanPenjualan({
   // membulatkan total kebetulan benar. Ia berhenti benar begitu metode kedua
   // lahir, dan berhenti benar untuk kedua kalinya begitu satu order dapat
   // dibayar dengan dua metode.
-  const rencana = rencanakanPembayaran({
-    total: totals.total,
-    bagian: bagian.map((b) => ({
-      metode: b.metode,
-      nominal: b.metode === 'cash' ? undefined : (b.nominal ?? totals.total),
-      tendered: b.metode === 'cash' ? BigInt(b.tendered) : undefined,
-    })),
-    roundingIncrement: BigInt(outlet?.rounding_increment ?? 100),
-    roundingMode: (outlet?.rounding_mode ?? 'half_up') as RoundingMode,
-  });
+  const rencana = rencanaBayarKeranjang({ outlet, totals }, bagian);
 
   if (!rencana.ok) {
     if (rencana.kode === 'KURANG_BAYAR') {

@@ -1386,6 +1386,7 @@ test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = 
   const { simpanPenjualan, hitungKeranjang, rencanaBayarKeranjang } = await import(MOD);
   assert.equal(typeof rencanaBayarKeranjang, 'function', 'rencanaBayarKeranjang tidak diekspor dari kasir/penjualan.ts');
 
+  const ket_ = (x) => JSON.stringify(x, (_, v) => (typeof v === 'bigint' ? String(v) : v));
   let kasus = 0;
   let adaPembulatan = 0;
   for (const total of [9_950n, 64_120n, 93_555n]) {
@@ -1406,14 +1407,14 @@ test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = 
         for (const [namaBentuk, non] of Object.entries(bentuk)) {
           // Tagihan tunai dicari dulu dengan uang berlebih, lalu tiga nominal diuji di sekitarnya.
           const dasar = rencanaBayarKeranjang(hitungan, [...non, { metode: 'cash', tendered: 1_000_000n }]);
-          assert.equal(dasar.ok, true, `dasar tidak ok: ${JSON.stringify(dasar)}`);
+          assert.equal(dasar.ok, true, `dasar tidak ok: ${ket_(dasar)}`);
           const ditagih = dasar.rencana.tunaiDitagih;
           for (const diterima of new Set([ditagih, ditagih + 1n, 100_000n])) {
             if (diterima < ditagih) continue;
             const bagian = [...non, { metode: 'cash', tendered: diterima }];
             const ket = `total=${total} inc=${inc} mode=${mode} ${namaBentuk} diterima=${diterima}`;
             const rencana = rencanaBayarKeranjang(hitungan, bagian);
-            assert.equal(rencana.ok, true, `${ket}: ${JSON.stringify(rencana)}`);
+            assert.equal(rencana.ok, true, `${ket}: ${ket_(rencana)}`);
 
             const db = dbPalsu({ tarif: [], outlet });
             const hasil = await simpanPenjualan({ db, ...args({ keranjang, pembayaran: bagian }) });

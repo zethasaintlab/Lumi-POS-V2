@@ -23,6 +23,7 @@ import type { Hlc } from '../../../../packages/domain/src/hlc.ts';
 import {
   hitungKeranjang,
   type HitunganKeranjang,
+  rencanaBayarKeranjang,
   simpanPenjualan,
   type HasilPenjualan,
   type MetodeBayar,
@@ -482,6 +483,17 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const lunasTanpaTunai = sisa !== null && sisa === 0n && bagian.length > 0;
   const masukanLengkap = lunasTanpaTunai || formLengkap;
 
+  /* ⛔ Kembalian K-06 = `rencana.kembalian` dari `rencanaBayarKeranjang` — fungsi
+     yang SAMA dengan `simpanPenjualan`, dengan bagian non-tunai yang sudah
+     dimasukkan + bagian tunai dari kolom (keputusan user 28 September 2026).
+     Tidak ada aritmetika di layar: kolom kosong/cacat → `null` → `Rp —`, bukan
+     kembalian dari Rp 0; `KURANG_BAYAR` dan galat lain memakai kodenya, tanpa
+     angka kurang yang dihitung sendiri. */
+  const rencanaTunai =
+    tabAktif === 'tunai' && !lunasTanpaTunai && hitungan !== null && tenderedBaca !== null
+      ? rencanaBayarKeranjang(hitungan, [...bagian, { metode: 'cash', tendered: tenderedBaca }])
+      : null;
+
   const terkunci = alasanKunci !== null;
 
   /* ⛔ Alasan tombol utama nonaktif — satu kalimat, dirujuk `aria-describedby`.
@@ -735,11 +747,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
             Menjumlahkan butir di bawahnya adalah aritmetika KEDUA, dan pajak
             INKLUSIF membuatnya tidak sama dengan total yang tersimpan.
 
-            ⛔ PEMBULATAN TIDAK ADA DI SINI. FR-C9 membulatkan `amount_due`,
-            bukan `total`, dan hanya pada SISA TUNAI sesudah bagian non-tunai —
-            perhitungan yang baru lengkap di dalam `simpanPenjualan`. Angka
-            bulat hanya sah di K-07; penjaga P2 menolak kebocorannya ke sini
-            (Task 8B mengubah aturannya, dalam commit tersendiri). */}
+            ⛔ Total TIDAK PERNAH dibulatkan. FR-C9 membulatkan hanya SISA TUNAI
+            sesudah bagian non-tunai, dan hasilnya tampil di kotak Kembalian di
+            bawah — dari `rencanaBayarKeranjang`, bukan dihitung di sini (P2). */}
         <div className="kasir-bayar-atas">
           {hitungan !== null ? (
             <div className="kasir-bayar-total">
@@ -870,6 +880,24 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                     {rupiah(BigInt(p))}
                   </button>
                 ))}
+              </div>
+              {/* Kotak Kembalian (mockup): 32/700 aksen di panel `--accent-subtle`.
+                  `rupiah('')` = `Rp —`, jalur nilai-hilang pemformat tunggal. */}
+              <div className="kasir-bayar-kembalian" role="status">
+                <p className="t-caption">Kembalian</p>
+                <p className="t-display num">
+                  {rencanaTunai !== null && rencanaTunai.ok ? rupiah(rencanaTunai.rencana.kembalian) : rupiah('')}
+                </p>
+                {rencanaTunai !== null && !rencanaTunai.ok && (
+                  <p className="t-caption">
+                    {rencanaTunai.kode === 'KURANG_BAYAR' ? 'Uang diterima kurang dari tagihan tunai.' : rencanaTunai.pesan}
+                  </p>
+                )}
+                {rencanaTunai !== null && rencanaTunai.ok && rencanaTunai.rencana.roundingAdjustment !== 0n && (
+                  <p className="t-caption">
+                    Tagihan tunai dibulatkan menjadi <span className="num">{rupiah(rencanaTunai.rencana.tunaiDitagih)}</span>
+                  </p>
+                )}
               </div>
             </>
           )}

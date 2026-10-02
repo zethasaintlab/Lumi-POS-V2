@@ -757,6 +757,16 @@
 .kasir-bayar-sub { align-self: flex-start; }
 .kasir-bayar-sub button { white-space: nowrap; }
 .kasir-bayar-pintasan { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.kasir-bayar-kembalian {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--accent-subtle);
+}
+.kasir-bayar-kembalian p { margin: 0; }
+.kasir-bayar-kembalian .t-display { color: var(--primary); }
 .kasir-bayar-campuran { margin-top: auto; }
 
 /* ⛔ Pembatas di ATAS blok aksi: ia menyatakan satu hal — blok ini LAPISAN yang

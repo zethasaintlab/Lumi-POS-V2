@@ -419,6 +419,7 @@ test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.ch
         await bidang(hal, /Nominal bagian ini/).fill(k.non.nominal);
         await bidang(hal, /Referensi pembayaran/).fill('REF-KMB-1');
         await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
+        await hal.getByRole('button', { name: 'Tunai', exact: true }).click();
       } else if (k.non?.jenis === 'transfer') {
         await bukaCampuran(hal);
         await hal.getByRole('button', { name: 'Transfer', exact: true }).click();
