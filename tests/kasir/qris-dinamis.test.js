@@ -504,6 +504,7 @@ test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berb
   // Total sama (22.000), isi berbeda.
   assert.equal(drafCocokKeranjang(tMod, dgn([mod('m2', 2000)], 20000), 22000n), false, 'modifier berbeda (id) pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 1000)], 21000), 22000n), false, 'harga modifier dan harga satuan bergeser pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 1000)], 20000), 22000n), false, 'harga modifier SAJA berbeda (id, qty, harga satuan sama) dianggap cocok');
   assert.equal(drafCocokKeranjang(tMod, dgn([], 22000), 22000n), false, 'modifier dihapus dan harga satuan dinaikkan pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 2000, 2000)], 20000), 22000n), false, 'qty modifier berbeda dianggap cocok');
   assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 2000), mod('m3', 0)], 20000), 22000n), false, 'modifier tambahan dianggap cocok');
@@ -513,6 +514,7 @@ test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berb
   assert.equal(drafCocokKeranjang(tDis, kDis, 20000n), true, 'pembanding hampa: keranjang berdiskon yang SAMA dianggap berbeda');
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: diskon('percent', 2000n) }, 20000n), false, 'nilai diskon berbeda pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: diskon('amount', 1000n) }, 20000n), false, 'tipe diskon berbeda pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: diskon('percent', 1000n, 'lain') }, 20000n), false, 'alasan diskon SAJA berbeda dianggap cocok');
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: null }, 20000n), false, 'diskon dicabut pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tId, { ...KERANJANG, diskon: diskon('percent', 1000n) }, 22000n), false, 'diskon ditambahkan pada total sama dianggap cocok');
 });
