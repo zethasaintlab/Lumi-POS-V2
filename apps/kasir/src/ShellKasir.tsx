@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Icon, SyncIndicator, Tabs, Wordmark, type IconName } from 'ds';
 import { keadaanIndikator } from '../../../packages/sync-client/src/status.ts';
 import { ruteNav, type Rute } from './rute/tabel.ts';
 import { navigasi } from './rute/navigasi.ts';
+import { kunciNavSekarang, langgananKunciNav } from './rute/kunci-nav.ts';
 import { useAntrean } from './konteks/useAntrean.ts';
 import { useKeadaanLokal } from './konteks/DbLokalProvider.tsx';
 import { PitaAntrean } from './PitaAntrean.tsx';
@@ -53,6 +54,9 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
      `PanelPemberitahuan` (lonceng) keduanya menerima `db` yang boleh `null`. */
   const { lokal } = useKeadaanLokal();
   const [panelTerbuka, setPanelTerbuka] = useState(false);
+  /* ⛔ Kunci nav dari K-06 (`rute/kunci-nav.ts`): QRIS menunggu atau penjualan
+     sedang disimpan. `null` = bebas. */
+  const alasanKunci = useSyncExternalStore(langgananKunciNav, kunciNavSekarang, kunciNavSekarang);
 
   /* ⛔ `siap` saja TIDAK cukup, dan selisih antara keduanya adalah cacat yang
      hidup di sini sampai 21 September 2026.
@@ -103,25 +107,55 @@ export function ShellKasir({ outlet, device, pengguna, perangkatTerdaftar, ruteA
 
             ⛔ EMPAT tab, mengikuti mockup (Kasir · Riwayat · Laci kas · Tutup
             shift; `rute/tabel.ts`). `/sync` dan `/perangkat` pindah ke `MenuPengguna`. */}
-        <Tabs
-          variant="underline"
-          ariaLabel="Navigasi kasir"
-          value={ruteAktif?.jalur ?? ''}
-          onChange={(jalur) => navigasi(jalur)}
-          tabs={nav.map((r) => ({
-            value: r.jalur,
-            /* ⛔ `label` menerima ReactNode — `Tabs` bundle merendernya apa
-               adanya (`{lbl}`), jadi ikon di atas label tidak menuntut komponen
-               tab kedua yang ditulis sendiri. Yang ditulis sendiri akan
-               menyimpang dari back-office yang memakai `Tabs` yang sama. */
-            label: (
-              <>
-                <Icon name={(r.nav?.ikon ?? 'layers') as IconName} size={18} />
-                <span>{r.nav?.label ?? r.nama}</span>
-              </>
-            ),
-          }))}
-        />
+        {/* ⛔ Terkunci: markup yang SAMA dengan `Tabs` bundle (`.tabs-underline`,
+            `role="tab"`), tetapi tiap tab `aria-disabled="true"` + `aria-describedby`
+            ke kalimat alasan, dan klik tidak menavigasi. `Tabs` bundle tidak punya
+            keadaan nonaktif dan `ds-bundle/` tidak disunting, jadi keadaan ini
+            ditulis di sini; cabang bebasnya tetap `Tabs` bundle. Alasannya
+            `sr-only`: kalimat terlihatnya ada di K-06 sendiri (DS #5). */}
+        {alasanKunci === null ? (
+          <Tabs
+            variant="underline"
+            ariaLabel="Navigasi kasir"
+            value={ruteAktif?.jalur ?? ''}
+            onChange={(jalur) => navigasi(jalur)}
+            tabs={nav.map((r) => ({
+              value: r.jalur,
+              /* ⛔ `label` menerima ReactNode — `Tabs` bundle merendernya apa
+                 adanya (`{lbl}`), jadi ikon di atas label tidak menuntut komponen
+                 tab kedua yang ditulis sendiri. Yang ditulis sendiri akan
+                 menyimpang dari back-office yang memakai `Tabs` yang sama. */
+              label: (
+                <>
+                  <Icon name={(r.nav?.ikon ?? 'layers') as IconName} size={18} />
+                  <span>{r.nav?.label ?? r.nama}</span>
+                </>
+              ),
+            }))}
+          />
+        ) : (
+          <>
+            <div className="tabs tabs-underline" role="tablist" aria-label="Navigasi kasir">
+              {nav.map((r) => (
+                <button
+                  key={r.jalur}
+                  type="button"
+                  role="tab"
+                  aria-selected={(ruteAktif?.jalur ?? '') === r.jalur}
+                  aria-disabled="true"
+                  aria-describedby="nav-kunci-alasan"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <Icon name={(r.nav?.ikon ?? 'layers') as IconName} size={18} />
+                  <span>{r.nav?.label ?? r.nama}</span>
+                </button>
+              ))}
+            </div>
+            <span id="nav-kunci-alasan" className="sr-only">
+              {alasanKunci}
+            </span>
+          </>
+        )}
 
         {/* Kanan header: indikator sinkron, lonceng, tombol pengguna — SATU
             grup yang didorong ke ujung kanan (`margin-left: auto`), sama

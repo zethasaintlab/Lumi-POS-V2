@@ -153,15 +153,11 @@ async function ukur(hal) {
       kembali: kembali && r(kembali),
       secondary: probe('--secondary'),
       /* ⛔ TERLIHAT, bukan sekadar ada di DOM: overlay lama `position: fixed`
-         menutup header yang tetap ter-mount di bawahnya. Yang diukur adalah
-         elemen yang menjawab di titik tengah header. */
-      header: (() => {
-        const h = document.querySelector('.kasir-header');
-        if (!h) return false;
-        const x = h.getBoundingClientRect();
-        const di = document.elementFromPoint(x.left + 12, x.top + x.height / 2);
-        return !!di && !!di.closest('.kasir-header');
-      })(),
+         menutup header yang tetap ter-mount di bawahnya, jadi header dihitung
+         "terlihat" hanya bila TIDAK ADA `.overlay` di dokumen. (Titik tengah
+         header tidak dapat dipakai: pada panggung 1024 bilah galeri menutupnya
+         dan `elementsFromPoint` tidak menjangkaunya.) */
+      header: !!document.querySelector('.kasir-header') && !document.querySelector('.overlay'),
       dalamOverlay: !!kartu?.closest('.overlay'),
       gridK03: !!document.querySelector('.kasir-grid'),
     };

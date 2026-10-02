@@ -629,47 +629,14 @@ export function Kasir() {
     setPilihan({ item, daftar });
   };
 
-  /* ⛔ K-06 dirender sebagai OVERLAY di atas K-03, 2 September 2026 — bukan
-     lagi `return <Pembayaran/>` yang mengganti seluruh layar.
-     `TEMUAN.md` A6.
-
-     Keranjang tetap terlihat di belakangnya, dan itu bukan estetika: kasir
-     yang menagih sambil pelanggan menambah satu item terakhir tidak lagi
-     kehilangan konteks pesanannya. Halaman penuh membuat "kembali" terasa
-     seperti membatalkan.
-
-     ⛔ Overlaynya BESAR (`kasir-overlay-lebar`), bukan kotak dialog.
-     Pertimbangan yang dinyatakan di `TEMUAN.md`: K-06 memuat pembayaran
-     CAMPURAN beberapa metode, QRIS dinamis menampilkan QR + polling sampai 5
-     menit, dan K-07 menampilkan kembalian pada 32px — angka terbesar di
-     seluruh aplikasi, dibaca kasir DAN pelanggan bersamaan. Kotak 420px
-     menyempitkan ketiganya.
-
-     ⛔ KELAS `.overlay`/`.dialog` bundle, BUKAN komponen `<Modal>`-nya. Modal
-     bundle memasang `onClick={onClose}` pada latarnya — ketukan meleset di
-     tepi tablet MEMBUANG pembayaran yang sedang diketik. Itu persis alasan
-     `LatarDialog` menolak tutup-saat-latar-diklik, dan alasannya berlaku
-     lebih kuat di sini: yang hilang bukan pilihan modifier melainkan nominal
-     tunai yang sudah diserahkan pelanggan.
-
-     Bentuk yang sama dengan aturan `CartRow`/`ProductCard`: pakai kelasnya,
-     jangan pakai komponennya. Bedanya di sini bukan uang melainkan
-     PERILAKU — dan keduanya sama-sama tidak menghasilkan error.
-
-     ⛔ Batas yang DINYATAKAN: K-03 tetap di-unmount di baliknya, jadi
-     keranjang TIDAK terlihat menembus latar. Membiarkannya hidup berarti
-     `usePemindaiGlobal` tetap mendengarkan — dan scan yang masuk saat kasir
-     sedang mengetik nominal tunai akan menambah barang ke pesanan yang
-     angkanya sudah disebutkan ke pelanggan. Itu perubahan perilaku, bukan
-     perubahan tampilan, dan ia tidak dikerjakan di dalam sapuan UI. */
+  /* ⛔ K-06 adalah HALAMAN di dalam shell (spec § 7, kampanye Hidupkan desain,
+     Task 8) — bukan lagi overlay `kasir-overlay-bayar`; header tetap terlihat.
+     K-03 tetap di-UNMOUNT di baliknya, jadi `usePemindaiGlobal` (`aktif`
+     di atas) mati selama pembayaran: scan yang masuk saat kasir mengetik
+     nominal akan menambah barang ke pesanan yang angkanya sudah disebutkan ke
+     pelanggan. Pengunci tab nav selama QRIS/simpan ada di `Pembayaran.tsx`. */
   if (membayar) {
-    return (
-      <div className="overlay kasir-overlay-bayar" role="dialog" aria-modal="true" aria-label="Pembayaran">
-        <div className="dialog kasir-overlay-lebar">
-          <Pembayaran onKembali={() => setMembayar(false)} />
-        </div>
-      </div>
-    );
+    return <Pembayaran onKembali={() => setMembayar(false)} />;
   }
 
   return (

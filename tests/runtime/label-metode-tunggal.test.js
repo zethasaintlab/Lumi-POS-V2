@@ -13,7 +13,7 @@
 // uang transfer "Lainnya" persis di layar tempat pemilik mencocokkannya dengan
 // mutasi rekening.
 //
-// Task 8 memperluas pindaian ke `apps/kasir/src/layar`.
+// Task 8 memperluas pindaian ke `apps/kasir/src/layar` (K-06 menghapus `NAMA_METODE`).
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -21,7 +21,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const AKAR = path.resolve(__dirname, '..', '..');
-const LINGKUP = ['apps/backoffice/src', 'apps/hp/src'];
+const LINGKUP = ['apps/backoffice/src', 'apps/hp/src', 'apps/kasir/src/layar'];
 
 function berkas(dir, hasil = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -44,7 +44,7 @@ const POLA_DEKLARASI = [
   /\bfunction\s+labelMetode\b/,
 ];
 
-test('⛔ G-LABEL: tidak ada peta label metode lokal di apps/backoffice dan apps/hp', () => {
+test('⛔ G-LABEL: tidak ada peta label metode lokal di apps/backoffice, apps/hp, dan apps/kasir/src/layar', () => {
   const semua = LINGKUP.flatMap((d) => berkas(path.join(AKAR, d)));
   assert.ok(
     semua.length >= 20,

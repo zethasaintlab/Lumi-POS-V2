@@ -12,6 +12,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
 import { buatDbPalsu } from '../galeri/db-palsu.ts';
 import { Pembayaran } from '../layar/Pembayaran.tsx';
+import { ShellKasir } from '../ShellKasir.tsx';
 import { PanelQris } from '../komponen/PanelQris.tsx';
 import { setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
@@ -66,7 +67,12 @@ pasangLokalPalsu({
   keputusanMigrasi: { tindakan: 'tidak-ada' } as never,
   pemberitahu: buatPemberitahu(),
 });
-dbAktif = buatDbPalsu('normal');
+/* `?matikan=a,b` — kunci fitur yang dipaksa MATI (kill switch), supaya "tab
+   Transfer HILANG" dapat diuji tanpa keadaan galeri baru. */
+const matikan = (new URLSearchParams(window.location.search).get('matikan') ?? '')
+  .split(',')
+  .filter((k) => k !== '');
+dbAktif = buatDbPalsu('normal', { matikanFitur: matikan });
 
 const q = new URLSearchParams(window.location.search);
 
@@ -163,31 +169,21 @@ function Akar() {
     },
   } as unknown as KeadaanLokal;
 
-  /* ⛔ Pembungkus overlay DISALIN dari `Kasir.tsx:511-513`, kata demi kata, dan
-     ia bukan hiasan.
-
-     Sampai 16 September 2026 harness ini memasang `<Pembayaran>` TELANJANG ke
-     `#k06`. Ia cukup untuk penjaga yang membaca teks dan keberadaan tombol —
-     dan diam-diam salah untuk apa pun yang mengukur TATA LETAK: seluruh batas
-     tinggi K-06 datang dari `.kasir-overlay-lebar` (`max-height: 100%` di
-     dalam `.overlay` yang `position: fixed; inset: 0`). Tanpa pembungkus itu
-     layarnya tumbuh setinggi isinya, tidak pernah menggulir, dan blok aksi
-     yang menempel di aplikasi terukur BERGESER di sini.
-
-     Terukur sebelum diperbaiki: blok aksi bergeser 177,0 px antara isi pendek
-     dan isi panjang, dan `.kasir-bayar-isi` melaporkan `scrollHeight ===
-     clientHeight` — penggulungnya tidak pernah menyala.
+  /* ⛔ K-06 adalah HALAMAN di dalam `ShellKasir` (Task 8, spec § 7), dan
+     harness memasangnya DI DALAM shell sungguhan: seluruh batas tinggi kartu
+     datang dari `.kasir-konten` + `.kasir-bayar-halaman`, jadi mengukur blok
+     aksi (P8) tanpa shell mengukur salinan. Header-nya juga yang dipakai P1
+     untuk membuktikan tab nav terkunci. K-07 membawa overlay-nya sendiri
+     (`Pembayaran.tsx`), persis seperti di aplikasi.
 
      Harness yang berbeda bentuk dari aplikasinya adalah salinan, dan penjaga
      yang menjaga salinan tidak menjaga apa pun. */
   return (
     <DbLokalPalsuProvider keadaan={keadaan}>
       <IsiSiap>
-        <div className="overlay kasir-overlay-bayar" role="dialog" aria-modal="true" aria-label="Pembayaran">
-          <div className="dialog kasir-overlay-lebar">
-            <Pembayaran onKembali={() => undefined} />
-          </div>
-        </div>
+        <ShellKasir outlet="Outlet uji" device="K1" perangkatTerdaftar pengguna="Kasir uji" ruteAktif={null}>
+          <Pembayaran onKembali={() => undefined} />
+        </ShellKasir>
       </IsiSiap>
     </DbLokalPalsuProvider>
   );

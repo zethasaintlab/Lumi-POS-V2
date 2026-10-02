@@ -680,6 +680,11 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       if ((globalThis as { __galeriTulisLambat?: boolean }).__galeriTulisLambat) await new Promise((r) => setTimeout(r, 400));
       throw new Error('galeri: penulisan jejak gagal (perangkat penuh)');
     }
+    /* `__galeriTahanPenjualan` ([EKSPLORASI] Task 8): promise yang ditunggu
+       sebelum INSERT order pertama, supaya test dapat mengukur jendela
+       "sedang menyimpan" (kunci tab nav, ketukan ganda) tanpa timer. */
+    const tahan = (globalThis as { __galeriTahanPenjualan?: Promise<void> }).__galeriTahanPenjualan;
+    if (tahan && /^INSERT INTO "order"/i.test(sql.trim())) await tahan;
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
     /* Urutan parameter = `catatKasManual` (`kas/manual.ts`): id, shift_id, type,
