@@ -1551,7 +1551,9 @@ test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = 
           for (const diterima of [ditagih, ditagih + 1n, 100_000n]) {
             const bagian = [...non, { metode: 'cash', tendered: Number(diterima) }];
             const rencana = rencanaBayarKeranjang(hitungan, bagian);
-            const hasil = await simpanPenjualan({ db, ...args({ keranjang, pembayaran: bagian }) });
+            // `order_line.id` unik per penjualan di database yang sama.
+            const kr = { ...keranjang, baris: [{ ...keranjang.baris[0], id: `b-${kasus}` }] };
+            const hasil = await simpanPenjualan({ db, ...args({ keranjang: kr, pembayaran: bagian }) });
             const nama = `${mode}/${incr}/${total}/${skema}/diterima ${diterima}`;
             kasus++;
             if (!rencana.ok) {
