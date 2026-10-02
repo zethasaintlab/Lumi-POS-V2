@@ -99,6 +99,15 @@ const PENGECUALIAN_DIAM = [
       '(bukan "tidak melakukan apa-apa", melainkan "melakukan, hasilnya sama"). Pada ' +
       'DB sungguhan yang antreannya berubah, baca ulang MENGUBAH angka yang tampil.',
   },
+  {
+    layar: 'K-06-menunggu',
+    label: 'Cek status',
+    alasan:
+      '`cekStatus` (`PanelQris.tsx`) menembak gateway lewat server, yang di galeri tidak ada ' +
+      '(`BASE_URL_TAK_TERJANGKAU`): jawabannya selalu `pending`, sama dengan keadaan sebelum ' +
+      'ditekan, jadi React tidak menyentuh node DOM apa pun. Pada server sungguhan, hasil ' +
+      'berbeda (lunas / ditolak / kedaluwarsa) MENGUBAH layar — dijaga `k06-penjaga` P6.',
+  },
 ];
 
 function chromePath() {

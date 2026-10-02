@@ -147,6 +147,9 @@ function agregat(tabel: string, sql: string, baris: readonly unknown[]): Record<
  */
 export interface OpsiDbPalsu {
   tanpaShift?: boolean;
+  /** Draf QRIS dinamis yang tertinggal (`draf_qris_lokal`): K-06 memulihkannya dan
+      menampilkan panel "Menunggu pembayaran…" (layar galeri `K-06-menunggu`). */
+  drafQris?: boolean;
   /** Kunci `fitur.ts` yang dipaksa MATI (`aktif: 0`) — dipakai
       `tests/kasir-dom/k03-toolbar.test.js` untuk membuktikan "Diskon HILANG,
       bukan nonaktif" tanpa menambah keadaan galeri baru (yang akan
@@ -485,6 +488,29 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
             },
           ]
         : [],
+    draf_qris_lokal: opsi.drafQris
+      ? [
+          {
+            id: 'kini',
+            order_id: 'ord-galeri-qris',
+            payment_id: 'pay-galeri-qris',
+            shift_id: 'shift-galeri',
+            draf: JSON.stringify({
+              orderId: 'ord-galeri-qris',
+              checkId: 'chk-galeri-qris',
+              receiptNumber: 'K1-20260901-0099',
+              sequence: 99,
+              businessDate: '2026-09-01',
+              paymentIds: ['pay-galeri-qris'],
+              occurredAt: '2026-09-01T02:00:00.000Z',
+              hlc: '1',
+            }),
+            muatan: '{}',
+            qr_string: '00020101021226590014ID.CO.QRIS.GALERI',
+            dibuat_pada: '2026-09-01T02:00:00.000Z',
+          },
+        ]
+      : [],
     print_job: [],
     fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),
     telemetry_local: [],

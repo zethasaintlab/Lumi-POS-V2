@@ -24,6 +24,7 @@ import { langgananKeranjang } from '../kasir/simpanan.ts';
 import { TABEL_RUTE } from '../rute/tabel.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
 import { Fondasi } from './Fondasi.tsx';
+import { BayarGaleri } from './BayarGaleri.tsx';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
 
 /**
@@ -87,6 +88,13 @@ const LAYAR = [
      yang tidak pernah terlihat kasir yang belum masuk. */
   { id: 'K-01', nama: 'Login PIN', render: () => <Login />, tanpaShell: true },
   { id: 'K-02', nama: 'Buka shift', render: () => <BukaShift /> },
+  /* K-06 dibuka LANGSUNG dari galeri (bukan lewat K-03 → Bayar) dalam tiga bentuk,
+     supaya G-TOMBOL-HIDUP menjangkau tombol matinya: tab QRIS dengan QRIS dinamis
+     tak terjangkau (galeri tidak punya server), dan panel QRIS menunggu (draf
+     dipulihkan dari `draf_qris_lokal`, `db-palsu.ts` `drafQris`). */
+  { id: 'K-06', nama: 'Pembayaran', render: () => <BayarGaleri /> },
+  { id: 'K-06-qris', nama: 'Pembayaran · tab QRIS', render: () => <BayarGaleri tabAwal="qris" /> },
+  { id: 'K-06-menunggu', nama: 'Pembayaran · QRIS menunggu', render: () => <BayarGaleri /> },
   { id: 'K-09', nama: 'Detail transaksi', render: () => <DetailTransaksi orderId="ord-1" /> },
   { id: 'K-08', nama: 'Riwayat', render: () => <Riwayat /> },
   { id: 'K-12', nama: 'Tutup kas', render: () => <TutupKas /> },
@@ -217,7 +225,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, gagalBacaKas, jumlahGagal });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', drafQris: layarId === 'K-06-menunggu', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, gagalBacaKas, jumlahGagal });
     dbSkenario = db;
     return {
       tahap: 'siap',
