@@ -505,11 +505,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   /* ⛔ Kembalian K-06 = `rencana.kembalian` dari `rencanaBayarKeranjang` — fungsi
      yang SAMA dengan `simpanPenjualan`, dengan bagian non-tunai yang sudah
      dimasukkan + bagian tunai dari kolom (keputusan user 28 September 2026).
-     Tidak ada aritmetika di layar: kolom kosong/cacat → `null` → `Rp —`, bukan
+     Tidak ada aritmetika di layar: kolom kosong/cacat/0 → `null` → `Rp —` (0 sejajar `formLengkap`: alasan tombol "Isi nominal", bukan "kurang"), bukan
      kembalian dari Rp 0; `KURANG_BAYAR` dan galat lain memakai kodenya, tanpa
      angka kurang yang dihitung sendiri. */
   const rencanaTunai: HasilRencanaBayar | null =
-    tabAktif === 'tunai' && !lunasTanpaTunai && hitungan !== null && tenderedBaca !== null
+    tabAktif === 'tunai' && !lunasTanpaTunai && hitungan !== null && tenderedBaca !== null && tenderedBaca > 0
       ? hitungRencanaAman(hitungan, [...bagian, { metode: 'cash', tendered: tenderedBaca }])
       : null;
   /* Rencana yang menolak (kurang bayar, galat lain) menonaktifkan tombol utama dengan

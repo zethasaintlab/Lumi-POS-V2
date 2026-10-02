@@ -1650,7 +1650,14 @@ test('⛔ G-NOMINAL: kolom kosong / "25.5" / "abc" / "0" → Kembalian Rp —, K
       assert.equal(nilai, 'Rp —', `nominal ${nama}: Kembalian "${nilai}" — harus "Rp —", tidak pernah kembalian dari Rp 0`);
       assert.notEqual(nilai, 'Rp 0', `nominal ${nama}: Kembalian Rp 0 untuk masukan yang bukan nominal`);
       assert.equal(await aksi.isDisabled(), true, `nominal ${nama}: Konfirmasi bayar aktif`);
-      assert.match(await alasanDari(hal, aksi), /Isi nominal yang diterima/, `nominal ${nama}: tombol mati TANPA alasan`);
+      const alasanKolom = await alasanDari(hal, aksi);
+      assert.match(alasanKolom, /Isi nominal yang diterima/, `nominal ${nama}: tombol mati TANPA alasan`);
+      assert.ok(!/\d/.test(alasanKolom), `nominal ${nama}: alasan tombol memuat angka (angka kedua di layar): ${JSON.stringify(alasanKolom)}`);
+      const isiKotakKolom = await hal.locator('.kasir-bayar-kembalian').innerText();
+      assert.ok(
+        !/kurang/i.test(isiKotakKolom),
+        `nominal ${nama}: kotak Kembalian berkata "kurang" padahal alasan tombol "Isi nominal yang diterima.": ${JSON.stringify(isiKotakKolom)}`
+      );
     }
     assert.equal(await jumlahOrder(hal), 0, 'penulisan terjadi untuk nominal cacat');
   } finally {
@@ -1686,7 +1693,9 @@ test('⛔ I-1: uang tunai kurang → "Konfirmasi bayar" NONAKTIF dengan alasan; 
     await bacaKembalianK06(hal, 'uang kurang (I-1)');
     const aksi = hal.getByRole('button', { name: 'Konfirmasi bayar' });
     assert.equal(await aksi.isDisabled(), true, '"Konfirmasi bayar" AKTIF padahal tunai kurang — ketukan menghasilkan angka kurang kedua');
-    assert.match(await alasanDari(hal, aksi), /kurang dari tagihan tunai/i, 'tombol mati TANPA alasan kurang');
+    const alasanKurang = await alasanDari(hal, aksi);
+    assert.match(alasanKurang, /kurang dari tagihan tunai/i, 'tombol mati TANPA alasan kurang');
+    assert.ok(!/\d/.test(alasanKurang), `alasan tombol tunai kurang memuat angka (angka kedua di layar): ${JSON.stringify(alasanKurang)}`);
     // Pertahanan berlapis: ketukan paksa pun tidak menulis dan tidak menampilkan angka kurang.
     await aksi.evaluate((e) => e.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     await hal.waitForTimeout(300);
@@ -1756,6 +1765,131 @@ test('⛔ kata kembalian/pembulatan di K-06 HANYA di kotak Kembalian; tidak ada 
     });
     assert.deepEqual(luar, [], `kata kembalian/pembulatan bocor di luar kotak Kembalian: ${JSON.stringify(luar)}`);
     assert.ok(!/Pembulatan\s*[+−-]/.test(await teks(hal)), 'K-06 merender baris "Pembulatan +/−" bentuk K-07');
+  } finally {
+    await hal.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Fix round 2 Task 8B (sabotase independen Opus) — penjaga tambahan
+// ---------------------------------------------------------------------------
+
+/** Konfirmasi bayar → K-07; kembalian K-07 dan payment.change_amount tunai (BigInt). */
+async function konfirmasiDanBaca(hal) {
+  await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+  await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+  const k07 = bacaRupiah(await hal.locator('.kasir-k07-kembalian .num').textContent());
+  const tunai = (await barisPayment(hal)).find((b) => b.params[3] === 'cash');
+  assert.ok(tunai, 'baris payment tunai tidak ditulis');
+  return { k07, tersimpan: BigInt(tunai.params[6]), jumlahTunai: BigInt(tunai.params[4]) };
+}
+
+test('⛔ S14: kembalian K-06 mengikuti kolom TERBARU — ketik lalu pintasan, pintasan lalu pintasan — dan = K-07 = change_amount', async () => {
+  /* harga 40.500 → total 44.955, increment 1.000 → tagihan tunai 45.000. Nilai ABSOLUT tulis tangan:
+     100.000 → 55.000; 50.000 → 5.000. Kembalian basi (state kedua yang tak ikut pintasan) menyisakan 55.000. */
+  const hal = await buka('render=k06&baris=1&harga=40500&pembulatan=1000');
+  try {
+    const kolom = hal.getByLabel('Nominal diterima');
+    const langkah = [
+      ['ketik 100.000', () => kolom.fill('100.000'), 55_000n],
+      ['pintasan Rp 50.000 sesudah ketik', () => hal.getByRole('button', { name: 'Rp 50.000', exact: true }).click(), 5_000n],
+      ['pintasan Rp 100.000 sesudah pintasan', () => hal.getByRole('button', { name: 'Rp 100.000', exact: true }).click(), 55_000n],
+      ['pintasan Rp 50.000 sesudah pintasan', () => hal.getByRole('button', { name: 'Rp 50.000', exact: true }).click(), 5_000n],
+    ];
+    for (const [nama, aksi, harapan] of langkah) {
+      await aksi();
+      const nilai = bacaRupiah(await bacaKembalianK06(hal, nama));
+      assert.equal(nilai, harapan, `${nama}: Kembalian K-06 ${nilai} ≠ ${harapan} — kembalian basi, tidak mengikuti kolom Nominal diterima`);
+    }
+    const { k07, tersimpan } = await konfirmasiDanBaca(hal);
+    assert.equal(k07, 5_000n, `K-07 ${k07} ≠ 5000 — kembalian K-06 dan K-07 tidak sama`);
+    assert.equal(tersimpan, 5_000n, `payment.change_amount ${tersimpan} ≠ 5000`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ S2: nominal diterima BUKAN kelipatan 1.000 (100.400) dipakai apa adanya: Kembalian = K-07 = change_amount = 55.400', async () => {
+  const hal = await buka('render=k06&baris=1&harga=40500&pembulatan=1000');
+  try {
+    await hal.getByLabel('Nominal diterima').fill('100.400');
+    const nilai = bacaRupiah(await bacaKembalianK06(hal, 'tendered 100.400'));
+    assert.equal(nilai, 55_400n, `tendered 100.400: Kembalian K-06 ${nilai} ≠ 55400 — nominal diterima dibulatkan/diubah di layar`);
+    const { k07, tersimpan } = await konfirmasiDanBaca(hal);
+    assert.equal(k07, 55_400n, `K-07 ${k07} ≠ 55400`);
+    assert.equal(tersimpan, 55_400n, `payment.change_amount ${tersimpan} ≠ 55400`);
+  } finally {
+    await hal.close();
+  }
+});
+
+/* Mode pembulatan outlet, nilai ABSOLUT tulis tangan (increment 500, tunai 100.000).
+   84.000 → total 93.240 (sisa 240): half_up/down 93.000, up 93.500.
+   85.000 → total 94.350 (sisa 350): half_up/up 94.500, down 94.000. Tanpa param = bawaan half_up. */
+const KASUS_MODE = [
+  { mode: null, harga: 84000, kembalian: 7_000n },
+  { mode: 'half_up', harga: 84000, kembalian: 7_000n },
+  { mode: 'up', harga: 84000, kembalian: 6_500n },
+  { mode: 'down', harga: 84000, kembalian: 7_000n },
+  { mode: 'half_up', harga: 85000, kembalian: 5_500n },
+  { mode: 'up', harga: 85000, kembalian: 5_500n },
+  { mode: 'down', harga: 85000, kembalian: 6_000n },
+];
+
+test('⛔ S4/S6b: mode pembulatan outlet (half_up/up/down) menentukan Kembalian K-06 = K-07 = change_amount — nilai absolut', async () => {
+  assert.equal(KASUS_MODE.length, 7, 'jumlah kasus mode pembulatan berubah — penjaga harus tetap mencakup ketiga mode');
+  for (const k of KASUS_MODE) {
+    const nama = `mode ${k.mode ?? '(bawaan)'}, harga ${k.harga}`;
+    const hal = await buka(`render=k06&baris=1&harga=${k.harga}&pembulatan=500${k.mode ? `&modePembulatan=${k.mode}` : ''}`);
+    try {
+      await hal.getByLabel('Nominal diterima').fill('100.000');
+      const nilai = bacaRupiah(await bacaKembalianK06(hal, nama));
+      assert.equal(nilai, k.kembalian, `${nama}: Kembalian K-06 ${nilai} ≠ ${k.kembalian} — mode pembulatan outlet tidak dipakai`);
+      const { k07, tersimpan } = await konfirmasiDanBaca(hal);
+      assert.equal(k07, k.kembalian, `${nama}: K-07 ${k07} ≠ ${k.kembalian}`);
+      assert.equal(tersimpan, k.kembalian, `${nama}: payment.change_amount ${tersimpan} ≠ ${k.kembalian}`);
+    } finally {
+      await hal.close();
+    }
+  }
+});
+
+test('⛔ S26: campuran QRIS statis 50.020 + tunai (increment 500): baris "Tagihan tunai dibulatkan menjadi" = payment.amount tunai tersimpan, BUKAN amount_due', async () => {
+  /* total 93.240 − 50.020 = 43.220 → half_up 43.000 = tunaiDitagih. amount_due order = 93.020. */
+  const hal = await buka('render=k06&baris=1&harga=84000&pembulatan=500');
+  try {
+    await bukaCampuran(hal);
+    await pilihQrisStatis(hal);
+    await bidang(hal, /Nominal bagian ini/).fill('50020');
+    await bidang(hal, /Referensi pembayaran/).fill('REF-S26-1');
+    await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
+    await hal.getByRole('button', { name: 'Tunai', exact: true }).click();
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await bacaKembalianK06(hal, 'campuran');
+    const baris = hal.locator('.kasir-bayar-kembalian').getByText(/Tagihan tunai dibulatkan menjadi/);
+    assert.equal(await baris.count(), 1, 'campuran: baris "Tagihan tunai dibulatkan menjadi" tidak tampil');
+    const nilaiBaris = bacaRupiah(await baris.textContent());
+    assert.equal(nilaiBaris, 43_000n, `campuran: baris menyebut ${nilaiBaris} ≠ 43000 (bagian tunai) — jangan amount_due`);
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    const tunai = (await barisPayment(hal)).find((b) => b.params[3] === 'cash');
+    assert.equal(nilaiBaris, BigInt(tunai.params[4]), `baris menyebut ${nilaiBaris}, payment.amount tunai tersimpan ${tunai.params[4]}`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ S9: kotak Kembalian HANYA di tab Tunai — tab QRIS/Kartu/Transfer tanpa .kasir-bayar-kembalian dan tanpa kata "Kembalian"', async () => {
+  const hal = await buka('render=k06&baris=1&harga=85000&pembulatan=500');
+  try {
+    // Pembanding anti-hampa: di tab Tunai kotaknya ada.
+    assert.equal(await hal.locator('.kasir-bayar-kembalian').count(), 1, 'tab Tunai tidak punya kotak Kembalian — penjaga ini hampa');
+    for (const tab of ['QRIS', 'Kartu', 'Transfer']) {
+      await hal.getByRole('button', { name: tab, exact: true }).click();
+      assert.equal(await hal.locator('.kasir-bayar-kembalian').count(), 0, `tab ${tab}: kotak Kembalian tampil — kembalian hanya milik tunai`);
+      const isi = await hal.locator('.kasir-bayar-kartu').innerText();
+      assert.ok(!/kembalian/i.test(isi), `tab ${tab}: kata "Kembalian" tampil di luar tab Tunai: ${JSON.stringify(isi.match(/.{0,20}kembalian.{0,20}/i)?.[0])}`);
+    }
   } finally {
     await hal.close();
   }
