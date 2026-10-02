@@ -16,6 +16,7 @@ import { ShellKasir } from '../ShellKasir.tsx';
 import { TABEL_RUTE } from '../rute/tabel.ts';
 import { PanelQris } from '../komponen/PanelQris.tsx';
 import { setelKeranjang } from '../kasir/simpanan.ts';
+import { kunciNavSekarang } from '../rute/kunci-nav.ts';
 import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
 import type { StatusBayar } from '../kasir/qris-dinamis.ts';
 
@@ -64,8 +65,13 @@ const delegasi: DbLokal = {
      test melepasnya — dipakai penjaga "tab nav terkunci selama penjualan
      disimpan" untuk membuat jendela menyimpan terlihat tanpa berpacu timer. */
   transaction: async (fn) => {
-    const tahan = (window as unknown as { __tahanTransaksi?: { promise: Promise<void> } }).__tahanTransaksi;
-    if (tahan) await tahan.promise;
+    const tahan = (window as unknown as { __tahanTransaksi?: { promise: Promise<void>; masuk?: number } }).__tahanTransaksi;
+    if (tahan) {
+      // `masuk` = berapa transaksi yang sudah tiba di gerbang; test menunggunya
+      // alih-alih menebak waktu (`k06-penjaga`: onSelesai ganda).
+      tahan.masuk = (tahan.masuk ?? 0) + 1;
+      await tahan.promise;
+    }
     return dbAktif!.transaction(fn);
   },
 };
@@ -195,8 +201,13 @@ function Akar() {
   );
 }
 
-createRoot(document.querySelector('#k06') as HTMLElement).render(
+const akar = createRoot(document.querySelector('#k06') as HTMLElement);
+akar.render(
   <StrictMode>
     <Akar />
   </StrictMode>
 );
+
+/* Kait uji: kunci nav modul-global dan pembongkaran layar di tengah operasi
+   (`k06-penjaga`: kunci tidak boleh tertinggal sesudah K-06 dilepas). */
+Object.assign(window, { __kunciNav: kunciNavSekarang, __bongkarK06: () => akar.unmount() });

@@ -654,6 +654,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* 728 px = lebar kartu mockup; tidak ada token lebar kartu di skala spasi (maks 32 px). */
   width: min(45.5rem, 100%);
   min-height: 0;
 }
@@ -689,6 +690,7 @@
 .kasir-tab-bayar {
   display: flex;
   gap: var(--space-1);
+  /* 40 px = tinggi segmented mockup; `--touch-min` (44) terlalu tinggi, area tekan 44 datang dari `.sentuh`. */
   height: 2.5rem;
   padding: var(--space-1);
   background: var(--secondary);

@@ -272,7 +272,9 @@ test('⛔ P1: selama QRIS menunggu, pemilih metode ADA tetapi setiap tab disable
     const utama = await hal.$eval('.kasir-bayar-aksi .btn-primary', (e) => ({
       teks: e.textContent.trim(),
       mati: e.disabled === true || e.getAttribute('aria-disabled') === 'true',
+      alasan: document.getElementById(e.getAttribute('aria-describedby') ?? '')?.textContent.trim() ?? '',
     }));
+    assert.ok(utama.alasan.length > 0, 'tombol "Menunggu pembayaran…" nonaktif TANPA alasan tertulis (aria-describedby kosong) — G-TOMBOL-HIDUP');
     assert.equal(utama.teks, 'Menunggu pembayaran…', `tombol utama selagi menunggu: "${utama.teks}"`);
     assert.ok(utama.mati, 'tombol utama AKTIF selagi QRIS menunggu — ada jalur ketukan yang dapat menandai lunas');
 
@@ -435,6 +437,7 @@ test('⛔ P5: metode online-only saat tak terjangkau → tetap terlihat, DENGAN 
     const dinamis = hal.getByRole('button', { name: 'QRIS dinamis', exact: true });
     assert.equal(await dinamis.count(), 1, 'sub-pilihan QRIS dinamis HILANG dari tab QRIS saat tak terjangkau');
     assert.equal(await dinamis.isDisabled(), true, 'QRIS dinamis aktif padahal server tak terjangkau');
+    assert.match(await alasanTombol(dinamis), /Perlu internet/, 'sub-pilihan QRIS dinamis mati TANPA aria-describedby ke kalimat alasannya — G-TOMBOL-HIDUP');
 
     const isi = await teks(hal);
     assert.match(isi, /Perlu internet/, 'sub-pilihan mati TANPA kalimat alasan');
@@ -907,13 +910,14 @@ test('⛔ header tetap terlihat selama K-06 (halaman di dalam shell, bukan overl
       const header = document.querySelector('.kasir-header');
       return {
         header: header ? Math.round(header.getBoundingClientRect().height) : null,
-        grid: document.querySelectorAll('.kasir-grid').length,
         diKonten: kartu?.closest('.kasir-konten') !== null,
         diOverlay: kartu?.closest('.overlay') !== null,
       };
     });
     assert.equal(u.header, 68, `header tidak terlihat/68 px selama K-06: ${u.header}`);
-    assert.equal(u.grid, 0, 'grid K-03 ada di DOM selama K-06');
+    /* Ketiadaan grid K-03 TIDAK diperiksa di sini: harness ini tidak pernah me-mount `Kasir`,
+       jadi hitungannya selalu 0 (benar sendiri). Ia diukur `k06-tata-letak` di galeri,
+       setelah `.kasir-grid > *` terbukti ada di K-03. */
     assert.equal(u.diKonten, true, 'kartu K-06 tidak berada di dalam .kasir-konten');
     assert.equal(u.diOverlay, false, 'kartu K-06 masih dirender di dalam overlay');
   } finally {
@@ -982,8 +986,10 @@ test('⛔ ketukan ganda "Konfirmasi bayar" menyimpan SATU penjualan (Review Focu
   }
 });
 
-test('⛔ qris_static dan card_edc di jalur TAMPILAN: masing-masing sampai K-07 dengan label benar', async () => {
+test('⛔ qris_static dan card_edc di jalur TAMPILAN: label bagian di K-06 (campuran), payment.method tersimpan (campuran DAN metode tunggal), dan K-07 tercapai', async () => {
   // Fixture #3 `uang-pembayaran-kas.md`: teruji di jalur DATA, belum di TAMPILAN.
+  // K-07 sendiri tidak memuat nama metode (hanya kembalian dan nomor struk), jadi
+  // yang diukur di K-07 adalah tercapainya layar itu, bukan sebuah label.
   const kasus = [
     {
       nama: 'QRIS (statis)',
@@ -1004,20 +1010,26 @@ test('⛔ qris_static dan card_edc di jalur TAMPILAN: masing-masing sampai K-07 
     },
   ];
   for (const k of kasus) {
-    const hal = await buka('render=k06&baris=2');
-    try {
-      await bukaCampuran(hal);
-      await k.isi(hal);
-      // Label bagian dari `labelMetode` domain, di daftar bagian kartu.
-      await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
-      const daftar = await hal.$$eval('.kasir-bayar .kasir-baris-daftar .kasir-subtotal', (n) => n.map((e) => e.textContent.trim()));
-      assert.ok(daftar.some((t) => t.includes(k.nama)), `bagian ${k.metode} tidak berlabel "${k.nama}": ${JSON.stringify(daftar)}`);
-      await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
-      await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
-      const bayar = await tulisan(hal, /INSERT INTO payment/);
-      assert.ok(bayar[0].params.includes(k.metode), `${k.metode} tidak sampai ke baris payment: ${JSON.stringify(bayar[0]?.params)}`);
-    } finally {
-      await hal.close();
+    for (const campuran of [true, false]) {
+      const hal = await buka('render=k06&baris=2');
+      try {
+        if (campuran) await bukaCampuran(hal);
+        await k.isi(hal);
+        if (campuran) {
+          // Label bagian dari `labelMetode` domain, di daftar bagian kartu.
+          await hal.getByRole('button', { name: 'Tambah pembayaran lain' }).click();
+          const daftar = await hal.$$eval('.kasir-bayar .kasir-baris-daftar .kasir-subtotal', (n) => n.map((e) => e.textContent.trim()));
+          assert.ok(daftar.some((t) => t.includes(k.nama)), `bagian ${k.metode} tidak berlabel "${k.nama}": ${JSON.stringify(daftar)}`);
+        }
+        await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+        await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+        const bayar = await tulisan(hal, /INSERT INTO payment/);
+        const jalur = campuran ? 'campuran' : 'metode tunggal';
+        assert.equal(bayar.length, 1, `${k.metode} (${jalur}) menulis ${bayar.length} baris payment`);
+        assert.ok(bayar[0].params.includes(k.metode), `${k.metode} (${jalur}) tidak sampai ke baris payment: ${JSON.stringify(bayar[0]?.params)}`);
+      } finally {
+        await hal.close();
+      }
     }
   }
 });
@@ -1066,6 +1078,150 @@ test('⛔ P1b: selama penjualan disimpan setiap jalan keluar header (tab, indika
     assert.equal(await klik('.kasir-indikator'), true);
     await hal.waitForFunction(() => window.location.pathname === '/sync', null, { timeout: 5000 }).catch(() => undefined);
     assert.equal(await lokasi(), '/sync', 'indikator sinkron tidak menavigasi sesudah kunci dilepas');
+  } finally {
+    await hal.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PENJAGA TAMBAHAN — fix round 2 Task 8 (sabotase independen Opus: S1b, S12b, S3, S4, S6c)
+// ---------------------------------------------------------------------------
+
+/** Menahan SETIAP transaksi db palsu sampai `lepas()` dipanggil (lihat harness k06). */
+const pasangTahan = (hal) =>
+  hal.evaluate(() => {
+    const g = { masuk: 0 };
+    g.promise = new Promise((r) => (g.lepas = r));
+    window.__tahanTransaksi = g;
+  });
+
+/** Menunggu hingga satu render + efek pasifnya selesai (tanpa menebak waktu). */
+const tungguRender = (hal) =>
+  hal.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0)))));
+
+test('⛔ selama penjualan DISIMPAN, klik buatan pada tab METODE tidak mengganti metode, dan setiap tab metode ber-aria-disabled="true"', async () => {
+  /* Sabotase independen S1b/S12b: guard handler yang hanya memeriksa panel QRIS, dan
+     `terkunci={false}` pada jalur biasa, sama-sama lolos — penjaga lama hanya menguji
+     tab METODE saat QRIS menunggu dan tab NAV saat menyimpan. Mengganti metode saat
+     menyimpan mengubah bagian yang sedang ditulis. */
+  const hal = await buka('render=k06&baris=2');
+  try {
+    await pasangTahan(hal);
+    await hal.getByLabel('Nominal diterima').fill('600.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('.kasir-bayar-aksi .btn-primary:has-text("Menyimpan…")', { timeout: 5000 });
+
+    const status = await hal.$$eval(TAB, (n) => n.map((e) => ({ nama: e.textContent.trim(), diKunci: e.getAttribute('aria-disabled') })));
+    assert.equal(status.length, 4, `tab metode tidak dirender selama menyimpan: ${JSON.stringify(status)}`);
+    for (const t of status) {
+      assert.equal(t.diKunci, 'true', `tab metode "${t.nama}" TIDAK aria-disabled="true" selama penjualan disimpan: ${t.diKunci}`);
+    }
+
+    const terpilih = () =>
+      hal.$$eval(TAB, (n) => n.filter((e) => e.getAttribute('aria-selected') === 'true').map((e) => e.textContent.trim()));
+    assert.deepEqual(await terpilih(), ['Tunai'], 'metode awal bukan Tunai');
+    await hal.evaluate(
+      (sel) =>
+        new Promise((r) => {
+          document.querySelectorAll(sel).forEach((e) => e.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+          requestAnimationFrame(() => requestAnimationFrame(r));
+        }),
+      TAB
+    );
+    assert.deepEqual(await terpilih(), ['Tunai'], 'klik buatan pada tab METODE selama penjualan disimpan MENGGANTI metode aktif');
+
+    await hal.evaluate(() => window.__tahanTransaksi.lepas());
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+  } finally {
+    await hal.close();
+  }
+});
+
+/** Rute server palsu untuk jalur QRIS dinamis: order dan payment dijawab, QR terbit. */
+const RUTE_QRIS = {
+  '**/orders': { id: 'ord-uji' },
+  '**/orders/*/payments': { qrString: '00020101021226590014ID.CO.QRIS.UJI' },
+};
+
+test('⛔ ketukan ganda "Tampilkan kode QR" mencadangkan SATU nomor struk dan memesan SATU order di gateway', async () => {
+  /* Sabotase independen S3: `mulaiQris` tanpa penjaga sinkron lolos — dua nomor struk
+     terbakar dan dua QR terbit di gateway untuk satu pelanggan. */
+  const hal = await buka('render=k06&baris=2', { rute: RUTE_QRIS });
+  try {
+    let postOrder = 0;
+    hal.on('request', (r) => {
+      if (r.method() === 'POST' && /\/orders$/.test(new URL(r.url()).pathname)) postOrder += 1;
+    });
+    await tab(hal, 'QRIS').click();
+    await hal.evaluate(() => {
+      const b = [...document.querySelectorAll('.kasir-bayar-aksi .btn-primary')].find((e) => e.textContent.trim() === 'Tampilkan kode QR');
+      b.click();
+      b.click();
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+    await hal.waitForLoadState('networkidle');
+    const nomor = await tulisan(hal, /UPDATE device_config SET receipt_sequence/);
+    assert.equal(nomor.length, 1, `ketukan ganda mencadangkan ${nomor.length} nomor struk (satu pelanggan, satu nomor)`);
+    assert.equal(postOrder, 1, `ketukan ganda memesan ${postOrder} order di gateway — dua QR untuk satu pelanggan`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ onSelesai("lunas") yang terpanggil dua kali menulis SATU penjualan (INSERT INTO "order" tepat sekali)', async () => {
+  /* Sabotase independen S4: `PanelQris` memanggil `onSelesai` dari efek yang bergantung pada
+     identitas `onSelesai` — prop inline yang berganti SETIAP render. Begitu `selesaikanQris`
+     menyetel `menyimpan`, render ulang memicu efeknya lagi; hanya penjaga sinkron di
+     `selesaikanQris` yang mencegah penjualan QRIS ditulis dua kali. Jalur ini organik:
+     tidak ada panggilan buatan, hanya gateway yang menjawab `confirmed`. */
+  const hal = await buka('render=k06&baris=2', { rute: RUTE_QRIS });
+  try {
+    // Galat halaman dikumpulkan: layar yang melempar saat gateway menjawab `confirmed` tampak
+    // seperti "tidak terjadi apa-apa" (halaman kosong), bukan seperti penjualan yang hilang.
+    const galatHalaman = [];
+    hal.on('pageerror', (e) => galatHalaman.push(e.message));
+    let lepasStatus;
+    const gerbang = new Promise((r) => (lepasStatus = r));
+    await hal.route('**/payments/*/check-status', async (r) => {
+      await gerbang;
+      await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'confirmed' }) });
+    });
+    await tab(hal, 'QRIS').click();
+    await hal.getByRole('button', { name: 'Tampilkan kode QR' }).click();
+    await hal.waitForSelector('text=Pindai untuk membayar', { timeout: 10_000 });
+
+    await pasangTahan(hal);
+    lepasStatus();
+    // Penjualan pertama sudah tiba di gerbang transaksi; beri render + efek pasif satu putaran
+    // penuh supaya efek PanelQris sempat memanggil `onSelesai` kedua kalinya.
+    await hal.waitForFunction(() => (window.__tahanTransaksi?.masuk ?? 0) >= 1, null, { timeout: 5000 }).catch(() => undefined);
+    assert.deepEqual(galatHalaman, [], `halaman melempar saat gateway mengonfirmasi lunas — penjualan QRIS yang sudah dibayar pelanggan TIDAK ditulis: ${galatHalaman.join(' | ')}`);
+    assert.ok((await hal.evaluate(() => window.__tahanTransaksi.masuk ?? 0)) >= 1, 'konfirmasi lunas dari gateway tidak pernah memulai penulisan penjualan');
+    await tungguRender(hal);
+    await hal.evaluate(() => window.__tahanTransaksi.lepas());
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    await hal.waitForLoadState('networkidle');
+    const order = await tulisan(hal, /INSERT INTO "order"/);
+    assert.equal(order.length, 1, `onSelesai('lunas') ganda menulis ${order.length} baris order — penjualan QRIS tercatat dua kali`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ K-06 dilepas selagi terkunci (menyimpan) MELEPAS kunci nav — kunci modul-global tidak boleh tertinggal', async () => {
+  /* Sabotase independen S6c: tanpa pelepasan saat unmount (sesi berakhir, rute berganti di
+     tengah simpan) kunci tertinggal dan seluruh jalan keluar header mati selamanya. */
+  const hal = await buka('render=k06&baris=2');
+  try {
+    await pasangTahan(hal);
+    await hal.getByLabel('Nominal diterima').fill('600.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForFunction(() => window.__kunciNav() !== null, null, { timeout: 5000 });
+    assert.notEqual(await hal.evaluate(() => window.__kunciNav()), null, 'prasyarat: kunci terpasang selama menyimpan');
+    await hal.evaluate(() => window.__bongkarK06());
+    const sisa = await hal.evaluate(() => window.__kunciNav());
+    assert.equal(sisa, null, `kunci nav TERTINGGAL sesudah K-06 dilepas: "${sisa}" — seluruh jalan keluar header terkunci tanpa pemilik`);
   } finally {
     await hal.close();
   }

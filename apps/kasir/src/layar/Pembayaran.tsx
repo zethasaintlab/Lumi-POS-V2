@@ -98,7 +98,10 @@ const SUB_QRIS = [
    menambah. Dengan kolom nominal bebas di atasnya, ini cukup. */
 export const PINTASAN_TUNAI = [20_000, 50_000, 100_000] as const;
 
-export function Pembayaran({ onKembali }: { onKembali: () => void }) {
+/* `tabAwal` hanya untuk galeri (`?layar=K-06-qris`): tombol mati di tab QRIS tidak
+   terjangkau G-TOMBOL-HIDUP kalau layarnya selalu dibuka di Tunai. Aplikasi tidak
+   mengisinya. */
+export function Pembayaran({ onKembali, tabAwal = 'tunai' }: { onKembali: () => void; tabAwal?: TabBayar }) {
   const { db, pemberitahu } = useDbLokal();
   const { sesi } = useSesi();
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
@@ -113,7 +116,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   const [nominalTunai, setNominalTunai] = useState('');
   /* FR-C1 — tab metode; metode aktif diturunkan dari tab + sub-pilihan QRIS.
      QRIS dinamis lewat `mulaiQris` (gateway lebih dulu, `spec-c:320`). */
-  const [tab, setTab] = useState<TabBayar>('tunai');
+  const [tab, setTab] = useState<TabBayar>(tabAwal);
   const [subQris, setSubQris] = useState<'qris_dynamic' | 'qris_static' | null>(null);
   const [bankTujuan, setBankTujuan] = useState('');
   /* Pembayaran campuran dibuka lewat tautan kecil di kartu (keputusan bawaan
@@ -268,6 +271,52 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     };
   }, [db]);
 
+  /* ⛔ DEFINISI `selesaikanQris` HARUS di atas semua `return` awal. Cabang panel QRIS
+     (di bawah) memanggilnya dari `onSelesai`; sebagai `const` yang dideklarasikan sesudah
+     return itu, binding-nya tidak pernah diinisialisasi dan konfirmasi lunas dari gateway
+     melempar ReferenceError — layar kosong, pelanggan sudah membayar, penjualan tidak
+     ditulis. Tak satu pun test sebelum `k06-penjaga` "onSelesai ganda" mencapai jalur ini. */
+  /* Dipanggil saat gateway mengonfirmasi. Penjualan ditulis LOKAL di sini —
+     satu transaksi, invariant #1 utuh — dengan identitas draf yang server
+     sudah pegang, dan TANPA mengisi outbox. */
+  const selesaikanQris = (draf: DrafTerkirim) => {
+    if (sedangMenyimpan.current) return;
+    sedangMenyimpan.current = true;
+    setMenyimpan(true);
+    void simpanPenjualan({
+      db,
+      konfig: konfig!,
+      sesi: sesi!,
+      shift: shift!,
+      keranjang,
+      // ⛔ `qris_dynamic`, BUKAN `qris_static`. Keduanya "QRIS" di mata kasir
+      // dan sangat berbeda di mata laporan: `qris_static` menandai
+      // `confirmed_manually`, dan FR-G5 memakainya sebagai sinyal exception.
+      // Menulis pembayaran yang GATEWAY konfirmasi sebagai dikonfirmasi-manual
+      // menuduh kasir atas kontrol yang justru berjalan.
+      pembayaran: [{ metode: 'qris_dynamic', paymentId: draf.paymentIds[0] }],
+      waktu: () => new Date(),
+      idBaru: () => crypto.randomUUID(),
+      hlc: () => hlc!.tick(),
+      draf,
+    })
+      .then(async (hasil) => {
+        await bersihkanDraf(db);
+        pemberitahu.beritahu();
+        if (hasil.status === 'tersimpan') {
+          setPanelQris(null);
+          setSelesai(hasil);
+          return;
+        }
+        setGalat('Pembayaran lunas di server, tetapi penjualan gagal ditulis di perangkat.');
+      })
+      .catch((e: Error) => setGalat(`Penjualan TIDAK tersimpan: ${e.message}`))
+      .finally(() => {
+        sedangMenyimpan.current = false;
+        setMenyimpan(false);
+      });
+  };
+
   if (!siap) return <Memuat judul="Menyiapkan pembayaran…" bentuk="blok" jumlah={4} />;
 
   if (gagalMuat) {
@@ -337,7 +386,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
         </div>
         <div className="kasir-bayar-aksi">
           <div className="kasir-bayar-baris">
-            <Tombol varian="primary" kritis disabled>
+            <Tombol varian="primary" kritis disabled keterangan="bayar-kunci-alasan">
               Menunggu pembayaran…
             </Tombol>
           </div>
@@ -625,47 +674,6 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
     })();
   };
 
-  /* Dipanggil saat gateway mengonfirmasi. Penjualan ditulis LOKAL di sini —
-     satu transaksi, invariant #1 utuh — dengan identitas draf yang server
-     sudah pegang, dan TANPA mengisi outbox. */
-  const selesaikanQris = (draf: DrafTerkirim) => {
-    if (sedangMenyimpan.current) return;
-    sedangMenyimpan.current = true;
-    setMenyimpan(true);
-    void simpanPenjualan({
-      db,
-      konfig: konfig!,
-      sesi: sesi!,
-      shift: shift!,
-      keranjang,
-      // ⛔ `qris_dynamic`, BUKAN `qris_static`. Keduanya "QRIS" di mata kasir
-      // dan sangat berbeda di mata laporan: `qris_static` menandai
-      // `confirmed_manually`, dan FR-G5 memakainya sebagai sinyal exception.
-      // Menulis pembayaran yang GATEWAY konfirmasi sebagai dikonfirmasi-manual
-      // menuduh kasir atas kontrol yang justru berjalan.
-      pembayaran: [{ metode: 'qris_dynamic', paymentId: draf.paymentIds[0] }],
-      waktu: () => new Date(),
-      idBaru: () => crypto.randomUUID(),
-      hlc: () => hlc!.tick(),
-      draf,
-    })
-      .then(async (hasil) => {
-        await bersihkanDraf(db);
-        pemberitahu.beritahu();
-        if (hasil.status === 'tersimpan') {
-          setPanelQris(null);
-          setSelesai(hasil);
-          return;
-        }
-        setGalat('Pembayaran lunas di server, tetapi penjualan gagal ditulis di perangkat.');
-      })
-      .catch((e: Error) => setGalat(`Penjualan TIDAK tersimpan: ${e.message}`))
-      .finally(() => {
-        sedangMenyimpan.current = false;
-        setMenyimpan(false);
-      });
-  };
-
   const bayar = () => {
     /* ⛔ Ketukan ganda "Konfirmasi bayar" (Review Focus 1): kasir yang
        terburu-buru menekannya dua kali, dan state `menyimpan` baru terbaca
@@ -783,6 +791,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                 <Tombol
                   varian="ghost"
                   disabled={menyimpan}
+                  keterangan={menyimpan ? 'bayar-kunci-alasan' : undefined}
                   onClick={() => {
                     setBagian((d) => d.filter((_, j) => j !== i));
                     setGalat(null);
@@ -826,6 +835,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                       'var(--space-3)'
                     )}
                     disabled={menyimpan}
+                    aria-describedby={menyimpan ? 'bayar-kunci-alasan' : undefined}
                     onClick={() => {
                       /* ⛔ MENETAPKAN, bukan `t + p`: pintasan yang menambah
                          membuat dua ketukan meleset menjadi nominal yang tidak
@@ -852,6 +862,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                       type="button"
                       aria-pressed={subAktif === q.metode}
                       disabled={menyimpan || alasan !== null}
+                      aria-describedby={alasan !== null ? `qris-alasan-${q.metode}` : menyimpan ? 'bayar-kunci-alasan' : undefined}
                       onClick={() => {
                         setSubQris(q.metode);
                         setGalat(null);
@@ -866,7 +877,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                   dan `spec-c:271` menuntut teksnya secara eksplisit. Sub-pilihan
                   yang mati tanpa penjelasan adalah yang kasir simpulkan rusak. */}
               {alasanNonaktif('qris_dynamic', jangkauan) !== null && (
-                <p className="t-caption kasir-login-sub">
+                <p id="qris-alasan-qris_dynamic" className="t-caption kasir-login-sub">
                   QRIS dinamis: {alasanNonaktif('qris_dynamic', jangkauan)}
                 </p>
               )}
@@ -985,11 +996,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
             tampilan bawaan. Hilang bila sudah ada bagian — membukanya kembali
             tidak bermakna dan menutupnya menyembunyikan bagian yang ada. */}
         {!campuran ? (
-          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} onClick={() => setCampuran(true)}>
+          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} aria-describedby={menyimpan ? 'bayar-kunci-alasan' : undefined} onClick={() => setCampuran(true)}>
             Bayar dengan lebih dari satu metode
           </button>
         ) : bagian.length === 0 ? (
-          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} onClick={() => setCampuran(false)}>
+          <button type="button" className="btn btn-ghost kasir-tautan-campuran" disabled={menyimpan} aria-describedby={menyimpan ? 'bayar-kunci-alasan' : undefined} onClick={() => setCampuran(false)}>
             Bayar dengan satu metode saja
           </button>
         ) : null}
