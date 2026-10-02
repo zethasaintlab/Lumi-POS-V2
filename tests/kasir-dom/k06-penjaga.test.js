@@ -569,6 +569,93 @@ test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.ch
 });
 
 // ---------------------------------------------------------------------------
+// G-NOMINAL — "Nominal diterima": kosong/cacat → Rp —, aksi nonaktif DENGAN alasan, tidak pernah Rp 0
+// ---------------------------------------------------------------------------
+
+test('⛔ G-NOMINAL: kolom kosong / "25.5" / "abc" → Kembalian Rp —, Konfirmasi bayar nonaktif dengan alasan; tidak pernah Rp 0', async () => {
+  const hal = await buka('render=k06&baris=2');
+  const galatHalaman = [];
+  hal.on('pageerror', (e) => galatHalaman.push(String(e)));
+  try {
+    for (const isi of ['', '25.5', 'abc']) {
+      await hal.getByLabel('Nominal diterima').fill(isi);
+      const label = `nominal diterima ${JSON.stringify(isi)}`;
+      const kembalian = await kembalianK06(hal);
+      assert.equal(kembalian, 'Rp —', `${label}: kembalian "${kembalian}", bukan "Rp —" (nilai hilang, bukan nol)`);
+      assert.ok(!/Rp\s0(?!\d)/.test(await teks(hal)), `${label}: "Rp 0" muncul di K-06 — kolom kosong/cacat terbaca sebagai nol`);
+
+      const konfirmasi = hal.getByRole('button', { name: 'Konfirmasi bayar' });
+      assert.equal(await konfirmasi.isDisabled(), true, `${label}: "Konfirmasi bayar" AKTIF`);
+      const alasan = await alasanTombol(konfirmasi);
+      assert.ok(alasan.length > 0, `${label}: "Konfirmasi bayar" nonaktif TANPA alasan tertulis (G-TOMBOL-HIDUP)`);
+      /* Kolom kosong/cacat BUKAN "uang kurang": 0 yang lahir dari kolom kosong
+         akan jatuh ke KURANG_BAYAR dan membawa kalimat itu. */
+      assert.ok(!/kurang/i.test(alasan), `${label}: alasan "${alasan}" memperlakukan masukan hilang sebagai uang kurang`);
+    }
+    assert.deepEqual(galatHalaman, [], `masukan cacat membuat halaman melempar: ${galatHalaman.join(' | ')}`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ G-NOMINAL: uang kurang → Kembalian Rp — dan alasan TANPA angka hitungan layar', async () => {
+  const hal = await buka('render=k06&baris=2');
+  try {
+    await hal.getByLabel('Nominal diterima').fill('1.000');
+    assert.equal(await kembalianK06(hal), 'Rp —', 'uang kurang: kembalian bukan "Rp —"');
+    const konfirmasi = hal.getByRole('button', { name: 'Konfirmasi bayar' });
+    assert.equal(await konfirmasi.isDisabled(), true, 'uang kurang: "Konfirmasi bayar" AKTIF');
+    const alasan = await alasanTombol(konfirmasi);
+    assert.match(alasan, /Uang diterima kurang dari tagihan tunai\./, `alasan uang kurang: "${alasan}"`);
+    assert.ok(!/\d/.test(alasan), `alasan memuat angka hitungan layar: "${alasan}"`);
+
+    // Tak satu pun nominal di layar adalah hasil hitungan layar (mis. kurangnya).
+    const total = await nilaiTotalAtas(hal);
+    const subtotal = 40_000n; // fixture harness: 2 baris × Rp 20.000
+    const dijelaskan = new Set([total, total - subtotal, 1_000n, 20_000n, 50_000n, 100_000n]);
+    for (const n of semuaNominal(await teks(hal))) {
+      assert.ok(dijelaskan.has(n), `nominal Rp ${n} di K-06 tidak dijelaskan (total ${total}) — kurang yang dihitung layar?`);
+    }
+  } finally {
+    await hal.close();
+  }
+});
+
+test('baris "Tagihan tunai dibulatkan menjadi" tampil HANYA bila pembulatan ≠ 0, nilainya = tunaiDitagih yang tersimpan', async () => {
+  // (a) pembulatan ≠ 0: baris ada, nilainya = baris payment tunai yang tertulis.
+  const a = await buka('render=k06&baris=1&harga=20050&pembulatan=500');
+  try {
+    await a.getByLabel('Nominal diterima').fill('100.000');
+    const baris = a.locator('.kasir-kembalian .kasir-kembalian-tagihan');
+    assert.equal(await baris.count(), 1, 'pembulatan ≠ 0 tetapi baris "Tagihan tunai dibulatkan menjadi" tidak ada');
+    const isi = (await baris.innerText()).trim();
+    assert.match(isi, /^Tagihan tunai dibulatkan menjadi Rp\s?[\d.]+$/, `bentuk kalimat: "${isi}"`);
+    const tampil = bacaRupiah(isi.replace('Tagihan tunai dibulatkan menjadi', ''));
+    await a.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await a.waitForSelector('.kasir-k07-kembalian', { timeout: 10_000 });
+    const simpan = await tersimpan(a);
+    assert.notEqual(simpan.pembulatan, 0n, 'fixture a: pembulatan tersimpan 0 — kasus tidak membuktikan apa pun');
+    assert.equal(tampil, simpan.tunaiDitagih, `baris menyebut Rp ${tampil}, tersimpan ${simpan.tunaiDitagih}`);
+  } finally {
+    await a.close();
+  }
+
+  // (b) pembulatan = 0 (total 44.400, increment 100): baris TIDAK ada.
+  const b = await buka('render=k06&baris=2');
+  try {
+    await b.getByLabel('Nominal diterima').fill('100.000');
+    await kembalianK06(b); // kotak ada
+    assert.equal(await b.locator('.kasir-kembalian-tagihan').count(), 0, 'pembulatan 0 tetapi baris tagihan dibulatkan tampil');
+    assert.ok(!/dibulatkan menjadi/.test(await teks(b)), 'kalimat "dibulatkan menjadi" tampil padahal pembulatan 0');
+    await b.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await b.waitForSelector('.kasir-k07-kembalian', { timeout: 10_000 });
+    assert.equal((await tersimpan(b)).pembulatan, 0n, 'fixture b: pembulatan tersimpan ≠ 0 — kasus tidak membuktikan "tanpa baris"');
+  } finally {
+    await b.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // PENJAGA 5 — metode yang dinonaktifkan MEMBAWA alasannya
 // ---------------------------------------------------------------------------
 

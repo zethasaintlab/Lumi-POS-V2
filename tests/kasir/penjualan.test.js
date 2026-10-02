@@ -1514,3 +1514,67 @@ test('⛔ COMMIT gagal pada penjualan berdraf MEMPERTAHANKAN draf (penghapusan i
   assert.equal(await jumlahDraf(raw), 1, 'draf hilang padahal penjualan tidak tersimpan — "Cek status" tak dapat mengulang');
   raw.tutup();
 });
+
+
+// ---- Task 8B: kembalian K-06 dari rencana yang sama dengan simpanPenjualan ----
+
+test('⛔ G-KEMBALIAN property: rencanaBayarKeranjang = hasil simpanPenjualan = payment.change_amount', async () => {
+  /* Keputusan user 28 September 2026 (#76): kembalian di K-06 dihitung lewat
+     rencana yang SAMA dengan `simpanPenjualan`. Yang dibandingkan di sini bukan
+     rumus di test, melainkan DUA pemanggil nyata dan baris yang ditulis ke
+     SQLite sungguhan. */
+  const { simpanPenjualan, hitungKeranjang, rencanaBayarKeranjang } = await import(MOD);
+  assert.equal(typeof rencanaBayarKeranjang, 'function', '`rencanaBayarKeranjang` belum diekspor dari kasir/penjualan.ts');
+
+  const bagianNonTunai = {
+    'tunai saja': () => [],
+    'qris_static 50% + tunai': (total) => [{ metode: 'qris_static', referensi: 'ref 4821', nominal: total / 2n }],
+    'transfer 1 + tunai': () => [TRFB({ nominal: 1n })],
+  };
+  let kasus = 0;
+  let berhasil = 0;
+  let berpembulatan = 0;
+  for (const mode of ['half_up', 'up', 'down']) {
+    for (const incr of [100n, 500n, 1000n]) {
+      const db = await dbSqlite();
+      await db.execute('UPDATE outlet SET rounding_increment = ?, rounding_mode = ?', [Number(incr), mode]);
+      for (const total of [9_950n, 64_120n, 93_555n]) {
+        const keranjang = { baris: [{ ...BARIS[0], unitPrice: Number(total) }], diskon: null };
+        const hitungan = await hitungKeranjang({ db, konfig: KONFIG, keranjang, shift: SHIFT, waktu: JAM });
+        assert.equal(hitungan.totals.total, total, 'fixture: total keranjang ≠ total yang dituju');
+        for (const [skema, bangun] of Object.entries(bagianNonTunai)) {
+          const non = bangun(total);
+          // Tagihan tunai dari rencana itu sendiri (uang berlimpah) — bukan dari rumus test.
+          const probe = rencanaBayarKeranjang(hitungan, [...non, { metode: 'cash', tendered: 10_000_000 }]);
+          assert.equal(probe.ok, true, `${skema} @ ${total}: probe tidak ok: ${probe.pesan}`);
+          const ditagih = probe.rencana.tunaiDitagih;
+          for (const diterima of [ditagih, ditagih + 1n, 100_000n]) {
+            const bagian = [...non, { metode: 'cash', tendered: Number(diterima) }];
+            const rencana = rencanaBayarKeranjang(hitungan, bagian);
+            const hasil = await simpanPenjualan({ db, ...args({ keranjang, pembayaran: bagian }) });
+            const nama = `${mode}/${incr}/${total}/${skema}/diterima ${diterima}`;
+            kasus++;
+            if (!rencana.ok) {
+              assert.notEqual(hasil.status, 'tersimpan', `${nama}: rencana menolak (${rencana.kode}) tetapi simpanPenjualan menyimpan`);
+              continue;
+            }
+            assert.equal(hasil.status, 'tersimpan', `${nama}: rencana ok tetapi simpanPenjualan ${hasil.status}`);
+            berhasil++;
+            assert.equal(hasil.kembalian, rencana.rencana.kembalian, `${nama}: kembalian`);
+            assert.equal(hasil.roundingAdjustment, rencana.rencana.roundingAdjustment, `${nama}: roundingAdjustment`);
+            assert.equal(hasil.amountDue, rencana.rencana.amountDue, `${nama}: amountDue`);
+            const baris = await db.getAll(`SELECT change_amount FROM payment WHERE order_id = ? AND method = 'cash'`, [hasil.orderId]);
+            assert.equal(baris.length, 1, `${nama}: baris payment tunai`);
+            assert.equal(BigInt(baris[0].change_amount), rencana.rencana.kembalian, `${nama}: payment.change_amount ≠ kembalian rencana`);
+            if (rencana.rencana.roundingAdjustment !== 0n) berpembulatan++;
+          }
+        }
+      }
+      db.tutup();
+    }
+  }
+  assert.ok(kasus >= 162, `hanya ${kasus} kasus (≥ 162)`);
+  assert.ok(berhasil >= 162 / 2, `hanya ${berhasil} kasus ok`);
+  assert.ok(berpembulatan >= 40, `hanya ${berpembulatan} kasus dengan pembulatan ≠ 0 — property tidak menyentuh pembulatan`);
+});
+
