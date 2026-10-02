@@ -405,7 +405,7 @@ const KASUS_KEMBALIAN = [
   { nama: 'b: increment 500, tunai saja', kueri: 'baris=1&harga=85000&pembulatan=500', non: null, diterima: '100.000' },
   { nama: 'c: increment 1.000, pintasan Rp 50.000', kueri: 'baris=1&harga=40500&pembulatan=1000', non: null, diterima: 'pintasan-50000' },
   { nama: 'd: increment 500, QRIS statis 50.020 + tunai', kueri: 'baris=1&harga=84000&pembulatan=500', non: { jenis: 'qris', nominal: '50020' }, diterima: '50.000' },
-  { nama: 'e: increment 500, Transfer 30.000 + tunai', kueri: 'baris=1&harga=84000&pembulatan=500', non: { jenis: 'transfer', nominal: '30000' }, diterima: '100.000' },
+  { nama: 'e: increment 500, Transfer 30.100 + tunai', kueri: 'baris=1&harga=84000&pembulatan=500', non: { jenis: 'transfer', nominal: '30100' }, diterima: '100.000' },
 ];
 
 test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.change_amount tersimpan', async () => {
@@ -1635,6 +1635,42 @@ test('⛔ G-NOMINAL: uang kurang → Kembalian Rp — dan alasan TANPA angka hit
     // Pembanding anti-hampa: uang cukup memberi angka, bukan "Rp —".
     await hal.getByLabel('Nominal diterima').fill('100.000');
     assert.notEqual(await bacaKembalianK06(hal, 'uang cukup'), 'Rp —', 'uang cukup tetap "Rp —" — penjaga ini hampa');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ I-1: uang tunai kurang → "Konfirmasi bayar" NONAKTIF dengan alasan; tidak ada angka "Kurang" kedua, tidak ada order tertulis', async () => {
+  // G-NOMINAL: total 94.350, tagihan tunai dibulatkan 94.500; diterima 50.000. `sisaTagihan` melewati
+  // bagian tunai dan akan berkata "Kurang Rp 94.350" — salah Rp 50.000.
+  const hal = await buka('render=k06&baris=1&harga=85000&pembulatan=500');
+  try {
+    await hal.getByLabel('Nominal diterima').fill('50.000');
+    await bacaKembalianK06(hal, 'uang kurang (I-1)');
+    const aksi = hal.getByRole('button', { name: 'Konfirmasi bayar' });
+    assert.equal(await aksi.isDisabled(), true, '"Konfirmasi bayar" AKTIF padahal tunai kurang — ketukan menghasilkan angka kurang kedua');
+    assert.match(await alasanDari(hal, aksi), /kurang dari tagihan tunai/i, 'tombol mati TANPA alasan kurang');
+    // Pertahanan berlapis: ketukan paksa pun tidak menulis dan tidak menampilkan angka kurang.
+    await aksi.evaluate((e) => e.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await hal.waitForTimeout(300);
+    const semua = await teks(hal);
+    assert.ok(!/Kurang\s+Rp/i.test(semua), `layar menampilkan angka "Kurang Rp …" kedua: ${semua.match(/Kurang\s+Rp[^.]*/i)?.[0]}`);
+    assert.equal(await jumlahOrder(hal), 0, 'order tertulis untuk tunai yang kurang');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ M-1: rounding_increment 0 → K-06 TIDAK crash: Kembalian Rp —, pesan galat, "Konfirmasi bayar" nonaktif', async () => {
+  const hal = await buka('render=k06&baris=1&harga=85000&pembulatan=0');
+  try {
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    const nilai = await bacaKembalianK06(hal, 'increment 0');
+    assert.equal(nilai, 'Rp —', `increment 0: Kembalian "${nilai}"`);
+    const isiKotak = await hal.locator('.kasir-bayar-kembalian').innerText();
+    assert.match(isiKotak, /pembulatan/i, `increment 0: tidak ada pesan galat di kotak: ${JSON.stringify(isiKotak)}`);
+    assert.equal(await hal.getByRole('button', { name: 'Konfirmasi bayar' }).isDisabled(), true, 'increment 0: Konfirmasi bayar aktif');
+    assert.equal(await jumlahOrder(hal), 0);
   } finally {
     await hal.close();
   }

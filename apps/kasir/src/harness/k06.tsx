@@ -77,7 +77,8 @@ const matikan = (new URLSearchParams(window.location.search).get('matikan') ?? '
    `failed` — jalan keluar header yang dijaga kunci nav. Default tetap `normal`. */
 const skenarioUji = (new URLSearchParams(window.location.search).get('skenario') ?? 'normal') as Parameters<typeof buatDbPalsu>[0];
 /* `?pembulatan=500&modePembulatan=up` — outlet dengan pembulatan selain bawaan (100, half_up). */
-const pembulatanUji = Number(new URLSearchParams(window.location.search).get('pembulatan') ?? '') || undefined;
+const pembulatanMentah = new URLSearchParams(window.location.search).get('pembulatan');
+const pembulatanUji = pembulatanMentah === null || pembulatanMentah === '' ? undefined : Number(pembulatanMentah);
 const modeUji = new URLSearchParams(window.location.search).get('modePembulatan') as 'half_up' | 'up' | 'down' | null;
 dbAktif = buatDbPalsu(skenarioUji, {
   matikanFitur: matikan,
