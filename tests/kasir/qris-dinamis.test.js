@@ -530,3 +530,19 @@ test('⛔ G-KANAL: muatan order QRIS membawa kanal KERANJANG (dine_in), bukan li
   assert.ok(order, 'POST /orders tidak terkirim');
   assert.equal(order.body.channel, 'dine_in', 'muatan POST /orders channel bukan dine_in');
 });
+
+test('⛔ G-KANAL: draf QRIS takeaway TIDAK cocok dengan keranjang dine_in walau baris dan total sama', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  // Draf diterbitkan untuk kanal takeaway (server memegang order takeaway).
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(tersimpan.muatan.channel, 'takeaway', 'fixture: draf bukan takeaway');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'takeaway' }, 22000n), true, 'pembanding hampa: kanal SAMA dianggap berbeda');
+  assert.equal(
+    drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'dine_in' }, 22000n),
+    false,
+    'draf takeaway dianggap cocok dengan keranjang dine_in — perangkat menulis order dine_in sementara server takeaway (kanal tidak dibandingkan)'
+  );
+});

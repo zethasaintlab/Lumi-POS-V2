@@ -207,14 +207,23 @@ test('⛔ server: dine_in + service_charge_rate bukan nol → service_charge_amo
   await buatTarif({ rate: '0.1000', channel: 'dine_in', name: 'PBJT 10%' });
   await owner.query('BEGIN');
   await owner.query("SELECT set_config('app.tenant_id', $1, true)", [tenant.id]);
+  const awal = (await owner.query('SELECT service_charge_rate FROM outlet WHERE id = $1', [base.outlet.id])).rows[0].service_charge_rate;
   await owner.query('UPDATE outlet SET service_charge_rate = 0.1000 WHERE id = $1', [base.outlet.id]);
   const rate = await owner.query('SELECT service_charge_rate FROM outlet WHERE id = $1', [base.outlet.id]);
   await owner.query('COMMIT');
   assert.equal(Number(rate.rows[0].service_charge_rate), 0.1, 'fixture: service_charge_rate outlet tidak terpasang');
-  const fx = await setupDeviceAndShift();
-  const order = await buatOrder(fx, { channel: 'dine_in' });
-  assert.equal(order.serviceChargeAmount, 0, 'service charge masih terkunci nol (Q2 terbuka)');
-  assert.equal(order.total, order.subtotal - order.orderDiscount + order.taxAmount);
+  try {
+    const fx = await setupDeviceAndShift();
+    const order = await buatOrder(fx, { channel: 'dine_in' });
+    assert.equal(order.serviceChargeAmount, 0, 'service charge masih terkunci nol (Q2 terbuka)');
+    assert.equal(order.total, order.subtotal - order.orderDiscount + order.taxAmount);
+  } finally {
+    // Pulihkan: keadaan outlet tidak boleh bocor ke test berikutnya.
+    await owner.query('BEGIN');
+    await owner.query("SELECT set_config('app.tenant_id', $1, true)", [tenant.id]);
+    await owner.query('UPDATE outlet SET service_charge_rate = $2 WHERE id = $1', [base.outlet.id, awal]);
+    await owner.query('COMMIT');
+  }
 });
 
 // --- T12: snapshot kebal perubahan tarif ---
