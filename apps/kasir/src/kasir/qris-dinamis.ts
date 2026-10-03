@@ -320,6 +320,9 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
   if (total === null || nominalDraf(d) !== total) return false;
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
+  /* Kanal ikut dibandingkan: tarif inklusif memberi total sama di kedua kanal, tetapi `order.channel`
+     dan pajak tersimpan berbeda — penjualan lokal ditulis dari KERANJANG, bukan dari muatan draf. */
+  if (d.muatan.channel !== kanalSah(keranjang.kanal)) return false;
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,
      dan `confirmed` menulis penjualan dari KERANJANG, bukan dari muatan draf. */
   const diskon = d.muatan.discount as { tipe?: unknown; nilai?: unknown } | undefined;

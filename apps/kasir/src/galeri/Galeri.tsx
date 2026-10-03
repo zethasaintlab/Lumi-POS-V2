@@ -184,10 +184,11 @@ export function Galeri() {
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
-  const { tarifKanal, layanan, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet } = useMemo(() => {
+  const { tarif, tarifKanal, layanan, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet } = useMemo(() => {
     const q = new URLSearchParams(window.location.search);
     return {
       editItem: q.get('editItem') === '1',
+      tarif: (q.get('tarif') === 'galat' || q.get('tarif') === 'tahan' ? q.get('tarif') : undefined) as 'galat' | 'tahan' | undefined,
       tarifKanal: q.get('tarifKanal') === '1',
       layanan: q.get('layanan') ? Number(q.get('layanan')) : undefined,
       stokKetat: q.get('stokKetat') === '1',
@@ -220,7 +221,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, tarifKanal, layanan, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, tarif, tarifKanal, layanan, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -245,7 +246,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario, layarId, matikanFitur, tarifKanal, layanan, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal]);
+  }, [skenario, layarId, matikanFitur, tarif, tarifKanal, layanan, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal]);
 
   return (
     <div className="galeri">

@@ -57,7 +57,7 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = 
       // `dalam` DIREKAM per penulisan, bukan hanya dihitung sekali. Tanpa
       // ini, `simpanHlc` yang dipindah ke luar transaksi tetap terlihat
       // "ditulis" dan test hijau untuk kode yang melanggar I10.
-      state.tulis.push({ sql: sql.trim().split('\n')[0], params, dalam: state.diDalamTransaksi });
+      state.tulis.push({ sql: sql.trim().split('\n')[0], sqlPenuh: sql, params, dalam: state.diDalamTransaksi });
       if (/UPDATE device_config/.test(sql)) {
         state.device_config.receipt_sequence = params[0];
         state.device_config.sequence_business_date = params[1];
@@ -1578,8 +1578,38 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   });
   assert.equal(hasil.status, 'tersimpan');
 
+  // Kolom `service_charge_amount` order lokal DIUKUR: nilainya di daftar VALUES harus literal `0`
+  // (bukan placeholder yang bisa diisi `service_charge_rate`).
+  const sql = orderInsert(db).sqlPenuh;
+  const kolom = sql.match(/\(([^)]*)\)\s*VALUES/)[1].split(',').map((x) => x.trim());
+  const nilaiSql = sql.match(/VALUES\s*\(([^)]*)\)/)[1].split(',').map((x) => x.trim());
+  assert.equal(kolom.length, nilaiSql.length, 'daftar kolom dan VALUES tidak sejajar — pengukur rusak');
+  assert.equal(nilaiSql[kolom.indexOf('service_charge_amount')], '0', 'order lokal: service_charge_amount bukan literal 0');
   assert.equal(hasil.total, 20000n + dine.totalTaxExclusive, 'total = subtotal − diskon + pajak eksklusif, tanpa biaya layanan');
   const muatan = muatanOutbox(db);
   assert.equal(muatan.total, Number(20000n + dine.totalTaxExclusive));
   assert.ok(!Object.keys(muatan).some((k) => /service/i.test(k)), 'muatan outbox tidak membawa biaya layanan');
+});
+
+test('⛔ G-TANPA-LAYANAN struk: dine_in + outlet.service_charge_rate bukan nol → struk tercetak menyebut Dine-in dan TANPA baris layanan/service', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const db = dbPalsu({ tarif: TARIF_KANAL, outlet: { ...OUTLET, service_charge_rate: 1000 } });
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'dine_in' } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  assert.equal(hasil.cetak.status, 'tercetak', JSON.stringify(hasil.cetak));
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.match(teks, /Dine-in/, 'pembanding hampa: struk tidak menyebut kanal Dine-in');
+  assert.doesNotMatch(teks, /layanan|service/i, 'struk dine_in memuat baris biaya layanan');
 });

@@ -485,6 +485,36 @@ test('lembar Pajak pada keranjang KOSONG: pilihan kanal tetap ada dan lembar men
   assert.match(isi, /Nama tarif tampil setelah ada item/, 'keadaan kosong lembar tidak dijelaskan');
 });
 
+test('⛔ lembar Pajak: tiap pilihan kanal ≥ 56 px tinggi (aksi menyangkut uang, DS #3)', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await tungguBarisPajak(hal, 'PPN 11%');
+  const lembar = await bukaLembarPajak(hal);
+  const tinggi = await lembar.locator('.kasir-pilih-kanal button').evaluateAll((b) => b.map((e) => Math.round(e.getBoundingClientRect().height)));
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(tinggi.length, 2, `pilihan kanal: ${tinggi.length}, harap 2`);
+  for (const t of tinggi) assert.ok(t >= 56, `pilihan kanal setinggi ${t}px, harap >= 56px`);
+});
+
+test('lembar Pajak keadaan MEMUAT dan GALAT: pilihan kanal tetap ada dan dapat dipilih, dan lembar mengatakan keadaannya', async () => {
+  for (const [mode, pola] of [['tahan', /Membaca tarif/], ['galat', /Tarif tidak dapat dibaca/]]) {
+    const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', kueri: { tarif: mode } });
+    await tombolPajak(hal).click();
+    await hal.waitForSelector('[role="dialog"][aria-label="Pajak pesanan"]', { timeout: 3000 });
+    await hal.waitForFunction((p) => new RegExp(p).test(document.querySelector('[role="dialog"]')?.innerText ?? ''), pola.source, { timeout: 5000 }).catch(() => {});
+    const lembar = hal.locator('[role="dialog"][aria-label="Pajak pesanan"]');
+    const isi = await lembar.innerText();
+    const n = await lembar.locator('.kasir-pilih-kanal button').count();
+    await lembar.getByRole('button', { name: /^Dine in/ }).click();
+    const label = (await tombolPajak(hal).innerText()).trim();
+    await hal.close();
+    assert.ok(pola.test(isi), `mode ${mode}: lembar tidak mengatakan keadaannya (${pola}). Terbaca: ${isi.slice(0, 200)}`);
+    assert.equal(n, 2, `mode ${mode}: pilihan kanal hilang`);
+    assert.equal(label, 'Dine in', `mode ${mode}: kanal tidak dapat dipilih (label ${label})`);
+    assert.ok(galat.filter((g) => !/tax_rate|tidak dapat dibaca/i.test(g)).length === 0, `mode ${mode}: galat konsol: ${galat.join(' | ')}`);
+  }
+});
+
 test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak dan keranjang; total tidak memuat biaya layanan', async () => {
   const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', kueri: { tarifKanal: 1, layanan: 1000 } });
   await tungguBarisPajak(hal, 'PPN 11%');

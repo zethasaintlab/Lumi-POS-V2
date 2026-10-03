@@ -185,6 +185,9 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` `?layanan=1000` — `outlet.service_charge_rate` (×10000, 1000 = 10%), supaya G-TANPA-LAYANAN
       dapat membuktikan Dine in tidak menyiratkan biaya layanan SAAT outlet punya tarif layanan. */
   layanan?: number;
+  /** `[EKSPLORASI]` `?tarif=galat|tahan` — pembacaan `tax_rate` menolak (`galat`) atau tidak pernah selesai
+      (`tahan`): keadaan galat dan memuat lembar Pajak. Dibaca `k03-toolbar.test.js` (fix round Task 10, M-3). */
+  tarif?: 'galat' | 'tahan';
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -550,6 +553,8 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       // berpacu dengan timer.
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
       const tabel = tabelDari(sql);
+      if (tabel === 'tax_rate' && opsi.tarif === 'galat') throw new Error('galeri: tax_rate tidak dapat dibaca');
+      if (tabel === 'tax_rate' && opsi.tarif === 'tahan') return TAK_PERNAH_SELESAI;
       /* `__galeriTahanDraf`: menahan BACA draf QRIS sampai test melepasnya, supaya jendela
          "pemulihan draf belum selesai" dapat diukur tanpa timer (fix round Task 9, C1c). */
       if (tabel === 'draf_qris_lokal') await (globalThis as { __galeriTahanDraf?: Promise<void> }).__galeriTahanDraf;

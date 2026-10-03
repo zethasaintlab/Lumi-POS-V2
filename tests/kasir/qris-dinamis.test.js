@@ -527,3 +527,20 @@ test('⛔ G-KANAL: order yang dikirim saat meminta QR membawa kanal KERANJANG (d
     assert.equal(order.body.channel, harap, `kanal keranjang ${kanal}: order.channel ${order.body.channel} ≠ ${harap}`);
   }
 });
+
+test('⛔ drafCocokKeranjang: total SAMA tetapi kanal BERBEDA tidak cocok (tarif inklusif: dine_in dan takeaway bertotal sama, pajaknya tidak)', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  // Draf ditagih sebagai takeaway (`KERANJANG` tanpa kanal = takeaway).
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(tersimpan.muatan.channel, 'takeaway', 'prasyarat: draf bermuatan takeaway');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'takeaway' }, 22000n), true, 'pembanding hampa: kanal yang SAMA dianggap berbeda');
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, 22000n), true, 'keranjang lama tanpa kanal = takeaway harus cocok');
+  assert.equal(
+    drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'dine_in' }, 22000n),
+    false,
+    'kanal berbeda (total sama) dianggap cocok — penjualan lokal akan ditulis dengan order.channel/pajak yang tidak ditagih'
+  );
+});
