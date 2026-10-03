@@ -630,7 +630,8 @@ test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masi
 
   await hal.getByRole('button', { name: /^Dine in · PBJT 10%/ }).click();
   await hal.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
-  await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-subtotal')].some((e) => /PBJT 10%/.test(e.innerText)), null, { timeout: 5000 });
+  // Timeout ditelan: bila kanal tidak sampai ke keranjang, yang gagal adalah assert BERNAMA di bawah, bukan TimeoutError.
+  await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-subtotal')].some((e) => /PBJT 10%/.test(e.innerText)), null, { timeout: 3000 }).catch(() => {});
   const sesudah = (await barisRingkasan(hal)).filter((b) => /PPN 11%|PBJT 10%/.test(b));
   const namaBaru = await hal.getByRole('button', { name: 'Pajak: Dine in', exact: true }).count();
   await hal.close();
@@ -663,7 +664,7 @@ test('Pajak NONAKTIF dengan alasan terbaca saat keranjang kosong (Aturan tombol 
   await hal.close();
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   assert.ok(hasil, 'tombol Pajak tidak ada');
-  assert.equal(hasil.disabled, true);
+  assert.equal(hasil.disabled, true, 'Pajak tidak nonaktif padahal keranjang kosong');
   assert.ok(hasil.alasan && hasil.alasan.length > 0, 'Pajak nonaktif tanpa alasan terbaca');
 });
 
@@ -673,7 +674,8 @@ test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_cha
   const lembar = await teksDialog(hal);
   await hal.getByRole('button', { name: /^Dine in · PBJT 10%/ }).click();
   await hal.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
-  await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-subtotal')].some((e) => /PBJT 10%/.test(e.innerText)), null, { timeout: 5000 });
+  // Timeout ditelan: bila kanal tidak sampai ke keranjang, yang gagal adalah assert BERNAMA di bawah, bukan TimeoutError.
+  await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-subtotal')].some((e) => /PBJT 10%/.test(e.innerText)), null, { timeout: 3000 }).catch(() => {});
   const ringkasan = (await barisRingkasan(hal)).join(' | ');
   const seluruh = await hal.evaluate(() => document.body.innerText);
   await hal.close();
@@ -683,4 +685,25 @@ test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_cha
   for (const [nama, teks] of [['lembar Pajak', lembar], ['ringkasan keranjang', ringkasan], ['seluruh K-03', seluruh]]) {
     assert.doesNotMatch(teks, /layanan|service/i, `${nama} menyiratkan biaya layanan: ${teks.match(/.{0,30}(layanan|service).{0,30}/i)?.[0]}`);
   }
+});
+
+test('⛔ D13: pemindai barcode global MATI selama lembar Pajak terbuka — scan tidak menambah barang di balik lembar', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await bukaLembarPajak(hal);
+  const sebelum = (await hal.locator('.kasir-baris').allInnerTexts()).join(' | ');
+  await hal.evaluate((kode) => {
+    document.activeElement instanceof HTMLElement && document.activeElement.blur();
+    for (const ch of [...kode, 'Enter']) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+    }
+  }, KODE_BARCODE_FIXTURE);
+  await hal.waitForTimeout(400);
+  const sesudah = (await hal.locator('.kasir-baris').allInnerTexts()).join(' | ');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(
+    sesudah,
+    sebelum,
+    'pemindai global tetap aktif di balik lembar Pajak: isi keranjang berubah oleh scan barcode'
+  );
 });

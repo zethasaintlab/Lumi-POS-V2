@@ -26,18 +26,19 @@ const path = require('node:path');
 const SERVER_SRC = path.join(__dirname, '../../apps/server/src');
 const DOMAIN_SRC = path.join(__dirname, '../../packages/domain/src');
 const KASIR_HITUNG_SRC = path.join(__dirname, '../../apps/kasir/src/kasir');
+const KASIR_TSX = ['komponen', 'layar'].map((d) => path.join(__dirname, '../../apps/kasir/src', d));
 
 // Satu-satunya file yang BOLEH memuat aritmetika tarif.
 const TAX_MODULE = path.join(DOMAIN_SRC, 'tax.ts');
 
-async function collectTsFiles(dir) {
+async function collectTsFiles(dir, ekstensi = /\.ts$/) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...(await collectTsFiles(full)));
-    } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      files.push(...(await collectTsFiles(full, ekstensi)));
+    } else if (entry.isFile() && ekstensi.test(entry.name)) {
       files.push(full);
     }
   }
@@ -68,8 +69,8 @@ function stripComments(source) {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-async function scan(dir) {
-  const files = await collectTsFiles(dir);
+async function scan(dir, ekstensi) {
+  const files = await collectTsFiles(dir, ekstensi);
   const findings = [];
   for (const file of files) {
     if (path.resolve(file) === path.resolve(TAX_MODULE)) continue;
@@ -104,6 +105,25 @@ test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/kasir (jalur h
   assert.ok(files.length > 5, 'apps/kasir/src/kasir harus punya banyak file -- guard lulus vakum');
   assert.ok(files.some((f) => f.endsWith('kanal.ts')), 'kanal.ts tidak terpindai');
   assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
+});
+
+// Lapisan tampilan kasir (.tsx + .ts): LembarKanal, Kasir, Pembayaran berjanji
+// "tidak ada angka tarif diketik" — janji itu butuh penjaga, bukan hanya komentar.
+// Komentar (termasuk `{/* */}` JSX) dibuang oleh `stripComments`; yang tertangkap
+// hanya literal desimal/persentase di kode. Dibuktikan merah lewat sabotase
+// `const TARIF = 0.1; n * TARIF` di LembarKanal.tsx.
+test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/komponen dan layar (.ts + .tsx)', async () => {
+  const semua = { files: [], findings: [] };
+  for (const dir of KASIR_TSX) {
+    const r = await scan(dir, /\.tsx?$/);
+    semua.files.push(...r.files);
+    semua.findings.push(...r.findings);
+  }
+  assert.ok(semua.files.length > 20, 'komponen+layar harus punya banyak file -- guard lulus vakum');
+  for (const nama of ['LembarKanal.tsx', 'Kasir.tsx', 'Pembayaran.tsx']) {
+    assert.ok(semua.files.some((f) => f.endsWith(nama)), `${nama} tidak terpindai`);
+  }
+  assert.deepEqual(semua.findings, [], `angka tarif pajak ditemukan di lapisan tampilan:\n${semua.findings.join('\n')}`);
 });
 
 // Kedua sentinel di bawah membuktikan POLANYA sendiri benar. Guard yang lolos

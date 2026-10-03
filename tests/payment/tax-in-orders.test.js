@@ -182,7 +182,7 @@ test('⛔ server: channel dine_in memilih tarif dine_in dan tax_amount sama deng
   const dine = await buatTarif({ rate: '0.1000', channel: 'dine_in', name: 'PBJT 10%' });
   const fx = await setupDeviceAndShift();
   const order = await buatOrder(fx, { channel: 'dine_in' });
-  assert.equal(order.channel, 'dine_in');
+  assert.equal(order.channel, 'dine_in', 'order.channel tersimpan server bukan dine_in');
   assert.equal(order.lines[0].taxRateId, dine.id, 'tarif dine_in harus menang atas all');
 
   // Pembanding: `calculateTax` langsung, dengan tarif yang SAMA yang dipakai perangkat.
@@ -216,7 +216,7 @@ test('⛔ server: dine_in + service_charge_rate bukan nol → service_charge_amo
     const fx = await setupDeviceAndShift();
     const order = await buatOrder(fx, { channel: 'dine_in' });
     assert.equal(order.serviceChargeAmount, 0, 'service charge masih terkunci nol (Q2 terbuka)');
-    assert.equal(order.total, order.subtotal - order.orderDiscount + order.taxAmount);
+    assert.equal(order.total, order.subtotal - order.orderDiscount + order.taxAmount, 'total server memuat komponen selain subtotal − diskon + pajak (service charge bocor ke total)');
   } finally {
     // Pulihkan: keadaan outlet tidak boleh bocor ke test berikutnya.
     await owner.query('BEGIN');
