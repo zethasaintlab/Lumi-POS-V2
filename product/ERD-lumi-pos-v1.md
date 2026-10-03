@@ -296,10 +296,14 @@ Sengaja **bukan** `tenant.default_vertical_profile_id`: itu membuat siklus FK `t
 | `has_calculation_variance` | bool | Ditandai server (FR-H6) |
 | `variance_amount` | bigint nullable | |
 | `voided_by_order_id` | ulid nullable | Menunjuk record void |
+| `customer_name` | text nullable | Nama pemesan, `CHECK ≤ 40`. Nama saja, tanpa telepon. Migrasi `0037`; keputusan P5(b) |
+| `table_number` | text nullable | `CHECK ≤ 16` `[ASUMSI]`. Migrasi `0037`; keputusan P5(b) |
+| `note` | text nullable | Catatan pesanan, `CHECK ≤ 140`. Migrasi `0037`; keputusan P6(a) |
 | `created_by`, `occurred_at`, `recorded_at`, `hlc` | | |
 
 ### `check`
 `id` · `order_id` · `label` · `subtotal` · `total`
+`label` **tetap `NULL`** — nama pemesan memakai `order.customer_name`, bukan kolom ini (P5).
 **v1: constraint aplikasi 1:1 dengan `order`.** Melonggarkannya nanti tidak memerlukan perubahan skema (KEP-06).
 
 ### `order_line`
