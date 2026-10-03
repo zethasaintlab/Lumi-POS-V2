@@ -57,7 +57,7 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = 
       // `dalam` DIREKAM per penulisan, bukan hanya dihitung sekali. Tanpa
       // ini, `simpanHlc` yang dipindah ke luar transaksi tetap terlihat
       // "ditulis" dan test hijau untuk kode yang melanggar I10.
-      state.tulis.push({ sql: sql.trim().split('\n')[0], params, dalam: state.diDalamTransaksi });
+      state.tulis.push({ sql: sql.trim().split('\n')[0], sqlLengkap: sql, params, dalam: state.diDalamTransaksi });
       if (/UPDATE device_config/.test(sql)) {
         state.device_config.receipt_sequence = params[0];
         state.device_config.sequence_business_date = params[1];
@@ -1658,4 +1658,106 @@ test('⛔ nomor kartu di dataPesanan ditolak di perangkat — tidak ada order, t
   });
   assert.equal(hasil.status, 'data_pesanan_tidak_sah', `status ${hasil.status}`);
   assert.equal(db.state.tulis.length, 0, 'ada penulisan padahal data pesanan ditolak');
+});
+
+// --- Fix round 2 (sabotase independen): penjaga yang lebih ketat ---
+
+/** Memetakan SETIAP kolom INSERT ke nilai bind-nya (literal ditandai `LITERAL`). Tidak bergantung pada posisi. */
+function bindPerKolom(t) {
+  const m = /\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)/s.exec(t.sqlLengkap);
+  assert.ok(m, `bentuk INSERT tidak dikenali: ${t.sqlLengkap}`);
+  const kolom = m[1].split(',').map((x) => x.trim());
+  const nilai = m[2].split(',').map((x) => x.trim());
+  assert.equal(kolom.length, nilai.length, 'jumlah kolom ≠ jumlah nilai di INSERT order');
+  let b = 0;
+  const hasil = {};
+  kolom.forEach((k, i) => {
+    hasil[k] = nilai[i] === '?' ? t.params[b++] : `LITERAL:${nilai[i]}`;
+  });
+  assert.equal(b, t.params.length, 'jumlah bind ≠ jumlah placeholder');
+  return hasil;
+}
+
+const DATA_BEDA = { namaPemesan: 'NAMA-X', nomorMeja: 'MEJA-Y', catatan: 'CATATAN-Z' };
+
+test('⛔ INSERT order lokal: tiap bind sesuai KOLOMNYA — customer_name/table_number/note tidak tertukar', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: DATA_BEDA } }) });
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  const k = bindPerKolom(order);
+  assert.equal(k.customer_name, 'NAMA-X', 'customer_name berisi bukan nama');
+  assert.equal(k.table_number, 'MEJA-Y', 'table_number berisi bukan meja (tertukar dengan note?)');
+  assert.equal(k.note, 'CATATAN-Z', 'note berisi bukan catatan (tertukar dengan table_number?)');
+  assert.equal(k.channel, 'takeaway');
+  assert.equal(k.receipt_number, 'K1-20260811-0001');
+});
+
+test('⛔ struk cetakan PERTAMA dari simpanPenjualan memuat Atas nama, Meja, dan Catatan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: DATA_BEDA } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  assert.equal(hasil.cetak.status, 'tercetak', JSON.stringify(hasil.cetak));
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.match(teks, /Atas nama: NAMA-X/, 'struk pertama tanpa "Atas nama" (hanya cetak ulang yang memuatnya?)');
+  assert.match(teks, /Meja: MEJA-Y/, 'struk pertama tanpa "Meja"');
+  assert.match(teks, /Catatan: CATATAN-Z/, 'struk pertama tanpa "Catatan"');
+});
+
+for (const [nama, kunci, nilai] of [
+  ['nama', 'namaPemesan', '4111 1111 1111 1111'],
+  ['meja', 'nomorMeja', '4111111111111111'],
+  ['catatan', 'catatan', 'kartu 4111-1111-1111-1111'],
+  ['nama 41 karakter', 'namaPemesan', 'a'.repeat(41)],
+  ['meja 17 karakter', 'nomorMeja', 'm'.repeat(17)],
+  ['catatan 141 karakter', 'catatan', 'c'.repeat(141)],
+  ['nama berkarakter kontrol', 'namaPemesan', 'a\x1bp'],
+]) {
+  test(`⛔ validasi perangkat per field: ${nama} → data_pesanan_tidak_sah, nol penulisan`, async () => {
+    const { simpanPenjualan } = await import(MOD);
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({
+      db,
+      ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: null, [kunci]: nilai } } }),
+    });
+    assert.equal(hasil.status, 'data_pesanan_tidak_sah', `${nama} (${kunci}) lolos validasi perangkat: ${hasil.status}`);
+    assert.equal(db.state.tulis.length, 0, 'ada penulisan padahal data pesanan ditolak');
+  });
+}
+
+// C5 — spec-first: kunci muatan POST /orders harus DIDEKLARASIKAN di openapi (properti request).
+// Kunci yang tidak dideklarasikan tidak ditolak server, tetapi kontrak berbohong.
+test('⛔ setiap kunci muatanOrder (tingkat atas dan baris) ada di properti request openapi createOrder', async () => {
+  const { muatanOrder } = await import(MOD);
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const yaml = fs.readFileSync(path.join(__dirname, '..', '..', 'packages', 'contracts', 'openapi.yaml'), 'utf8');
+  const awal = yaml.indexOf('operationId: createOrder');
+  const akhir = yaml.indexOf('responses:', awal);
+  assert.ok(awal > 0 && akhir > awal, 'operasi createOrder tidak ditemukan di openapi');
+  const bagian = yaml.slice(awal, akhir);
+  const dideklarasi = new Set([...bagian.matchAll(/^ {16}([A-Za-z]+):/gm)].map((m) => m[1]));
+  assert.ok(dideklarasi.has('channel') && dideklarasi.has('lines'), 'pembaca properti openapi tidak melihat apa pun');
+
+  const m = muatanOrder({
+    orderId: 'o', konfig: KONFIG, shiftId: 's1', receiptNumber: 'K1-20260811-0001', businessDate: '2026-08-11',
+    sequence: 1, channel: 'dine_in', checkId: 'c', hlc: 1n, occurredAt: '2026-08-11T07:00:00Z', total: 22000n,
+    keranjang: { baris: BARIS, diskon: { ...DISKON_KECIL, alasanCatatan: 'x' }, kanal: 'dine_in', dataPesanan: DATA_BEDA },
+    idBaru: ID,
+  });
+  const liar = Object.keys(m).filter((k) => !dideklarasi.has(k));
+  assert.deepEqual(liar, [], `muatanOrder memuat kunci yang tidak ada di openapi createOrder: ${liar.join(', ')}`);
+  for (const k of ['customerName', 'tableNumber', 'note']) assert.ok(k in m, `fixture tidak membawa ${k}`);
 });

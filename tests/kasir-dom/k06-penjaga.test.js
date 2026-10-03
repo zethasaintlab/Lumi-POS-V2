@@ -1481,6 +1481,24 @@ for (const [nama, pasang] of [
   });
 }
 
+// --- Task 11 fix round 2 (C8): data pesanan tidak sah ditolak di K-06 DENGAN pesan domain ---
+
+test('⛔ data pesanan tidak sah (nomor kartu di catatan): K-06 menampilkan pesan domain + arah koreksi, BUKAN "Keranjang kosong.", nol order', async () => {
+  const hal = await buka('render=k06&baris=2&catatan=' + encodeURIComponent('kartu 4111 1111 1111 1111'));
+  try {
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await tunggu(hal, () => (document.querySelector('[role="alert"]')?.textContent ?? '').length > 0, 'data pesanan tidak sah tidak menampilkan galat apa pun');
+    const alert = await hal.locator('[role="alert"]').first().innerText();
+    assert.match(alert, /nomor kartu/i, `pesan domain tidak tampil: "${alert}"`);
+    assert.match(alert, /kembali ke kasir/i, `arah koreksi tidak tampil: "${alert}"`);
+    assert.ok(!/Keranjang kosong\./.test(alert), 'jatuh ke "Keranjang kosong." — cabang data_pesanan_tidak_sah hilang');
+    assert.equal(await jumlahOrder(hal), 0, 'order tertulis padahal data pesanan tidak sah');
+  } finally {
+    await hal.close();
+  }
+});
+
 // --- D. Penggabungan bagian di batas layar ---
 
 test('⛔ campuran QRIS statis + kartu + tunai sampai K-07: TIGA baris payment, method dan amount per baris benar', async () => {

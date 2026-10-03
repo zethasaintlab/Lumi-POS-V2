@@ -14,7 +14,7 @@ SET LOCAL lock_timeout = '5s';
 --
 -- Batas di DATABASE juga, bukan hanya di aplikasi (`packages/domain/src/
 -- data-pesanan.ts`: 40/16/140). 16 untuk nomor meja adalah [ASUMSI] spec § 12.
--- Tabel `order` dipartisi; ALTER pada induk merambat ke partisi.
+-- `order` adalah tabel biasa (relkind 'r', tanpa partisi/pewarisan; terukur pg_class + pg_inherits).
 
 ALTER TABLE "order"
   ADD COLUMN customer_name text CHECK (customer_name IS NULL OR length(customer_name) <= 40),

@@ -105,6 +105,8 @@ function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
     ...keranjangKosong(),
     /* `?kanal=dine_in` — kanal pesanan yang dibawa dari K-03. */
     kanal: new URLSearchParams(window.location.search).get('kanal') === 'dine_in' ? 'dine_in' : 'takeaway',
+    /* `?catatan=…` — catatan pesanan dari K-03 (Task 11); isi tak sah menguji penolakan di K-06. */
+    dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: new URLSearchParams(window.location.search).get('catatan') },
     baris: Array.from({ length: jumlahBaris }, (_, i) => ({
       id: `uji-${i}`,
       variationId: `var-${i}`,

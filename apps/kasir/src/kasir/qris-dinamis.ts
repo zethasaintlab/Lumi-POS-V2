@@ -4,7 +4,7 @@ import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
 import type { Keranjang } from './keranjang.ts';
 import { kanalDari } from './kanal.ts';
-import { dataPesananDari } from './data-pesanan.ts';
+import { dataPesananDari, periksaDataPesanan } from './data-pesanan.ts';
 
 /**
  * FR-C3 + FR-C14 — jalur penjualan ONLINE-FIRST untuk QRIS dinamis.
@@ -218,6 +218,12 @@ export async function mintaQr({
   idBaru: () => string;
   sekarang: string;
 }): Promise<HasilQr> {
+  // ⛔ Aturan yang sama dengan `simpanPenjualan`, SEBELUM draf disimpan dan SEBELUM POST /orders:
+  // server menolak data pesanan tidak sah dengan 400, dan order yang tidak pernah terbit tidak boleh
+  // meninggalkan draf yang tampak sebagai QR tertunda.
+  const galatData = periksaDataPesanan(dataPesananDari(keranjang));
+  if (galatData !== null) return { status: 'gagal', pesan: galatData.pesan, paymentId: null };
+
   const muatan = muatanOrder({
     orderId: draf.orderId,
     konfig,

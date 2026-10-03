@@ -192,16 +192,22 @@ test('⛔ retry dengan idempotency key sama (dan respons hilang) tidak menduplik
   assert.equal((await bacaOrder(tenant.id, p.id)).customer_name, 'Budi');
 });
 
-test('kolom database menolak > batas walau jalur tulis lupa memvalidasi', async () => {
-  const s = await siapkan();
-  const p = muatan(s);
-  assert.equal((await req(p)).statusCode, 201);
-  await owner.query('BEGIN');
-  await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
-  await assert.rejects(
-    owner.query(`UPDATE "order" SET customer_name = $1 WHERE id = $2`, ['a'.repeat(41), p.id]),
-    /order_customer_name_check|check constraint/i,
-    'CHECK length(customer_name) <= 40 tidak ada di database'
-  );
-  await owner.query('ROLLBACK');
-});
+for (const [kolom, batas] of [['customer_name', 40], ['table_number', 16], ['note', 140]]) {
+  test(`kolom database menolak ${kolom} > ${batas} walau jalur tulis lupa memvalidasi (CHECK DB)`, async () => {
+    const p = muatan(await siapkan());
+    assert.equal((await req(p)).statusCode, 201);
+    await owner.query('BEGIN');
+    await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+    await assert.rejects(
+      owner.query(`UPDATE "order" SET ${kolom} = $1 WHERE id = $2`, ['a'.repeat(batas + 1), p.id]),
+      /check constraint/i,
+      `CHECK length(${kolom}) <= ${batas} tidak ada di database`
+    );
+    await owner.query('ROLLBACK');
+    // Tepat di batas diterima.
+    await owner.query('BEGIN');
+    await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+    await owner.query(`UPDATE "order" SET ${kolom} = $1 WHERE id = $2`, ['a'.repeat(batas), p.id]);
+    await owner.query('ROLLBACK');
+  });
+}

@@ -563,3 +563,42 @@ test('⛔ draf QRIS dengan nama/meja/catatan lama TIDAK cocok dengan keranjang y
   );
   assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, dataPesanan: { ...dp, catatan: 'pedas' } }, 22000n), false, 'catatan tidak dibandingkan');
 });
+
+// --- Fix round 2 (sabotase independen) ---
+
+test('⛔ draf QRIS: tableNumber ikut dibandingkan (C6)', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  const dp = { namaPemesan: 'Budi', nomorMeja: '5', catatan: 'pedas' };
+  await mintaQr({ ...argMinta(draf(), { db: d, kirim }), keranjang: { ...KERANJANG, dataPesanan: dp } });
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, dataPesanan: dp }, 22000n), true, 'pembanding hampa');
+  assert.equal(
+    drafCocokKeranjang(tersimpan, { ...KERANJANG, dataPesanan: { ...dp, nomorMeja: '9' } }, 22000n),
+    false,
+    'meja 5 dianggap cocok dengan meja 9 — struk lokal dan server berbeda'
+  );
+});
+
+for (const [nama, kunci, nilai] of [
+  ['nomor kartu di catatan', 'catatan', 'kartu 4111 1111 1111 1111'],
+  ['nama 41 karakter', 'namaPemesan', 'a'.repeat(41)],
+  ['meja 17 karakter', 'nomorMeja', 'm'.repeat(17)],
+]) {
+  test(`⛔ mintaQr memeriksa data pesanan SEBELUM POST /orders (C9): ${nama} → gagal, tanpa draf dan tanpa panggilan server`, async () => {
+    const { mintaQr, pulihkanDraf } = await import(MOD);
+    const d = db();
+    const dipanggil = [];
+    const kirim = async (jalur, opsi) => {
+      dipanggil.push(jalur);
+      return { status: 201, body: { qrString: 'QR' } };
+    };
+    const dp = { namaPemesan: null, nomorMeja: null, catatan: null, [kunci]: nilai };
+    const hasil = await mintaQr({ ...argMinta(draf(), { db: d, kirim }), keranjang: { ...KERANJANG, dataPesanan: dp } });
+    assert.equal(hasil.status, 'gagal', `status ${hasil.status}`);
+    assert.equal(hasil.paymentId, null);
+    assert.deepEqual(dipanggil, [], 'server dipanggil padahal data pesanan tidak sah — order menjadi gagal-permanen di sana');
+    assert.equal(await pulihkanDraf(d, 's1'), null, 'draf tersimpan padahal data pesanan tidak sah');
+  });
+}
