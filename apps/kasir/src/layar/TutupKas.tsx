@@ -576,8 +576,8 @@ export function TutupKas() {
            mengarang angka supaya tombolnya menyala. Yang ditolak adalah field
            KOSONG dan bentuk yang tidak dapat dibaca, dan keduanya sudah
            `null` di `bacaRupiah`. */
-        disabled={sibuk || hitunganTidakSah}
-        keterangan={sibuk || hitunganTidakSah ? 'tutupkas-lanjut-alasan' : undefined}
+        disabled={sibuk || hitunganTidakSah || tahanan.length > 0}
+        keterangan={sibuk || hitunganTidakSah || tahanan.length > 0 ? 'tutupkas-lanjut-alasan' : undefined}
         onClick={() => {
           setSibuk(true);
           /* ⛔ `konfig`, `sesi`, `idBaru`, dan `hlc` ikut supaya percobaan
@@ -606,7 +606,11 @@ export function TutupKas() {
         Lanjut
       </Tombol>
       <span id="tutupkas-lanjut-alasan" className="sr-only">
-        {sibuk ? 'Sedang memproses hitungan.' : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
+        {tahanan.length > 0
+          ? PESAN_ADA_TAHANAN(tahanan.length)
+          : sibuk
+            ? 'Sedang memproses hitungan.'
+            : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
       </span>
     </div>
   );
@@ -651,7 +655,7 @@ function DaftarTahananTutup({ daftar }: { daftar: RingkasTahanan[] }) {
     <section className="card card-pad kasir-dialog-sel" aria-label="Pesanan tahan">
       <h2 className="t-body-md">Pesanan tahan ({daftar.length})</h2>
       <p className="t-caption kasir-login-sub">
-        Kas tidak dapat ditutup sebelum pesanan ini dilanjutkan atau dibuang.
+        Hitungan kas baru dapat dimulai sesudah pesanan ini dilanjutkan atau dibuang.
       </p>
       <ul className="kasir-baris-daftar">
         {daftar.map((t) => (

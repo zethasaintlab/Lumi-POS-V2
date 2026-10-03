@@ -2062,3 +2062,10 @@
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
+
+/* Kabar sesudah Lanjutkan pesanan tahan: teks + tombol Tutup (target sentuh dari `.btn`). */
+.kasir-tahan-kabar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}

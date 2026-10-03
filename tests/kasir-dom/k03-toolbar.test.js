@@ -917,10 +917,18 @@ test('⛔ Lanjutkan: item yang tidak lagi ada di katalog dibuang DAN kasir diber
   await hal.waitForSelector('[role="status"]', { timeout: 5000 }).catch(() => {});
   const kabar = await hal.locator('[role="status"]').allInnerTexts();
   const baris = await hal.locator('.kasir-baris').count();
+  const tutupKabar = await hal.evaluate(() => {
+    const b = [...document.querySelectorAll('[role="status"] button, [role="status"] [role="button"]')].find((e) => /Tutup/.test(e.textContent ?? ''));
+    return b ? { tag: b.tagName, tinggi: b.getBoundingClientRect().height } : null;
+  });
   await hal.close();
+  assert.ok(tutupKabar, 'kabar Lanjutkan tidak punya tombol Tutup');
+  assert.equal(tutupKabar.tag, 'BUTTON', `Tutup kabar berupa <${tutupKabar.tag}>, harap <button>`);
+  assert.ok(tutupKabar.tinggi >= 44, `Tutup kabar ${tutupKabar.tinggi}px, target sentuh >= 44`);
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   assert.equal(baris, 0, 'baris yang variation-nya tidak ada lagi tetap masuk keranjang');
   assert.ok(kabar.some((t) => /Item Keranjang 1\b/.test(t) && /dibuang/.test(t)), `kasir tidak diberi tahu nama item yang dibuang: ${kabar.join(' | ')}`);
+  assert.ok(!kabar.some((t) => /Harga berubah/.test(t)), `kabar "Harga berubah" muncul padahal item hanya dibuang: ${kabar.join(' | ')}`);
 });
 
 test('⛔ Lanjutkan saat keranjang berjalan TIDAK kosong: tidak menimpa — menawarkan "Tahan pesanan ini dulu"', async () => {
@@ -998,4 +1006,28 @@ test('⛔ scanner global mati selama dialog Pesanan tahan terbuka', async () => 
   await hal.close();
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   assert.equal(sesudah, sebelum, `scan masuk selama dialog Pesanan tahan terbuka (${sebelum} → ${sesudah})`);
+});
+
+test('⛔ target sentuh dialog Pesanan tahan: Tahan, Lanjutkan, Buang, Tutup >= 44 px; konfirmasi Buang >= 56 px', async () => {
+  const { hal, galat } = await bukaK03();
+  await tambahItemNyata(hal, 1);
+  await bukaDialogTahan(hal);
+  await hal.getByRole('button', { name: 'Tahan pesanan ini', exact: true }).click();
+  await hal.waitForFunction(() => /Lanjutkan/.test(document.querySelector('[role="dialog"]')?.innerText ?? ''), null, { timeout: 5000 });
+  const ukur = (nama) => hal.getByRole('button', { name: nama, exact: true }).first().evaluate((b) => {
+    const r = b.getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  });
+  const tombol = {};
+  for (const nama of ['Tahan pesanan ini', 'Lanjutkan', 'Buang', 'Tutup']) tombol[nama] = await ukur(nama);
+  await hal.getByRole('button', { name: 'Buang', exact: true }).click();
+  const konfirmasi = { buang: await ukur('Buang pesanan'), batal: await ukur('Batal') };
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  for (const [nama, u] of Object.entries(tombol)) {
+    assert.ok(u.h >= 44 && u.w >= 44, `tombol "${nama}" ${u.w}x${u.h}px, target sentuh >= 44`);
+  }
+  for (const [nama, u] of Object.entries(konfirmasi)) {
+    assert.ok(u.h >= 56, `konfirmasi Buang "${nama}" ${u.h}px, aksi menyangkut uang/audit menuntut >= 56`);
+  }
 });

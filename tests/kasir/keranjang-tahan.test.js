@@ -61,7 +61,7 @@ const SESI = { userId: 'u-sari', nama: 'Sari', peran: ['cashier'], masukPada: ''
 
 function buatDb({ gagalSetelAudit = false, gagalCommit = false } = {}) {
   // Kait kegagalan dapat dinyalakan SESUDAH prasyarat ditulis (`d.gagal`).
-  const gagal = { setelAudit: gagalSetelAudit, commit: gagalCommit };
+  const gagal = { setelAudit: gagalSetelAudit, commit: gagalCommit, simpanKeranjang: false };
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec(DDL);
   sqlite.exec(ddlTahan());
@@ -74,6 +74,10 @@ function buatDb({ gagalSetelAudit = false, gagalCommit = false } = {}) {
     getAll: baca,
     async execute(sql, params = []) {
       sqlite.prepare(sql).run(...params);
+      // Perangkat "mati" tepat sesudah DELETE tahanan, saat keranjang hasil lanjutan hendak ditulis.
+      if (gagal.simpanKeranjang && /INSERT INTO keranjang_lokal/.test(sql)) {
+        throw new Error('perangkat mati di tengah transaksi');
+      }
       if (gagal.setelAudit && /INSERT INTO audit_event/.test(sql)) {
         throw new Error('perangkat mati di tengah transaksi');
       }
@@ -89,6 +93,9 @@ function buatDb({ gagalSetelAudit = false, gagalCommit = false } = {}) {
     gagal,
     getAll: baca,
     async execute(sql, params = []) {
+      if (gagal.simpanKeranjang && /INSERT INTO keranjang_lokal/.test(sql)) {
+        throw new Error('perangkat mati di tengah transaksi');
+      }
       if (dalamTx) bocor.push(sql.replace(/\s+/g, ' ').trim());
       sqlite.prepare(sql).run(...params);
     },
@@ -183,6 +190,20 @@ test('⛔ G-TAHAN: tahan → keranjang berjalan kosong; lanjutkan → keranjang 
   assert.equal(n(d, 'keranjang_tahan'), 0, 'tahanan tidak dihapus sesudah dilanjutkan');
   // Keranjang yang dilanjutkan sudah durable di transaksi yang sama.
   assert.equal(n(d, 'keranjang_lokal'), 1, 'keranjang yang dilanjutkan tidak ditulis ke keranjang_lokal dalam transaksi yang sama (mati sesudahnya = pesanan hilang)');
+  assert.deepEqual(d.bocor, [], `penulisan di LUAR transaksi: ${JSON.stringify(d.bocor)}`);
+});
+
+test('⛔ lanjutkan gagal di tengah (sesudah DELETE tahanan / saat COMMIT) → tahanan UTUH dan keranjang tak berubah (atomisitas)', async () => {
+  const { lanjutkanTahanan, jumlahTahanan } = await import(MOD);
+  for (const kait of ['simpanKeranjang', 'commit']) {
+    const d = buatDb();
+    const h = await tahan(d, keranjangLengkap());
+    assert.equal(h.ok, true);
+    d.gagal[kait] = true;
+    await assert.rejects(lanjutkanTahanan(d, h.id, HARGA_SAMA, WAKTU), /perangkat mati/);
+    assert.equal(await jumlahTahanan(d, 's1'), 1, `ATOMISITAS: tahanan HILANG padahal lanjutkan gagal (${kait}) — pesanan pelanggan lenyap`);
+    assert.equal(n(d, 'keranjang_lokal'), 0, `keranjang berjalan berubah padahal lanjutkan gagal (${kait})`);
+  }
 });
 
 test('⛔ tahan TIDAK menulis audit (belum ada yang dibatalkan) dan tidak menyentuh order/payment/cash_movement/draf QRIS', async () => {
@@ -253,7 +274,7 @@ test('variation yang diarsip dibuang dan namanya dilaporkan', async () => {
   assert.equal(hasil.keranjang.baris[0].id, 'b1');
   assert.equal(hasil.barisDibuang.length, 1);
   assert.match(hasil.barisDibuang[0], /Roti/, `nama baris yang dibuang tidak dilaporkan: ${JSON.stringify(hasil.barisDibuang)}`);
-  assert.equal(hasil.subtotalBerubah, true);
+  assert.equal(hasil.subtotalBerubah, false, 'item yang HANYA dibuang dilaporkan sebagai "harga berubah" (menyesatkan kasir)');
 });
 
 test('⛔ diskon yang tumbuh melewati nominalDisetujui sesudah harga ulang → statusDiskon menuntut persetujuan baru', async () => {
@@ -380,10 +401,14 @@ test('⛔ lanjutkan menolak (melempar) bila keranjang berjalan belum kosong — 
   assert.equal(isi.baris[0].id, 'berjalan', 'keranjang berjalan ditimpa');
 });
 
-test('lanjutkan tahanan yang rusak (isi tak terurai) → null dan barisnya dibuang, bukan melempar', async () => {
-  const { lanjutkanTahanan, jumlahTahanan } = await import(MOD);
+test('⛔ lanjutkan tahanan rusak → MELEMPAR, barisnya TIDAK dihapus; Buang menghapusnya DENGAN jejak', async () => {
+  const { lanjutkanTahanan, buangTahanan, jumlahTahanan } = await import(MOD);
   const d = buatDb();
   d.sqlite.prepare(`INSERT INTO keranjang_tahan VALUES ('x','s1','bukan json',1,1,'2026-09-28T00:00:00Z')`).run();
-  assert.equal(await lanjutkanTahanan(d, 'x', HARGA_SAMA, WAKTU), null);
+  await assert.rejects(lanjutkanTahanan(d, 'x', HARGA_SAMA, WAKTU), /tidak dapat dibaca/);
+  assert.equal(await jumlahTahanan(d, 's1'), 1, 'tahanan rusak DIHAPUS oleh Lanjutkan tanpa jejak cart_cleared');
+  assert.equal(n(d, 'audit_event'), 0);
+  await buangTahanan(d, 'x', { konfig: KONFIG, sesi: SESI, total: 0n, waktu: WAKTU, idBaru, hlc: () => 1n });
   assert.equal(await jumlahTahanan(d, 's1'), 0);
+  assert.equal(n(d, 'audit_event'), 1, 'Buang tahanan rusak tidak menulis jejak');
 });

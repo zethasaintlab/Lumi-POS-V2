@@ -253,30 +253,52 @@ test('⛔ SELISIH NOL dapat dicapai — kontrol kas mengukur laci, bukan layarny
   );
 });
 
-test('⛔ K-12 menolak tutup shift selama ada tahanan dan menampilkan daftarnya', async () => {
+test('⛔ K-12 + tahanan: daftar tampil, "Lanjut" NONAKTIF dengan alasan tertulis, nol percobaan hitungan tercatat, nol penutupan, target ≥ 56 px', async () => {
   const { hal, galat } = await bukaK12('normal', '&tahanan=2');
   const bidang = hal.getByLabel(/hitungan fisik/i);
   await bidang.waitFor({ state: 'visible', timeout: 5_000 });
-  // Selisih nol: tidak ada otorisasi atau alasan yang dapat menjadi penyebab penolakan lain.
   await bidang.fill(String(SALDO_SEHARUSNYA));
-  await hal.getByRole('button', { name: 'Lanjut' }).click();
-  await hal.getByRole('button', { name: 'Tutup Kas', exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
-  await hal.getByRole('button', { name: 'Tutup Kas', exact: true }).click();
-  await hal.waitForTimeout(800);
-
+  const lanjut = hal.getByRole('button', { name: 'Lanjut', exact: true });
+  const info = await lanjut.evaluate((b) => {
+    const ref = b.getAttribute('aria-describedby');
+    const r = b.getBoundingClientRect();
+    return {
+      nonaktif: b.disabled || b.getAttribute('aria-disabled') === 'true',
+      alasan: ref ? document.getElementById(ref)?.textContent ?? '' : '',
+      tinggi: r.height,
+    };
+  });
+  // Klik paksa: tombol nonaktif tidak boleh menembus ke catatHitungan.
+  await lanjut.click({ force: true }).catch(() => {});
+  await hal.waitForTimeout(500);
   const hasil = await hal.evaluate(() => ({
-    teks: document.body.innerText,
-    laporan: [...document.querySelectorAll('h1')].some((h) => /Laporan Shift/.test(h.innerText)),
-    daftar: [...document.querySelectorAll('[data-tahanan]')].length,
-    alert: [...document.querySelectorAll('[role="alert"]')].map((e) => e.innerText).join(' | '),
+    daftar: document.querySelectorAll('[data-tahanan]').length,
     tulis: (window.__galeriTulis ?? []).map((t) => t.sql),
+    review: /Hasil hitungan/.test(document.body.innerText),
+    laporan: [...document.querySelectorAll('h1')].some((h) => /Laporan Shift/.test(h.innerText)),
   }));
   await hal.close();
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
-  assert.equal(hasil.laporan, false, 'shift TERTUTUP (Laporan Shift tampil) padahal masih ada pesanan tahan');
-  assert.equal(hasil.tulis.filter((s) => /UPDATE cash_drawer_shift\s+SET status = 'closed'/.test(s)).length, 0, 'shift DITUTUP (UPDATE ... status = closed) padahal ada tahanan');
-  assert.match(hasil.alert, /pesanan tahan/i, `penolakan tidak menyebut pesanan tahan: ${hasil.alert}`);
+  assert.equal(info.nonaktif, true, '"Lanjut" AKTIF selama ada tahanan: percobaan hitungan tercatat sebelum penutupan ditolak (hitungan buta FR-D2 melemah)');
+  assert.match(info.alasan, /pesanan tahan/i, `"Lanjut" nonaktif TANPA alasan tertulis: "${info.alasan}"`);
+  assert.doesNotMatch(info.alasan, /\d{3}/, 'alasan memuat angka (saldo?)');
+  assert.ok(info.tinggi >= 56, `tombol Lanjut ${info.tinggi}px, aksi uang menuntut >= 56`);
   assert.equal(hasil.daftar, 2, `daftar tahanan di K-12 berisi ${hasil.daftar} baris, harap 2`);
+  assert.equal(hasil.tulis.filter((q) => /UPDATE cash_drawer_shift/.test(q)).length, 0, 'ada UPDATE cash_drawer_shift (percobaan hitungan/penutupan) padahal ada tahanan');
+  assert.equal(hasil.tulis.filter((q) => /INSERT INTO audit_event/.test(q)).length, 0, 'audit count_attempt tertulis padahal ada tahanan');
+  assert.equal(hasil.review, false, 'tahap review (angka saldo) tampil padahal ada tahanan');
+  assert.equal(hasil.laporan, false, 'shift TERTUTUP padahal ada pesanan tahan');
+});
+
+test('⛔ hitungan buta (FR-D2) + tahanan: tahap hitung tidak membocorkan saldo seharusnya', async () => {
+  const { hal, galat } = await bukaK12('normal', '&tahanan=2');
+  await hal.getByLabel(/hitungan fisik/i).waitFor({ state: 'visible', timeout: 5_000 });
+  const teks = await hal.evaluate(() => document.body.innerText);
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(!/670\.?500/.test(teks), 'saldo seharusnya (670.500) tampil di tahap hitung saat ada tahanan');
+  assert.ok(!/Kas diharapkan|Saldo seharusnya|Selisih/i.test(teks), 'rincian saldo/selisih tampil di tahap hitung saat ada tahanan');
+  assert.match(teks, /Pesanan tahan/, 'prasyarat: blok tahanan tampil');
 });
 
 test('K-12 tanpa tahanan: tidak ada blok pesanan tahan (keadaan normal tidak berubah)', async () => {

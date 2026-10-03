@@ -152,19 +152,19 @@ export async function bacaHargaKini(
 export function hargaUlang(k: Keranjang, harga: HargaKini): HasilHargaUlang {
   const barisDibuang: string[] = [];
   const baris: BarisKeranjang[] = [];
+  /* `subtotalBerubah` = HARGA baris yang tersisa berubah. Baris yang dibuang dilaporkan terpisah
+     (`barisDibuang`): kabar "harga berubah" untuk item yang hanya diarsip menyesatkan. */
   let berubah = false;
   for (const b of k.baris) {
     const nama = b.variationCount > 1 ? `${b.itemName} (${b.variationName})` : b.itemName;
     const hargaVariation = harga.variation.get(b.variationId);
     if (hargaVariation === undefined) {
       barisDibuang.push(nama);
-      berubah = true;
       continue;
     }
     const hilang = b.modifier.find((m) => !harga.modifier.has(m.id));
     if (hilang) {
       barisDibuang.push(`${nama} + ${hilang.nama}`);
-      berubah = true;
       continue;
     }
     const modifier = b.modifier.map((m) => ({ ...m, harga: harga.modifier.get(m.id) as number }));
@@ -180,9 +180,11 @@ export function hargaUlang(k: Keranjang, harga: HargaKini): HasilHargaUlang {
  * Melanjutkan tahanan: harga diresolusi ulang, tahanan dihapus, dan keranjang
  * hasilnya ditulis ke `keranjang_lokal` — satu transaksi.
  *
- * `null` bila tahanan sudah tidak ada (lanjutkan ganda) atau isinya tidak
- * terurai (barisnya dibuang; tahanan yang tak bisa dibuka tidak boleh
- * menahan tutup shift selamanya).
+ * `null` bila tahanan sudah tidak ada (lanjutkan ganda).
+ *
+ * ⛔ MELEMPAR bila isinya tidak terurai, dan barisnya TIDAK dihapus: menghapus
+ * di sini = pesanan hilang tanpa jejak `cart_cleared`. Jalan keluarnya Buang,
+ * yang menulis jejak (nol baris) — konsisten, dan tidak menahan tutup kas.
  *
  * ⛔ MELEMPAR bila keranjang berjalan belum kosong: menimpanya diam-diam
  * menghapus pesanan pelanggan lain. Layar menawarkan "Tahan pesanan ini dulu".
@@ -203,8 +205,7 @@ export async function lanjutkanTahanan(
     if (!baris) return null;
     const keranjang = uraikan(baris.isi);
     if (keranjang === null) {
-      await tx.execute('DELETE FROM keranjang_tahan WHERE id = ?', [id]);
-      return null;
+      throw new Error('Pesanan tahan ini tidak dapat dibaca. Buang saja; pembuangan tercatat di audit.');
     }
     if (await adaKeranjangBerjalan(tx)) {
       throw new Error('Keranjang berjalan belum kosong. Tahan atau selesaikan pesanan itu dulu.');

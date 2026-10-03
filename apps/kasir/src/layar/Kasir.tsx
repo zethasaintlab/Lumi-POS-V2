@@ -1176,19 +1176,12 @@ export function Kasir() {
             Ia dapat ditutup: peringatan yang tidak dapat dihilangkan akan
             menetap di layar sepanjang shift dan berhenti dibaca. */}
         {infoTahan && (
-          <p className="t-caption kasir-login-galat" role="status">
-            {infoTahan}{' '}
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={() => setInfoTahan(null)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setInfoTahan(null);
-              }}
-            >
+          <div className="kasir-tahan-kabar" role="status">
+            <p className="t-caption grow">{infoTahan}</p>
+            <Tombol varian="ghost" onClick={() => setInfoTahan(null)}>
               Tutup
-            </span>
-          </p>
+            </Tombol>
+          </div>
         )}
 
         {pesanStok && (
