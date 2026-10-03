@@ -329,3 +329,26 @@ test('⛔ cetak ulang membawa KANAL order: dine_in → "Dine-in", takeaway → "
     assert.equal(out.includes(bukan), false, `order ${kanal}: struk cetak ulang menyebut kanal lain ("${bukan}")`);
   }
 });
+
+// Task 11 (P5(b), P6(a)): cetak ulang membaca nama, meja, catatan dari kolom
+// `order` — bukan dari keranjang atau katalog — jadi identik dengan cetakan pertama.
+test('⛔ cetak ulang membawa "Atas nama", "Meja", "Catatan" dari kolom order, identik antar cetak ulang', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(
+    `UPDATE "order" SET customer_name = 'Budi', table_number = 'A3', note = 'tanpa es' WHERE id = 'ord-1'`
+  );
+  const out = await cetak(db);
+  assert.match(out, /Atas nama: Budi/);
+  assert.match(out, /Meja: A3/);
+  assert.match(out, /Catatan: tanpa es/);
+  assert.equal(await cetak(db), out, 'dua cetak ulang berbeda');
+  assert.equal(db.tabelDisentuh.has('item'), false, 'cetak ulang menyentuh tabel katalog');
+});
+
+test('cetak ulang order tanpa data pesanan: ketiga baris tidak dicetak', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  const out = await cetak(db);
+  assert.ok(!/Atas nama|Meja:|Catatan:/.test(out), out);
+});

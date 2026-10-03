@@ -379,3 +379,22 @@ test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
       hilang.join('\n  ')
   );
 });
+
+// Task 11 (P5(b), P6(a)): nama pemesan, nomor meja, catatan turun lewat stream
+// `riwayat` supaya K-08 dan cetak ulang K-09 untuk penjualan lama membawa
+// "Atas nama", "Meja", "Catatan". Menghilangkan satu saja dari SELECT membuat
+// cetak ulang berbeda dari cetakan pertama, tanpa error apa pun.
+test('⛔ query order di stream riwayat membawa customer_name, table_number, note', () => {
+  const q = kueri().find((x) => /FROM "order"/.test(x) && /voided_by_order_id/.test(x));
+  assert.ok(q, 'query order stream riwayat tidak ditemukan');
+  const kolom = kolomDiminta(q);
+  for (const k of ['customer_name', 'table_number', 'note']) {
+    assert.ok(kolom.includes(k), `${k} tidak turun ke perangkat lewat riwayat: ${q}`);
+  }
+});
+
+test('⛔ check.label TIDAK dipakai nama pemesan: query check tetap membawa label apa adanya', () => {
+  const q = kueri().find((x) => /FROM "check"/.test(x));
+  assert.ok(q);
+  assert.ok(kolomDiminta(q).includes('label'));
+});

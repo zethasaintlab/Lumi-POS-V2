@@ -1,6 +1,7 @@
 import type { PermintaanDiskon } from '../../../../packages/domain/src/diskon.ts';
 import type { ItemKatalog, VariationKatalog } from '../katalog/baca.ts';
 import { KANAL_BAWAAN, type Kanal } from './kanal.ts';
+import { rapikanDataPesanan } from '../../../../packages/domain/src/data-pesanan.ts';
 
 /**
  * Keranjang K-03. Murni: tanpa React, tanpa database, tanpa waktu.
@@ -101,6 +102,21 @@ export interface DiskonKeranjang {
   nominalDisetujui: bigint | null;
 }
 
+/**
+ * Nama pemesan, nomor meja, catatan (P5(b), P6(a)) — tiga kolom `order`
+ * (migrasi 0037). Opsional: `null` = tidak diisi. Nama SAJA, tanpa telepon.
+ * Aturannya satu di `packages/domain/src/data-pesanan.ts`.
+ */
+export interface DataPesananKeranjang {
+  namaPemesan: string | null;
+  nomorMeja: string | null;
+  catatan: string | null;
+}
+
+export function dataPesananKosong(): DataPesananKeranjang {
+  return { namaPemesan: null, nomorMeja: null, catatan: null };
+}
+
 export interface Keranjang {
   baris: BarisKeranjang[];
   /** `null` = tidak ada diskon. */
@@ -111,10 +127,22 @@ export interface Keranjang {
    * `takeaway`.
    */
   kanal: Kanal;
+  /** Keranjang tersimpan versi lama tanpa field ini dibaca sebagai semua `null`. */
+  dataPesanan: DataPesananKeranjang;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null, kanal: KANAL_BAWAAN };
+  return { baris: [], diskon: null, kanal: KANAL_BAWAAN, dataPesanan: dataPesananKosong() };
+}
+
+/** Trim; kosong → `null`. Validasi batas/kartu ada di dialog dan `simpanPenjualan`. */
+export function setelDataPesanan(k: Keranjang, bagian: Partial<DataPesananKeranjang>): Keranjang {
+  const lama = k.dataPesanan ?? dataPesananKosong();
+  const baru = { ...lama };
+  if ('namaPemesan' in bagian) baru.namaPemesan = rapikanDataPesanan(bagian.namaPemesan);
+  if ('nomorMeja' in bagian) baru.nomorMeja = rapikanDataPesanan(bagian.nomorMeja);
+  if ('catatan' in bagian) baru.catatan = rapikanDataPesanan(bagian.catatan);
+  return { ...k, dataPesanan: baru };
 }
 
 export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {
@@ -133,7 +161,14 @@ export function setelDiskon(k: Keranjang, diskon: DiskonKeranjang | null): Keran
  * persetujuan yang tidak pernah diberikan untuknya.
  */
 export function lepasDiskonBilaKosong(k: Keranjang): Keranjang {
-  return k.baris.length === 0 && k.diskon !== null ? { ...k, diskon: null } : k;
+  if (k.baris.length !== 0) return k;
+  // ⛔ Data pesanan ikut dilepas dengan alasan yang sama: "Atas nama Budi"
+  // pada keranjang kosong akan tercetak di struk pelanggan BERIKUTNYA.
+  const adaData =
+    k.dataPesanan !== undefined &&
+    (k.dataPesanan.namaPemesan !== null || k.dataPesanan.nomorMeja !== null || k.dataPesanan.catatan !== null);
+  if (k.diskon === null && !adaData) return k;
+  return { ...k, diskon: null, dataPesanan: dataPesananKosong() };
 }
 
 /**

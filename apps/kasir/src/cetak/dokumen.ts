@@ -55,6 +55,14 @@ export interface DataStruk {
   waktu: string;
   namaKasir: string;
   channel: 'dine_in' | 'takeaway';
+  /**
+   * P5(b), P6(a) — dicetak sebagai "Atas nama", "Meja", "Catatan" SEBELUM baris
+   * item. Opsional; kosong/spasi = tidak dicetak. Cetak ulang membacanya dari
+   * kolom `order`, jadi identik dengan cetakan pertama (FR-B11).
+   */
+  namaPemesan?: string | null;
+  nomorMeja?: string | null;
+  catatan?: string | null;
   baris: readonly BarisStrukOrder[];
   subtotal: number;
   diskon: number;
@@ -113,6 +121,17 @@ export function bangunDokumenStruk(data: DataStruk): ReceiptDocument {
   // sama dapat menagih dua kali, dan tidak ada yang dapat membuktikan mana
   // yang asli.
   if (data.cetakUlang) baris.push({ jenis: 'teks', isi: '** CETAK ULANG **', rata: 'tengah' });
+
+  // Teks dilipat renderer di batas kata (`lipat`, escpos.ts), bukan dipotong:
+  // catatan panjang tetap terbaca utuh di 32 kolom.
+  for (const [label, nilai] of [
+    ['Atas nama', data.namaPemesan],
+    ['Meja', data.nomorMeja],
+    ['Catatan', data.catatan],
+  ] as const) {
+    const isi = typeof nilai === 'string' ? nilai.trim() : '';
+    if (isi.length > 0) baris.push({ jenis: 'teks', isi: `${label}: ${isi}` });
+  }
 
   baris.push({ jenis: 'garis' });
 

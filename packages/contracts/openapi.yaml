@@ -3536,6 +3536,16 @@ paths:
                     - kompensasi_keluhan
                     - lainnya
                 discountReasonNote: { type: string, nullable: true }
+                # P5(b), P6(a) -- OPSIONAL; klien versi N-1 tidak mengirimnya.
+                # Kosong/spasi saja = tidak ada. SENGAJA tanpa `maxLength`:
+                # aturannya satu di packages/domain/src/data-pesanan.ts
+                # (nama <= 40, meja <= 16, catatan <= 140, nomor kartu
+                # ditolak POSSIBLE_CARD_NUMBER), pola sama dengan total.
+                # Nama saja, TANPA nomor telepon (keputusan user).
+                # check.label tetap NULL.
+                customerName: { type: string, nullable: true }
+                tableNumber: { type: string, nullable: true }
+                note: { type: string, nullable: true }
                 lines:
                   type: array
                   minItems: 1

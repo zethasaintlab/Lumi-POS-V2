@@ -1750,6 +1750,19 @@
 }
 .kasir-keranjang-kosong p { margin: 0; }
 
+/* Nama pemesan, nomor meja, catatan (P5(b), P6(a)) — di atas daftar item, teks
+ * yang sama dengan yang tercetak di struk. `flex: none`: blok kecil ini tidak
+ * boleh mengecil jadi nol saat daftar penuh. Catatan 140 karakter dilipat. */
+.kasir-data-pesanan {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--ink-subtle);
+  overflow-wrap: anywhere;
+}
+.kasir-data-pesanan p { margin: 0; }
+
 /* Subtotal, pajak, Total, Bayar, dan aksi sekunder menempel di bawah — tidak
    ikut bergulir bersama daftar item.
 

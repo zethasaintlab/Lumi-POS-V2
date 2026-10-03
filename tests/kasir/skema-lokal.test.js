@@ -167,3 +167,19 @@ test('T2 nama tabel selalu dikutip di SQL yang dihasilkan', async () => {
   assert.match(def.order.put.sql, /INSERT OR REPLACE INTO "order"/);
   assert.match(def.check.put.sql, /INSERT OR REPLACE INTO "check"/);
 });
+
+// Task 11 (P5(b), P6(a)): tiga kolom `order` baru HARUS ada di DDL lokal DAN
+// ikut `put` raw table. `put` yang kehilangan satu kolom membuat penjualan
+// turun tanpa nama/meja/catatan, tanpa error.
+test('⛔ order lokal memuat customer_name, table_number, note, dan put menulis ketiganya', async () => {
+  const { kolomPerTabel, buatDefinisiRaw } = await import('../../apps/kasir/src/lokal/skema.ts');
+  const k = kolomPerTabel(sql());
+  for (const c of ['customer_name', 'table_number', 'note']) {
+    assert.ok(k.order.includes(c), `kolom ${c} hilang dari "order" lokal`);
+  }
+  const put = buatDefinisiRaw(k).order.put;
+  for (const c of ['customer_name', 'table_number', 'note']) {
+    assert.ok(put.sql.includes(c), `put order tidak menulis ${c}`);
+  }
+  assert.equal(put.params.length, k.order.length);
+});

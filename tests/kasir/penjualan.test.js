@@ -631,6 +631,112 @@ test('⛔ diskon MUNCUL di struk — subtotal kotor tanpa barisnya tidak dapat d
 });
 
 // ---------------------------------------------------------------------------
+// Task 11 — nama pemesan, nomor meja, catatan (P5(b), P6(a))
+// ---------------------------------------------------------------------------
+
+const DATA = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'tanpa es' };
+
+/** Nilai yang di-BIND per nama kolom pada INSERT "order" — bukan per indeks. */
+function kolomOrder(db) {
+  const t = db.state.tulis.find((x) => /INSERT INTO "order"/.test(x.sql));
+  assert.ok(t, 'baris order tidak ditulis');
+  const daftar = /\(([^)]*)\)\s*VALUES/.exec(t.sqlPenuh)[1].split(',').map((c) => c.trim());
+  // Hanya kolom ber-placeholder yang punya parameter; yang literal ('closed', 0) dilewati.
+  const nilai = /VALUES\s*\(([^)]*)\)/.exec(t.sqlPenuh)[1].split(',').map((c) => c.trim());
+  assert.equal(nilai.length, daftar.length, 'jumlah kolom dan nilai INSERT order tidak sama');
+  const hasil = {};
+  let p = 0;
+  daftar.forEach((kol, i) => {
+    hasil[kol] = nilai[i] === '?' ? t.params[p++] : `literal:${nilai[i]}`;
+  });
+  return hasil;
+}
+
+test('⛔ nama, meja, catatan ke kolom order lokal dan muatan outbox; check.label NULL', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db, ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: DATA } }),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  const o = kolomOrder(db);
+  assert.equal(o.customer_name, 'Budi');
+  assert.equal(o.table_number, 'A3');
+  assert.equal(o.note, 'tanpa es');
+
+  const payload = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
+  assert.equal(payload.customerName, 'Budi');
+  assert.equal(payload.tableNumber, 'A3');
+  assert.equal(payload.note, 'tanpa es');
+
+  // ⛔ check.label TETAP NULL — nama pemesan tidak boleh bocor ke sana.
+  const check = db.state.tulis.find((t) => /INSERT INTO "check"/.test(t.sql));
+  assert.match(check.sqlPenuh, /VALUES \(\?, \?, NULL, \?, \?\)/, 'label check bukan literal NULL');
+  assert.ok(!check.params.includes('Budi'), 'nama pemesan masuk ke baris check');
+});
+
+test('⛔ tanpa data pesanan: kolom NULL dan muatan outbox TANPA ketiga field (N-1)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  for (const keranjang of [
+    { baris: BARIS, diskon: null },
+    { baris: BARIS, diskon: null, dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: null } },
+  ]) {
+    const db = dbPalsu();
+    assert.equal((await simpanPenjualan({ db, ...args({ keranjang }) })).status, 'tersimpan');
+    const o = kolomOrder(db);
+    assert.equal(o.customer_name, null);
+    assert.equal(o.table_number, null);
+    assert.equal(o.note, null);
+    const payload = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
+    for (const k of ['customerName', 'tableNumber', 'note']) {
+      assert.ok(!(k in payload), `${k} ikut terkirim padahal kosong — klien N-1 tidak mengirimnya`);
+    }
+  }
+});
+
+test('⛔ data pesanan tidak sah DITOLAK di perangkat dan tidak menulis apa pun', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  for (const dataPesanan of [
+    { namaPemesan: 'a'.repeat(41), nomorMeja: null, catatan: null },
+    { namaPemesan: null, nomorMeja: 'a'.repeat(17), catatan: null },
+    { namaPemesan: null, nomorMeja: null, catatan: 'a'.repeat(141) },
+    { namaPemesan: null, nomorMeja: null, catatan: '4111 1111 1111 1111' },
+  ]) {
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({
+      db, ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan } }),
+    });
+    assert.equal(hasil.status, 'data_pesanan_tidak_sah', `lolos: ${JSON.stringify(dataPesanan)}`);
+    assert.ok(['VALIDATION_ERROR', 'POSSIBLE_CARD_NUMBER'].includes(hasil.kode));
+    assert.equal(db.state.tulis.length, 0, 'penjualan menulis sesuatu padahal data pesanan ditolak');
+  }
+});
+
+test('struk penjualan mencetak "Atas nama", "Meja", "Catatan"', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: DATA } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  assert.equal(hasil.cetak.status, 'tercetak', JSON.stringify(hasil.cetak));
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.match(teks, /Atas nama: Budi/);
+  assert.match(teks, /Meja: A3/);
+  assert.match(teks, /Catatan: tanpa es/);
+});
+
+// ---------------------------------------------------------------------------
 // FR-C2 & FR-C4 — QRIS statis dan EDC di perangkat
 // ---------------------------------------------------------------------------
 //

@@ -448,6 +448,23 @@ raw table yang **ditulis sendiri**. Yang diketahui: `tax_rate.rate`,
 tersimpan sebagai `real` di kolom `INTEGER` — hanya `typeof()` SQLite yang
 membedakannya.
 
+### 7.4 ⛔ Sesudah pembaruan, perangkat mengunduh ulang riwayat (R4, PR 2C Kasir)
+
+Migrasi `0037` menambah tiga kolom ke tabel `order`: nama pemesan, nomor meja,
+catatan. `order` adalah raw table, jadi **sidik jari skema lokal berubah SEKALI**
+dan setiap perangkat menjalankan `disconnectAndClear()` lalu mengunduh ulang
+katalog **dan riwayat penjualannya**. Itu perilaku yang dimaksud (§ 7.1), bukan
+kerusakan.
+
+- **Perangkat yang offline saat pembaruan terpasang berjalan dengan katalog
+  kosong sampai terhubung.** Tidak ada galat — gejalanya sama dengan § 7.2.
+  Kasir harus terhubung sekali agar katalog turun.
+- Outbox (penjualan yang belum terkirim) **tidak tersentuh** migrasi lokal ini.
+- Riwayat K-08 dan cetak ulang K-09 untuk penjualan lama kembali setelah unduh
+  ulang selesai; sebelum itu daftarnya kosong.
+- Order lama tidak punya nama/meja/catatan (kolomnya `NULL`); cetak ulangnya
+  sama seperti dulu.
+
 ---
 
 ## 8. Kas & shift
@@ -781,6 +798,15 @@ berhenti `gagal-permanen` (404). Penjualan tidak terhenti dan jejaknya aman di
 antrean lokal; setelah server diperbarui, putar ulang lewat § 10.1. Gejala dan
 pemulihan: § 8.7 dan § 8.7.1. Klien lama di atas server baru aman (rute
 tambahan, tidak ada yang diubah).
+
+**PR 2C (R8): kolom nama pemesan, nomor meja, catatan.** `POST /orders` kini
+menerima `customerName`, `tableNumber`, `note` (opsional). Urutannya sama:
+**server (termasuk migrasi `0037`) lebih dulu**, klien sesudahnya. Klien baru
+di atas server lama mengirim field yang belum dikenal bersama penjualan; server
+lama mengabaikannya (nama/meja/catatan hilang dari order itu), jadi jangan
+menaikkan tahap klien sebelum server diperbarui. Klien lama di atas server baru
+aman: ketiga field opsional. Dampak di perangkat saat klien baru terpasang:
+§ 7.4.
 
 ---
 

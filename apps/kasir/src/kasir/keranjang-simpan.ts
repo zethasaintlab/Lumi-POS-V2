@@ -1,5 +1,11 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
-import { keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
+import { dataPesananKosong, keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
+import {
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+  rapikanDataPesanan,
+} from '../../../../packages/domain/src/data-pesanan.ts';
 import { kanalSah } from './kanal.ts';
 
 /**
@@ -202,7 +208,31 @@ function uraikan(teks: string): Keranjang | null {
   }
 
   const kosong = keranjangKosong();
-  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal: kanalSah(o.kanal) };
+  return {
+    ...kosong,
+    baris,
+    diskon: diskonSah(o.diskon),
+    kanal: kanalSah(o.kanal),
+    dataPesanan: dataPesananSah(o.dataPesanan),
+  };
+}
+
+/**
+ * ⛔ Setiap bagian diperiksa dengan aturan DOMAIN yang sama dengan dialog dan
+ * server; yang tidak sah (kelewat panjang, nomor kartu, bukan teks) menjadi
+ * `null`, bukan dibawa ke struk. Keranjang lama tanpa field → semua `null`.
+ */
+function dataPesananSah(nilai: unknown): Keranjang['dataPesanan'] {
+  const kosong = dataPesananKosong();
+  if (typeof nilai !== 'object' || nilai === null) return kosong;
+  const d = nilai as Record<string, unknown>;
+  const ambil = (v: unknown, periksa: (x: unknown) => unknown): string | null =>
+    typeof v === 'string' && periksa(v) === null ? rapikanDataPesanan(v) : null;
+  return {
+    namaPemesan: ambil(d.namaPemesan, periksaNamaPemesan),
+    nomorMeja: ambil(d.nomorMeja, periksaNomorMeja),
+    catatan: ambil(d.catatan, periksaCatatan),
+  };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {

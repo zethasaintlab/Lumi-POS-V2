@@ -317,3 +317,29 @@ test('⛔ gantiModifier: cabang PENGGABUNGAN mempertahankan diskon order apa ada
   assert.equal(baru.baris.length, 1, 'fixture: cabang penggabungan tidak berjalan — penjaga hampa');
   assert.equal(baru.diskon, diskon, 'cabang penggabungan gantiModifier menjatuhkan/mengubah diskon order (persetujuan manajer hilang diam-diam)');
 });
+
+// Task 11 (P5(b), P6(a)): data pesanan menempel pada keranjang.
+test('data pesanan: bawaan null; setel merapikan (trim, kosong → null) dan Batalkan mengosongkannya', async () => {
+  const { keranjangKosong, setelDataPesanan, kosongkan, tambah } = await import(MOD);
+  const k0 = keranjangKosong();
+  assert.deepEqual(k0.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+
+  const k1 = setelDataPesanan(k0, { namaPemesan: '  Budi ' });
+  assert.equal(k1.dataPesanan.namaPemesan, 'Budi');
+  assert.equal(k1.dataPesanan.nomorMeja, null);
+  assert.equal(setelDataPesanan(k1, { namaPemesan: '   ' }).dataPesanan.namaPemesan, null);
+
+  const k2 = setelDataPesanan(tambah(k0, { item: ITEM, variation: V1, modifier: [], idBaris: () => 'b1' }), {
+    nomorMeja: '4',
+    catatan: 'pedas',
+  });
+  assert.deepEqual(kosongkan(k2).dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+});
+
+test('⛔ data pesanan TIDAK menempel ke pesanan berikutnya: baris terakhir dihapus → null', async () => {
+  const { keranjangKosong, setelDataPesanan, tambah, hapusBaris } = await import(MOD);
+  let k = tambah(keranjangKosong(), { item: ITEM, variation: V1, modifier: [], idBaris: () => 'b1' });
+  k = setelDataPesanan(k, { namaPemesan: 'Budi', nomorMeja: '4', catatan: 'pedas' });
+  const sisa = hapusBaris(k, 'b1');
+  assert.deepEqual(sisa.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+});

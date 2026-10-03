@@ -32,6 +32,12 @@ import { computeLineTotal, computeOrderTotals } from '../../../../../../packages
 import { calculateTax } from '../../../../../../packages/domain/src/tax.ts';
 import type { TaxBreakdown } from '../../../../../../packages/domain/src/tax.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
+import {
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+  rapikanDataPesanan,
+} from '../../../../../../packages/domain/src/data-pesanan.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // T3, T5, T6, T7, T9, T14 (docs/superpowers/plans/PLAN-ordering-fondasi.md).
@@ -157,6 +163,13 @@ interface OrderInput {
    * sendiri dan menyimpan hitungannya; nilai ini hanya dibandingkan.
    */
   total?: unknown;
+  /**
+   * P5(b), P6(a) — OPSIONAL (klien N-1 tidak mengirimnya). Aturannya satu di
+   * `packages/domain/src/data-pesanan.ts`, dibagi dengan perangkat.
+   */
+  customerName?: unknown;
+  tableNumber?: unknown;
+  note?: unknown;
 }
 
 // --- validasi uang/kuantitas: sama pola dengan assertPriceValid (prices.ts)
@@ -366,12 +379,12 @@ const INSERT_ORDER_SQL = `
     id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
     status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
     rounding_adjustment, total, amount_due, has_calculation_variance, variance_amount,
-    created_by, occurred_at, hlc
+    created_by, occurred_at, hlc, customer_name, table_number, note
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     'open', $9, $10, $18, 0, $11,
     0, $12, $12, $16, $17,
-    $13, COALESCE($14::timestamptz, now()), $15
+    $13, COALESCE($14::timestamptz, now()), $15, $19, $20, $21
   )
   RETURNING *
 `;
@@ -460,6 +473,11 @@ async function insertOrderTree(
       variance.flagged,
       variance.amount === null ? null : variance.amount.toString(),
       orderDiscount.toString(),
+      // P5(b), P6(a) -- sudah divalidasi fail-fast di createOrder; di sini
+      // hanya dirapikan (trim, kosong -> NULL). `check.label` TIDAK diisi.
+      rapikanDataPesanan(body.customerName),
+      rapikanDataPesanan(body.tableNumber),
+      rapikanDataPesanan(body.note),
     ]);
     const orderRow = orderRows[0];
 
@@ -772,6 +790,15 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
       }
       if (body.hlc !== undefined) {
         assertHlcValid(body.hlc);
+      }
+      // P5(b), P6(a) -- ketiganya opsional; galat membawa kode domainnya
+      // (POSSIBLE_CARD_NUMBER berbeda dari VALIDATION_ERROR, FR-C5).
+      const galatDataPesanan =
+        periksaNamaPemesan(body.customerName) ??
+        periksaNomorMeja(body.tableNumber) ??
+        periksaCatatan(body.note);
+      if (galatDataPesanan !== null) {
+        throw new HttpError(400, galatDataPesanan.kode, galatDataPesanan.pesan);
       }
 
       // HLC -- keputusan desain PLAN §"HLC": klien kirim -> update() (menghormati

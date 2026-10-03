@@ -291,3 +291,31 @@ test('⛔ contoh spec-c:376 TETAP mencetak "2x Kopi Susu", bukan "Kopi Susu Regu
   assert.ok(out.includes('2x Kopi Susu'), out);
   assert.ok(!out.includes('Kopi Susu Regular'), `contoh spec berubah:\n${out}`);
 });
+
+// Task 11 (P5(b), P6(a)): "Atas nama", "Meja", "Catatan" sebelum baris item.
+test('⛔ struk mencetak "Atas nama", "Meja", "Catatan", sebelum item, dilipat di 32 kolom', async () => {
+  const catatan = 'tanpa es, gula sedikit, tolong dibungkus terpisah untuk dua gelas';
+  const data = { ...CONTOH, namaPemesan: 'Budi Santoso', nomorMeja: 'A3', catatan };
+  for (const lebar of [32, 48]) {
+    const out = await cetak(data, lebar);
+    const baris = out.split('\n');
+    for (const b of baris) assert.ok(b.length <= lebar, `baris ${b.length} > ${lebar} kolom: ${JSON.stringify(b)}`);
+    const idx = (frag) => baris.findIndex((b) => b.includes(frag));
+    assert.ok(idx('Atas nama: Budi Santoso') >= 0, `"Atas nama" tidak tercetak:\n${out}`);
+    assert.ok(idx('Meja: A3') >= 0, '"Meja" tidak tercetak');
+    assert.ok(idx('Catatan: tanpa es') >= 0, '"Catatan" tidak tercetak');
+    // Seluruh kata catatan ada (dilipat, tidak dipotong).
+    const gabung = baris.join(' ').replace(/\s+/g, ' ');
+    for (const kata of catatan.split(' ')) assert.ok(gabung.includes(kata), `kata "${kata}" hilang dari catatan`);
+    const itemPertama = idx('2x Kopi Susu');
+    assert.ok(idx('Catatan: tanpa es') < itemPertama && idx('Meja: A3') < itemPertama && idx('Atas nama:') < itemPertama,
+      'ketiga baris harus SEBELUM baris item');
+  }
+});
+
+test('struk tanpa nama/meja/catatan: ketiga baris tidak dicetak (spasi saja dan null = kosong)', async () => {
+  for (const data of [CONTOH, { ...CONTOH, namaPemesan: null, nomorMeja: '  ', catatan: undefined }]) {
+    const out = await cetak(data);
+    assert.ok(!/Atas nama|Meja:|Catatan:/.test(out), `baris data pesanan tercetak tanpa isi:\n${out}`);
+  }
+});

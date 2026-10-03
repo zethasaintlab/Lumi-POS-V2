@@ -430,3 +430,52 @@ test('⛔ T5b `telemetry_local` ada di TABEL_LOKAL_SAJA, bukan TABEL_RAW', async
   assert.ok(TABEL_LOKAL_SAJA.includes('telemetry_local'));
   assert.ok(!TABEL_RAW.includes('telemetry_local'));
 });
+
+// Task 11 (R4): P5(b) + P6(a) menambah TIGA kolom ke raw table `order`. Syarat
+// user: merchant membayar ongkos unduh ulang SEKALI. Ketiganya karena itu satu
+// perubahan sidik jari, dan outbox (penjualan yang belum terkirim) tidak
+// tersentuh.
+test('⛔ tiga kolom order baru mengubah sidik jari SEKALI — satu migrasi, bukan tiga', async () => {
+  const { jalankanMigrasi } = await import(MIGRASI);
+  const { sidikJariSkemaLokal } = await import(SKEMA);
+  const baru = sql();
+  const tiga = ['customer_name', 'table_number', 'note'];
+  // DDL sebelum Task 11: tanpa ketiga kolom.
+  const lama = baru.replace(
+    /hlc INTEGER NOT NULL,((?:\s*--[^\n]*)*)\s*customer_name TEXT, table_number TEXT, note TEXT/,
+    'hlc INTEGER NOT NULL$1'
+  );
+  assert.notEqual(lama, baru, 'pola ketiga kolom tidak ditemukan di DDL — penjaga ini hampa');
+  const sidikLama = sidikJariSkemaLokal(lama);
+  const sidikBaru = sidikJariSkemaLokal(baru);
+  assert.notEqual(sidikLama, sidikBaru);
+
+  // Perangkat lama (sidik lama) → TEPAT satu bersihkan + satu DDL + satu simpan.
+  const jejak = [];
+  const ddl = [];
+  await jalankanMigrasi({
+    sqlSkema: baru,
+    bacaSidik: async () => sidikLama,
+    jalankanDdl: async (r) => {
+      jejak.push('ddl');
+      ddl.push(JSON.stringify(r));
+    },
+    bersihkanSync: async () => jejak.push('bersih'),
+    simpanSidik: async (s) => jejak.push(`simpan:${s === sidikBaru}`),
+  });
+  assert.deepEqual(jejak, ['bersih', 'ddl', 'simpan:true']);
+  // Outbox tidak pernah di-drop oleh migrasi ini.
+  assert.ok(!/DROP TABLE[^"]*"outbox_local"/.test(ddl.join('')), 'outbox_local ikut di-drop');
+
+  // Boot berikutnya: sidik sama → tidak ada pembersihan lagi (sekali, bukan tiga).
+  const jejak2 = [];
+  await jalankanMigrasi({
+    sqlSkema: baru,
+    bacaSidik: async () => sidikBaru,
+    jalankanDdl: async () => jejak2.push('ddl'),
+    bersihkanSync: async () => jejak2.push('bersih'),
+    simpanSidik: async () => jejak2.push('simpan'),
+  });
+  assert.deepEqual(jejak2, []);
+  assert.equal(tiga.length, 3);
+});

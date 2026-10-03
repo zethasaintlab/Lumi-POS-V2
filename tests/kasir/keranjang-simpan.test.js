@@ -67,7 +67,12 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
+const KERANJANG = {
+  baris: [baris()],
+  diskon: null,
+  kanal: 'takeaway',
+  dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: null },
+};
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -327,4 +332,36 @@ test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway',
     `UPDATE keranjang_lokal SET isi = '${JSON.stringify({ baris: [baris()], diskon: null, kanal: 'delivery' })}' WHERE id IS NOT NULL`
   );
   assert.equal((await pulihkanKeranjang(d, 's1')).keranjang.kanal, 'takeaway');
+});
+
+test('⛔ data pesanan (nama, meja, catatan) dipulihkan; keranjang lama tanpa field → semua null', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  const dataPesanan = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'tanpa es' };
+  await simpanKeranjang(d, 's1', { ...KERANJANG, dataPesanan }, JAM);
+  const baru = await pulihkanKeranjang(d, 's1');
+  assert.deepEqual(baru.keranjang.dataPesanan, dataPesanan, 'data pesanan hilang saat dipulihkan');
+
+  // Baris yang ditulis versi lama: tanpa `dataPesanan` sama sekali.
+  d.sqlite.exec(
+    `UPDATE keranjang_lokal SET isi = '${JSON.stringify({ baris: [baris()], diskon: null, kanal: 'takeaway' })}' WHERE id IS NOT NULL`
+  );
+  const lama = await pulihkanKeranjang(d, 's1');
+  assert.equal(lama.status, 'dipulihkan');
+  assert.deepEqual(lama.keranjang.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+});
+
+test('⛔ data pesanan yang tidak sah dibuang saat dipulihkan (nomor kartu, kelewat panjang, bukan teks)', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  await simpanKeranjang(d, 's1', KERANJANG, JAM);
+  d.sqlite.exec(
+    `UPDATE keranjang_lokal SET isi = '${JSON.stringify({
+      baris: [baris()], diskon: null, kanal: 'takeaway',
+      dataPesanan: { namaPemesan: '4111 1111 1111 1111', nomorMeja: 'x'.repeat(17), catatan: 42 },
+    })}' WHERE id IS NOT NULL`
+  );
+  const hasil = await pulihkanKeranjang(d, 's1');
+  assert.equal(hasil.status, 'dipulihkan');
+  assert.deepEqual(hasil.keranjang.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
 });
