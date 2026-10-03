@@ -218,12 +218,6 @@ export async function mintaQr({
   idBaru: () => string;
   sekarang: string;
 }): Promise<HasilQr> {
-  // ⛔ Aturan yang sama dengan `simpanPenjualan`, SEBELUM draf disimpan dan SEBELUM POST /orders:
-  // server menolak data pesanan tidak sah dengan 400, dan order yang tidak pernah terbit tidak boleh
-  // meninggalkan draf yang tampak sebagai QR tertunda.
-  const galatData = periksaDataPesanan(dataPesananDari(keranjang));
-  if (galatData !== null) return { status: 'gagal', pesan: galatData.pesan, paymentId: null };
-
   const muatan = muatanOrder({
     orderId: draf.orderId,
     konfig,
@@ -255,6 +249,12 @@ export async function mintaQr({
         'kode QR baru tidak dibuat selama ia belum selesai atau dibatalkan.',
     };
   }
+
+  // ⛔ Aturan yang sama dengan `simpanPenjualan`, SESUDAH pagar `tertunda` dan SEBELUM draf/POST /orders
+  // (server menolak data tak sah dengan 400). Tidak boleh di atas pagar: `gagal` ber-paymentId null
+  // membuat layar memanggil `bersihkanDraf` — menghapus jejak QR payment LAIN.
+  const galatData = periksaDataPesanan(dataPesananDari(keranjang));
+  if (galatData !== null) return { status: 'gagal', pesan: galatData.pesan, paymentId: null };
 
   await simpanDraf(
     db,

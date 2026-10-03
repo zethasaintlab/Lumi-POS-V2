@@ -602,3 +602,33 @@ for (const [nama, kunci, nilai] of [
     assert.equal(await pulihkanDraf(d, 's1'), null, 'draf tersimpan padahal data pesanan tidak sah');
   });
 }
+
+// Fix round 3 (R1): pagar `tertunda` HARUS lebih dulu dari pemeriksaan data pesanan. Hasil `gagal` dengan
+// paymentId null membuat layar memanggil bersihkanDraf — menghapus jejak lokal QR payment LAIN.
+test('⛔ R1: QR pay-1 hidup, permintaan pay-2 dengan catatan bernomor kartu → tertunda, draf pay-1 UTUH', async () => {
+  const { mintaQr, pulihkanDraf } = await import(MOD);
+  const d = db();
+  const kirim1 = pengirim({ '/payments': { status: 201, body: { qrString: 'QR-PAY-1' } } });
+  const pertama = await mintaQr(argMinta(draf(), { db: d, kirim: kirim1 }));
+  assert.equal(pertama.status, 'qr', 'fixture: QR pertama tidak terbit');
+
+  const dipanggil = [];
+  const kirim2 = async (jalur) => {
+    dipanggil.push(jalur);
+    return { status: 201, body: { qrString: 'QR-PAY-2' } };
+  };
+  const kedua = await mintaQr({
+    ...argMinta(draf({ orderId: 'ord-2', checkId: 'chk-2', paymentIds: ['pay-2'] }), { db: d, kirim: kirim2 }),
+    keranjang: { ...KERANJANG, dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: 'kartu 4111 1111 1111 1111' } },
+  });
+  assert.equal(
+    kedua.status,
+    'tertunda',
+    `permintaan kedua = ${kedua.status}: 'gagal' (paymentId null) membuat layar memanggil bersihkanDraf dan MENGHAPUS jejak QR pay-1`
+  );
+  assert.deepEqual(dipanggil, [], 'server dipanggil');
+  const utuh = await pulihkanDraf(d, 's1');
+  assert.ok(utuh !== null, 'draf pay-1 hilang');
+  assert.equal(utuh.paymentId, 'pay-1');
+  assert.equal(utuh.qrString, 'QR-PAY-1', 'QR pay-1 tertimpa/hilang');
+});

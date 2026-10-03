@@ -1739,7 +1739,7 @@ for (const [nama, kunci, nilai] of [
 
 // C5 — spec-first: kunci muatan POST /orders harus DIDEKLARASIKAN di openapi (properti request).
 // Kunci yang tidak dideklarasikan tidak ditolak server, tetapi kontrak berbohong.
-test('⛔ setiap kunci muatanOrder (tingkat atas dan baris) ada di properti request openapi createOrder', async () => {
+test('⛔ setiap kunci TINGKAT ATAS muatanOrder ada di properti request openapi createOrder', async () => {
   const { muatanOrder } = await import(MOD);
   const fs = require('node:fs');
   const path = require('node:path');
