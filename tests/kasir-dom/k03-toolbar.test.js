@@ -33,7 +33,7 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Pesanan tahan',
 ];
 /** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon', 'Batalkan']);
+const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Batalkan']);
 /** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
     Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
 const SEMENTARA = new Set([]);
@@ -110,7 +110,7 @@ after(async () => {
  * karena beberapa test butuh cart TERISI (`keranjang-penuh`).
  */
 async function bukaK03(opsi = {}) {
-  const { keadaan = 'normal', matikan = [] } = opsi;
+  const { keadaan = 'normal', matikan = [], kueri = {} } = opsi;
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
@@ -119,6 +119,7 @@ async function bukaK03(opsi = {}) {
   });
   const q = new URLSearchParams({ layar: 'K-03', keadaan });
   if (matikan.length > 0) q.set('matikan', matikan.join(','));
+  for (const [k, v] of Object.entries(kueri)) q.set(k, String(v));
   await hal.goto(`${alamat}/harness-galeri.html?${q.toString()}`, { waitUntil: 'load' });
   await hal.waitForSelector('.kasir-toolbar', { timeout: 10_000 });
   return { hal, galat };
@@ -133,7 +134,12 @@ test('⛔ toolbar berisi label TERPASANG dalam urutan mockup (ditambah SEMENTARA
     const header = document.querySelector('.kasir-header');
     const tombol = toolbar ? [...toolbar.querySelectorAll('button')] : [];
     return {
-      label: tombol.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
+      /* Nama aksesibel berawalan "Pajak" dipetakan ke label mockup "Pajak": labelnya
+         terlihat kanal aktif (Takeaway / Dine in), Q8 — bukan kata "Pajak". */
+      label: tombol.map((b) => {
+        const nama = b.getAttribute('aria-label');
+        return nama !== null && /^Pajak/.test(nama) ? 'Pajak' : b.innerText.trim().replace(/\s+/g, ' ');
+      }),
       diHeader: header && toolbar ? header.contains(toolbar) : false,
     };
   });
@@ -372,6 +378,140 @@ test('⛔ scanner global mati selama dialog toolbar terbuka', async () => {
     sebelum,
     `keranjang berubah (${sebelum} → ${sesudah}) dari scan yang masuk SELAMA dialog toolbar terbuka — scanner global harus mati`
   );
+});
+
+// ---------------------------------------------------------------------------
+// Task 10 — tombol Pajak = pilihan KANAL (G-KANAL, G-TANPA-LAYANAN; PR 2C)
+// ---------------------------------------------------------------------------
+
+/** Baris ringkasan keranjang: label + nilai, dari `.kasir-subtotal` dan `.kasir-total`. */
+const barisRingkasan = (hal) =>
+  hal.evaluate(() =>
+    [...document.querySelectorAll('.kasir-keranjang .kasir-subtotal, .kasir-keranjang .kasir-total')].map((e) => ({
+      label: e.firstElementChild?.textContent.trim() ?? '',
+      nilai: e.querySelector('.num')?.textContent.trim() ?? '',
+    }))
+  );
+
+const angkaRp = (t) => BigInt(t.replace(/[^\d]/g, '') || '0') * (/^−|^-/.test(t.replace(/\s/g, '').replace(/^\+/, '')) ? -1n : 1n);
+
+async function tungguBarisPajak(hal, nama, ada = true) {
+  await hal
+    .waitForFunction(
+      ([n, a]) => {
+        const ada = [...document.querySelectorAll('.kasir-keranjang .kasir-subtotal')].some(
+          (e) => e.firstElementChild?.textContent.trim() === n
+        );
+        return ada === a;
+      },
+      [nama, ada],
+      { timeout: 5000 }
+    )
+    .catch(() => {});
+}
+
+const tombolPajak = (hal) => hal.getByRole('button', { name: /^Pajak/ });
+
+/** Membuka lembar dan menunggu nama tarif terbaca (bukan "Membaca tarif…"). */
+async function bukaLembarPajak(hal) {
+  assert.equal(await tombolPajak(hal).count(), 1, 'tombol Pajak (nama aksesibel berawalan "Pajak") tidak ada di toolbar');
+  await tombolPajak(hal).click();
+  await hal.waitForSelector('[role="dialog"][aria-label="Pajak pesanan"]', { timeout: 3000 });
+  await hal
+    .waitForFunction(() => !/Membaca tarif/.test(document.querySelector('[role="dialog"]')?.innerText ?? ''), null, {
+      timeout: 5000,
+    })
+    .catch(() => {});
+  return hal.locator('[role="dialog"][aria-label="Pajak pesanan"]');
+}
+
+test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masing-masing; memilih Dine in mengubah baris tarif di keranjang dan label tombol', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', kueri: { tarifKanal: 1 } });
+  await tungguBarisPajak(hal, 'PPN 11%');
+  const awal = (await barisRingkasan(hal)).map((b) => b.label);
+  assert.ok(awal.includes('PPN 11%'), `takeaway (bawaan) tidak menampilkan baris "PPN 11%": ${JSON.stringify(awal)}`);
+  assert.ok(!awal.includes('PBJT 10%'), 'takeaway menampilkan tarif dine_in');
+  assert.equal(await tombolPajak(hal).count(), 1, 'tombol Pajak tidak ada di toolbar');
+  assert.equal(await tombolPajak(hal).getAttribute('aria-label'), 'Pajak: Takeaway');
+
+  const lembar = await bukaLembarPajak(hal);
+  const pilihan = await lembar.locator('.kasir-pilih-kanal button').evaluateAll((b) =>
+    b.map((e) => ({ teks: e.innerText.replace(/\s+/g, ' ').trim(), aktif: e.getAttribute('aria-pressed') }))
+  );
+  assert.equal(pilihan.length, 2, `lembar Pajak berisi ${pilihan.length} pilihan, harap 2 (Takeaway, Dine in)`);
+  assert.ok(/^Takeaway · PPN 11%/.test(pilihan[0].teks), `pilihan Takeaway: ${pilihan[0].teks}`);
+  assert.ok(/^Dine in · PBJT 10%/.test(pilihan[1].teks), `pilihan Dine in: ${pilihan[1].teks}`);
+  assert.equal(pilihan[0].aktif, 'true', 'Takeaway tidak ditandai aktif');
+  assert.equal(pilihan[1].aktif, 'false');
+  assert.ok(/Dipilih/.test(pilihan[0].teks), 'status terpilih hanya warna — tidak ada teks "Dipilih"');
+
+  await lembar.getByRole('button', { name: /^Dine in/ }).click();
+  await tungguBarisPajak(hal, 'PBJT 10%');
+  const sesudah = (await barisRingkasan(hal)).map((b) => b.label);
+  const tombol = await tombolPajak(hal).getAttribute('aria-label');
+  const label = await tombolPajak(hal).innerText();
+  const dialogMasih = await hal.locator('[role="dialog"]').count();
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(dialogMasih, 0, 'lembar Pajak tetap terbuka sesudah memilih kanal');
+  assert.ok(sesudah.includes('PBJT 10%'), `Dine in dipilih tetapi baris "PBJT 10%" tidak muncul: ${JSON.stringify(sesudah)}`);
+  assert.ok(!sesudah.includes('PPN 11%'), 'Dine in dipilih tetapi baris "PPN 11%" (tarif takeaway) masih tampil');
+  assert.equal(tombol, 'Pajak: Dine in', `nama aksesibel tombol: ${tombol}`);
+  assert.equal(label.trim(), 'Dine in', `label terlihat tombol: ${label}`);
+});
+
+test('outlet tanpa tarif per kanal: kedua pilihan menyebut tarif yang sama DAN lembarnya mengatakan itu', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await tungguBarisPajak(hal, 'PPN 11%');
+  const lembar = await bukaLembarPajak(hal);
+  const pilihan = await lembar.locator('.kasir-pilih-kanal button').evaluateAll((b) => b.map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
+  const isi = await lembar.innerText();
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(/^Takeaway · PPN 11%/.test(pilihan[0]), `Takeaway: ${pilihan[0]}`);
+  assert.ok(/^Dine in · PPN 11%/.test(pilihan[1]), `Dine in: ${pilihan[1]}`);
+  assert.match(isi, /Tarif sama untuk kedua kanal\./, 'lembar tidak mengatakan bahwa tarifnya sama');
+});
+
+test('lembar Pajak pada keranjang KOSONG: pilihan kanal tetap ada dan lembar menyebut kenapa nama tarif belum tampil', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal' });
+  const lembar = await bukaLembarPajak(hal);
+  const n = await lembar.locator('.kasir-pilih-kanal button').count();
+  const isi = await lembar.innerText();
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(n, 2, 'keranjang kosong: pilihan kanal hilang');
+  assert.match(isi, /Nama tarif tampil setelah ada item/, 'keadaan kosong lembar tidak dijelaskan');
+});
+
+test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak dan keranjang; total tidak memuat biaya layanan', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', kueri: { tarifKanal: 1, layanan: 1000 } });
+  await tungguBarisPajak(hal, 'PPN 11%');
+  const lembar = await bukaLembarPajak(hal);
+  const teksLembar = await lembar.innerText();
+  await lembar.getByRole('button', { name: /^Dine in/ }).click();
+  await tungguBarisPajak(hal, 'PBJT 10%');
+
+  const rincian = await barisRingkasan(hal);
+  const teksKeranjang = await hal.locator('.kasir-keranjang').innerText();
+  const teksSemua = await hal.evaluate(() => document.body.innerText);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  // Pembanding anti-hampa: Dine in BENAR-BENAR aktif dan tarifnya dine_in.
+  assert.ok(rincian.some((b) => b.label === 'PBJT 10%'), `Dine in tidak aktif (penjaga hampa): ${JSON.stringify(rincian)}`);
+  for (const [nama, teks] of [['lembar Pajak', teksLembar], ['keranjang', teksKeranjang], ['seluruh layar', teksSemua]]) {
+    assert.ok(!/layanan|service/i.test(teks), `${nama} menyiratkan biaya layanan saat Dine in: ${JSON.stringify(teks.match(/.{0,30}(layanan|service).{0,30}/i)?.[0])}`);
+  }
+  // Total = Subtotal − Diskon + pajak eksklusif, tanpa komponen ketiga (biaya layanan).
+  const sub = rincian.find((b) => b.label === 'Subtotal');
+  const total = rincian.find((b) => b.label === 'Total');
+  const pajak = rincian.filter((b) => /^\+/.test(b.nilai.replace(/\s/g, '')) && b.label !== 'Subtotal');
+  const diskon = rincian.filter((b) => /^−/.test(b.nilai.replace(/\s/g, '')));
+  assert.ok(sub && total, `Subtotal/Total tidak terbaca: ${JSON.stringify(rincian)}`);
+  const hitung = angkaRp(sub.nilai) - diskon.reduce((n, b) => n + angkaRp(b.nilai.replace(/^−\s*/, '')), 0n) + pajak.reduce((n, b) => n + angkaRp(b.nilai), 0n);
+  assert.equal(angkaRp(total.nilai), hitung, `Total ${total.nilai} ≠ subtotal − diskon + pajak (${hitung}) — ada komponen ketiga (biaya layanan?) di total`);
 });
 
 // ---------------------------------------------------------------------------

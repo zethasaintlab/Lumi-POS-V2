@@ -2029,3 +2029,23 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* K-03 lembar Pajak — dua pilihan kanal, 56px (menyangkut uang, DS #3). Yang
+   terpilih ditandai garis aksen DAN teks "Dipilih" (DS #5), bukan latar aksen:
+   aksi utama dialog ini tetap "Tutup"-nya layar, tidak ada. */
+.kasir-pilih-kanal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kasir-pilih-kanal button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: left;
+}
+.kasir-pilih-kanal button[aria-pressed="true"] {
+  border: 2px solid var(--primary);
+  color: var(--primary);
+}

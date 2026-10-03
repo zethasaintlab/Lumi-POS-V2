@@ -174,6 +174,88 @@ test('FR-C7: order dine_in memakai tarif all, bukan tarif takeaway', async () =>
   assert.equal(order.taxAmount, 2000, '20.000 x 10%');
 });
 
+// --- Task 10 (PR 2C): kanal dine_in dari perangkat — jalur server ---
+//
+// Fixture yang SAMA dengan tests/kasir/penjualan.test.js (G-KANAL): PBJT 10%
+// khusus dine_in dan PPN 11% `all`, keduanya tingkat tenant. Pembanding
+// perangkat = `calculateTax` langsung, bukan angka yang diketik.
+async function tanpaRls(fn) {
+  await owner.query('BEGIN');
+  try {
+    await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+    await fn(owner);
+    await owner.query('COMMIT');
+  } catch (e) {
+    await owner.query('ROLLBACK');
+    throw e;
+  }
+}
+
+async function pasangTarifKanal() {
+  await akhiriTarifSeed();
+  await buatTarif({ rate: '0.1000', channel: 'dine_in', name: 'PBJT 10%', type: 'pbjt' });
+  await buatTarif({ rate: '0.1100', channel: 'all', name: 'PPN 11%', type: 'ppn' });
+}
+
+async function pajakPerangkat(channel) {
+  const { calculateTax } = await import('../../packages/domain/src/tax.ts');
+  const spek = (id, name, rateScaled, ch) => ({
+    id, name, rateScaled, isInclusive: false, jurisdiction: null, outletId: null,
+    channel: ch, appliesTo: 'all_items', appliesToIds: [],
+  });
+  return calculateTax({
+    lines: [{ lineId: 'x', itemId: 'x', categoryId: null, amount: 20000n }],
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates: [spek('a', 'PBJT 10%', 1000n, 'dine_in'), spek('b', 'PPN 11%', 1100n, 'all')],
+    channel,
+    outletId: base.outlet.id,
+  });
+}
+
+test('⛔ server: channel dine_in memilih tarif dine_in dan tax_amount sama dengan perangkat', async () => {
+  await pasangTarifKanal();
+  const fx = await setupDeviceAndShift();
+  const dine = await pajakPerangkat('dine_in');
+  const bawa = await pajakPerangkat('takeaway');
+  assert.notEqual(dine.totalTax, bawa.totalTax, 'fixture tidak membedakan kanal');
+
+  const orderDine = await buatOrder(fx, { channel: 'dine_in' });
+  assert.equal(orderDine.channel, 'dine_in');
+  assert.equal(BigInt(orderDine.taxAmount), dine.totalTax, 'dine_in = tarif PBJT dine_in');
+  assert.equal(orderDine.lines[0].taxRate, '0.1000');
+
+  const orderBawa = await buatOrder(fx, { channel: 'takeaway' });
+  assert.equal(BigInt(orderBawa.taxAmount), bawa.totalTax, 'takeaway = PPN 11% (all)');
+  assert.equal(orderBawa.lines[0].taxRate, '0.1100');
+});
+
+test('⛔ server: dine_in + service_charge_rate bukan nol → service_charge_amount 0', async () => {
+  await pasangTarifKanal();
+  // FORCE RLS berlaku juga untuk owner: tenant dipasang per transaksi.
+  await tanpaRls(async (c) => {
+    await c.query('UPDATE outlet SET service_charge_rate = 0.1000 WHERE id = $1', [base.outlet.id]);
+  });
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, { channel: 'dine_in' });
+
+  const rows = [];
+  await tanpaRls(async (c) => {
+    const r = await c.query(
+      'SELECT service_charge_amount, subtotal, order_discount, tax_amount, total FROM "order" WHERE id = $1',
+      [order.id]
+    );
+    rows.push(...r.rows);
+  });
+  assert.equal(Number(rows[0].service_charge_amount), 0, 'biaya layanan tertulis nol');
+  const dine = await pajakPerangkat('dine_in');
+  assert.equal(
+    BigInt(rows[0].total),
+    BigInt(rows[0].subtotal) - BigInt(rows[0].order_discount) + dine.totalTaxExclusive,
+    'total = subtotal − diskon + pajak eksklusif, tanpa biaya layanan'
+  );
+});
+
 // --- T12: snapshot kebal perubahan tarif ---
 //
 // INI acceptance criteria FR-C6 kedua, dan alasan seluruh mekanisme snapshot

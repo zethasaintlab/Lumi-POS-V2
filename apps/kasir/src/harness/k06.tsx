@@ -80,8 +80,13 @@ const skenarioUji = (new URLSearchParams(window.location.search).get('skenario')
 const pembulatanMentah = new URLSearchParams(window.location.search).get('pembulatan');
 const pembulatanUji = pembulatanMentah === null || pembulatanMentah === '' ? undefined : Number(pembulatanMentah);
 const modeUji = new URLSearchParams(window.location.search).get('modePembulatan') as 'half_up' | 'up' | 'down' | null;
+/* `?tarifKanal=1&layanan=1000` — tarif per kanal dan outlet ber-`service_charge_rate` (G-KANAL, G-TANPA-LAYANAN). */
+const tarifKanalUji = new URLSearchParams(window.location.search).get('tarifKanal') === '1';
+const layananMentah = new URLSearchParams(window.location.search).get('layanan');
 dbAktif = buatDbPalsu(skenarioUji, {
   matikanFitur: matikan,
+  tarifKanal: tarifKanalUji,
+  layanan: layananMentah ? Number(layananMentah) : undefined,
   pembulatan: pembulatanUji,
   modePembulatan: modeUji ?? undefined,
 });
@@ -100,6 +105,8 @@ function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
   if (jumlahBaris === 0) return keranjangKosong();
   return {
     ...keranjangKosong(),
+    /* `?kanal=dine_in` — kanal keranjang (G-KANAL); selain itu bawaan `takeaway`. */
+    kanal: q.get('kanal') === 'dine_in' ? 'dine_in' : 'takeaway',
     baris: Array.from({ length: jumlahBaris }, (_, i) => ({
       id: `uji-${i}`,
       variationId: `var-${i}`,

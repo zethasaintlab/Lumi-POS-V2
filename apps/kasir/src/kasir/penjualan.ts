@@ -36,6 +36,7 @@ import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
 import type { Keranjang } from './keranjang.ts';
+import { kanalSah } from './kanal.ts';
 
 /**
  * K-06/K-07 — menyimpan penjualan di perangkat.
@@ -383,15 +384,17 @@ export async function hitungKeranjang({
   keranjang,
   shift,
   waktu,
-  channel = 'takeaway',
 }: {
   db: DbLokal;
   konfig: KonfigPerangkat;
   keranjang: Keranjang;
   shift: ShiftAktif;
   waktu: () => Date;
-  channel?: 'dine_in' | 'takeaway';
 }): Promise<HitunganKeranjang> {
+  /* ⛔ Kanal datang dari KERANJANG, tidak dari parameter: dua sumber untuk
+     satu pertanyaan (layar dan jalur tulis) adalah cara tarif di layar
+     menyimpang dari `order.channel` yang tersimpan. */
+  const channel = kanalSah(keranjang.kanal);
   const sekarang = waktu();
   const outlet = (
     await db.getAll<BarisOutlet>(
@@ -654,7 +657,6 @@ export async function simpanPenjualan({
   waktu,
   idBaru,
   hlc,
-  channel = 'takeaway',
   peripheral,
   printerProfile,
   draf,
@@ -674,7 +676,6 @@ export async function simpanPenjualan({
   waktu: () => Date;
   idBaru: () => string;
   hlc: () => bigint;
-  channel?: 'dine_in' | 'takeaway';
   /**
    * Periferal perangkat ini. Boleh TIDAK ADA — merchant yang menjual lewat
    * QRIS tanpa printer adalah kasus nyata, dan aplikasi berjalan penuh di
@@ -703,7 +704,8 @@ export async function simpanPenjualan({
 }): Promise<HasilPenjualan> {
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
 
-  const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu, channel });
+  const channel = kanalSah(keranjang.kanal);
+  const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu });
   const { sekarang, outlet, businessDate, lineTotals, statusDsk, orderDiscount, pajak, totals, lacak } =
     hitung;
 

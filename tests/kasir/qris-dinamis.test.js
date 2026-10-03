@@ -106,7 +106,6 @@ const argMinta = (d, over = {}) => ({
   shiftId: 's1',
   keranjang: KERANJANG,
   draf: d,
-  channel: 'takeaway',
   total: 22000n,
   idBaru: (() => {
     let n = 0;
@@ -517,4 +516,14 @@ test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berb
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: diskon('percent', 1000n, 'lain') }, 20000n), false, 'alasan diskon SAJA berbeda dianggap cocok');
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: null }, 20000n), false, 'diskon dicabut pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tId, { ...KERANJANG, diskon: diskon('percent', 1000n) }, 22000n), false, 'diskon ditambahkan pada total sama dianggap cocok');
+});
+
+test('⛔ G-KANAL: order yang dikirim saat meminta QR membawa kanal KERANJANG (dine_in), bukan literal', async () => {
+  const { mintaQr } = await import(MOD);
+  for (const [kanal, harap] of [['dine_in', 'dine_in'], ['takeaway', 'takeaway'], [undefined, 'takeaway']]) {
+    const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+    await mintaQr({ ...argMinta(draf(), { db: db(), kirim }), keranjang: { ...KERANJANG, kanal } });
+    const order = kirim.dikirim.find((x) => /\/orders$/.test(x.jalur));
+    assert.equal(order.body.channel, harap, `kanal keranjang ${kanal}: order.channel ${order.body.channel} ≠ ${harap}`);
+  }
 });

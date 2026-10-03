@@ -134,11 +134,13 @@ const KLAIM = [
   {
     id: 'ppn-nol-di-fixture',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
-    frasa: '**`ppn` tidak pernah muncul di satu pun fixture. Nol.**',
-    harap: 0,
+    frasa: '**`ppn` muncul di 3 literal fixture test (dipenuhi 3 Oktober 2026).**',
+    harap: 3,
     // ⛔ Ini yang paling penting di registri: ia berubah menjadi bukan-nol
-    // tepat pada hari gerbang K-06/K-07 dipenuhi, dan pada hari itu KEDUA
-    // dokumen harus ikut berubah.
+    // tepat pada hari gerbang K-06/K-07 dipenuhi (Task 10, PR 2C), dan pada
+    // hari itu KEDUA dokumen berubah. Kini 3: penjualan.test.js,
+    // tax-in-orders.test.js, tax.test.js — angka yang BERGESER bila fixture
+    // ppn dihapus, dan itulah yang dijaga.
     // ⛔ Berkas INI dikecualikan. Versi pertama menghitung 1 — dan yang satu
     // itu adalah string `'ppn'` di dalam pengukurnya sendiri. Penjaga yang
     // mengukur dirinya sendiri melaporkan dunia yang ia ciptakan.

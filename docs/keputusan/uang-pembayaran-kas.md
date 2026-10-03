@@ -284,6 +284,8 @@ menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
 
 Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
 
+**Fixture #1 dipenuhi 3 Oktober 2026 (Task 10, PR 2C).** `tax_rate.type = 'ppn'` 11% (rate 1100, skala 10.000) kini ada di `tests/domain/tax.test.js` (eksklusif dan inklusif, diskon order), `tests/kasir/penjualan.test.js` (G-KANAL) dan `tests/payment/tax-in-orders.test.js`. `TaxCalculator` menanganinya tanpa perubahan; tidak ada bug uang. Fixture #2 terpenuhi SEPARUH: `channel = 'dine_in'` kini diuji di perangkat, server, dan K-06/K-07; `service_charge_amount != 0` **belum** — biaya layanan terkunci nol di klien dan server, dan membangunnya menunggu jawaban Q2. Yang diuji sebagai gantinya (G-TANPA-LAYANAN): Dine in dengan `outlet.service_charge_rate` bukan nol tetap menulis `service_charge_amount = 0`.
+
 
 ### Transfer sebagai metode keempat (PR 2B Task 7, 30 September 2026)
 

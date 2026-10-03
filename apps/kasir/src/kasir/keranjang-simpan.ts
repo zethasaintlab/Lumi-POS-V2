@@ -1,5 +1,6 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
+import { kanalSah } from './kanal.ts';
 
 /**
  * KEP-21 — keranjang K-03 yang BERTAHAN melewati muat ulang.
@@ -201,7 +202,7 @@ function uraikan(teks: string): Keranjang | null {
   }
 
   const kosong = keranjangKosong();
-  return { ...kosong, baris, diskon: diskonSah(o.diskon) };
+  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal: kanalSah(o.kanal) };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {

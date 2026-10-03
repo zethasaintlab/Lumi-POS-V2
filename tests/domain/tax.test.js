@@ -433,3 +433,38 @@ test('nilai number (bukan bigint) ditolak -- float tidak boleh masuk jalur pajak
     /bigint/i
   );
 });
+
+// --- Fixture #1 (docs/keputusan/uang-pembayaran-kas.md): tax_rate.type = ppn ---
+//
+// ⛔ Jenis tarif tidak masuk `TaxRateSpec` — `calculateTax` hanya melihat tarif,
+// bukan jenisnya. Yang diuji di sini adalah angkanya: 11% berskala 10.000
+// (1100n), tidak pernah 0.11.
+const PPN_11 = { ...PBJT_10, id: 'rate-ppn-11', name: 'PPN 11%', type: 'ppn', rateScaled: 1100n };
+
+test('⛔ fixture #1: tax_rate type ppn 11% (rate 1100 berskala 10.000) dihitung TaxCalculator', async () => {
+  const { calculateTax } = await import(MOD);
+  const masuk = {
+    lines: [baris('a', 60000n), baris('b', 30000n)],
+    serviceChargeAmount: 0n,
+    orderDiscount: 9000n,
+    channel: 'takeaway',
+    outletId: 'outlet-1',
+  };
+
+  // Eksklusif: dasar = 90.000 − 9.000 = 81.000; pajak = 81.000 × 11% = 8.910.
+  const eks = calculateTax({ ...masuk, taxRates: [PPN_11] });
+  assert.equal(eks.totalTax, 8910n);
+  assert.equal(eks.totalTaxExclusive, 8910n, 'eksklusif menambah total');
+  assert.equal(eks.lines[0].base, 81000n);
+  assert.equal(eks.lines[0].name, 'PPN 11%');
+
+  // Inklusif: 81.000 − 81.000/1,11 = 81.000 − 72.973 (72.972,97 dibulatkan) = 8.027.
+  const inkl = calculateTax({ ...masuk, taxRates: [{ ...PPN_11, isInclusive: true }] });
+  assert.equal(inkl.totalTax, 8027n);
+  assert.equal(inkl.totalTaxExclusive, 0n, 'inklusif tidak menambah total');
+
+  // Kedua baris tetap menjumlah ke total pajak (tidak ada sen yatim).
+  const jumlah = (b) => b.perLine.reduce((n, l) => n + l.amount, 0n);
+  assert.equal(jumlah(eks), eks.totalTax);
+  assert.equal(jumlah(inkl), inkl.totalTax);
+});

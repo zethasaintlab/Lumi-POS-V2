@@ -90,7 +90,14 @@ dengan "52 layar" dan "414 AC".
 
 ### ⛔ Temuan terbesar, dan ia bukan metode pembayaran
 
-**`ppn` tidak pernah muncul di satu pun fixture. Nol.**
+**`ppn` muncul di 3 literal fixture test (dipenuhi 3 Oktober 2026).**
+
+Dipenuhi Task 10 (PR 2C, tombol Pajak = pilihan kanal): `tax.test.js` (fixture
+#1, eksklusif dan inklusif, dengan diskon order), `penjualan.test.js`
+(G-KANAL, PPN 11% `all` melawan PBJT 10% `dine_in`), dan `tax-in-orders.test.js`
+(server). `TaxCalculator` menangani `ppn` 11% tanpa perubahan. Sampai 2
+September 2026 angkanya NOL; paragraf berikut ini adalah temuan audit itu,
+dibiarkan sebagai riwayat:
 
 `tax_rate.type` punya empat nilai (`pbjt`, `ppn`, `service_charge`, `none`) dan
 hanya `pbjt` yang pernah diuji. PPN adalah **pajak nasional 11%** — jenis pajak

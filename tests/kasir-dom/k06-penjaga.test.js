@@ -1902,3 +1902,43 @@ test('⛔ S9: kotak Kembalian HANYA di tab Tunai — tab QRIS/Kartu/Transfer tan
     await hal.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Task 10 (PR 2C) — kanal keranjang sampai ke K-06/K-07 dan ke order tersimpan
+// ---------------------------------------------------------------------------
+
+test('⛔ G-KANAL + G-TANPA-LAYANAN: keranjang dine_in → Total dari jalur hitung kanal dine_in, order.channel dine_in, dan tidak ada teks /layanan|service/i di K-06 maupun K-07 (outlet ber-service_charge_rate)', async () => {
+  /* Pembanding tulis-tangan (oracle bebas): 85.000 + PBJT 10% (dine_in) = 93.500; takeaway memakai PPN 11% = 94.350
+     (angka yang sama dipakai G-NOMINAL di atas). Fixture galeri `tarifKanal` + `layanan` (10%). */
+  const hasil = {};
+  for (const [kanal, kueri] of [
+    ['dine_in', 'render=k06&baris=1&harga=85000&kanal=dine_in&tarifKanal=1&layanan=1000'],
+    ['takeaway', 'render=k06&baris=1&harga=85000&tarifKanal=1&layanan=1000'],
+  ]) {
+    const hal = await buka(kueri);
+    try {
+      const total = await nilaiTotal(hal);
+      // Diperiksa SEBELUM berinteraksi: total yang salah membuat "Konfirmasi bayar" nonaktif
+      // (100.000 tidak cukup), dan kegagalannya jadi timeout klik, bukan pesan ini.
+      const harapTotal = kanal === 'dine_in' ? 93_500n : 94_350n;
+      assert.equal(total, harapTotal, `K-06 ${kanal}: Total ${total} ≠ ${harapTotal} — kanal keranjang tidak sampai ke hitungan, atau ada komponen ketiga (biaya layanan?)`);
+      const teksK06 = await teks(hal);
+      await hal.getByLabel('Nominal diterima').fill('100.000');
+      await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+      await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+      const teksK07 = await teks(hal);
+      const order = (await tulisan(hal)).find((t) => /^INSERT INTO "order"/i.test(t.sql));
+      hasil[kanal] = { total, teksK06, teksK07, channel: order?.params[8], tax: order?.params[11] };
+    } finally {
+      await hal.close();
+    }
+  }
+  assert.equal(hasil.dine_in.total, 93_500n, `K-06 dine_in: Total ${hasil.dine_in.total} ≠ 93500 (85.000 + PBJT 10%) — kanal keranjang tidak sampai ke hitungan`);
+  assert.equal(hasil.takeaway.total, 94_350n, `K-06 takeaway: Total ${hasil.takeaway.total} ≠ 94350 (85.000 + PPN 11%)`);
+  assert.equal(hasil.dine_in.channel, 'dine_in', `order.channel tersimpan "${hasil.dine_in.channel}" untuk keranjang dine_in`);
+  assert.equal(hasil.takeaway.channel, 'takeaway');
+  assert.equal(String(hasil.dine_in.tax), '8500', 'order.tax_amount dine_in ≠ 8500 (PBJT 10% × 85.000)');
+  for (const [nama, t] of [['K-06', hasil.dine_in.teksK06], ['K-07', hasil.dine_in.teksK07]]) {
+    assert.ok(!/layanan|service/i.test(t), `${nama} menyiratkan biaya layanan saat Dine in: ${JSON.stringify(t.match(/.{0,30}(layanan|service).{0,30}/i)?.[0])}`);
+  }
+});

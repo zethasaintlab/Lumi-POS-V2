@@ -29,14 +29,15 @@ const DOMAIN_SRC = path.join(__dirname, '../../packages/domain/src');
 // Satu-satunya file yang BOLEH memuat aritmetika tarif.
 const TAX_MODULE = path.join(DOMAIN_SRC, 'tax.ts');
 
-async function collectTsFiles(dir) {
+async function collectTsFiles(dir, { ekstensi = /\.ts$/, lewatiDir = [] } = {}) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...(await collectTsFiles(full)));
-    } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      if (lewatiDir.includes(entry.name)) continue;
+      files.push(...(await collectTsFiles(full, { ekstensi, lewatiDir })));
+    } else if (entry.isFile() && ekstensi.test(entry.name)) {
       files.push(full);
     }
   }
@@ -67,8 +68,8 @@ function stripComments(source) {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-async function scan(dir) {
-  const files = await collectTsFiles(dir);
+async function scan(dir, opsi) {
+  const files = await collectTsFiles(dir, opsi);
   const findings = [];
   for (const file of files) {
     if (path.resolve(file) === path.resolve(TAX_MODULE)) continue;
@@ -93,6 +94,23 @@ test('invariant #7: tidak ada angka tarif pajak di apps/server', async () => {
 test('invariant #7: tidak ada angka tarif pajak di packages/domain selain tax.ts', async () => {
   const { files, findings } = await scan(DOMAIN_SRC);
   assert.ok(files.length > 1, 'packages/domain/src harus punya lebih dari satu file -- guard lulus vakum');
+  assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
+});
+
+// Task 10 (PR 2C): lembar Pajak dan `kasir/kanal.ts` hidup di apps/kasir — jalur
+// hitung dan layar kasir, yang dua guard di atas tidak pernah melihat.
+// `galeri/` dan `harness/` DIKECUALIKAN: keduanya fixture/skenario (nama tarif
+// "PPN 11%", persentase batang skenario) dan bukan jalur hitung.
+const KASIR_SRC = path.join(__dirname, '../../apps/kasir/src');
+
+test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src (di luar galeri dan harness)', async () => {
+  const { files, findings } = await scan(KASIR_SRC, { ekstensi: /\.tsx?$/, lewatiDir: ['galeri', 'harness'] });
+  assert.ok(files.length > 50, `hanya ${files.length} berkas di apps/kasir/src -- guard lulus vakum`);
+  assert.ok(
+    files.some((f) => f.endsWith(path.join('kasir', 'kanal.ts'))) &&
+      files.some((f) => f.endsWith('LembarKanal.tsx')),
+    'kanal.ts / LembarKanal.tsx tidak ikut terpindai'
+  );
   assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
 });
 
