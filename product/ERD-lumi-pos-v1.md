@@ -296,6 +296,9 @@ Sengaja **bukan** `tenant.default_vertical_profile_id`: itu membuat siklus FK `t
 | `has_calculation_variance` | bool | Ditandai server (FR-H6) |
 | `variance_amount` | bigint nullable | |
 | `voided_by_order_id` | ulid nullable | Menunjuk record void |
+| `customer_name` | text nullable | **Nama saja, tanpa telepon.** `CHECK length ≤ 40`. Tercetak sebagai "Atas nama" (P5(b), migrasi `0037`) |
+| `table_number` | text nullable | `CHECK length ≤ 16` `[ASUMSI]`, mis. "4", "A3". **Data**, bukan manajemen meja (v1.1). Tercetak sebagai "Meja" (P5(b), `0037`) |
+| `note` | text nullable | Catatan pesanan, `CHECK length ≤ 140`. Tercetak sebagai "Catatan" (P6(a), `0037`) |
 | `created_by`, `occurred_at`, `recorded_at`, `hlc` | | |
 
 ### `check`
