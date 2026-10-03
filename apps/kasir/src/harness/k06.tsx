@@ -92,6 +92,8 @@ dbAktif = buatDbPalsu(skenarioUji, {
 });
 
 const q = new URLSearchParams(window.location.search);
+/* Dibaca test: kanal keranjang SEKARANG (kanal tidak boleh menempel ke transaksi berikutnya). */
+(window as unknown as { __kanalKini: () => string }).__kanalKini = () => keranjangSekarang().kanal;
 
 /**
  * Keranjang yang dipasang sebelum mount.

@@ -318,3 +318,14 @@ test('⛔ cetak ulang transfer menyebut "Transfer", bukan "Lainnya", dan sama de
   db.sqlite.exec(`UPDATE payment SET provider = NULL`);
   assert.ok((await cetak(db)).includes('Lainnya'), 'other tanpa provider harus tetap Lainnya');
 });
+
+test('⛔ cetak ulang membawa KANAL order: dine_in → "Dine-in", takeaway → "Takeaway"', async () => {
+  for (const [kanal, harap, bukan] of [['dine_in', 'Dine-in', 'Takeaway'], ['takeaway', 'Takeaway', 'Dine-in']]) {
+    const db = dbSungguhan();
+    isiOrder(db);
+    db.sqlite.exec(`UPDATE "order" SET channel = '${kanal}' WHERE id = 'ord-1'`);
+    const out = await cetak(db);
+    assert.ok(out.includes(harap), `order ${kanal}: struk cetak ulang tidak menyebut "${harap}"`);
+    assert.equal(out.includes(bukan), false, `order ${kanal}: struk cetak ulang menyebut kanal lain ("${bukan}")`);
+  }
+});

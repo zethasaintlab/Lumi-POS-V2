@@ -90,12 +90,12 @@ dengan "52 layar" dan "414 AC".
 
 ### ⛔ Temuan terbesar, dan ia bukan metode pembayaran
 
-**`ppn` muncul di 3 literal fixture test (dipenuhi 3 Oktober 2026).**
+**`ppn` muncul di 4 literal fixture test (dipenuhi 3 Oktober 2026).**
 
 Dipenuhi Task 10 (PR 2C, tombol Pajak = pilihan kanal): `tax.test.js` (fixture
 #1, eksklusif dan inklusif, dengan diskon order), `penjualan.test.js`
-(G-KANAL, PPN 11% `all` melawan PBJT 10% `dine_in`), dan `tax-in-orders.test.js`
-(server). `TaxCalculator` menangani `ppn` 11% tanpa perubahan. Sampai 2
+(G-KANAL, PPN 11% `all` melawan PBJT 10% `dine_in`), `tax-in-orders.test.js`
+(server), dan `calculation-variance.test.js` (hitungan ulang versi klien per kanal). `TaxCalculator` menangani `ppn` 11% tanpa perubahan. Sampai 2
 September 2026 angkanya NOL; paragraf berikut ini adalah temuan audit itu,
 dibiarkan sebagai riwayat:
 

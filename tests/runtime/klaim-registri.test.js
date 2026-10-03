@@ -134,12 +134,12 @@ const KLAIM = [
   {
     id: 'ppn-nol-di-fixture',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
-    frasa: '**`ppn` muncul di 3 literal fixture test (dipenuhi 3 Oktober 2026).**',
-    harap: 3,
+    frasa: '**`ppn` muncul di 4 literal fixture test (dipenuhi 3 Oktober 2026).**',
+    harap: 4,
     // ⛔ Ini yang paling penting di registri: ia berubah menjadi bukan-nol
     // tepat pada hari gerbang K-06/K-07 dipenuhi (Task 10, PR 2C), dan pada
-    // hari itu KEDUA dokumen berubah. Kini 3: penjualan.test.js,
-    // tax-in-orders.test.js, tax.test.js — angka yang BERGESER bila fixture
+    // hari itu KEDUA dokumen berubah. Kini 4: penjualan.test.js,
+    // tax-in-orders.test.js, tax.test.js, calculation-variance.test.js — angka yang BERGESER bila fixture
     // ppn dihapus, dan itulah yang dijaga.
     // ⛔ Berkas INI dikecualikan. Versi pertama menghitung 1 — dan yang satu
     // itu adalah string `'ppn'` di dalam pengukurnya sendiri. Penjaga yang

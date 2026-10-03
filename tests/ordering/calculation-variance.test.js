@@ -443,3 +443,38 @@ test('harga usang dengan total yang konsisten dengannya tetap tidak ditandai', a
   const rows = await query('SELECT total FROM "order" WHERE id = $1', [JSON.parse(res.body).id]);
   assert.equal(rows[0].total, '50000', 'yang tersimpan tetap hitungan server: 2 x 25000');
 });
+
+// ============================================================
+// Task 10 (PR 2C) -- kanal ikut hitungan ulang versi klien
+// ============================================================
+
+// Outlet bertarif per kanal: PBJT 10% khusus dine_in, PPN 11% `all`. Perangkat
+// berharga basi (10.000, harga sah sekarang 25.000) menghitung total KONSISTEN
+// dengan harganya sendiri DAN kanalnya. Hitungan ulang versi klien yang memaku
+// kanal takeaway memberi PPN 11% untuk order dine_in, dan order yang normal
+// ditandai selisih lalu masuk laporan exception (FR-H6, spec-h:97).
+test('⛔ kanal dine_in: harga basi + total konsisten dengan tarif KANAL-nya tidak ditandai selisih (dan takeaway sebaliknya)', async () => {
+  for (const kanal of ['dine_in', 'takeaway']) {
+    await resetAll(owner);
+    base = await seedTenantBase(appSetup, { suffix: 'VarianceKanal' });
+    tenant = base.tenant;
+    await akhiriTarifSeed();
+    for (const t of [
+      { rate: '0.1000', name: 'PBJT 10%', type: 'pbjt', channel: 'dine_in' },
+      { rate: '0.1100', name: 'PPN 11%', type: 'ppn', channel: 'all' },
+    ]) {
+      const r = await req('POST', '/tax-rates', { id: crypto.randomUUID(), isInclusive: false, ...t });
+      assert.equal(r.statusCode, 201, r.body);
+    }
+    const fx = await setupDeviceAndShift();
+    const v = await buatVariation(10000);
+    const sekarang = await jamDatabase();
+    await ubahHarga(v, 25000, geser(sekarang, -60));
+
+    // Total klien: harga basi 10.000 + pajak kanalnya (10% dine_in -> 11.000; 11% takeaway -> 11.100).
+    const totalKlien = kanal === 'dine_in' ? 11000 : 11100;
+    const res = await buatOrder(fx, [baris(v.variationId, { unitPrice: 10000 })], { total: totalKlien, channel: kanal });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(JSON.parse(res.body).hasCalculationVariance, false, `${kanal}: order normal ditandai selisih — hitungan ulang versi klien memakai kanal yang salah`);
+  }
+});

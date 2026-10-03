@@ -515,6 +515,62 @@ test('lembar Pajak keadaan MEMUAT dan GALAT: pilihan kanal tetap ada dan dapat d
   }
 });
 
+/** K-03 galeri ber-tarif per kanal, kanal Dine in dipilih lewat lembar Pajak. */
+async function bukaDineIn() {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', kueri: { tarifKanal: 1 } });
+  await tungguBarisPajak(hal, 'PPN 11%');
+  const lembar = await bukaLembarPajak(hal);
+  await lembar.getByRole('button', { name: /^Dine in/ }).click();
+  await tungguBarisPajak(hal, 'PBJT 10%');
+  assert.equal(await tombolPajak(hal).getAttribute('aria-label'), 'Pajak: Dine in', 'prasyarat hampa: Dine in tidak terpilih');
+  return { hal, galat };
+}
+
+test('⛔ kanal TIDAK menempel sesudah Batalkan: keranjang kosong kembali ber-kanal takeaway', async () => {
+  const { hal } = await bukaDineIn();
+  await hal.getByRole('button', { name: 'Batalkan', exact: true }).click();
+  await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
+  const nama = await tombolPajak(hal).getAttribute('aria-label');
+  await hal.close();
+  assert.equal(nama, 'Pajak: Takeaway', `sesudah Batalkan kanal masih "${nama}" — kanal pesanan yang dibatalkan menempel ke pesanan berikutnya`);
+});
+
+test('⛔ G-BATAL-AUDIT dengan Dine in: total audit cart_cleared = Total yang tampil (termasuk PBJT dine_in)', async () => {
+  const { hal } = await bukaDineIn();
+  const total = (await barisRingkasan(hal)).find((b) => b.label === 'Total').nilai.replace(/\D/g, '');
+  await hal.getByRole('button', { name: 'Batalkan', exact: true }).click();
+  await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
+  const a = audit(await bacaTulis(hal));
+  await hal.close();
+  assert.equal(a.length, 1, `audit_event: ${a.length}, harap 1`);
+  const after = JSON.parse(a[0].params[7]);
+  assert.equal(after.total, total, `total audit ${after.total} != Total yang tampil ${total} (Dine in) — total dihitung dengan kanal lain`);
+});
+
+test('⛔ lembar Pajak DIBUKA LAGI sesudah Dine in dipilih: Dine in aria-pressed + "Dipilih", Takeaway tidak; tanpa teks layanan/service', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', kueri: { tarifKanal: 1, layanan: 1000 } });
+  await tungguBarisPajak(hal, 'PPN 11%');
+  const l1 = await bukaLembarPajak(hal);
+  await l1.getByRole('button', { name: /^Dine in/ }).click();
+  await tungguBarisPajak(hal, 'PBJT 10%');
+  const lembar = await bukaLembarPajak(hal);
+  const pilihan = await lembar.locator('.kasir-pilih-kanal button').evaluateAll((b) =>
+    b.map((e) => ({ teks: e.innerText.replace(/\s+/g, ' ').trim(), aktif: e.getAttribute('aria-pressed') }))
+  );
+  const isi = await lembar.innerText();
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  const [takeaway, dine] = pilihan;
+  assert.ok(/^Takeaway/.test(takeaway.teks) && /^Dine in/.test(dine.teks), `urutan pilihan: ${JSON.stringify(pilihan)}`);
+  assert.equal(dine.aktif, 'true', 'Dine in dipilih tetapi aria-pressed bukan true');
+  assert.equal(takeaway.aktif, 'false', 'Takeaway masih aria-pressed true padahal Dine in dipilih');
+  assert.ok(/Dipilih/.test(dine.teks), 'Dine in aktif tanpa teks "Dipilih"');
+  assert.ok(!/Dipilih/.test(takeaway.teks), 'Takeaway ditandai "Dipilih" padahal bukan kanal aktif');
+  assert.ok(!/layanan|service/i.test(isi), `lembar (Dine in aktif) menyiratkan biaya layanan: ${JSON.stringify(isi.match(/.{0,30}(layanan|service).{0,30}/i)?.[0])}`);
+});
+
 test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak dan keranjang; total tidak memuat biaya layanan', async () => {
   const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', kueri: { tarifKanal: 1, layanan: 1000 } });
   await tungguBarisPajak(hal, 'PPN 11%');

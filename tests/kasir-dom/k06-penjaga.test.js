@@ -1942,3 +1942,18 @@ test('⛔ G-KANAL + G-TANPA-LAYANAN: keranjang dine_in → Total dari jalur hitu
     assert.ok(!/layanan|service/i.test(t), `${nama} menyiratkan biaya layanan saat Dine in: ${JSON.stringify(t.match(/.{0,30}(layanan|service).{0,30}/i)?.[0])}`);
   }
 });
+
+test('⛔ kanal TIDAK menempel: sesudah penjualan dine_in selesai dan "Transaksi Baru" ditekan, keranjang baru ber-kanal takeaway', async () => {
+  const hal = await buka('render=k06&baris=1&harga=85000&kanal=dine_in&tarifKanal=1');
+  try {
+    assert.equal(await hal.evaluate(() => window.__kanalKini()), 'dine_in', 'prasyarat hampa: keranjang uji tidak ber-kanal dine_in');
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    await hal.getByRole('button', { name: 'Transaksi Baru' }).click();
+    const kanal = await hal.evaluate(() => window.__kanalKini());
+    assert.equal(kanal, 'takeaway', `keranjang transaksi berikutnya ber-kanal "${kanal}" — kanal pesanan sebelumnya menempel dan menagih tarif yang salah`);
+  } finally {
+    await hal.close();
+  }
+});

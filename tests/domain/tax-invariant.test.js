@@ -114,6 +114,40 @@ test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src (di luar galer
   assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
 });
 
+// Bentuk lain yang lolos dari pola di atas (fix round 2 Task 10, sabotase independen):
+// tarif berskala (`10_000n`), pembagian persen (`* 11n) / 100n`), tulisan "11 persen" —
+// dan `kanal.ts`/`LembarKanal.tsx` tidak punya alasan memuat LITERAL bigint apa pun
+// (`1000n` = 10% berskala dan skala kuantitas samar, jadi di kedua berkas itu dilarang total).
+const POLA_BENTUK_LAIN = /(?<![\w.])10_?000n|\/\s*100n|\d{1,2}\s*persen/gi;
+const POLA_BIGINT = /(?<![\w.])\d[\d_]*n\b/g;
+
+test('invariant #7: apps/kasir/src tanpa tarif berskala, pembagian 100n, atau "N persen"; kanal.ts dan LembarKanal.tsx tanpa literal bigint', async () => {
+  const files = await collectTsFiles(KASIR_SRC, { ekstensi: /\.tsx?$/, lewatiDir: ['galeri', 'harness'] });
+  const temuan = [];
+  for (const f of files) {
+    const kode = stripComments(await readFile(f, 'utf8'));
+    const rel = path.relative(process.cwd(), f);
+    for (const [pola, nama] of [[POLA_BENTUK_LAIN, 'bentuk tarif'], ...(/kanal\.ts$|LembarKanal\.tsx$/.test(f) ? [[POLA_BIGINT, 'literal bigint']] : [])]) {
+      pola.lastIndex = 0;
+      const m = kode.match(pola);
+      if (m !== null) temuan.push(`${rel}: ${nama}: ${[...new Set(m)].join(', ')}`);
+    }
+  }
+  assert.ok(files.length > 50);
+  assert.deepEqual(temuan, [], `angka tarif pajak di luar TaxCalculator:\n${temuan.join('\n')}`);
+});
+
+test('sentinel: pola bentuk lain menangkap yang dilarang dan tidak menangkap yang sah', () => {
+  for (const x of ['const t = 10_000n;', 'const p = (a * 11n) / 100n;', "const n = 'PPN 11 persen';"]) {
+    POLA_BENTUK_LAIN.lastIndex = 0;
+    assert.ok(POLA_BENTUK_LAIN.test(x), `pola gagal menangkap: ${x}`);
+  }
+  for (const x of ['const MILLI = 1000n;', 'const n = 100;', "const s = 'persentase';"]) {
+    POLA_BENTUK_LAIN.lastIndex = 0;
+    assert.equal(POLA_BENTUK_LAIN.test(x), false, `pola salah menangkap: ${x}`);
+  }
+});
+
 // Kedua sentinel di bawah membuktikan POLANYA sendiri benar. Guard yang lolos
 // karena regex-nya tidak pernah match apa pun sama tidak bergunanya dengan
 // guard yang lolos karena daftar filenya kosong.
