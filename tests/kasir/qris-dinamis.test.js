@@ -546,3 +546,20 @@ test('⛔ G-KANAL: draf QRIS takeaway TIDAK cocok dengan keranjang dine_in walau
     'draf takeaway dianggap cocok dengan keranjang dine_in — perangkat menulis order dine_in sementara server takeaway (kanal tidak dibandingkan)'
   );
 });
+
+test('⛔ draf QRIS dengan nama/meja/catatan lama TIDAK cocok dengan keranjang yang datanya diubah (Task 11)', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  const dp = { namaPemesan: 'Budi', nomorMeja: '5', catatan: null };
+  await mintaQr({ ...argMinta(draf(), { db: d, kirim }), keranjang: { ...KERANJANG, dataPesanan: dp } });
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(tersimpan.muatan.customerName, 'Budi', 'fixture: muatan draf tanpa customerName');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, dataPesanan: dp }, 22000n), true, 'pembanding hampa: data SAMA dianggap berbeda');
+  assert.equal(
+    drafCocokKeranjang(tersimpan, { ...KERANJANG, dataPesanan: { ...dp, namaPemesan: 'Andi' } }, 22000n),
+    false,
+    'draf bernama Budi dianggap cocok dengan keranjang bernama Andi — struk lokal dan server berbeda'
+  );
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, dataPesanan: { ...dp, catatan: 'pedas' } }, 22000n), false, 'catatan tidak dibandingkan');
+});

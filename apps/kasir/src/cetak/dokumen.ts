@@ -55,6 +55,13 @@ export interface DataStruk {
   waktu: string;
   namaKasir: string;
   channel: 'dine_in' | 'takeaway';
+  /**
+   * P5(b)/P6(a) — dari `order.customer_name`/`table_number`/`note`. Opsional;
+   * kosong atau spasi saja tidak mencetak baris apa pun.
+   */
+  namaPemesan?: string | null;
+  nomorMeja?: string | null;
+  catatan?: string | null;
   baris: readonly BarisStrukOrder[];
   subtotal: number;
   diskon: number;
@@ -113,6 +120,17 @@ export function bangunDokumenStruk(data: DataStruk): ReceiptDocument {
   // sama dapat menagih dua kali, dan tidak ada yang dapat membuktikan mana
   // yang asli.
   if (data.cetakUlang) baris.push({ jenis: 'teks', isi: '** CETAK ULANG **', rata: 'tengah' });
+
+  // ⛔ Teks, bukan duaKolom: `teks` DILIPAT di batas kata, sedangkan `duaKolom` memotong kiri.
+  // Catatan yang terpotong di 32 kolom berarti pesanan salah dibuat.
+  for (const [label, nilai] of [
+    ['Atas nama', data.namaPemesan],
+    ['Meja', data.nomorMeja],
+    ['Catatan', data.catatan],
+  ] as const) {
+    const t = (nilai ?? '').trim();
+    if (t !== '') baris.push({ jenis: 'teks', isi: `${label}: ${t}` });
+  }
 
   baris.push({ jenis: 'garis' });
 

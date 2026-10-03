@@ -67,7 +67,12 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
+const KERANJANG = {
+  baris: [baris()],
+  diskon: null,
+  kanal: 'takeaway',
+  dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: null },
+};
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -330,4 +335,31 @@ test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway',
     .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
     .run('kini', 's1', JSON.stringify({ baris: [baris()], diskon: null, kanal: 'delivery' }), '2026-08-24T10:00:00Z');
   assert.equal((await pulihkanKeranjang(aneh, 's1')).keranjang.kanal, 'takeaway');
+});
+
+test('⛔ dataPesanan dipulihkan; keranjang lama dan sampah → semua null (Task 11)', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const DP = { namaPemesan: 'Budi', nomorMeja: 'A-07', catatan: 'tanpa gula' };
+
+  const d = db();
+  await simpanKeranjang(d, 's1', { ...KERANJANG, dataPesanan: DP }, JAM);
+  const pulih = await pulihkanKeranjang(d, 's1');
+  assert.deepEqual(pulih.keranjang.dataPesanan, DP, 'nama/meja/catatan hilang saat keranjang dipulihkan');
+
+  const KOSONG = { namaPemesan: null, nomorMeja: null, catatan: null };
+  const tulis = (isi) => {
+    const x = db();
+    x.sqlite
+      .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
+      .run('kini', 's1', JSON.stringify(isi), '2026-08-24T10:00:00Z');
+    return x;
+  };
+  // Ditulis versi aplikasi SEBELUM data pesanan ada.
+  assert.deepEqual((await pulihkanKeranjang(tulis({ baris: [baris()], diskon: null }), 's1')).keranjang.dataPesanan, KOSONG);
+  // Sampah: bukan objek, tipe salah, spasi saja.
+  assert.deepEqual((await pulihkanKeranjang(tulis({ baris: [baris()], diskon: null, dataPesanan: 'x' }), 's1')).keranjang.dataPesanan, KOSONG);
+  assert.deepEqual(
+    (await pulihkanKeranjang(tulis({ baris: [baris()], diskon: null, dataPesanan: { namaPemesan: 42, nomorMeja: '  ', catatan: ' ok ' } }), 's1')).keranjang.dataPesanan,
+    { namaPemesan: null, nomorMeja: null, catatan: 'ok' }
+  );
 });

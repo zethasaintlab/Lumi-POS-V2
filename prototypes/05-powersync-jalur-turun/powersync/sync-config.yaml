@@ -175,7 +175,8 @@ streams:
                business_date, sequence, channel, status, subtotal,
                order_discount, service_charge_amount, tax_amount, total,
                amount_due, rounding_adjustment, voided_by_order_id,
-               has_calculation_variance, variance_amount, occurred_at, hlc
+               has_calculation_variance, variance_amount, occurred_at, hlc,
+               customer_name, table_number, note
           FROM "order"
          WHERE tenant_id = auth.parameter('tenant_id')
            AND outlet_id = auth.parameter('outlet_id')

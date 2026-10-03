@@ -291,3 +291,44 @@ test('⛔ contoh spec-c:376 TETAP mencetak "2x Kopi Susu", bukan "Kopi Susu Regu
   assert.ok(out.includes('2x Kopi Susu'), out);
   assert.ok(!out.includes('Kopi Susu Regular'), `contoh spec berubah:\n${out}`);
 });
+
+// ---------------------------------------------------------------------------
+// Task 11 — Atas nama / Meja / Catatan (P5(b), P6(a)). Sebelum baris item;
+// dilipat (bukan dipotong) di 32 kolom: catatan yang terpotong berarti
+// pesanan salah dibuat.
+// ---------------------------------------------------------------------------
+
+const DATA_PESANAN_STRUK = {
+  namaPemesan: 'Budi Santoso',
+  nomorMeja: 'A-07',
+  catatan: 'Tanpa gula, es sedikit, dipisah cup, tolong cepat ya mas',
+};
+
+test('struk mencetak "Atas nama", "Meja", "Catatan", dilipat di 32 kolom', async () => {
+  const out = await cetak({ ...CONTOH, ...DATA_PESANAN_STRUK }, 32);
+  const baris = out.split('\n');
+  assert.ok(baris.includes('Atas nama: Budi Santoso'), `tanpa "Atas nama":\n${out}`);
+  assert.ok(baris.includes('Meja: A-07'), `tanpa "Meja":\n${out}`);
+  const i = baris.findIndex((l) => l.startsWith('Catatan: '));
+  assert.ok(i >= 0, `tanpa "Catatan":\n${out}`);
+  // Dilipat: catatan 62 karakter ≥ 2 baris, dan SELURUH isinya tercetak (tidak terpotong).
+  const potongan = [];
+  for (let j = i; j < baris.length && !/^-+$/.test(baris[j]); j += 1) potongan.push(baris[j]);
+  assert.ok(potongan.length >= 2, 'catatan panjang tidak dilipat ke baris berikutnya');
+  assert.equal(
+    potongan.join(' ').replace('Catatan: ', ''),
+    DATA_PESANAN_STRUK.catatan,
+    'isi catatan hilang/terpotong di struk'
+  );
+  for (const l of baris) assert.ok(l.length <= 32, `baris ${l.length} > 32: ${JSON.stringify(l)}`);
+  // Sebelum baris item.
+  const iItem = baris.findIndex((l) => l.startsWith('2x Kopi Susu'));
+  assert.ok(baris.indexOf('Meja: A-07') < iItem && i < iItem, 'data pesanan tercetak sesudah baris item');
+});
+
+test('data pesanan kosong/null: tidak ada baris "Atas nama"/"Meja"/"Catatan"', async () => {
+  for (const d of [{}, { namaPemesan: null, nomorMeja: null, catatan: null }, { namaPemesan: '  ', nomorMeja: '', catatan: ' ' }]) {
+    const out = await cetak({ ...CONTOH, ...d });
+    assert.ok(!/Atas nama|Meja:|Catatan:/.test(out), `baris kosong tercetak:\n${out}`);
+  }
+});

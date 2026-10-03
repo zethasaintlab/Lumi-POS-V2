@@ -33,7 +33,7 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Pesanan tahan',
 ];
 /** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Batalkan']);
+const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Catatan', 'Pelanggan', 'No. Meja', 'Batalkan']);
 /** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
     Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
 const SEMENTARA = new Set([]);
@@ -706,4 +706,119 @@ test('⛔ D13: pemindai barcode global MATI selama lembar Pajak terbuka — scan
     sebelum,
     'pemindai global tetap aktif di balik lembar Pajak: isi keranjang berubah oleh scan barcode'
   );
+});
+
+// ---------------------------------------------------------------------------
+// Task 11 — Catatan / Pelanggan / No. Meja (P5(b), P6(a)). Satu dialog, tiga mode.
+// ---------------------------------------------------------------------------
+
+/** Teks `role=alert` di dialog, atau '' bila tidak ada (tanpa menunggu timeout 30 dtk). */
+async function pesanGalatDialog(hal) {
+  const alert = hal.locator('[role="dialog"] [role="alert"]');
+  return (await alert.count()) === 0 ? '' : alert.first().innerText();
+}
+
+const MODE_DATA = [
+  { tombol: 'Catatan', judul: 'Catatan pesanan', label: 'Catatan', isi: 'tanpa gula, es sedikit', tampil: /Catatan:?\s*tanpa gula, es sedikit/ },
+  { tombol: 'Pelanggan', judul: 'Pelanggan', label: 'Nama pemesan', isi: 'Budi', tampil: /Atas nama:?\s*Budi/ },
+  { tombol: 'No. Meja', judul: 'No. Meja', label: 'Nomor meja', isi: 'A-07', tampil: /Meja:?\s*A-07/ },
+];
+
+test('⛔ Catatan/Pelanggan/No. Meja: isi tersimpan, tampil di keranjang, dan dialog menolak nomor kartu dengan pesan domain', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+
+  for (const m of MODE_DATA) {
+    await pastikanTombol(hal, m.tombol, `toolbar ${m.tombol} belum terpasang`);
+    await hal.getByRole('button', { name: new RegExp(`^${m.tombol}`) }).first().click();
+    await hal.waitForSelector('[role="dialog"]', { timeout: 3000 }).catch(() => {});
+    assert.equal(await hal.locator('[role="dialog"]').count(), 1, `${m.tombol} tidak membuka dialog`);
+
+    // Nomor kartu (berpemisah) ditolak DENGAN pesan domain; dialog menahan, isi belum tersimpan.
+    await hal.getByRole('textbox', { name: m.label, exact: true }).fill('4111 1111 1111 1111');
+    await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+    const pesan = await pesanGalatDialog(hal);
+    assert.match(pesan, /nomor kartu/i, `${m.tombol}: nomor kartu tidak ditolak dengan pesan domain (terbaca: "${pesan}")`);
+    assert.equal(await hal.locator('[role="dialog"]').count(), 1, `${m.tombol}: dialog menutup padahal nomor kartu`);
+    assert.ok(!/4111/.test(await hal.locator('.kasir-keranjang').innerText()), `${m.tombol}: nomor kartu bocor ke keranjang`);
+
+    // Isi sah tersimpan dan tampil di keranjang.
+    await hal.getByRole('textbox', { name: m.label, exact: true }).fill(m.isi);
+    await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+    await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 3000 }).catch(() => {});
+    assert.equal(await hal.locator('[role="dialog"]').count(), 0, `${m.tombol}: dialog tidak tertutup sesudah Simpan`);
+    const keranjang = await hal.locator('.kasir-keranjang').innerText();
+    assert.match(keranjang.replace(/\s+/g, ' '), m.tampil, `${m.tombol}: "${m.isi}" tidak tampil di keranjang:\n${keranjang}`);
+  }
+
+  // Dibuka lagi: nilai tersimpan terisi; dikosongkan lalu Simpan → hilang dari keranjang.
+  await hal.getByRole('button', { name: /^Pelanggan/ }).first().click();
+  assert.equal(await hal.getByRole('textbox', { name: 'Nama pemesan', exact: true }).inputValue(), 'Budi', 'nilai tersimpan tidak diisi ulang di dialog');
+  await hal.getByRole('textbox', { name: 'Nama pemesan', exact: true }).fill('   ');
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 3000 }).catch(() => {});
+  const akhir = await hal.locator('.kasir-keranjang').innerText();
+  assert.ok(!/Atas nama/.test(akhir), 'nama dikosongkan tetapi masih tampil di keranjang');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('⛔ batas panjang: nama 41 karakter ditolak dengan pesan batasnya; Batal tidak mengubah isi', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  await pastikanTombol(hal, 'Pelanggan', 'toolbar Pelanggan belum terpasang');
+  await hal.getByRole('button', { name: /^Pelanggan/ }).first().click();
+  await hal.getByRole('textbox', { name: 'Nama pemesan', exact: true }).fill('a'.repeat(41));
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  const pesan = await pesanGalatDialog(hal);
+  assert.match(pesan, /paling banyak 40 karakter/, `batas 40 tidak disebut: "${pesan}"`);
+  await hal.getByRole('button', { name: 'Batal', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 3000 }).catch(() => {});
+  assert.ok(!/Atas nama/.test(await hal.locator('.kasir-keranjang').innerText()), 'Batal menyimpan isi');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('dialog Pelanggan berlabel "Nama pemesan", satu kolom teks, tanpa kolom telepon', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await pastikanTombol(hal, 'Pelanggan', 'toolbar Pelanggan belum terpasang');
+  await hal.getByRole('button', { name: /^Pelanggan/ }).first().click();
+  await hal.waitForSelector('[role="dialog"]');
+  const hasil = await hal.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const input = [...d.querySelectorAll('input, textarea, select')];
+    return {
+      jumlah: input.length,
+      jenis: input.map((i) => i.getAttribute('type') ?? i.tagName.toLowerCase()),
+      label: [...d.querySelectorAll('label')].map((l) => l.textContent.trim()),
+      teks: d.innerText,
+    };
+  });
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(hasil.jumlah, 1, `dialog Pelanggan punya ${hasil.jumlah} kolom, harap SATU (nama saja, keputusan user P5)`);
+  assert.ok(!hasil.jenis.includes('tel'), 'dialog Pelanggan punya kolom telepon');
+  assert.deepEqual(hasil.label, ['Nama pemesan']);
+  assert.ok(!/telepon|\bHP\b|WhatsApp|no\.? ?hp/i.test(hasil.teks), `dialog Pelanggan menyebut telepon: ${hasil.teks}`);
+});
+
+test('⛔ scanner global mati selama dialog Catatan/Pelanggan/No. Meja terbuka', async () => {
+  const { hal, galat } = await bukaK03();
+  for (const nama of ['Catatan', 'Pelanggan', 'No. Meja']) {
+    await pastikanTombol(hal, nama, `toolbar ${nama} belum terpasang`);
+    await hal.getByRole('button', { name: new RegExp(`^${nama}`) }).first().click();
+    await hal.waitForSelector('[role="dialog"]');
+    const sebelum = await hal.locator('.kasir-baris').count();
+    await hal.evaluate((kode) => {
+      for (const ch of kode) window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }, KODE_BARCODE_FIXTURE);
+    await hal.waitForTimeout(300);
+    const sesudah = await hal.locator('.kasir-baris').count();
+    assert.equal(sesudah, sebelum, `scan masuk selama dialog ${nama} terbuka (${sebelum} → ${sesudah})`);
+    await hal.getByRole('button', { name: 'Batal', exact: true }).click();
+    await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 3000 }).catch(() => {});
+  }
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
 });

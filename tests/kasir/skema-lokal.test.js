@@ -159,6 +159,22 @@ test('T2 definisi raw table memuat seluruh kolom dan hanya tabel yang direplikas
   }
 });
 
+// PR 2C Task 11 -- `put` untuk "order" membawa ketiga kolom baru, dan di
+// urutan yang SAMA dengan skema (urutan menaruh nilai ke kolom).
+test('⛔ put order memuat customer_name, table_number, note sesuai urutan skema', async () => {
+  const { kolomPerTabel, buatDefinisiRaw } = await import(SKEMA);
+  const k = kolomPerTabel(sql());
+  const d = buatDefinisiRaw(k).order;
+  for (const c of ['customer_name', 'table_number', 'note']) {
+    assert.ok(k.order.includes(c), `kolom ${c} tidak ada di skema lokal`);
+    assert.ok(d.put.sql.includes(`"${c}"`), `put order tanpa ${c}`);
+  }
+  const m = /INSERT OR REPLACE INTO "order"\s*\(([^)]*)\)/i.exec(d.put.sql);
+  assert.ok(m, 'bentuk put order tidak dikenali — penjaga urutan tidak berjalan');
+  const urut = m[1].split(',').map((x) => x.trim().replace(/"/g, ''));
+  assert.deepEqual(urut, k.order, 'urutan kolom put order menyimpang dari skema');
+});
+
 // Nama tabel `order` dan `check` adalah kata kunci SQL. `put` tanpa tanda
 // kutip menghasilkan syntax error saat baris penjualan PERTAMA turun.
 test('T2 nama tabel selalu dikutip di SQL yang dihasilkan', async () => {

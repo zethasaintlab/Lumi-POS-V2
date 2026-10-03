@@ -430,3 +430,37 @@ test('⛔ T5b `telemetry_local` ada di TABEL_LOKAL_SAJA, bukan TABEL_RAW', async
   assert.ok(TABEL_LOKAL_SAJA.includes('telemetry_local'));
   assert.ok(!TABEL_RAW.includes('telemetry_local'));
 });
+
+// PR 2C Task 11 (R4) -- tiga kolom `order` (customer_name, table_number, note)
+// datang dalam SATU migrasi, jadi sidik jari berubah SEKALI. Tiga migrasi
+// terpisah = tiga unduh ulang riwayat di setiap perangkat.
+test('⛔ tiga kolom order baru mengubah sidik jari SEKALI — satu migrasi, bukan tiga', async () => {
+  const { kolomPerTabel, sidikJariRawTable } = await import(SKEMA);
+  const { putuskanMigrasi } = await import(MIGRASI);
+  const penuh = kolomPerTabel(sql());
+  const BARU = ['customer_name', 'table_number', 'note'];
+  for (const k of BARU) assert.ok(penuh.order.includes(k), `kolom ${k} tidak ada di "order" lokal`);
+
+  const lama = { ...penuh, order: penuh.order.filter((k) => !BARU.includes(k)) };
+  const sidikLama = sidikJariRawTable(lama);
+  const sidikBaru = sidikJariRawTable(penuh);
+  assert.notEqual(sidikLama, sidikBaru, 'sidik jari buta terhadap tiga kolom baru');
+
+  // Perangkat terpasang -> sidik jari berubah -> bangun ulang SELALU dengan
+  // bersihkan sync (riwayat diunduh ulang); outbox dijaga test rencanaDdl di atas.
+  const k = putuskanMigrasi({ sidikTersimpan: sidikLama, sidikSekarang: sidikBaru });
+  assert.equal(k.perluBangunUlang, true);
+  assert.equal(k.perluBersihkanSync, true);
+
+  // Dua kolom saja sudah sidik ketiga: tidak ada keadaan antara yang sah, jadi
+  // kolom-kolom itu tidak boleh mendarat di lebih dari satu migrasi server.
+  const migrasi = fs.readdirSync(path.join(__dirname, '..', '..', 'db', 'migrations')).sort();
+  const menyentuh = migrasi.filter((f) => {
+    const s = fs.readFileSync(path.join(__dirname, '..', '..', 'db', 'migrations', f), 'utf8');
+    return BARU.some((c) => new RegExp(`ADD COLUMN\\s+${c}\\b`).test(s));
+  });
+  assert.deepEqual(menyentuh, ['0037_order_customer_table_note.sql'], 'kolom order baru tersebar di lebih dari satu migrasi');
+  const isi = fs.readFileSync(path.join(__dirname, '..', '..', 'db', 'migrations', menyentuh[0]), 'utf8');
+  assert.equal((isi.match(/ADD COLUMN/g) ?? []).length, 3, '0037 harus menambah TEPAT tiga kolom');
+  assert.match(isi, /SET LOCAL lock_timeout/, '0037 tanpa lock_timeout');
+});

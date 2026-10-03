@@ -424,6 +424,9 @@ CREATE TABLE "order" (
   -- menangkapnya: penjaga drift hanya membandingkan kolom yang ada di KEDUA
   -- sisi. `KOLOM_SENGAJA_TIDAK_TURUN` sekarang menutup celah itu.
   voided_by_order_id TEXT,
+  -- PR 2C Task 11 (migrasi server 0037; P5(b), P6(a)). Nullable, tanpa default.
+  -- `check.label` TIDAK dipakai untuk nama pemesan.
+  customer_name TEXT, table_number TEXT, note TEXT,
   created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
 CREATE TABLE "check" (

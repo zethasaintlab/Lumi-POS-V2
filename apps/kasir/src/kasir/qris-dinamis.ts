@@ -4,6 +4,7 @@ import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
 import type { Keranjang } from './keranjang.ts';
 import { kanalDari } from './kanal.ts';
+import { dataPesananDari } from './data-pesanan.ts';
 
 /**
  * FR-C3 + FR-C14 — jalur penjualan ONLINE-FIRST untuk QRIS dinamis.
@@ -318,6 +319,16 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
   if (total === null || nominalDraf(d) !== total) return false;
   // ⛔ Kanal ikut: draf takeaway melawan keranjang dine_in (total sama) menulis order berkanal beda dari server.
   if (d.muatan.channel !== kanalDari(keranjang)) return false;
+  // ⛔ Nama/meja/catatan ikut: `confirmed` menulis order lokal dari KERANJANG, sedangkan server
+  // sudah menerima muatan draf — dua catatan berbeda untuk satu struk.
+  const dp = dataPesananDari(keranjang);
+  if (
+    (d.muatan.customerName ?? null) !== dp.namaPemesan ||
+    (d.muatan.tableNumber ?? null) !== dp.nomorMeja ||
+    (d.muatan.note ?? null) !== dp.catatan
+  ) {
+    return false;
+  }
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,

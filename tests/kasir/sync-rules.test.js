@@ -379,3 +379,15 @@ test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
       hilang.join('\n  ')
   );
 });
+
+// PR 2C Task 11 -- tanpa tiga kolom ini di SELECT `order`, K-09 mencetak ulang
+// struk TANPA "Atas nama/Meja/Catatan" sesudah perangkat mengunduh ulang
+// riwayatnya, dan tidak ada galat yang menandainya.
+test('⛔ SELECT order menurunkan customer_name, table_number, note', () => {
+  const q = kueri().find((x) => /FROM "order"\s+WHERE/i.test(x) && /receipt_number/.test(x));
+  assert.ok(q, 'query riwayat `order` tidak ditemukan');
+  const diminta = kolomDiminta(q);
+  for (const k of ['customer_name', 'table_number', 'note']) {
+    assert.ok(diminta.includes(k), `sync rules order tidak menurunkan ${k}`);
+  }
+});

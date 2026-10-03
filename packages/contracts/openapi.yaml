@@ -3494,6 +3494,14 @@ paths:
                 businessDate: { type: string, format: date }
                 sequence: { type: integer, minimum: 1 }
                 channel: { type: string, enum: [dine_in, takeaway] }
+                # P5(b)/P6(a) -- nama pemesan (<= 40), nomor meja (<= 16),
+                # catatan (<= 140). Opsional; klien N-1 tidak mengirimnya.
+                # Batas SENGAJA tidak dinyatakan di sini: `data-pesanan.ts`
+                # satu-satunya sumber kebenaran, supaya pesan galatnya milik
+                # domain (dan nomor kartu mendapat POSSIBLE_CARD_NUMBER).
+                customerName: { type: string, nullable: true }
+                tableNumber: { type: string, nullable: true }
+                note: { type: string, nullable: true }
                 # hlc SENGAJA type: string, bukan integer -- ia bilangan
                 # 57-bit (packages/domain/src/hlc.ts) yang melebihi presisi
                 # double JSON/JS. assertHlcValid (handlers/orders.ts) adalah
@@ -8254,6 +8262,9 @@ components:
         sequence: { type: integer }
         status: { type: string, enum: [voided, refunded] }
         channel: { type: string, enum: [dine_in, takeaway] }
+        customerName: { type: string, nullable: true }
+        tableNumber: { type: string, nullable: true }
+        note: { type: string, nullable: true }
         subtotal: { type: integer }
         orderDiscount: { type: integer }
         serviceChargeAmount: { type: integer }

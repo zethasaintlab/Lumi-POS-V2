@@ -301,3 +301,15 @@ Keputusan user P1 dan P2 (issue #76, komentar `5862870577`, 28 September 2026): 
 - Daftar `provider` untuk `other` tertutup (`bank_transfer`); nilai lain ditolak 400 `VALIDATION_ERROR`. Kill switch `pembayaran_transfer` hanya menyembunyikan tab; server tetap menerima Transfer yang sudah tersimpan di perangkat.
 - Idempotensi jalur manual kini men-hash seluruh isi yang disimpan (422 `IDEMPOTENCY_KEY_HASH_MISMATCH` bila key sama dengan isi beda); baris lama berhash `orderId:paymentId` tetap dikenali sebagai request yang sama.
 - Struk Transfer hanya mencetak "Transfer" (tanpa referensi, Q5 terbuka); nama "Transfer" dieja di `metode-tampilan.ts` saja.
+
+## Nama pemesan, nomor meja, catatan pesanan (Task 11 PR 2C, 3 Oktober 2026)
+
+Keputusan user P5(b) dan P6(a), 28 September 2026 (issue #76 komentar 5862870577): tiga kolom opsional
+`order.customer_name` (≤ 40), `table_number` (≤ 16 `[ASUMSI]`), `note` (≤ 140), **satu migrasi** (`0037`) supaya
+sidik jari skema lokal berubah SEKALI. Nama saja, tanpa telepon; `check.label` **tetap `NULL`**.
+
+- Aturannya SATU: `packages/domain/src/data-pesanan.ts`, dipakai perangkat (`simpanPenjualan`, dialog K-03) dan server
+  (`POST /orders`). Nomor kartu (13-19 digit, berpemisah) → `POSSIBLE_CARD_NUMBER`, diperiksa SEBELUM batas panjang.
+- Sumber di perangkat: `Keranjang.dataPesanan`, dibaca `dataPesananDari` — tanpa parameter paralel (pola `kanalDari`).
+  Muatan outbox membawa field HANYA bila terisi (N-1). `drafCocokKeranjang` ikut membandingkannya.
+- Server N-1: tanpa ketiga field perilaku identik; kosong/spasi disimpan `NULL`, bukan string kosong.

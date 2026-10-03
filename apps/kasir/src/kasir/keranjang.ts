@@ -1,5 +1,6 @@
 import type { PermintaanDiskon } from '../../../../packages/domain/src/diskon.ts';
 import type { Kanal } from './kanal.ts';
+import type { DataPesanan } from './data-pesanan.ts';
 import type { ItemKatalog, VariationKatalog } from '../katalog/baca.ts';
 
 /**
@@ -107,10 +108,21 @@ export interface Keranjang {
   diskon: DiskonKeranjang | null;
   /** FR-C7 — kanal pesanan; menentukan tarif pajak yang berlaku. Bawaan `takeaway`. */
   kanal: Kanal;
+  /** P5(b)/P6(a) — nama pemesan, nomor meja, catatan. Semua `null` = tidak diisi. */
+  dataPesanan: DataPesanan;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null, kanal: 'takeaway' };
+  return {
+    baris: [],
+    diskon: null,
+    kanal: 'takeaway',
+    dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: null },
+  };
+}
+
+export function setelDataPesanan(k: Keranjang, dataPesanan: DataPesanan): Keranjang {
+  return { ...k, dataPesanan };
 }
 
 export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {

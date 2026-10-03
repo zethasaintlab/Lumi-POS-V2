@@ -740,6 +740,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           setGalat(`${hasil.pesan} Penjualan belum tersimpan.`);
           return;
         }
+        if (hasil.status === 'data_pesanan_tidak_sah') {
+          /* Pesan DOMAIN kata demi kata (nomor kartu / batas); koreksinya di K-03. */
+          setGalat(`${hasil.pesan} Penjualan belum tersimpan — kembali ke kasir untuk memperbaikinya.`);
+          return;
+        }
         if (hasil.status === 'butuh_penyetuju_diskon') {
           /* ⛔ Penjualan TIDAK ditulis, dan layar mengatakannya. Kasir yang
              hanya membaca "gagal" akan menekan Bayar lagi; yang membaca

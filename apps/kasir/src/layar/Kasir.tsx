@@ -26,6 +26,7 @@ import {
   satuanKeranjang,
   setelDiskon,
   setelKanal,
+  setelDataPesanan,
   subtotalKeranjang,
   tambah,
   type BarisKeranjang,
@@ -59,6 +60,8 @@ import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { LembarKanal } from '../komponen/LembarKanal.tsx';
+import { DialogTeksPesanan, type ModeTeksPesanan } from '../komponen/DialogTeksPesanan.tsx';
+import { dataPesananDari } from '../kasir/data-pesanan.ts';
 import { kanalDari, LABEL_KANAL, ringkasKanal, type RingkasanKanal } from '../kasir/kanal.ts';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
@@ -153,6 +156,8 @@ export function Kasir() {
      membaca nama tarif kedua kanal lewat `hitungKeranjang` — fungsi yang sama
      dengan blok Total, bukan tabel tarif kedua. */
   const [lembarKanal, setLembarKanal] = useState(false);
+  /* Toolbar #4-#6 — Catatan, Pelanggan, No. Meja (P5(b), P6(a)): satu dialog, tiga mode. */
+  const [dialogTeks, setDialogTeks] = useState<ModeTeksPesanan | null>(null);
   const [ringkasanKanal, setRingkasanKanal] = useState<RingkasanKanal[] | null>(null);
   const [galatKanal, setGalatKanal] = useState(false);
   /* Toolbar #1 — Item manual (P4(a), spec § 4 baris 1). Dialog, alasan yang
@@ -487,7 +492,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !lembarKanal && !dialogManual && !dialogBatal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !lembarKanal && dialogTeks === null && !dialogManual && !dialogBatal,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -686,11 +691,12 @@ export function Kasir() {
             bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
             keranjang.
 
-            ⛔ EMPAT aksi hari ini, semuanya TERPASANG mockup (Item manual,
-            Diskon, Pajak [Task 10: pilihan kanal], Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
+            ⛔ TUJUH aksi hari ini, semuanya TERPASANG mockup (Item manual,
+            Diskon, Pajak [Task 10: pilihan kanal], Catatan, Pelanggan, No. Meja
+            [Task 11], Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
             Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya pindah ke
-            layar Laci kas (K-18, `layar/LaciKas.tsx`). Empat sisanya di mockup
-            (Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
+            layar Laci kas (K-18, `layar/LaciKas.tsx`). Satu sisanya di mockup
+            (Pesanan tahan) nol kode di
             repo ini; tombol yang tidak melakukan apa-apa adalah janji kepada
             kasir yang produk ini tidak dapat tepati — Task 10/11/12
             membangun sisanya (spec § 4 "Toolbar
@@ -761,6 +767,22 @@ export function Kasir() {
               Keranjang kosong. Tambahkan item untuk memilih kanal pajak.
             </span>
           )}
+
+          {/* Catatan, Pelanggan, No. Meja — data pesanan (P5(b), P6(a)). Selalu ada dan
+              aktif: tidak bergantung pada isi keranjang (nama bisa ditanya lebih dulu).
+              Isinya tampil di keranjang di bawah, jadi tombolnya tidak perlu mengubah label. */}
+          <Tombol varian="ghost" onClick={() => setDialogTeks('catatan')}>
+            <Icon name="pencil" size={17} />
+            <span className="kasir-toolbar-label">Catatan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('pelanggan')}>
+            <Icon name="user-round" size={17} />
+            <span className="kasir-toolbar-label">Pelanggan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('meja')}>
+            <Icon name="utensils-crossed" size={17} />
+            <span className="kasir-toolbar-label">No. Meja</span>
+          </Tombol>
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
               konfirmasi dan jejak audit (spec § 4 baris 7). Tidak di balik
@@ -1120,6 +1142,26 @@ export function Kasir() {
           </p>
         )}
 
+        {/* P5/P6 — data pesanan terlihat di keranjang: kasir yang mengisinya harus dapat memeriksanya
+            sebelum menagih, bukan percaya pada tombol yang tidak berubah. Kosong → tidak ada baris. */}
+        {(() => {
+          const d = dataPesananDari(keranjang);
+          const baris = [
+            d.namaPemesan !== null ? `Atas nama: ${d.namaPemesan}` : null,
+            d.nomorMeja !== null ? `Meja: ${d.nomorMeja}` : null,
+            d.catatan !== null ? `Catatan: ${d.catatan}` : null,
+          ].filter((x): x is string => x !== null);
+          return baris.length === 0 ? null : (
+            <div className="kasir-data-pesanan">
+              {baris.map((t) => (
+                <p key={t} className="t-caption">
+                  {t}
+                </p>
+              ))}
+            </div>
+          );
+        })()}
+
         {keranjang.baris.length === 0 ? (
           <div className="kasir-keranjang-kosong">
             {/* Ikon di keadaan kosong, bukan hiasan: panel yang isinya satu
@@ -1296,6 +1338,32 @@ export function Kasir() {
             setLembarKanal(false);
           }}
           onBatal={() => setLembarKanal(false)}
+        />
+      )}
+
+      {dialogTeks !== null && (
+        <DialogTeksPesanan
+          mode={dialogTeks}
+          nilaiAwal={
+            dialogTeks === 'catatan'
+              ? dataPesananDari(keranjang).catatan
+              : dialogTeks === 'pelanggan'
+                ? dataPesananDari(keranjang).namaPemesan
+                : dataPesananDari(keranjang).nomorMeja
+          }
+          onSimpan={(nilai) => {
+            setKeranjang((kr) => {
+              const d = dataPesananDari(kr);
+              return setelDataPesanan(kr, {
+                ...d,
+                ...(dialogTeks === 'catatan' ? { catatan: nilai } : {}),
+                ...(dialogTeks === 'pelanggan' ? { namaPemesan: nilai } : {}),
+                ...(dialogTeks === 'meja' ? { nomorMeja: nilai } : {}),
+              });
+            });
+            setDialogTeks(null);
+          }}
+          onBatal={() => setDialogTeks(null)}
         />
       )}
 

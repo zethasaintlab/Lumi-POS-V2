@@ -1566,7 +1566,8 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
 
   const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
   assert.equal(order.params[8], 'dine_in', 'order.channel lokal bukan dine_in');
-  assert.equal(order.params.length, 18, 'INSERT order mem-bind kolom baru (service_charge_amount seharusnya literal 0, bukan bind)');
+  // 18 + tiga kolom Task 11 (customer_name, table_number, note) di ujung. Yang dijaga: service_charge_amount tetap literal 0.
+  assert.equal(order.params.length, 21, 'INSERT order mem-bind kolom baru (service_charge_amount seharusnya literal 0, bukan bind)');
   const outbox = db.state.tulis.find((t) => /outbox_local/.test(t.sql));
   const muatan = JSON.parse(outbox.params[4]);
   for (const [k, v] of Object.entries(muatan)) {
@@ -1589,4 +1590,72 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   })();
   assert.equal(hasil.total, subtotal - diskon + langsung.totalTaxExclusive, 'total memuat komponen selain subtotal − diskon + pajak');
   assert.equal(muatan.total, Number(hasil.total));
+});
+
+// ---------------------------------------------------------------------------
+// Task 11 — Pelanggan, No. Meja, Catatan (P5(b), P6(a)). Satu sumber:
+// `Keranjang.dataPesanan`, bukan parameter terpisah (pola `kanalDari`, Task 10).
+// ---------------------------------------------------------------------------
+
+const DATA_PESANAN = { namaPemesan: 'Budi', nomorMeja: 'A-07', catatan: 'tanpa gula' };
+
+test('nama, meja, catatan ke kolom order lokal dan muatan outbox; check.label NULL', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: DATA_PESANAN } }),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  // `dbPalsu` hanya merekam BARIS PERTAMA sql; ketiga kolom ada di ujung urutan bind.
+  const [nama, meja, cat] = order.params.slice(-3);
+  assert.equal(nama, 'Budi', 'order.customer_name lokal salah');
+  assert.equal(meja, 'A-07', 'order.table_number lokal salah');
+  assert.equal(cat, 'tanpa gula', 'order.note lokal salah');
+  const muatan = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
+  assert.equal(muatan.customerName, 'Budi', 'muatan outbox tanpa customerName');
+  assert.equal(muatan.tableNumber, 'A-07', 'muatan outbox tanpa tableNumber');
+  assert.equal(muatan.note, 'tanpa gula', 'muatan outbox tanpa note');
+
+  // ⛔ P5: `check.label` tetap NULL — nama pemesan bukan label check.
+  const cek = db.state.tulis.find((t) => /INSERT INTO "check"/.test(t.sql));
+  assert.equal(cek.params.length, 4, 'INSERT check mem-bind kolom baru (label harus literal NULL)');
+  assert.ok(!cek.params.includes('Budi'), 'nama pemesan bocor ke baris check');
+});
+
+test('⛔ N-1: tanpa dataPesanan (keranjang lama) kolom NULL dan muatan outbox TANPA ketiga field', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({ db, ...args() });
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.equal(order.params.length, 21);
+  assert.deepEqual(order.params.slice(-3), [null, null, null], 'kolom data pesanan bukan NULL untuk keranjang lama');
+  const muatan = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
+  for (const k of ['customerName', 'tableNumber', 'note']) {
+    assert.ok(!(k in muatan), `muatan outbox memuat ${k} padahal kosong — server N-1 menolak/menyimpang`);
+  }
+});
+
+test('⛔ teks spasi saja → NULL; teks dipangkas sebelum disimpan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: { namaPemesan: '  Sari ', nomorMeja: '   ', catatan: null } } }),
+  });
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.deepEqual(order.params.slice(-3), ['Sari', null, null]);
+});
+
+test('⛔ nomor kartu di dataPesanan ditolak di perangkat — tidak ada order, tidak ada outbox', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: '4111 1111 1111 1111' } } }),
+  });
+  assert.equal(hasil.status, 'data_pesanan_tidak_sah', `status ${hasil.status}`);
+  assert.equal(db.state.tulis.length, 0, 'ada penulisan padahal data pesanan ditolak');
 });

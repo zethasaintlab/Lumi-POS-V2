@@ -318,3 +318,24 @@ test('⛔ cetak ulang transfer menyebut "Transfer", bukan "Lainnya", dan sama de
   db.sqlite.exec(`UPDATE payment SET provider = NULL`);
   assert.ok((await cetak(db)).includes('Lainnya'), 'other tanpa provider harus tetap Lainnya');
 });
+
+// Task 11 — cetak ulang membaca ketiga kolom `order` yang sama dengan cetakan pertama.
+test('⛔ cetak ulang mencetak "Atas nama", "Meja", "Catatan" dari kolom order', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite
+    .prepare(`UPDATE "order" SET customer_name = ?, table_number = ?, note = ? WHERE id = 'ord-1'`)
+    .run('Budi', 'A-07', 'tanpa gula');
+  const out = await cetak(db);
+  const baris = out.split('\n');
+  assert.ok(baris.includes('Atas nama: Budi'), `cetak ulang tanpa "Atas nama":\n${out}`);
+  assert.ok(baris.includes('Meja: A-07'), `cetak ulang tanpa "Meja":\n${out}`);
+  assert.ok(baris.includes('Catatan: tanpa gula'), `cetak ulang tanpa "Catatan":\n${out}`);
+});
+
+test('cetak ulang order tanpa data pesanan (NULL) tidak mencetak baris tambahan', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  const out = await cetak(db);
+  assert.ok(!/Atas nama|Meja:|Catatan:/.test(out), `baris kosong tercetak:\n${out}`);
+});

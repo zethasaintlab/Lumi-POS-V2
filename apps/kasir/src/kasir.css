@@ -2042,3 +2042,12 @@
   text-align: left;
   white-space: normal;
 }
+
+/* P5/P6 (Task 11) — nama pemesan, meja, catatan di atas daftar item keranjang. Sempit dan
+   tanpa tombol: yang mengubahnya tombol toolbar. Catatan panjang dilipat, bukan dipotong. */
+.kasir-data-pesanan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}

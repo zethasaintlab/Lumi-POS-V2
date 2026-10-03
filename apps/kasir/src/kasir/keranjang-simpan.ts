@@ -1,6 +1,7 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
 import { kanalDari } from './kanal.ts';
+import { dataPesananDari } from './data-pesanan.ts';
 
 /**
  * KEP-21 — keranjang K-03 yang BERTAHAN melewati muat ulang.
@@ -204,7 +205,14 @@ function uraikan(teks: string): Keranjang | null {
   const kosong = keranjangKosong();
   // ⛔ Keranjang tersimpan SEBELUM kanal ada (atau bernilai asing) pulih sebagai
   // `takeaway`, bukan `undefined` yang akan terikat ke `order.channel`.
-  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal: kanalDari({ kanal: o.kanal as Keranjang['kanal'] }) };
+  // ⛔ Sama untuk `dataPesanan`: keranjang lama → semua `null`, sampah → dibuang per kolom.
+  return {
+    ...kosong,
+    baris,
+    diskon: diskonSah(o.diskon),
+    kanal: kanalDari({ kanal: o.kanal as Keranjang['kanal'] }),
+    dataPesanan: dataPesananDari({ dataPesanan: o.dataPesanan as Keranjang['dataPesanan'] }),
+  };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {

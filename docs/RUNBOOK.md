@@ -39,6 +39,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Penjualan Transfer tidak sampai ke server" · "Transfer tercatat 'Lainnya'" | §5.7 Transfer |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
+| "Sesudah update, riwayat penjualan di kasir hilang sebentar" | §7.4 sidik jari skema berubah |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
 | "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
 | "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
@@ -693,6 +694,29 @@ mem-*hash* body untuk mendeteksi `IDEMPOTENCY_KEY_REUSED`.
 ⛔ **Jangan membuang berkas ekspornya** selama masih ada baris yang gagal. Ia
 satu-satunya salinan penjualan itu setelah perangkatnya hilang.
 
+### 7.4 ⛔ Sesudah pembaruan, perangkat mengunduh ulang riwayat
+
+Menambah kolom ke tabel raw (`order`, `order_line`, …) mengubah **sidik jari
+skema lokal**; perangkat yang memuat versi baru menjalankan
+`disconnectAndClear()` dan membangun ulang tabelnya. Hari ini penyebabnya tiga
+kolom `order` (`customer_name`, `table_number`, `note`; migrasi `0037`) — satu
+migrasi, jadi **satu** unduh ulang, bukan tiga.
+
+Yang merchant lihat:
+
+- Riwayat (K-08) dan cetak ulang untuk penjualan lama kosong sampai stream
+  `riwayat` selesai turun. Jendelanya 90 hari, disaring per perangkat.
+- ⛔ **Perangkat yang OFFLINE saat itu berjalan dengan katalog kosong sampai
+  terhubung.** Penjualan baru tetap mustahil dari katalog kosong; tidak ada
+  yang dapat dilakukan dari sisi server. Katakan ini sebelum merchant memasang
+  pembaruan di jam sibuk, dan pasang saat perangkat terhubung.
+- ⛔ **Antrean upload (`outbox_local`) TIDAK tersentuh.** Penjualan yang belum
+  terkirim selamat; hanya tabel yang direplikasi yang dibangun ulang.
+
+Bukan gangguan bila: perangkat terhubung dan riwayat/katalog kembali dalam
+beberapa menit. Gangguan bila: katalog tetap kosong sesudah terhubung — lanjut
+ke §7.2.
+
 ---
 
 ## 12. Rilis bertahap
@@ -756,6 +780,20 @@ bernomor lebih rendah (`app_release` memilih yang **terbaru dibuat**, bukan
 yang tertinggi nomornya). ⛔ Rollback skema SQLite lokal **hampir mustahil**
 setelah data ditulis dengan skema baru (KEP-36) — periksa apakah versi yang
 ditarik menambah tabel atau kolom lokal sebelum menjanjikan rollback.
+
+### 12.2.1 ⛔ Urutan rilis: SERVER dulu, baru klien
+
+Fitur yang menambah field atau rute (Transfer, audit Batalkan `cart_cleared`,
+nama pemesan/meja/catatan `order.customer_name`/`table_number`/`note`) dirilis
+**server → klien**, tidak pernah sebaliknya. Klien baru di atas server lama
+mengirim field yang tidak dikenal atau rute yang belum ada, dan barisnya
+berhenti `gagal-permanen` di antrean — penjualan yang uangnya sudah diterima.
+Server baru di atas klien lama aman: ketiga field opsional, klien N-1 tidak
+mengirimnya.
+
+Urutannya: (1) terapkan migrasi `0037` (expand, nullable, `lock_timeout`),
+(2) rilis server, (3) baru naikkan tahap klien (§12.1). Menunda langkah 3
+tidak merugikan; membaliknya merugikan.
 
 ### 12.3 Jendela update dan penundaan
 
