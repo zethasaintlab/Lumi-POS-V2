@@ -518,3 +518,15 @@ test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berb
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: null }, 20000n), false, 'diskon dicabut pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tId, { ...KERANJANG, diskon: diskon('percent', 1000n) }, 22000n), false, 'diskon ditambahkan pada total sama dianggap cocok');
 });
+
+test('⛔ G-KANAL: muatan order QRIS membawa kanal KERANJANG (dine_in), bukan literal takeaway', async () => {
+  const { mintaQr } = await import(MOD);
+  const d = db();
+  const kirim = pengirim();
+  // `channel` sengaja TIDAK diberikan: kanal datang dari keranjang, satu sumber.
+  const { channel: _tanpa, ...arg } = argMinta(draf(), { db: d, kirim });
+  await mintaQr({ ...arg, keranjang: { ...KERANJANG, kanal: 'dine_in' } });
+  const order = kirim.dikirim.find((k) => k.jalur === '/orders');
+  assert.ok(order, 'POST /orders tidak terkirim');
+  assert.equal(order.body.channel, 'dine_in', 'muatan POST /orders channel bukan dine_in');
+});

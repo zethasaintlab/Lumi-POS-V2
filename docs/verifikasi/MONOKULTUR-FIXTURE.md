@@ -90,6 +90,12 @@ dengan "52 layar" dan "414 AC".
 
 ### ⛔ Temuan terbesar, dan ia bukan metode pembayaran
 
+**Dipenuhi 3 Oktober 2026 (Task 10, PR 2C): `ppn` muncul di 2 berkas test.**
+Literal `'ppn'` kini ada di `tests/kasir/penjualan.test.js` dan `tests/payment/tax-in-orders.test.js`;
+fixture #1 juga menjalankan tarif 11% (rate 1100) di `tests/domain/tax.test.js`, eksklusif dan inklusif —
+`TaxCalculator` menanganinya tanpa perubahan (`calculateTax` tidak membaca `tax_rate.type`). `dine_in` kini juga dipilih lewat tombol Pajak K-03. Kalimat di bawah adalah
+hasil audit 2 September 2026, dipertahankan sebagai potret bertanggal.
+
 **`ppn` tidak pernah muncul di satu pun fixture. Nol.**
 
 `tax_rate.type` punya empat nilai (`pbjt`, `ppn`, `service_charge`, `none`) dan

@@ -84,6 +84,9 @@ dbAktif = buatDbPalsu(skenarioUji, {
   matikanFitur: matikan,
   pembulatan: pembulatanUji,
   modePembulatan: modeUji ?? undefined,
+  /* `?pajakKanal=1` / `?layanan=1` — lihat `OpsiDbPalsu`. */
+  pajakKanal: new URLSearchParams(window.location.search).get('pajakKanal') === '1',
+  layanan: new URLSearchParams(window.location.search).get('layanan') === '1',
 });
 
 const q = new URLSearchParams(window.location.search);
@@ -100,6 +103,8 @@ function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
   if (jumlahBaris === 0) return keranjangKosong();
   return {
     ...keranjangKosong(),
+    /* `?kanal=dine_in` — kanal pesanan yang dibawa dari K-03. */
+    kanal: new URLSearchParams(window.location.search).get('kanal') === 'dine_in' ? 'dine_in' : 'takeaway',
     baris: Array.from({ length: jumlahBaris }, (_, i) => ({
       id: `uji-${i}`,
       variationId: `var-${i}`,

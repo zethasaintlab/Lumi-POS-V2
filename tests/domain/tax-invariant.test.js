@@ -25,6 +25,7 @@ const path = require('node:path');
 
 const SERVER_SRC = path.join(__dirname, '../../apps/server/src');
 const DOMAIN_SRC = path.join(__dirname, '../../packages/domain/src');
+const KASIR_HITUNG_SRC = path.join(__dirname, '../../apps/kasir/src/kasir');
 
 // Satu-satunya file yang BOLEH memuat aritmetika tarif.
 const TAX_MODULE = path.join(DOMAIN_SRC, 'tax.ts');
@@ -93,6 +94,15 @@ test('invariant #7: tidak ada angka tarif pajak di apps/server', async () => {
 test('invariant #7: tidak ada angka tarif pajak di packages/domain selain tax.ts', async () => {
   const { files, findings } = await scan(DOMAIN_SRC);
   assert.ok(files.length > 1, 'packages/domain/src harus punya lebih dari satu file -- guard lulus vakum');
+  assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
+});
+
+// Jalur hitung klien (keranjang, kanal, penjualan). `kanal.ts` (Task 10) lahir
+// di sini; guard ini yang membuat `* 0.11` di dalamnya merah, bukan hanya di server.
+test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/kasir (jalur hitung klien)', async () => {
+  const { files, findings } = await scan(KASIR_HITUNG_SRC);
+  assert.ok(files.length > 5, 'apps/kasir/src/kasir harus punya banyak file -- guard lulus vakum');
+  assert.ok(files.some((f) => f.endsWith('kanal.ts')), 'kanal.ts tidak terpindai');
   assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
 });
 

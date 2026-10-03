@@ -33,7 +33,7 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Pesanan tahan',
 ];
 /** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon', 'Batalkan']);
+const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Batalkan']);
 /** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
     Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
 const SEMENTARA = new Set([]);
@@ -110,7 +110,7 @@ after(async () => {
  * karena beberapa test butuh cart TERISI (`keranjang-penuh`).
  */
 async function bukaK03(opsi = {}) {
-  const { keadaan = 'normal', matikan = [] } = opsi;
+  const { keadaan = 'normal', matikan = [], pajakKanal = false, layanan = false } = opsi;
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
@@ -119,6 +119,8 @@ async function bukaK03(opsi = {}) {
   });
   const q = new URLSearchParams({ layar: 'K-03', keadaan });
   if (matikan.length > 0) q.set('matikan', matikan.join(','));
+  if (pajakKanal) q.set('pajakKanal', '1');
+  if (layanan) q.set('layanan', '1');
   await hal.goto(`${alamat}/harness-galeri.html?${q.toString()}`, { waitUntil: 'load' });
   await hal.waitForSelector('.kasir-toolbar', { timeout: 10_000 });
   return { hal, galat };
@@ -133,7 +135,12 @@ test('⛔ toolbar berisi label TERPASANG dalam urutan mockup (ditambah SEMENTARA
     const header = document.querySelector('.kasir-header');
     const tombol = toolbar ? [...toolbar.querySelectorAll('button')] : [];
     return {
-      label: tombol.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
+      /* Pajak: label terlihat = kanal aktif ("Takeaway"/"Dine in"), jadi dicocokkan lewat NAMA AKSESIBEL
+         berawalan "Pajak" (Q8, Task 10), bukan teks terlihat. */
+      label: tombol.map((b) => {
+        const aria = b.getAttribute('aria-label');
+        return aria && /^Pajak/.test(aria) ? 'Pajak' : b.innerText.trim().replace(/\s+/g, ' ');
+      }),
       diHeader: header && toolbar ? header.contains(toolbar) : false,
     };
   });
@@ -587,4 +594,93 @@ test('⛔ penulisan jejak GAGAL (melempar) → dialog menahan dengan galat, kera
   assert.equal(audit(r.tulis).length, 0);
   assert.equal(outbox(r.tulis).length, 0);
   assert.equal(hapusKeranjang(r.tulis).length, r.hapusAwal, 'keranjang_lokal dihapus padahal jejak gagal');
+});
+
+// ---------------------------------------------------------------------------
+// Task 10 — Pajak = pilihan kanal (FR-C7). G-KANAL / G-TANPA-LAYANAN.
+
+const bukaLembarPajak = async (hal) => {
+  await hal.getByRole('button', { name: /^Pajak:/ }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  // Nama tarif datang dari `hitungKeranjang` secara asinkron — tunggu sampai tampil.
+  await hal.waitForFunction(
+    () => !/Membaca tarif/.test(document.querySelector('[role="dialog"]')?.innerText ?? ''),
+    null,
+    { timeout: 5000 }
+  );
+};
+const teksDialog = (hal) => hal.locator('[role="dialog"]').innerText();
+const barisRingkasan = (hal) =>
+  hal.evaluate(() => [...document.querySelectorAll('.kasir-subtotal')].map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
+
+test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masing-masing; memilih Dine in mengubah baris "Pajak · <nama tarif>" di keranjang', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', pajakKanal: true });
+  // Nama aksesibel + label terlihat = kanal aktif (Q8).
+  const tombol = hal.getByRole('button', { name: 'Pajak: Takeaway', exact: true });
+  assert.equal(await tombol.count(), 1, 'tombol toolbar tidak bernama aksesibel "Pajak: Takeaway"');
+  assert.match(await tombol.innerText(), /^Takeaway$/, 'label terlihat bukan kanal aktif');
+  await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-subtotal')].some((e) => /PPN 11%/.test(e.innerText)), null, { timeout: 5000 });
+  const sebelum = (await barisRingkasan(hal)).filter((b) => /PPN 11%|PBJT 10%/.test(b));
+
+  await bukaLembarPajak(hal);
+  const lembar = await teksDialog(hal);
+  assert.match(lembar, /Takeaway · PPN 11%/, `lembar tanpa "Takeaway · PPN 11%": ${lembar}`);
+  assert.match(lembar, /Dine in · PBJT 10%/, `lembar tanpa "Dine in · PBJT 10%": ${lembar}`);
+  assert.doesNotMatch(lembar, /Tarif sama untuk kedua kanal/, 'kedua kanal berbeda tarif, tetapi lembar mengklaim sama');
+
+  await hal.getByRole('button', { name: /^Dine in · PBJT 10%/ }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
+  await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-subtotal')].some((e) => /PBJT 10%/.test(e.innerText)), null, { timeout: 5000 });
+  const sesudah = (await barisRingkasan(hal)).filter((b) => /PPN 11%|PBJT 10%/.test(b));
+  const namaBaru = await hal.getByRole('button', { name: 'Pajak: Dine in', exact: true }).count();
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(namaBaru, 1, 'nama aksesibel tidak berubah jadi "Pajak: Dine in"');
+  assert.ok(sebelum.length === 1 && /PPN 11%/.test(sebelum[0]), `sebelum: harap baris PPN 11% saja, terbaca ${JSON.stringify(sebelum)}`);
+  assert.ok(sesudah.length === 1 && /PBJT 10%/.test(sesudah[0]), `sesudah memilih Dine in: harap baris PBJT 10% saja, terbaca ${JSON.stringify(sesudah)}`);
+});
+
+test('outlet tanpa tarif per kanal: kedua pilihan menyebut tarif yang sama DAN lembarnya mengatakan itu', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await bukaLembarPajak(hal);
+  const lembar = await teksDialog(hal);
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.match(lembar, /Takeaway · PPN 11%/);
+  assert.match(lembar, /Dine in · PPN 11%/, `Dine in tidak menyebut tarif yang sama: ${lembar}`);
+  assert.match(lembar, /Tarif sama untuk kedua kanal/, 'kedua kanal sama tarif, lembar tidak mengatakannya');
+});
+
+test('Pajak NONAKTIF dengan alasan terbaca saat keranjang kosong (Aturan tombol §4)', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal' });
+  const hasil = await hal.evaluate(() => {
+    const b = [...document.querySelectorAll('.kasir-toolbar button')].find((x) => /^Pajak/.test(x.getAttribute('aria-label') ?? ''));
+    if (!b) return null;
+    const id = b.getAttribute('aria-describedby');
+    return { disabled: b.disabled, alasan: id ? document.getElementById(id)?.textContent.trim() : null };
+  });
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(hasil, 'tombol Pajak tidak ada');
+  assert.equal(hasil.disabled, true);
+  assert.ok(hasil.alasan && hasil.alasan.length > 0, 'Pajak nonaktif tanpa alasan terbaca');
+});
+
+test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak dan keranjang', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', pajakKanal: true, layanan: true });
+  await bukaLembarPajak(hal);
+  const lembar = await teksDialog(hal);
+  await hal.getByRole('button', { name: /^Dine in · PBJT 10%/ }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
+  await hal.waitForFunction(() => [...document.querySelectorAll('.kasir-subtotal')].some((e) => /PBJT 10%/.test(e.innerText)), null, { timeout: 5000 });
+  const ringkasan = (await barisRingkasan(hal)).join(' | ');
+  const seluruh = await hal.evaluate(() => document.body.innerText);
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.match(ringkasan, /PBJT 10%/, 'fixture: kanal Dine in tidak sampai ke keranjang');
+  for (const [nama, teks] of [['lembar Pajak', lembar], ['ringkasan keranjang', ringkasan], ['seluruh K-03', seluruh]]) {
+    assert.doesNotMatch(teks, /layanan|service/i, `${nama} menyiratkan biaya layanan: ${teks.match(/.{0,30}(layanan|service).{0,30}/i)?.[0]}`);
+  }
 });

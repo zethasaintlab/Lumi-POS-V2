@@ -3,6 +3,7 @@ import type { KonfigPerangkat } from '../../../../packages/sync-client/src/peran
 import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
 import type { Keranjang } from './keranjang.ts';
+import { kanalDari } from './kanal.ts';
 
 /**
  * FR-C3 + FR-C14 — jalur penjualan ONLINE-FIRST untuk QRIS dinamis.
@@ -202,7 +203,6 @@ export async function mintaQr({
   shiftId,
   keranjang,
   draf,
-  channel,
   total,
   idBaru,
   sekarang,
@@ -213,7 +213,6 @@ export async function mintaQr({
   shiftId: string;
   keranjang: Keranjang;
   draf: DrafTerkirim;
-  channel: 'dine_in' | 'takeaway';
   total: bigint;
   idBaru: () => string;
   sekarang: string;
@@ -225,7 +224,8 @@ export async function mintaQr({
     receiptNumber: draf.receiptNumber,
     businessDate: draf.businessDate,
     sequence: draf.sequence,
-    channel,
+    // ⛔ Kanal dari KERANJANG — sama dengan yang dipakai `simpanPenjualan` untuk order yang sama.
+    channel: kanalDari(keranjang),
     checkId: draf.checkId,
     hlc: draf.hlc,
     occurredAt: draf.occurredAt,

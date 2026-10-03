@@ -239,6 +239,45 @@ test('FR-C7: tarif channel lain tidak dipakai', async () => {
   assert.equal(b.lines[0].taxRateId, 'r-all-ch');
 });
 
+// --- ⛔ fixture #1 (keputusan user 2 September 2026): jenis pajak PPN ---
+//
+// Angka dihitung TANGAN, bukan dari fungsi yang diuji: 90.000 − diskon 9.000 = 81.000
+// (60.000→54.000, 30.000→27.000 proporsional). Eksklusif: 81.000 × 11% = 8.910.
+// Inklusif: 81.000 − round(81.000 ÷ 1,11 = 72.972,97) = 81.000 − 72.973 = 8.027.
+// `TaxCalculator` tidak membaca `tax_rate.type`; yang diuji adalah tarif 1100n.
+const PPN_11 = {
+  id: 'rate-ppn-11',
+  name: 'PPN 11%',
+  rateScaled: 1100n,
+  isInclusive: false,
+  outletId: null,
+  channel: 'all',
+  appliesTo: 'all_items',
+  appliesToIds: [],
+};
+
+test('⛔ fixture #1: tax_rate type ppn 11% (rate 1100 berskala 10.000) dihitung TaxCalculator', async () => {
+  const { calculateTax } = await import(MOD);
+  const masuk = (rate) => ({
+    lines: [baris('a', 60000n), baris('b', 30000n)],
+    serviceChargeAmount: 0n,
+    orderDiscount: 9000n,
+    taxRates: [rate],
+    channel: 'takeaway',
+    outletId: 'outlet-1',
+  });
+
+  const eks = calculateTax(masuk(PPN_11));
+  assert.equal(eks.lines[0].base, 81000n);
+  assert.equal(eks.totalTax, 8910n, 'eksklusif: 81.000 x 11%');
+  assert.equal(eks.totalTaxExclusive, 8910n, 'eksklusif MENAMBAH total');
+  assert.equal(eks.lines[0].name, 'PPN 11%');
+
+  const inkl = calculateTax(masuk({ ...PPN_11, id: 'rate-ppn-11-inc', isInclusive: true }));
+  assert.equal(inkl.totalTax, 8027n, 'inklusif: 81.000 - 81.000/1,11');
+  assert.equal(inkl.totalTaxExclusive, 0n, 'inklusif TIDAK menambah total');
+});
+
 // --- AC FR-C8 kelima: diskon order proporsional ---
 
 test('diskon order didistribusikan proporsional ke baris', async () => {

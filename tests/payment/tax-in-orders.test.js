@@ -174,6 +174,49 @@ test('FR-C7: order dine_in memakai tarif all, bukan tarif takeaway', async () =>
   assert.equal(order.taxAmount, 2000, '20.000 x 10%');
 });
 
+// --- Task 10 (kampanye Hidupkan desain): kanal dipilih kasir, server mengikutinya ---
+
+test('⛔ server: channel dine_in memilih tarif dine_in dan tax_amount sama dengan perangkat', async () => {
+  await akhiriTarifSeed();
+  await buatTarif({ rate: '0.1100', channel: 'all', name: 'PPN 11%', type: 'ppn' });
+  const dine = await buatTarif({ rate: '0.1000', channel: 'dine_in', name: 'PBJT 10%' });
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, { channel: 'dine_in' });
+  assert.equal(order.channel, 'dine_in');
+  assert.equal(order.lines[0].taxRateId, dine.id, 'tarif dine_in harus menang atas all');
+
+  // Pembanding: `calculateTax` langsung, dengan tarif yang SAMA yang dipakai perangkat.
+  const { calculateTax } = await import('../../packages/domain/src/tax.ts');
+  const spec = (id, name, rateScaled, channel) => ({
+    id, name, rateScaled, isInclusive: false, outletId: null, channel, appliesTo: 'all_items', appliesToIds: [],
+  });
+  const perangkat = calculateTax({
+    lines: [{ lineId: 'x', itemId: 'x', categoryId: null, amount: BigInt(order.subtotal) }],
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates: [spec('all', 'PPN 11%', 1100n, 'all'), spec('dine', 'PBJT 10%', 1000n, 'dine_in')],
+    channel: 'dine_in',
+    outletId: base.outlet.id,
+  });
+  assert.equal(BigInt(order.taxAmount), perangkat.totalTax, 'tax_amount server ≠ hitungan perangkat');
+  assert.equal(order.taxAmount, 2000, '20.000 x 10%');
+});
+
+test('⛔ server: dine_in + service_charge_rate bukan nol → service_charge_amount 0', async () => {
+  await akhiriTarifSeed();
+  await buatTarif({ rate: '0.1000', channel: 'dine_in', name: 'PBJT 10%' });
+  await owner.query('BEGIN');
+  await owner.query("SELECT set_config('app.tenant_id', $1, true)", [tenant.id]);
+  await owner.query('UPDATE outlet SET service_charge_rate = 0.1000 WHERE id = $1', [base.outlet.id]);
+  const rate = await owner.query('SELECT service_charge_rate FROM outlet WHERE id = $1', [base.outlet.id]);
+  await owner.query('COMMIT');
+  assert.equal(Number(rate.rows[0].service_charge_rate), 0.1, 'fixture: service_charge_rate outlet tidak terpasang');
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, { channel: 'dine_in' });
+  assert.equal(order.serviceChargeAmount, 0, 'service charge masih terkunci nol (Q2 terbuka)');
+  assert.equal(order.total, order.subtotal - order.orderDiscount + order.taxAmount);
+});
+
 // --- T12: snapshot kebal perubahan tarif ---
 //
 // INI acceptance criteria FR-C6 kedua, dan alasan seluruh mekanisme snapshot

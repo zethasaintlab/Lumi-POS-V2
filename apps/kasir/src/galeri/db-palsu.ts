@@ -179,6 +179,12 @@ export interface OpsiDbPalsu {
   pembulatan?: number;
   /** `[EKSPLORASI]` `?modePembulatan=up` — `outlet.rounding_mode` (bawaan half_up). */
   modePembulatan?: 'half_up' | 'up' | 'down';
+  /** `[EKSPLORASI]` `?pajakKanal=1` — SATU tarif tambahan khusus `dine_in` (PBJT 10%) di samping PPN 11% kanal
+      `all`, supaya lembar Pajak (Task 10) punya dua tarif berbeda untuk dibandingkan. Dibaca `k03-toolbar.test.js`. */
+  pajakKanal?: boolean;
+  /** `[EKSPLORASI]` `?layanan=1` — `outlet.service_charge_rate` 10% (1000), untuk G-TANPA-LAYANAN: service charge
+      masih terkunci nol (Q2 terbuka), jadi tidak satu layar pun boleh menyiratkan biaya layanan. */
+  layanan?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -362,7 +368,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
            `'nearest'` yang sempat di sini tidak dikenal `simpanPenjualan`, dan
            kegagalannya baru terlihat saat K-07 dicoba dari galeri. */
         rounding_mode: opsi.modePembulatan ?? 'half_up',
-        service_charge_rate: 0,
+        service_charge_rate: opsi.layanan ? 1000 : 0,
         vertical_profile_id: 'vp-1',
         discount_threshold_percent: 2000,
         discount_threshold_amount: 50000,
@@ -395,6 +401,25 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         effective_from: '2026-01-01T00:00:00.000Z',
         effective_to: null,
       },
+      ...(opsi.pajakKanal
+        ? [
+            {
+              id: 'tax-pbjt-dine',
+              tenant_id: 'ten-galeri',
+              outlet_id: null,
+              name: 'PBJT 10%',
+              type: 'pbjt',
+              rate: 1000,
+              is_inclusive: 0,
+              jurisdiction: 'ID',
+              channel: 'dine_in',
+              applies_to: 'all_items',
+              applies_to_ids: null,
+              effective_from: '2026-01-01T00:00:00.000Z',
+              effective_to: null,
+            },
+          ]
+        : []),
     ],
     vertical_profile: [
       {

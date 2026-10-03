@@ -1902,3 +1902,52 @@ test('⛔ S9: kotak Kembalian HANYA di tab Tunai — tab QRIS/Kartu/Transfer tan
     await hal.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// PENJAGA 9 — kanal dari K-03 menentukan total K-06 dan order tersimpan (Task 10, FR-C7)
+// ---------------------------------------------------------------------------
+
+test('⛔ P9: total K-06 dari jalur hitung dengan kanal — dine_in memakai tarif dine_in, takeaway tarif all', async () => {
+  /* Dua baris × 20.000 = 40.000. Dine in: PBJT 10% eksklusif → 44.000. Takeaway: PPN 11% → 44.400.
+     Angkanya dihitung tangan di sini; yang diuji adalah bahwa K-06 membawa kanal keranjang. */
+  for (const [kanal, harap] of [['dine_in', 44000n], ['takeaway', 44400n]]) {
+    const hal = await buka(`render=k06&baris=2&pajakKanal=1&kanal=${kanal}`);
+    try {
+      assert.equal(await nilaiTotal(hal), harap, `kanal ${kanal}: total K-06 bukan ${harap}`);
+    } finally {
+      await hal.close();
+    }
+  }
+});
+
+test('⛔ P9: Pembayaran.tsx tidak memaku kanal — tidak ada literal channel/kanal di layar K-06', () => {
+  const sumber = fs.readFileSync(path.join(AKAR, 'apps/kasir/src/layar/Pembayaran.tsx'), 'utf8');
+  const kode = sumber.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(
+    kode,
+    /\b(channel|kanal)\s*[:=]\s*['"](takeaway|dine_in)['"]/,
+    'Pembayaran.tsx memaku channel/kanal sebagai literal — kanal pilihan kasir di K-03 hilang di K-06'
+  );
+});
+
+test('⛔ P9 + G-TANPA-LAYANAN DOM: Dine in + service_charge_rate bukan nol — K-06 dan K-07 tanpa teks /layanan|service/i, order.channel tersimpan dine_in', async () => {
+  const hal = await buka('render=k06&baris=2&pajakKanal=1&layanan=1&kanal=dine_in');
+  try {
+    const k06 = await teks(hal);
+    assert.match(k06, /PBJT 10%/, 'fixture: tarif dine_in tidak tampil di K-06');
+    assert.doesNotMatch(k06, /layanan|service/i, `K-06 menyiratkan biaya layanan: ${k06.match(/.{0,30}(layanan|service).{0,30}/i)?.[0]}`);
+
+    await hal.getByLabel('Nominal diterima').fill('100000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    const k07 = await teks(hal);
+    assert.doesNotMatch(k07, /layanan|service/i, `K-07 menyiratkan biaya layanan: ${k07.match(/.{0,30}(layanan|service).{0,30}/i)?.[0]}`);
+
+    const order = (await tulisan(hal)).find((t) => /^INSERT INTO "order"/i.test(t.sql));
+    assert.ok(order, 'baris order tidak ditulis');
+    assert.equal(order.params[8], 'dine_in', 'order.channel tersimpan bukan dine_in');
+    assert.equal(BigInt(order.params[10]), 0n, 'fixture: tidak ada diskon');
+  } finally {
+    await hal.close();
+  }
+});
