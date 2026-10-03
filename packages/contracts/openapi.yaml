@@ -4005,12 +4005,15 @@ paths:
                 id: { type: string }
                 method:
                   type: string
-                  # Daftar TERTUTUP. `other` (voucher fisik, transfer) belum
-                  # dibangun -- FR-C2 menuntut catatan wajib untuknya, dan
-                  # menerimanya sebelum itu ada berarti membangun separuh
-                  # FR-C2 tanpa pengaman yang menyertainya.
-                  enum: [cash, qris_dynamic, qris_static, card_edc]
+                  # Daftar TERTUTUP. `other` HANYA untuk Transfer: ia menuntut
+                  # `provider: bank_transfer` dan `reference` (divalidasi di
+                  # handler; PR 2B Task 7, keputusan user P1). Voucher fisik
+                  # dan `other` lain belum dibangun.
+                  enum: [cash, qris_dynamic, qris_static, card_edc, other]
                   default: cash
+                # Hanya untuk `method: other`. Daftar tertutup di handler:
+                # `bank_transfer`; nilai lain ditolak 400 VALIDATION_ERROR.
+                provider: { type: string, nullable: true }
                 # tenderedAmount = uang yang DISERAHKAN pelanggan (tunai
                 # saja), bukan yang terpakai. Server yang menghitung amount
                 # dan changeAmount, karena keduanya bergantung pada pembulatan
@@ -4099,6 +4102,14 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: Order tidak dalam status yang bisa dibayar, id sudah ada, atau key sedang diproses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            Idempotency-Key sudah dipakai untuk body yang berbeda
+            (IDEMPOTENCY_KEY_HASH_MISMATCH)
           content:
             application/json:
               schema:
@@ -7079,6 +7090,7 @@ components:
             type: object
             required: [method, jumlahTransaksi, total]
             properties:
+              # Kode laporan: `transfer` = other + bank_transfer.
               method: { type: string }
               jumlahTransaksi: { type: integer }
               total: { type: string }
@@ -7401,6 +7413,9 @@ components:
             properties:
               id: { type: string }
               method: { type: string }
+              # Aditif (PR 2B Task 7): `other` + `bank_transfer` = Transfer.
+              # Klien lama yang mengabaikannya menampilkan `other`.
+              provider: { type: string, nullable: true }
               amount: { type: string }
               tenderedAmount: { type: string, nullable: true }
               changeAmount: { type: string, nullable: true }
@@ -7566,7 +7581,10 @@ components:
             properties:
               method:
                 type: string
-                enum: [cash, qris_dynamic, qris_static, card_edc, other]
+                # KODE LAPORAN, bukan nilai kolom: `transfer` = `other` +
+                # provider `bank_transfer`; `other` = sisanya (tidak pernah
+                # Transfer). Aturan lipatnya di `kodeLaporanMetode`.
+                enum: [cash, qris_dynamic, qris_static, card_edc, transfer, other]
               jumlahTransaksi: { type: integer }
               totalDiterima: { type: string }
               perkiraanMdr:
@@ -7635,7 +7653,8 @@ components:
                 properties:
                   method:
                     type: string
-                    enum: [cash, qris_dynamic, qris_static, card_edc, other]
+                    # Kode laporan (`transfer` = other + bank_transfer).
+                    enum: [cash, qris_dynamic, qris_static, card_edc, transfer, other]
                   jumlahTransaksi: { type: integer }
                   totalDiterima: { type: string }
                   perkiraanMdr:
@@ -7800,7 +7819,8 @@ components:
         changeAmount: { type: integer, nullable: true }
         status: { type: string }
         confirmedManually: { type: boolean }
-        # Terisi hanya untuk metode yang lewat gateway (QRIS dinamis).
+        # Terisi untuk metode yang lewat gateway (QRIS dinamis) dan untuk
+        # Transfer (`other` + `bank_transfer`, tanpa gateway).
         # `providerReference` bisa NULL walau provider terisi: payment ditulis
         # SEBELUM gateway dipanggil, supaya ia tetap ada bila gateway tidak
         # menjawab (FR-C14).

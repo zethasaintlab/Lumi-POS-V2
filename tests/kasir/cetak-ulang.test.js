@@ -297,3 +297,24 @@ test('⛔ cetak ulang mencetak DISKON, bukan nol', async () => {
   // menyodorkan dua angka yang selisihnya tidak dapat dijelaskan.
   assert.match(out, /Diskon/, `baris diskon hilang: ${out}`);
 });
+
+test('⛔ cetak ulang transfer menyebut "Transfer", bukan "Lainnya", dan sama dengan cetakan pertama', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  // Ganti pembayaran tunai menjadi transfer penuh.
+  db.sqlite.exec(`DELETE FROM payment`);
+  db.sqlite.exec(`
+    INSERT INTO payment (id, order_id, check_id, method, provider, provider_reference, amount, status,
+                         confirmed_manually, tendered_at)
+    VALUES ('pay-t','ord-1','chk','other','bank_transfer','TRF-RAHASIA-77',55000,'confirmed',1,'2026-07-26T14:32:00Z')
+  `);
+  const out = await cetak(db);
+  assert.ok(out.includes('Transfer'), 'metode Transfer tidak tercetak ulang');
+  assert.equal(out.includes('Lainnya'), false, 'transfer tercetak ulang sebagai Lainnya');
+  assert.equal(out.includes('TRF-RAHASIA-77'), false, '[Q5] struk transfer tidak mencetak referensi');
+  assert.equal(out.includes('Kembali'), false, 'baris kembalian tercetak untuk transfer');
+
+  // other TANPA provider tetap "Lainnya" -- lipatnya hanya untuk bank_transfer.
+  db.sqlite.exec(`UPDATE payment SET provider = NULL`);
+  assert.ok((await cetak(db)).includes('Lainnya'), 'other tanpa provider harus tetap Lainnya');
+});

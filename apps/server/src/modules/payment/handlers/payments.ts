@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from '../../../db.ts';
 import { withTenantTransaction } from '../../../db.ts';
 import { HttpError } from '../../../http-error.ts';
@@ -16,10 +16,13 @@ import { computeCashRounding } from '../../../../../../packages/domain/src/money
 import { assertTransition } from '../../../../../../packages/domain/src/order-state.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../../../packages/domain/src/buku-kas.ts';
 import {
+  PROVIDER_TRANSFER,
+  dikonfirmasiManual,
   periksaApprovalCode,
   periksaBukanNomorKartu,
   periksaCardLast4,
   periksaReferensi,
+  periksaTransfer,
   type GalatBayar,
 } from '../../../../../../packages/domain/src/pembayaran-manual.ts';
 import { perkiraanMdr, metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/mdr.ts';
@@ -58,6 +61,8 @@ interface OrderStateRow {
   total: string;
   tax_amount: string;
   outlet_id: string;
+  rounding_adjustment: string;
+  amount_due: string;
 }
 
 interface PaymentInput {
@@ -86,21 +91,29 @@ function toPayment(row: PaymentRow) {
   };
 }
 
-// Sub-project C-1 hanya tunai. QRIS statis butuh kontrol anti-fraud wajib
-// (FR-C2: field referensi, confirmed_manually, penanda di struk, laporan
-// exception) dan QRIS dinamis butuh gateway -- keduanya C-2. Menerimanya
-// sekarang berarti membangun separuh FR-C2 tanpa kontrol yang menyertainya.
-const SUPPORTED_METHODS = new Set(['cash', 'qris_dynamic', 'qris_static', 'card_edc']);
+// Satu daftar per jalur, dan SUPPORTED diturunkan dari ketiganya: metode yang
+// lolos validasi tetapi tak punya jalur akan jatuh ke cabang tunai (kas naik
+// oleh uang bank -- tinjauan Opus I-3). QRIS statis/EDC/Transfer (`other`) butuh kontrol
+// FR-C2 yang menyertainya; QRIS dinamis butuh gateway.
+const METODE_TUNAI = ['cash'] as const;
+const METODE_GATEWAY = ['qris_dynamic'] as const;
+const METODE_MANUAL = ['qris_static', 'card_edc', 'other'] as const;
+const SUPPORTED_METHODS = new Set<string>([...METODE_TUNAI, ...METODE_GATEWAY, ...METODE_MANUAL]);
 
 // QRIS dinamis tidak menerima `tenderedAmount` -- tidak ada uang yang
 // diserahkan di tangan. Yang dikirim klien adalah `amount`, nominal yang
 // diminta ke gateway.
-const GATEWAY_METHODS = new Set(['qris_dynamic']);
+const GATEWAY_METHODS = new Set<string>(METODE_GATEWAY);
 
 // Metode yang dikonfirmasi MANUSIA, bukan sistem. Tidak ada gateway yang
 // ditanyai -- kontrol wajibnya (referensi untuk QRIS statis, approval code
-// untuk EDC) adalah satu-satunya yang berdiri di sana.
-const MANUAL_METHODS = new Set(['qris_static', 'card_edc']);
+// untuk EDC, referensi untuk Transfer) adalah satu-satunya yang berdiri di sana.
+// `other` di sini SELALU Transfer: `provider` di luar daftar tertutup ditolak.
+const MANUAL_METHODS = new Set<string>(METODE_MANUAL);
+
+// Daftar TERTUTUP `provider` untuk `method = 'other'`. Menambah satu berarti
+// keputusan produk baru, bukan sekadar string.
+const PROVIDER_OTHER_DIIZINKAN: readonly string[] = [PROVIDER_TRANSFER];
 
 function assertMethodSupported(method: string): void {
   if (!SUPPORTED_METHODS.has(method)) {
@@ -451,12 +464,12 @@ const INSERT_MANUAL_PAYMENT_SQL = `
     id, tenant_id, outlet_id, device_id, order_id, check_id, method, amount,
     status, confirmed_manually, provider_reference, approval_code, card_last4,
     acquirer, terminal_reference, tendered_at, created_by, occurred_at, hlc,
-    mdr_estimated
+    mdr_estimated, provider
   )
   SELECT $1, $2, o.outlet_id, o.device_id, o.id, $3, $4, $5,
          'confirmed', $6, $7, $8, $9,
          $10, $11, now(), $12, COALESCE($13::timestamptz, now()), $14,
-         $16
+         $16, $17
     FROM "order" o WHERE o.id = $15
   RETURNING *
 `;
@@ -476,8 +489,12 @@ const INSERT_MANUAL_PAYMENT_SQL = `
  * bahwa tidak ada sistem yang memverifikasi, dan FR-G5 memakainya untuk
  * laporan exception per kasir.
  *
- * `provider` sengaja dibiarkan NULL: tidak ada penyedia yang terlibat.
- * Mengisinya akan membuat laporan mengira transaksi ini pernah diverifikasi.
+ * `provider` NULL untuk QRIS statis dan EDC: tidak ada penyedia yang terlibat,
+ * dan mengisinya akan membuat laporan mengira transaksi ini pernah
+ * diverifikasi. Satu-satunya pengisi adalah Transfer (`method = 'other'`,
+ * `provider = 'bank_transfer'`): di sana `provider` bukan penyedia gateway
+ * melainkan penanda jenis, yang dipakai laporan untuk menampilkan "Transfer"
+ * alih-alih "Lainnya" (`kodeLaporanMetode`). `confirmed_manually` tetap true.
  */
 async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   const { pool, hlc } = deps;
@@ -489,6 +506,7 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     cardLast4?: unknown;
     acquirer?: unknown;
     terminalReference?: unknown;
+    provider?: unknown;
   };
 
   assertGatewayAmountValid(body.amount);
@@ -496,8 +514,22 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   let reference: string | null = null;
   let approvalCode: string | null = null;
   let cardLast4: string | null = null;
+  let provider: string | null = null;
 
-  if (method === 'qris_static') {
+  if (method === 'other') {
+    // ⛔ Daftar tertutup, dan pesannya MENYEBUT pilihannya.
+    if (typeof body.provider !== 'string' || !PROVIDER_OTHER_DIIZINKAN.includes(body.provider)) {
+      throw new HttpError(
+        400,
+        'VALIDATION_ERROR',
+        `provider untuk method other harus salah satu dari: ${PROVIDER_OTHER_DIIZINKAN.join(', ')}.`
+      );
+    }
+    provider = body.provider;
+    // Aturan (dan pesannya) milik domain, dibagi dengan perangkat.
+    lempar(periksaTransfer(body.reference, body.acquirer));
+    reference = (body.reference as string).trim();
+  } else if (method === 'qris_static') {
     assertReferenceValid(body.reference);
     reference = body.reference.trim();
   } else {
@@ -518,15 +550,38 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
   const amount = BigInt(body.amount);
   const hlcValue = body.hlc === undefined ? hlc.tick() : hlc.update(BigInt(body.hlc));
 
+  // ⛔ Hash SELURUH isi yang disimpan, bukan `orderId:id`: key sama dengan isi
+  // beda dijawab dari cache dan pembayaran kedua hilang diam-diam. `hlc`
+  // (metadata) sengaja di luar hash. Baris lama yang ditulis sebelum PR 2B
+  // memakai `orderId:id`; retry atas baris itu tetap dianggap request yang
+  // sama, supaya respons yang hilang di seberang rilis tidak menjadi 422.
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify([
+        orderId, body.id, method, amount.toString(), reference, approvalCode, cardLast4,
+        acquirer, terminalReference, provider, body.occurredAt ?? null,
+      ])
+    )
+    .digest('hex');
+  const hashLama = `${orderId}:${body.id}`;
+
   const hasil = await withTenantTransaction(pool, tenantId, async (client) => {
     const existing = await findIdempotencyKey(client, idempotencyKey);
-    if (existing !== null && existing.completed) {
-      return { kind: 'cached' as const, record: existing };
+    if (existing !== null) {
+      if (existing.requestHash !== requestHash && existing.requestHash !== hashLama) {
+        throw new HttpError(
+          422,
+          'IDEMPOTENCY_KEY_HASH_MISMATCH',
+          `Idempotency-Key ${idempotencyKey} sudah dipakai untuk request dengan body yang berbeda.`
+        );
+      }
+      if (existing.completed) return { kind: 'cached' as const, record: existing };
     }
-    await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash: `${orderId}:${body.id}` });
+    await claimIdempotencyKey(client, { key: idempotencyKey, tenantId, requestHash });
 
     const { rows: orderRows } = await client.query<OrderStateRow>(
-      `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id, c.id AS check_id
+      `SELECT o.id, o.status, o.total, o.tax_amount, o.outlet_id,
+            o.rounding_adjustment, o.amount_due, c.id AS check_id
          FROM "order" o JOIN "check" c ON c.order_id = o.id
         WHERE o.id = $1 FOR UPDATE OF o`,
       [orderId]
@@ -549,9 +604,9 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     try {
       const { rows } = await client.query<PaymentRow>(INSERT_MANUAL_PAYMENT_SQL, [
         body.id, tenantId, order.check_id, method, amount.toString(),
-        method === 'qris_static', reference, approvalCode, cardLast4,
+        dikonfirmasiManual(method), reference, approvalCode, cardLast4,
         acquirer, terminalReference, actorId, body.occurredAt ?? null, hlcValue.toString(), orderId,
-        mdr,
+        mdr, provider,
       ]);
       paymentRow = rows[0];
     } catch (err) {
@@ -564,13 +619,21 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     const total = BigInt(order.total);
     const sudahDibayar = await sumConfirmed(client, orderId);
     let statusBaru = order.status;
+    let pembulatan = order.rounding_adjustment;
+    let sisaTagihan = order.amount_due;
     if (sudahDibayar >= total) {
       assertTransition(order.status, 'paid');
       assertTransition('paid', 'closed');
       // rounding_adjustment TIDAK disentuh: pembulatan FR-C9 hanya berlaku
       // pada sisa yang dibayar TUNAI, dan tidak ada tunai di sini.
-      await client.query(`UPDATE "order" SET status = 'closed', amount_due = total WHERE id = $1`, [orderId]);
+      const { rows: tutup } = await client.query<{ rounding_adjustment: string; amount_due: string }>(
+        `UPDATE "order" SET status = 'closed', amount_due = total WHERE id = $1
+         RETURNING rounding_adjustment, amount_due`,
+        [orderId]
+      );
       statusBaru = 'closed';
+      pembulatan = tutup[0].rounding_adjustment;
+      sisaTagihan = tutup[0].amount_due;
     }
 
     await insertOutboxEvent(client, {
@@ -585,7 +648,7 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
     const responseBody = {
       payment: {
         ...toPayment(paymentRow),
-        provider: null,
+        provider,
         providerReference: reference,
       },
       order: {
@@ -593,8 +656,10 @@ async function recordManualPayment(deps: ManualDeps, ctx: GatewayCtx) {
         status: statusBaru,
         total: Number(total),
         taxAmount: Number(order.tax_amount),
-        roundingAdjustment: 0,
-        amountDue: Number(total),
+        // Dibaca dari baris order, bukan literal: respons yang menulis `0`
+        // sendiri tidak dapat mengungkap baris yang menyimpang.
+        roundingAdjustment: Number(pembulatan),
+        amountDue: Number(sisaTagihan),
       },
       outstanding: Number(sudahDibayar >= total ? 0n : total - sudahDibayar),
     };
@@ -872,6 +937,16 @@ export function createPaymentEntryHandlers(pool: Pool, hlc: Hlc, provider: Payme
         return await recordManualPayment(
           { pool, hlc },
           { req, reply, tenantId, actorId, idempotencyKey, orderId, method }
+        );
+      }
+
+      // Pagar kedua: hanya tunai yang boleh sampai ke cabang yang menulis
+      // `cash_movement`. Metode yang didukung tetapi tak berjalur = cacat server.
+      if (method !== 'cash') {
+        throw new HttpError(
+          500,
+          'PAYMENT_METHOD_UNROUTED',
+          `Metode "${method}" didukung tetapi tidak punya jalur pembayaran.`
         );
       }
 

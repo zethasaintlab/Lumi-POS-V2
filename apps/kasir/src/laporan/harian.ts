@@ -1,4 +1,5 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
+import { kodeLaporanMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 import {
   posisiPenjualan,
   type PosisiPenjualan,
@@ -126,8 +127,8 @@ export async function laporanHarian(
   // Ditemukan saat membangun `GET /reports/payments`, yang menegakkan aturan
   // yang sama. `sumConfirmed` di server sudah memakainya sejak Modul C untuk
   // pelunasan order; yang di sini tertinggal.
-  const bayar = await db.getAll<{ method: string; amount: number; order_id: string }>(
-    `SELECT p.method, p.amount, p.order_id
+  const bayar = await db.getAll<{ method: string; provider: string | null; amount: number; order_id: string }>(
+    `SELECT p.method, p.provider, p.amount, p.order_id
        FROM payment p JOIN "order" o ON o.id = p.order_id
       WHERE o.business_date = ?
         AND p.status = 'confirmed'`,
@@ -136,10 +137,12 @@ export async function laporanHarian(
   const perMetodeMap = new Map<string, { jumlah: number; total: bigint }>();
   for (const b of bayar) {
     if (batal.has(b.order_id)) continue;
-    const kini = perMetodeMap.get(b.method) ?? { jumlah: 0, total: 0n };
+    // ⛔ Kode laporan: transfer (other + bank_transfer) terpisah dari `other`.
+    const kode = kodeLaporanMetode(b.method, b.provider);
+    const kini = perMetodeMap.get(kode) ?? { jumlah: 0, total: 0n };
     kini.jumlah += 1;
     kini.total += BigInt(b.amount);
-    perMetodeMap.set(b.method, kini);
+    perMetodeMap.set(kode, kini);
   }
 
   // Distribusi per jam (`spec-g:90`) — untuk perencanaan staf.

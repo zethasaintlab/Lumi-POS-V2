@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Tombol } from '../Tombol.tsx';
+import { Icon } from 'ds';
+import { GambarQr } from './GambarQr.tsx';
 import {
   BATAS_POLLING_MS,
   JEDA_POLLING_MS,
@@ -24,7 +26,8 @@ import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 export type HasilPanel =
   | { status: 'lunas' }
-  | { status: 'batal' }
+  /** `baru`: kasir menekan "Buat kode baru" sesudah QR kedaluwarsa. */
+  | { status: 'batal'; baru?: boolean }
   /** Kasir menutup layar; drafnya SENGAJA dibiarkan hidup di server. */
   | { status: 'ditunda' };
 
@@ -38,6 +41,15 @@ interface Props {
   /** Di-inject supaya polling dapat diuji tanpa menunggu waktu nyata. */
   jeda?: number;
   batas?: number;
+  /** Jam (ms) yang di-inject: hitung mundur dan batas polling memakainya, bukan `Date.now()` langsung. */
+  sekarang?: () => number;
+}
+
+const dua = (n: number) => String(n).padStart(2, '0');
+/** `MM:SS`, dibulatkan KE ATAS: 00:00 hanya muncul saat batasnya sungguh lewat. */
+function formatSisa(ms: number): string {
+  const detik = Math.max(0, Math.ceil(ms / 1000));
+  return `${dua(Math.floor(detik / 60))}:${dua(detik % 60)}`;
 }
 
 export function PanelQris({
@@ -49,11 +61,20 @@ export function PanelQris({
   onSelesai,
   jeda = JEDA_POLLING_MS,
   batas = BATAS_POLLING_MS,
+  sekarang = Date.now,
 }: Props) {
   const [status, setStatus] = useState<StatusBayar>('pending');
   const [habisWaktu, setHabisWaktu] = useState(false);
   const [sibuk, setSibuk] = useState(false);
-  const mulai = useRef(Date.now());
+  const jamRef = useRef(sekarang);
+  jamRef.current = sekarang;
+  const mulai = useRef(sekarang());
+  const [kini, setKini] = useState(() => sekarang());
+
+  useEffect(() => {
+    const t = setInterval(() => setKini(jamRef.current()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let hidup = true;
@@ -70,7 +91,7 @@ export function PanelQris({
          sebagai `pending_confirmation` dan masuk daftar "Perlu diperiksa".
          Menandainya gagal berarti membatalkan transaksi yang uangnya mungkin
          sudah masuk. */
-      if (Date.now() - mulai.current >= batas) {
+      if (jamRef.current() - mulai.current >= batas) {
         setHabisWaktu(true);
         return;
       }
@@ -84,57 +105,92 @@ export function PanelQris({
     };
   }, [kirim, paymentId, jeda, batas]);
 
+  /* ⛔ `onSelesai` lewat ref, efeknya hanya bergantung pada `status`: induk
+     membuatnya baru di tiap render, dan `menyimpan=true` setelah panggilan
+     pertama merender ulang — efek yang bergantung padanya menulis penjualan
+     LUNAS GANDA untuk satu konfirmasi gateway. */
+  const selesaiRef = useRef(onSelesai);
+  selesaiRef.current = onSelesai;
   useEffect(() => {
-    if (status === 'confirmed') onSelesai({ status: 'lunas' });
-  }, [status, onSelesai]);
+    if (status === 'confirmed') selesaiRef.current({ status: 'lunas' });
+  }, [status]);
 
-  const batalkan = () => {
+  const batalkan = (baru: boolean) => {
     setSibuk(true);
     void tinggalkanDraf(kirim, orderId, 'qris_dibatalkan').finally(() => {
       setSibuk(false);
-      onSelesai({ status: 'batal' });
+      onSelesai({ status: 'batal', baru });
     });
   };
 
+  /* QR hanya tampil selama MASIH dapat dibayar. Kedaluwarsa dan ditolak
+     penerbit menyembunyikannya: kode mati yang masih dapat dipindai mengundang
+     pelanggan membayar ke tempat yang salah. Habis waktu lokal TIDAK
+     menyembunyikannya — kita belum tahu apakah gateway sudah menutupnya. */
+  const qrHidup = status === 'pending';
+
+  if (status === 'confirmed') {
+    return (
+      <div className="kasir-qris" role="status">
+        <span className="kasir-qris-centang" aria-hidden="true">
+          <Icon name="check" size={32} />
+        </span>
+        <h2 className="t-title">Pembayaran terkonfirmasi</h2>
+        <p className="t-body-md num">{rupiah(nominal)}</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="kasir-shift">
-      <h2 className="t-title">Pindai untuk membayar</h2>
-      <p className="t-display num">{rupiah(nominal)}</p>
+    <div className="kasir-qris">
+      <div className="kasir-qris-baris">
+        {qrHidup && <GambarQr isi={qrString} />}
+        <div className="kasir-qris-info">
+          {status === 'kedaluwarsa' ? (
+            <h2 className="t-title">Kode QR kedaluwarsa</h2>
+          ) : (
+            <h2 className="t-title">Pindai QRIS untuk membayar</h2>
+          )}
+          <p className="t-title num">{rupiah(nominal)}</p>
+          {qrHidup && !habisWaktu && (
+            <p className="t-body-md num" aria-live="off">
+              Berlaku selama {formatSisa(batas - (kini - mulai.current))}
+            </p>
+          )}
+          {status === 'pending' && !habisWaktu && (
+            <p className="t-body-md" role="status">
+              Menunggu pembayaran pelanggan… Jangan tutup layar ini.
+            </p>
+          )}
 
-      {/* ⛔ Payload QR ditampilkan sebagai TEKS, bukan gambar.
-          Merender QR menuntut pustaka baru, dan `CLAUDE.md` mengunci
-          dependensi. Teksnya tetap dapat dipindai lewat aplikasi bank yang
-          menerima tempel-kode, dan batas ini dinyatakan alih-alih disembunyikan
-          di balik kotak kosong. */}
-      <p className="t-caption kasir-login-sub" style={{ wordBreak: 'break-all' }}>
-        {qrString}
-      </p>
+          {/* ⛔ Habis waktu BUKAN gagal, dan kalimatnya harus mengatakannya.
+              Kasir yang membaca "gagal" akan menagih ulang pelanggan yang mungkin
+              sudah membayar. */}
+          {habisWaktu && status === 'pending' && (
+            <p className="t-body-md kasir-login-galat" role="alert">
+              Belum ada konfirmasi setelah 5 menit. Ini <strong>tidak berarti</strong> pelanggan belum
+              membayar — tekan Cek status sebelum menagih ulang. Transaksi ini masuk daftar &ldquo;Perlu
+              diperiksa&rdquo; di back-office.
+            </p>
+          )}
 
-      {status === 'pending' && !habisWaktu && (
-        <p className="t-body-md" role="status">
-          Menunggu pembayaran pelanggan… Jangan tutup layar ini.
-        </p>
-      )}
+          {status === 'gagal' && (
+            <p className="t-body-md kasir-login-galat" role="alert">
+              Pembayaran ditolak penerbit. Pelanggan tidak terdebit; minta metode lain.
+            </p>
+          )}
+          {status === 'kedaluwarsa' && (
+            <p className="t-body-md kasir-login-galat" role="alert">
+              QR sudah kedaluwarsa. Pelanggan tidak terdebit; buat pembayaran baru.
+            </p>
+          )}
+        </div>
+      </div>
 
-      {/* ⛔ Habis waktu BUKAN gagal, dan kalimatnya harus mengatakannya.
-          Kasir yang membaca "gagal" akan menagih ulang pelanggan yang mungkin
-          sudah membayar. */}
-      {habisWaktu && status === 'pending' && (
-        <p className="t-body-md kasir-login-galat" role="alert">
-          Belum ada konfirmasi setelah 5 menit. Ini <strong>tidak berarti</strong> pelanggan belum
-          membayar — tekan Cek status sebelum menagih ulang. Transaksi ini masuk daftar &ldquo;Perlu
-          diperiksa&rdquo; di back-office.
-        </p>
-      )}
-
-      {status === 'gagal' && (
-        <p className="t-body-md kasir-login-galat" role="alert">
-          Pembayaran ditolak penerbit. Pelanggan tidak terdebit; minta metode lain.
-        </p>
-      )}
-      {status === 'kedaluwarsa' && (
-        <p className="t-body-md kasir-login-galat" role="alert">
-          QR sudah kedaluwarsa. Pelanggan tidak terdebit; buat pembayaran baru.
+      {/* Jalur salin: payload apa adanya (tanpa trim), dapat dipilih. Hanya selama QR hidup. */}
+      {qrHidup && (
+        <p className="t-caption kasir-qris-teks" style={{ wordBreak: 'break-all' }}>
+          {qrString}
         </p>
       )}
 
@@ -145,7 +201,8 @@ export function PanelQris({
           disabled={sibuk}
           onClick={() => {
             setHabisWaktu(false);
-            mulai.current = Date.now();
+            mulai.current = jamRef.current();
+            setKini(mulai.current);
             void cekStatus(kirim, paymentId).then(setStatus);
           }}
         >
@@ -156,9 +213,14 @@ export function PanelQris({
             `pending`, yang tersedia adalah menutup layar: membatalkan draf
             yang pelanggannya sedang memindai berarti melepas stok untuk
             penjualan yang detik berikutnya lunas. */}
-        {(status === 'gagal' || status === 'kedaluwarsa') && (
-          <Tombol varian="ghost" kritis disabled={sibuk} onClick={batalkan}>
+        {status === 'gagal' && (
+          <Tombol varian="ghost" kritis disabled={sibuk} onClick={() => batalkan(false)}>
             {sibuk ? 'Membatalkan…' : 'Batalkan transaksi'}
+          </Tombol>
+        )}
+        {status === 'kedaluwarsa' && (
+          <Tombol varian="ghost" kritis disabled={sibuk} onClick={() => batalkan(true)}>
+            {sibuk ? 'Membatalkan…' : 'Buat kode baru'}
           </Tombol>
         )}
         {status === 'pending' && (

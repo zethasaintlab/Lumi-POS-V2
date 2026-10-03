@@ -307,3 +307,12 @@ login PIN → buka shift → jual (grid + modifier) → bayar tunai
 
 - ⛔ **`RentangTanggal` punya prop `sumbu`.** Ia menyatakan "tanggal bisnis" di setiap layar yang memakainya; benar sepuluh kali dan salah sekali — B-22 menyaring `occurred_at`, karena sebagian besar peristiwa audit tidak menempel pada order mana pun.
 
+
+### Transfer di setiap laporan per metode (PR 2B Task 7, 30 September 2026)
+
+Syarat user atas P1 (issue #76, komentar `5862870577`): *laporan per metode dan rekonsiliasi FR-C12 mengelompokkan menurut `provider` dan menampilkan "Transfer", tidak pernah "Lainnya"; uang bank tidak boleh tersembunyi dari pemilik.*
+
+- Aturan lipat `(method, provider)` → kode laporan ditulis SEKALI, di `kodeLaporanMetode` (`packages/domain/src/metode-tampilan.ts`): `other` + `bank_transfer` menjadi `transfer`, selebihnya `method`. Query mengambil `provider` dan melipat di TypeScript; SQL tidak menulis `CASE` padanannya.
+- Field `method` pada laporan agregat (FR-C12, rekapitulasi FR-C13, CSV, ringkasan HP, detail shift, K-12, K-13, laporan harian perangkat) adalah kode laporan; detail transaksi (B-03 dan riwayat perangkat) membawa `provider` per baris dan memanggil `labelMetode(method, provider)`.
+- Klien lama yang belum mengenal kode `transfer` menampilkan kata mentah `transfer`, bukan "Lainnya". Dijaga `tests/server/laporan-transfer.test.js` (G-LAPORAN-TRF) dan `tests/runtime/label-metode-tunggal.test.js` (G-LABEL).
+- Koreksi lingkup kalimat di atas: ia benar hanya untuk laporan agregat yang sudah terlipat. B-03 back-office lama (detail per baris) membaca `other` tanpa `provider` dan menampilkan "Lainnya" (`openapi.yaml` sudah mengakuinya); yang sudah meneruskan `provider` adalah `Detail.tsx` versi baru (dijaga G-LABEL).

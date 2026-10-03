@@ -36,6 +36,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Stok minus padahal barang ada" | §4 stok & oversell |
 | "Sudah bayar QRIS tapi order belum lunas" | §5 pembayaran gateway |
 | "Uang yang masuk rekening kurang dari yang tercatat" | §5.5 potongan MDR |
+| "Penjualan Transfer tidak sampai ke server" · "Transfer tercatat 'Lainnya'" | §5.7 Transfer |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
@@ -357,6 +358,19 @@ plus diskon, service charge, dan pembulatan. Periode dan tanggal dibuat ada
 | Yurisdiksi "(tidak tercatat)" | Baris ditulis sebelum migrasi `0028`. Nilainya tidak dapat direkonstruksi tanpa menebak, dan menebak akan mengubah rekapitulasi periode yang sudah dilaporkan. |
 | `diskon_order` dan `service_charge` selalu 0 | Benar hari ini: jalur pembuatan order belum menulis keduanya. Bukan kerusakan. |
 | Total berbeda dari Laporan Penjualan | ⛔ **Tidak boleh terjadi** — keduanya memakai fungsi yang sama, dan ada test yang membandingkannya. Eskalasi. |
+
+### 5.7 Transfer: berhenti di antrean, atau tercatat "Lainnya"
+
+Transfer bank disimpan sebagai `method = 'other'` + `provider = 'bank_transfer'`
+(tanpa migrasi). Dikonfirmasi kasir, berfungsi offline, `confirmed_manually`
+true, dan **tidak pernah** menulis `cash_movement`.
+
+| Gejala | Sebab dan tindakan |
+|---|---|
+| Item `payment` Transfer berhenti `gagal-permanen` di antrean, `last_error` memuat `PAYMENT_METHOD_UNSUPPORTED` atau `VALIDATION_ERROR` ("method must be equal to one of the allowed values") | ⛔ **Server belum diperbarui.** Klien yang sudah memakai Transfer dirilis lebih dulu daripada servernya. Urutan rilis wajib **server → klien** (R8, `docs/superpowers/specs/2026-09-28-kasir-design.md`). Perbarui server; penjualan sudah tersimpan di perangkat dan item `failed` tidak dicoba lagi otomatis, jadi ambil ekspor pemulihan K-14 lalu putar ulang lewat §10.1 — jangan membuat penjualan baru. |
+| `POSSIBLE_CARD_NUMBER` pada item Transfer | Kasir mengetik 13–19 digit di referensi atau bank. Aturannya di `packages/domain/src/pembayaran-manual.ts`, sama di perangkat dan server; perangkat seharusnya menolaknya sebelum menyimpan — bila sampai ke server, versi klien lebih tua dari aturan ini. |
+| Laporan menyebut uang transfer "Lainnya", atau baris Transfer tidak ada | ⛔ Cacat, bukan konfigurasi. Aturan lipatnya satu, `kodeLaporanMetode`, dan `tests/server/laporan-transfer.test.js` menjaga setiap laporan per metode. Eskalasi. Klien lama yang belum mengenal kode `transfer` menampilkan kata mentah `transfer`, bukan "Lainnya". Itu benar hanya untuk laporan agregat yang sudah terlipat. B-03 back-office lama (detail per baris `payments[]`) membaca `other` tanpa `provider`, jadi transfer tampil "Lainnya" di sana sampai back-office diperbarui — keterbatasan yang diakui di `openapi.yaml`, bukan cacat baru. |
+| Tab Transfer hilang di K-06 | Kill switch `pembayaran_transfer` dimatikan untuk merchant itu (`tools/kill-switch.mjs`). Ia hanya menyembunyikan tab; penjualan Transfer yang sudah tersimpan di perangkat tetap diterima server. |
 
 ---
 

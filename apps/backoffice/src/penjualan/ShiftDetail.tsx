@@ -10,11 +10,11 @@ import {
   arahSelisih,
   besaranSelisih,
   labelGerak,
-  labelMetode,
   labelAlasanSelisih,
   nadaSelisih,
   type DetailShift,
 } from './b04.ts';
+import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 
 /**
  * B-05 — Detail Shift, sebagai Modal di atas B-04.

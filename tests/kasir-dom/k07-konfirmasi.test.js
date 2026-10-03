@@ -4,7 +4,7 @@
 //
 // Fase 3.3 rebuild UI kasir (`docs/RENCANA-REBUILD-UI.md`). Selisih "dapat
 // dikejar" di `docs/referensi-visual/BANDING.md` § K-07, diukur di overlay
-// galeri (jalur K-03 → Bayar → tunai → Simpan Penjualan):
+// galeri (jalur K-03 → Bayar → Tunai → nominal → Konfirmasi bayar):
 //
 //   1. Kartu 536 px (mockup), bukan kartu pembayaran 728.
 //   2. Ikon centang dalam lingkaran lembut + judul "Transaksi selesai".
@@ -119,8 +119,8 @@ async function bukaK07(lebar) {
   await hal.waitForTimeout(800);
   await hal.getByRole('button', { name: 'Bayar', exact: true }).click();
   await hal.waitForTimeout(500);
-  for (let i = 0; i < 6; i += 1) await hal.getByRole('button', { name: '+ Rp 100.000' }).click();
-  await hal.getByRole('button', { name: 'Simpan Penjualan' }).click();
+  await hal.getByLabel('Nominal diterima').fill('600.000');
+  await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
   await hal.waitForSelector('text=Transaksi Baru', { timeout: 10_000 });
   await hal.waitForTimeout(400);
   return { hal, galat };

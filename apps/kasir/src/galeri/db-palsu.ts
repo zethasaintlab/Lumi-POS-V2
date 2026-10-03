@@ -166,12 +166,19 @@ export interface OpsiDbPalsu {
       K-18 (Task 4). Bukan keadaan galeri baru (alasan yang sama dengan `matikanFitur`); skenario
       `kosong` sendiri berarti perangkat belum terdaftar, bukan riwayat kosong. */
   tanpaKasManual?: boolean;
+  /** `?transfer=1` — pembayaran `ord-1` menjadi Transfer (`other` + `bank_transfer`), untuk penjaga label K-09. */
+  transfer?: boolean;
   /** `?gagalBacaKas=1` — MENGGAGALKAN hanya `bacaKasManualShift` (query `cash_movement … type IN`), bukan
       pembacaan lain: keadaan `error` galeri gagal lebih awal di konfigurasi perangkat dan tidak pernah
       mencapai riwayat. Test dapat menyetel `window.__galeriGagalBacaKas` sesudah muat untuk membaca-ulang. */
   gagalBacaKas?: boolean;
   /** `?jumlahGagal=N` — jumlah item antrean GAGAL, menimpa skenario (`header.test.js`: "(500)"). */
   jumlahGagal?: number;
+  /** `[EKSPLORASI]` `?pembulatan=500` — `outlet.rounding_increment` (bawaan 100), supaya penjaga K-06 dapat
+      memakai pembulatan yang BUKAN bawaan. Dibaca `k06-penjaga.test.js` (P3, kembalian K-06 = tersimpan). */
+  pembulatan?: number;
+  /** `[EKSPLORASI]` `?modePembulatan=up` — `outlet.rounding_mode` (bawaan half_up). */
+  modePembulatan?: 'half_up' | 'up' | 'down';
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -256,12 +263,13 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       .map((o, i) => ({
         order_id: o.id,
         id: `pay-${o.id}`,
-        method: i % 3 === 1 ? 'qris_static' : 'cash',
+        method: opsi.transfer && o.id === 'ord-1' ? 'other' : i % 3 === 1 ? 'qris_static' : 'cash',
+        provider: opsi.transfer && o.id === 'ord-1' ? 'bank_transfer' : null,
         amount: o.total,
         /* Uang yang diserahkan dibulatkan ke atas pecahan Rp 50.000 — bentuk
            yang kasir lihat sehari-hari. Non-tunai NULL (`spec-d:201`). */
-        tendered_amount: i % 3 === 1 ? null : Math.ceil(o.total / 50_000) * 50_000,
-        change_amount: i % 3 === 1 ? null : Math.ceil(o.total / 50_000) * 50_000 - o.total,
+        tendered_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000,
+        change_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000 - o.total,
         status: 'confirmed',
       })),
     refund: [],
@@ -349,11 +357,11 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
            Sampai 25 September 2026 nilainya 0 — nilai yang `simpanPenjualan`
            TOLAK ("roundingIncrement harus lebih besar dari 0"), jadi K-07
            tidak pernah dapat dicapai dari galeri. */
-        rounding_increment: 100,
+        rounding_increment: opsi.pembulatan ?? 100,
         /* `half_up` — kosakata `outlet.rounding_mode` adalah half_up/up/down.
            `'nearest'` yang sempat di sini tidak dikenal `simpanPenjualan`, dan
            kegagalannya baru terlihat saat K-07 dicoba dari galeri. */
-        rounding_mode: 'half_up',
+        rounding_mode: opsi.modePembulatan ?? 'half_up',
         service_charge_rate: 0,
         vertical_profile_id: 'vp-1',
         discount_threshold_percent: 2000,
@@ -486,6 +494,8 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
           ]
         : [],
     print_job: [],
+    // Draf QRIS dinamis (`qris-dinamis.ts`): satu baris, diisi/dihapus di `jalankan`.
+    draf_qris_lokal: [],
     fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),
     telemetry_local: [],
     // Diisi di `getAll` — WebP-nya di-encode kanvas, dan itu async.
@@ -515,6 +525,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       // berpacu dengan timer.
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
       const tabel = tabelDari(sql);
+      /* `__galeriTahanDraf`: menahan BACA draf QRIS sampai test melepasnya, supaya jendela
+         "pemulihan draf belum selesai" dapat diukur tanpa timer (fix round Task 9, C1c). */
+      if (tabel === 'draf_qris_lokal') await (globalThis as { __galeriTahanDraf?: Promise<void> }).__galeriTahanDraf;
 
       /* ⛔ `error` menolak setiap pembacaan KECUALI identitas perangkat.
 
@@ -677,8 +690,23 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       if ((globalThis as { __galeriTulisLambat?: boolean }).__galeriTulisLambat) await new Promise((r) => setTimeout(r, 400));
       throw new Error('galeri: penulisan jejak gagal (perangkat penuh)');
     }
+    /* `__galeriTahanPenjualan` ([EKSPLORASI] Task 8): promise yang ditunggu
+       sebelum INSERT order pertama, supaya test dapat mengukur jendela
+       "sedang menyimpan" (kunci tab nav, ketukan ganda) tanpa timer. */
+    const tahan = (globalThis as { __galeriTahanPenjualan?: Promise<void> }).__galeriTahanPenjualan;
+    if (tahan && /^INSERT INTO "order"/i.test(sql.trim())) await tahan;
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
+    /* Draf QRIS ([EKSPLORASI] Task 9): urutan kolom = `simpanDraf`. Hanya agar
+       pemulihan draf (`pulihkanDraf`) dapat dirender ulang di harness. */
+    if (/^INSERT INTO draf_qris_lokal/i.test(sql.trim()) && params?.length === 8) {
+      perTabel.draf_qris_lokal.length = 0;
+      perTabel.draf_qris_lokal.push({
+        id: params[0], order_id: params[1], payment_id: params[2], shift_id: params[3],
+        draf: params[4], muatan: params[5], qr_string: params[6], dibuat_pada: params[7],
+      });
+    }
+    if (/^DELETE FROM draf_qris_lokal/i.test(sql.trim())) perTabel.draf_qris_lokal.length = 0;
     /* Urutan parameter = `catatKasManual` (`kas/manual.ts`): id, shift_id, type,
        delta, counterpart_type, reason_code, note, created_by, occurred_at, hlc.
        Hanya `paid_in`/`paid_out` — INSERT penjualan punya bentuk lain. */

@@ -178,3 +178,58 @@ test('sisa tagihan terhitung meski masukannya belum lengkap', async () => {
   // ditolak di tempat lain hanya membingungkan.
   assert.equal(sisaTagihan(50_000n, [{ metode: 'qris_static', nominal: 80_000n }]), 0n);
 });
+
+// --- Transfer (`other` + `bank_transfer`), PR 2B Task 7, keputusan user P1 ---
+
+test('property G-TRF-KAS: transfer + tunai menutup tagihan tepat; pembulatan hanya pada sisa tunai', async () => {
+  const { rencanakanPembayaran } = await import(MOD);
+  let kasus = 0;
+  for (const total of [9_950n, 64_120n, 93_555n]) {
+    for (const transfer of [0n, 1n, total / 2n, total - 1n, total]) {
+      for (const increment of [1n, 100n, 500n]) {
+        kasus += 1;
+        const bagian = [];
+        if (transfer > 0n) bagian.push({ metode: 'other', nominal: transfer });
+        if (transfer < total) bagian.push({ metode: 'cash', tendered: total * 2n });
+        const h = rencanakanPembayaran({
+          total,
+          bagian,
+          roundingIncrement: increment,
+          roundingMode: 'half_up',
+        });
+        const ket = `total=${total} transfer=${transfer} inc=${increment}`;
+        assert.equal(h.ok, true, `rencana ditolak: ${ket}`);
+        const r = h.rencana;
+        assert.equal(r.amountDue, transfer + r.tunaiDitagih, `amountDue != transfer + tunai: ${ket}`);
+        assert.equal(r.tunaiDitagih % increment, 0n, `tunai tidak kelipatan increment: ${ket}`);
+        assert.equal(r.amountDue, total + r.roundingAdjustment, `amountDue != total + pembulatan: ${ket}`);
+        if (transfer === total) {
+          assert.equal(r.roundingAdjustment, 0n, `transfer penuh tidak boleh dibulatkan: ${ket}`);
+          assert.equal(r.tunaiDitagih, 0n, ket);
+        }
+        // Pembulatan hanya pada SISA: selisihnya tidak lebih dari setengah increment.
+        const mutlak = r.roundingAdjustment < 0n ? -r.roundingAdjustment : r.roundingAdjustment;
+        assert.ok(mutlak * 2n <= increment, `pembulatan melebihi setengah increment: ${ket}`);
+        // Nominal bagian transfer tidak disentuh pembulatan.
+        if (transfer > 0n) assert.equal(r.nominalBagian[0], transfer, `bagian transfer berubah: ${ket}`);
+      }
+    }
+  }
+  assert.equal(kasus, 45, 'jumlah kasus enumerasi berubah — property menyempit diam-diam');
+});
+
+test('⛔ kelebihan bayar transfer ditolak', async () => {
+  const { rencanakanPembayaran } = await import(MOD);
+  const h = rencanakanPembayaran(rencana(50_000n, [{ metode: 'other', nominal: 60_000n }]));
+  assert.equal(h.ok, false, 'transfer melebihi tagihan diterima');
+  assert.equal(h.kode, 'KELEBIHAN_NON_TUNAI');
+  // Tunai + transfer yang melebihi total juga ditolak.
+  const h2 = rencanakanPembayaran(
+    rencana(50_000n, [
+      { metode: 'other', nominal: 50_001n },
+      { metode: 'cash', tendered: 100_000n },
+    ])
+  );
+  assert.equal(h2.ok, false);
+  assert.equal(h2.kode, 'KELEBIHAN_NON_TUNAI');
+});

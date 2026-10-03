@@ -6,6 +6,7 @@ import { assertUserVisible } from '../../identity/index.ts';
 import { assertOutletVisible } from '../../tenancy/index.ts';
 import { assertRentang } from './rentang.ts';
 import { metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/mdr.ts';
+import { kodeLaporanMetode } from '../../../../../../packages/domain/src/metode-tampilan.ts';
 
 /**
  * `GET /reports/payments` — FR-G1, uang masuk per METODE pembayaran.
@@ -47,6 +48,17 @@ import { metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/m
  * Aturan yang sama dengan `posisiPenjualan` dan laporan produk: pesanan yang
  * PUNYA pembatal tidak pernah menghasilkan uang yang bertahan.
  *
+ * ## ⛔ Transfer ditampilkan sebagai "Transfer" (keputusan user P1)
+ *
+ * Transfer disimpan sebagai `method = 'other'` + `provider = 'bank_transfer'`.
+ * Query mengelompokkan menurut `(method, provider)` lalu MELIPAT di sini lewat
+ * `kodeLaporanMetode` — satu-satunya tempat aturan lipat itu ditulis (SQL
+ * tidak menulis `CASE` padanannya). Field `method` respons adalah KODE
+ * LAPORAN: `transfer` untuk other+bank_transfer, `other` untuk sisanya. Uang
+ * bank yang terlipat ke "Lainnya" tersembunyi dari pemilik justru di layar
+ * tempat ia mencocokkannya dengan mutasi rekening. Ekspor CSV, rekapitulasi
+ * FR-C13, dan ringkasan HP memanggil fungsi ini dan mewarisinya.
+ *
  * ## Ini bukan omzet, dan tidak akan sama dengannya
  *
  * Total di sini adalah uang yang DITERIMA per metode; omzet bersih
@@ -57,6 +69,7 @@ import { metodePunyaPerkiraanMdr } from '../../../../../../packages/domain/src/m
 
 interface BarisDb {
   method: string;
+  provider: string | null;
   jumlah: string;
   total: string;
   mdr: string | null;
@@ -69,8 +82,9 @@ export async function ambilPembayaran(
   client: import('../../../db.ts').PoolClient,
   { from, to, outletId }: { from: string; to: string; outletId: string | null }
 ) {
-        const { rows } = await client.query<BarisDb>(
+  const { rows } = await client.query<BarisDb>(
     `SELECT p.method,
+            p.provider,
             COUNT(*)::text                                        AS jumlah,
             SUM(p.amount)::text                                   AS total,
             SUM(COALESCE(p.mdr_estimated, 0))::text               AS mdr,
@@ -86,26 +100,46 @@ export async function ambilPembayaran(
         AND NOT EXISTS (
           SELECT 1 FROM "order" v WHERE v.voided_by_order_id = o.id
         )
-      GROUP BY p.method
-      ORDER BY SUM(p.amount) DESC, p.method ASC`,
+      GROUP BY p.method, p.provider`,
     [from, to, outletId]
   );
 
-  // ⛔ STRING. `pg` mengembalikan `bigint` sebagai string, dan
-  // mengubahnya ke `number` membuang presisi di atas 2^53.
-  const metode = rows.map((r) => {
-    const diterima = BigInt(r.total);
-    const tanpaPerkiraan = Number(r.tanpa_mdr);
+  // ⛔ Lipat `(method, provider)` → kode laporan DI SINI, lalu jumlahkan baris
+  // yang kodenya sama. Bigint sepanjang jalan: `pg` mengembalikan `bigint`
+  // sebagai string, dan mengubahnya ke `number` membuang presisi di atas 2^53.
+  const terlipat = new Map<
+    string,
+    { asal: string; jumlah: number; total: bigint; mdr: bigint; tanpaMdr: number }
+  >();
+  for (const r of rows) {
+    const kode = kodeLaporanMetode(r.method, r.provider);
+    const kini = terlipat.get(kode) ?? { asal: r.method, jumlah: 0, total: 0n, mdr: 0n, tanpaMdr: 0 };
+    kini.jumlah += Number(r.jumlah);
+    kini.total += BigInt(r.total);
+    kini.mdr += BigInt(r.mdr ?? '0');
+    kini.tanpaMdr += Number(r.tanpa_mdr);
+    terlipat.set(kode, kini);
+  }
+
+  // Urutan tetap: SUM DESC, kode ASC (dulu `ORDER BY` di SQL; kini di TS karena
+  // pengelompokan akhir baru terjadi setelah dilipat).
+  const urut = [...terlipat].sort(([ka, a], [kb, b]) =>
+    a.total === b.total ? (ka < kb ? -1 : ka > kb ? 1 : 0) : a.total > b.total ? -1 : 1
+  );
+
+  const metode = urut.map(([kode, v]) => {
+    const diterima = v.total;
+    const tanpaPerkiraan = v.tanpaMdr;
     // ⛔ Diturunkan dari BARIS yang tersimpan, bukan dari metodenya saja.
     // Baris yang ditulis sebelum FR-C12 punya `mdr_estimated = NULL` meski
     // metodenya QRIS; menjumlahkannya sebagai nol akan melaporkan "tidak ada
-    // potongan" untuk transaksi yang sebenarnya dipotong.
-    const punyaPerkiraan =
-      metodePunyaPerkiraanMdr(r.method) && tanpaPerkiraan < Number(r.jumlah);
-    const mdr = punyaPerkiraan ? BigInt(r.mdr ?? '0') : null;
+    // potongan" untuk transaksi yang sebenarnya dipotong. `asal` (kolom
+    // `method` sebenarnya) yang ditanyakan, bukan kode laporan.
+    const punyaPerkiraan = metodePunyaPerkiraanMdr(v.asal) && tanpaPerkiraan < v.jumlah;
+    const mdr = punyaPerkiraan ? v.mdr : null;
     return {
-      method: r.method,
-      jumlahTransaksi: Number(r.jumlah),
+      method: kode,
+      jumlahTransaksi: v.jumlah,
       totalDiterima: diterima.toString(),
       /** `null` = metode ini tidak punya perkiraan potongan sama sekali. */
       perkiraanMdr: mdr === null ? null : mdr.toString(),

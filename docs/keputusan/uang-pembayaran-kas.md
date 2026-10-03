@@ -161,6 +161,7 @@ Sisa Modul B: tidak ada yang belum digarap. **FR-B11 ditutup** bersama antrean `
 - ⛔ **Satu baris `payment` per bagian.** Menggabungkan dua metode menjadi satu baris membuat rekonsiliasi FR-C12 tidak dapat memisahkan uang bank dari uang laci — dua saluran yang settlement-nya berbeda hari.
 - ⛔ **Kelebihan bayar non-tunai DITOLAK** (`spec-c:225`), dengan angkanya. Hanya SATU bagian tunai per transaksi.
 - ⛔ **`hitungKeranjang` adalah satu fungsi untuk layar dan jalur penulisan.** K-06 harus menampilkan TOTAL sebelum kasir membaginya, dan subtotal belum kena pajak.
+- ⛔ **`rencanaBayarKeranjang` adalah satu fungsi untuk kembalian di K-06 dan jalur penulisan** (keputusan user 28 September 2026, issue #76 komentar 5862870577). K-06 menampilkan kembalian sebelum simpan; angka yang dihitung layar dengan jalannya sendiri akan menyimpang dari yang tersimpan tepat di bawaan pembulatan dan pembayaran campuran.
 - **Penjualan tetap ditulis hanya saat LUNAS.** Order `open` yang tidak pernah dibayar akan muncul di laporan dan belum punya jalan penutupan (KEP-21).
 
 **Modul C selesai. FR-C3 + QRIS dinamis di kasir ditutup 24 Agustus 2026** lewat jalur penjualan **ONLINE-FIRST** — satu-satunya jalur di repo ini yang menulis ke server lebih dulu.
@@ -178,7 +179,9 @@ cadangkan nomor struk (lokal) → POST /orders (draf, `open`)
 - ⛔ **Draf BERTAHAN di perangkat** (`draf_qris_lokal`, murni lokal) dan disimpan **sebelum** gateway dipanggil — alasan yang sama persis dengan commit `pending_confirmation` di server. `spec-c:328` menuntutnya; K-06 memulihkannya saat dibuka.
 - ⛔ **Timeout polling BUKAN gagal**, dan kalimat di layar mengatakannya. Kasir yang membaca "gagal" akan menagih ulang pelanggan yang mungkin sudah membayar. **"Batalkan" hanya ditawarkan saat kita TAHU uang tidak berpindah** (ditolak penerbit / QR kedaluwarsa); selama `pending` yang tersedia adalah menutup layar.
 - ⛔ **`POST /orders/{id}/abandon`** — pembersihan massal baru menyentuh order `open` setelah **24 jam** dan menuntut `stock_adjust`. Kasir yang membatalkan di depan pelanggan tidak dapat menunggu keduanya, dan stok yang terkunci sehari membuat produk berikutnya terlihat habis. `tinggalkanOrder` adalah SATU fungsi yang dipakai keduanya; order yang sudah dibayar ditolak **409** (void/refund punya kontrolnya sendiri).
-- **QR ditampilkan sebagai TEKS, bukan gambar.** Merender QR menuntut pustaka baru dan stack dikunci. Batas yang dinyatakan.
+- ~~**QR ditampilkan sebagai TEKS, bukan gambar.** Merender QR menuntut pustaka baru dan stack dikunci. Batas yang dinyatakan.~~ **Digantikan 2 Oktober 2026 (kampanye kasir, Task 9, P3b disetujui user 28 September 2026).**
+- **QR kini GAMBAR** (`apps/kasir/src/komponen/GambarQr.tsx`, SVG, level koreksi M, `qrcode-generator@2.0.4` dipaku tanpa `^`), 192 px di dalam kartu K-06, dengan hitung mundur "Berlaku selama MM:SS" dari `BATAS_POLLING_MS`. `qrString` tetap tampil sebagai teks terpilih di bawah gambar (jalur salin) dan **tidak pernah dinormalisasi** (`trim()` mengubah kode yang dibayar pelanggan). QR baru **diminta saat "Tampilkan kode QR" ditekan**, bukan saat tab dipilih (P3). QR tidak digambar lagi sesudah kedaluwarsa atau ditolak penerbit. ⛔ Tambahan user: *"Gambar yang tidak dapat dipindai lebih buruk daripada tidak ada gambar"* — dijaga G-QR (`tests/kasir-dom/k06-qr.test.js`): `<svg>` yang ada di DOM dirasterkan pada ukuran tampil dan 4×, didekode jsQR (devDependency), dan harus SAMA PERSIS dengan `qrString`. Konfirmasi tetap hanya dari `cekStatus`/polling gateway; tombol utama selama menunggu nonaktif "Menunggu pembayaran…". Catatan: koreksi galat level M menyerap satu modul data yang terbalik, jadi sabotase "balik satu modul" hanya terbaca bila modul itu di pola pencari posisi.
+- ⛔ **Draf ber-QR yang hidup MENUTUP permintaan QR baru** (fix round Task 9, 2 Oktober 2026). Sesudah "Tutup layar" draf sengaja hidup; kartu lalu menawarkan "Lanjutkan pembayaran QRIS tertunda" (membuka panel draf yang sama, polling lanjut), bukan "Tampilkan kode QR" — `simpanDraf` meng-UPSERT satu baris, jadi QR kedua menimpa jejak payment pertama (`spec-c:291`, `spec-c:326`). Pagar kedua di domain: `mintaQr` menolak (`tertunda`, nol permintaan) bila draf ber-QR dengan `payment_id` lain ada. Pemulihan memakai nominal dan muatan DRAF; `drafCocokKeranjang` (baris, qty, harga, total) menentukan apakah `confirmed` boleh menulis penjualan lokal — keranjang yang berubah TIDAK pernah menjadi penjualan dari tagihan gateway lama.
 - **Bentuk SQL `draf_qris_lokal` belum dijalankan di BROWSER** — utang yang dicatat; `ON CONFLICT(id)` pernah ditolak `wa-sqlite`.
 
 **Keputusan produk yang mengikat kode katalog:**
@@ -281,3 +284,12 @@ menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
 
 Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
 
+
+### Transfer sebagai metode keempat (PR 2B Task 7, 30 September 2026)
+
+Keputusan user P1 dan P2 (issue #76, komentar `5862870577`, 28 September 2026): Transfer disimpan sebagai `method = 'other'` + `provider = 'bank_transfer'` tanpa migrasi (`spec-c:244`), `confirmed_manually = true`.
+
+- Aturan validasi Transfer (referensi wajib ≥ 3 karakter, tidak berbentuk nomor kartu, berlaku juga untuk field bank) hidup di `packages/domain/src/pembayaran-manual.ts` (`periksaTransfer`), dan server memakainya juga — pesan galatnya sama dengan yang tampil di perangkat.
+- Daftar `provider` untuk `other` tertutup (`bank_transfer`); nilai lain ditolak 400 `VALIDATION_ERROR`. Kill switch `pembayaran_transfer` hanya menyembunyikan tab; server tetap menerima Transfer yang sudah tersimpan di perangkat.
+- Idempotensi jalur manual kini men-hash seluruh isi yang disimpan (422 `IDEMPOTENCY_KEY_HASH_MISMATCH` bila key sama dengan isi beda); baris lama berhash `orderId:paymentId` tetap dikenali sebagai request yang sama.
+- Struk Transfer hanya mencetak "Transfer" (tanpa referensi, Q5 terbuka); nama "Transfer" dieja di `metode-tampilan.ts` saja.

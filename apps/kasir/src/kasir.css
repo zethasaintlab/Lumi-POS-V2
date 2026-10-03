@@ -615,61 +615,194 @@
 .kasir-shift-kartu dl,
 .kasir-shift-kartu dd { margin: 0; }
 
-/* --- K-06: isi yang menggulir + blok aksi yang menempel -------------------
+/* --- K-06: halaman + kartu pembayaran bertoggle (Task 8, spec § 7) ---------
  *
- * ⛔ MODIFIER di atas `.kasir-shift`, bukan kelas pengganti. `.kasir-shift`
- * memusatkan isinya (`align-items: center; justify-content: center`) karena
- * K-02 memang satu blok pendek di tengah layar; K-06 bukan itu. Menyalin
- * seluruh aturannya ke kelas baru berarti dua tempat yang memutuskan padding
- * dan jarak layar bayar.
+ * K-06 adalah HALAMAN di dalam `kasir-konten` (header tetap terlihat), bukan
+ * overlay. Kartu 728 px (`45.5rem`, mockup `Payment`) dengan empat bagian dari
+ * atas: blok total, segmented metode, isi yang MENGGULIR, blok aksi yang
+ * menempel di dasar kartu.
  *
- * ⛔ Polanya SAMA PERSIS dengan keranjang K-03, dan itu disengaja: penggulung
- * di dalam, bukan `position: sticky`. Sticky menuntut latar sendiri supaya isi
- * yang lewat di belakangnya tidak tembus, dan latar yang ditulis di sini
- * adalah tempat kedua yang memutuskan warna permukaan kartu. Flex tidak punya
- * masalah itu — blok aksinya memang tidak pernah berada di aliran gulir.
+ * ⛔ Polanya SAMA dengan keranjang K-03: penggulung di dalam, bukan
+ * `position: sticky` (sticky menuntut latar sendiri, dan latar itu tempat kedua
+ * yang memutuskan warna permukaan). Blok aksi memang tidak pernah berada di
+ * aliran gulir.
  *
- * ⛔ `min-height: 0` WAJIB di kedua tingkat. Tanpanya anak flex menolak
- * mengecil di bawah tinggi kontennya, `overflow-y` tidak pernah menyala, dan
- * isi yang panjang MENDORONG blok aksi keluar layar — persis cacat yang blok
- * ini perbaiki. Ia tidak menghasilkan error; ia hanya tidak bekerja. Pelajaran
- * yang sama sudah ditulis di `.kasir-baris-daftar`, dan ia berlaku lagi di
- * sini karena alasan yang sama.
+ * ⛔ `min-height: 0` WAJIB di tingkat halaman dan isi. Tanpanya anak flex
+ * menolak mengecil di bawah tinggi kontennya, `overflow-y` tidak pernah
+ * menyala, dan isi yang panjang MENDORONG blok aksi keluar layar (P8). Ia
+ * tidak menghasilkan error; ia hanya tidak bekerja.
+ *
+ * ⛔ Isi berbasis `355px` (min-h mockup) tetapi BOLEH mengecil: pada tablet
+ * pendek kartu menyusut lewat isi, bukan lewat blok aksi, dan pada layar
+ * lapang tinggi kartu tetap — blok aksi tidak bergeser antara isi pendek dan
+ * panjang.
  */
-.kasir-bayar {
-  align-items: stretch;
-  justify-content: flex-start;
+.kasir-bayar-halaman {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
   min-height: 0;
+  padding: var(--space-2) var(--space-4) var(--space-2);
+  background: var(--surface-sunk);
 }
+
+.kasir-bayar-kembali {
+  width: min(45.5rem, 100%);
+  flex: none;
+}
+
+.kasir-bayar-kartu {
+  display: flex;
+  flex-direction: column;
+  width: min(45.5rem, 100%);
+  flex: 0 1 auto;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+/* Blok atas: "TOTAL BELANJA" 13 px kapital + nilai 32/700; sisa tagihan di
+   kanan; butir ringkasan (subtotal, diskon, pajak) satu baris di bawahnya. */
+.kasir-bayar-atas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  background: var(--panel-subtle-bg);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.kasir-bayar-total { display: flex; flex-direction: column; }
+.kasir-bayar-total-label {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+}
+.kasir-bayar-atas .kasir-subtotal {
+  flex-direction: column;
+  align-items: flex-end;
+  padding-top: 0;
+  border-top: 0;
+}
+.kasir-bayar-ringkas {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+  margin: 0;
+  color: var(--ink-muted);
+}
+.kasir-ringkas-butir { white-space: nowrap; }
+
+/* Segmented empat tab: tinggi 40 dalam wadah `--secondary` (mockup). Area tekan
+   56 lewat `.sentuh-uang`; kiri/kanan dipotong 0 supaya area tetangga tidak
+   bertumpuk. Tab aktif di atas permukaan `--card` dengan teks `--primary`
+   (bukan latar aksen: aksen milik satu aksi utama layar, DS #2). */
+.kasir-bayar-tab {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-auto-flow: column;
+  gap: var(--space-1);
+  margin: var(--space-3) var(--space-3) 0;
+  padding: var(--space-1);
+  background: var(--secondary);
+  border-radius: var(--radius-control);
+  flex: none;
+}
+.kasir-bayar-tab button {
+  --sentuh-kiri: 0px;
+  --sentuh-kanan: 0px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: var(--text-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+.kasir-bayar-tab button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-card);
+}
+.kasir-bayar-tab button:disabled,
+.kasir-bayar-sub button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .kasir-bayar-isi {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  flex: 1;
+  flex: 1 1 355px;
   min-height: 0;
   overflow-y: auto;
+  padding: var(--space-4) var(--space-6);
 }
+/* Daftar bagian campuran memakai kelas K-03 yang `flex: 1; overflow-y: auto`
+   — di sini ia harus setinggi isinya, kalau tidak flex memampatkannya dan isi
+   tidak pernah menggulir (P8 mengukur penggulungnya). */
+.kasir-bayar-isi > .kasir-baris-daftar {
+  flex: none;
+  overflow: visible;
+  background: none;
+}
+/* QRIS dinamis di dalam kartu (Task 9, spec § 7). Gambar 192 px dari atribut
+   `width`/`height` `GambarQr`; warnanya token, bukan nilai di dalam SVG. */
+.kasir-qris { display: flex; flex-direction: column; gap: var(--space-4); align-items: flex-start; }
+.kasir-qris-baris { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6); }
+.kasir-qris-info { display: flex; flex-direction: column; gap: var(--space-2); flex: 1 1 12rem; min-width: 0; }
+.kasir-qris-info p, .kasir-qris-info h2, .kasir-qris > p, .kasir-qris > h2 { margin: 0; }
+.kasir-qr { flex: none; display: block; border-radius: var(--radius-control); }
+.kasir-qr-latar { fill: var(--card); }
+.kasir-qr-modul { fill: var(--foreground); }
+.kasir-qris-teks { margin: 0; color: var(--ink-muted); user-select: text; }
+.kasir-qris-centang {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
+.kasir-bayar-kunci { margin: 0; color: var(--ink-muted); }
+.kasir-bayar-sub { align-self: flex-start; }
+.kasir-bayar-sub button { white-space: nowrap; }
+.kasir-bayar-pintasan { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.kasir-bayar-kembalian {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--accent-subtle);
+}
+.kasir-bayar-kembalian p { margin: 0; }
+.kasir-bayar-kembalian .t-display { color: var(--primary); }
+.kasir-bayar-campuran { margin-top: auto; }
 
-/* ⛔ Pembatas di ATAS blok aksi, satu garis, sejajar dengan
- * `.kasir-subtotal:first-of-type` di keranjang K-03. Ia menyatakan satu hal:
- * blok ini LAPISAN yang terpisah dari isi yang menggulir di atasnya. Bayangan
- * atau permukaan yang berbeda akan menyatakan hal yang sama dengan lebih
- * keras, dan layar kasir hanya boleh punya satu hal yang menarik mata —
- * aksennya.
- *
- * `flex: none` supaya ia tidak ikut MENGECIL saat isi memenuhi kartunya.
- * Tombol Bayar yang tingginya menyusut tidak menghasilkan error; ia hanya
- * berhenti memenuhi target sentuh 56px tepat pada transaksi paling panjang.
- */
+/* ⛔ Pembatas di ATAS blok aksi: ia menyatakan satu hal — blok ini LAPISAN yang
+ * terpisah dari isi yang menggulir di atasnya. `flex: none` supaya ia tidak
+ * ikut MENGECIL saat isi memenuhi kartunya: tombol yang tingginya menyusut
+ * tidak menghasilkan error; ia berhenti memenuhi target sentuh 56px tepat pada
+ * transaksi paling panjang. */
 .kasir-bayar-aksi {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex: none;
-  padding-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
 }
+.kasir-bayar-alasan { margin: 0; text-align: right; color: var(--ink-muted); }
 
 /* K-12 — penanda langkah, panel selisih, dan rincian saldo.
 
@@ -818,15 +951,6 @@
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
-}
-
-/* K-06: pemilih metode SATU baris (rebuild UI Fase 3.2, mockup: segmented
-   satu baris). Tetap `.kasir-pecahan` — P1/P5 `k06-penjaga` membaca tombol
-   metode lewat kelas itu. Kolomnya `auto-fit`, bukan 4 tetap: QRIS statis dapat
-   dimatikan lewat kill switch, dan tiga metode harus mengisi barisnya. */
-.kasir-metode {
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-  align-items: start;
 }
 
 /* K-06: baris aksi — aksi sekunder di kiri, aksi utama di kanan (mockup:
@@ -1895,4 +2019,13 @@
   flex: 1;
   flex-direction: column;
   min-width: 0;
+}
+
+/* Jalan keluar header yang dikunci K-06 (`rute/kunci-nav.ts`): isyarat visual
+   selain `aria-disabled`; kalimat alasannya terlihat di K-06 sendiri (DS #5). */
+.kasir-indikator[aria-disabled="true"],
+.kasir-pita-tautan[aria-disabled="true"],
+.kasir-menu-item[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

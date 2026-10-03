@@ -1,4 +1,5 @@
 import type { PoolClient } from '../../../db.ts';
+import { kodeLaporanMetode } from '../../../../../../packages/domain/src/metode-tampilan.ts';
 
 /**
  * B-04 (daftar shift) & B-05 (detail shift) — modul `reporting`.
@@ -127,9 +128,10 @@ async function penerimaanPerShift(
   const { rows } = await client.query<{
     shift_id: string;
     method: string;
+    provider: string | null;
     amount: unknown;
   }>(
-    `SELECT o.shift_id, p.method, p.amount
+    `SELECT o.shift_id, p.method, p.provider, p.amount
        FROM payment p
        JOIN "order" o ON o.id = p.order_id
       WHERE o.shift_id = ANY($1) AND p.status = 'confirmed'`,
@@ -141,10 +143,13 @@ async function penerimaanPerShift(
     const nilai = BigInt(teks(r.amount));
     kini.total += nilai;
     kini.jumlah += 1;
-    const m = kini.perMetode.get(r.method) ?? { total: 0n, jumlah: 0 };
+    // ⛔ Kunci = KODE LAPORAN, bukan `method` mentah: transfer (other +
+    // bank_transfer) tampil sebagai `transfer`, terpisah dari `other`.
+    const kode = kodeLaporanMetode(r.method, r.provider);
+    const m = kini.perMetode.get(kode) ?? { total: 0n, jumlah: 0 };
     m.total += nilai;
     m.jumlah += 1;
-    kini.perMetode.set(r.method, m);
+    kini.perMetode.set(kode, m);
     peta.set(r.shift_id, kini);
   }
   return peta;

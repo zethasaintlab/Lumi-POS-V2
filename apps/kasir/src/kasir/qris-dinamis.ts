@@ -182,6 +182,8 @@ export async function pulihkanDraf(db: DbLokal, shiftId: string): Promise<DrafTe
 
 export type HasilQr =
   | { status: 'qr'; qrString: string; paymentId: string; draf: DrafTerkirim }
+  /** Draf ber-QR payment LAIN masih hidup: tidak ada yang dikirim, tidak ada yang ditimpa. */
+  | { status: 'tertunda'; pesan: string }
   | { status: 'gagal'; pesan: string; paymentId: string | null };
 
 /**
@@ -232,6 +234,20 @@ export async function mintaQr({
     idBaru,
   });
   const paymentId = draf.paymentIds[0];
+
+  /* ⛔ Pagar domain (bukan hanya UI): draf ber-QR milik payment LAIN adalah satu-satunya
+     jejak lokal uang yang mungkin sudah dibayar pelanggan (`spec-c:291`). `simpanDraf`
+     meng-UPSERT satu baris, jadi QR kedua menimpanya dan pelanggan dapat membayar dua kali.
+     Retry atas payment_id yang SAMA lolos — kunci idempotensinya sama, bukan QR kedua. */
+  const ada = await pulihkanDraf(db, shiftId);
+  if (ada !== null && ada.qrString !== null && ada.paymentId !== paymentId) {
+    return {
+      status: 'tertunda',
+      pesan:
+        'Masih ada pembayaran QRIS yang tertunda untuk shift ini. Periksa statusnya lebih dulu; ' +
+        'kode QR baru tidak dibuat selama ia belum selesai atau dibatalkan.',
+    };
+  }
 
   await simpanDraf(
     db,
@@ -285,6 +301,52 @@ export async function mintaQr({
     sekarang
   );
   return { status: 'qr', qrString: qr, paymentId, draf };
+}
+
+/** Total (rupiah utuh) yang DITAGIH draf, dari muatan order yang dikirim ke server. */
+export function nominalDraf(d: DrafTersimpan): bigint | null {
+  const t = d.muatan.total;
+  return typeof t === 'number' && Number.isInteger(t) ? BigInt(t) : null;
+}
+
+/**
+ * Apakah keranjang SAAT INI sama dengan yang ditagih draf — baris (id, produk, qty, harga)
+ * dan total. ⛔ Pemulihan memakai nominal dan muatan DRAF; penjualan lokal hanya boleh ditulis
+ * dari keranjang yang cocok, karena gateway menagih total draf, bukan total keranjang baru.
+ */
+export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total: bigint | null): boolean {
+  if (total === null || nominalDraf(d) !== total) return false;
+  const baris = d.muatan.lines;
+  if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
+  /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,
+     dan `confirmed` menulis penjualan dari KERANJANG, bukan dari muatan draf. */
+  const diskon = d.muatan.discount as { tipe?: unknown; nilai?: unknown } | undefined;
+  const dk = keranjang.diskon;
+  if (dk === null ? diskon !== undefined : diskon?.tipe !== dk.minta.tipe || diskon?.nilai !== Number(dk.minta.nilai)) {
+    return false;
+  }
+  if ((d.muatan.discountReasonCode ?? null) !== (dk?.alasanKode ?? null)) return false;
+  return keranjang.baris.every((b, i) => {
+    const l = baris[i] as Record<string, unknown> | undefined;
+    if (
+      l === undefined ||
+      l.id !== b.id ||
+      l.variationId !== b.variationId ||
+      l.quantityMilli !== b.quantityMilli ||
+      l.unitPrice !== b.unitPrice
+    ) {
+      return false;
+    }
+    const mods = l.modifiers;
+    return (
+      Array.isArray(mods) &&
+      mods.length === b.modifier.length &&
+      b.modifier.every((m, j) => {
+        const x = mods[j] as Record<string, unknown> | undefined;
+        return x !== undefined && x.modifierId === m.id && x.price === m.harga && x.quantityMilli === m.qtyMilli;
+      })
+    );
+  });
 }
 
 export type StatusBayar = 'confirmed' | 'pending' | 'gagal' | 'kedaluwarsa';

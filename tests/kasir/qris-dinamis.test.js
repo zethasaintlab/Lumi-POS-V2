@@ -384,3 +384,137 @@ test('⛔ pembatalan yang GAGAL dilaporkan false, tidak melempar', async () => {
   };
   assert.equal(await tinggalkanDraf(meledak, 'o', 'x'), false);
 });
+
+// ---------------------------------------------------------------------------
+// ⛔ Tagih ganda (`spec-c:291`, `spec-c:326`) — fix round Task 9, temuan C1
+// ---------------------------------------------------------------------------
+
+test('⛔ mintaQr MENOLAK bila draf ber-QR dengan payment_id LAIN masih hidup: nol permintaan, draf utuh', async () => {
+  const { mintaQr, pulihkanDraf } = await import(MOD);
+  const d = db();
+  const kirim1 = pengirim({ '/payments': { status: 201, body: { qrString: 'QR-PERTAMA' } } });
+  const pertama = await mintaQr(argMinta(draf(), { db: d, kirim: kirim1 }));
+  assert.equal(pertama.status, 'qr', 'pembanding hampa: permintaan pertama tidak menghasilkan QR');
+
+  const kirim2 = pengirim({ '/payments': { status: 201, body: { qrString: 'QR-KEDUA' } } });
+  const kedua = await mintaQr(
+    argMinta(draf({ orderId: 'ord-2', checkId: 'chk-2', paymentIds: ['pay-2'] }), { db: d, kirim: kirim2 })
+  );
+  assert.equal(kedua.status, 'tertunda', `permintaan kedua berstatus "${kedua.status}", harapan "tertunda" — QR kedua diminta untuk uang yang mungkin sudah dibayar`);
+  assert.equal(kirim2.dikirim.length, 0, `${kirim2.dikirim.length} permintaan ke server sementara draf pay-1 masih hidup — risiko tagih ganda`);
+  const sisa = await pulihkanDraf(d, 's1');
+  assert.equal(sisa.paymentId, 'pay-1', 'draf pay-1 ditimpa: jejak lokal payment pertama hilang');
+  assert.equal(sisa.qrString, 'QR-PERTAMA');
+});
+
+test('mintaQr atas draf dengan payment_id YANG SAMA (retry) tetap jalan — kunci idempotensi sama, bukan QR kedua', async () => {
+  const { mintaQr } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const ulang = await mintaQr(argMinta(draf(), { db: d, kirim }));
+  assert.equal(ulang.status, 'qr', 'retry draf yang sama ditolak — pagar terlalu lebar');
+});
+
+test('⛔ drafCocokKeranjang: keranjang yang sama cocok; qty, harga, baris tambahan, atau total berbeda TIDAK cocok', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, 22000n), true, 'pembanding hampa: keranjang yang SAMA dianggap berbeda');
+  const baris0 = KERANJANG.baris[0];
+  const ubah = (o) => ({ ...KERANJANG, baris: [{ ...baris0, ...o }] });
+  assert.equal(drafCocokKeranjang(tersimpan, ubah({ quantityMilli: 2000 }), 22000n), false, 'qty berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, ubah({ unitPrice: 25000 }), 22000n), false, 'harga berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, ubah({ variationId: 'v9' }), 22000n), false, 'produk berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, baris: [baris0, { ...baris0, id: 'b2' }] }, 22000n), false, 'baris tambahan dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, 23000n), false, 'total berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, null), false, 'total tak diketahui dianggap cocok');
+});
+
+
+// ---------------------------------------------------------------------------
+// ⛔ Fix round 2 Task 9 — celah penjaga yang sabotase independen temukan
+// ---------------------------------------------------------------------------
+
+test('⛔ amount POST payments === total yang ditagih, juga untuk total TIDAK bulat (FR-C9: pembulatan hanya pada sisa tunai)', async () => {
+  const { mintaQr } = await import(MOD);
+  for (const total of [22000n, 94350n, 40500n, 1n, 85001n, 123456789n]) {
+    const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+    await mintaQr({ ...argMinta(draf(), { db: db(), kirim }), total });
+    const bayar = kirim.dikirim.find((x) => /payments$/.test(x.jalur));
+    assert.equal(bayar.body.amount, Number(total), `amount ${bayar.body.amount} ≠ total ${total} — nominal QRIS bukan total transaksi (pembulatan FR-C9 hanya pada SISA TUNAI)`);
+    const order = kirim.dikirim.find((x) => /\/orders$/.test(x.jalur));
+    assert.equal(order.body.total, Number(total), `total order ${order.body.total} ≠ ${total}`);
+  }
+});
+
+test('⛔ cekStatus: HANYA HTTP 2xx + status "confirmed" yang menjadi confirmed — status Midtrans mentah dan non-2xx dengan body confirmed tidak', async () => {
+  const { cekStatus } = await import(MOD);
+  const mentah = ['deny', 'cancel', 'expire', 'pending', 'settlement', 'capture', 'refund', 'partial_refund', 'chargeback', 'authorize', 'pending_confirmation', 'CONFIRMED', 'Confirmed', ' confirmed', 'ok', 'paid', 'success', '??', 'x'.repeat(40)];
+  for (const status of mentah) {
+    for (const bentuk of [{ status }, { payment: { status } }]) {
+      const h = await cekStatus(pengirim({ 'check-status': { status: 200, body: bentuk } }), 'p');
+      assert.notEqual(h, 'confirmed', `status mentah ${JSON.stringify(status)} dibaca confirmed — menyerahkan barang tanpa konfirmasi gateway`);
+    }
+  }
+  for (const kode of [100, 199, 300, 301, 400, 401, 403, 404, 409, 422, 500, 502, 503, 504]) {
+    const h = await cekStatus(pengirim({ 'check-status': { status: kode, body: { status: 'confirmed' } } }), 'p');
+    assert.equal(h, 'pending', `HTTP ${kode} dengan body {status:'confirmed'} dibaca ${h}, harapan pending — hanya 2xx yang dipercaya`);
+  }
+  for (const kode of [200, 201, 202, 204]) {
+    const h = await cekStatus(pengirim({ 'check-status': { status: kode, body: { status: 'confirmed' } } }), 'p');
+    assert.equal(h, 'confirmed', `pembanding hampa: HTTP ${kode} + confirmed dibaca ${h}`);
+  }
+});
+
+test('⛔ qrString tersimpan dan terpulihkan BYTE-PER-BYTE: spasi di ujung dan di dalam, non-ASCII, tidak di-trim', async () => {
+  const { mintaQr, pulihkanDraf } = await import(MOD);
+  for (const qr of ['  000201 01 Kopi  Uji  ', '000201 Café', '\t000201\n', 'x']) {
+    const d = db();
+    const kirim = pengirim({ '/payments': { status: 201, body: { qrString: qr } } });
+    const hasil = await mintaQr(argMinta(draf(), { db: d, kirim }));
+    assert.equal(hasil.qrString, qr, `qrString yang dikembalikan ${JSON.stringify(hasil.qrString)} ≠ dari gateway ${JSON.stringify(qr)}`);
+    const sisa = await pulihkanDraf(d, 's1');
+    assert.equal(sisa.qrString, qr, `qrString pemulihan ${JSON.stringify(sisa.qrString)} ≠ dari gateway ${JSON.stringify(qr)} — QR hasil pemulihan bukan milik transaksi ini`);
+  }
+});
+
+test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berbeda pada total SAMA → TIDAK cocok', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const b0 = KERANJANG.baris[0];
+  const tulis = async (keranjang, total) => {
+    const d = db();
+    await mintaQr({ ...argMinta(draf(), { db: d, kirim: pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } }) }), keranjang, total });
+    return pulihkanDraf(d, 's1');
+  };
+  const mod = (id, harga, qtyMilli = 1000) => ({ id, nama: id, harga, qtyMilli });
+  const dgn = (modifier, unitPrice) => ({ ...KERANJANG, baris: [{ ...b0, unitPrice, modifier }] });
+  const diskon = (tipe, nilai, alasanKode = 'loyal') => ({ minta: { tipe, nilai }, alasanKode, alasanCatatan: null });
+
+  // Pembanding hampa: draf yang SAMA dengan modifier dan diskon cocok dengan keranjang yang sama.
+  const kMod = dgn([mod('m1', 2000)], 20000);
+  const tMod = await tulis(kMod, 22000n);
+  assert.equal(drafCocokKeranjang(tMod, kMod, 22000n), true, 'pembanding hampa: keranjang bermodifier yang SAMA dianggap berbeda');
+
+  const tId = await tulis(KERANJANG, 22000n);
+  assert.equal(drafCocokKeranjang(tId, { ...KERANJANG, baris: [{ ...b0, id: 'b-lain' }] }, 22000n), false, 'baris dengan id berbeda (isi sama) dianggap cocok');
+
+  // Total sama (22.000), isi berbeda.
+  assert.equal(drafCocokKeranjang(tMod, dgn([mod('m2', 2000)], 20000), 22000n), false, 'modifier berbeda (id) pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 1000)], 21000), 22000n), false, 'harga modifier dan harga satuan bergeser pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 1000)], 20000), 22000n), false, 'harga modifier SAJA berbeda (id, qty, harga satuan sama) dianggap cocok');
+  assert.equal(drafCocokKeranjang(tMod, dgn([], 22000), 22000n), false, 'modifier dihapus dan harga satuan dinaikkan pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 2000, 2000)], 20000), 22000n), false, 'qty modifier berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tMod, dgn([mod('m1', 2000), mod('m3', 0)], 20000), 22000n), false, 'modifier tambahan dianggap cocok');
+
+  const kDis = { ...KERANJANG, diskon: diskon('percent', 1000n) };
+  const tDis = await tulis(kDis, 20000n);
+  assert.equal(drafCocokKeranjang(tDis, kDis, 20000n), true, 'pembanding hampa: keranjang berdiskon yang SAMA dianggap berbeda');
+  assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: diskon('percent', 2000n) }, 20000n), false, 'nilai diskon berbeda pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: diskon('amount', 1000n) }, 20000n), false, 'tipe diskon berbeda pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: diskon('percent', 1000n, 'lain') }, 20000n), false, 'alasan diskon SAJA berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: null }, 20000n), false, 'diskon dicabut pada total sama dianggap cocok');
+  assert.equal(drafCocokKeranjang(tId, { ...KERANJANG, diskon: diskon('percent', 1000n) }, 22000n), false, 'diskon ditambahkan pada total sama dianggap cocok');
+});

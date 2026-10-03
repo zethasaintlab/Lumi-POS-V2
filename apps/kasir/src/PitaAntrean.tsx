@@ -8,6 +8,7 @@ import {
   type TingkatAntrean,
 } from '../../../packages/domain/src/antrean-menua.ts';
 import { navigasi } from './rute/navigasi.ts';
+import { usePakaiKunciNav } from './rute/pakai-kunci-nav.ts';
 
 /* FR-H8 — peringatan antrean menua di layar kasir (`spec-h:310`).
 
@@ -46,6 +47,8 @@ const IKON: Record<Exclude<TingkatAntrean, 'aman'>, 'clock' | 'alert'> = {
 
 export function PitaAntrean({ tertuaPada }: { tertuaPada: string | null }) {
   const [sekarang, setSekarang] = useState(() => Date.now());
+  // Selama K-06 menyimpan/QRIS menunggu, tautan terkunci seperti tab nav (`rute/kunci-nav.ts`).
+  const alasanKunci = usePakaiKunciNav();
 
   useEffect(() => {
     const id = setInterval(() => setSekarang(Date.now()), DETAK_MS);
@@ -89,7 +92,13 @@ export function PitaAntrean({ tertuaPada }: { tertuaPada: string | null }) {
           tak terlihat") memperluas target sentuhnya ke 44px TANPA mengubah
           `getBoundingClientRect()`, pola yang sama dengan chip saringan K-03
           (Task 9 Step 0). Kalimat tombolnya TIDAK berubah. */}
-      <button type="button" className="kasir-pita-tautan sentuh t-caption" onClick={() => navigasi('/sync')}>
+      <button
+        type="button"
+        className="kasir-pita-tautan sentuh t-caption"
+        aria-disabled={alasanKunci !== null ? true : undefined}
+        aria-describedby={alasanKunci !== null ? 'nav-kunci-alasan' : undefined}
+        onClick={() => navigasi('/sync')}
+      >
         Lihat antrean
       </button>
     </div>

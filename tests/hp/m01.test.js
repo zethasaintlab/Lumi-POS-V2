@@ -225,3 +225,13 @@ test('⛔ outlet tanpa nama tidak menjadi baris omzet tanpa label', async () => 
   assert.ok(baris[0].nama.trim().length > 0);
   assert.match(baris[0].nama, /tidak dikenal/i);
 });
+
+test('⛔ ringkasan HP menyebut transfer "Transfer", tidak pernah "Lainnya"', async () => {
+  const { barisMetode } = await import(M01);
+  const baris = barisMetode([
+    { metode: 'transfer', total: '60000', jumlah: 2 },
+    { metode: 'other', total: '7000', jumlah: 1 },
+  ]);
+  assert.equal(baris[0].label, 'Transfer', 'uang bank tersembunyi di Lainnya');
+  assert.equal(baris[1].label, 'Lainnya');
+});

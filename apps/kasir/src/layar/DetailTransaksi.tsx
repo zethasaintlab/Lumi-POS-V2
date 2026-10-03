@@ -13,6 +13,9 @@ import { rencanaPembatalan } from '../kasir/pembatalan.ts';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import {
+  labelMetode as labelMetodeDomain,
+} from '../../../../packages/domain/src/metode-tampilan.ts';
 
 /* K-09 — Detail Transaksi (IA §2.2).
 
@@ -31,13 +34,6 @@ const ALASAN: Record<string, string> = {
   item_habis: 'Item habis',
   uji_coba: 'Uji coba',
   lainnya: 'Lainnya',
-};
-
-const METODE: Record<string, string> = {
-  cash: 'Tunai',
-  qris_dynamic: 'QRIS',
-  qris_static: 'QRIS statis',
-  card: 'Kartu (EDC)',
 };
 
 export function DetailTransaksi({ orderId }: { orderId: string }) {
@@ -193,7 +189,11 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
         <ul className="kasir-baris-daftar">
           {pembayaran.map((p) => (
             <li key={p.id} className="kasir-baris">
-              <span className="grow t-body-md">{METODE[p.metode] ?? p.metode}</span>
+              <span className="grow t-body-md">
+                {/* SATU peta (`metode-tampilan.ts`, G-LABEL): `provider` ikut supaya
+                    transfer tidak terbaca "Lainnya". */}
+                {labelMetodeDomain(p.metode, p.provider)}
+              </span>
               {p.diterima !== null && (
                 <span className="t-caption num">diterima {rupiah(p.diterima)}</span>
               )}

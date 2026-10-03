@@ -59,7 +59,7 @@ let seq = 0;
  * `baris` = [{ itemName, variationName, unitPrice, qty }] dengan qty dalam
  * satuan utuh (dikali 1000 di sini, sesuai konvensi kuantitas).
  */
-function jual(db, { id, baris, metode = 'cash', jam = '10', taxAmount = 0, businessDate = TANGGAL, statusBayar = 'confirmed' }) {
+function jual(db, { id, baris, metode = 'cash', provider = null, jam = '10', taxAmount = 0, businessDate = TANGGAL, statusBayar = 'confirmed' }) {
   const s = db.sqlite;
   seq += 1;
   const total = baris.reduce((t, b) => t + b.unitPrice * b.qty, 0);
@@ -83,8 +83,8 @@ function jual(db, { id, baris, metode = 'cash', jam = '10', taxAmount = 0, busin
     `);
   });
   s.exec(`
-    INSERT INTO payment (id, order_id, check_id, method, amount, status, tendered_at)
-    VALUES ('pay-${id}','${id}','chk-${id}','${metode}',${total},'${statusBayar}','${businessDate}T${jam}:00:00Z')
+    INSERT INTO payment (id, order_id, check_id, method, provider, amount, status, tendered_at)
+    VALUES ('pay-${id}','${id}','chk-${id}','${metode}',${provider === null ? 'NULL' : `'${provider}'`},${total},'${statusBayar}','${businessDate}T${jam}:00:00Z')
   `);
   return total;
 }
@@ -349,4 +349,23 @@ test('⛔ payment pending dan failed TIDAK dihitung di ringkasan per metode', as
     'metode dengan payment belum/tidak terkonfirmasi ikut dilaporkan'
   );
   assert.equal(hasil.perMetode[0].total, 25000n);
+});
+
+test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan harian)', async () => {
+  const { laporanHarian } = await import(MOD);
+  const db = dbSungguhan();
+  jual(db, { id: 'o1', baris: [{ ...KOPI, unitPrice: 25000, qty: 1 }], metode: 'cash' });
+  jual(db, { id: 'o2', baris: [{ ...KOPI, unitPrice: 40000, qty: 1 }], metode: 'other', provider: 'bank_transfer' });
+  jual(db, { id: 'o3', baris: [{ ...KOPI, unitPrice: 15000, qty: 1 }], metode: 'other', provider: 'bank_transfer' });
+  jual(db, { id: 'o4', baris: [{ ...KOPI, unitPrice: 5000, qty: 1 }], metode: 'other' });
+
+  const l = await laporanHarian(db, { businessDate: TANGGAL });
+  const peta = Object.fromEntries(l.perMetode.map((m) => [m.metode, m]));
+  assert.ok(peta.transfer, `laporan harian tidak memuat transfer: ${JSON.stringify(l.perMetode.map((m) => m.metode))}`);
+  assert.equal(peta.transfer.total, 55000n);
+  assert.equal(peta.transfer.jumlah, 2);
+  assert.equal(peta.other.total, 5000n, 'other tanpa provider tercampur dengan transfer');
+  assert.equal(l.perMetode.reduce((t, m) => t + m.total, 0n), 85000n, 'uang hilang dari pengelompokan');
+  // Urutan tetap: total menurun, lalu kode.
+  assert.deepEqual(l.perMetode.map((m) => m.metode), ['transfer', 'cash', 'other']);
 });

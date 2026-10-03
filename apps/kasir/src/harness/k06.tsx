@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { StrictMode, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import 'ds/styles.css';
 import '../kasir.css';
@@ -12,10 +12,12 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { buatPemberitahu } from '../../../../packages/sync-client/src/pemberitahu.ts';
 import { buatDbPalsu } from '../galeri/db-palsu.ts';
 import { Pembayaran } from '../layar/Pembayaran.tsx';
+import { ShellKasir } from '../ShellKasir.tsx';
 import { PanelQris } from '../komponen/PanelQris.tsx';
 import { setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
 import type { StatusBayar } from '../kasir/qris-dinamis.ts';
+import { jalurSekarang, langgananJalur, navigasi } from '../rute/navigasi.ts';
 
 /**
  * Harness DOM untuk K-06 Pembayaran dan panel QRIS — HANYA untuk test.
@@ -66,7 +68,23 @@ pasangLokalPalsu({
   keputusanMigrasi: { tindakan: 'tidak-ada' } as never,
   pemberitahu: buatPemberitahu(),
 });
-dbAktif = buatDbPalsu('normal');
+/* `?matikan=a,b` — kunci fitur yang dipaksa MATI (kill switch), supaya "tab
+   Transfer HILANG" dapat diuji tanpa keadaan galeri baru. */
+const matikan = (new URLSearchParams(window.location.search).get('matikan') ?? '')
+  .split(',')
+  .filter((k) => k !== '');
+/* `?skenario=gambar-antrean` memunculkan pita antrean menua dan indikator
+   `failed` — jalan keluar header yang dijaga kunci nav. Default tetap `normal`. */
+const skenarioUji = (new URLSearchParams(window.location.search).get('skenario') ?? 'normal') as Parameters<typeof buatDbPalsu>[0];
+/* `?pembulatan=500&modePembulatan=up` — outlet dengan pembulatan selain bawaan (100, half_up). */
+const pembulatanMentah = new URLSearchParams(window.location.search).get('pembulatan');
+const pembulatanUji = pembulatanMentah === null || pembulatanMentah === '' ? undefined : Number(pembulatanMentah);
+const modeUji = new URLSearchParams(window.location.search).get('modePembulatan') as 'half_up' | 'up' | 'down' | null;
+dbAktif = buatDbPalsu(skenarioUji, {
+  matikanFitur: matikan,
+  pembulatan: pembulatanUji,
+  modePembulatan: modeUji ?? undefined,
+});
 
 const q = new URLSearchParams(window.location.search);
 
@@ -78,7 +96,7 @@ const q = new URLSearchParams(window.location.search);
  * saja menghasilkan layar "Keranjang kosong" dan penjaga yang hijau karena
  * tidak melihat apa pun.
  */
-function keranjangUji(jumlahBaris: number): Keranjang {
+function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
   if (jumlahBaris === 0) return keranjangKosong();
   return {
     ...keranjangKosong(),
@@ -88,14 +106,15 @@ function keranjangUji(jumlahBaris: number): Keranjang {
       itemName: `Item Uji ${i + 1}`,
       variationName: 'Regular',
       variationCount: 1,
-      unitPrice: 20000,
+      unitPrice: harga,
       quantityMilli: 1000,
       modifier: [],
     })),
   };
 }
 
-setelKeranjang(keranjangUji(Number(q.get('baris') ?? '2')));
+/* `?harga=85000` — harga satuan baris uji (bawaan 20.000), supaya total tidak bulat. */
+setelKeranjang(keranjangUji(Number(q.get('baris') ?? '2'), Number(q.get('harga') ?? '20000')));
 
 /**
  * `kirim` palsu untuk `PanelQris`.
@@ -118,8 +137,33 @@ function keServer(s: StatusBayar): string {
   return 'pending_confirmation';
 }
 
+/* `?rute=1` — K-06 hidup di jalur `/bayar` dengan satu entri riwayat sebelumnya
+   (`/kasir`), dan hanya terpasang selama `jalurSekarang() === '/bayar'`, persis
+   seperti `App.tsx`. Tanpa ini tombol Kembali peramban tidak punya tempat
+   mendarat dan tidak ada yang dapat meng-unmount layar. Default: tanpa rute. */
+const pakaiRute = q.get('rute') === '1';
+if (pakaiRute) {
+  window.history.replaceState({}, '', '/kasir');
+  window.history.pushState({}, '', '/bayar');
+  /* Navigasi yang MENGABAIKAN kunci: mensimulasikan unmount yang bukan lewat tab
+     nav (sesi habis, pemulihan), untuk menguji cleanup kunci. */
+  (window as unknown as { __paksaKeluar: () => void }).__paksaKeluar = () => {
+    window.history.pushState({}, '', '/kasir');
+    window.dispatchEvent(new Event('lumi:navigasi'));
+  };
+  /* Kasir mengubah keranjang di K-03 selagi QRIS tertunda (fix round Task 9, C1a). */
+  (window as unknown as { __ubahKeranjang: (n: number, harga?: number) => void }).__ubahKeranjang = (n, harga) =>
+    setelKeranjang(keranjangUji(n, harga));
+  /* Kebalikannya: K-06 dipasang lagi (pemulihan draf QRIS) tanpa membuka database baru. */
+  (window as unknown as { __paksaMasuk: () => void }).__paksaMasuk = () => {
+    window.history.pushState({}, '', '/bayar');
+    window.dispatchEvent(new Event('lumi:navigasi'));
+  };
+}
+
 function Akar() {
   const render = q.get('render') ?? 'k06';
+  const jalur = useSyncExternalStore(langgananJalur, jalurSekarang, () => '/');
 
   if (render === 'panel') {
     const status = (q.get('status') ?? 'pending') as StatusBayar;
@@ -129,12 +173,14 @@ function Akar() {
     return (
       <PanelQris
         kirim={kirimPalsu(status) as never}
-        qrString="00020101021226590014ID.CO.QRIS.WWW0118UJI0303UMI"
+        qrString={q.get('qr') ?? '00020101021226590014ID.CO.QRIS.WWW0118UJI0303UMI'}
         paymentId="pay-uji"
         orderId="ord-uji"
         nominal={123456n}
         jeda={50}
-        batas={habisWaktu ? 0 : 60_000}
+        batas={habisWaktu ? 0 : Number(q.get('batas') ?? '60000')}
+        /* `?jam=1` — jam suntikan: test menggeser `window.__jam` (ms), bukan menunggu. */
+        sekarang={q.get('jam') === '1' ? () => (window as unknown as { __jam?: number }).__jam ?? Date.now() : undefined}
         onSelesai={(h) => {
           // Hasil ditulis ke DOM, bukan ke konsol: penjaga membacanya dari
           // halaman, dan konsol tidak bertahan melewati navigasi.
@@ -163,31 +209,25 @@ function Akar() {
     },
   } as unknown as KeadaanLokal;
 
-  /* ⛔ Pembungkus overlay DISALIN dari `Kasir.tsx:511-513`, kata demi kata, dan
-     ia bukan hiasan.
-
-     Sampai 16 September 2026 harness ini memasang `<Pembayaran>` TELANJANG ke
-     `#k06`. Ia cukup untuk penjaga yang membaca teks dan keberadaan tombol —
-     dan diam-diam salah untuk apa pun yang mengukur TATA LETAK: seluruh batas
-     tinggi K-06 datang dari `.kasir-overlay-lebar` (`max-height: 100%` di
-     dalam `.overlay` yang `position: fixed; inset: 0`). Tanpa pembungkus itu
-     layarnya tumbuh setinggi isinya, tidak pernah menggulir, dan blok aksi
-     yang menempel di aplikasi terukur BERGESER di sini.
-
-     Terukur sebelum diperbaiki: blok aksi bergeser 177,0 px antara isi pendek
-     dan isi panjang, dan `.kasir-bayar-isi` melaporkan `scrollHeight ===
-     clientHeight` — penggulungnya tidak pernah menyala.
+  /* ⛔ K-06 adalah HALAMAN di dalam `ShellKasir` (Task 8, spec § 7), dan
+     harness memasangnya DI DALAM shell sungguhan: seluruh batas tinggi kartu
+     datang dari `.kasir-konten` + `.kasir-bayar-halaman`, jadi mengukur blok
+     aksi (P8) tanpa shell mengukur salinan. Header-nya juga yang dipakai P1
+     untuk membuktikan tab nav terkunci. K-07 membawa overlay-nya sendiri
+     (`Pembayaran.tsx`), persis seperti di aplikasi.
 
      Harness yang berbeda bentuk dari aplikasinya adalah salinan, dan penjaga
      yang menjaga salinan tidak menjaga apa pun. */
   return (
     <DbLokalPalsuProvider keadaan={keadaan}>
       <IsiSiap>
-        <div className="overlay kasir-overlay-bayar" role="dialog" aria-modal="true" aria-label="Pembayaran">
-          <div className="dialog kasir-overlay-lebar">
-            <Pembayaran onKembali={() => undefined} />
-          </div>
-        </div>
+        <ShellKasir outlet="Outlet uji" device="K1" perangkatTerdaftar pengguna="Kasir uji" ruteAktif={null}>
+          {pakaiRute && jalur !== '/bayar' ? (
+            <p id="layar-lain">Layar lain: {jalur}</p>
+          ) : (
+            <Pembayaran onKembali={() => (pakaiRute ? navigasi('/kasir') : undefined)} />
+          )}
+        </ShellKasir>
       </IsiSiap>
     </DbLokalPalsuProvider>
   );
