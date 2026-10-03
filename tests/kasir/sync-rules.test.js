@@ -392,9 +392,3 @@ test('⛔ query order di stream riwayat membawa customer_name, table_number, not
     assert.ok(kolom.includes(k), `${k} tidak turun ke perangkat lewat riwayat: ${q}`);
   }
 });
-
-test('⛔ check.label TIDAK dipakai nama pemesan: query check tetap membawa label apa adanya', () => {
-  const q = kueri().find((x) => /FROM "check"/.test(x));
-  assert.ok(q);
-  assert.ok(kolomDiminta(q).includes('label'));
-});

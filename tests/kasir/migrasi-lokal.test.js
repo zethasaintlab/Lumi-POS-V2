@@ -439,13 +439,26 @@ test('⛔ tiga kolom order baru mengubah sidik jari SEKALI — satu migrasi, buk
   const { jalankanMigrasi } = await import(MIGRASI);
   const { sidikJariSkemaLokal } = await import(SKEMA);
   const baru = sql();
-  const tiga = ['customer_name', 'table_number', 'note'];
   // DDL sebelum Task 11: tanpa ketiga kolom.
   const lama = baru.replace(
     /hlc INTEGER NOT NULL,((?:\s*--[^\n]*)*)\s*customer_name TEXT, table_number TEXT, note TEXT/,
     'hlc INTEGER NOT NULL$1'
   );
   assert.notEqual(lama, baru, 'pola ketiga kolom tidak ditemukan di DDL — penjaga ini hampa');
+  // Selisih bentuk raw table HANYA tiga kolom `order`, berurutan, tanpa tabel lain:
+  // itulah yang membuat perubahan sidik jari ini SATU, bukan tiga.
+  const { kolomPerTabel } = await import(SKEMA);
+  const kl = kolomPerTabel(lama);
+  const kb = kolomPerTabel(baru);
+  assert.deepEqual(
+    kb.order.filter((c) => !kl.order.includes(c)),
+    ['customer_name', 'table_number', 'note']
+  );
+  for (const t of Object.keys(kb)) {
+    if (t === 'order') continue;
+    assert.deepEqual(kb[t], kl[t], `tabel ${t} ikut berubah — sidik jari berubah lebih dari karena order`);
+  }
+  assert.deepEqual(kl.order, kb.order.filter((c) => kl.order.includes(c)), 'urutan kolom lama berubah');
   const sidikLama = sidikJariSkemaLokal(lama);
   const sidikBaru = sidikJariSkemaLokal(baru);
   assert.notEqual(sidikLama, sidikBaru);
@@ -477,5 +490,4 @@ test('⛔ tiga kolom order baru mengubah sidik jari SEKALI — satu migrasi, buk
     simpanSidik: async () => jejak2.push('simpan'),
   });
   assert.deepEqual(jejak2, []);
-  assert.equal(tiga.length, 3);
 });

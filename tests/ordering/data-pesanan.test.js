@@ -197,3 +197,24 @@ test('⛔ batas kolom di DATABASE sama dengan konstanta domain (40/16/140), buka
   assert.match(def.ck_order_table_number_len ?? '', new RegExp(`<= ${MAKS_NOMOR_MEJA}\\)`));
   assert.match(def.ck_order_note_len ?? '', new RegExp(`<= ${MAKS_CATATAN}\\)`));
 });
+
+test('⛔ karakter kendali di nama/meja/catatan ditolak 400 VALIDATION_ERROR, dan tidak ada order tersimpan', async () => {
+  const s = await setup();
+  for (const f of [{ customerName: 'Bu\x00di' }, { tableNumber: 'A\x1b3' }, { note: 'baris1\nbaris2' }]) {
+    const body = payload(s, f);
+    const res = await post(body);
+    assert.equal(res.statusCode, 400, res.body);
+    assert.match(res.body, /VALIDATION_ERROR/);
+    assert.match(res.body, /karakter kendali/);
+    assert.deepEqual(await bacaOrder(tenant.id, body.id), []);
+  }
+});
+
+test('⛔ kompatibilitas MAJU: field asing di POST /orders diterima 201 dan tidak disimpan (penjaga klien lebih baru dari server)', async () => {
+  const s = await setup();
+  const body = payload(s, { fieldBelumDikenal: 'x', customerPhone: '0812' });
+  const res = await post(body);
+  assert.equal(res.statusCode, 201, res.body);
+  const [row] = await bacaOrder(tenant.id, body.id);
+  assert.deepEqual(row, { customer_name: null, table_number: null, note: null });
+});

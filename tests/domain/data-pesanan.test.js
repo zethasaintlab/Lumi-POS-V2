@@ -67,3 +67,19 @@ test('Q7: tidak ada penolakan pola telepon (nama berisi angka pendek sah)', asyn
   const { periksaNamaPemesan } = await import(MOD);
   assert.equal(periksaNamaPemesan('Budi 0812'), null);
 });
+
+// Fix round Task 11 (M-6): karakter kendali merusak struk ESC/POS dan kolom teks.
+for (const k of KASUS) {
+  test(`⛔ karakter kendali ditolak VALIDATION_ERROR (${k.fn}), termasuk di tengah teks`, async () => {
+    const m = await import(MOD);
+    for (const v of ['Bu\x00di', 'Bu\x1bdi', 'Budi\x7f', 'a\nb', 'a\tb', 'a\rb', '\x07x']) {
+      const g = m[k.fn](v);
+      assert.notEqual(g, null, `${JSON.stringify(v)} lolos`);
+      assert.equal(g.kode, 'VALIDATION_ERROR');
+      assert.match(g.pesan, /karakter kendali/);
+    }
+    // Spasi di ujung dibuang trim, bukan dianggap karakter kendali; spasi biasa di tengah sah.
+    assert.equal(m[k.fn]('  a b  '), null);
+    assert.equal(m[k.fn]('Café ñ'), null);
+  });
+}

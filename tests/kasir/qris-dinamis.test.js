@@ -544,3 +544,40 @@ test('⛔ drafCocokKeranjang: total SAMA tetapi kanal BERBEDA tidak cocok (tarif
     'kanal berbeda (total sama) dianggap cocok — penjualan lokal akan ditulis dengan order.channel/pajak yang tidak ditagih'
   );
 });
+
+// Fix round Task 11 (I-1): `confirmed` menulis penjualan dari KERANJANG, jadi nama/meja/catatan
+// yang berbeda dari muatan draf menulis order lokal yang tidak sama dengan yang terkirim ke server.
+test('⛔ drafCocokKeranjang: nama/meja/catatan berbeda (total SAMA) tidak cocok; sama cocok; kosong ≡ absen', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const kosong = { namaPemesan: null, nomorMeja: null, catatan: null };
+  const dengan = (dataPesanan) => ({ ...KERANJANG, dataPesanan });
+  const buatDraf = async (dataPesanan) => {
+    const d = db();
+    const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+    await mintaQr(argMinta(draf(), { db: d, kirim }));
+    return pulihkanDraf(d, 's1').then((t) => ({ t, kirim, dataPesanan }));
+  };
+  // Draf ditagih TANPA data pesanan.
+  const { t: tanpa } = await buatDraf(kosong);
+  assert.equal(drafCocokKeranjang(tanpa, KERANJANG, 22000n), true, 'keranjang lama tanpa dataPesanan harus cocok');
+  assert.equal(drafCocokKeranjang(tanpa, dengan(kosong), 22000n), true, 'kosong ≡ absen harus cocok');
+  assert.equal(drafCocokKeranjang(tanpa, dengan({ ...kosong, namaPemesan: '  ' }), 22000n), true, 'spasi saja ≡ kosong');
+  for (const [k, v] of [['namaPemesan', 'Budi'], ['nomorMeja', 'A3'], ['catatan', 'tanpa es']]) {
+    assert.equal(
+      drafCocokKeranjang(tanpa, dengan({ ...kosong, [k]: v }), 22000n),
+      false,
+      `${k} ditambahkan selagi QRIS tertunda (total sama) dianggap cocok`
+    );
+  }
+  // Draf ditagih DENGAN data pesanan.
+  const d2 = db();
+  const kirim2 = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  const awal = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'tanpa es' };
+  await mintaQr({ ...argMinta(draf(), { db: d2, kirim: kirim2 }), keranjang: dengan(awal) });
+  const dg = await pulihkanDraf(d2, 's1');
+  assert.equal(dg.muatan.customerName, 'Budi', 'prasyarat: muatan draf membawa nama');
+  assert.equal(drafCocokKeranjang(dg, dengan({ ...awal, namaPemesan: ' Budi ' }), 22000n), true, 'pembanding hampa: data yang SAMA (dirapikan) dianggap berbeda');
+  for (const [k, v] of [['namaPemesan', 'Siti'], ['nomorMeja', 'B1'], ['catatan', 'pedas'], ['namaPemesan', null]]) {
+    assert.equal(drafCocokKeranjang(dg, dengan({ ...awal, [k]: v }), 22000n), false, `${k} → ${v} dianggap cocok`);
+  }
+});

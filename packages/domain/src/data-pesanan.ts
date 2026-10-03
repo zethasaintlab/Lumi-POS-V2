@@ -26,6 +26,15 @@ export function rapikanDataPesanan(nilai: unknown): string | null {
   return t.length === 0 ? null : t;
 }
 
+/** U+0000–U+001F dan U+007F. Tanpa regex: `no-control-regex` menolak rentang itu. */
+function adaKarakterKendali(teks: string): boolean {
+  for (let i = 0; i < teks.length; i += 1) {
+    const c = teks.charCodeAt(i);
+    if (c <= 0x1f || c === 0x7f) return true;
+  }
+  return false;
+}
+
 function periksa(nilai: unknown, maks: number, label: string): GalatBayar | null {
   if (nilai === undefined || nilai === null) return null;
   if (typeof nilai !== 'string') {
@@ -33,6 +42,11 @@ function periksa(nilai: unknown, maks: number, label: string): GalatBayar | null
   }
   const t = nilai.trim();
   if (t.length === 0) return null;
+  // ⛔ Karakter kendali (NUL, ESC, CR/LF, TAB, DEL) merusak byte ESC/POS struk dan
+  // kolom teks; teks satu baris tidak butuh satu pun.
+  if (adaKarakterKendali(t)) {
+    return { kode: 'VALIDATION_ERROR', pesan: `${label} tidak boleh memuat karakter kendali.` };
+  }
   // Nomor kartu diperiksa LEBIH DULU: sinyal POSSIBLE_CARD_NUMBER tidak boleh
   // tertutup galat panjang (PAN berpemisah melebihi batas nomor meja).
   const kartu = periksaBukanNomorKartu(t, label);

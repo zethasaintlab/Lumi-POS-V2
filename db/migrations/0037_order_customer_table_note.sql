@@ -29,6 +29,12 @@ SET LOCAL lock_timeout = '5s';
 -- Pengecualian yang dinyatakan terhadap invariant #2: tidak ada. Kolom ini
 -- ditulis SEKALI saat INSERT order; tidak ada jalur UPDATE.
 
+-- ⛔ CHECK ditulis inline (bukan `NOT VALID` + `VALIDATE CONSTRAINT`) dengan alasan:
+-- kolomnya baru, jadi SEMUA baris lama NULL dan CHECK `IS NULL OR …` lulus tanpa
+-- memindai nilai apa pun; dan runner (`db/migrate.js`) membungkus berkas ini dalam SATU
+-- transaksi, sehingga `NOT VALID` memegang kunci ACCESS EXCLUSIVE sampai commit juga —
+-- memisahkan VALIDATE di dalam transaksi yang sama tidak mengurangi lamanya kunci.
+-- Yang menjaga adalah `lock_timeout` di atas: migrasi gagal cepat, bukan menahan penjualan.
 ALTER TABLE "order"
   ADD COLUMN customer_name text
     CONSTRAINT ck_order_customer_name_len CHECK (customer_name IS NULL OR length(customer_name) <= 40),
