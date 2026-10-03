@@ -2051,3 +2051,14 @@
   gap: var(--space-1);
   overflow-wrap: anywhere;
 }
+
+/* Pesanan tahan (Task 12): baris daftar di dialog K-03 dan di K-12. Kelas sendiri, BUKAN `.kasir-baris` —
+   itu baris keranjang, dan penjaga yang menghitungnya tidak boleh menghitung tahanan. */
+.kasir-tahan-baris {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  list-style: none;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}

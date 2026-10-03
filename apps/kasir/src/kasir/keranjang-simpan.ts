@@ -93,8 +93,11 @@ export async function simpanKeranjang(
  * Keduanya karena itu ditulis sebagai STRING dan dibaca kembali menjadi
  * `bigint`. Konvensi yang sama dengan setiap uang yang melewati JSON di repo
  * ini (muatan outbox, `after` di `audit_event`).
+ *
+ * Diekspor untuk Pesanan tahan (`keranjang-tahan.ts`): serializer KEDUA akan
+ * menyimpang tepat di bigint, kanal, dan `dataPesanan`.
  */
-function serialkan(k: Keranjang): string {
+export function serialkan(k: Keranjang): string {
   return JSON.stringify(k, (_kunci, nilai: unknown) =>
     typeof nilai === 'bigint' ? nilai.toString() : nilai
   );
@@ -108,6 +111,12 @@ function serialkan(k: Keranjang): string {
  */
 export async function bersihkanKeranjangDi(db: DbLokal): Promise<void> {
   await db.execute('DELETE FROM keranjang_lokal WHERE id = ?', [KUNCI]);
+}
+
+/** Ada keranjang BERJALAN yang tersimpan (baris ada = keranjang tidak kosong). */
+export async function adaKeranjangBerjalan(db: DbLokal): Promise<boolean> {
+  const baris = await db.getAll<{ id: string }>('SELECT id FROM keranjang_lokal WHERE id = ?', [KUNCI]);
+  return baris.length > 0;
 }
 
 export type HasilPulih =
@@ -161,7 +170,7 @@ export async function pulihkanKeranjang(db: DbLokal, shiftId: string): Promise<H
  * ia lihat, dan persetujuan yang dipulihkan setengah adalah potongan tanpa
  * penyetuju.
  */
-function uraikan(teks: string): Keranjang | null {
+export function uraikan(teks: string): Keranjang | null {
   let mentah: unknown;
   try {
     mentah = JSON.parse(teks);

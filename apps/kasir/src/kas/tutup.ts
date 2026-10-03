@@ -16,6 +16,7 @@ import {
   type TipeMovement,
 } from '../../../../packages/domain/src/buku-kas.ts';
 import { bacaAmbangOutlet } from '../kasir/diskon.ts';
+import { daftarTahanan, type RingkasTahanan } from '../kasir/keranjang-tahan.ts';
 import { bangunUlangSnapshot } from '../inventori/stok.ts';
 import {
   posisiPenjualan,
@@ -455,7 +456,9 @@ export type HasilTutup =
   | { status: 'sudah_tertutup' }
   | { status: 'butuh_otorisasi'; selisih: number }
   | { status: 'butuh_alasan'; selisih: number }
-  | { status: 'penyetuju_sama_dengan_aktor' };
+  | { status: 'penyetuju_sama_dengan_aktor' }
+  /** Pesanan tahan (Task 12) masih ada: lanjutkan atau buang dulu. `[EKSPLORASI]` bentuk varian. */
+  | { status: 'ada_tahanan'; daftar: RingkasTahanan[] };
 
 export async function tutupKas({
   db,
@@ -483,6 +486,12 @@ export async function tutupKas({
   // Shift yang sudah tertutup TIDAK dapat dibuka ulang (`spec-d` state
   // machine: `CLOSED` tidak punya transisi keluar).
   if (shift.status === 'closed') return { status: 'sudah_tertutup' };
+
+  // ⛔ Tahanan yang tertinggal saat shift tertutup tidak punya pemilik lagi
+  // (terikat shift_id): pesanan pelanggan hilang tanpa jejak. Ditolak SEBELUM
+  // apa pun dihitung atau ditulis; sejajar FR-B1 AC keempat.
+  const tahanan = await daftarTahanan(db, shiftId);
+  if (tahanan.length > 0) return { status: 'ada_tahanan', daftar: tahanan };
 
   const seharusnya = await saldoSeharusnya(db, shift);
   const selisih = hitungan - seharusnya;

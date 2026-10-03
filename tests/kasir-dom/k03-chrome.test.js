@@ -265,14 +265,15 @@ test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header
      "Diskon". Task 4 (Laci kas) MENGELUARKAN "Buka laci" dan "Kas masuk /
      keluar" dari toolbar ini — keduanya pindah ke layar K-18. Task 10 menambah
      "Pajak" di antara Diskon dan Batalkan. Task 11 menambah "Catatan",
-     "Pelanggan", "No. Meja" di antara Pajak dan Batalkan (urutan mockup). */
+     "Pelanggan", "No. Meja" di antara Pajak dan Batalkan (urutan mockup). Task 12
+     menambah "Pesanan tahan" paling akhir: kedelapan lengkap. */
   assert.deepEqual(
     hasil.label,
-    ['Item manual', 'Diskon', 'Pajak', 'Catatan', 'Pelanggan', 'No. Meja', 'Batalkan'],
-    'isi toolbar tidak sesuai. Tujuh label ini yang punya kode di repo hari ' +
-      'ini (Item manual, Diskon, Pajak (Task 10), Catatan/Pelanggan/No. Meja (Task 11), Batalkan (Task 5B)); ' +
+    ['Item manual', 'Diskon', 'Pajak', 'Catatan', 'Pelanggan', 'No. Meja', 'Batalkan', 'Pesanan tahan'],
+    'isi toolbar tidak sesuai. Delapan label ini yang punya kode di repo hari ' +
+      'ini (Item manual, Diskon, Pajak (Task 10), Catatan/Pelanggan/No. Meja (Task 11), Batalkan (Task 5B), Pesanan tahan (Task 12)); ' +
       'Buka laci dan Kas masuk / keluar pindah ke layar Laci kas (K-18, Task 4); ' +
-      'satu lainnya di mockup (Pesanan tahan) belum, dan tombol yang tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
+      'tombol yang tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
   );
 
   /* Aturan design system #3. */

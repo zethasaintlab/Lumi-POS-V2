@@ -26,7 +26,7 @@ const SHIFT = {
   count_attempts: null,
 };
 
-function dbPalsu({ shift = SHIFT, gerakan = MOVEMENTS, order = PEMBAYARAN } = {}) {
+function dbPalsu({ shift = SHIFT, gerakan = MOVEMENTS, order = PEMBAYARAN, tahanan = [] } = {}) {
   const state = { shift: { ...shift }, tulis: [], transaksi: 0, diDalam: false };
   const db = {
     state,
@@ -34,6 +34,7 @@ function dbPalsu({ shift = SHIFT, gerakan = MOVEMENTS, order = PEMBAYARAN } = {}
       if (/FROM cash_drawer_shift/.test(sql)) return state.shift ? [state.shift] : [];
       if (/FROM cash_movement/.test(sql)) return gerakan;
       if (/FROM payment/.test(sql)) return order;
+      if (/FROM keranjang_tahan/.test(sql)) return tahanan;
       return [];
     },
     async execute(sql, params = []) {
@@ -624,4 +625,22 @@ test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan shift 
   assert.equal(peta.transfer?.jumlah, 2);
   assert.equal(peta.other?.total, 5000);
   assert.equal(l.perMetode.reduce((t, m) => t + m.total, 0), 180000, 'uang hilang dari pengelompokan');
+});
+
+test('⛔ tutup DITOLAK selama ada pesanan tahan (Task 12): daftar dikembalikan, nol penulisan', async () => {
+  const { tutupKas } = await import(MOD);
+  const tahanan = [
+    { id: 'th1', jumlah_item: 2000, subtotal: 40000, dibuat_pada: '2026-08-13T08:00:00Z' },
+    { id: 'th2', jumlah_item: 1000, subtotal: 20000, dibuat_pada: '2026-08-13T09:00:00Z' },
+  ];
+  const db = dbPalsu({ tahanan });
+  const hasil = await tutupKas({
+    db, shiftId: 's1', hitungan: 2510000, sesi: { userId: 'u-sari' }, approverId: null, alasan: null,
+    waktu: () => new Date('2026-08-13T15:00:00Z'), idBaru: () => 'x', hlc: () => 1n,
+  });
+  assert.equal(hasil.status, 'ada_tahanan', `tutup tidak ditolak: status ${hasil.status}`);
+  assert.deepEqual(hasil.daftar.map((t) => t.id), ['th1', 'th2']);
+  assert.equal(hasil.daftar[0].subtotal, 40000n);
+  assert.equal(db.state.tulis.length, 0, 'penolakan menulis sesuatu');
+  assert.equal(db.state.transaksi, 0);
 });

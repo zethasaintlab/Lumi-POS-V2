@@ -67,8 +67,8 @@ const KLAIM = [
   {
     id: 'pemformat-rupiah-pemakai',
     berkas: 'CLAUDE.md',
-    frasa: '38 berkas mengimpornya',
-    harap: 38,
+    frasa: '39 berkas mengimpornya',
+    harap: 39,
     // ⛔ `import`, bukan sekadar MENYEBUT nama berkasnya. Versi pertama
     // memakai `includes('uang-tampilan')` dan menghitung 36 — yang ke-36
     // adalah `packages/ds/index.ts`, yang menyebutnya di KOMENTAR (catatan

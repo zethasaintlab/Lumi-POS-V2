@@ -97,6 +97,10 @@ export const TABEL_LOKAL_SAJA = [
   // muncul di laporan tanpa punya jalan penutupan. Berbagi order antar device
   // saat offline adalah non-goal v1 yang dinyatakan.
   'keranjang_lokal',
+  // Task 12 — Pesanan tahan. Murni lokal dan SENGAJA bukan raw table: tahanan
+  // tidak pernah naik ke server (hanya peristiwa `cart_cleared` saat dibuang),
+  // dan raw table mengubah sidik jari skema (unduh ulang katalog per perangkat).
+  'keranjang_tahan',
   // FR-C3/FR-C14 — draf QRIS dinamis yang menunggu konfirmasi gateway. Murni
   // lokal dengan alasan yang sama; ia menjaga agar tab yang ter-refresh di
   // tengah menunggu tidak menghilangkan jejak transaksi yang pelanggannya

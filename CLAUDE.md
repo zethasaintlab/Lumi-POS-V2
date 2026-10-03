@@ -177,7 +177,7 @@ Keduanya dirancang untuk basis kode yang memakai `number` untuk uang. Repo ini `
 
 ### ⛔ Pemformat rupiah: SATU, dan penjaganya melarang yang kesembilan
 
-`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 38 berkas mengimpornya (TERVERIFIKASI 28 September 2026); ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
+`packages/domain/src/uang-tampilan.ts` adalah satu-satunya. 39 berkas mengimpornya (TERVERIFIKASI 3 Oktober 2026); ia menangani `bigint`, `number`, `string` (endpoint laporan mengirim uang sebagai string justru untuk menjaga presisi di atas 2⁵³), nilai negatif (`−`, U+2212), dan nilai **hilang** (`Rp —`, yang **tidak sama** dengan `Rp 0`). Salinan baru menyimpang tepat di ketiga tepian itu — dan ketiganya adalah yang paling perlu dibaca benar.
 
 Salinan terakhir dihapus 2 September 2026: `apps/backoffice/src/langganan/upgrade.ts` — B-29, satu-satunya layar yang angkanya berakhir di tagihan yang merchant bayar.
 

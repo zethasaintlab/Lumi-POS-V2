@@ -185,6 +185,8 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` `?layanan=1` — `outlet.service_charge_rate` 10% (1000), untuk G-TANPA-LAYANAN: service charge
       masih terkunci nol (Q2 terbuka), jadi tidak satu layar pun boleh menyiratkan biaya layanan. */
   layanan?: boolean;
+  /** `[EKSPLORASI]` `?tahanan=N` — N Pesanan tahan di shift galeri (K-12 menolak tutup; Task 12). Bukan keadaan galeri baru. */
+  tahanan?: number;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -519,6 +521,15 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
           ]
         : [],
     print_job: [],
+    // Pesanan tahan (Task 12): murni lokal; `?tahanan=N` mengisinya. INSERT/DELETE ditiru di `jalankan`.
+    keranjang_tahan: Array.from({ length: opsi.tahanan ?? 0 }, (_, i) => ({
+      id: `tahan-${i + 1}`,
+      shift_id: 'shift-galeri',
+      isi: keranjangDuaPuluh(),
+      jumlah_item: 20_000,
+      subtotal: 18_000 * 20 + 500 * 190,
+      dibuat_pada: `2026-09-01T0${i + 1}:00:00.000Z`,
+    })),
     // Draf QRIS dinamis (`qris-dinamis.ts`): satu baris, diisi/dihapus di `jalankan`.
     draf_qris_lokal: [],
     fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),
@@ -657,6 +668,12 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
          Cakupannya sengaja sempit — DUA bentuk saja sejak 25 September 2026,
          ini dan `order_id`/`id = ?` di atas, sejajar dengan `agregat`: fake
          yang mulai menafsirkan `WHERE` apa pun menjadi mesin SQL kedua. */
+      /* `keranjang_tahan`: dua bentuk WHERE saja (`id = ?`, `shift_id = ?`) — daftar, lanjutkan, dan buang
+         membacanya per baris; fake yang mengabaikan WHERE menyerahkan SEMUA tahanan untuk satu id. */
+      if (tabel === 'keranjang_tahan' && !/\b(count|sum)\s*\(/i.test(sql)) {
+        const kolom = /WHERE\s+id\s*=\s*\?/i.test(sql) ? 'id' : /WHERE\s+shift_id\s*=\s*\?/i.test(sql) ? 'shift_id' : null;
+        if (kolom) return (baris as Record<string, unknown>[]).filter((r) => r[kolom] === params?.[0]) as T[];
+      }
       if (tabel === 'outbox_local' && /status\s*=\s*'failed'/i.test(sql)) {
         return (baris as { status: string }[]).filter((r) => r.status === 'failed') as T[];
       }
@@ -722,6 +739,15 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     if (tahan && /^INSERT INTO "order"/i.test(sql.trim())) await tahan;
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
+    /* Pesanan tahan (Task 12): urutan kolom = `tahanKeranjang`. */
+    if (/^INSERT INTO keranjang_tahan/i.test(sql.trim()) && params?.length === 6) {
+      perTabel.keranjang_tahan.push({
+        id: params[0], shift_id: params[1], isi: params[2], jumlah_item: params[3], subtotal: params[4], dibuat_pada: params[5],
+      });
+    }
+    if (/^DELETE FROM keranjang_tahan/i.test(sql.trim())) {
+      perTabel.keranjang_tahan = (perTabel.keranjang_tahan as { id: unknown }[]).filter((r) => r.id !== params?.[0]);
+    }
     /* Draf QRIS ([EKSPLORASI] Task 9): urutan kolom = `simpanDraf`. Hanya agar
        pemulihan draf (`pulihkanDraf`) dapat dirender ulang di harness. */
     if (/^INSERT INTO draf_qris_lokal/i.test(sql.trim()) && params?.length === 8) {

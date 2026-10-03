@@ -374,6 +374,27 @@ CREATE TABLE keranjang_lokal (
   diperbarui_pada TEXT NOT NULL
 );
 
+-- Pesanan tahan (Task 12, spec § 4 baris 8). BANYAK baris per shift (maks 20,
+-- `MAKS_TAHANAN`), berbeda dari `keranjang_lokal` yang satu.
+--
+-- ⛔ Murni lokal, SENGAJA bukan raw table dan bukan `order` berstatus `open` —
+-- alasan yang sama dengan `keranjang_lokal`: tidak pernah naik ke server, dan
+-- sidik jari skema yang berubah menuntut `disconnectAndClear()` di setiap
+-- perangkat. Perangkat yang sudah ada mendapat tabelnya lewat
+-- `rencanaBuatLokalHilang` (TABEL_LOKAL_SAJA), bukan lewat sidik jari.
+--
+-- `isi` = JSON `Keranjang` dari serializer YANG SAMA dengan `keranjang_lokal`
+-- (`serialkan`/`uraikan`). `jumlah_item` = jumlah kuantitas ×1000 (konvensi
+-- kuantitas), `subtotal` = rupiah utuh — keduanya hanya untuk daftar.
+CREATE TABLE keranjang_tahan (
+  id TEXT PRIMARY KEY NOT NULL,
+  shift_id TEXT NOT NULL,
+  isi TEXT NOT NULL,
+  jumlah_item INTEGER NOT NULL,
+  subtotal INTEGER NOT NULL,
+  dibuat_pada TEXT NOT NULL
+);
+
 -- ---------- IDENTITAS (direplikasi turun) ----------
 -- FR-F3: login berfungsi offline. Itu hanya mungkin bila hash PIN ADA di
 -- perangkat (`spec-f:124`) -- verifikasi terjadi lokal, tanpa jaringan.

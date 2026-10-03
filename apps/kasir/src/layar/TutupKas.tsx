@@ -26,6 +26,8 @@ import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { Bidang } from '../Bidang.tsx';
+import { daftarTahanan, type RingkasTahanan } from '../kasir/keranjang-tahan.ts';
+import { tampilkanKuantitas } from '../../../../packages/domain/src/kuantitas.ts';
 import { LangkahKas, type Langkah } from '../komponen/LangkahKas.tsx';
 
 /* K-12 Tutup Kas + K-13 Laporan Shift (IA §2.2).
@@ -119,6 +121,8 @@ export function TutupKas() {
   const [laporan, setLaporan] = useState<LaporanShift | null>(null);
   const [galat, setGalat] = useState<string | null>(null);
   const [sibuk, setSibuk] = useState(false);
+  /* Pesanan tahan shift ini (Task 12). Tutup ditolak selama tidak kosong. */
+  const [tahanan, setTahanan] = useState<RingkasTahanan[]>([]);
 
   useEffect(() => {
     let hidup = true;
@@ -130,6 +134,7 @@ export function TutupKas() {
       if (!hidup) return;
       setShift(s);
       if (s) setRingkas(await ringkasanSebelumHitung(db, s.id));
+      if (s) setTahanan(await daftarTahanan(db, s.id));
       if (hidup) setSiap(true);
     })().catch((e: Error) => {
       /* ⛔ Tanpa ini layar berhenti di "Menyiapkan tutup kas" selamanya, dan
@@ -275,7 +280,10 @@ export function TutupKas() {
         }
         if (hasil.status === 'butuh_otorisasi') setGalat('Selisih di atas ambang — PIN manajer diperlukan.');
         else if (hasil.status === 'butuh_alasan') setGalat('Pilih alasan selisih terlebih dahulu.');
-        else if (hasil.status === 'penyetuju_sama_dengan_aktor')
+        else if (hasil.status === 'ada_tahanan') {
+          setTahanan(hasil.daftar);
+          setGalat(PESAN_ADA_TAHANAN(hasil.daftar.length));
+        } else if (hasil.status === 'penyetuju_sama_dengan_aktor')
           setGalat('Anda tidak dapat menyetujui selisih hitungan Anda sendiri.');
         else setGalat('Kas tidak dapat ditutup.');
       })
@@ -394,6 +402,7 @@ export function TutupKas() {
           </section>
         </div>
 
+          <DaftarTahananTutup daftar={tahanan} />
           <p className="t-body-md kasir-login-galat kasir-pesan-tetap" role="alert">
             {galat ?? ' '}
           </p>
@@ -490,6 +499,8 @@ export function TutupKas() {
           )
           .join(' · ')}
       </p>
+
+      <DaftarTahananTutup daftar={tahanan} />
 
       {/* ⛔ FIELD BEBAS, dan tombol pecahan turun menjadi JALAN PINTAS.
 
@@ -625,5 +636,31 @@ function Baris({
           adalah tepat yang pemindahan ke `packages/domain` selesaikan. */}
       <span className={tebal ? 't-title num' : 't-body-md num'}>{rupiah(n)}</span>
     </div>
+  );
+}
+
+const PESAN_ADA_TAHANAN = (n: number) =>
+  `Ada ${n} pesanan tahan. Lanjutkan atau buang dulu di layar Kasir sebelum menutup kas.`;
+
+/* ⛔ Hanya TAMPIL bila ada tahanan (keadaan kosong = tidak ada blok sama sekali:
+   tidak menambah tinggi pada tutup kas biasa). Tidak memuat angka kas, jadi
+   hitungan buta (FR-D2) tidak tersentuh. */
+function DaftarTahananTutup({ daftar }: { daftar: RingkasTahanan[] }) {
+  if (daftar.length === 0) return null;
+  return (
+    <section className="card card-pad kasir-dialog-sel" aria-label="Pesanan tahan">
+      <h2 className="t-body-md">Pesanan tahan ({daftar.length})</h2>
+      <p className="t-caption kasir-login-sub">
+        Kas tidak dapat ditutup sebelum pesanan ini dilanjutkan atau dibuang.
+      </p>
+      <ul className="kasir-baris-daftar">
+        {daftar.map((t) => (
+          <li key={t.id} className="kasir-tahan-baris" data-tahanan={t.id}>
+            <span className="grow t-caption">{tampilkanKuantitas(String(t.jumlahItem))} item</span>
+            <span className="t-body-md num">{rupiah(t.subtotal)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
