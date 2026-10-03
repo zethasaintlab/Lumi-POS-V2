@@ -128,7 +128,8 @@ export function bangunDokumenStruk(data: DataStruk): ReceiptDocument {
     ['Meja', data.nomorMeja],
     ['Catatan', data.catatan],
   ] as const) {
-    const t = (nilai ?? '').trim();
+    // Jaring kedua: karakter kontrol dibuang (data lama/jalur lain), supaya ESC/GS tak sampai ke printer.
+    const t = (nilai ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
     if (t !== '') baris.push({ jenis: 'teks', isi: `${label}: ${t}` });
   }
 

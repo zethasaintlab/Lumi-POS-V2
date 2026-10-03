@@ -8262,9 +8262,6 @@ components:
         sequence: { type: integer }
         status: { type: string, enum: [voided, refunded] }
         channel: { type: string, enum: [dine_in, takeaway] }
-        customerName: { type: string, nullable: true }
-        tableNumber: { type: string, nullable: true }
-        note: { type: string, nullable: true }
         subtotal: { type: integer }
         orderDiscount: { type: integer }
         serviceChargeAmount: { type: integer }
@@ -8317,6 +8314,9 @@ components:
         sequence: { type: integer }
         status: { type: string, enum: [open, paid, closed, voided, refunded, abandoned] }
         channel: { type: string, enum: [dine_in, takeaway] }
+        customerName: { type: string, nullable: true }
+        tableNumber: { type: string, nullable: true }
+        note: { type: string, nullable: true }
         subtotal: { type: integer }
         orderDiscount: { type: integer }
         serviceChargeAmount: { type: integer }

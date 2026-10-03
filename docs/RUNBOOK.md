@@ -781,19 +781,24 @@ yang tertinggi nomornya). ⛔ Rollback skema SQLite lokal **hampir mustahil**
 setelah data ditulis dengan skema baru (KEP-36) — periksa apakah versi yang
 ditarik menambah tabel atau kolom lokal sebelum menjanjikan rollback.
 
-### 12.2.1 ⛔ Urutan rilis: SERVER dulu, baru klien
+### 12.2.1 ⛔ Urutan rilis: SERVER dulu, baru klien — tidak pernah sebaliknya
 
 Fitur yang menambah field atau rute (Transfer, audit Batalkan `cart_cleared`,
 nama pemesan/meja/catatan `order.customer_name`/`table_number`/`note`) dirilis
-**server → klien**, tidak pernah sebaliknya. Klien baru di atas server lama
-mengirim field yang tidak dikenal atau rute yang belum ada, dan barisnya
-berhenti `gagal-permanen` di antrean — penjualan yang uangnya sudah diterima.
-Server baru di atas klien lama aman: ketiga field opsional, klien N-1 tidak
-mengirimnya.
+**server → klien**.
+
+- **Server baru + klien lama: aman.** Ketiga field opsional; klien N-1 tidak
+  mengirimnya.
+- **Klien baru + server lama: BERBAHAYA.** Untuk nama/meja/catatan server lama
+  **membuang field itu diam-diam** (skema respons dan INSERT tidak
+  mengenalnya): penjualan MASUK tanpa nama/meja/catatan, tanpa galat apa pun,
+  sementara struk lokal sudah mencetaknya. Untuk rute baru (Transfer,
+  `cart_cleared`) hasilnya baris outbox `gagal-permanen` — penjualan yang
+  uangnya sudah diterima.
 
 Urutannya: (1) terapkan migrasi `0037` (expand, nullable, `lock_timeout`),
-(2) rilis server, (3) baru naikkan tahap klien (§12.1). Menunda langkah 3
-tidak merugikan; membaliknya merugikan.
+(2) rilis server dan pastikan sehat, (3) baru naikkan tahap klien (§12.1).
+Menunda langkah 3 tidak merugikan; membaliknya merugikan.
 
 ### 12.3 Jendela update dan penundaan
 

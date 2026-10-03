@@ -52,12 +52,35 @@ test('⛔ nomor kartu di nama/meja/catatan → POSSIBLE_CARD_NUMBER, termasuk be
   }
 });
 
-test('nomor biasa yang BUKAN kartu lolos: meja 12, telepon 12 digit tidak ditandai', async () => {
+test('nomor biasa yang BUKAN kartu lolos: meja 12, telepon 12 digit tidak ditandai (Q7: tanpa penolakan pola telepon)', async () => {
   const m = await import(MOD);
   assert.equal(m.periksaNomorMeja('12'), null);
   assert.equal(m.periksaNomorMeja('A-07'), null);
   assert.equal(m.periksaCatatan('tanpa gula, es sedikit'), null);
+  // 12 digit (di bawah ambang PAN 13): bukan kartu, dan Q7 tidak menolak pola telepon.
+  assert.equal(m.periksaNamaPemesan('081234567890'), null, 'telepon 12 digit ditolak padahal Q7 bawaan: tidak ada penolakan');
+  assert.equal(m.periksaCatatan('hubungi 0812-3456-7890'), null, 'telepon berpemisah 12 digit ditolak');
+  // Kontras: 13 digit tetap dianggap kemungkinan kartu (perilaku kartu tidak berubah).
+  assert.equal(m.periksaCatatan('0812345678901')?.kode, 'POSSIBLE_CARD_NUMBER');
 });
+
+test('⛔ karakter kontrol (ESC, GS, LF, NUL, DEL) ditolak VALIDATION_ERROR — diteruskan ke printer', async () => {
+  const m = await import(MOD);
+  for (const [fn] of BATAS) {
+    for (const k of ['\x1b', '\x1d', '\n', '\r', '\t', '\x00', '\x7f']) {
+      const g = m[fn](`ab${k}cd`);
+      assert.notEqual(g, null, `${fn}: karakter kontrol ${JSON.stringify(k)} lolos — dapat membuka laci/merusak struk`);
+      assert.equal(g.kode, 'VALIDATION_ERROR');
+      assert.match(g.pesan, /karakter kontrol/i);
+    }
+  }
+  // Kontrol di UJUNG tidak lolos lewat trim.
+  assert.equal(periksaTrimKontrol(m)?.kode, 'VALIDATION_ERROR');
+});
+
+function periksaTrimKontrol(m) {
+  return m.periksaCatatan('\x1b@halo');
+}
 
 test('kosong dan spasi saja → null, bukan galat', async () => {
   const m = await import(MOD);

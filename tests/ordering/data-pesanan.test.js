@@ -102,6 +102,11 @@ test('customerName, tableNumber, note masuk kolom order masing-masing', async ()
   const p = muatan(await siapkan(), { customerName: 'Budi', tableNumber: 'A-07', note: 'tanpa gula' });
   const res = await req(p);
   assert.equal(res.statusCode, 201, res.body);
+  // Respons NYATA: serializer membuang properti yang tidak dideklarasikan di skema `Order`.
+  const badan = JSON.parse(res.body);
+  assert.equal(badan.customerName, 'Budi', 'respons POST /orders tanpa customerName (skema Order openapi?)');
+  assert.equal(badan.tableNumber, 'A-07', 'respons POST /orders tanpa tableNumber');
+  assert.equal(badan.note, 'tanpa gula', 'respons POST /orders tanpa note');
   const row = await bacaOrder(tenant.id, p.id);
   assert.equal(row.customer_name, 'Budi');
   assert.equal(row.table_number, 'A-07');

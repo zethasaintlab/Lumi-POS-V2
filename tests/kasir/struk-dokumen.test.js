@@ -332,3 +332,14 @@ test('data pesanan kosong/null: tidak ada baris "Atas nama"/"Meja"/"Catatan"', a
     assert.ok(!/Atas nama|Meja:|Catatan:/.test(out), `baris kosong tercetak:\n${out}`);
   }
 });
+
+test('⛔ jaring dokumen: karakter kontrol di data pesanan tidak sampai ke byte printer', async () => {
+  const { bangunDokumenStruk } = await import(DOK);
+  const { renderEscPos } = await import(ESCPOS);
+  const bytes = renderEscPos(bangunDokumenStruk({ ...CONTOH, catatan: 'a\x1bp\x00\x19b', namaPemesan: 'x\x1d\x56y' }), PROFIL(32));
+  const teks = Buffer.from(bytes).toString('latin1');
+  // Satu-satunya ESC 'p' (buka laci) yang sah hanya bila dokumen memintanya; di sini TIDAK.
+  assert.ok(!teks.includes(ESC + 'p'), 'ESC p dari catatan lolos ke printer — laci terbuka');
+  // Pemotong sah di ujung struk (profil hasCutter) = TEPAT satu GS V.
+  assert.equal(teks.split(GS + 'V').length - 1, 1, 'GS V dari nama lolos ke printer — struk terpotong di tengah');
+});

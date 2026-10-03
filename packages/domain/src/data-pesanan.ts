@@ -31,6 +31,11 @@ function periksa(nilai: unknown, maks: number, label: string): GalatBayar | null
   }
   const t = nilai.trim();
   if (t === '') return null;
+  // ⛔ Karakter kontrol (ESC, GS, LF, NUL, DEL, …) ditolak: teks ini diteruskan ke printer
+  // lewat `keAscii`, dan ESC/GS membuka laci atau merusak struk.
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(t)) {
+    return { kode: 'VALIDATION_ERROR', pesan: `${label} tidak boleh memuat karakter kontrol.` };
+  }
   // ⛔ Nomor kartu DULU: yang berpemisah melewati batas meja (16) dan akan
   // terbaca "kepanjangan" — kehilangan satu-satunya sinyal bahwa seseorang
   // mengetik data kartu ke POS.
