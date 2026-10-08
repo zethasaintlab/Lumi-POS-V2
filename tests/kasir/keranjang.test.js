@@ -317,3 +317,46 @@ test('⛔ gantiModifier: cabang PENGGABUNGAN mempertahankan diskon order apa ada
   assert.equal(baru.baris.length, 1, 'fixture: cabang penggabungan tidak berjalan — penjaga hampa');
   assert.equal(baru.diskon, diskon, 'cabang penggabungan gantiModifier menjatuhkan/mengubah diskon order (persetujuan manajer hilang diam-diam)');
 });
+
+// ---------------------------------------------------------------------------
+// Task 10 fix round (I-1): kanal tidak bocor ke pesanan berikutnya.
+
+test('⛔ kanal kembali ke takeaway saat keranjang berisi→kosong (hapusBaris dan qty→0); memilih kanal pada keranjang kosong tetap boleh', async () => {
+  const { keranjangKosong, tambah, setelKanal, hapusBaris, ubahQty } = await import(MOD);
+  const isi = tambah(setelKanal(keranjangKosong(), 'dine_in'), { item: ITEM, variation: V1, modifier: [], idBaris: () => 'b1' });
+  assert.equal(isi.kanal, 'dine_in', 'pembanding hampa: kanal dine_in tidak terpasang');
+
+  assert.equal(hapusBaris(isi, 'b1').kanal, 'takeaway', 'hapusBaris baris terakhir membawa Dine in ke pesanan berikutnya');
+  assert.equal(ubahQty(isi, 'b1', 0).kanal, 'takeaway', 'qty→0 membawa Dine in ke pesanan berikutnya');
+
+  // Masih ada baris lain → kanal dipertahankan.
+  const dua = tambah(isi, { item: ITEM, variation: V2, modifier: [], idBaris: () => 'b2' });
+  assert.equal(hapusBaris(dua, 'b1').kanal, 'dine_in', 'menghapus SATU dari dua baris mengubah kanal');
+
+  // Memilih kanal pada keranjang yang sudah kosong tetap sah.
+  assert.equal(setelKanal(keranjangKosong(), 'dine_in').kanal, 'dine_in');
+});
+
+// M-2: ringkasKanal / kanalSah murni, dengan nama tarif yang BUKAN fixture mana pun.
+test('ringkasKanal mengambil nama dari rincian pajak tiap kanal (nama non-fixture); sama true hanya bila daftar identik', async () => {
+  const { ringkasKanal, kanalSah, kanalDari } = await import('../../apps/kasir/src/kasir/kanal.ts');
+  const h = (...nama) => ({ pajak: { lines: nama.map((name) => ({ name })) } });
+
+  const beda = ringkasKanal({ dine_in: h('Zeta Resto 7', 'Biaya Qux'), takeaway: h('Alfa Bawa 3') });
+  assert.deepEqual(beda.map((r) => r.kanal), ['takeaway', 'dine_in']);
+  assert.deepEqual(beda.find((r) => r.kanal === 'dine_in').namaTarif, ['Zeta Resto 7', 'Biaya Qux']);
+  assert.deepEqual(beda.find((r) => r.kanal === 'takeaway').namaTarif, ['Alfa Bawa 3']);
+  assert.ok(beda.every((r) => r.sama === false));
+
+  const sama = ringkasKanal({ dine_in: h('Omega 1'), takeaway: h('Omega 1') });
+  assert.ok(sama.every((r) => r.sama === true && r.namaTarif[0] === 'Omega 1'));
+
+  const kosong = ringkasKanal({ dine_in: h(), takeaway: h() });
+  assert.ok(kosong.every((r) => r.sama === true && r.namaTarif.length === 0));
+
+  assert.equal(kanalSah('dine_in'), 'dine_in');
+  assert.equal(kanalSah('takeaway'), 'takeaway');
+  for (const x of ['delivery', '', null, undefined, 1, {}]) assert.equal(kanalSah(x), 'takeaway', `kanalSah(${String(x)})`);
+  assert.equal(kanalDari({}), 'takeaway');
+  assert.equal(kanalDari({ kanal: 'dine_in' }), 'dine_in');
+});

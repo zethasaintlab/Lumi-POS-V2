@@ -518,3 +518,21 @@ test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berb
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: null }, 20000n), false, 'diskon dicabut pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tId, { ...KERANJANG, diskon: diskon('percent', 1000n) }, 22000n), false, 'diskon ditambahkan pada total sama dianggap cocok');
 });
+
+test('⛔ drafCocokKeranjang: kanal berbeda dari muatan draf TIDAK cocok (channel dine_in vs takeaway, kedua arah)', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(tersimpan.muatan.channel, 'takeaway', 'pembanding hampa: draf bukan takeaway');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'takeaway' }, 22000n), true, 'pembanding hampa: kanal sama dianggap beda');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'dine_in' }, 22000n), false, 'draf takeaway cocok dengan keranjang Dine in');
+
+  const d2 = db();
+  await mintaQr({ ...argMinta(draf(), { db: d2, kirim }), channel: 'dine_in', keranjang: { ...KERANJANG, kanal: 'dine_in' } });
+  const dine = await pulihkanDraf(d2, 's1');
+  assert.equal(dine.muatan.channel, 'dine_in', 'pembanding hampa: draf bukan dine_in');
+  assert.equal(drafCocokKeranjang(dine, { ...KERANJANG, kanal: 'takeaway' }, 22000n), false, 'draf Dine in cocok dengan keranjang takeaway');
+  assert.equal(drafCocokKeranjang(dine, { ...KERANJANG, kanal: 'dine_in' }, 22000n), true);
+});
