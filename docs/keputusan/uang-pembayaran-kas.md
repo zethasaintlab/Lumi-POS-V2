@@ -282,6 +282,15 @@ tidak dipilah sekarang** (keputusan user). Keduanya batas atas populasi, bukan
 cacat; apakah nol di suatu layar sah atau tidak hanya dapat diputuskan **saat
 menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
 
+⛔ **Status fixture, 8 Oktober 2026 (PR 2C Task 10).** Fixture #1 (`ppn` 11%)
+dipenuhi: disemai di `tests/kasir/penjualan.test.js` dan
+`tests/payment/tax-in-orders.test.js`, dan `TaxCalculator` menanganinya
+(eksklusif dan inklusif, dengan diskon order — `tests/domain/tax.test.js`).
+Fixture #2 dipenuhi SEPARUH: `channel = 'dine_in'` kini diuji end-to-end
+(perangkat, server, DOM; G-KANAL), tetapi `service_charge_amount != 0` **belum**
+— service charge tidak dibangun (Q2 bawaan: dibiarkan terkunci nol; G-TANPA-LAYANAN
+menjaga bahwa Dine in tidak menyiratkannya). Separuh itu menunggu jawaban Q2.
+
 Audit monokultur fixture: `docs/verifikasi/MONOKULTUR-FIXTURE.md`. ⛔ Temuan terbesarnya bukan metode pembayaran melainkan **`tax_rate.type = 'ppn'` yang NOL di seluruh fixture** — PPN adalah pajak nasional 11%, dan `TaxCalculator` berdiri di atas satu jenis pajak saja (`pbjt`).
 
 

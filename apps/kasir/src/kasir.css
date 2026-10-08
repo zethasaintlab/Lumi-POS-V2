@@ -542,6 +542,12 @@
   justify-content: flex-end;
   gap: var(--space-3);
 }
+/* Lembar Pajak: dua pilihan kanal bertumpuk, masing-masing 56 px (aksi uang). */
+.kasir-kanal-daftar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
 
 /* K-10 refund — dua kolom (rebuild UI Fase 3.5). Lebar dua kartu mockup
    (2 × 502 + celah). Kolom menyusut menjadi satu pada layar sempit lewat

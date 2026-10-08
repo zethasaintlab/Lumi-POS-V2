@@ -30,11 +30,13 @@ interface Props {
   keterangan?: string;
   /** Nama aksesibel bila teks tampilnya glyph (`−`, `+`) yang tidak menjelaskan aksinya. */
   ariaLabel?: string;
+  /** Pilihan yang sedang terpilih dalam sekelompok pilihan (`aria-pressed`). */
+  tekan?: boolean;
   onClick?: () => void;
   children: React.ReactNode;
 }
 
-export function Tombol({ varian = 'secondary', kritis = false, disabled, title, keterangan, ariaLabel, onClick, children }: Props) {
+export function Tombol({ varian = 'secondary', kritis = false, disabled, title, keterangan, ariaLabel, tekan, onClick, children }: Props) {
   const kelas = ['btn', `btn-${varian}`, kritis ? 'btn-critical' : ''].filter(Boolean).join(' ');
   return (
     <button
@@ -44,6 +46,7 @@ export function Tombol({ varian = 'secondary', kritis = false, disabled, title, 
       title={title}
       aria-describedby={keterangan}
       aria-label={ariaLabel}
+      aria-pressed={tekan}
       onClick={onClick}
     >
       {children}

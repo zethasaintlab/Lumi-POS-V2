@@ -130,3 +130,23 @@ test('sentinel: pola TIDAK menangkap angka sah yang bertebaran di kode ini', () 
     assert.equal(TAX_NUMBER_PATTERN.test(contoh), false, `pola salah menangkap angka sah: ${contoh}`);
   }
 });
+
+// Task 10 (PR 2C): guard di atas hanya memindai apps/server/src dan packages/domain/src. Sisi kasir
+// untuk pilihan KANAL (nama tarif per kanal, lembar Pajak) tidak terjangkau -- dan sabotase `* 0.11`
+// di kanal.ts lolos sebelum daftar ini ada. Daftarnya eksplisit, bukan seluruh apps/kasir: kode kasir
+// penuh angka sah (px, ms, skala), dan guard yang menangkap semuanya akan dimatikan.
+test('invariant #7: berkas pilihan kanal di apps/kasir tidak memuat angka tarif pajak', async () => {
+  const berkas = [
+    'apps/kasir/src/kasir/kanal.ts',
+    'apps/kasir/src/komponen/LembarKanal.tsx',
+  ];
+  const temuan = [];
+  for (const rel of berkas) {
+    const kode = stripComments(await readFile(path.join(__dirname, '../..', rel), 'utf8'));
+    assert.ok(kode.length > 200, `${rel} kosong/terlalu pendek -- guard lulus vakum`);
+    TAX_NUMBER_PATTERN.lastIndex = 0;
+    const cocok = kode.match(TAX_NUMBER_PATTERN);
+    if (cocok !== null) temuan.push(`${rel}: ${[...new Set(cocok)].join(', ')}`);
+  }
+  assert.deepEqual(temuan, [], `angka tarif pajak di luar TaxCalculator (invariant #7):\n${temuan.join('\n')}`);
+});

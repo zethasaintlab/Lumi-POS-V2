@@ -433,3 +433,62 @@ test('nilai number (bukan bigint) ditolak -- float tidak boleh masuk jalur pajak
     /bigint/i
   );
 });
+
+// --- ⛔ fixture #1 (uang-pembayaran-kas.md § "K-06/K-07 tidak boleh dinyatakan
+// selesai tanpa tiga fixture ini"): tax_rate.type ppn, 11% ---
+//
+// `TaxRateSpec` tidak memuat `type` -- kalkulatornya hanya melihat tarif
+// berskala 10.000 -- jadi yang diuji di sini adalah bahwa tarif PPN 11% (1100n)
+// dihitung benar. Semua angka diturunkan TANGAN, bukan dari pemanggilan lain.
+
+const PPN_11 = {
+  id: 'rate-ppn-11',
+  name: 'PPN 11%',
+  rateScaled: 1100n,
+  isInclusive: false,
+  outletId: null,
+  channel: 'all',
+  appliesTo: 'all_items',
+  appliesToIds: [],
+};
+
+test('⛔ fixture #1: tax_rate type ppn 11% (rate 1100 berskala 10.000) dihitung TaxCalculator -- eksklusif dan inklusif, dengan diskon order', async () => {
+  const { calculateTax } = await import(MOD);
+
+  // Eksklusif, tanpa diskon: 100.000 x 11% = 11.000 dan MENAMBAH total.
+  const e1 = calculateTax({
+    lines: [baris('a', 100000n)], serviceChargeAmount: 0n, orderDiscount: 0n,
+    taxRates: [PPN_11], channel: 'dine_in', outletId: 'outlet-1',
+  });
+  assert.equal(e1.totalTax, 11000n);
+  assert.equal(e1.totalTaxExclusive, 11000n);
+  assert.equal(e1.lines[0].name, 'PPN 11%');
+  assert.equal(e1.lines[0].rateScaled, 1100n);
+
+  // Eksklusif + diskon order 10.000: dasar 90.000 -> 9.900.
+  const e2 = calculateTax({
+    lines: [baris('a', 60000n), baris('b', 40000n)], serviceChargeAmount: 0n, orderDiscount: 10000n,
+    taxRates: [PPN_11], channel: 'takeaway', outletId: 'outlet-1',
+  });
+  assert.equal(e2.lines[0].base, 90000n);
+  assert.equal(e2.totalTax, 9900n);
+  assert.equal(e2.totalTaxExclusive, 9900n);
+
+  // Inklusif, tanpa diskon: 111.000 - 111.000/1,11 = 111.000 - 100.000 = 11.000; total TIDAK bertambah.
+  const inklusif = { ...PPN_11, id: 'rate-ppn-11-inc', isInclusive: true };
+  const i1 = calculateTax({
+    lines: [baris('a', 111000n)], serviceChargeAmount: 0n, orderDiscount: 0n,
+    taxRates: [inklusif], channel: 'takeaway', outletId: 'outlet-1',
+  });
+  assert.equal(i1.totalTax, 11000n);
+  assert.equal(i1.totalTaxExclusive, 0n);
+
+  // Inklusif + diskon order 9.000 dari 120.000: dasar 111.000 -> 11.000.
+  const i2 = calculateTax({
+    lines: [baris('a', 120000n)], serviceChargeAmount: 0n, orderDiscount: 9000n,
+    taxRates: [inklusif], channel: 'dine_in', outletId: 'outlet-1',
+  });
+  assert.equal(i2.lines[0].base, 111000n);
+  assert.equal(i2.totalTax, 11000n);
+  assert.equal(i2.totalTaxExclusive, 0n);
+});

@@ -184,7 +184,7 @@ export function Galeri() {
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
-  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet } = useMemo(() => {
+  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet, tarifKanal, layanan } = useMemo(() => {
     const q = new URLSearchParams(window.location.search);
     return {
       editItem: q.get('editItem') === '1',
@@ -193,6 +193,8 @@ export function Galeri() {
       tanpaKasManual: q.get('tanpaKasManual') === '1',
       gagalBacaKas: q.get('gagalBacaKas') === '1',
       transfer: q.get('transfer') === '1',
+      tarifKanal: q.get('tarifKanal') === '1',
+      layanan: q.get('layanan') === '1',
       /* Jalur test header (R2): hitungan gagal 3 digit dan nama pengguna panjang. */
       jumlahGagal: q.get('jumlahGagal') ? Number(q.get('jumlahGagal')) : undefined,
       namaPengguna: q.get('namaPengguna') ?? undefined,
@@ -218,7 +220,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, tarifKanal, layanan });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -243,7 +245,7 @@ export function Galeri() {
         pemberitahu: buatPemberitahu(),
       },
     };
-  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal]);
+  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, tarifKanal, layanan]);
 
   return (
     <div className="galeri">

@@ -45,6 +45,7 @@ import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { useSesi } from '../konteks/useSesi.ts';
 import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, subtotalKeranjang } from '../kasir/keranjang.ts';
+import { kanalDari } from '../kasir/kanal.ts';
 import { nilaiDiskon } from '../../../../packages/domain/src/diskon.ts';
 import { Tombol } from '../Tombol.tsx';
 import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
@@ -622,7 +623,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           shiftId: shift.id,
           keranjang,
           draf: d,
-          channel: 'takeaway',
+          channel: kanalDari(keranjang),
           total,
           idBaru: () => crypto.randomUUID(),
           sekarang: d.occurredAt,

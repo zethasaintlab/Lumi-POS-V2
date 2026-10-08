@@ -1,4 +1,5 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
+import { kanalSah } from './kanal.ts';
 import { keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
 
 /**
@@ -201,7 +202,8 @@ function uraikan(teks: string): Keranjang | null {
   }
 
   const kosong = keranjangKosong();
-  return { ...kosong, baris, diskon: diskonSah(o.diskon) };
+  // Keranjang yang ditulis sebelum `kanal` ada → takeaway (bawaan), tidak ditolak.
+  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal: kanalSah(o.kanal) };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {

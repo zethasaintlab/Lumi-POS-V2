@@ -1,5 +1,6 @@
 import type { PermintaanDiskon } from '../../../../packages/domain/src/diskon.ts';
 import type { ItemKatalog, VariationKatalog } from '../katalog/baca.ts';
+import type { Kanal } from './kanal.ts';
 
 /**
  * Keranjang K-03. Murni: tanpa React, tanpa database, tanpa waktu.
@@ -104,10 +105,19 @@ export interface Keranjang {
   baris: BarisKeranjang[];
   /** `null` = tidak ada diskon. */
   diskon: DiskonKeranjang | null;
+  /**
+   * Kanal pesanan (FR-C7). Mengalir ke `hitungKeranjang`, `simpanPenjualan`,
+   * dan `POST /orders`; Dine in TIDAK menyiratkan biaya layanan (spec § 4).
+   */
+  kanal: Kanal;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null };
+  return { baris: [], diskon: null, kanal: 'takeaway' };
+}
+
+export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {
+  return k.kanal === kanal ? k : { ...k, kanal };
 }
 
 export function setelDiskon(k: Keranjang, diskon: DiskonKeranjang | null): Keranjang {

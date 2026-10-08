@@ -262,13 +262,15 @@ test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header
      manual" masuk lebih dulu, mengikuti urutan `LABEL_TOOLBAR_MOCKUP` di
      `k03-toolbar.test.js`. Task 5B menambah "Batalkan" tepat sesudah
      "Diskon". Task 4 (Laci kas) MENGELUARKAN "Buka laci" dan "Kas masuk /
-     keluar" dari toolbar ini — keduanya pindah ke layar K-18. */
+     keluar" dari toolbar ini — keduanya pindah ke layar K-18. Task 10 (PR 2C)
+     menambah Pajak: label TERLIHAT-nya kanal aktif ("Takeaway"), bukan kata
+     "Pajak" (Q8, bawaan plan); nama aksesibelnya "Pajak: Takeaway". */
   assert.deepEqual(
     hasil.label,
-    ['Item manual', 'Diskon', 'Batalkan'],
-    'isi toolbar tidak sesuai. Tiga label ini yang punya kode di repo hari ' +
-      'ini (Item manual, Diskon, Batalkan (Task 5B)); Buka laci dan Kas masuk / ' +
-      'keluar pindah ke layar Laci kas (K-18, Task 4); lima lainnya di mockup ' +
+    ['Item manual', 'Diskon', 'Takeaway', 'Batalkan'],
+    'isi toolbar tidak sesuai. Empat label ini yang punya kode di repo hari ' +
+      'ini (Item manual, Diskon, Pajak = kanal aktif (Task 10), Batalkan (Task 5B)); Buka laci dan Kas masuk / ' +
+      'keluar pindah ke layar Laci kas (K-18, Task 4); empat lainnya di mockup ' +
       'belum, dan tombol yang tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
   );
 

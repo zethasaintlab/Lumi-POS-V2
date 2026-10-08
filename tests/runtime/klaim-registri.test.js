@@ -135,7 +135,11 @@ const KLAIM = [
     id: 'ppn-nol-di-fixture',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
     frasa: '**`ppn` tidak pernah muncul di satu pun fixture. Nol.**',
-    harap: 0,
+    // 2 = dua berkas test yang menyemai `tax_rate` ber-type ppn (8 Oktober 2026,
+    // fixture #1, PR 2C Task 10): `tests/kasir/penjualan.test.js` dan
+    // `tests/payment/tax-in-orders.test.js`. Nama id registri tetap, kalimat
+    // lamanya tetap di dokumen (claude-md-larangan) dan dilengkapi kalimat baru.
+    harap: 2,
     // ⛔ Ini yang paling penting di registri: ia berubah menjadi bukan-nol
     // tepat pada hari gerbang K-06/K-07 dipenuhi, dan pada hari itu KEDUA
     // dokumen harus ikut berubah.
