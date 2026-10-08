@@ -360,3 +360,14 @@ test('ringkasKanal mengambil nama dari rincian pajak tiap kanal (nama non-fixtur
   assert.equal(kanalDari({}), 'takeaway');
   assert.equal(kanalDari({ kanal: 'dine_in' }), 'dine_in');
 });
+
+test('⛔ setelKanal: kanal dapat kembali Dine in → Takeaway, dan tidak menyentuh baris/diskon', async () => {
+  const { keranjangKosong, tambah, setelKanal } = await import(MOD);
+  const isi = tambah(keranjangKosong(), { item: ITEM, variation: V1, modifier: [], idBaris: () => 'b1' });
+  const dine = setelKanal(isi, 'dine_in');
+  assert.equal(dine.kanal, 'dine_in', 'pembanding hampa: Dine in tidak terpasang');
+  const balik = setelKanal(dine, 'takeaway');
+  assert.equal(balik.kanal, 'takeaway', 'kanal tidak dapat kembali ke Takeaway');
+  assert.deepEqual(balik.baris, isi.baris);
+  assert.equal(balik.diskon, null);
+});

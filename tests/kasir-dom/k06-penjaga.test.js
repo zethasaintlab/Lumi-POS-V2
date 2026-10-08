@@ -1925,6 +1925,9 @@ test('⛔ P9 + G-KANAL: Total K-06 untuk keranjang Dine in = total jalur hitung 
 test('⛔ G-KANAL + G-TANPA-LAYANAN: Dine in dibayar tunai → order.channel dine_in tersimpan; tidak ada teks /layanan|service/i di K-06 dan K-07', async () => {
   const hal = await buka('render=k06&baris=2&kanal=dine_in&tarifKanal=1&layanan=1');
   try {
+    /* Pembanding hampa (S37): outlet harness BENAR-BENAR ber-service_charge_rate bukan nol. */
+    const laju = await hal.evaluate(() => globalThis.__galeriTabel?.outlet?.[0]?.service_charge_rate);
+    assert.ok(typeof laju === 'number' && laju !== 0, `service_charge_rate harness ${laju} — penjaga G-TANPA-LAYANAN hampa`);
     const k06 = await teks(hal);
     assert.doesNotMatch(k06, /layanan|service/i, 'K-06 menyebut layanan/service untuk Dine in');
     await hal.getByRole('button', { name: 'Rp 50.000', exact: true }).click();
@@ -1960,6 +1963,20 @@ test('⛔ G-KANAL QRIS dinamis: keranjang Dine in → POST /orders membawa chann
     const order = (await tulisan(hal)).find((t) => /^INSERT INTO "order"/i.test(t.sql));
     assert.ok(order, 'order lokal tidak tertulis');
     assert.equal(order.params[8], 'dine_in', 'order.channel lokal (QRIS dinamis) bukan dine_in');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ "Transaksi Baru" di K-07 tidak mewarisi kanal: jual Dine in → keranjang berikutnya takeaway', async () => {
+  const hal = await buka('render=k06&baris=2&kanal=dine_in&tarifKanal=1');
+  try {
+    assert.equal(await hal.evaluate(() => globalThis.__kanalKini()), 'dine_in', 'pembanding hampa: keranjang uji bukan dine_in');
+    await hal.getByRole('button', { name: 'Rp 50.000', exact: true }).click();
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    await hal.getByRole('button', { name: 'Transaksi Baru' }).click();
+    assert.equal(await hal.evaluate(() => globalThis.__kanalKini()), 'takeaway', 'Transaksi Baru mewarisi kanal Dine in');
   } finally {
     await hal.close();
   }
