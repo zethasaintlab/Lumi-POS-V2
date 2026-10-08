@@ -296,6 +296,9 @@ Sengaja **bukan** `tenant.default_vertical_profile_id`: itu membuat siklus FK `t
 | `has_calculation_variance` | bool | Ditandai server (FR-H6) |
 | `variance_amount` | bigint nullable | |
 | `voided_by_order_id` | ulid nullable | Menunjuk record void |
+| `customer_name` | text nullable | Nama pemesan, ≤ 40 (CHECK). Nama saja, tanpa telepon. Migrasi `0037` |
+| `table_number` | text nullable | Nomor meja, ≤ 16 (CHECK) `[ASUMSI]`. **Data**, bukan manajemen meja (v1.1). Migrasi `0037` |
+| `note` | text nullable | Catatan pesanan, ≤ 140 (CHECK). Migrasi `0037` |
 | `created_by`, `occurred_at`, `recorded_at`, `hlc` | | |
 
 ### `check`
