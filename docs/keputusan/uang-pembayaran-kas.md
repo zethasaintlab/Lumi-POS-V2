@@ -283,8 +283,8 @@ cacat; apakah nol di suatu layar sah atau tidak hanya dapat diputuskan **saat
 menyentuh layar itu**. Pemilahan massal akan menghasilkan tebakan bervolume.
 
 ⛔ **Status fixture, 8 Oktober 2026 (PR 2C Task 10).** Fixture #1 (`ppn` 11%)
-dipenuhi: disemai di `tests/kasir/penjualan.test.js` dan
-`tests/payment/tax-in-orders.test.js`, dan `TaxCalculator` menanganinya
+dipenuhi: disemai di `tests/kasir/penjualan.test.js`,
+`tests/payment/tax-in-orders.test.js`, dan `tests/ordering/calculation-variance.test.js`, dan `TaxCalculator` menanganinya
 (eksklusif dan inklusif, dengan diskon order — `tests/domain/tax.test.js`).
 Fixture #2 dipenuhi SEPARUH: `channel = 'dine_in'` kini diuji end-to-end
 (perangkat, server, DOM; G-KANAL), tetapi `service_charge_amount != 0` **belum**
