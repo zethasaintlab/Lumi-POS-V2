@@ -1,4 +1,5 @@
 import type { BarisStruk, ReceiptDocument } from './escpos.ts';
+import { LABEL_KANAL } from '../kasir/kanal.ts';
 
 /**
  * `ReceiptDocument` — struktur deskriptif struk (FR-C10, `spec-c:371`).
@@ -70,10 +71,9 @@ export interface DataStruk {
   cetakUlang?: boolean;
 }
 
-const CHANNEL: Record<DataStruk['channel'], string> = {
-  dine_in: 'Dine-in',
-  takeaway: 'Takeaway',
-};
+/* Ejaan kanal SATU sumber dengan layar (`kasir/kanal.ts`): struk dan layar yang mengeja berbeda
+   ("Dine-in" vs "Dine in") membuat kasir yang mencocokkan keduanya menduga salah satunya keliru. */
+const CHANNEL: Record<DataStruk['channel'], string> = LABEL_KANAL;
 
 /**
  * Format uang untuk STRUK.

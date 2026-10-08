@@ -291,3 +291,15 @@ test('⛔ contoh spec-c:376 TETAP mencetak "2x Kopi Susu", bukan "Kopi Susu Regu
   assert.ok(out.includes('2x Kopi Susu'), out);
   assert.ok(!out.includes('Kopi Susu Regular'), `contoh spec berubah:\n${out}`);
 });
+
+// Task 10 (PR 2C) fix round 2 (S31, G-TANPA-LAYANAN): struk Dine in dengan service charge nol
+// tidak memuat baris layanan/service, dan kanalnya dieja seperti di layar ("Dine in").
+test('⛔ G-TANPA-LAYANAN struk: channel dine_in + serviceCharge 0 → tidak ada baris /layanan|service/i; kanal dieja "Dine in"', async () => {
+  const dine = { ...CONTOH, channel: 'dine_in', serviceCharge: 0 };
+  const teks = await cetak(dine);
+  assert.doesNotMatch(teks, /layanan|service/i, `struk Dine in memuat baris layanan:\n${teks}`);
+  assert.match(teks, /Dine in/, `struk tidak menyebut kanal "Dine in":\n${teks}`);
+  assert.doesNotMatch(teks, /Dine-in/, 'ejaan struk "Dine-in" berbeda dari layar');
+  // Pembanding anti-hampa: service charge bukan nol memang dicetak.
+  assert.match(await cetak({ ...CONTOH, channel: 'dine_in' }), /Service/, 'pembanding hampa: serviceCharge 4050 tidak tercetak');
+});
