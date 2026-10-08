@@ -132,7 +132,11 @@ export function setelDiskon(k: Keranjang, diskon: DiskonKeranjang | null): Keran
  * persetujuan yang tidak pernah diberikan untuknya.
  */
 export function lepasDiskonBilaKosong(k: Keranjang): Keranjang {
-  return k.baris.length === 0 && k.diskon !== null ? { ...k, diskon: null } : k;
+  // Kanal ikut kembali ke bawaan: Dine in pesanan lama tidak boleh bocor ke pesanan berikutnya.
+  // Memilih kanal pada keranjang yang SUDAH kosong tidak lewat sini, jadi tetap boleh.
+  return k.baris.length === 0 && (k.diskon !== null || k.kanal !== 'takeaway')
+    ? { ...k, diskon: null, kanal: 'takeaway' }
+    : k;
 }
 
 /**
