@@ -150,3 +150,21 @@ test('invariant #7: berkas pilihan kanal di apps/kasir tidak memuat angka tarif 
   }
   assert.deepEqual(temuan, [], `angka tarif pajak di luar TaxCalculator (invariant #7):\n${temuan.join('\n')}`);
 });
+
+// Task 10 fix round 2 (S14): layar yang memanggil `hitungKeranjang` tempat paling mudah tergoda
+// "menampilkan pajak sedikit" dengan pengali sendiri. Hanya pola DESIMAL tarif (`0.11`, `.1`): kedua
+// layar penuh `%` sah (lebar CSS, `100%`), jadi pola persen sengaja tidak dipakai di sini.
+// Pengecualian per berkas, dengan alasan tertulis; hari ini kosong.
+test('invariant #7: layar/Kasir.tsx dan layar/Pembayaran.tsx tidak memuat pengali desimal tarif', async () => {
+  const DESIMAL = /(?<![\w.])0?\.\d+(?!\.\d)/g;
+  const PENGECUALIAN = {}; // { 'apps/kasir/src/layar/X.tsx': ['0.5 — alasan tertulis'] }
+  assert.ok('0.11'.match(DESIMAL) && 'x * .1'.match(DESIMAL) && !'0.0.0.0'.match(DESIMAL), 'pola desimal salah — guard hampa');
+  const temuan = [];
+  for (const rel of ['apps/kasir/src/layar/Kasir.tsx', 'apps/kasir/src/layar/Pembayaran.tsx']) {
+    const kode = stripComments(await readFile(path.join(__dirname, '../..', rel), 'utf8'));
+    assert.ok(kode.length > 1000, `${rel} terlalu pendek -- guard lulus vakum`);
+    const cocok = (kode.match(DESIMAL) ?? []).filter((m) => !(PENGECUALIAN[rel] ?? []).some((p) => p.startsWith(m)));
+    if (cocok.length > 0) temuan.push(`${rel}: ${[...new Set(cocok)].join(', ')}`);
+  }
+  assert.deepEqual(temuan, [], `pengali desimal tarif di layar kasir (invariant #7):\n${temuan.join('\n')}`);
+});
