@@ -443,3 +443,32 @@ test('harga usang dengan total yang konsisten dengannya tetap tidak ditandai', a
   const rows = await query('SELECT total FROM "order" WHERE id = $1', [JSON.parse(res.body).id]);
   assert.equal(rows[0].total, '50000', 'yang tersimpan tetap hitungan server: 2 x 25000');
 });
+
+// Task 10 (PR 2C) fix round 2 (S23): kanal ikut pemeriksaan selisih. Perangkat yang menjual Dine in
+// dengan harga usang menghitung total memakai tarif kanal dine_in; pemeriksa selisih server harus
+// memakai kanal yang SAMA, atau setiap penjualan Dine in ditandai anomali palsu.
+test('⛔ Dine in dengan harga usang dan tarif per kanal tidak ditandai selisih (kanal ikut pemeriksa)', async () => {
+  const buatTarif = async (over) => {
+    const res = await req('POST', '/tax-rates', { id: crypto.randomUUID(), isInclusive: false, ...over });
+    assert.equal(res.statusCode, 201, res.body);
+  };
+  await buatTarif({ name: 'PBJT 10%', type: 'pbjt', rate: '0.1000', channel: 'dine_in' });
+  await buatTarif({ name: 'PPN 11%', type: 'ppn', rate: '0.1100', channel: 'all' });
+
+  const fx = await setupDeviceAndShift();
+  const v = await buatVariation(10000);
+  const sekarang = await jamDatabase();
+  await ubahHarga(v, 25000, geser(sekarang, -60));
+
+  // Harga usang 10.000 + PBJT 10% (kanal dine_in) = 11.000. Bila pemeriksa salah memakai takeaway
+  // (PPN 11%) hasilnya 11.100 dan order ini ditandai.
+  const res = await buatOrder(fx, [baris(v.variationId, { unitPrice: 10000 })], { total: 11000, channel: 'dine_in' });
+  assert.equal(res.statusCode, 201, res.body);
+  const body = JSON.parse(res.body);
+  assert.equal(body.channel, 'dine_in');
+  assert.equal(body.hasCalculationVariance, false, 'Dine in berharga usang ditandai selisih — pemeriksa tidak memakai kanal order');
+
+  // Pembanding anti-hampa: total yang cocok dengan kanal LAIN (11.100) memang ditandai.
+  const res2 = await buatOrder(fx, [baris(v.variationId, { unitPrice: 10000 })], { total: 11100, channel: 'dine_in' });
+  assert.equal(JSON.parse(res2.body).hasCalculationVariance, true, 'pembanding hampa: total takeaway pada order dine_in tidak ditandai');
+});
