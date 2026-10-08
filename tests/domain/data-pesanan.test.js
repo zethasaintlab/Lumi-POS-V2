@@ -70,3 +70,16 @@ test('bersihkanTeksPesanan: trim, kosong → null', async () => {
   assert.equal(bersihkanTeksPesanan(null), null);
   assert.equal(bersihkanTeksPesanan(undefined), null);
 });
+
+for (const k of KASUS) {
+  test(`⛔ ${k.fungsi}: karakter kendali (NUL, tab di tengah, C1) ditolak VALIDATION_ERROR`, async () => {
+    const m = await import(MOD);
+    for (const v of ['a\u0000b', 'a\u0001b', 'a\tb', 'a\nb', 'a\u007Fb', 'a\u0085b', 'a\u009Fb']) {
+      const g = m[k.fungsi](v);
+      assert.notEqual(g, null, `${JSON.stringify(v)} lolos`);
+      assert.equal(g.kode, 'VALIDATION_ERROR', `${JSON.stringify(v)} → ${g.kode}`);
+      assert.match(g.pesan, /karakter/i);
+    }
+    assert.equal(m[k.fungsi]('Kopi  é — 日本 😀'), null, 'karakter sah (aksen, CJK, emoji) ikut ditolak');
+  });
+}

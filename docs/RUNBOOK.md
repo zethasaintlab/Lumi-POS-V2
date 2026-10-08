@@ -462,12 +462,22 @@ tabel rawnya lalu menjalankan `disconnectAndClear()` (R4).
 | Sesudah pembaruan, riwayat (K-08) kosong sebentar lalu terisi sendiri | Sengaja: stream `riwayat` mengunduh ulang penjualan perangkat itu. Tunggu sampai sinkron; jangan mengulang pembaruan. |
 | ⛔ Perangkat yang **offline** saat pembaruan terpasang berjalan dengan **katalog kosong** sampai terhubung | Sengaja dan tertulis: skema lokal sudah dibangun ulang, katalog baru kembali lewat sync. Penjualan yang sudah antre di `outbox_local` **tidak tersentuh** dan tetap terkirim. Jangan memasang pembaruan ini di perangkat yang akan dibawa ke tempat tanpa sinyal. |
 
-**Urutan rilis (R8): server dulu, klien sesudahnya.** Server baru menerima
-`customerName`, `tableNumber`, `note` sebagai field opsional di `POST /orders`,
-jadi klien lama (tanpa ketiganya) tetap diterima persis seperti sebelumnya.
-Klien baru di atas server lama mengirim field yang tidak dikenal server lama:
-kolomnya belum ada dan nilainya hilang diam-diam. Migrasi dijalankan sebelum
-server baru dipasang.
+**Urutan rilis (R8): migrasi → sync rules → server → klien.** Migrasi `0037`
+lebih dulu (kolom harus ada sebelum server menulisnya), lalu sync rules
+(`sync-config.yaml` meng-SELECT ketiga kolom), lalu server baru, terakhir klien.
+Server baru menerima `customerName`, `tableNumber`, `note` sebagai field
+opsional di `POST /orders`, jadi klien lama (tanpa ketiganya) tetap diterima
+persis seperti sebelumnya. Klien baru di atas server lama mengirim field yang
+tidak dikenal server lama: nilainya dibuang diam-diam, bukan ditolak.
+
+**Catatan kunci tabel (M-2).** `0037` menambah tiga kolom ber-CHECK ke `order`
+(tabel besar). `ADD COLUMN` nullable tanpa default tidak menulis ulang
+tabel, tetapi CHECK yang ditambahkan bersama kolom divalidasi terhadap baris yang
+ada di bawah `ACCESS EXCLUSIVE`; kolomnya baru, jadi semua barisnya NULL dan
+validasinya murah. Tetap dilindungi `lock_timeout = 5s`: bila migrasi gagal karena
+kunci, ulangi di jam sepi, jangan naikkan batasnya. Bila suatu hari CHECK
+ditambahkan ke kolom yang SUDAH berisi, pakai `NOT VALID` lalu `VALIDATE
+CONSTRAINT` terpisah.
 
 ---
 

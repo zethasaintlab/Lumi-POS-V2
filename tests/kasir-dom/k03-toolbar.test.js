@@ -859,3 +859,34 @@ test('⛔ Batalkan keranjang membuang nama/meja/catatan (tidak diwarisi pesanan 
   await hal.close();
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
 });
+
+test('⛔ Catatan NONAKTIF dengan alasan terbaca saat keranjang kosong; Pelanggan dan No. Meja tetap aktif; Catatan aktif bila keranjang berisi (spec § 4 "Aturan tombol")', async () => {
+  const baca = (hal) =>
+    hal.evaluate(() => {
+      const tombol = (nama) => [...document.querySelectorAll('.kasir-toolbar button')].find((b) => b.innerText.trim() === nama);
+      const d = (nama) => {
+        const b = tombol(nama);
+        if (!b) return null;
+        const id = b.getAttribute('aria-describedby');
+        return { disabled: b.disabled, id, alasan: id ? (document.getElementById(id)?.textContent ?? '').trim() : null };
+      };
+      return { catatan: d('Catatan'), pelanggan: d('Pelanggan'), meja: d('No. Meja') };
+    });
+
+  const kosong = await bukaK03({ keadaan: 'normal' });
+  const k = await baca(kosong.hal);
+  await kosong.hal.close();
+  assert.equal(kosong.galat.length, 0, `galat konsol: ${kosong.galat.join(' | ')}`);
+  assert.ok(k.catatan, 'tombol Catatan tidak ada');
+  assert.equal(k.catatan.disabled, true, 'Catatan aktif padahal keranjang kosong');
+  assert.ok(k.catatan.id && k.catatan.alasan, `Catatan nonaktif tanpa alasan terbaca (aria-describedby=${k.catatan.id}, teks="${k.catatan.alasan}")`);
+  assert.match(k.catatan.alasan, /kosong/i, `alasan tidak menyebut keranjang kosong: "${k.catatan.alasan}"`);
+  assert.equal(k.pelanggan?.disabled, false, 'Pelanggan ikut nonaktif');
+  assert.equal(k.meja?.disabled, false, 'No. Meja ikut nonaktif');
+
+  const penuh = await bukaK03({ keadaan: 'keranjang-penuh' });
+  const p = await baca(penuh.hal);
+  await penuh.hal.close();
+  assert.equal(p.catatan.disabled, false, 'Catatan nonaktif padahal keranjang berisi');
+  assert.equal(p.catatan.id, null, 'Catatan aktif masih menunjuk alasan nonaktif');
+});

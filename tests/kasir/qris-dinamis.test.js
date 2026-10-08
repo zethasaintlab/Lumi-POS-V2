@@ -536,3 +536,26 @@ test('⛔ drafCocokKeranjang: kanal berbeda dari muatan draf TIDAK cocok (channe
   assert.equal(drafCocokKeranjang(dine, { ...KERANJANG, kanal: 'takeaway' }, 22000n), false, 'draf Dine in cocok dengan keranjang takeaway');
   assert.equal(drafCocokKeranjang(dine, { ...KERANJANG, kanal: 'dine_in' }, 22000n), true);
 });
+
+test('⛔ drafCocokKeranjang: nama pemesan, nomor meja, atau catatan berbeda dari muatan draf → TIDAK cocok (Task 11)', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const dgnData = (dataPesanan) => ({ ...KERANJANG, dataPesanan });
+  const KOSONG = { namaPemesan: null, nomorMeja: null, catatan: null };
+  const tulis = async (keranjang) => {
+    const d = db();
+    await mintaQr({ ...argMinta(draf(), { db: d, kirim: pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } }) }), keranjang, total: 22000n });
+    return pulihkanDraf(d, 's1');
+  };
+  const isi = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' };
+  const tIsi = await tulis(dgnData(isi));
+  assert.equal(drafCocokKeranjang(tIsi, dgnData(isi), 22000n), true, 'pembanding hampa: data pesanan yang SAMA dianggap berbeda');
+  assert.equal(drafCocokKeranjang(tIsi, dgnData({ ...isi, namaPemesan: 'Ani' }), 22000n), false, 'nama berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tIsi, dgnData({ ...isi, nomorMeja: 'B1' }), 22000n), false, 'meja berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(tIsi, dgnData({ ...isi, catatan: null }), 22000n), false, 'catatan dihapus dianggap cocok');
+  assert.equal(drafCocokKeranjang(tIsi, dgnData(KOSONG), 22000n), false, 'data dikosongkan dianggap cocok');
+  const tKosong = await tulis(dgnData(KOSONG));
+  assert.equal(drafCocokKeranjang(tKosong, dgnData(KOSONG), 22000n), true);
+  assert.equal(drafCocokKeranjang(tKosong, dgnData({ ...KOSONG, catatan: 'baru' }), 22000n), false, 'catatan ditambah sesudah draf dianggap cocok');
+  // Spasi tepi: keranjang '  Budi ' dan draf 'Budi' adalah data yang sama.
+  assert.equal(drafCocokKeranjang(tIsi, dgnData({ ...isi, namaPemesan: '  Budi ' }), 22000n), true, 'trim tidak diterapkan di pembanding');
+});

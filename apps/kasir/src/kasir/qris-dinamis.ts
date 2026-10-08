@@ -2,7 +2,8 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
-import type { Keranjang } from './keranjang.ts';
+import { dataPesananDari, type Keranjang } from './keranjang.ts';
+import { bersihkanTeksPesanan } from '../../../../packages/domain/src/data-pesanan.ts';
 import { kanalDari } from './kanal.ts';
 
 /**
@@ -321,6 +322,17 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
   /* Kanal menentukan tarif pajak (FR-C7): draf Dine in tidak boleh menulis penjualan takeaway. */
   if (d.muatan.channel !== kanalDari(keranjang)) return false;
+  /* Nama, meja, catatan (Task 11): draf membawanya di muatan, tetapi struk dan penjualan
+     lokal ditulis dari KERANJANG. Data yang diubah sesudah QR terbit akan tercetak/tersimpan
+     berbeda dari yang sudah dikirim ke server. */
+  const dp = dataPesananDari(keranjang);
+  if (
+    (d.muatan.customerName ?? null) !== bersihkanTeksPesanan(dp.namaPemesan) ||
+    (d.muatan.tableNumber ?? null) !== bersihkanTeksPesanan(dp.nomorMeja) ||
+    (d.muatan.note ?? null) !== bersihkanTeksPesanan(dp.catatan)
+  ) {
+    return false;
+  }
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,
      dan `confirmed` menulis penjualan dari KERANJANG, bukan dari muatan draf. */
   const diskon = d.muatan.discount as { tipe?: unknown; nilai?: unknown } | undefined;

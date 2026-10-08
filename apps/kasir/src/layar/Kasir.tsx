@@ -773,10 +773,23 @@ export function Kasir() {
               baris 4–6). Label TETAP (nama mockup); isinya tampil di keranjang,
               bukan di label tombol. Selalu ada: tidak bergantung isi keranjang,
               dan tidak di balik kill switch (tidak menyentuh uang). */}
-          <Tombol varian="ghost" onClick={() => setDialogTeks('catatan')}>
+          {/* Catatan nonaktif DENGAN alasan saat keranjang kosong (spec § 4 "Aturan
+              tombol": Diskon, Catatan, Batalkan, Tahan). Pelanggan dan No. Meja
+              tetap aktif: keduanya sah dipilih sebelum item pertama. */}
+          <Tombol
+            varian="ghost"
+            disabled={keranjang.baris.length === 0}
+            keterangan={keranjang.baris.length === 0 ? 'toolbar-catatan-alasan' : undefined}
+            onClick={() => setDialogTeks('catatan')}
+          >
             <Icon name="pencil" size={17} />
             <span className="kasir-toolbar-label">Catatan</span>
           </Tombol>
+          {keranjang.baris.length === 0 && (
+            <span id="toolbar-catatan-alasan" className="sr-only">
+              Keranjang kosong. Tambahkan item sebelum menulis catatan.
+            </span>
+          )}
           <Tombol varian="ghost" onClick={() => setDialogTeks('pelanggan')}>
             <Icon name="user-round" size={17} />
             <span className="kasir-toolbar-label">Pelanggan</span>

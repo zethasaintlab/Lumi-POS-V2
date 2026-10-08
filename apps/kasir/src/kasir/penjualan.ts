@@ -550,6 +550,16 @@ export function rencanaBayarKeranjang(
   });
 }
 
+/** Nama, meja, catatan keranjang setelah trim; kosong → `null`. */
+function dataBersih(keranjang: Keranjang) {
+  const d = dataPesananDari(keranjang);
+  return {
+    namaPemesan: bersihkanTeksPesanan(d.namaPemesan),
+    nomorMeja: bersihkanTeksPesanan(d.nomorMeja),
+    catatan: bersihkanTeksPesanan(d.catatan),
+  };
+}
+
 /**
  * Muatan `POST /orders` — SATU tempat, dipakai jalur outbox dan jalur
  * online-first (FR-C3).
@@ -563,16 +573,6 @@ export function rencanaBayarKeranjang(
  * Murni: tanpa I/O. `idBaru` di-inject karena modifier butuh id baru per
  * baris, dan itu satu-satunya sumber ketidakmurnian yang tersisa.
  */
-/** Nama, meja, catatan keranjang setelah trim; kosong → `null`. */
-function dataBersih(keranjang: Keranjang) {
-  const d = dataPesananDari(keranjang);
-  return {
-    namaPemesan: bersihkanTeksPesanan(d.namaPemesan),
-    nomorMeja: bersihkanTeksPesanan(d.nomorMeja),
-    catatan: bersihkanTeksPesanan(d.catatan),
-  };
-}
-
 export function muatanOrder({
   orderId,
   konfig,

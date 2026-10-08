@@ -27,6 +27,18 @@ export function bersihkanTeksPesanan(nilai: unknown): string | null {
   return t === '' ? null : t;
 }
 
+/**
+ * ⛔ Karakter kendali ditolak. NUL membuat PostgreSQL menjawab 500 (`text` tidak
+ * dapat memuat `\u0000`), dan baris baru/C1 merusak struk 32 kolom.
+ */
+function adaKarakterKendali(t: string): boolean {
+  for (const c of t) {
+    const k = c.codePointAt(0) ?? 0;
+    if (k <= 0x1f || (k >= 0x7f && k <= 0x9f)) return true;
+  }
+  return false;
+}
+
 function periksa(nilai: unknown, label: string, maks: number): GalatBayar | null {
   if (nilai === null || nilai === undefined) return null;
   if (typeof nilai !== 'string') {
@@ -34,6 +46,9 @@ function periksa(nilai: unknown, label: string, maks: number): GalatBayar | null
   }
   const t = nilai.trim();
   if (t === '') return null;
+  if (adaKarakterKendali(t)) {
+    return { kode: 'VALIDATION_ERROR', pesan: `${label} memuat karakter yang tidak diizinkan.` };
+  }
   if (Array.from(t).length > maks) {
     return { kode: 'VALIDATION_ERROR', pesan: `${label} maksimal ${maks} karakter.` };
   }

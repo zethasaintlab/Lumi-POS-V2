@@ -215,3 +215,21 @@ test('⛔ retry dengan idempotency key sama (dan respons hilang) tidak menduplik
   assert.notEqual(beda.statusCode, 201, 'key sama + body beda diproses');
   assert.equal((await barisOrder(p.id)).customer_name, 'Budi');
 });
+
+test('⛔ NUL / karakter kendali di nama, meja, catatan → 400 VALIDATION_ERROR, bukan 500', async () => {
+  const d = await perangkatDanShift();
+  for (const [kolom, nilai] of [['customerName', 'Bu\u0000di'], ['tableNumber', 'A\u0001'], ['note', 'x\u0085y']]) {
+    const res = await kirim(badan(d, { [kolom]: nilai }));
+    assert.equal(res.statusCode, 400, `${kolom}: ${res.statusCode} ${res.body}`);
+    assert.match(res.body, /VALIDATION_ERROR/);
+  }
+});
+
+test('emoji: 40 emoji (80 unit UTF-16) diterima, 41 ditolak — server menghitung per code point seperti CHECK', async () => {
+  const d = await perangkatDanShift();
+  const ok = badan(d, { customerName: '😀'.repeat(40) });
+  assert.equal((await kirim(ok)).statusCode, 201);
+  assert.equal((await barisOrder(ok.id)).customer_name, '😀'.repeat(40));
+  const res = await kirim(badan(d, { customerName: '😀'.repeat(41) }));
+  assert.equal(res.statusCode, 400, res.body);
+});

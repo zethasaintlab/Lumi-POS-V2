@@ -1639,3 +1639,17 @@ test('⛔ penjualan menolak data pesanan yang melanggar domain (nomor kartu) —
   assert.equal(hasil.kode, 'POSSIBLE_CARD_NUMBER');
   assert.equal(db.state.tulis.filter((t) => /INSERT INTO "order"/.test(t.sql)).length, 0);
 });
+
+test('⛔ penjualan menolak karakter kendali di data pesanan (keranjang pulih dari bentuk rusak)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  for (const dataPesanan of [
+    { namaPemesan: 'Bu\u0000di', nomorMeja: null, catatan: null },
+    { namaPemesan: null, nomorMeja: 'A\u0001', catatan: null },
+    { namaPemesan: null, nomorMeja: null, catatan: 'x\u0085y' },
+  ]) {
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({ db, ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'takeaway', dataPesanan } }) });
+    assert.equal(hasil.status, 'pembayaran_tidak_sah', `karakter kendali lolos: ${JSON.stringify(dataPesanan)}`);
+    assert.equal(db.state.tulis.filter((t) => /INSERT INTO "order"/.test(t.sql)).length, 0);
+  }
+});
