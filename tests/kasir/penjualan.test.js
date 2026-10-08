@@ -57,7 +57,7 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = 
       // `dalam` DIREKAM per penulisan, bukan hanya dihitung sekali. Tanpa
       // ini, `simpanHlc` yang dipindah ke luar transaksi tetap terlihat
       // "ditulis" dan test hijau untuk kode yang melanggar I10.
-      state.tulis.push({ sql: sql.trim().split('\n')[0], params, dalam: state.diDalamTransaksi });
+      state.tulis.push({ sql: sql.trim().split('\n')[0], penuh: sql, params, dalam: state.diDalamTransaksi });
       if (/UPDATE device_config/.test(sql)) {
         state.device_config.receipt_sequence = params[0];
         state.device_config.sequence_business_date = params[1];
@@ -1576,4 +1576,66 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   assert.equal(BigInt(order.params[11]), p.totalTax, 'tax_amount menghitung service charge ke dasar pajak');
   const outbox = db.state.tulis.find((t) => /outbox_local/.test(t.sql));
   assert.doesNotMatch(outbox.params[4], /service/i, 'muatan outbox memuat service charge');
+});
+
+// ---------------------------------------------------------------------------
+// Task 11 (PR 2C) -- nama pemesan, nomor meja, catatan (P5(b) + P6(a)).
+
+const DATA_PESANAN = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' };
+
+test('nama, meja, catatan ke kolom order lokal dan muatan outbox; check.label NULL', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db, ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'takeaway', dataPesanan: DATA_PESANAN } }),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.equal(order.params.length, 21, 'INSERT order lokal tidak menulis ketiga kolom baru (21 parameter)');
+  // Kolom = penanda + 2 literal (`'closed'`, `0`); SQLite menolak ketidaksepakatan
+  // saat sungguhan, tetapi db palsu tidak.
+  const kolom = /\(([^)]*)\)\s*VALUES/.exec(order.penuh)[1].split(',').length;
+  const penanda = (order.penuh.match(/\?/g) ?? []).length;
+  assert.deepEqual([kolom, penanda], [21 + 2, 21], `kolom ${kolom} / penanda ${penanda} / parameter ${order.params.length} tidak sepakat`);
+  assert.deepEqual(order.params.slice(-3), ['Budi', 'A3', 'Tanpa gula'], 'nilai di kolom lokal salah/urutan tertukar');
+
+  const outbox = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
+  assert.equal(outbox.customerName, 'Budi');
+  assert.equal(outbox.tableNumber, 'A3');
+  assert.equal(outbox.note, 'Tanpa gula');
+
+  const cek = db.state.tulis.find((t) => /INSERT INTO "check"/.test(t.sql));
+  assert.match(cek.sql, /label, subtotal, total\) VALUES \(\?, \?, NULL,/, 'check.label bukan literal NULL');
+  assert.ok(!cek.params.includes('Budi'), 'nama pemesan bocor ke check');
+});
+
+test('⛔ tanpa data pesanan: kolom lokal NULL dan muatan outbox TIDAK membawa kuncinya (N-1)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({ db, ...args() });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.deepEqual(order.params.slice(-3), [null, null, null]);
+  const outbox = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
+  for (const k of ['customerName', 'tableNumber', 'note']) {
+    assert.ok(!(k in outbox), `muatan outbox membawa ${k} padahal kosong`);
+  }
+});
+
+test('⛔ penjualan menolak data pesanan yang melanggar domain (nomor kartu) — bukan hanya dialog', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: BARIS, diskon: null, kanal: 'takeaway',
+        dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: 'kartu 4111 1111 1111 1111' },
+      },
+    }),
+  });
+  assert.equal(hasil.status, 'pembayaran_tidak_sah', 'penjualan tersimpan dengan nomor kartu di catatan');
+  assert.equal(hasil.kode, 'POSSIBLE_CARD_NUMBER');
+  assert.equal(db.state.tulis.filter((t) => /INSERT INTO "order"/.test(t.sql)).length, 0);
 });

@@ -379,3 +379,15 @@ test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
       hilang.join('\n  ')
   );
 });
+
+// Task 11 (PR 2C) — nama pemesan, nomor meja, catatan harus TURUN lewat stream
+// `riwayat`. Kolom yang ada di raw table tetapi tidak di SELECT-nya tidak
+// menghasilkan error: cetak ulang K-09 untuk penjualan lama kehilangan baris
+// "Atas nama"/"Meja"/"Catatan" tanpa suara.
+test('⛔ `order` di stream riwayat men-SELECT customer_name, table_number, note', () => {
+  const q = kueri().find((s) => /FROM "order"\s*WHERE/.test(s) && /receipt_number/.test(s));
+  assert.ok(q, 'query `order` stream riwayat tidak ditemukan');
+  for (const k of ['customer_name', 'table_number', 'note']) {
+    assert.match(q, new RegExp(`\\b${k}\\b`), `${k} tidak di-SELECT: cetak ulang penjualan lama kehilangan kolom ini`);
+  }
+});

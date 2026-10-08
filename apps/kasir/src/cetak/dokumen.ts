@@ -56,6 +56,10 @@ export interface DataStruk {
   waktu: string;
   namaKasir: string;
   channel: 'dine_in' | 'takeaway';
+  /** Migrasi 0037. Kosong/`null`/tak ada → barisnya tidak dicetak. */
+  namaPemesan?: string | null;
+  nomorMeja?: string | null;
+  catatan?: string | null;
   baris: readonly BarisStrukOrder[];
   subtotal: number;
   diskon: number;
@@ -107,6 +111,16 @@ export function bangunDokumenStruk(data: DataStruk): ReceiptDocument {
   baris.push({ jenis: 'teks', isi: data.waktu });
   baris.push({ jenis: 'teks', isi: `Kasir: ${data.namaKasir}` });
   baris.push({ jenis: 'teks', isi: CHANNEL[data.channel] });
+  // Sebelum baris item, supaya pembuat minuman membacanya lebih dulu. 'teks'
+  // dilipat di lebar kertas (`lipat`), jadi catatan 140 karakter tidak terpotong.
+  for (const [label, isi] of [
+    ['Atas nama', data.namaPemesan],
+    ['Meja', data.nomorMeja],
+    ['Catatan', data.catatan],
+  ] as const) {
+    const t = typeof isi === 'string' ? isi.trim() : '';
+    if (t !== '') baris.push({ jenis: 'teks', isi: `${label}: ${t}` });
+  }
 
   // FR-B11 — cetakan kedua dan seterusnya DITANDAI. Struk kedua yang tidak
   // dapat dibedakan dari yang pertama adalah alat penipuan: pelanggan yang

@@ -29,7 +29,7 @@
 -- menghitung nama kolom BUTA terhadap perubahan ini, dan ke-12 tabel akan
 -- diperbaiki di berkas ini tanpa satu pun perangkat menerapkannya.
 --
--- Ongkosnya ditanggung sekali, dan ia sama dengan migrasi `0035` dan `0036`:
+-- Ongkosnya ditanggung sekali, dan ia sama dengan migrasi `0035`, `0036`, dan `0037`:
 -- setiap perangkat terpasang membangun ulang SELURUH raw table-nya lalu
 -- mengunduh ulang katalognya. Kedua belas tabel ini ADA di sync rules jalur
 -- turun, jadi isinya kembali sendiri — enam tabel riwayat (`order`, `check`,
@@ -424,7 +424,11 @@ CREATE TABLE "order" (
   -- menangkapnya: penjaga drift hanya membandingkan kolom yang ada di KEDUA
   -- sisi. `KOLOM_SENGAJA_TIDAK_TURUN` sekarang menutup celah itu.
   voided_by_order_id TEXT,
-  created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
+  created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL,
+  -- Migrasi 0037 (P5(b) + P6(a)): nama pemesan, nomor meja, catatan. NULL bila
+  -- kasir tidak mengisinya. Tiga kolom dalam SATU migrasi supaya sidik jari
+  -- skema lokal berubah sekali. `check.label` tetap NULL.
+  customer_name TEXT, table_number TEXT, note TEXT
 );
 CREATE TABLE "check" (
   id TEXT PRIMARY KEY NOT NULL, order_id TEXT NOT NULL, label TEXT,

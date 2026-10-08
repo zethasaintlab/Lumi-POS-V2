@@ -303,3 +303,35 @@ test('⛔ G-TANPA-LAYANAN struk: channel dine_in + serviceCharge 0 → tidak ada
   // Pembanding anti-hampa: service charge bukan nol memang dicetak.
   assert.match(await cetak({ ...CONTOH, channel: 'dine_in' }), /Service/, 'pembanding hampa: serviceCharge 4050 tidak tercetak');
 });
+
+// ---------------------------------------------------------------------------
+// Task 11 (PR 2C) — nama pemesan, nomor meja, catatan (P5(b) + P6(a)).
+
+test('struk mencetak "Atas nama", "Meja", "Catatan", dilipat di 32 kolom, SEBELUM baris item', async () => {
+  const data = {
+    ...CONTOH,
+    namaPemesan: 'Budi Santoso',
+    nomorMeja: 'A3',
+    catatan: 'Tanpa gula, es dipisah, tolong dibungkus rapi karena dibawa naik motor',
+  };
+  const out = await cetak(data, 32);
+  const baris = out.split('\n');
+  assert.ok(baris.includes('Atas nama: Budi Santoso'), `tidak ada "Atas nama":\n${out}`);
+  assert.ok(baris.includes('Meja: A3'), `tidak ada "Meja":\n${out}`);
+  const iCatatan = baris.findIndex((b) => b.startsWith('Catatan: Tanpa gula'));
+  assert.ok(iCatatan >= 0, `tidak ada "Catatan":\n${out}`);
+  // Catatan 70+ karakter dilipat — SEMUA katanya tetap tercetak, tidak terpotong.
+  for (const kata of data.catatan.split(' ')) assert.ok(out.includes(kata), `kata "${kata}" hilang dari struk`);
+  for (const b of baris) assert.ok(b.length <= 32, `baris ${b.length} kolom (>32): ${JSON.stringify(b)}`);
+  // Sebelum baris item pertama.
+  const iItem = baris.findIndex((b) => b.includes('2x Kopi Susu'));
+  assert.ok(iItem > iCatatan, 'Catatan tercetak SESUDAH baris item');
+  assert.ok(baris.findIndex((b) => b === 'Meja: A3') < iItem);
+});
+
+test('⛔ tanpa nama/meja/catatan: struk TIDAK memuat label-labelnya (baris kosong tidak dicetak)', async () => {
+  for (const data of [CONTOH, { ...CONTOH, namaPemesan: null, nomorMeja: null, catatan: null }, { ...CONTOH, namaPemesan: '  ' }]) {
+    const out = await cetak(data);
+    assert.doesNotMatch(out, /Atas nama|Meja:|Catatan:/, `label tercetak tanpa isi:\n${out}`);
+  }
+});

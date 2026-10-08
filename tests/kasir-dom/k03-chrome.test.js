@@ -264,14 +264,16 @@ test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header
      "Diskon". Task 4 (Laci kas) MENGELUARKAN "Buka laci" dan "Kas masuk /
      keluar" dari toolbar ini — keduanya pindah ke layar K-18. Task 10 (PR 2C)
      menambah Pajak: label TERLIHAT-nya kanal aktif ("Takeaway"), bukan kata
-     "Pajak" (Q8, bawaan plan); nama aksesibelnya "Pajak: Takeaway". */
+     "Pajak" (Q8, bawaan plan); nama aksesibelnya "Pajak: Takeaway". Task 11
+     (PR 2C) menambah Catatan, Pelanggan, No. Meja sesudah Pajak. */
   assert.deepEqual(
     hasil.label,
-    ['Item manual', 'Diskon', 'Takeaway', 'Batalkan'],
-    'isi toolbar tidak sesuai. Empat label ini yang punya kode di repo hari ' +
-      'ini (Item manual, Diskon, Pajak = kanal aktif (Task 10), Batalkan (Task 5B)); Buka laci dan Kas masuk / ' +
-      'keluar pindah ke layar Laci kas (K-18, Task 4); empat lainnya di mockup ' +
-      'belum, dan tombol yang tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
+    ['Item manual', 'Diskon', 'Takeaway', 'Catatan', 'Pelanggan', 'No. Meja', 'Batalkan'],
+    'isi toolbar tidak sesuai. Tujuh label ini yang punya kode di repo hari ' +
+      'ini (Item manual, Diskon, Pajak = kanal aktif (Task 10), Catatan, Pelanggan, No. Meja (Task 11), ' +
+      'Batalkan (Task 5B)); Buka laci dan Kas masuk / keluar pindah ke layar Laci kas ' +
+      '(K-18, Task 4); Pesanan tahan belum, dan tombol yang tidak melakukan apa-apa ' +
+      'tidak boleh ditambahkan ke sini.'
   );
 
   /* Aturan design system #3. */

@@ -67,7 +67,7 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
+const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway', dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: null } };
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -329,4 +329,41 @@ test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway',
     [JSON.stringify({ baris: [baris()], diskon: null, kanal: 'delivery' }), 'kini']
   );
   assert.equal((await pulihkanKeranjang(d, 's1')).keranjang.kanal, 'takeaway');
+});
+
+test('data pesanan dipulihkan; keranjang lama tanpa field → semua null; tipe salah → null', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  const data = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' };
+  await simpanKeranjang(d, 's1', { ...KERANJANG, dataPesanan: data }, JAM);
+  const pulih = await pulihkanKeranjang(d, 's1');
+  assert.equal(pulih.status, 'dipulihkan');
+  assert.deepEqual(pulih.keranjang.dataPesanan, data, 'nama/meja/catatan hilang saat dipulihkan');
+
+  await d.execute('UPDATE keranjang_lokal SET isi = ? WHERE id = ?', [
+    JSON.stringify({ baris: [baris()], diskon: null, kanal: 'takeaway' }),
+    'kini',
+  ]);
+  assert.deepEqual(
+    (await pulihkanKeranjang(d, 's1')).keranjang.dataPesanan,
+    { namaPemesan: null, nomorMeja: null, catatan: null },
+    'keranjang lama tanpa dataPesanan tidak dipulihkan sebagai kosong'
+  );
+
+  await d.execute('UPDATE keranjang_lokal SET isi = ? WHERE id = ?', [
+    JSON.stringify({ baris: [baris()], diskon: null, dataPesanan: { namaPemesan: 42, nomorMeja: '  ', catatan: { x: 1 } } }),
+    'kini',
+  ]);
+  assert.deepEqual((await pulihkanKeranjang(d, 's1')).keranjang.dataPesanan, {
+    namaPemesan: null, nomorMeja: null, catatan: null,
+  });
+});
+
+test('lepasDiskonBilaKosong: keranjang kosong membuang nama/meja/catatan pesanan lama', async () => {
+  const { lepasDiskonBilaKosong } = await import('../../apps/kasir/src/kasir/keranjang.ts');
+  const data = { namaPemesan: 'Budi', nomorMeja: '4', catatan: null };
+  const k = lepasDiskonBilaKosong({ baris: [], diskon: null, kanal: 'takeaway', dataPesanan: data });
+  assert.deepEqual(k.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null }, 'data pesanan lama bocor ke pesanan berikutnya');
+  const isi = lepasDiskonBilaKosong({ baris: [baris()], diskon: null, kanal: 'takeaway', dataPesanan: data });
+  assert.deepEqual(isi.dataPesanan, data, 'keranjang berisi tidak boleh kehilangan data pesanan');
 });

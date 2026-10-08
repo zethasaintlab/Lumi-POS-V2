@@ -3501,6 +3501,19 @@ paths:
                 hlc: { type: string, nullable: true }
                 occurredAt: { type: string, format: date-time, nullable: true }
                 checkId: { type: string }
+                # Migrasi 0037 (P5(b) + P6(a)) -- nama pemesan (<= 40), nomor
+                # meja (<= 16), catatan (<= 140). Opsional: klien versi N-1
+                # tidak mengirimnya, dan tanpa ketiganya perilaku identik
+                # dengan sebelum 0037. SENGAJA tanpa `type`/`maxLength`:
+                # `periksaNamaPemesan`/`periksaNomorMeja`/`periksaCatatan`
+                # (packages/domain/src/data-pesanan.ts) satu-satunya sumber
+                # kebenaran -- batas dihitung per code point dan nomor kartu
+                # ditolak POSSIBLE_CARD_NUMBER, yang tidak dapat dinyatakan
+                # di sini. Pola sama dengan quantityMilli. `check.label`
+                # TETAP NULL.
+                customerName: {}
+                tableNumber: {}
+                note: {}
                 # FR-H6 -- total yang DIHITUNG KLIEN. Opsional, dan tidak
                 # pernah dipercaya: server tetap menghitung sendiri dan
                 # menyimpan hitungannya. Nilai ini hanya dibandingkan, dan
@@ -8306,6 +8319,10 @@ components:
         sequence: { type: integer }
         status: { type: string, enum: [open, paid, closed, voided, refunded, abandoned] }
         channel: { type: string, enum: [dine_in, takeaway] }
+        # Migrasi 0037. null bila klien tidak mengirimnya.
+        customerName: { type: string, nullable: true }
+        tableNumber: { type: string, nullable: true }
+        note: { type: string, nullable: true }
         subtotal: { type: integer }
         orderDiscount: { type: integer }
         serviceChargeAmount: { type: integer }

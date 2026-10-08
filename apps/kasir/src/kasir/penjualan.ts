@@ -35,7 +35,13 @@ import type { PrinterProfile } from '../cetak/escpos.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
-import type { Keranjang } from './keranjang.ts';
+import { dataPesananDari, type Keranjang } from './keranjang.ts';
+import {
+  bersihkanTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../packages/domain/src/data-pesanan.ts';
 import { kanalDari, type Kanal } from './kanal.ts';
 
 /**
@@ -557,6 +563,16 @@ export function rencanaBayarKeranjang(
  * Murni: tanpa I/O. `idBaru` di-inject karena modifier butuh id baru per
  * baris, dan itu satu-satunya sumber ketidakmurnian yang tersisa.
  */
+/** Nama, meja, catatan keranjang setelah trim; kosong → `null`. */
+function dataBersih(keranjang: Keranjang) {
+  const d = dataPesananDari(keranjang);
+  return {
+    namaPemesan: bersihkanTeksPesanan(d.namaPemesan),
+    nomorMeja: bersihkanTeksPesanan(d.nomorMeja),
+    catatan: bersihkanTeksPesanan(d.catatan),
+  };
+}
+
 export function muatanOrder({
   orderId,
   konfig,
@@ -588,6 +604,7 @@ export function muatanOrder({
 }): Record<string, unknown> {
   const hlcValue = hlc;
   const totals = { total };
+  const dataKirim = dataBersih(keranjang);
   return {
     id: orderId,
     outletId: konfig.outletId,
@@ -600,6 +617,11 @@ export function muatanOrder({
     checkId,
     hlc: hlcValue.toString(),
     occurredAt,
+    // Migrasi 0037. Hanya bila diisi: klien N-1 dan penjualan tanpa data
+    // pesanan menghasilkan muatan identik dengan sebelum 0037.
+    ...(dataKirim.namaPemesan !== null ? { customerName: dataKirim.namaPemesan } : {}),
+    ...(dataKirim.nomorMeja !== null ? { tableNumber: dataKirim.nomorMeja } : {}),
+    ...(dataKirim.catatan !== null ? { note: dataKirim.catatan } : {}),
     // FR-H6: total dan harga yang DIPAKAI KLIEN. Server tetap menghitung
     // sendiri; ini yang membuatnya dapat membedakan klien yang belum
     // tersinkron dari selisih yang tidak dapat dijelaskan.
@@ -706,6 +728,18 @@ export async function simpanPenjualan({
   draf?: DrafTerkirim;
 }): Promise<HasilPenjualan> {
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
+
+  // ⛔ Domain yang sama dengan server (`POST /orders`) dan dialog K-03. Tanpa
+  // ini keranjang yang dipulihkan dari bentuk rusak menyimpan lokal lalu
+  // `gagal-permanen` di antrean — uang diterima, penjualan terjebak.
+  const pesanan = dataBersih(keranjang);
+  const galatPesanan =
+    periksaNamaPemesan(pesanan.namaPemesan) ??
+    periksaNomorMeja(pesanan.nomorMeja) ??
+    periksaCatatan(pesanan.catatan);
+  if (galatPesanan !== null) {
+    return { status: 'pembayaran_tidak_sah', kode: galatPesanan.kode, pesan: galatPesanan.pesan };
+  }
 
   const channel = channelPaksa ?? kanalDari(keranjang);
   const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu, channel });
@@ -816,8 +850,9 @@ export async function simpanPenjualan({
       `INSERT INTO "order"
          (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
           status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
-          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc,
+          customer_name, table_number, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         orderId, konfig.tenantId, konfig.outletId, konfig.deviceId, shift.id,
         receiptNumber, businessDate, sequence, channel,
@@ -830,6 +865,7 @@ export async function simpanPenjualan({
         Number(totals.total),
         Number(amountDue),
         sesi.userId, occurredAt, Number(hlcValue),
+        pesanan.namaPemesan, pesanan.nomorMeja, pesanan.catatan,
       ]
     );
 
@@ -1117,6 +1153,9 @@ export async function simpanPenjualan({
       waktu: occurredAt,
       namaKasir: sesi.userId,
       channel,
+      namaPemesan: pesanan.namaPemesan,
+      nomorMeja: pesanan.nomorMeja,
+      catatan: pesanan.catatan,
       baris: keranjang.baris.map((b, i) => ({
         itemName: b.itemName,
         variationName: b.variationName,

@@ -21,9 +21,12 @@ import {
 } from '../katalog/baca.ts';
 import { bacaGambarKatalog, PESAN_GAMBAR_RUSAK, type GambarItem } from '../katalog/gambar.ts';
 import {
+  adaDataPesanan,
+  dataPesananDari,
   keranjangKosong,
   qtyDiKeranjang,
   satuanKeranjang,
+  setelDataPesanan,
   setelDiskon,
   setelKanal,
   subtotalKeranjang,
@@ -60,6 +63,7 @@ import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
 import { LembarKanal } from '../komponen/LembarKanal.tsx';
+import { DialogTeksPesanan, type ModeTeksPesanan } from '../komponen/DialogTeksPesanan.tsx';
 import { kanalDari, LABEL_KANAL, ringkasKanal, type RingkasanKanal } from '../kasir/kanal.ts';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
@@ -160,6 +164,9 @@ export function Kasir() {
   /* Toolbar #3 — Pajak = pilihan KANAL (spec § 4 baris 3, P9(a)). Nama tarif
      per kanal dihitung ulang tiap kali lembar terbuka dan keranjang berubah. */
   const [dialogKanal, setDialogKanal] = useState(false);
+  /* Toolbar #4–#6 — Catatan, Pelanggan, No. Meja (spec § 4, P5(b)/P6(a)). Satu
+     dialog tiga mode; isinya tinggal di `keranjang.dataPesanan`. */
+  const [dialogTeks, setDialogTeks] = useState<ModeTeksPesanan | null>(null);
   const [ringkasanKanal, setRingkasanKanal] = useState<RingkasanKanal[] | null>(null);
   const [gagalRingkasan, setGagalRingkasan] = useState(false);
   /* `ARCH:358` — kill switch per fitur per merchant. Dibaca dari perangkat,
@@ -494,7 +501,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && !dialogKanal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && !dialogKanal && dialogTeks === null,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -760,6 +767,23 @@ export function Kasir() {
           >
             <Icon name="receipt-text" size={17} />
             <span className="kasir-toolbar-label">{LABEL_KANAL[kanalDari(keranjang)]}</span>
+          </Tombol>
+
+          {/* Catatan, Pelanggan, No. Meja — data pesanan opsional (spec § 4
+              baris 4–6). Label TETAP (nama mockup); isinya tampil di keranjang,
+              bukan di label tombol. Selalu ada: tidak bergantung isi keranjang,
+              dan tidak di balik kill switch (tidak menyentuh uang). */}
+          <Tombol varian="ghost" onClick={() => setDialogTeks('catatan')}>
+            <Icon name="pencil" size={17} />
+            <span className="kasir-toolbar-label">Catatan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('pelanggan')}>
+            <Icon name="user-round" size={17} />
+            <span className="kasir-toolbar-label">Pelanggan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('meja')}>
+            <Icon name="utensils-crossed" size={17} />
+            <span className="kasir-toolbar-label">No. Meja</span>
           </Tombol>
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
@@ -1074,6 +1098,22 @@ export function Kasir() {
           </button>
         </div>
 
+        {/* Data pesanan (nama, meja, catatan) — terlihat supaya kasir tahu apa
+            yang akan tercetak di struk. Teks, bukan warna (aturan DS #5). */}
+        {adaDataPesanan(keranjang) && (
+          <ul className="t-caption kasir-pesanan-data" aria-label="Data pesanan">
+            {dataPesananDari(keranjang).namaPemesan !== null && (
+              <li>Atas nama: {dataPesananDari(keranjang).namaPemesan}</li>
+            )}
+            {dataPesananDari(keranjang).nomorMeja !== null && (
+              <li>Meja: {dataPesananDari(keranjang).nomorMeja}</li>
+            )}
+            {dataPesananDari(keranjang).catatan !== null && (
+              <li>Catatan: {dataPesananDari(keranjang).catatan}</li>
+            )}
+          </ul>
+        )}
+
         {/* FR-E4 — peringatan stok. Aturan design system #5: status TIDAK
             PERNAH warna saja, selalu ada teks; di sini teksnya memang
             seluruh pesannya, dan angkanya ikut karena `spec-e:152` menuntut
@@ -1297,6 +1337,34 @@ export function Kasir() {
             setDialogKanal(false);
           }}
           onBatal={() => setDialogKanal(false)}
+        />
+      )}
+
+      {dialogTeks !== null && (
+        <DialogTeksPesanan
+          mode={dialogTeks}
+          awal={
+            dialogTeks === 'catatan'
+              ? dataPesananDari(keranjang).catatan
+              : dialogTeks === 'pelanggan'
+                ? dataPesananDari(keranjang).namaPemesan
+                : dataPesananDari(keranjang).nomorMeja
+          }
+          onBatal={() => setDialogTeks(null)}
+          onSimpan={(nilai) => {
+            const mode = dialogTeks;
+            setKeranjang((k) =>
+              setelDataPesanan(
+                k,
+                mode === 'catatan'
+                  ? { catatan: nilai }
+                  : mode === 'pelanggan'
+                    ? { namaPemesan: nilai }
+                    : { nomorMeja: nilai }
+              )
+            );
+            setDialogTeks(null);
+          }}
         />
       )}
 

@@ -171,11 +171,15 @@ streams:
       # berstatus `open` (AC FR-B7 pertama), jadi status dibaca dari
       # ada/tidaknya pembatal. Tanpa kolom ini, order yang dibatalkan tampil
       # NORMAL di K-08 dan dapat dicetak ulang sebagai struk yang sah.
+      # `customer_name`, `table_number`, `note` (migrasi 0037) turun supaya
+      # cetak ulang K-09 untuk penjualan lama tetap mencetak "Atas nama",
+      # "Meja", "Catatan".
       - SELECT id, tenant_id, outlet_id, device_id, shift_id, receipt_number,
                business_date, sequence, channel, status, subtotal,
                order_discount, service_charge_amount, tax_amount, total,
                amount_due, rounding_adjustment, voided_by_order_id,
-               has_calculation_variance, variance_amount, occurred_at, hlc
+               has_calculation_variance, variance_amount, occurred_at, hlc,
+               customer_name, table_number, note
           FROM "order"
          WHERE tenant_id = auth.parameter('tenant_id')
            AND outlet_id = auth.parameter('outlet_id')

@@ -101,6 +101,19 @@ export interface DiskonKeranjang {
   nominalDisetujui: bigint | null;
 }
 
+/**
+ * Nama pemesan, nomor meja, dan catatan pesanan (P5(b) + P6(a), migrasi 0037).
+ * `null` = tidak diisi. Batas dan pemeriksaan nomor kartu milik
+ * `packages/domain/src/data-pesanan.ts`, dipakai dialog dan `simpanPenjualan`.
+ */
+export interface DataPesanan {
+  namaPemesan: string | null;
+  nomorMeja: string | null;
+  catatan: string | null;
+}
+
+export const DATA_PESANAN_KOSONG: DataPesanan = { namaPemesan: null, nomorMeja: null, catatan: null };
+
 export interface Keranjang {
   baris: BarisKeranjang[];
   /** `null` = tidak ada diskon. */
@@ -110,10 +123,31 @@ export interface Keranjang {
    * dan `POST /orders`; Dine in TIDAK menyiratkan biaya layanan (spec § 4).
    */
   kanal: Kanal;
+  /** Nama, meja, catatan. Keranjang bentuk lama tanpa field ini = semua `null`. */
+  dataPesanan: DataPesanan;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null, kanal: 'takeaway' };
+  return { baris: [], diskon: null, kanal: 'takeaway', dataPesanan: DATA_PESANAN_KOSONG };
+}
+
+export function setelDataPesanan(k: Keranjang, data: Partial<DataPesanan>): Keranjang {
+  return { ...k, dataPesanan: { ...dataPesananDari(k), ...data } };
+}
+
+/** Data pesanan efektif; keranjang bentuk lama (tanpa field) = kosong. */
+export function dataPesananDari(k: { dataPesanan?: Partial<DataPesanan> | null }): DataPesanan {
+  const d = k.dataPesanan;
+  return {
+    namaPemesan: d?.namaPemesan ?? null,
+    nomorMeja: d?.nomorMeja ?? null,
+    catatan: d?.catatan ?? null,
+  };
+}
+
+export function adaDataPesanan(k: { dataPesanan?: Partial<DataPesanan> | null }): boolean {
+  const d = dataPesananDari(k);
+  return d.namaPemesan !== null || d.nomorMeja !== null || d.catatan !== null;
 }
 
 export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {
@@ -134,8 +168,9 @@ export function setelDiskon(k: Keranjang, diskon: DiskonKeranjang | null): Keran
 export function lepasDiskonBilaKosong(k: Keranjang): Keranjang {
   // Kanal ikut kembali ke bawaan: Dine in pesanan lama tidak boleh bocor ke pesanan berikutnya.
   // Memilih kanal pada keranjang yang SUDAH kosong tidak lewat sini, jadi tetap boleh.
-  return k.baris.length === 0 && (k.diskon !== null || k.kanal !== 'takeaway')
-    ? { ...k, diskon: null, kanal: 'takeaway' }
+  // Nama pemesan, meja, dan catatan pesanan lama juga tidak diwarisi.
+  return k.baris.length === 0 && (k.diskon !== null || k.kanal !== 'takeaway' || adaDataPesanan(k))
+    ? { ...k, diskon: null, kanal: 'takeaway', dataPesanan: DATA_PESANAN_KOSONG }
     : k;
 }
 

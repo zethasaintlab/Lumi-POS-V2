@@ -30,6 +30,12 @@ import {
 } from '../../sync/index.ts';
 import { computeLineTotal, computeOrderTotals } from '../../../../../../packages/domain/src/money.ts';
 import { calculateTax } from '../../../../../../packages/domain/src/tax.ts';
+import {
+  bersihkanTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../../../packages/domain/src/data-pesanan.ts';
 import type { TaxBreakdown } from '../../../../../../packages/domain/src/tax.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -62,6 +68,10 @@ interface OrderRow {
   sequence: number;
   status: string;
   channel: string;
+  /** Migrasi 0037. NULL bila klien tidak mengirimnya. */
+  customer_name: string | null;
+  table_number: string | null;
+  note: string | null;
   subtotal: string;
   order_discount: string;
   service_charge_amount: string;
@@ -151,6 +161,15 @@ interface OrderInput {
   hlc?: string;
   occurredAt?: string;
   checkId: string;
+  /**
+   * Nama pemesan, nomor meja, catatan (migrasi 0037; P5(b) + P6(a)). Opsional:
+   * klien N-1 tidak mengirimnya. Divalidasi `packages/domain/src/data-pesanan.ts`
+   * SEBELUM transaksi dibuka; sengaja bukan `string` di tipe ini karena
+   * nilai dari wire belum dipercaya.
+   */
+  customerName?: unknown;
+  tableNumber?: unknown;
+  note?: unknown;
   lines: OrderLineInput[];
   /**
    * FR-H6 — total yang DIHITUNG KLIEN. Opsional. Server tetap menghitung
@@ -332,6 +351,9 @@ function toOrder(order: OrderRow, check: CheckRow, lines: LineWithModifiers[]) {
     sequence: order.sequence,
     status: order.status,
     channel: order.channel,
+    customerName: order.customer_name,
+    tableNumber: order.table_number,
+    note: order.note,
     subtotal: Number(order.subtotal),
     orderDiscount: Number(order.order_discount),
     serviceChargeAmount: Number(order.service_charge_amount),
@@ -366,12 +388,12 @@ const INSERT_ORDER_SQL = `
     id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
     status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
     rounding_adjustment, total, amount_due, has_calculation_variance, variance_amount,
-    created_by, occurred_at, hlc
+    created_by, occurred_at, hlc, customer_name, table_number, note
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     'open', $9, $10, $18, 0, $11,
     0, $12, $12, $16, $17,
-    $13, COALESCE($14::timestamptz, now()), $15
+    $13, COALESCE($14::timestamptz, now()), $15, $19, $20, $21
   )
   RETURNING *
 `;
@@ -460,6 +482,10 @@ async function insertOrderTree(
       variance.flagged,
       variance.amount === null ? null : variance.amount.toString(),
       orderDiscount.toString(),
+      // 0037 — sudah divalidasi di `periksaDataPesanan`; di sini hanya trim.
+      bersihkanTeksPesanan(body.customerName),
+      bersihkanTeksPesanan(body.tableNumber),
+      bersihkanTeksPesanan(body.note),
     ]);
     const orderRow = orderRows[0];
 
@@ -754,6 +780,14 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
         // ambang. Diskon di bawah ambang tetap masuk laporan exception FR-G5,
         // dan baris tanpa alasan di sana tidak dapat diagregasi jadi apa pun.
         if (pesan !== null) throw new HttpError(400, 'VALIDATION_ERROR', pesan);
+      }
+
+      const galatPesanan =
+        periksaNamaPemesan(body.customerName) ??
+        periksaNomorMeja(body.tableNumber) ??
+        periksaCatatan(body.note);
+      if (galatPesanan !== null) {
+        throw new HttpError(400, galatPesanan.kode, galatPesanan.pesan);
       }
 
       // Validasi fail-fast SEBELUM transaksi dibuka -- pola sama dengan

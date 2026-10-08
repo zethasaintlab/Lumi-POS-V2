@@ -39,6 +39,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Penjualan Transfer tidak sampai ke server" · "Transfer tercatat 'Lainnya'" | §5.7 Transfer |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
+| "Sesudah update, riwayat kasir kosong sebentar" | §7.4 sidik jari skema |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
 | "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
 | "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
@@ -447,6 +448,26 @@ raw table yang **ditulis sendiri**. Yang diketahui: `tax_rate.rate`,
 `item_variation.conversion_factor`, `order_line.tax_rate`. Gejalanya nilai yang
 tersimpan sebagai `real` di kolom `INTEGER` — hanya `typeof()` SQLite yang
 membedakannya.
+
+
+### 7.4 Sesudah pembaruan, perangkat mengunduh ulang riwayat (sidik jari skema berubah)
+
+Migrasi `0037` menambah tiga kolom ke `order` (`customer_name`, `table_number`,
+`note`: nama pemesan, nomor meja, catatan). `order` adalah raw table, jadi
+sidik jari skema lokal berubah **sekali** dan setiap perangkat membangun ulang
+tabel rawnya lalu menjalankan `disconnectAndClear()` (R4).
+
+| Gejala | Artinya |
+|---|---|
+| Sesudah pembaruan, riwayat (K-08) kosong sebentar lalu terisi sendiri | Sengaja: stream `riwayat` mengunduh ulang penjualan perangkat itu. Tunggu sampai sinkron; jangan mengulang pembaruan. |
+| ⛔ Perangkat yang **offline** saat pembaruan terpasang berjalan dengan **katalog kosong** sampai terhubung | Sengaja dan tertulis: skema lokal sudah dibangun ulang, katalog baru kembali lewat sync. Penjualan yang sudah antre di `outbox_local` **tidak tersentuh** dan tetap terkirim. Jangan memasang pembaruan ini di perangkat yang akan dibawa ke tempat tanpa sinyal. |
+
+**Urutan rilis (R8): server dulu, klien sesudahnya.** Server baru menerima
+`customerName`, `tableNumber`, `note` sebagai field opsional di `POST /orders`,
+jadi klien lama (tanpa ketiganya) tetap diterima persis seperti sebelumnya.
+Klien baru di atas server lama mengirim field yang tidak dikenal server lama:
+kolomnya belum ada dan nilainya hilang diam-diam. Migrasi dijalankan sebelum
+server baru dipasang.
 
 ---
 

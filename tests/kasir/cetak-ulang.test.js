@@ -318,3 +318,18 @@ test('⛔ cetak ulang transfer menyebut "Transfer", bukan "Lainnya", dan sama de
   db.sqlite.exec(`UPDATE payment SET provider = NULL`);
   assert.ok((await cetak(db)).includes('Lainnya'), 'other tanpa provider harus tetap Lainnya');
 });
+
+test('⛔ cetak ulang membaca nama, meja, catatan dari kolom order dan sama dengan cetakan pertama', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(`UPDATE "order" SET customer_name = 'Budi', table_number = 'A3', note = 'Tanpa gula' WHERE id = 'ord-1'`);
+  const out = await cetak(db);
+  assert.ok(out.includes('Atas nama: Budi'), `cetak ulang kehilangan nama:\n${out}`);
+  assert.ok(out.includes('Meja: A3'), `cetak ulang kehilangan meja:\n${out}`);
+  assert.ok(out.includes('Catatan: Tanpa gula'), `cetak ulang kehilangan catatan:\n${out}`);
+
+  // Order tanpa ketiganya (penjualan lama) tidak mencetak labelnya.
+  const lama = dbSungguhan();
+  isiOrder(lama);
+  assert.doesNotMatch(await cetak(lama), /Atas nama|Meja:|Catatan:/);
+});

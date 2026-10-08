@@ -430,3 +430,55 @@ test('⛔ T5b `telemetry_local` ada di TABEL_LOKAL_SAJA, bukan TABEL_RAW', async
   assert.ok(TABEL_LOKAL_SAJA.includes('telemetry_local'));
   assert.ok(!TABEL_RAW.includes('telemetry_local'));
 });
+
+// ---------------------------------------------------------------------------
+// Task 11 (PR 2C) — nama pemesan, nomor meja, catatan: tiga kolom `order`.
+// Keputusan user (P5(b)): SATU migrasi, supaya perangkat membangun ulang SEKALI.
+// ---------------------------------------------------------------------------
+
+const KOLOM_PESANAN = ['customer_name', 'table_number', 'note'];
+
+test('⛔ tiga kolom order baru mengubah sidik jari SEKALI — satu migrasi, bukan tiga', async () => {
+  const { kolomPerTabel, sidikJariSkemaLokal } = await import(SKEMA);
+  const { putuskanMigrasi, rencanaDdl } = await import(MIGRASI);
+
+  // 1. Sisi server: SATU berkas migrasi, SATU pernyataan ALTER, ketiga kolom.
+  const dir = path.join(__dirname, '..', '..', 'db', 'migrations');
+  const pernyataan = [];
+  for (const berkas of fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+    const isi = fs.readFileSync(path.join(dir, berkas), 'utf8').replace(/\r\n?/g, '\n');
+    for (const m of isi.matchAll(/ALTER TABLE\s+"?order"?([^]*?);/g)) {
+      const kolom = KOLOM_PESANAN.filter((k) => new RegExp(`ADD COLUMN\\s+${k}\\b`).test(m[1]));
+      if (kolom.length > 0) pernyataan.push({ berkas, kolom });
+    }
+  }
+  assert.equal(
+    pernyataan.length,
+    1,
+    `kolom pesanan tersebar di ${pernyataan.length} pernyataan ALTER (${JSON.stringify(pernyataan)}) — setiap pernyataan di migrasi berbeda = satu pembangunan ulang lagi di SETIAP perangkat`
+  );
+  assert.deepEqual([...pernyataan[0].kolom].sort(), [...KOLOM_PESANAN].sort(), 'tidak semua dari ketiga kolom ada di satu ALTER');
+
+  // 2. Sisi perangkat: ketiganya ada di raw table `order`, dan menghilangkan
+  //    mereka menggeser sidik jari — itu satu-satunya transisi.
+  const baru = sql();
+  const kolom = kolomPerTabel(baru);
+  for (const k of KOLOM_PESANAN) {
+    assert.ok(kolom.order.includes(k), `raw table order lokal tidak punya ${k}`);
+  }
+  const lama = { ...kolom, order: kolom.order.filter((k) => !KOLOM_PESANAN.includes(k)) };
+  const { sidikJariRawTable } = await import(SKEMA);
+  assert.notEqual(sidikJariRawTable(lama), sidikJariRawTable(kolom), 'sidik jari buta terhadap ketiga kolom');
+
+  // 3. Transisi itu membangun ulang DAN membersihkan sync, dan TIDAK menyentuh
+  //    `outbox_local` (penjualan yang belum terkirim).
+  const keputusan = putuskanMigrasi({
+    sidikTersimpan: sidikJariRawTable(lama),
+    sidikSekarang: sidikJariRawTable(kolom),
+  });
+  assert.equal(keputusan.perluBangunUlang, true);
+  assert.equal(keputusan.perluBersihkanSync, true, '`disconnectAndClear` tidak diambil — katalog kosong permanen');
+  const r = rencanaDdl(baru);
+  assert.ok(!r.drop.some((d) => d.includes('outbox_local')), 'outbox_local ikut di-drop — penjualan yang belum terkirim hilang');
+  assert.ok(sidikJariSkemaLokal(baru).length > 0);
+});
