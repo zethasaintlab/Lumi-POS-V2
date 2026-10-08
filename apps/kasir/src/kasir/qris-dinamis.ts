@@ -3,6 +3,7 @@ import type { KonfigPerangkat } from '../../../../packages/sync-client/src/peran
 import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
 import type { Keranjang } from './keranjang.ts';
+import { kanalDari } from './kanal.ts';
 
 /**
  * FR-C3 + FR-C14 — jalur penjualan ONLINE-FIRST untuk QRIS dinamis.
@@ -318,6 +319,8 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
   if (total === null || nominalDraf(d) !== total) return false;
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
+  /* Kanal menentukan tarif pajak (FR-C7): draf Dine in tidak boleh menulis penjualan takeaway. */
+  if (d.muatan.channel !== kanalDari(keranjang)) return false;
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,
      dan `confirmed` menulis penjualan dari KERANJANG, bukan dari muatan draf. */
   const diskon = d.muatan.discount as { tipe?: unknown; nilai?: unknown } | undefined;
