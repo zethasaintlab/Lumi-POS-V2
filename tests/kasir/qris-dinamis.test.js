@@ -573,3 +573,21 @@ test('dataPesananDrafCocok memisahkan penyebab: data pesanan berubah saja → fa
   assert.equal(dataPesananDrafCocok(tersimpan, { ...KERANJANG, baris: [{ ...baris0, quantityMilli: 2000 }] }), true,
     'perubahan baris salah dituduh data pesanan — pesan galat K-06 menyesatkan');
 });
+
+test('⛔ dataPesananDrafCocok & drafCocokKeranjang: nama, meja, catatan masing-masing berubah SENDIRIAN → tidak cocok', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang, dataPesananDrafCocok } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  const awal = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' };
+  await mintaQr(argMinta(draf(), { db: d, kirim, keranjang: { ...KERANJANG, dataPesanan: awal } }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  const dengan = (dataPesanan) => ({ ...KERANJANG, dataPesanan });
+  assert.equal(dataPesananDrafCocok(tersimpan, dengan(awal)), true, 'pembanding hampa: data yang sama dianggap berbeda');
+  for (const kolom of ['namaPemesan', 'nomorMeja', 'catatan']) {
+    const ubah = dengan({ ...awal, [kolom]: 'berbeda' });
+    assert.equal(dataPesananDrafCocok(tersimpan, ubah), false, `${kolom} berubah sendirian dianggap cocok`);
+    assert.equal(drafCocokKeranjang(tersimpan, ubah, 22000n), false, `drafCocokKeranjang mengabaikan ${kolom}`);
+    const hapus = dengan({ ...awal, [kolom]: null });
+    assert.equal(dataPesananDrafCocok(tersimpan, hapus), false, `${kolom} dihapus dianggap cocok`);
+  }
+});

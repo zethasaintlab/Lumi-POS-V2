@@ -104,6 +104,12 @@ function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
     ...keranjangKosong(),
     /* `?kanal=dine_in` — kanal keranjang uji. */
     kanal: new URLSearchParams(window.location.search).get('kanal') === 'dine_in' ? 'dine_in' : 'takeaway',
+    /* `?dataPesananTidakSah=1` — catatan berbentuk nomor kartu, yang dialog dan `uraikan` TIDAK akan pernah
+       menghasilkan: dipasang langsung ke memori untuk memaksa status `data_pesanan_tidak_sah` (fix round 2 Task 11). */
+    dataPesanan:
+      new URLSearchParams(window.location.search).get('dataPesananTidakSah') === '1'
+        ? { namaPemesan: 'Budi', nomorMeja: null, catatan: 'bayar 4111 1111 1111 1111' }
+        : keranjangKosong().dataPesanan,
     baris: Array.from({ length: jumlahBaris }, (_, i) => ({
       id: `uji-${i}`,
       variationId: `var-${i}`,

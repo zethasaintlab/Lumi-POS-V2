@@ -1927,3 +1927,42 @@ test('⛔ S9: kotak Kembalian HANYA di tab Tunai — tab QRIS/Kartu/Transfer tan
     await hal.close();
   }
 });
+
+// --- Fix round 2 Task 11: data pesanan tak sah di K-06 (UI10, UI9) ---
+
+test('⛔ tunai: data pesanan tak sah → galat memuat pesan domain dan "belum tersimpan", BUKAN "Keranjang kosong."; nol order', async () => {
+  const hal = await buka('render=k06&baris=2&dataPesananTidakSah=1');
+  try {
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await tunggu(hal, () => document.querySelector('[role="alert"]') !== null || /Keranjang kosong|nomor kartu/.test(document.body.innerText), 'K-06 tidak menampilkan galat apa pun');
+    const galat = await hal.evaluate(() => document.body.innerText);
+    assert.doesNotMatch(galat.replace(/Keranjang kosong\s*$/m, ''), /Keranjang kosong\./, 'keranjang BERISI dilaporkan "Keranjang kosong."');
+    assert.match(galat, /tampak memuat nomor kartu/, 'galat tidak memuat pesan domain');
+    assert.match(galat, /belum tersimpan/i);
+    assert.equal(await jumlahOrder(hal), 0, 'order tertulis padahal data pesanan tak sah');
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ QRIS lunas di server + data pesanan tak sah: draf TIDAK dibersihkan, galat menyebut lunas di server dan pesan domain, nol order', async () => {
+  const hal = await buka('render=k06&baris=2&dataPesananTidakSah=1', { rute: { ...RUTE_QR, '**/payments/*/check-status': { status: 'confirmed' } } });
+  try {
+    await mulaiQrisDinamis(hal).catch(() => {});
+    await tunggu(hal, () => /Pembayaran lunas di server/.test(document.body.innerText), 'galat "Pembayaran lunas di server" tidak muncul untuk QRIS lunas + data pesanan tak sah', null, 15_000);
+    const teksHal = await hal.evaluate(() => document.body.innerText);
+    assert.match(teksHal, /tampak memuat nomor kartu/, 'galat tidak memuat pesan domain');
+    assert.doesNotMatch(teksHal, /Penjualan lunas|Transaksi selesai/);
+    assert.equal(await jumlahOrder(hal), 0, 'order tertulis padahal data pesanan tak sah');
+    const tulis = await tulisan(hal);
+    assert.ok(tulis.some((t) => /draf_qris_lokal/i.test(t.sql) && /^(INSERT|UPDATE)/i.test(t.sql)), 'prasyarat: draf tidak pernah ditulis (test hampa)');
+    assert.equal(
+      tulis.filter((t) => /^DELETE FROM draf_qris_lokal/i.test(t.sql)).length,
+      0,
+      'draf QRIS dibersihkan padahal uang sudah lunas di server dan penjualan lokal belum tertulis — jejak pemulihan hilang'
+    );
+  } finally {
+    await hal.close();
+  }
+});

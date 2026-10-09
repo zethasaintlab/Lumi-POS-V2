@@ -180,5 +180,12 @@ test('⛔ order lokal memuat customer_name, table_number, note; put menulis keti
     assert.ok(def.order.put.sql.includes(`"${kolom}"`) || def.order.put.sql.includes(kolom), `put order tanpa ${kolom}`);
   }
   assert.equal(def.order.put.params.length, k.order.length, 'jumlah params put order != jumlah kolom');
-  assert.ok(!/ROUND\(\? \*[^)]*\)[^,]*customer_name/.test(def.order.put.sql), 'teks dikonversi seperti angka');
+  // Parameter ke-i HARUS dibaca dari kolom ke-i (urutan tertukar menaruh nama di kolom catatan tanpa error),
+  // dan ketiganya teks apa adanya: `ekspresiNilai` = '?' (bukan konversi berskala angka).
+  const { ekspresiNilai } = await import(SKEMA);
+  for (const kolom of ['customer_name', 'table_number', 'note']) {
+    const i = k.order.indexOf(kolom);
+    assert.deepEqual(def.order.put.params[i], { Column: kolom }, `put order: parameter ke-${i} bukan kolom ${kolom}`);
+    assert.equal(ekspresiNilai('order', kolom), '?', `${kolom} dikonversi seperti angka (SKALA_KOLOM.order.${kolom})`);
+  }
 });

@@ -1679,3 +1679,50 @@ test('⛔ isi yang melanggar aturan domain (41 karakter / nomor kartu) TIDAK dit
     assert.equal(db.state.tulis.filter((x) => /INSERT INTO "order"/.test(x.sql)).length, 0);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Fix round 2 Task 11 (J7/J8) — cetakan PERTAMA membawa data pesanan, dan identik dengan cetak ulang.
+
+test('⛔ cetakan PERTAMA mencetak Atas nama/Meja/Catatan yang benar dan sama dengan cetak ulang order yang sama', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { bangunUlangStruk } = await import('../../apps/kasir/src/cetak/ulang.ts');
+  const { renderEscPos } = await import('../../apps/kasir/src/cetak/escpos.ts');
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const teks = (bytes) => Buffer.from(bytes).toString('latin1');
+  const barisPesanan = (t) => t.split('\n').filter((b) => /^(Atas nama|Meja|Catatan):/.test(b.replace(/[^\x20-\x7e]/g, '')));
+
+  const db = await dbSqlite();
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({
+      keranjang: {
+        baris: BARIS, diskon: null, kanal: 'takeaway',
+        dataPesanan: { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' },
+      },
+    }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBatalScan: () => {},
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  assert.equal(dicetak.length, 1, 'cetakan pertama tidak terkirim ke printer');
+
+  const pertama = barisPesanan(teks(dicetak[0])).map((b) => b.replace(/[^\x20-\x7e]/g, ''));
+  assert.deepEqual(
+    pertama,
+    ['Atas nama: Budi', 'Meja: A3', 'Catatan: Tanpa gula'],
+    'cetakan pertama salah/hilang: nama, meja, catatan harus tiap-tiap di barisnya'
+  );
+
+  const dok = await bangunUlangStruk(db, hasil.orderId, { namaMerchant: 'Outlet Pusat', cetakUlang: false });
+  const ulang = barisPesanan(teks(renderEscPos(dok, PROFIL_58MM))).map((b) => b.replace(/[^\x20-\x7e]/g, ''));
+  assert.deepEqual(ulang, pertama, 'cetak ulang tidak identik dengan cetakan pertama untuk baris pesanan');
+  db.tutup();
+});

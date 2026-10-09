@@ -960,37 +960,45 @@ test('⛔ scanner global mati selama dialog Catatan/Pelanggan/No. Meja terbuka',
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
 });
 
-test('⛔ tujuh tombol toolbar MUAT di kolom katalog pada 1024 dan 1280 (tanpa terpotong atau membungkus), dan Bayar TIDAK bergeser saat data pesanan terisi', async () => {
-  for (const lebar of [1024, 1280]) {
+test('⛔ tujuh tombol toolbar MUAT di kolom katalog pada panggung 1024×768 (tanpa terpotong atau membungkus), dan Bayar TIDAK bergeser saat data pesanan terisi', async () => {
+  for (const lebar of [1280]) {
     const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
-    await hal.setViewportSize({ width: lebar, height: lebar === 1024 ? 768 : 800 });
+    /* ⛔ Panggung galeri SELALU 1024×768 dan hanya tidak diskalakan bila jendela > 1088px (`galeri.css`:
+       skala .72 di bawahnya). Pada jendela 1024 versi sebelumnya mengukur Bayar y=791, h=40 = 56 × .72,
+       di luar jendela — artefak skala, bukan tata letak aplikasi. Karena itu SATU jendela 1280×800, dan
+       semua koordinat relatif terhadap panggung. */
     await hal.waitForSelector('.kasir-baris');
     const ukur = () => hal.evaluate(() => {
       const bar = document.querySelector('.kasir-toolbar');
       const panel = document.querySelector('.kasir-grid-panel');
       const r = bar.getBoundingClientRect();
       const p = panel.getBoundingClientRect();
-      const bayar = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Bayar');
-      const b = bayar.getBoundingClientRect();
+      const panggung = document.querySelector('.galeri-panggung > *').getBoundingClientRect();
+      const bayar = [...document.querySelector('.galeri-panggung').querySelectorAll('button')].find((b) => b.innerText.trim() === 'Bayar');
+      const b0 = bayar.getBoundingClientRect();
+      const b = { left: b0.left, top: b0.top - panggung.top, width: b0.width, height: b0.height, bawah: b0.bottom - panggung.top, tinggiPanggung: panggung.height };
       return {
         tombol: [...bar.querySelectorAll('button')].map((x) => { const q = x.getBoundingClientRect(); return { n: x.innerText.trim(), kiri: q.left, kanan: q.right, atas: q.top, bawah: q.bottom }; }),
         bar: { kiri: r.left, kanan: r.right, atas: r.top, bawah: r.bottom, scrollW: bar.scrollWidth, clientW: bar.clientWidth },
         panelKanan: p.right,
-        bayar: { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) },
+        bayar: { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height), bawah: Math.round(b.bawah) },
+        tinggiPanggung: Math.round(b.tinggiPanggung),
       };
     });
     const a = await ukur();
+    assert.equal(a.bayar.h, 56, `panggung 1024: Bayar ${a.bayar.h}px — aksi uang harus 56 (panggung ${a.tinggiPanggung}px)`);
+    assert.ok(a.bayar.bawah <= a.tinggiPanggung, `panggung 1024: Bayar di luar panggung (bawah ${a.bayar.bawah} > ${a.tinggiPanggung})`);
     assert.equal(a.tombol.length, 7, `${a.tombol.length} tombol di ${lebar}px`);
-    assert.ok(a.bar.scrollW <= a.bar.clientW, `${lebar}px: toolbar meluap (scrollWidth ${a.bar.scrollW} > ${a.bar.clientW}) — tombol terpotong`);
+    assert.ok(a.bar.scrollW <= a.bar.clientW, `panggung 1024: toolbar meluap (scrollWidth ${a.bar.scrollW} > ${a.bar.clientW}) — tombol terpotong`);
     for (const t of a.tombol) {
-      assert.ok(t.kanan <= a.panelKanan + 0.5, `${lebar}px: tombol "${t.n}" melewati tepi kolom katalog (${t.kanan} > ${a.panelKanan}) dan menaungi keranjang`);
-      assert.ok(t.atas >= a.bar.atas - 0.5 && t.bawah <= a.bar.bawah + 0.5, `${lebar}px: tombol "${t.n}" membungkus ke baris lain`);
+      assert.ok(t.kanan <= a.panelKanan + 0.5, `panggung 1024: tombol "${t.n}" melewati tepi kolom katalog (${t.kanan} > ${a.panelKanan}) dan menaungi keranjang`);
+      assert.ok(t.atas >= a.bar.atas - 0.5 && t.bawah <= a.bar.bawah + 0.5, `panggung 1024: tombol "${t.n}" membungkus ke baris lain`);
     }
     await isiDialogPesanan(hal, 'Pelanggan', 'Nama pemesan', 'Budi Santoso Wijayakusuma');
     await isiDialogPesanan(hal, 'No. Meja', 'Nomor meja', 'Teras 12');
     await isiDialogPesanan(hal, 'Catatan', 'Catatan', 'Kopi susu tanpa gula, croissant dipanaskan dan dibelah dua, es dipisah, sedotan kertas, kantong terpisah untuk dibawa pulang');
     const b = await ukur();
-    assert.deepEqual(b.bayar, a.bayar, `${lebar}px: Bayar bergeser ${JSON.stringify(a.bayar)} → ${JSON.stringify(b.bayar)} saat data pesanan terisi`);
+    assert.deepEqual(b.bayar, a.bayar, `panggung 1024: Bayar bergeser ${JSON.stringify(a.bayar)} → ${JSON.stringify(b.bayar)} saat data pesanan terisi`);
     await hal.close();
     assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   }
