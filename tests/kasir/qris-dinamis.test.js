@@ -543,3 +543,14 @@ test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berb
   assert.equal(drafCocokKeranjang(tDis, { ...KERANJANG, diskon: null }, 20000n), false, 'diskon dicabut pada total sama dianggap cocok');
   assert.equal(drafCocokKeranjang(tId, { ...KERANJANG, diskon: diskon('percent', 1000n) }, 22000n), false, 'diskon ditambahkan pada total sama dianggap cocok');
 });
+
+test('⛔ S13/S32: nomorMeja "  A3 " masuk muatan sebagai "A3" (dinormalisasi), dan draf tetap COCOK dengan keranjang berspasi itu', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const k = { ...KERANJANG, dataPesanan: { namaPemesan: null, nomorMeja: '  A3 ', catatan: null } };
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr({ ...argMinta(draf(), { db: d, kirim }), keranjang: k });
+  const t = await pulihkanDraf(d, 's1');
+  assert.equal(t.muatan.tableNumber, 'A3', `muatan.tableNumber ${JSON.stringify(t.muatan.tableNumber)} -- server menerima spasi tepi`);
+  assert.equal(drafCocokKeranjang(t, k, 22000n), true, 'draf berspasi tepi tidak cocok dengan keranjang yang sama (pemulihan QRIS menolak diam-diam)');
+});

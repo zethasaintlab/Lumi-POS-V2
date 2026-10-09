@@ -338,8 +338,11 @@ test('keranjangKosong membawa dataPesanan kosong; setelDataPesanan mengganti sat
   assert.deepEqual(k.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null }, 'masukan tidak boleh diubah');
 });
 
-test('⛔ pesanan BARU (kosongkan) tidak mewarisi nama/meja/catatan pesanan sebelumnya', async () => {
-  const { keranjangKosong, setelDataPesanan, kosongkan } = await import('../../apps/kasir/src/kasir/keranjang.ts');
-  const terisi = setelDataPesanan(keranjangKosong(), { namaPemesan: 'Budi', nomorMeja: '4', catatan: 'x' });
-  assert.deepEqual(kosongkan(terisi).dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+test('⛔ pesanan BARU (keranjangKosong, jalur nyata Batalkan & Transaksi Baru) tidak berbagi objek dataPesanan dengan pesanan sebelumnya', async () => {
+  const { keranjangKosong, setelDataPesanan } = await import('../../apps/kasir/src/kasir/keranjang.ts');
+  const lama = setelDataPesanan(keranjangKosong(), { namaPemesan: 'Budi', nomorMeja: '4', catatan: 'x' });
+  const baru = keranjangKosong();
+  assert.deepEqual(baru.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null }, 'keranjangKosong mewarisi data pesanan');
+  assert.notEqual(baru.dataPesanan, lama.dataPesanan, 'dataPesanan dibagi antar keranjang');
+  assert.notEqual(keranjangKosong().dataPesanan, baru.dataPesanan, 'dua keranjangKosong berbagi satu objek dataPesanan (mutasi bocor)');
 });

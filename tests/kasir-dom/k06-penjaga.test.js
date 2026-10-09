@@ -1979,3 +1979,27 @@ test('⛔ S9 G-KANAL K-06: bayar dine_in lalu "Transaksi Baru" → keranjang mem
     await hal.close();
   }
 });
+
+test('⛔ S27: bayar lalu "Transaksi Baru" → dataPesanan memori kosong (nama/meja/catatan tidak diwariskan ke pesanan berikutnya)', async () => {
+  const hal = await buka('render=k06&baris=2&pesanan=1');
+  try {
+    const sebelum = await hal.evaluate(() => window.__dataPesananKeranjang?.());
+    assert.deepEqual(
+      sebelum,
+      { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' },
+      `dataPesanan awal ${JSON.stringify(sebelum)} — fixture salah, penjaga ini hampa`
+    );
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    await hal.getByRole('button', { name: 'Transaksi Baru', exact: true }).click();
+    const sesudah = await hal.evaluate(() => window.__dataPesananKeranjang?.());
+    assert.deepEqual(
+      sesudah,
+      { namaPemesan: null, nomorMeja: null, catatan: null },
+      `sesudah Transaksi Baru dataPesanan ${JSON.stringify(sesudah)} — bocor ke pesanan berikutnya`
+    );
+  } finally {
+    await hal.close();
+  }
+});

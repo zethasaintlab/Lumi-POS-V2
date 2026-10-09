@@ -392,6 +392,6 @@ test('⛔ stream riwayat membawa customer_name, table_number, note pada query or
   for (const k of ['customer_name', 'table_number', 'note']) {
     assert.ok(kolom.includes(k), `query order tanpa ${k}: ${kolom.join(', ')}`);
   }
-  assert.match(q, /tenant_id = auth\.parameter\('tenant_id'\)/);
-  assert.match(q, /device_id = auth\.parameter\('device_id'\)/);
+  assert.match(q, /tenant_id = auth\.parameter\('tenant_id'\)/, 'query order tanpa batas tenant_id -- customer_name (data pribadi) bocor lintas tenant');
+  assert.match(q, /device_id = auth\.parameter\('device_id'\)/, 'query order tanpa batas device_id');
 });

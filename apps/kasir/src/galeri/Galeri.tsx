@@ -20,7 +20,7 @@ import { Login } from '../layar/Login.tsx';
 import { BukaShift } from '../layar/BukaShift.tsx';
 import { DetailTransaksi } from '../layar/DetailTransaksi.tsx';
 import { buatDbPalsu, perangkatTerdaftarUntuk } from './db-palsu.ts';
-import { langgananKeranjang } from '../kasir/simpanan.ts';
+import { keranjangSekarang, langgananKeranjang } from '../kasir/simpanan.ts';
 import { TABEL_RUTE } from '../rute/tabel.ts';
 import { SKENARIO, type NamaSkenario } from './skenario.ts';
 import { Fondasi } from './Fondasi.tsx';
@@ -181,6 +181,13 @@ export function Galeri() {
     return langgananKeranjang(() => {
       w.__galeriKeranjangSet = (w.__galeriKeranjangSet ?? 0) + 1;
     });
+  }, []);
+
+  /* Jalur test: data pesanan keranjang MEMORI (penjaga S27/S28 — pesanan baru
+     tidak mewarisi nama/meja/catatan). */
+  useEffect(() => {
+    (window as unknown as { __dataPesananKeranjang: () => unknown }).__dataPesananKeranjang = () =>
+      keranjangSekarang().dataPesanan;
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */

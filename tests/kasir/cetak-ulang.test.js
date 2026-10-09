@@ -362,7 +362,7 @@ test('⛔ cetak ulang membaca customer_name, table_number, note dari order dan m
   assert.ok(out.includes('Atas nama: Budi'), out);
   assert.ok(out.includes('Meja: A3'), out);
   assert.ok(out.includes('Catatan: Tanpa gula'), out);
-  assert.ok(out.indexOf('Atas nama:') < out.indexOf('2x Kopi Susu'));
+  assert.ok(out.indexOf('Atas nama:') < out.indexOf('2x Kopi Susu'), 'data pesanan harus tercetak SEBELUM baris item pada cetak ulang');
 });
 
 test('cetak ulang order tanpa data pesanan (riwayat lama) tidak mencetak barisnya', async () => {

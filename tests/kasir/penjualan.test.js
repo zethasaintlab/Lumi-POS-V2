@@ -1711,3 +1711,66 @@ test('⛔ nama 41 karakter / nomor kartu di catatan DITOLAK di perangkat, tidak 
     assert.equal(db.state.tulis.length, 0, 'ada yang tertulis padahal ditolak');
   }
 });
+
+// ---------------------------------------------------------------------------
+// Task 11 (fix round) -- S16: struk PERTAMA memuat nama/meja/catatan
+// ---------------------------------------------------------------------------
+
+const periferCatat = (dicetak) => ({
+  printReceipt: async (bytes) => { dicetak.push(bytes); },
+  openCashDrawer: async () => {},
+  listDevices: async () => [],
+  testDevice: async () => false,
+  onBarcodeScanned: () => () => {},
+});
+
+test('⛔ S16: struk PERTAMA memuat "Atas nama/Meja/Catatan" dan byte-nya = bangunUlangStruk tanpa penanda CETAK ULANG', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const { bangunUlangStruk } = await import('../../apps/kasir/src/cetak/ulang.ts');
+  const { renderEscPos } = await import('../../apps/kasir/src/cetak/escpos.ts');
+  const dicetak = [];
+  const db = await dbSqlite();
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan: DATA_PESANAN } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: periferCatat(dicetak),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  assert.ok(dicetak.length >= 1, 'tidak ada yang tercetak -- penjaga ini hampa');
+  const pertama = Buffer.from(dicetak[0]).toString('latin1');
+  assert.ok(pertama.includes('Atas nama: Budi'), 'struk pertama tanpa "Atas nama: Budi"');
+  assert.ok(pertama.includes('Meja: A3'), 'struk pertama tanpa "Meja: A3"');
+  assert.ok(pertama.includes('Catatan: Tanpa gula'), 'struk pertama tanpa "Catatan: Tanpa gula"');
+
+  // Cetakan pertama dan cetak ulang berasal dari data yang sama: byte-nya harus sama.
+  const dok = await bangunUlangStruk(db, hasil.orderId, { namaMerchant: 'Outlet Pusat', cetakUlang: false });
+  assert.ok(dok, 'bangunUlangStruk tidak menemukan order');
+  const ulang = Buffer.from(renderEscPos(dok, PROFIL_58MM)).toString('latin1');
+  for (const baris of ['Atas nama: Budi', 'Meja: A3', 'Catatan: Tanpa gula']) {
+    assert.ok(ulang.includes(baris), `cetak ulang tanpa "${baris}" (pembacaan kolom order)`);
+  }
+  // Baris "Tunai" dikecualikan: cetakan pertama mencetak uang diterima (25.000), cetak ulang
+  // nominal tagihan tunai (20.000) -- selisih lama di luar cakupan penjaga ini.
+  const tanpaTunai = (t) => t.replace(/Tunai +[\d.]+\n/, '');
+  assert.equal(tanpaTunai(pertama), tanpaTunai(ulang), 'struk pertama berbeda dari bangunUlangStruk (tanpa penanda) -- dua jalur menyimpang');
+});
+
+test('⛔ S15c: meja 17 karakter dan nomor kartu di meja DITOLAK di perangkat, nol baris order/outbox', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  for (const [ket, dataPesanan, kode] of [
+    ['meja 17 karakter', { namaPemesan: null, nomorMeja: 'm'.repeat(17), catatan: null }, 'VALIDATION_ERROR'],
+    ['nomor kartu di meja', { namaPemesan: null, nomorMeja: '4111111111111111', catatan: null }, 'POSSIBLE_CARD_NUMBER'],
+  ]) {
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({
+      db,
+      ...args({ keranjang: { baris: BARIS, diskon: null, dataPesanan } }),
+    });
+    assert.equal(hasil.status, 'pembayaran_tidak_sah', `${ket}: status ${hasil.status}`);
+    assert.equal(hasil.kode, kode, `${ket}: kode ${hasil.kode}`);
+    assert.equal(db.state.tulis.length, 0, `${ket}: ada yang tertulis padahal ditolak`);
+    assert.equal(db.state.tulis.filter((t) => /"order"|outbox_local/.test(t.sql)).length, 0, `${ket}: baris order/outbox tertulis`);
+  }
+});

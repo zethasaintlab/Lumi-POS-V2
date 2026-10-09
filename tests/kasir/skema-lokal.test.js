@@ -184,3 +184,18 @@ test('⛔ order lokal memuat customer_name, table_number, note — dan put memas
   // check.label tetap kolom lokal yang ada tetapi bukan tempat nama pemesan.
   assert.ok(k.check.includes('label'));
 });
+
+// S22: nama/meja/catatan adalah teks apa adanya. Kolom bertipe lain membuat SQLite
+// menyimpan "4" sebagai 4 (INTEGER affinity) dan "007" menjadi 7 -- nomor meja berubah diam-diam.
+test('⛔ S22: tipe lokal customer_name, table_number, note = TEXT (bukan INTEGER/REAL/NUMERIC)', async () => {
+  const { pecahPernyataan, bagiKolom } = await import(SKEMA);
+  const stmt = pecahPernyataan(sql()).find((s) => /^CREATE TABLE "order"\s*\(/i.test(s));
+  assert.ok(stmt, 'CREATE TABLE "order" tidak ditemukan di skema lokal');
+  const defs = bagiKolom(stmt.slice(stmt.indexOf('(') + 1, stmt.lastIndexOf(')')));
+  for (const kol of ['customer_name', 'table_number', 'note']) {
+    const d = defs.find((x) => new RegExp(`^${kol}\\b`).test(x.trim()));
+    assert.ok(d, `kolom ${kol} tidak ada di order lokal`);
+    const tipe = d.trim().split(/\s+/)[1];
+    assert.equal(tipe?.toUpperCase(), 'TEXT', `order.${kol} bertipe ${tipe} di skema lokal, harap TEXT -- "007" bisa tersimpan sebagai 7`);
+  }
+});

@@ -321,13 +321,13 @@ test('struk mencetak "Atas nama", "Meja", "Catatan", dilipat di 32 kolom', async
 
 test('struk tanpa data pesanan tidak mencetak baris kosong "Atas nama/Meja/Catatan"', async () => {
   const out = await cetak(CONTOH);
-  assert.ok(!/Atas nama|Meja:|Catatan:/.test(out));
+  assert.ok(!/Atas nama|Meja:|Catatan:/.test(out), `baris data pesanan tercetak padahal kosong:\n${out}`);
   const out2 = await cetak({ ...CONTOH, namaPemesan: null, nomorMeja: null, catatan: null });
   assert.equal(out2, out, 'null harus identik dengan tidak ada');
 });
 
 test('hanya satu dari tiga terisi: hanya barisnya yang tercetak', async () => {
   const out = await cetak({ ...CONTOH, nomorMeja: '7' });
-  assert.ok(/Meja: 7/.test(out));
-  assert.ok(!/Atas nama|Catatan:/.test(out));
+  assert.ok(/Meja: 7/.test(out), `baris "Meja: 7" tidak tercetak:\n${out}`);
+  assert.ok(!/Atas nama|Catatan:/.test(out), `nama/catatan tercetak padahal hanya meja yang diisi:\n${out}`);
 });

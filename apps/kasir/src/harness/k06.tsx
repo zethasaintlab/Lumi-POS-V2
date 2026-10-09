@@ -124,6 +124,13 @@ setelKeranjang(keranjangUji(Number(q.get('baris') ?? '2'), Number(q.get('harga')
 /* Jalur test: kanal keranjang MEMORI saat ini (penjaga S9 — kanal tidak bocor sesudah Transaksi Baru). */
 (window as unknown as { __kanalKeranjang: () => string }).__kanalKeranjang = () => keranjangSekarang().kanal;
 
+(window as unknown as { __dataPesananKeranjang: () => unknown }).__dataPesananKeranjang = () =>
+  keranjangSekarang().dataPesanan;
+/* `?pesanan=1` — keranjang awal sudah berisi nama/meja/catatan (penjaga S27). */
+if (q.get('pesanan') === '1') {
+  setelKeranjang(setelDataPesanan(keranjangSekarang(), { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' }));
+}
+
 /**
  * `kirim` palsu untuk `PanelQris`.
  *

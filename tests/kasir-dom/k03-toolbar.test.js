@@ -967,3 +967,57 @@ test('Catatan/Pelanggan/No. Meja tetap aktif saat keranjang kosong, dan scanner 
   assert.deepEqual(mati, [false, false, false], `tombol nonaktif/hilang pada keranjang kosong: ${JSON.stringify(mati)}`);
   assert.equal(baris, 0, 'scan SELAMA dialog No. Meja terbuka menambah item ke keranjang');
 });
+
+// ---------------------------------------------------------------------------
+// Task 11 (fix round) — S27/S28 pesanan baru tidak mewarisi; S33 batas per mode.
+// ---------------------------------------------------------------------------
+
+const dataPesananMemori = (hal) => hal.evaluate(() => window.__dataPesananKeranjang?.());
+
+test('⛔ S27/S28: isi Pelanggan "Budi" → Batalkan → konfirmasi: panel "Data pesanan" hilang dan dataPesanan ketiganya null (pesanan baru tidak mewarisi)', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await isiDialog(hal, 'Pelanggan', 'Nama pemesan', 'Budi');
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0, null, { timeout: 3000 });
+  const sebelum = await dataPesananMemori(hal);
+  const panelSebelum = await hal.locator('[aria-label="Data pesanan"]').count();
+  assert.equal(sebelum?.namaPemesan, 'Budi', `fixture: Budi tidak tersimpan (${JSON.stringify(sebelum)}) — penjaga hampa`);
+  assert.equal(panelSebelum, 1, 'fixture: panel "Data pesanan" tidak tampil sebelum Batalkan — penjaga hampa');
+
+  await hal.getByRole('button', { name: 'Batalkan', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
+  const sesudah = await dataPesananMemori(hal);
+  const panel = await hal.locator('[aria-label="Data pesanan"]').count();
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(panel, 0, 'panel "Data pesanan" masih tampil sesudah Batalkan — pesanan baru mewarisi data pesanan lama');
+  assert.deepEqual(
+    sesudah,
+    { namaPemesan: null, nomorMeja: null, catatan: null },
+    `dataPesanan sesudah Batalkan ${JSON.stringify(sesudah)} — pesanan baru mewarisi nama/meja/catatan`
+  );
+});
+
+for (const [tombol, label, panjang, pesan] of [
+  ['No. Meja', 'Nomor meja', 17, 'Nomor meja maksimal 16 karakter.'],
+  ['Pelanggan', 'Nama pemesan', 41, 'Nama pemesan maksimal 40 karakter.'],
+  ['Catatan', 'Catatan pesanan', 141, 'Catatan maksimal 140 karakter.'],
+]) {
+  test(`⛔ S33: dialog ${tombol} menolak ${panjang} karakter — Simpan nonaktif dengan "${pesan}"; batas persis masih diterima`, async () => {
+    const { hal, galat } = await bukaK03();
+    await isiDialog(hal, tombol, label, 'x'.repeat(panjang));
+    await hal.waitForSelector('[role="dialog"] [role="alert"]', { timeout: 3000 }).catch(() => {});
+    const pesanTampil = await hal.locator('[role="dialog"] [role="alert"]').first().innerText().catch(() => '');
+    const matiLebih = await hal.getByRole('button', { name: 'Simpan', exact: true }).isDisabled();
+    await hal.getByLabel(label).fill('x'.repeat(panjang - 1));
+    const matiPas = await hal.getByRole('button', { name: 'Simpan', exact: true }).isDisabled();
+    await hal.close();
+    assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+    assert.equal(pesanTampil, pesan, `${tombol}: pesan "${pesanTampil}", harap "${pesan}" (batas mode salah dipakai)`);
+    assert.ok(matiLebih, `${tombol}: Simpan aktif untuk ${panjang} karakter`);
+    assert.equal(matiPas, false, `${tombol}: Simpan nonaktif untuk ${panjang - 1} karakter — batas terlalu ketat`);
+  });
+}
