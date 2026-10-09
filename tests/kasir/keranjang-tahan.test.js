@@ -27,6 +27,10 @@ CREATE TABLE keranjang_tahan (
   id TEXT PRIMARY KEY NOT NULL, shift_id TEXT NOT NULL, isi TEXT NOT NULL,
   jumlah_item INTEGER NOT NULL, subtotal INTEGER NOT NULL, dibuat_pada TEXT NOT NULL
 );
+CREATE TABLE draf_qris_lokal (
+  id TEXT PRIMARY KEY NOT NULL, order_id TEXT, payment_id TEXT, shift_id TEXT NOT NULL,
+  draf TEXT, muatan TEXT, qr_string TEXT, dibuat_pada TEXT
+);
 CREATE TABLE cash_drawer_shift (id TEXT PRIMARY KEY, outlet_id TEXT, device_id TEXT, status TEXT);
 CREATE TABLE audit_event (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, outlet_id TEXT, device_id TEXT,
@@ -449,4 +453,56 @@ test('⛔ sidik jari skema lokal TIDAK berubah karena tabel murni lokal baru (pe
   const tanpa = asli.replace(/CREATE TABLE keranjang_tahan \([\s\S]*?\);\n/, '');
   assert.notEqual(tanpa, asli, 'prasyarat: DDL keranjang_tahan harus ada untuk dibuang');
   assert.equal(sidikJariSkemaLokal(asli), sidikJariSkemaLokal(tanpa));
+});
+
+// ---------------------------------------------------------------------------
+// Fix round akhir I3 (jalur uang): selama draf QRIS dinamis tertunda ada untuk
+// shift ini, Tahan/Buang/Lanjutkan DITOLAK -- harga dan keranjang di balik
+// draf tidak boleh berubah di bawah QR yang mungkin sudah dibayar pelanggan.
+// ---------------------------------------------------------------------------
+
+const adaDraf = (d, shift = 's1') =>
+  d.sqlite.prepare(`INSERT INTO draf_qris_lokal VALUES ('kini','o1','p1',?, '{}','{}',NULL,'2026-09-28T00:00:00Z')`).run(shift);
+
+test('⛔ I3: draf QRIS ada → Tahan ditolak (galat Indonesia), keranjang berjalan UTUH, nol tahanan', async () => {
+  const { tahanKeranjang } = await import(MOD);
+  const { simpanKeranjang, pulihkanKeranjang } = await import(SIMPAN);
+  const d = buatDb();
+  await simpanKeranjang(d, 's1', KERANJANG_KAYA, JAM);
+  adaDraf(d);
+  const h = await tahanKeranjang(d, 's1', KERANJANG_KAYA, JAM, pembuatId());
+  assert.equal(h.ok, false);
+  assert.match(h.pesan, /QRIS/);
+  assert.equal(n(d, 'keranjang_tahan'), 0);
+  assert.equal((await pulihkanKeranjang(d, 's1')).status, 'dipulihkan', 'keranjang berjalan hilang');
+});
+
+test('⛔ I3: draf QRIS ada → Buang ditolak, tahanan UTUH, nol audit', async () => {
+  const { tahanKeranjang, buangTahanan } = await import(MOD);
+  const d = buatDb();
+  const { id } = await tahanKeranjang(d, 's1', KERANJANG_KAYA, JAM, pembuatId());
+  adaDraf(d);
+  await assert.rejects(() => buangTahanan(d, id, jejak()), /QRIS/);
+  assert.equal(n(d, 'keranjang_tahan'), 1);
+  assert.equal(n(d, 'audit_event'), 0);
+  assert.equal(n(d, 'outbox_local'), 0);
+});
+
+test('⛔ I3: draf QRIS ada → Lanjutkan ditolak (tidak menghitung ulang harga), tahanan UTUH', async () => {
+  const { tahanKeranjang, lanjutkanTahanan } = await import(MOD);
+  const d = buatDb();
+  const { id } = await tahanKeranjang(d, 's1', KERANJANG_KAYA, JAM, pembuatId());
+  adaDraf(d);
+  await assert.rejects(() => lanjutkanTahanan(d, id, HARGA_SAMA, JAM), /QRIS/);
+  assert.equal(n(d, 'keranjang_tahan'), 1);
+  assert.equal(n(d, 'keranjang_lokal'), 0);
+});
+
+test('I3: draf QRIS milik shift LAIN tidak menghalangi (perilaku lama)', async () => {
+  const { tahanKeranjang, lanjutkanTahanan } = await import(MOD);
+  const d = buatDb();
+  adaDraf(d, 's-lain');
+  const h = await tahanKeranjang(d, 's1', KERANJANG_KAYA, JAM, pembuatId());
+  assert.equal(h.ok, true);
+  assert.notEqual(await lanjutkanTahanan(d, h.id, HARGA_SAMA, JAM), null);
 });

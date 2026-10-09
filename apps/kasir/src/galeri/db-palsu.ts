@@ -185,6 +185,8 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` Task 10 `?layanan=1` -- `outlet.service_charge_rate` 10% (1000 berskala 10.000), untuk
       G-TANPA-LAYANAN: Dine in tidak boleh menyiratkan biaya layanan walau outlet menyetel tarifnya. */
   layanan?: boolean;
+  /** `?drafQris=1` (Task 12 fix) — satu draf QRIS dinamis tertunda di shift galeri (membekukan Tahan/Lanjutkan/Buang). */
+  drafQris?: boolean;
   /** `?tahanan=N` (Task 12) — tanam N Pesanan tahan (Americano Hot, harga LAMA Rp 10.000 + diskon Rp 1.000) di shift galeri. */
   tahanan?: number;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
@@ -553,7 +555,14 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     })) as Record<string, unknown>[],
     print_job: [],
     // Draf QRIS dinamis (`qris-dinamis.ts`): satu baris, diisi/dihapus di `jalankan`.
-    draf_qris_lokal: [],
+    draf_qris_lokal: opsi.drafQris
+      ? [
+          {
+            id: 'kini', order_id: 'ord-qris', payment_id: 'pay-qris', shift_id: 'shift-galeri',
+            draf: '{}', muatan: '{}', qr_string: null, dibuat_pada: '2026-09-01T02:00:00.000Z',
+          },
+        ]
+      : [],
     fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),
     telemetry_local: [],
     // Diisi di `getAll` — WebP-nya di-encode kanvas, dan itu async.
@@ -630,6 +639,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         }
       }
       /* Pesanan tahan (Task 12): hanya dua bentuk WHERE -- `shift_id = ?` dan `id = ?` -- bukan mesin SQL. */
+      if (tabel === 'draf_qris_lokal' && /WHERE\s+shift_id\s*=/i.test(sql)) {
+        return (perTabel.draf_qris_lokal as Record<string, unknown>[]).filter((r) => r.shift_id === (params ?? [])[0]) as T[];
+      }
       if (tabel === 'keranjang_tahan') {
         const kolom = /WHERE\s+shift_id\s*=/i.test(sql) ? 'shift_id' : /WHERE\s+id\s*=/i.test(sql) ? 'id' : null;
         const hasil = (perTabel.keranjang_tahan as Record<string, unknown>[]).filter(

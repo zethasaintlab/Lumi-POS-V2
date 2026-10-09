@@ -37,6 +37,20 @@ import type { Sesi } from '../identitas/login.ts';
 /** Batas tahanan per shift `[ASUMSI]` (spec § 12 butir 7). Ubah konstanta ini saja. */
 export const MAKS_TAHANAN = 20;
 
+/**
+ * ⛔ Draf QRIS dinamis yang menunggu konfirmasi gateway (`draf_qris_lokal`)
+ * membekukan perpindahan pesanan: QR-nya mungkin SUDAH dibayar pelanggan, dan
+ * keranjang/harga di baliknya tidak boleh berubah. Dibaca di dalam transaksi
+ * yang menulis, bukan sebelumnya.
+ */
+const PESAN_DRAF_QRIS =
+  'Ada pembayaran QRIS yang masih menunggu konfirmasi. Selesaikan atau batalkan pembayaran itu dulu.';
+
+async function adaDrafQris(db: DbLokal, shiftId: string): Promise<boolean> {
+  const baris = await db.getAll('SELECT 1 FROM draf_qris_lokal WHERE shift_id = ?', [shiftId]);
+  return baris.length > 0;
+}
+
 export interface RingkasTahanan {
   id: string;
   jumlahItem: number;
@@ -65,6 +79,7 @@ export async function tahanKeranjang(
   const id = idBaru();
   const dibuat = sekarang().toISOString();
   return db.transaction(async (tx): Promise<HasilTahan> => {
+    if (await adaDrafQris(tx, shiftId)) return { ok: false, pesan: PESAN_DRAF_QRIS };
     if ((await hitungTahanan(tx, shiftId)) >= MAKS_TAHANAN) {
       return {
         ok: false,
@@ -227,6 +242,7 @@ export async function lanjutkanTahanan(
     if (keranjang === null) {
       throw new Error('Pesanan tahan tidak dapat dibaca. Pesanan TIDAK dilanjutkan; buang lewat daftar Pesanan tahan.');
     }
+    if (await adaDrafQris(tx, baris.shift_id)) throw new Error(PESAN_DRAF_QRIS);
     // ⛔ Dalam transaksi yang sama dengan penulisan: keranjang berjalan yang terisi
     // (tab lain, efek layar) tidak boleh tertimpa diam-diam.
     const berjalan = await tx.getAll('SELECT 1 FROM keranjang_lokal WHERE id = ?', ['kini']);
@@ -283,6 +299,7 @@ export async function buangTahanan(db: DbLokal, id: string, jejak: JejakBuang): 
     idBaru: jejak.idBaru,
     hlc: jejak.hlc,
     hapus: async (tx) => {
+      if (await adaDrafQris(tx, tahanan.shiftId)) throw new Error(PESAN_DRAF_QRIS);
       // Sudah dilanjutkan di antara pembacaan dan transaksi? Batalkan SEMUANYA,
       // jejak ikut -- jejak untuk tahanan yang sudah menjadi keranjang berjalan
       // adalah catatan palsu.

@@ -1091,3 +1091,29 @@ test('⛔ scanner global mati selama dialog Pesanan tahan terbuka', async () => 
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   assert.equal(sesudah, sebelum, `keranjang berubah (${sebelum} → ${sesudah}) dari scan SELAMA dialog Pesanan tahan terbuka`);
 });
+
+test('⛔ I3 DOM: draf QRIS tertunda → Tahan/Buang ditolak dengan alasan terbaca di dialog; keranjang dan tahanan utuh (Lanjutkan: unit)', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', ekstra: { tahanan: 1, drafQris: 1 } });
+  await hal.waitForSelector('.kasir-baris');
+  const sebelum = await keadaanKeranjang(hal);
+  await bukaDialogTahan(hal);
+  const alasan = [];
+  await hal.getByRole('button', { name: 'Tahan pesanan ini', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"] [role="alert"]', { timeout: 3000 }).catch(() => {});
+  alasan.push(await hal.evaluate(() => document.querySelector('[role="dialog"] [role="alert"]')?.innerText ?? '(tidak ada alasan; dialog ' + (document.querySelector('[role="dialog"]') ? 'terbuka' : 'TERTUTUP: Tahan lolos') + ')'));
+  assert.match(alasan[0], /QRIS/, `Tahan tidak ditolak karena draf QRIS: "${alasan[0]}"`);
+  await hal.getByRole('button', { name: 'Buang', exact: true }).click();
+  await hal.getByRole('button', { name: 'Ya, buang', exact: true }).click();
+  await hal.waitForFunction(() => /QRIS/.test(document.querySelector('[role="dialog"] [role="alert"]')?.innerText ?? ''), null, { timeout: 3000 }).catch(() => {});
+  alasan.push(await hal.evaluate(() => document.querySelector('[role="dialog"] [role="alert"]')?.innerText ?? '(tidak ada alasan penolakan Buang)'));
+  const tulis = await bacaTulis(hal);
+  const sesudah = await keadaanKeranjang(hal);
+  const dialogMasihAda = (await dialogTahan(hal).count()) === 1;
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  for (const a of alasan) assert.match(a, /QRIS/, `alasan penolakan tidak menyebut QRIS: "${a}"`);
+  assert.ok(dialogMasihAda, 'dialog tertutup padahal ditolak');
+  assert.equal(sesudah.baris, sebelum.baris, 'keranjang berjalan berubah');
+  assert.equal(tahanTulis(tulis).length, 0, 'tahanan ditulis/dihapus padahal draf QRIS ada');
+  // Fake galeri tidak me-rollback, jadi audit TIDAK diperiksa di sini; atomisitasnya dijaga keranjang-tahan.test.js (SQLite sungguhan).
+});

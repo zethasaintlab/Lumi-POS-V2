@@ -198,7 +198,7 @@ export function Galeri() {
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
-  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet, pajakKanal, layanan, tahanan } = useMemo(() => {
+  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet, pajakKanal, layanan, tahanan, drafQris } = useMemo(() => {
     const q = new URLSearchParams(window.location.search);
     return {
       editItem: q.get('editItem') === '1',
@@ -209,6 +209,7 @@ export function Galeri() {
       transfer: q.get('transfer') === '1',
       pajakKanal: q.get('pajakKanal') === '1',
       layanan: q.get('layanan') === '1',
+      drafQris: q.get('drafQris') === '1',
       tahanan: q.get('tahanan') ? Number(q.get('tahanan')) : undefined,
       /* Jalur test header (R2): hitungan gagal 3 digit dan nama pengguna panjang. */
       jumlahGagal: q.get('jumlahGagal') ? Number(q.get('jumlahGagal')) : undefined,
@@ -235,7 +236,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, pajakKanal, layanan, tahanan });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, pajakKanal, layanan, tahanan, drafQris });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -260,7 +261,7 @@ export function Galeri() {
         pemberitahu: pemberitahuTercatat(),
       },
     };
-  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, pajakKanal, layanan, tahanan]);
+  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, pajakKanal, layanan, tahanan, drafQris]);
 
   return (
     <div className="galeri">
