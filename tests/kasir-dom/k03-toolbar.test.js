@@ -407,6 +407,10 @@ test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masi
   const opsi = await hal.$$eval('[role="dialog"] .kasir-kanal-pilihan', (b) =>
     b.map((e) => ({ teks: e.innerText.replace(/\s+/g, ' ').trim(), dipilih: e.getAttribute('aria-pressed') }))
   );
+  // Aksi yang mengubah angka uang: target sentuh 56px (CLAUDE.md DS #3), diukur bukan dibaca dari CSS.
+  const tinggi = await hal.$$eval('[role="dialog"] .kasir-kanal-pilihan', (b) => b.map((e) => e.getBoundingClientRect().height));
+  assert.equal(tinggi.length, 2, 'dua pilihan kanal harus ada');
+  for (const h of tinggi) assert.ok(h >= 56, `pilihan kanal setinggi ${h}px, harus >= 56px`);
   await hal.getByRole('button', { name: /^Dine in/ }).click();
   await hal.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0, null, { timeout: 3000 }).catch(() => {});
   await hal.waitForFunction(

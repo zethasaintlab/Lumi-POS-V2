@@ -57,7 +57,7 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = 
       // `dalam` DIREKAM per penulisan, bukan hanya dihitung sekali. Tanpa
       // ini, `simpanHlc` yang dipindah ke luar transaksi tetap terlihat
       // "ditulis" dan test hijau untuk kode yang melanggar I10.
-      state.tulis.push({ sql: sql.trim().split('\n')[0], params, dalam: state.diDalamTransaksi });
+      state.tulis.push({ sql: sql.trim().split('\n')[0], sqlPenuh: sql, params, dalam: state.diDalamTransaksi });
       if (/UPDATE device_config/.test(sql)) {
         state.device_config.receipt_sequence = params[0];
         state.device_config.sequence_business_date = params[1];
@@ -329,7 +329,16 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   assert.equal(order.params[11], Number(hitung.totalTax));
 
   const payload = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
-  assert.equal(payload.serviceChargeAmount ?? 0, 0, 'muatan outbox membawa biaya layanan');
+  // G-TANPA-LAYANAN: kolom diisi LITERAL 0 di SQL (bukan parameter), jadi tarif outlet tidak bisa
+  // bocor ke sana. Muatan outbox memang tak membawa field itu; `?? 0` lama lolos apa pun isinya.
+  const sqlOrder = order.sqlPenuh;
+  const kolom = /\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)/s.exec(sqlOrder);
+  assert.ok(kolom, 'INSERT "order" tidak terbaca');
+  const nama = kolom[1].split(',').map((x) => x.trim());
+  const nilai = kolom[2].split(',').map((x) => x.trim());
+  assert.equal(nama.length, nilai.length, 'kolom dan nilai INSERT tak sejajar');
+  assert.equal(nilai[nama.indexOf('service_charge_amount')], '0', 'service_charge_amount harus literal 0 di SQL');
+  assert.equal('serviceChargeAmount' in payload, false, 'muatan outbox tak boleh membawa biaya layanan');
   assert.equal(payload.total, Number(hasil.total));
 });
 

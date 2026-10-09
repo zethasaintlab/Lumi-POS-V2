@@ -102,6 +102,13 @@ test('⛔ angkanya persis seperti di spec, dengan titik ribuan', async () => {
   assert.ok(/\+ 45\b/.test(out), 'baris pembulatan hilang');
 });
 
+test('⛔ G-TANPA-LAYANAN: penjualan dine_in (serviceCharge 0) tidak mencetak baris Service', async () => {
+  const out = await cetak({ ...CONTOH, channel: 'dine_in', serviceCharge: 0 });
+  assert.ok(!/Service/i.test(out), 'struk dine_in tak boleh memuat baris Service');
+  // Kontrol: contoh dengan biaya layanan memang mencetaknya, jadi assert di atas tidak vakum.
+  assert.ok(/Service/.test(await cetak(CONTOH)), 'kontrol: baris Service muncul bila serviceCharge ≠ 0');
+});
+
 test('⛔ SUM baris yang tercetak = total yang tercetak (AC FR-C10 kedua)', async () => {
   // "Tidak ada selisih pembulatan tersembunyi." Diperiksa dari ANGKA YANG
   // TERCETAK, bukan dari data masukan — struk yang aritmetikanya tidak

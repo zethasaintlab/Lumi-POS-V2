@@ -132,20 +132,32 @@ test('sentinel: pola TIDAK menangkap angka sah yang bertebaran di kode ini', () 
 });
 
 // Task 10 (kampanye kasir 2C): scan di atas hanya melihat apps/server dan packages/domain, jadi
-// kode klien baru yang memilih KANAL tidak terjaga. Daftar ini sengaja SEMPIT (dua berkas jalur
-// kanal): memindai seluruh apps/kasir/src dimatikan orang oleh teks UI yang sah ("12%" di galeri).
-const JALUR_KANAL = [
-  path.join(__dirname, '../../apps/kasir/src/kasir/kanal.ts'),
-  path.join(__dirname, '../../apps/kasir/src/komponen/LembarKanal.tsx'),
-];
+// kode klien yang memilih KANAL tidak terjaga. Seluruh apps/kasir/src dipindai KECUALI galeri/ dan
+// harness/ (fixture + teks UI demo, mis. "12%"): di sana angka tarif sah sebagai data contoh.
+const KASIR_SRC = path.join(__dirname, '../../apps/kasir/src');
+const DIKECUALIKAN = new Set(['galeri', 'harness']);
 
-test('invariant #7: jalur kanal klien (kanal.ts, LembarKanal.tsx) tanpa angka tarif pajak', async () => {
+async function kumpulkanKasir(dir, atas = true) {
+  const files = [];
+  for (const e of await readdir(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      if (atas && DIKECUALIKAN.has(e.name)) continue;
+      files.push(...(await kumpulkanKasir(full, false)));
+    } else if (e.isFile() && /\.tsx?$/.test(e.name)) files.push(full);
+  }
+  return files;
+}
+
+test('invariant #7: apps/kasir/src (kecuali galeri, harness) tanpa angka tarif pajak', async () => {
+  const files = await kumpulkanKasir(KASIR_SRC);
+  assert.ok(files.length > 80, `hanya ${files.length} berkas kasir terpindai -- guard lulus vakum`);
   const findings = [];
-  for (const file of JALUR_KANAL) {
-    const code = stripComments(await readFile(file, 'utf8')); // melempar bila berkas hilang: tidak vakum
+  for (const file of files) {
+    const code = stripComments(await readFile(file, 'utf8'));
     TAX_NUMBER_PATTERN.lastIndex = 0;
     const matches = code.match(TAX_NUMBER_PATTERN);
     if (matches !== null) findings.push(`${path.relative(process.cwd(), file)}: ${[...new Set(matches)].join(', ')}`);
   }
-  assert.deepEqual(findings, [], `angka tarif pajak ditemukan di jalur kanal klien:\n${findings.join('\n')}`);
+  assert.deepEqual(findings, [], `angka tarif pajak ditemukan di klien kasir:\n${findings.join('\n')}`);
 });

@@ -208,16 +208,27 @@ test('⛔ server: channel dine_in memilih tarif dine_in dan tax_amount sama deng
 test('⛔ server: dine_in + service_charge_rate bukan nol → service_charge_amount 0 (G-TANPA-LAYANAN)', async () => {
   await akhiriTarifSeed();
   await buatTarif({ rate: '0.1100', channel: 'all', name: 'PPN 11%', type: 'ppn' });
+  const setTarifLayanan = async (nilai) => {
+    await owner.query('BEGIN');
+    await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+    await owner.query('UPDATE outlet SET service_charge_rate = $2 WHERE id = $1', [base.outlet.id, nilai]);
+    await owner.query('COMMIT');
+  };
   await owner.query('BEGIN');
   await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
-  await owner.query('UPDATE outlet SET service_charge_rate = 0.1000 WHERE id = $1', [base.outlet.id]);
+  const semula = (await owner.query('SELECT service_charge_rate FROM outlet WHERE id = $1', [base.outlet.id])).rows[0].service_charge_rate;
   await owner.query('COMMIT');
-  const fx = await setupDeviceAndShift();
-  const order = await buatOrder(fx, { channel: 'dine_in' });
-  assert.equal(order.serviceChargeAmount, 0, 'Dine in tidak boleh menyiratkan biaya layanan');
-  // 20.000 + PPN 11% = 22.200; biaya layanan 10% akan membuat 24.420.
-  assert.equal(order.taxAmount, 2200);
-  assert.equal(order.total, 22200);
+  await setTarifLayanan('0.1000');
+  try {
+    const fx = await setupDeviceAndShift();
+    const order = await buatOrder(fx, { channel: 'dine_in' });
+    assert.equal(order.serviceChargeAmount, 0, 'Dine in tidak boleh menyiratkan biaya layanan');
+    // 20.000 + PPN 11% = 22.200; biaya layanan 10% akan membuat 24.420.
+    assert.equal(order.taxAmount, 2200);
+    assert.equal(order.total, 22200);
+  } finally {
+    await setTarifLayanan(semula); // test lain berbagi outlet ini
+  }
 });
 
 // --- T12: snapshot kebal perubahan tarif ---

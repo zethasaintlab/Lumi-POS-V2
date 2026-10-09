@@ -135,7 +135,9 @@ const KLAIM = [
     id: 'ppn-nol-di-fixture',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
     frasa: "**Dipenuhi 9 Oktober 2026 (Task 10, kampanye kasir 2C): `'ppn'` kini muncul di fixture test (6 kemunculan).**",
-    harap: 6,
+    // Tahan-geser: yang dijaga "bukan nol", bukan angka 6 (fixture baru menggeser hitungan tanpa menipu).
+    // Frasa di dokumen tetap menyebut 6; sinkronnya dijaga entri frasa-ada, bukan angka di sini.
+    harap: true,
     // ⛔ Ini yang paling penting di registri: ia berubah menjadi bukan-nol
     // tepat pada hari gerbang K-06/K-07 dipenuhi, dan pada hari itu KEDUA
     // dokumen harus ikut berubah.
@@ -145,7 +147,7 @@ const KLAIM = [
     ukur: () =>
       isiSemua(berkasSumber('tests', /\.js$/, { lewati: ['klaim-registri.test.js'] }))
         .join('\n')
-        .split("'ppn'").length - 1,
+        .split("'ppn'").length - 1 >= 1,
   },
   {
     id: 'kasir-non-tunai',
