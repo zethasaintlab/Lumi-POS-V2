@@ -111,10 +111,29 @@ export interface Keranjang {
    * (`keranjangKosong`) selalu mulai dari bawaan itu.
    */
   kanal: Kanal;
+  /**
+   * Nama pemesan, nomor meja, catatan (P5/P6, migrasi 0037). Opsional dan
+   * ditulis SEKALI di `order`; `null` = tidak diisi. Bentuk lama tanpa field
+   * ini (fixture, keranjang tersimpan) dibaca sebagai semua `null`.
+   */
+  dataPesanan: DataPesanan;
 }
 
+export interface DataPesanan {
+  namaPemesan: string | null;
+  nomorMeja: string | null;
+  catatan: string | null;
+}
+
+export const DATA_PESANAN_KOSONG: DataPesanan = { namaPemesan: null, nomorMeja: null, catatan: null };
+
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null, kanal: 'takeaway' };
+  return { baris: [], diskon: null, kanal: 'takeaway', dataPesanan: { ...DATA_PESANAN_KOSONG } };
+}
+
+/** Mengubah sebagian bidang data pesanan; yang tidak disebut tetap. */
+export function setelDataPesanan(k: Keranjang, bagian: Partial<DataPesanan>): Keranjang {
+  return { ...k, dataPesanan: { ...(k.dataPesanan ?? DATA_PESANAN_KOSONG), ...bagian } };
 }
 
 export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {

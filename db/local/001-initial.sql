@@ -424,6 +424,9 @@ CREATE TABLE "order" (
   -- menangkapnya: penjaga drift hanya membandingkan kolom yang ada di KEDUA
   -- sisi. `KOLOM_SENGAJA_TIDAK_TURUN` sekarang menutup celah itu.
   voided_by_order_id TEXT,
+  -- Migrasi 0037 (P5/P6): nama pemesan, nomor meja, catatan. Satu migrasi,
+  -- satu perubahan sidik jari. Nullable: order lama dan klien N-1 tanpa isi.
+  customer_name TEXT, table_number TEXT, note TEXT,
   created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
 CREATE TABLE "check" (

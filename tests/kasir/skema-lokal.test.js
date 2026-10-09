@@ -167,3 +167,22 @@ test('T2 nama tabel selalu dikutip di SQL yang dihasilkan', async () => {
   assert.match(def.order.put.sql, /INSERT OR REPLACE INTO "order"/);
   assert.match(def.check.put.sql, /INSERT OR REPLACE INTO "check"/);
 });
+
+// P5/P6 (migrasi 0037). Ketiga kolom `order` ditulis per nama, bukan hanya
+// "jumlah params sama": `put` yang kehilangan satu kolom tidak error, hanya
+// membuat catatan pesanan hilang dari riwayat perangkat.
+test('⛔ order lokal memuat customer_name, table_number, note — dan put-nya menulis ketiganya', async () => {
+  const { kolomPerTabel, buatDefinisiRaw } = await import(SKEMA);
+  const k = kolomPerTabel(sql());
+  const def = buatDefinisiRaw(k);
+  for (const kolom of ['customer_name', 'table_number', 'note']) {
+    assert.ok(k.order.includes(kolom), `kolom ${kolom} tidak ada di "order" lokal`);
+    assert.ok(def.order.put.sql.includes(`"${kolom}"`), `put "order" tanpa ${kolom}`);
+    assert.ok(
+      def.order.put.params.some((p) => typeof p === 'object' && p.Column === kolom),
+      `params put "order" tanpa ${kolom}`
+    );
+  }
+  assert.equal(def.order.put.params.length, k.order.length);
+  assert.equal(k.check.includes('customer_name'), false, 'nama pemesan bukan milik "check"');
+});

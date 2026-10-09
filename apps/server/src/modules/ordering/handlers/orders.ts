@@ -31,6 +31,12 @@ import {
 import { computeLineTotal, computeOrderTotals } from '../../../../../../packages/domain/src/money.ts';
 import { calculateTax } from '../../../../../../packages/domain/src/tax.ts';
 import type { TaxBreakdown } from '../../../../../../packages/domain/src/tax.ts';
+import {
+  bersihkanTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../../../packages/domain/src/data-pesanan.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
@@ -157,6 +163,10 @@ interface OrderInput {
    * sendiri dan menyimpan hitungannya; nilai ini hanya dibandingkan.
    */
   total?: unknown;
+  /** P5/P6 — opsional; klien N-1 tidak mengirimnya. Validasi: `data-pesanan.ts`. */
+  customerName?: unknown;
+  tableNumber?: unknown;
+  note?: unknown;
 }
 
 // --- validasi uang/kuantitas: sama pola dengan assertPriceValid (prices.ts)
@@ -366,12 +376,12 @@ const INSERT_ORDER_SQL = `
     id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
     status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
     rounding_adjustment, total, amount_due, has_calculation_variance, variance_amount,
-    created_by, occurred_at, hlc
+    created_by, occurred_at, hlc, customer_name, table_number, note
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     'open', $9, $10, $18, 0, $11,
     0, $12, $12, $16, $17,
-    $13, COALESCE($14::timestamptz, now()), $15
+    $13, COALESCE($14::timestamptz, now()), $15, $19, $20, $21
   )
   RETURNING *
 `;
@@ -460,6 +470,9 @@ async function insertOrderTree(
       variance.flagged,
       variance.amount === null ? null : variance.amount.toString(),
       orderDiscount.toString(),
+      bersihkanTeksPesanan(body.customerName),
+      bersihkanTeksPesanan(body.tableNumber),
+      bersihkanTeksPesanan(body.note),
     ]);
     const orderRow = orderRows[0];
 
@@ -772,6 +785,15 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
       }
       if (body.hlc !== undefined) {
         assertHlcValid(body.hlc);
+      }
+      // P5/P6 — aturan yang SAMA dengan perangkat (domain). Tanpa ketiganya
+      // perilaku identik dengan hari ini (klien N-1).
+      for (const galat of [
+        periksaNamaPemesan(body.customerName),
+        periksaNomorMeja(body.tableNumber),
+        periksaCatatan(body.note),
+      ]) {
+        if (galat !== null) throw new HttpError(400, galat.kode, galat.pesan);
       }
 
       // HLC -- keputusan desain PLAN §"HLC": klien kirim -> update() (menghormati

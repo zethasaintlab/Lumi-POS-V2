@@ -26,6 +26,7 @@ import {
   satuanKeranjang,
   setelDiskon,
   setelKanal,
+  setelDataPesanan,
   subtotalKeranjang,
   tambah,
   type BarisKeranjang,
@@ -61,6 +62,7 @@ import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { LembarKanal } from '../komponen/LembarKanal.tsx';
 import { labelKanal, ringkasKanal, type Kanal, type RingkasanKanal } from '../kasir/kanal.ts';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
+import { DialogTeksPesanan, type ModeTeksPesanan } from '../komponen/DialogTeksPesanan.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { DialogEditItem } from '../komponen/DialogEditItem.tsx';
@@ -163,6 +165,9 @@ export function Kasir() {
      mengonfirmasi menulis `audit_event` `cart_cleared` (keputusan user
      28 September 2026, issue #76). */
   const [dialogBatal, setDialogBatal] = useState(false);
+  /* Toolbar #4-6 -- Catatan, Pelanggan, No. Meja (spec § 4 baris 4-6; P5, P6).
+     SATU dialog, tiga mode; `null` = tertutup. */
+  const [dialogTeks, setDialogTeks] = useState<ModeTeksPesanan | null>(null);
   /* `ARCH:358` — kill switch per fitur per merchant. Dibaca dari perangkat,
      jadi ia tetap berlaku offline; fitur yang belum pernah disegarkan
      mengikuti bawaan kode dan tetap menyala. */
@@ -497,7 +502,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && !lembarKanal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && !lembarKanal && dialogTeks === null,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -764,6 +769,23 @@ export function Kasir() {
           >
             <Icon name="receipt-text" size={17} />
             <span className="kasir-toolbar-label">{labelKanal(keranjang.kanal)}</span>
+          </Tombol>
+
+          {/* Catatan / Pelanggan / No. Meja -- data pesanan opsional (P5, P6).
+              Selalu aktif, juga saat keranjang kosong: kasir sering menanyakan
+              nama sebelum memindai. Isinya tampil di keranjang dan tersimpan
+              di `order` (migrasi 0037). */}
+          <Tombol varian="ghost" onClick={() => setDialogTeks('catatan')}>
+            <Icon name="pencil" size={17} />
+            <span className="kasir-toolbar-label">Catatan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('pelanggan')}>
+            <Icon name="user-round" size={17} />
+            <span className="kasir-toolbar-label">Pelanggan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('meja')}>
+            <Icon name="utensils-crossed" size={17} />
+            <span className="kasir-toolbar-label">No. Meja</span>
           </Tombol>
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
@@ -1124,6 +1146,18 @@ export function Kasir() {
           </p>
         )}
 
+        {/* P5/P6 -- data pesanan yang sudah diisi, terlihat kasir sebelum menagih.
+            Teks, bukan warna saja; tidak tampil bila tidak ada yang diisi. */}
+        {(keranjang.dataPesanan?.namaPemesan ||
+          keranjang.dataPesanan?.nomorMeja ||
+          keranjang.dataPesanan?.catatan) && (
+          <div className="kasir-data-pesanan t-caption">
+            {keranjang.dataPesanan?.namaPemesan && <p>Atas nama: {keranjang.dataPesanan.namaPemesan}</p>}
+            {keranjang.dataPesanan?.nomorMeja && <p>Meja: {keranjang.dataPesanan.nomorMeja}</p>}
+            {keranjang.dataPesanan?.catatan && <p>Catatan: {keranjang.dataPesanan.catatan}</p>}
+          </div>
+        )}
+
         {keranjang.baris.length === 0 ? (
           <div className="kasir-keranjang-kosong">
             {/* Ikon di keadaan kosong, bukan hiasan: panel yang isinya satu
@@ -1313,6 +1347,33 @@ export function Kasir() {
           )}
           onKonfirmasi={konfirmasiBatal}
           onBatal={() => setDialogBatal(false)}
+        />
+      )}
+
+      {dialogTeks !== null && (
+        <DialogTeksPesanan
+          mode={dialogTeks}
+          nilaiAwal={
+            dialogTeks === 'catatan'
+              ? (keranjang.dataPesanan?.catatan ?? null)
+              : dialogTeks === 'pelanggan'
+                ? (keranjang.dataPesanan?.namaPemesan ?? null)
+                : (keranjang.dataPesanan?.nomorMeja ?? null)
+          }
+          onSimpan={(nilai) => {
+            setKeranjang((k) =>
+              setelDataPesanan(
+                k,
+                dialogTeks === 'catatan'
+                  ? { catatan: nilai }
+                  : dialogTeks === 'pelanggan'
+                    ? { namaPemesan: nilai }
+                    : { nomorMeja: nilai }
+              )
+            );
+            setDialogTeks(null);
+          }}
+          onBatal={() => setDialogTeks(null)}
         />
       )}
 

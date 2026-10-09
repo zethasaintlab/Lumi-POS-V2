@@ -1366,6 +1366,19 @@
   gap: var(--space-2);
 }
 
+/* P5/P6 -- ringkasan Atas nama / Meja / Catatan di atas daftar baris. Melipat
+   panjang (catatan 140 karakter), tidak memotong. */
+.kasir-data-pesanan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.kasir-data-pesanan p {
+  margin: 0;
+}
+
 .kasir-keranjang-kosongkan {
   flex: none;
   min-width: var(--touch-min);

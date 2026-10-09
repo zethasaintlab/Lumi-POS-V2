@@ -67,7 +67,8 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
+const DATA_KOSONG = { namaPemesan: null, nomorMeja: null, catatan: null };
+const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway', dataPesanan: DATA_KOSONG };
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -330,4 +331,28 @@ test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway',
     assert.equal(hasil.status, 'dipulihkan', isi);
     assert.equal(hasil.keranjang.kanal, 'takeaway', isi);
   }
+});
+
+// P5/P6 (migrasi 0037). Nama, meja, dan catatan ikut keranjang yang bertahan:
+// kasir yang memuat ulang tab tidak mengetik ulang nama pelanggan di depannya.
+test('⛔ data pesanan bertahan melewati muat ulang; keranjang lama tanpa field → semua null', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  const isi = { ...KERANJANG, dataPesanan: { namaPemesan: 'Budi', nomorMeja: 'A-12', catatan: 'tanpa es' } };
+  await simpanKeranjang(d, 's1', isi, JAM);
+  assert.deepEqual((await pulihkanKeranjang(d, 's1')).keranjang.dataPesanan, isi.dataPesanan);
+
+  // Baris tersimpan versi lama: tidak punya `dataPesanan` sama sekali.
+  d.sqlite.prepare('UPDATE keranjang_lokal SET isi = ?').run(
+    JSON.stringify({ baris: [baris()], diskon: null, kanal: 'takeaway' })
+  );
+  const lama = await pulihkanKeranjang(d, 's1');
+  assert.equal(lama.status, 'dipulihkan');
+  assert.deepEqual(lama.keranjang.dataPesanan, DATA_KOSONG);
+
+  // Bentuk rusak (angka, objek) → null, bukan keranjang dibuang.
+  d.sqlite.prepare('UPDATE keranjang_lokal SET isi = ?').run(
+    JSON.stringify({ baris: [baris()], diskon: null, dataPesanan: { namaPemesan: 5, nomorMeja: {}, catatan: ' ' } })
+  );
+  assert.deepEqual((await pulihkanKeranjang(d, 's1')).keranjang.dataPesanan, DATA_KOSONG);
 });

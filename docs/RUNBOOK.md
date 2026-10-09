@@ -39,6 +39,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Penjualan Transfer tidak sampai ke server" · "Transfer tercatat 'Lainnya'" | §5.7 Transfer |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
+| "Sesudah update, kasir mengunduh ulang dan katalog kosong sebentar" | §7.4 sidik jari skema berubah |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
 | "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
 | "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
@@ -756,6 +757,23 @@ bernomor lebih rendah (`app_release` memilih yang **terbaru dibuat**, bukan
 yang tertinggi nomornya). ⛔ Rollback skema SQLite lokal **hampir mustahil**
 setelah data ditulis dengan skema baru (KEP-36) — periksa apakah versi yang
 ditarik menambah tabel atau kolom lokal sebelum menjanjikan rollback.
+
+### 12.2.1 ⛔ Urutan rilis: server DULU, klien sesudahnya
+
+Server harus sudah memuat migrasi dan kode yang menerima field baru sebelum
+klien yang mengirimnya dilepas. Berlaku untuk Transfer, audit Batalkan
+(`cart_cleared`), dan kolom nama pemesan / nomor meja / catatan (`0037`):
+
+1. Terapkan migrasi (`npm run db:migrate`) — expand saja, kolom nullable.
+2. Terapkan server (`POST /orders` menerima `customerName`, `tableNumber`,
+   `note` opsional; tanpa ketiganya perilakunya identik dengan sebelumnya).
+3. Baru naikkan tahap rilis klien (§12.1).
+
+⛔ Klien baru di atas server lama menghasilkan baris outbox `gagal-permanen`
+untuk penjualan yang memuat field baru. Penjualannya sudah tersimpan di
+perangkat dan uangnya sudah diterima; memulihkannya berarti memutar ulang
+antrean (§10.1) sesudah server diperbarui. Klien lama di atas server baru
+aman (field opsional).
 
 ### 12.3 Jendela update dan penundaan
 

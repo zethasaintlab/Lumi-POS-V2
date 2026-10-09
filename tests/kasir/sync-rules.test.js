@@ -379,3 +379,14 @@ test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
       hilang.join('\n  ')
   );
 });
+
+// P5/P6 (migrasi 0037). Kolom yang tidak ada di SELECT tidak pernah turun: K-08
+// dan cetak ulang di perangkat yang membangun ulang riwayat kehilangan "Atas
+// nama", "Meja", dan "Catatan" tanpa satu pun error.
+test('⛔ SELECT order menurunkan customer_name, table_number, note', () => {
+  const q = kueri().find((s) => /FROM "order"\s*(WHERE|$)/.test(s));
+  assert.ok(q, 'query riwayat atas "order" tidak ditemukan');
+  for (const kolom of ['customer_name', 'table_number', 'note']) {
+    assert.match(q, new RegExp(`\\b${kolom}\\b`), `${kolom} tidak ada di SELECT "order"`);
+  }
+});

@@ -317,3 +317,17 @@ test('⛔ gantiModifier: cabang PENGGABUNGAN mempertahankan diskon order apa ada
   assert.equal(baru.baris.length, 1, 'fixture: cabang penggabungan tidak berjalan — penjaga hampa');
   assert.equal(baru.diskon, diskon, 'cabang penggabungan gantiModifier menjatuhkan/mengubah diskon order (persetujuan manajer hilang diam-diam)');
 });
+
+// P5/P6 (migrasi 0037).
+test('data pesanan: keranjang baru kosong; setelDataPesanan mengubah satu bidang tanpa menyentuh yang lain', async () => {
+  const { keranjangKosong, setelDataPesanan, setelKanal } = await import(MOD);
+  const k0 = keranjangKosong();
+  assert.deepEqual(k0.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+
+  const k1 = setelDataPesanan(k0, { nomorMeja: 'A-12' });
+  assert.deepEqual(k1.dataPesanan, { namaPemesan: null, nomorMeja: 'A-12', catatan: null });
+  const k2 = setelDataPesanan(k1, { namaPemesan: 'Budi' });
+  assert.deepEqual(k2.dataPesanan, { namaPemesan: 'Budi', nomorMeja: 'A-12', catatan: null });
+  assert.deepEqual(setelKanal(k2, 'dine_in').dataPesanan, k2.dataPesanan, 'kanal tidak menghapus data pesanan');
+  assert.deepEqual(k0.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null }, 'tidak mengubah masukan');
+});

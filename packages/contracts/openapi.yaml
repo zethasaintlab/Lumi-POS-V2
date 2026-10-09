@@ -3501,6 +3501,15 @@ paths:
                 hlc: { type: string, nullable: true }
                 occurredAt: { type: string, format: date-time, nullable: true }
                 checkId: { type: string }
+                # P5/P6 (migrasi 0037) -- nama pemesan (<= 40), nomor meja
+                # (<= 16) dan catatan (<= 140). Opsional; klien versi N-1 tidak
+                # mengirimnya. Sengaja tanpa `maxLength`: batas dan pesannya
+                # dari packages/domain/src/data-pesanan.ts, satu-satunya sumber
+                # (sama dengan perangkat), supaya 400-nya berpesan domain.
+                # Nomor kartu ditolak POSSIBLE_CARD_NUMBER.
+                customerName: { type: string, nullable: true }
+                tableNumber: { type: string, nullable: true }
+                note: { type: string, nullable: true }
                 # FR-H6 -- total yang DIHITUNG KLIEN. Opsional, dan tidak
                 # pernah dipercaya: server tetap menghitung sendiri dan
                 # menyimpan hitungannya. Nilai ini hanya dibandingkan, dan

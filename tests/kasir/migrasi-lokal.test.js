@@ -430,3 +430,43 @@ test('⛔ T5b `telemetry_local` ada di TABEL_LOKAL_SAJA, bukan TABEL_RAW', async
   assert.ok(TABEL_LOKAL_SAJA.includes('telemetry_local'));
   assert.ok(!TABEL_RAW.includes('telemetry_local'));
 });
+
+// P5/P6 (migrasi 0037). Tiga kolom `order` = SATU perubahan sidik jari, bukan
+// tiga: setiap perubahan memaksa SETIAP perangkat `disconnectAndClear()` dan
+// mengunduh ulang riwayat. Keadaan "sebelum" dibangun dengan membuang baris
+// ketiga kolom itu dari SQL yang sama.
+test('⛔ tiga kolom order baru mengubah sidik jari SEKALI — satu migrasi, bukan tiga', async () => {
+  const { jalankanMigrasi } = await import(MIGRASI);
+  const { sidikJariSkemaLokal } = await import(SKEMA);
+  const baru = sql();
+  const BARIS = /^\s*customer_name TEXT, table_number TEXT, note TEXT,\r?\n/m;
+  assert.match(baru, BARIS, 'baris tiga kolom tidak ditemukan di db/local/001-initial.sql');
+  const lama = baru.replace(BARIS, '');
+  const sidikLama = sidikJariSkemaLokal(lama);
+  const sidikBaru = sidikJariSkemaLokal(baru);
+  assert.notEqual(sidikLama, sidikBaru, 'menambah tiga kolom order tidak mengubah sidik jari');
+
+  // Perangkat yang sudah terpasang membawa sidik jari lama. Boot pertama
+  // sesudah pembaruan: bersihkan sync + DDL tepat SEKALI; boot kedua: nol.
+  const jejak = [];
+  let tersimpan = sidikLama;
+  const argumen = () => ({
+    sqlSkema: baru,
+    bacaSidik: async () => tersimpan,
+    jalankanDdl: async (r) => { jejak.push(['ddl', r]); },
+    bersihkanSync: async () => { jejak.push(['bersih']); },
+    simpanSidik: async (s) => { tersimpan = s; jejak.push(['simpan']); },
+  });
+  await jalankanMigrasi(argumen());
+  assert.equal(jejak.filter((j) => j[0] === 'bersih').length, 1, 'disconnectAndClear harus diambil tepat sekali');
+  assert.equal(jejak.filter((j) => j[0] === 'ddl').length, 1);
+  assert.equal(tersimpan, sidikBaru);
+
+  // Antrean upload: DDL pembangunan ulang tidak menyentuh outbox_local.
+  const ddl = JSON.stringify(jejak.find((j) => j[0] === 'ddl')[1]);
+  assert.ok(!/DROP TABLE[^"]*"outbox_local"/.test(ddl), 'outbox_local ikut di-drop');
+
+  jejak.length = 0;
+  await jalankanMigrasi(argumen());
+  assert.deepEqual(jejak, [], 'boot kedua tidak boleh membangun ulang apa pun');
+});
