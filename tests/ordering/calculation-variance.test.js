@@ -443,3 +443,53 @@ test('harga usang dengan total yang konsisten dengannya tetap tidak ditandai', a
   const rows = await query('SELECT total FROM "order" WHERE id = $1', [JSON.parse(res.body).id]);
   assert.equal(rows[0].total, '50000', 'yang tersimpan tetap hitungan server: 2 x 25000');
 });
+
+// ============================================================
+// Task 10 -- kanal ikut hitungan ulang versi klien (FR-C7, FR-H6)
+// ============================================================
+
+test('⛔ pesanan dine_in dengan harga lama yang SAH dan tarif per kanal tidak ditandai selisih', async () => {
+  // Hitungan ulang versi klien (`hitungTotalVersiKlien`) hanya jalan bila klien memakai harga yang
+  // BERBEDA dari harga server tetapi pernah berlaku. Kanalnya harus kanal order: PBJT 10% khusus
+  // dine_in menang atas PPN 11% semua kanal. Kanal yang dipaku takeaway memakai PPN → 22.200 ≠ 22.000
+  // → dine_in sah ditandai selisih dan masuk laporan exception.
+  for (const [type, name, rate, channel] of [
+    ['ppn', 'PPN 11%', '0.1100', 'all'],
+    ['pbjt', 'PBJT 10%', '0.1000', 'dine_in'],
+  ]) {
+    const t = await req('POST', '/tax-rates', {
+      id: crypto.randomUUID(), name, type, rate, isInclusive: false, channel,
+    });
+    assert.equal(t.statusCode, 201, t.body);
+  }
+  const fx = await setupDeviceAndShift();
+  const v = await buatVariation(20000);
+  const sekarang = await jamDatabase();
+  await ubahHarga(v, 25000, geser(sekarang, -60));
+
+  // Server kini memakai 25.000 (total 27.500); klien masih memakai harga lama 20.000 (pernah
+  // berlaku) dan menghitung 20.000 + PBJT 10% = 22.000. Totalnya berbeda dari server, jadi
+  // hitungan ulang versi klien yang memutuskan: harus 22.000 pada kanal dine_in.
+  const res = await buatOrder(fx, [baris(v.variationId, { unitPrice: 20000 })], {
+    channel: 'dine_in',
+    total: 22000,
+  });
+  assert.equal(res.statusCode, 201, res.body);
+  const body = JSON.parse(res.body);
+  const rows = await query('SELECT has_calculation_variance, variance_amount, channel FROM "order" WHERE id = $1', [body.id]);
+  assert.equal(rows[0].channel, 'dine_in');
+  assert.equal(
+    rows[0].has_calculation_variance,
+    false,
+    'dine_in dengan total klien yang konsisten ditandai selisih: hitungan ulang versi klien memakai kanal yang salah'
+  );
+  assert.equal(rows[0].variance_amount, null);
+
+  // Pembeda: total klien 22.200 (tarif takeaway) pada pesanan dine_in MEMANG selisih.
+  const salah = await buatOrder(fx, [baris(v.variationId, { unitPrice: 20000 })], {
+    channel: 'dine_in',
+    total: 22200,
+  });
+  assert.equal(salah.statusCode, 201, salah.body);
+  assert.equal(JSON.parse(salah.body).hasCalculationVariance, true, 'fixture tidak membedakan kanal — test hampa');
+});

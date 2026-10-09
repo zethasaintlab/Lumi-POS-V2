@@ -182,6 +182,9 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` `?tarifKanal=1` (Task 10) — PBJT 10% khusus `dine_in` berdampingan dengan PPN 11% semua kanal,
       supaya Dine in dan Takeaway memilih tarif BERBEDA. Dibaca `k03-toolbar.test.js` (G-KANAL). */
   tarifKanal?: boolean;
+  /** `[EKSPLORASI]` `?tanpaTarif=1` (Task 10 fix round 2) — outlet TANPA tarif pajak sama sekali: kedua kanal
+      "Tanpa pajak". Dibaca `k03-toolbar.test.js`. */
+  tanpaTarif?: boolean;
   /** `[EKSPLORASI]` `?layanan=1` (Task 10) — `outlet.service_charge_rate` 10% (1000 berskala 10.000), untuk
       menegaskan Dine in TIDAK menyiratkan biaya layanan (G-TANPA-LAYANAN). */
   layanan?: boolean;
@@ -385,7 +388,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
 
        `rate` berskala ×10000 seperti kolom lokalnya (11% → 1100), eksklusif,
        berlaku untuk seluruh item dan seluruh kanal. */
-    tax_rate: [
+    tax_rate: opsi.tanpaTarif ? [] : [
       {
         id: 'tax-ppn',
         tenant_id: 'ten-galeri',
@@ -550,6 +553,11 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       // berpacu dengan timer.
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
       const tabel = tabelDari(sql);
+      /* `__galeriGagalTarif`: test menyetelnya SESUDAH layar memuat, supaya hanya pembacaan tarif berikutnya
+         (lembar Pajak) yang gagal — jalur `ringkasan === null` (keadaan error, DS #7). */
+      if (tabel === 'tax_rate' && (globalThis as { __galeriGagalTarif?: boolean }).__galeriGagalTarif) {
+        throw new Error('tax_rate tidak terbaca (fixture galeri)');
+      }
       /* `__galeriTahanDraf`: menahan BACA draf QRIS sampai test melepasnya, supaya jendela
          "pemulihan draf belum selesai" dapat diukur tanpa timer (fix round Task 9, C1c). */
       if (tabel === 'draf_qris_lokal') await (globalThis as { __galeriTahanDraf?: Promise<void> }).__galeriTahanDraf;

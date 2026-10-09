@@ -513,6 +513,31 @@ test('⛔ P3: kembalian di K-06 SAMA PERSIS dengan kembalian K-07 dan payment.ch
   }
 });
 
+test('⛔ P3 kanal dine_in: Total K-06 = order.total tersimpan, order.channel dine_in, kembalian K-06 = K-07 = change_amount (tarif PBJT dine_in, bukan PPN semua kanal)', async () => {
+  /* 84.000 × (1 + PBJT 10%) = 92.400 — angka tulis tangan. Tarif PPN 11% semua kanal akan memberi 93.240,
+     jadi kanal yang jatuh ke takeaway di mana pun (K-06, jalur tulis) terlihat sebagai selisih. Increment
+     500: tagihan tunai 92.500, diterima 100.000 → kembalian 7.500. */
+  const hal = await buka('render=k06&baris=1&harga=84000&pembulatan=500&kanal=dine_in&tarifKanal=1');
+  try {
+    assert.equal(await nilaiTotal(hal), 92400n, 'Total K-06 dine_in bukan 84.000 + PBJT 10% — kanal tidak dipakai hitungan K-06');
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    const angkaK06 = bacaRupiah(await hal.locator('.kasir-bayar-kembalian .num').first().textContent());
+    assert.equal(angkaK06, 7500n, `kembalian K-06 dine_in ${angkaK06}`);
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    const angkaK07 = bacaRupiah(await hal.locator('.kasir-k07-kembalian .num').textContent());
+    const order = (await tulisan(hal)).find((t) => /^INSERT INTO "order"/i.test(t.sql));
+    assert.ok(order, 'baris order tidak ditulis');
+    assert.equal(order.params[8], 'dine_in', 'order.channel tersimpan bukan dine_in');
+    assert.equal(BigInt(order.params[13]), 92400n, `order.total tersimpan ${order.params[13]} ≠ Total K-06 92.400`);
+    const tunai = (await barisPayment(hal)).find((b) => b.params[3] === 'cash');
+    assert.equal(angkaK07, 7500n, `kembalian K-07 dine_in ${angkaK07}`);
+    assert.equal(BigInt(tunai.params[6]), 7500n, 'payment.change_amount tersimpan dine_in tidak sama dengan K-06');
+  } finally {
+    await hal.close();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // PENJAGA 5 — metode yang dinonaktifkan MEMBAWA alasannya
 // ---------------------------------------------------------------------------

@@ -92,7 +92,7 @@ dengan "52 layar" dan "414 AC".
 
 **Audit 2 September 2026: `ppn` tidak pernah muncul di satu pun fixture. Nol.** (Tabel § 2 di atas adalah potret tanggal itu.)
 
-**Dipenuhi 9 Oktober 2026 (PR 2C Task 10): `ppn` kini muncul 3 kali di fixture.** Tarif PPN 11% (rate 1100 berskala 10.000) dihitung `TaxCalculator` tanpa tambalan — eksklusif dan inklusif (`tests/domain/tax.test.js`), pemilihan tarif per kanal di perangkat (`tests/kasir/penjualan.test.js`), dan di server (`tests/payment/tax-in-orders.test.js`). Hitungan ini diukur oleh `tests/runtime/klaim-registri.test.js` (id `ppn-nol-di-fixture`, nama lama dipertahankan).
+**Dipenuhi 9 Oktober 2026 (PR 2C Task 10): `ppn` kini muncul 4 kali di fixture.** Tarif PPN 11% (rate 1100 berskala 10.000) dihitung `TaxCalculator` tanpa tambalan — eksklusif dan inklusif (`tests/domain/tax.test.js`), pemilihan tarif per kanal di perangkat (`tests/kasir/penjualan.test.js`), di server (`tests/payment/tax-in-orders.test.js`), dan hitungan ulang selisih versi klien (`tests/ordering/calculation-variance.test.js`). Hitungan ini diukur oleh `tests/runtime/klaim-registri.test.js` (id `ppn-nol-di-fixture`, nama lama dipertahankan).
 
 `tax_rate.type` punya empat nilai (`pbjt`, `ppn`, `service_charge`, `none`) dan
 hanya `pbjt` yang pernah diuji. PPN adalah **pajak nasional 11%** — jenis pajak
