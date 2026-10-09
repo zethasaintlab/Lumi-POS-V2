@@ -118,15 +118,20 @@ async function hitungTahanan(db: DbLokal, shiftId: string): Promise<number> {
 export async function bacaTahanan(
   db: DbLokal,
   id: string
-): Promise<{ shiftId: string; keranjang: Keranjang | null } | null> {
+): Promise<{ shiftId: string; keranjang: Keranjang | null; jumlahItem: number; subtotal: bigint } | null> {
   const baris = (
-    await db.getAll<{ shift_id: string; isi: string }>(
-      'SELECT shift_id, isi FROM keranjang_tahan WHERE id = ?',
+    await db.getAll<{ shift_id: string; isi: string; jumlah_item: number; subtotal: number | bigint | string }>(
+      'SELECT shift_id, isi, jumlah_item, subtotal FROM keranjang_tahan WHERE id = ?',
       [id]
     )
   )[0];
   if (!baris) return null;
-  return { shiftId: baris.shift_id, keranjang: uraikan(baris.isi) };
+  return {
+    shiftId: baris.shift_id,
+    keranjang: uraikan(baris.isi),
+    jumlahItem: Number(baris.jumlah_item),
+    subtotal: BigInt(baris.subtotal),
+  };
 }
 
 export interface HasilHargaUlang {
@@ -199,8 +204,8 @@ export async function hargaKiniDariKatalog(
  * yang mati sesudah menghapus tidak kehilangan pesanan (ia sudah durable di
  * `keranjang_lokal`, tidak menunggu efek layar).
  *
- * Pemanggil memastikan keranjang berjalan KOSONG (layar menawarkan "Tahan
- * pesanan ini dulu"); fungsi ini menimpanya, tidak pernah menggabungkan.
+ * Menolak (galat, tahanan utuh) bila keranjang berjalan sudah berisi atau isi
+ * tahanan tidak terbaca.
  */
 export async function lanjutkanTahanan(
   db: DbLokal,
@@ -216,10 +221,19 @@ export async function lanjutkanTahanan(
       )
     )[0];
     if (!baris) return null;
-    await tx.execute('DELETE FROM keranjang_tahan WHERE id = ?', [id]);
-    // Isi yang tidak terbaca dibuang, bukan dilempar (alasan `pulihkanKeranjang`).
+    // ⛔ Isi tak terbaca: GALAT, baris UTUH. Menghapusnya diam-diam membuat
+    // pesanan hilang tanpa jejak; membuangnya resmi lewat Buang (dengan audit).
     const keranjang = uraikan(baris.isi);
-    if (keranjang === null) return null;
+    if (keranjang === null) {
+      throw new Error('Pesanan tahan tidak dapat dibaca. Pesanan TIDAK dilanjutkan; buang lewat daftar Pesanan tahan.');
+    }
+    // ⛔ Dalam transaksi yang sama dengan penulisan: keranjang berjalan yang terisi
+    // (tab lain, efek layar) tidak boleh tertimpa diam-diam.
+    const berjalan = await tx.getAll('SELECT 1 FROM keranjang_lokal WHERE id = ?', ['kini']);
+    if (berjalan.length > 0) {
+      throw new Error('Keranjang berjalan belum kosong. Tahan pesanan ini dulu.');
+    }
+    await tx.execute('DELETE FROM keranjang_tahan WHERE id = ?', [id]);
     const hasil = hargaUlang(keranjang, harga);
     await simpanKeranjang(tx, baris.shift_id, hasil.keranjang, sekarang);
     return hasil;
@@ -250,18 +264,21 @@ export async function buangTahanan(db: DbLokal, id: string, jejak: JejakBuang): 
   if (tahanan === null) {
     throw new Error('Pesanan tahan tidak ditemukan. Mungkin sudah dilanjutkan atau dibuang.');
   }
-  if (tahanan.keranjang === null || tahanan.keranjang.baris.length === 0) {
-    // Tidak ada isi yang dapat dibatalkan, jadi tidak ada yang dijejak.
-    await db.execute('DELETE FROM keranjang_tahan WHERE id = ?', [id]);
-    return;
-  }
+  // ⛔ Tahanan tak terbaca/kosong TETAP dijejak: tidak ada penghapusan tanpa
+  // audit. Ringkasannya dari kolom `jumlah_item`/`subtotal`; kuantitas per baris
+  // tidak diketahui, jadi `quantity_milli` = 1000 × jumlah baris `[ASUMSI]`.
+  const terbaca = tahanan.keranjang !== null && tahanan.keranjang.baris.length > 0;
+  const keranjang = terbaca
+    ? tahanan.keranjang!
+    : { baris: Array.from({ length: Math.max(tahanan.jumlahItem, 1) }, () => ({ quantityMilli: 1000 })) };
+  const total = terbaca ? jejak.total : tahanan.subtotal;
   const hasil = await batalkanKeranjang({
     db,
     konfig: jejak.konfig,
     sesi: jejak.sesi,
     shiftId: tahanan.shiftId,
-    keranjang: tahanan.keranjang,
-    total: jejak.total,
+    keranjang,
+    total,
     waktu: jejak.waktu,
     idBaru: jejak.idBaru,
     hlc: jejak.hlc,

@@ -322,12 +322,41 @@ test('lanjutkan id yang tidak ada → null', async () => {
   assert.equal(await lanjutkanTahanan(buatDb(), 'tidak-ada', HARGA_SAMA, JAM), null);
 });
 
-test('⛔ isi tahanan yang rusak dibuang (tidak mengunci daftar selamanya) dan dijawab null', async () => {
+test('⛔ Fix1 M1: tahanan dengan isi rusak TIDAK dihapus diam-diam oleh lanjutkan — galat "tidak dapat dibaca", baris utuh', async () => {
   const { lanjutkanTahanan } = await import(MOD);
   const d = buatDb();
   d.sqlite.prepare(`INSERT INTO keranjang_tahan VALUES ('x','s1','{bukan json',1,1,'2026-09-28T00:00:00Z')`).run();
-  assert.equal(await lanjutkanTahanan(d, 'x', HARGA_SAMA, JAM), null);
+  await assert.rejects(() => lanjutkanTahanan(d, 'x', HARGA_SAMA, JAM), /tidak dapat dibaca/);
+  assert.equal(n(d, 'keranjang_tahan'), 1, 'tahanan rusak hilang tanpa jejak');
+  assert.equal(n(d, 'keranjang_lokal'), 0);
+});
+
+test('⛔ Fix1 M1: buang tahanan rusak menulis TEPAT satu audit cart_cleared dari kolom jumlah_item/subtotal, lalu menghapus', async () => {
+  const { buangTahanan } = await import(MOD);
+  const d = buatDb();
+  d.sqlite.prepare(`INSERT INTO keranjang_tahan VALUES ('x','s1','{bukan json',2,50000,'2026-09-28T00:00:00Z')`).run();
+  await buangTahanan(d, 'x', jejak({ total: 0n }));
   assert.equal(n(d, 'keranjang_tahan'), 0);
+  assert.equal(n(d, 'audit_event'), 1, 'penghapusan tanpa audit');
+  assert.equal(n(d, 'outbox_local'), 1);
+  const a = d.sqlite.prepare('SELECT * FROM audit_event').get();
+  assert.equal(a.event_type, 'cart_cleared');
+  assert.deepEqual(JSON.parse(a.after), { line_count: 2, quantity_milli: 2000, total: '50000' });
+});
+
+test('⛔ Fix1 M2: lanjutkan menolak DI DALAM transaksi bila keranjang_lokal sudah berisi — tidak menimpa, tahanan utuh', async () => {
+  const { tahanKeranjang, lanjutkanTahanan } = await import(MOD);
+  const { simpanKeranjang, pulihkanKeranjang } = await import(SIMPAN);
+  const d = buatDb();
+  const { id } = await tahanKeranjang(d, 's1', KERANJANG_KAYA, JAM, pembuatId());
+  // Penulis kedua: keranjang berjalan terisi (tab lain / efek layar) SETELAH tahan.
+  const lain = { ...KERANJANG_KAYA, baris: [baris({ id: 'bz', variationId: 'v9' })], diskon: null };
+  await simpanKeranjang(d, 's1', lain, JAM);
+  await assert.rejects(() => lanjutkanTahanan(d, id, HARGA_SAMA, JAM), /Tahan pesanan ini dulu/);
+  assert.equal(n(d, 'keranjang_tahan'), 1, 'tahanan terhapus padahal tidak dilanjutkan');
+  const pulih = await pulihkanKeranjang(d, 's1');
+  assert.equal(pulih.status, 'dipulihkan');
+  assert.equal(pulih.keranjang.baris[0].id, 'bz', 'keranjang berjalan tertimpa');
 });
 
 test('⛔ G-BATAL-AUDIT: buang menulis SATU audit_event cart_cleared + satu outbox cart_cleared, dan tidak menulis order/payment/cash_movement', async () => {
