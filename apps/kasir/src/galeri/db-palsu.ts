@@ -185,7 +185,7 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` Task 10 `?layanan=1` -- `outlet.service_charge_rate` 10% (1000 berskala 10.000), untuk
       G-TANPA-LAYANAN: Dine in tidak boleh menyiratkan biaya layanan walau outlet menyetel tarifnya. */
   layanan?: boolean;
-  /** `?tahanan=N` (Task 12) — tanam N Pesanan tahan (Americano Hot, harga LAMA Rp 1) di shift galeri. */
+  /** `?tahanan=N` (Task 12) — tanam N Pesanan tahan (Americano Hot, harga LAMA Rp 10.000 + diskon Rp 1.000) di shift galeri. */
   tahanan?: number;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
@@ -520,7 +520,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
             },
           ]
         : [],
-    // Pesanan tahan (Task 12): ditanam hanya bila diminta; harga LAMA Rp 1 supaya Lanjutkan membuktikan harga ulang.
+    // Pesanan tahan (Task 12): ditanam hanya bila diminta; harga LAMA Rp 10.000 supaya Lanjutkan membuktikan harga ulang.
     keranjang_tahan: Array.from({ length: opsi.tahanan ?? 0 }, (_, i) => ({
       id: `tahan-${i + 1}`,
       shift_id: 'shift-galeri',
@@ -532,15 +532,23 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
             itemName: 'Americano',
             variationName: 'Hot',
             variationCount: 1,
-            unitPrice: 1,
+            unitPrice: 10000,
             quantityMilli: 1000,
             modifier: [],
           },
         ],
-        diskon: null,
+        // Diskon nominal DI BAWAH ambang (tanpa persetujuan) + PPN eksklusif galeri: total != subtotal,
+        // supaya jejak Buang yang memakai subtotal (bukan `hitungKeranjang`) tertangkap penjaga.
+        diskon: {
+          minta: { tipe: 'nominal', nilai: '1000' },
+          alasanKode: 'pelanggan_langganan',
+          alasanCatatan: null,
+          approverId: null,
+          nominalDisetujui: null,
+        },
       }),
       jumlah_item: 1,
-      subtotal: 1,
+      subtotal: 10000,
       dibuat_pada: `2026-09-01T0${i + 1}:00:00.000Z`,
     })) as Record<string, unknown>[],
     print_job: [],

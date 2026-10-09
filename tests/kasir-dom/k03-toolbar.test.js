@@ -456,11 +456,13 @@ test('⛔ Batalkan: konfirmasi "Kosongkan keranjang? N item", lalu keranjang kos
   await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
   await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
   const tulis = await bacaTulis(hal);
+  const beritahuBatal = await hal.evaluate(() => window.__galeriBeritahu);
   const dialogTertutup = (await hal.locator('[role="dialog"]').count()) === 0;
   await hal.close();
 
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   assert.ok(dialogTertutup, 'dialog konfirmasi tetap terbuka sesudah berhasil');
+  assert.equal(beritahuBatal, 1, `pemberitahu.beritahu() dipanggil ${beritahuBatal}x sesudah Batalkan (harus 1x: outbox cart_cleared perlu didorong)`);
   assert.equal(audit(tulis).length, 0 + 1, `harus TEPAT satu audit_event; ada ${audit(tulis).length} — nol audit adalah cacat yang fitur ini cegah`);
   const p = audit(tulis)[0].params;
   assert.equal(p[5], 'cart_cleared', `event_type ${p[5]}`);
@@ -870,8 +872,33 @@ test('Batal menutup dialog tanpa mengubah isi; mengosongkan kolom lalu Simpan me
 // ---------------------------------------------------------------------------
 // Task 12 — Pesanan tahan (G-TAHAN, sisi layar) + jejak Buang (G-BATAL-AUDIT).
 // Spec § 4 "Pesanan tahan", § 12 butir 7. `?tahanan=N` menanam N tahanan
-// berisi Americano Hot dengan harga LAMA (Rp 1) di shift galeri.
+// berisi Americano Hot dengan harga LAMA (Rp 10.000, katalog 22.000) + diskon nominal Rp 1.000 di shift galeri.
 // ---------------------------------------------------------------------------
+
+/** Total yang SEHARUSNYA tertulis di jejak Buang: dihitung langsung dari fungsi domain (bukan angka diketik
+    maupun subtotal) untuk tahanan galeri: 1 x Rp 10.000, diskon nominal Rp 1.000, PPN 11% eksklusif. */
+async function totalDomainTahananGaleri() {
+  const { computeLineTotal, computeOrderTotals } = await import('../../packages/domain/src/money.ts');
+  const { calculateTax } = await import('../../packages/domain/src/tax.ts');
+  const { nilaiDiskon } = await import('../../packages/domain/src/diskon.ts');
+  const baris = computeLineTotal({ unitPrice: 10000n, quantityMilli: 1000n, modifiers: [], discountAmount: 0n });
+  const orderDiscount = nilaiDiskon(baris, { tipe: 'nominal', nilai: 1000n });
+  const pajak = calculateTax({
+    lines: [{ lineId: 'th-baris-1', itemId: 'item-americano-vHot', categoryId: null, amount: baris }],
+    serviceChargeAmount: 0n,
+    orderDiscount,
+    taxRates: [
+      {
+        id: 'tax-ppn', name: 'PPN 11%', rateScaled: 1100n, isInclusive: false, jurisdiction: 'ID', outletId: null,
+        channel: 'all', appliesTo: 'all_items', appliesToIds: [],
+      },
+    ],
+    channel: 'takeaway',
+    outletId: 'outlet-galeri',
+  });
+  const totals = computeOrderTotals({ lineTotals: [baris], orderDiscount, serviceChargeAmount: 0n, taxAmount: pajak.totalTaxExclusive });
+  return { subtotal: baris, total: totals.total };
+}
 
 const tahanTulis = (tulis) => tulis.filter((t) => /keranjang_tahan/.test(t.sql));
 const dialogTahan = (hal) => hal.locator('[role="dialog"]');
@@ -986,7 +1013,7 @@ test('⛔ G-TAHAN DOM (Review Focus 3): Lanjutkan sesudah harga berubah → harg
   assert.ok(dialogTertutup, 'dialog tetap terbuka sesudah Lanjutkan');
   assert.equal(hasil.baris.length, 1);
   assert.match(hasil.baris[0], /Americano/);
-  assert.doesNotMatch(hasil.baris[0], /Rp 1\b(?!\d)/, `baris masih memakai harga LAMA Rp 1: ${hasil.baris[0]}`);
+  assert.doesNotMatch(hasil.baris[0], /10\.000/, `baris masih memakai harga LAMA Rp 10.000: ${hasil.baris[0]}`);
   assert.match(hasil.halaman, /Harga berubah/, 'kasir tidak diberi tahu bahwa harga berubah sejak ditahan');
   const hapus = tahanTulis(tulis).filter((t) => /^DELETE FROM keranjang_tahan/.test(t.sql));
   assert.equal(hapus.length, 1);
@@ -1025,7 +1052,10 @@ test('⛔ G-BATAL-AUDIT DOM: Buang tahanan minta konfirmasi, lalu SATU audit car
   await hal.getByRole('button', { name: 'Ya, buang', exact: true }).click();
   await hal.waitForFunction(() => /Belum ada pesanan tahan/.test(document.body.innerText), null, { timeout: 5000 });
   const tulis = await bacaTulis(hal);
+  const beritahu = await hal.evaluate(() => window.__galeriBeritahu);
   await hal.close();
+  // ⛔ Buang harus mendorong pengiriman (outbox cart_cleared): tanpa isyarat, indikator sinkron baru tahu ~1 dtk kemudian.
+  assert.equal(beritahu, 1, `pemberitahu.beritahu() dipanggil ${beritahu}x sesudah Buang (harus 1x)`);
 
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   assert.equal(audit(tulis).length, 1, `harus TEPAT satu audit_event; ada ${audit(tulis).length}`);
@@ -1036,7 +1066,10 @@ test('⛔ G-BATAL-AUDIT DOM: Buang tahanan minta konfirmasi, lalu SATU audit car
   const after = JSON.parse(p[7]);
   assert.equal(after.line_count, 1);
   assert.equal(after.quantity_milli, 1000);
-  assert.ok(/^\d+$/.test(after.total) && after.total !== '0', `total audit tidak masuk akal: ${after.total}`);
+  // ⛔ Total jejak = HITUNGAN DOMAIN (`hitungKeranjang`), bukan subtotal kolom tahanan. Anti-hampa: keduanya BERBEDA.
+  const ekspektasi = await totalDomainTahananGaleri();
+  assert.notEqual(ekspektasi.total, ekspektasi.subtotal, 'fixture hampa: total == subtotal, jejak subtotal tak terbedakan');
+  assert.equal(after.total, String(ekspektasi.total), `total audit ${after.total} != hitungan domain ${ekspektasi.total} (subtotal ${ekspektasi.subtotal})`);
   assert.equal(outbox(tulis).length, 1);
   assert.equal(audit(tulis)[0].dalam, true);
   const hapus = tahanTulis(tulis).filter((t) => /^DELETE FROM keranjang_tahan/.test(t.sql));

@@ -80,6 +80,20 @@ pasangLokalPalsu({
   pemberitahu: buatPemberitahu(),
 });
 
+/* Task 12 fix 2 (D12): jumlah panggilan `beritahu()` dibaca test DOM lewat `window.__galeriBeritahu` --
+   penulisan yang tidak mendorong pengiriman (Buang tahanan, Batalkan) tidak boleh senyap. */
+function pemberitahuTercatat() {
+  const p = buatPemberitahu();
+  const w = window as { __galeriBeritahu?: number };
+  w.__galeriBeritahu = 0;
+  const asli = p.beritahu.bind(p);
+  p.beritahu = () => {
+    w.__galeriBeritahu = (w.__galeriBeritahu ?? 0) + 1;
+    asli();
+  };
+  return p;
+}
+
 const LAYAR = [
   { id: 'K-03', nama: 'Kasir (grid + keranjang)', render: () => <Kasir /> },
   /* ⛔ TANPA shell: `App.tsx:45` merender `<Login />` telanjang saat sesi
@@ -243,7 +257,7 @@ export function Galeri() {
         } as never,
         db,
         keputusanMigrasi: { tindakan: 'tidak-ada' } as never,
-        pemberitahu: buatPemberitahu(),
+        pemberitahu: pemberitahuTercatat(),
       },
     };
   }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, pajakKanal, layanan, tahanan]);

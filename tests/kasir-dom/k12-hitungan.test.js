@@ -253,7 +253,30 @@ test('⛔ SELISIH NOL dapat dicapai — kontrol kas mengukur laci, bukan layarny
   );
 });
 
+/**
+ * Saldo seharusnya yang DITAMPILKAN K-12 pada tahap review (keadaan TANPA tahanan), dibaca dari layar —
+ * bukan literal. Dipakai untuk membuktikan penolakan tahanan tidak membocorkannya, dan anti-hampa:
+ * angka itu memang muncul di review.
+ */
+async function saldoDiReview() {
+  const { hal } = await bukaK12('normal');
+  await hal.getByLabel('Hitungan fisik laci').fill('1000');
+  await hal.getByRole('button', { name: 'Lanjut', exact: true }).click();
+  await hal.waitForFunction(() => /Kas diharapkan/.test(document.body.innerText), null, { timeout: 5000 });
+  const teks = await hal.evaluate(() => {
+    const baris = [...document.querySelectorAll('.kasir-subtotal')].find((b) => /Kas diharapkan/.test(b.innerText));
+    return baris ? baris.querySelector('.num')?.textContent ?? '' : '';
+  });
+  await hal.close();
+  return teks.trim();
+}
+
 test('⛔ K-12 menolak tutup shift selama ada tahanan dan menampilkan daftarnya — tanpa membocorkan saldo (hitungan buta)', async () => {
+  const saldo = await saldoDiReview();
+  // Anti-hampa: saldo benar-benar tampil di review tanpa tahanan, dan bukan nol/kosong.
+  assert.match(saldo, /\d/, `review tanpa tahanan tidak menampilkan "Kas diharapkan": "${saldo}"`);
+  assert.ok(saldo.replace(/\D/g, '') !== '0' && saldo.replace(/\D/g, '') !== '', `saldo fixture tak bermakna: "${saldo}"`);
+
   const { hal, galat } = await bukaK12('normal', '&tahanan=2');
   // ⛔ Hitungan SAH diisi dulu: tanpanya "Lanjut" sudah mati karena field kosong, dan penjaga hijau tanpa tahanan.
   await hal.getByLabel('Hitungan fisik laci').fill('670500');
@@ -274,7 +297,7 @@ test('⛔ K-12 menolak tutup shift selama ada tahanan dan menampilkan daftarnya 
   assert.match(hasil.peringatan, /2 pesanan/, 'daftar tidak menyebut jumlah tahanan');
   assert.equal(hasil.lanjutAda, true);
   assert.equal(hasil.lanjutMati, true, '"Lanjut" aktif padahal ada tahanan — shift bisa ditutup dengan pesanan menggantung');
-  assert.doesNotMatch(hasil.teks, /670\.500/, 'penolakan membocorkan saldo seharusnya (hitungan buta)');
+  assert.ok(!hasil.teks.includes(saldo), `penolakan membocorkan saldo seharusnya "${saldo}" (hitungan buta)`);
 });
 
 test('K-12 tanpa tahanan: tidak ada panel penolakan dan "Lanjut" bergantung pada hitungan saja', async () => {
