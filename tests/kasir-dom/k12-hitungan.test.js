@@ -255,6 +255,8 @@ test('⛔ SELISIH NOL dapat dicapai — kontrol kas mengukur laci, bukan layarny
 
 test('⛔ K-12 menolak tutup shift selama ada tahanan dan menampilkan daftarnya — tanpa membocorkan saldo (hitungan buta)', async () => {
   const { hal, galat } = await bukaK12('normal', '&tahanan=2');
+  // ⛔ Hitungan SAH diisi dulu: tanpanya "Lanjut" sudah mati karena field kosong, dan penjaga hijau tanpa tahanan.
+  await hal.getByLabel('Hitungan fisik laci').fill('670500');
   const hasil = await hal.evaluate(() => {
     const teks = document.querySelector('.kasir-konten')?.innerText ?? '';
     const lanjut = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Lanjut');
