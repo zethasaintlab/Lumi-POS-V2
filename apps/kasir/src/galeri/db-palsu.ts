@@ -185,6 +185,8 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` Task 10 `?layanan=1` -- `outlet.service_charge_rate` 10% (1000 berskala 10.000), untuk
       G-TANPA-LAYANAN: Dine in tidak boleh menyiratkan biaya layanan walau outlet menyetel tarifnya. */
   layanan?: boolean;
+  /** `?tahanan=N` (Task 12) — tanam N Pesanan tahan (Americano Hot, harga LAMA Rp 1) di shift galeri. */
+  tahanan?: number;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -518,6 +520,29 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
             },
           ]
         : [],
+    // Pesanan tahan (Task 12): ditanam hanya bila diminta; harga LAMA Rp 1 supaya Lanjutkan membuktikan harga ulang.
+    keranjang_tahan: Array.from({ length: opsi.tahanan ?? 0 }, (_, i) => ({
+      id: `tahan-${i + 1}`,
+      shift_id: 'shift-galeri',
+      isi: JSON.stringify({
+        baris: [
+          {
+            id: `th-baris-${i + 1}`,
+            variationId: 'item-americano-vHot',
+            itemName: 'Americano',
+            variationName: 'Hot',
+            variationCount: 1,
+            unitPrice: 1,
+            quantityMilli: 1000,
+            modifier: [],
+          },
+        ],
+        diskon: null,
+      }),
+      jumlah_item: 1,
+      subtotal: 1,
+      dibuat_pada: `2026-09-01T0${i + 1}:00:00.000Z`,
+    })) as Record<string, unknown>[],
     print_job: [],
     // Draf QRIS dinamis (`qris-dinamis.ts`): satu baris, diisi/dihapus di `jalankan`.
     draf_qris_lokal: [],
@@ -595,6 +620,15 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
             min_selections: 1,
           })) as T[];
         }
+      }
+      /* Pesanan tahan (Task 12): hanya dua bentuk WHERE -- `shift_id = ?` dan `id = ?` -- bukan mesin SQL. */
+      if (tabel === 'keranjang_tahan') {
+        const kolom = /WHERE\s+shift_id\s*=/i.test(sql) ? 'shift_id' : /WHERE\s+id\s*=/i.test(sql) ? 'id' : null;
+        const hasil = (perTabel.keranjang_tahan as Record<string, unknown>[]).filter(
+          (r) => kolom === null || r[kolom] === (params ?? [])[0]
+        );
+        if (/\bcount\s*\(/i.test(sql)) return [{ n: hasil.length }] as T[];
+        return hasil as T[];
       }
       const baris = perTabel[tabel] ?? [];
 
@@ -730,6 +764,15 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         id: params[0], order_id: params[1], payment_id: params[2], shift_id: params[3],
         draf: params[4], muatan: params[5], qr_string: params[6], dibuat_pada: params[7],
       });
+    }
+    if (/^INSERT INTO keranjang_tahan/i.test(sql.trim()) && params?.length === 6) {
+      perTabel.keranjang_tahan.push({
+        id: params[0], shift_id: params[1], isi: params[2], jumlah_item: params[3], subtotal: params[4], dibuat_pada: params[5],
+      });
+    }
+    if (/^DELETE FROM keranjang_tahan/i.test(sql.trim())) {
+      const i = (perTabel.keranjang_tahan as { id: unknown }[]).findIndex((r) => r.id === params?.[0]);
+      if (i >= 0) perTabel.keranjang_tahan.splice(i, 1);
     }
     if (/^DELETE FROM draf_qris_lokal/i.test(sql.trim())) perTabel.draf_qris_lokal.length = 0;
     /* Urutan parameter = `catatKasManual` (`kas/manual.ts`): id, shift_id, type,

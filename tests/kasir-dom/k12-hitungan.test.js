@@ -118,7 +118,7 @@ after(async () => {
   if (server) await new Promise((r) => server.close(r));
 });
 
-async function bukaK12(keadaan = 'normal') {
+async function bukaK12(keadaan = 'normal', ekstra = '') {
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
@@ -126,7 +126,7 @@ async function bukaK12(keadaan = 'normal') {
     if (m.type() === 'error' && /Failed to load resource/.test(m.text())) return;
     if (m.type() === 'error') galat.push(m.text());
   });
-  await hal.goto(`${alamat}/harness-galeri.html?layar=K-12&keadaan=${keadaan}`, {
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-12&keadaan=${keadaan}${ekstra}`, {
     waitUntil: 'load',
   });
   await hal.waitForSelector('.kasir-konten', { timeout: 10_000 });
@@ -251,4 +251,33 @@ test('⛔ SELISIH NOL dapat dicapai — kontrol kas mengukur laci, bukan layarny
       'adalah kabar baik, dan kabar baik yang terlihat seperti kabar buruk ' +
       'membuat kasir mencari uang yang tidak hilang.'
   );
+});
+
+test('⛔ K-12 menolak tutup shift selama ada tahanan dan menampilkan daftarnya — tanpa membocorkan saldo (hitungan buta)', async () => {
+  const { hal, galat } = await bukaK12('normal', '&tahanan=2');
+  const hasil = await hal.evaluate(() => {
+    const teks = document.querySelector('.kasir-konten')?.innerText ?? '';
+    const lanjut = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Lanjut');
+    return {
+      teks,
+      lanjutAda: !!lanjut,
+      lanjutMati: lanjut?.disabled ?? null,
+      peringatan: document.querySelector('[data-tahanan-blokir]')?.innerText ?? '',
+    };
+  });
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.match(hasil.peringatan, /Pesanan tahan/, `K-12 tidak menyebut Pesanan tahan: ${hasil.teks}`);
+  assert.match(hasil.peringatan, /2 pesanan/, 'daftar tidak menyebut jumlah tahanan');
+  assert.equal(hasil.lanjutAda, true);
+  assert.equal(hasil.lanjutMati, true, '"Lanjut" aktif padahal ada tahanan — shift bisa ditutup dengan pesanan menggantung');
+  assert.doesNotMatch(hasil.teks, /670\.500/, 'penolakan membocorkan saldo seharusnya (hitungan buta)');
+});
+
+test('K-12 tanpa tahanan: tidak ada panel penolakan dan "Lanjut" bergantung pada hitungan saja', async () => {
+  const { hal } = await bukaK12('normal');
+  const ada = await hal.evaluate(() => document.querySelector('[data-tahanan-blokir]') !== null);
+  await hal.close();
+  assert.equal(ada, false, 'panel penolakan tampil padahal tidak ada tahanan');
 });

@@ -36,6 +36,16 @@ import { periksaTambahStok } from '../kasir/batas-stok.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
 import { hitungKeranjang, type HitunganKeranjang } from '../kasir/penjualan.ts';
 import { batalkanKeranjang } from '../kasir/keranjang-batal.ts';
+import {
+  bacaTahanan,
+  buangTahanan,
+  daftarTahanan,
+  hargaKiniDariKatalog,
+  lanjutkanTahanan,
+  tahanKeranjang,
+  type RingkasTahanan,
+} from '../kasir/keranjang-tahan.ts';
+import { DialogPesananTahan } from '../komponen/DialogPesananTahan.tsx';
 import { kurangiBarisKeranjang } from '../kasir/keranjang-kurang.ts';
 import { muatHlc } from '../lokal/hlc.ts';
 import { tampilkanKuantitas } from '../../../../packages/domain/src/kuantitas.ts';
@@ -168,6 +178,10 @@ export function Kasir() {
   /* Toolbar #4-6 -- Catatan, Pelanggan, No. Meja (spec § 4 baris 4-6; P5, P6).
      SATU dialog, tiga mode; `null` = tertutup. */
   const [dialogTeks, setDialogTeks] = useState<ModeTeksPesanan | null>(null);
+  /* Toolbar #8 -- Pesanan tahan (Task 12). `daftarTahan === null` = sedang dibaca. */
+  const [dialogTahan, setDialogTahan] = useState(false);
+  const [daftarTahan, setDaftarTahan] = useState<RingkasTahanan[] | null>(null);
+  const [galatTahan, setGalatTahan] = useState<string | null>(null);
   /* `ARCH:358` — kill switch per fitur per merchant. Dibaca dari perangkat,
      jadi ia tetap berlaku offline; fitur yang belum pernah disegarkan
      mengikuti bawaan kode dan tetap menyala. */
@@ -344,6 +358,92 @@ export function Kasir() {
     return null;
   };
 
+  /* Toolbar #8 -- Pesanan tahan (Task 12). Murni lokal; tiap perpindahan satu
+     transaksi (`kasir/keranjang-tahan.ts`). Pesan galat dikembalikan ke dialog,
+     yang menahan dirinya terbuka -- tahanan tidak pernah hilang diam-diam. */
+  const muatTahanan = async () => {
+    if (!shift) {
+      setDaftarTahan([]);
+      return;
+    }
+    try {
+      setDaftarTahan(await daftarTahanan(db, shift.id));
+      setGalatTahan(null);
+    } catch (e) {
+      setGalatTahan((e as Error).message);
+      setDaftarTahan([]);
+    }
+  };
+  const bukaTahan = () => {
+    setDaftarTahan(null);
+    setGalatTahan(null);
+    setDialogTahan(true);
+    void muatTahanan();
+  };
+  const tahanSekarang = async (): Promise<string | null> => {
+    if (!shift) return 'Shift tidak dikenali. Pesanan TIDAK ditahan.';
+    const h = await tahanKeranjang(db, shift.id, keranjang, () => new Date(), () => crypto.randomUUID());
+    if (!h.ok) return h.pesan;
+    setelKeranjang(keranjangKosong());
+    setDialogTahan(false);
+    return null;
+  };
+  const lanjutkanDari = async (id: string): Promise<string | null> => {
+    if (keranjang.baris.length > 0) {
+      return 'Keranjang berjalan belum kosong. Tahan pesanan ini dulu.';
+    }
+    if (katalog.length === 0) return 'Katalog belum terbaca, harga ulang tidak dapat dihitung. Pesanan TIDAK dilanjutkan.';
+    const harga = await hargaKiniDariKatalog(db, katalog);
+    const hasil = await lanjutkanTahanan(db, id, harga);
+    if (hasil === null) {
+      await muatTahanan();
+      return 'Pesanan tahan tidak ditemukan atau tidak terbaca. Daftar dimuat ulang.';
+    }
+    setelKeranjang(hasil.keranjang);
+    /* ⛔ Kasir diberi tahu, tidak pernah diam-diam: harga berubah dan/atau item
+       hilang dari katalog (spec § 4). */
+    const kabar: string[] = [];
+    if (hasil.subtotalBerubah) {
+      kabar.push(`Harga berubah sejak ditahan. Subtotal kini ${rupiah(subtotalKeranjang(hasil.keranjang))}.`);
+    }
+    if (hasil.barisDibuang.length > 0) {
+      kabar.push(`Tidak tersedia lagi dan dibuang dari pesanan: ${hasil.barisDibuang.join(', ')}.`);
+    }
+    setPesanStok(kabar.length > 0 ? kabar.join(' ') : null);
+    setDialogTahan(false);
+    return null;
+  };
+  const buangDari = async (id: string): Promise<string | null> => {
+    if (!konfig || !sesi || !shift) return 'Sesi atau shift tidak dikenali. Pesanan TIDAK dibuang.';
+    const t = await bacaTahanan(db, id);
+    if (t === null) {
+      await muatTahanan();
+      return 'Pesanan tahan tidak ditemukan. Daftar dimuat ulang.';
+    }
+    /* Total jejak = `hitungKeranjang` atas keranjang tahanan, fungsi yang sama
+       dengan Batalkan -- bukan aritmetika kedua. */
+    const total =
+      t.keranjang !== null && t.keranjang.baris.length > 0
+        ? (await hitungKeranjang({ db, konfig, keranjang: t.keranjang, shift, waktu: () => new Date() })).totals.total
+        : 0n;
+    const hlc = await muatHlc(db, () => Date.now());
+    try {
+      await buangTahanan(db, id, {
+        konfig,
+        sesi,
+        total,
+        waktu: () => new Date(),
+        idBaru: () => crypto.randomUUID(),
+        hlc: () => hlc.tick(),
+      });
+    } catch (e) {
+      return (e as Error).message;
+    }
+    pemberitahu.beritahu();
+    await muatTahanan();
+    return null;
+  };
+
   /* ⛔ Simpan Edit Item. Qty yang TURUN (atau baris dihapus) menulis jejak
      `cart_line_reduced` + outbox + `keranjang_lokal` hasil edit dalam SATU
      transaksi lokal (Task 5C, issue #76 Q2); kenaikan qty dan perubahan
@@ -502,7 +602,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && !lembarKanal && dialogTeks === null,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && !lembarKanal && dialogTeks === null && !dialogTahan,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -807,6 +907,14 @@ export function Kasir() {
               {alasanBatalNonaktif}
             </span>
           )}
+
+          {/* Pesanan tahan -- tombol kedelapan mockup (Task 12). SELALU aktif:
+              daftar tahanan dapat dibuka juga saat keranjang kosong (di sanalah
+              Lanjutkan). Tahan pesanan ini nonaktif DENGAN alasan di dalam dialog. */}
+          <Tombol varian="ghost" onClick={bukaTahan}>
+            <Icon name="circle-pause" size={17} />
+            <span className="kasir-toolbar-label">Pesanan tahan</span>
+          </Tombol>
         </div>
 
         {/* ⛔ Pencarian dan urutan berbagi SATU baris kontrol, 2 September 2026.
@@ -1347,6 +1455,19 @@ export function Kasir() {
           )}
           onKonfirmasi={konfirmasiBatal}
           onBatal={() => setDialogBatal(false)}
+        />
+      )}
+
+      {dialogTahan && (
+        <DialogPesananTahan
+          daftar={daftarTahan}
+          galatMuat={galatTahan}
+          formatUang={rupiah}
+          keranjangKosong={keranjang.baris.length === 0}
+          onTahan={tahanSekarang}
+          onLanjutkan={lanjutkanDari}
+          onBuang={buangDari}
+          onTutup={() => setDialogTahan(false)}
         />
       )}
 

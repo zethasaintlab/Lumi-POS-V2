@@ -2054,3 +2054,32 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Pesanan tahan (Task 12): daftar di dialog. Hanya token. */
+.kasir-tahan-daftar {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.kasir-tahan-baris {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.kasir-tahan-isi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.kasir-tahan-aksi {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

@@ -26,6 +26,7 @@ import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { Bidang } from '../Bidang.tsx';
+import { daftarTahanan, type RingkasTahanan } from '../kasir/keranjang-tahan.ts';
 import { LangkahKas, type Langkah } from '../komponen/LangkahKas.tsx';
 
 /* K-12 Tutup Kas + K-13 Laporan Shift (IA §2.2).
@@ -98,6 +99,8 @@ export function TutupKas() {
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [shift, setShift] = useState<ShiftAktif | null>(null);
   const [ringkas, setRingkas] = useState<RingkasanAwal | null>(null);
+  /* Task 12 (R7): Pesanan tahan di shift ini. Daftarnya tidak memuat angka laci. */
+  const [tahanan, setTahanan] = useState<RingkasTahanan[]>([]);
   const [siap, setSiap] = useState(false);
   const [gagalMuat, setGagalMuat] = useState<string | null>(null);
 
@@ -130,6 +133,7 @@ export function TutupKas() {
       if (!hidup) return;
       setShift(s);
       if (s) setRingkas(await ringkasanSebelumHitung(db, s.id));
+      if (s && hidup) setTahanan(await daftarTahanan(db, s.id));
       if (hidup) setSiap(true);
     })().catch((e: Error) => {
       /* ⛔ Tanpa ini layar berhenti di "Menyiapkan tutup kas" selamanya, dan
@@ -274,7 +278,10 @@ export function TutupKas() {
           return;
         }
         if (hasil.status === 'butuh_otorisasi') setGalat('Selisih di atas ambang — PIN manajer diperlukan.');
-        else if (hasil.status === 'butuh_alasan') setGalat('Pilih alasan selisih terlebih dahulu.');
+        else if (hasil.status === 'ada_tahanan') {
+          setTahanan(hasil.daftar);
+          setGalat('Masih ada pesanan tahan. Lanjutkan atau buang dulu sebelum menutup kas.');
+        } else if (hasil.status === 'butuh_alasan') setGalat('Pilih alasan selisih terlebih dahulu.');
         else if (hasil.status === 'penyetuju_sama_dengan_aktor')
           setGalat('Anda tidak dapat menyetujui selisih hitungan Anda sendiri.');
         else setGalat('Kas tidak dapat ditutup.');
@@ -506,6 +513,27 @@ export function TutupKas() {
 
           `PRD:210` menggambar `[_______]` dan mockup `TutupKasScreen` memakai
           `<Field size="lg" prefix="Rp" inputMode="numeric">` sejak awal. */}
+      {/* ⛔ Task 12 (spec § 4, R7): tutup ditolak selama ada Pesanan tahan, dan
+          daftarnya ditampilkan di SINI, sebelum hitungan. Hanya jumlah, waktu,
+          dan subtotal pesanan -- tidak ada satu pun angka laci (hitungan buta). */}
+      {tahanan.length > 0 && (
+        <div className="card card-pad kasir-dialog-sel" role="alert" data-tahanan-blokir>
+          <h2 className="t-body-md">Pesanan tahan</h2>
+          <p className="t-body-md">
+            {tahanan.length} pesanan masih ditahan. Kas tidak dapat ditutup sebelum semuanya dilanjutkan atau dibuang
+            dari layar kasir.
+          </p>
+          <ul className="kasir-tahan-daftar">
+            {tahanan.map((t) => (
+              <li key={t.id} className="kasir-tahan-baris">
+                <span className="t-body-md">{t.jumlahItem} item</span>
+                <span className="t-body-md num">{rupiah(t.subtotal)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Bidang
         label="Hitungan fisik laci"
         ukuran="lg"
@@ -565,8 +593,8 @@ export function TutupKas() {
            mengarang angka supaya tombolnya menyala. Yang ditolak adalah field
            KOSONG dan bentuk yang tidak dapat dibaca, dan keduanya sudah
            `null` di `bacaRupiah`. */
-        disabled={sibuk || hitunganTidakSah}
-        keterangan={sibuk || hitunganTidakSah ? 'tutupkas-lanjut-alasan' : undefined}
+        disabled={sibuk || hitunganTidakSah || tahanan.length > 0}
+        keterangan={sibuk || hitunganTidakSah || tahanan.length > 0 ? 'tutupkas-lanjut-alasan' : undefined}
         onClick={() => {
           setSibuk(true);
           /* ⛔ `konfig`, `sesi`, `idBaru`, dan `hlc` ikut supaya percobaan
@@ -595,7 +623,11 @@ export function TutupKas() {
         Lanjut
       </Tombol>
       <span id="tutupkas-lanjut-alasan" className="sr-only">
-        {sibuk ? 'Sedang memproses hitungan.' : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
+        {sibuk
+          ? 'Sedang memproses hitungan.'
+          : tahanan.length > 0
+            ? 'Masih ada pesanan tahan. Lanjutkan atau buang dulu.'
+            : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
       </span>
     </div>
   );
