@@ -57,7 +57,7 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = 
       // `dalam` DIREKAM per penulisan, bukan hanya dihitung sekali. Tanpa
       // ini, `simpanHlc` yang dipindah ke luar transaksi tetap terlihat
       // "ditulis" dan test hijau untuk kode yang melanggar I10.
-      state.tulis.push({ sql: sql.trim().split('\n')[0], params, dalam: state.diDalamTransaksi });
+      state.tulis.push({ sql: sql.trim().split('\n')[0], sqlPenuh: sql, params, dalam: state.diDalamTransaksi });
       if (/UPDATE device_config/.test(sql)) {
         state.device_config.receipt_sequence = params[0];
         state.device_config.sequence_business_date = params[1];
@@ -1494,4 +1494,100 @@ test('⛔ rencanaBayarKeranjang: mode pembulatan outlet (half_up/up/down) menent
       assert.equal(r.rencana.kembalian, kembalian, `${ket}: kembalian`);
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Task 10 — Pajak = pilihan kanal (FR-C7). Spec § 4 "Pajak sebagai pilihan
+// kanal", § 11 G-KANAL dan G-TANPA-LAYANAN.
+
+const TARIF_DUA_KANAL = [
+  // PBJT 10% hanya untuk dine_in; PPN 11% untuk semua kanal. Resolusi FR-C7:
+  // kanal spesifik menang atas 'all', jadi dine_in → PBJT dan takeaway → PPN.
+  {
+    id: 'tr-pbjt-dine', tenant_id: 't1', outlet_id: 'o1', name: 'PBJT 10%', type: 'pbjt',
+    rate: 1000, is_inclusive: 0, phase: 'subtotal', channel: 'dine_in',
+    applies_to: 'all_items', applies_to_ids: null,
+    effective_from: '2026-01-01T00:00:00Z', effective_to: null,
+  },
+  {
+    id: 'tr-ppn-all', tenant_id: 't1', outlet_id: 'o1', name: 'PPN 11%', type: 'ppn',
+    rate: 1100, is_inclusive: 0, phase: 'subtotal', channel: 'all',
+    applies_to: 'all_items', applies_to_ids: null,
+    effective_from: '2026-01-01T00:00:00Z', effective_to: null,
+  },
+];
+
+/** Kolom → nilai untuk INSERT "order": literal di VALUES dibaca dari SQL, `?` dari params. */
+function barisOrder(db) {
+  const t = db.state.tulis.find((x) => /INSERT INTO "order"/.test(x.sql));
+  assert.ok(t, 'baris order tidak ditulis');
+  return t;
+}
+
+test('⛔ G-KANAL: dine_in memilih tarif kanal dine_in; order.channel tersimpan dine_in', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { calculateTax } = await import('../../packages/domain/src/tax.ts');
+
+  const kanalDine = { baris: BARIS, diskon: null, kanal: 'dine_in' };
+  const dbDine = dbPalsu({ tarif: TARIF_DUA_KANAL });
+  const hasil = await simpanPenjualan({ db: dbDine, ...args({ keranjang: kanalDine }) });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  // order.channel (kolom ke-9 pada INSERT "order") dan muatan outbox.
+  assert.equal(barisOrder(dbDine).params[8], 'dine_in', 'order.channel lokal bukan dine_in');
+  const outbox = dbDine.state.tulis.find((t) => /outbox_local/.test(t.sql));
+  assert.equal(JSON.parse(outbox.params[4]).channel, 'dine_in', 'muatan outbox channel bukan dine_in');
+
+  // tax_amount = hasil TaxCalculator yang dipanggil langsung dengan kanal yang sama.
+  const langsung = (channel) =>
+    calculateTax({
+      lines: [{ lineId: 'b1', itemId: 'v1', categoryId: null, amount: 20000n }],
+      serviceChargeAmount: 0n,
+      orderDiscount: 0n,
+      taxRates: TARIF_DUA_KANAL.map((r) => ({
+        id: r.id, name: r.name, rateScaled: BigInt(r.rate), isInclusive: r.is_inclusive === 1,
+        jurisdiction: null, outletId: r.outlet_id, channel: r.channel,
+        appliesTo: r.applies_to, appliesToIds: [],
+      })),
+      channel,
+      outletId: 'o1',
+    });
+  assert.equal(hasil.taxAmount, langsung('dine_in').totalTax, 'tax_amount dine_in bukan hasil TaxCalculator');
+
+  // Pembeda: takeaway di fixture yang SAMA memakai tarif lain, jadi pajaknya berbeda.
+  const dbTake = dbPalsu({ tarif: TARIF_DUA_KANAL });
+  const take = await simpanPenjualan({ db: dbTake, ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'takeaway' } }) });
+  assert.equal(barisOrder(dbTake).params[8], 'takeaway');
+  assert.equal(take.taxAmount, langsung('takeaway').totalTax);
+  assert.notEqual(hasil.taxAmount, take.taxAmount, 'fixture tidak membedakan kanal — test hampa');
+});
+
+test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) → service_charge_amount 0 di order lokal dan muatan outbox; total = subtotal − diskon + pajak eksklusif', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const outlet = { ...OUTLET, service_charge_rate: 1000 };
+  const db = dbPalsu({ tarif: TARIF_DUA_KANAL, outlet });
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'dine_in' } }),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  // service_charge_amount di INSERT "order" adalah literal di VALUES: kolom ke-13, nilai 0.
+  const penuh = barisOrder(db).sqlPenuh;
+  const kolom = penuh.slice(penuh.indexOf('(', penuh.indexOf('"order"')) + 1, penuh.indexOf(')')).split(',').map((c) => c.trim());
+  const nilai = penuh.slice(penuh.indexOf('VALUES (') + 8, penuh.lastIndexOf(')')).split(',').map((c) => c.trim());
+  assert.equal(kolom.length, nilai.length, 'penguraian kolom/nilai INSERT order meleset');
+  const i = kolom.indexOf('service_charge_amount');
+  assert.ok(i >= 0, 'kolom service_charge_amount hilang dari INSERT order');
+  assert.equal(nilai[i], '0', 'service_charge_amount order lokal bukan literal 0');
+
+  const outbox = db.state.tulis.find((x) => /outbox_local/.test(x.sql));
+  const muatan = JSON.parse(outbox.params[4]);
+  for (const [k, v] of Object.entries(muatan)) {
+    if (/service/i.test(k)) assert.equal(Number(v), 0, `muatan outbox ${k} bukan 0`);
+  }
+
+  // 20.000 − 0 + PBJT 10% eksklusif (2.000); tanpa biaya layanan 2.000 lagi.
+  assert.equal(hasil.total, 22000n, 'total memuat biaya layanan atau tarif yang salah');
+  assert.equal(hasil.taxAmount, 2000n);
 });

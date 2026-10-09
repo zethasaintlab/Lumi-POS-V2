@@ -1580,6 +1580,21 @@
   white-space: nowrap;
 }
 
+/* Lembar Pajak (K-03): dua pilihan kanal, 56 px (aksi menyangkut uang). Pilihan terpasang ditandai
+   ikon centang + `aria-checked`, bukan warna saja (DS #5). */
+.kasir-kanal-daftar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kasir-kanal-opsi {
+  justify-content: space-between;
+  width: 100%;
+}
+.kasir-kanal-opsi[aria-checked="true"] {
+  border-color: var(--primary);
+}
+
 .kasir-toolbar-label {
   font-size: var(--text-small);
   font-weight: var(--weight-medium);

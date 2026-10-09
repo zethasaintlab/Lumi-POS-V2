@@ -38,6 +38,53 @@ function baris(id, amount, extra = {}) {
   return { lineId: id, itemId: `item-${id}`, categoryId: null, amount, ...extra };
 }
 
+// ⛔ Fixture wajib #1 (`docs/keputusan/uang-pembayaran-kas.md` § "K-06/K-07
+// tidak boleh dinyatakan selesai tanpa tiga fixture ini"): `tax_rate.type = ppn`
+// 11%. `TaxCalculator` tidak mengenal `type` (hanya `rateScaled`), jadi yang
+// diuji adalah tarif 1100 berskala 10.000 lewat jalur eksklusif DAN inklusif.
+// Angka diturunkan tangan, bukan dari fungsi yang diuji.
+const PPN_11 = {
+  id: 'rate-ppn-11',
+  name: 'PPN 11%',
+  type: 'ppn',
+  rateScaled: 1100n,
+  isInclusive: false,
+  outletId: null,
+  channel: 'all',
+  appliesTo: 'all_items',
+  appliesToIds: [],
+};
+
+test("⛔ fixture #1: tax_rate type ppn 11% (rate 1100 berskala 10.000) dihitung TaxCalculator", async () => {
+  const { calculateTax } = await import(MOD);
+  const masukan = (rate) => ({
+    lines: [baris('a', 60000n), baris('b', 40000n)],
+    serviceChargeAmount: 0n,
+    orderDiscount: 10000n,
+    taxRates: [rate],
+    channel: 'takeaway',
+    outletId: 'outlet-1',
+  });
+
+  // Eksklusif: dasar = 100.000 − 10.000 = 90.000; 90.000 × 11% = 9.900.
+  const eks = calculateTax(masukan(PPN_11));
+  assert.equal(eks.lines.length, 1, 'satu tarif → satu baris breakdown');
+  assert.equal(eks.lines[0].name, 'PPN 11%');
+  assert.equal(eks.lines[0].base, 90000n);
+  assert.equal(eks.totalTax, 9900n);
+  assert.equal(eks.totalTaxExclusive, 9900n, 'eksklusif MENAMBAH total');
+  assert.equal(
+    eks.perLine.reduce((n, l) => n + l.amount, 0n),
+    9900n,
+    'SUM(perLine) = totalTax'
+  );
+
+  // Inklusif: 90.000 − 90.000 ÷ 1,11 = 90.000 − 81.081 (dibulatkan half-up) = 8.919.
+  const inkl = calculateTax(masukan({ ...PPN_11, id: 'rate-ppn-11-inc', isInclusive: true }));
+  assert.equal(inkl.totalTax, 8919n);
+  assert.equal(inkl.totalTaxExclusive, 0n, 'inklusif TIDAK menambah total');
+});
+
 // --- FR-C8 langkah 11-12: eksklusif ---
 
 test('eksklusif: pajak dihitung dari dasar dan MENAMBAH total', async () => {

@@ -277,6 +277,8 @@ Keputusan user 2 September 2026, diambil setelah audit monokultur. Ketiganya
 | 2 | `service_charge_amount != 0` **dan** `channel = 'dine_in'` | 3 berkas lawan 48 di produk F&B — yang paling khas LumiPOS justru yang paling sedikit diuji. Kanal memutuskan tarif pajak di sebagian yurisdiksi (`spec-c`) |
 | 3 | `qris_static` + `card_edc` di jalur **TAMPILAN** | Keduanya sudah teruji di jalur DATA (4 berkas: penjualan, tutup-kas, tutup-kas-refund, laporan-harian) dan TIDAK di jalur tampilan — persis lubang yang meloloskan peta metode keempat yang memuat `card` dan tidak memuat `qris_static` |
 
+**Status fixture (9 Oktober 2026, PR 2C Task 10, Pajak = pilihan kanal):** fixture #1 DIPENUHI — `tax_rate.type = 'ppn'` 11% dihitung `TaxCalculator` (eksklusif dan inklusif, dengan diskon order) di `tests/domain/tax.test.js`, dan tarif per kanal teruji di `tests/kasir/penjualan.test.js` dan `tests/payment/tax-in-orders.test.js`. Fixture #2 terpenuhi SEPARUH: `channel = 'dine_in'` teruji di perangkat, server, dan DOM galeri; `service_charge_amount != 0` BELUM, karena service charge tidak dibangun (Q2, bawaan plan) dan `service_charge_amount` tetap terkunci nol di perangkat dan server — yang dijaga G-TANPA-LAYANAN. Separuh itu terbuka sampai Q2 dijawab. Pilihan kanal disimpan di `Keranjang.kanal` (dipulihkan `takeaway` untuk keranjang tersimpan lama) dan mengalir ke `hitungKeranjang`, `simpanPenjualan`, dan `order.channel`; `hitungKeranjang` tidak lagi menerima parameter `channel` terpisah.
+
 ⛔ **K1 (28 dari 42 empty state) dan K2 (~19 endpoint tanpa penyebut) SENGAJA
 tidak dipilah sekarang** (keputusan user). Keduanya batas atas populasi, bukan
 cacat; apakah nol di suatu layar sah atau tidak hanya dapat diputuskan **saat

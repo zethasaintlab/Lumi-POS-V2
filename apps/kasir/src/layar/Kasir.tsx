@@ -25,11 +25,14 @@ import {
   qtyDiKeranjang,
   satuanKeranjang,
   setelDiskon,
+  setelKanal,
   subtotalKeranjang,
   tambah,
   type BarisKeranjang,
+  type Kanal,
   type ModifierTerpilih,
 } from '../kasir/keranjang.ts';
+import { kanalPesanan, LABEL_KANAL, ringkasKanal, type RingkasanKanal } from '../kasir/kanal.ts';
 import { periksaTambahStok } from '../kasir/batas-stok.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
 import { hitungKeranjang, type HitunganKeranjang } from '../kasir/penjualan.ts';
@@ -58,6 +61,7 @@ import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
+import { LembarKanal } from '../komponen/LembarKanal.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { DialogEditItem } from '../komponen/DialogEditItem.tsx';
@@ -150,6 +154,9 @@ export function Kasir() {
      sama dengan Diskon/Kas manual: tidak punya keadaan yang berguna lewat
      URL. */
   const [dialogManual, setDialogManual] = useState(false);
+  /* Toolbar #3 — Pajak = pilihan KANAL (spec § 4, P9(a)). `null` = lembar tertutup; `ringkasan`
+     `null` di dalamnya = tarif tidak terbaca (pilihan kanal tetap sah). */
+  const [lembarKanal, setLembarKanal] = useState<{ ringkasan: RingkasanKanal[] | null } | null>(null);
   /* Toolbar #7 — Batalkan (spec § 4 baris 7). Dialog konfirmasi, dan
      mengonfirmasi menulis `audit_event` `cart_cleared` (keputusan user
      28 September 2026, issue #76). */
@@ -284,6 +291,32 @@ export function Kasir() {
       : sesi === null
         ? 'Sesi tidak dikenali. Masuk ulang untuk memberi diskon.'
         : null;
+
+  /* Pajak — nonaktif saat keranjang kosong: nama tarif tiap kanal dibaca dari HASIL hitungan atas
+     isi keranjang (invariant #7), jadi tanpa baris tidak ada yang dapat ditampilkan. */
+  const alasanPajakNonaktif =
+    keranjang.baris.length === 0
+      ? 'Keranjang kosong. Tarif pajak ditampilkan dari isi keranjang; tambahkan item dulu.'
+      : konfig === null || shift === null
+        ? 'Perangkat atau shift belum siap. Pajak belum dapat dipilih.'
+        : null;
+  const kanalAktif = kanalPesanan(keranjang);
+
+  /* Hitung KEDUA kanal lewat `hitungKeranjang` yang sama dengan blok Total, lalu rangkum. Gagal baca
+     tidak menahan lembar: kanal tetap dapat dipilih, K-06 menghitung ulang sebelum menagih. */
+  const bukaLembarKanal = async () => {
+    if (!konfig || !shift) return;
+    let ringkasan: RingkasanKanal[] | null = null;
+    try {
+      const hitungUntuk = (kanal: Kanal) =>
+        hitungKeranjang({ db, konfig, keranjang: setelKanal(keranjang, kanal), shift, waktu: () => new Date() });
+      const [dine_in, takeaway] = await Promise.all([hitungUntuk('dine_in'), hitungUntuk('takeaway')]);
+      ringkasan = ringkasKanal({ dine_in, takeaway });
+    } catch {
+      ringkasan = null;
+    }
+    setLembarKanal({ ringkasan });
+  };
 
   /* Batalkan — alasan NONAKTIF, dua sebab dua kalimat (Aturan tombol §4).
      Tombol toolbar dan ikon tempat sampah di kepala keranjang berbagi satu
@@ -459,7 +492,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && lembarKanal === null,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -712,6 +745,25 @@ export function Kasir() {
                 </span>
               )}
             </>
+          )}
+
+          {/* Pajak — memilih KANAL (Dine in/Takeaway), bukan tarif (FR-C7). Label terlihat = kanal aktif
+              (Q8); nama aksesibel "Pajak: <kanal>" menyebut fungsinya, dan memuat label terlihat.
+              Tidak di balik kill switch: kanal menentukan `order.channel` setiap penjualan. */}
+          <Tombol
+            varian="ghost"
+            ariaLabel={`Pajak: ${LABEL_KANAL[kanalAktif]}`}
+            disabled={alasanPajakNonaktif !== null}
+            keterangan={alasanPajakNonaktif !== null ? 'toolbar-pajak-alasan' : undefined}
+            onClick={() => void bukaLembarKanal()}
+          >
+            <Icon name="receipt-text" size={17} />
+            <span className="kasir-toolbar-label">{LABEL_KANAL[kanalAktif]}</span>
+          </Tombol>
+          {alasanPajakNonaktif !== null && (
+            <span id="toolbar-pajak-alasan" className="sr-only">
+              {alasanPajakNonaktif}
+            </span>
           )}
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
@@ -1234,6 +1286,18 @@ export function Kasir() {
           onSimpan={(d) => {
             setKeranjang((k) => setelDiskon(k, d));
             setDialogDiskon(false);
+          }}
+        />
+      )}
+
+      {lembarKanal && (
+        <LembarKanal
+          aktif={kanalAktif}
+          ringkasan={lembarKanal.ringkasan}
+          onBatal={() => setLembarKanal(null)}
+          onPilih={(kanal) => {
+            setKeranjang((k) => setelKanal(k, kanal));
+            setLembarKanal(null);
           }}
         />
       )}

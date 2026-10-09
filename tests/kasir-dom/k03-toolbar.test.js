@@ -33,7 +33,7 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Pesanan tahan',
 ];
 /** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon', 'Batalkan']);
+const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Batalkan']);
 /** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
     Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
 const SEMENTARA = new Set([]);
@@ -110,7 +110,7 @@ after(async () => {
  * karena beberapa test butuh cart TERISI (`keranjang-penuh`).
  */
 async function bukaK03(opsi = {}) {
-  const { keadaan = 'normal', matikan = [] } = opsi;
+  const { keadaan = 'normal', matikan = [], tarifKanal = false, layanan = false } = opsi;
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
@@ -119,6 +119,10 @@ async function bukaK03(opsi = {}) {
   });
   const q = new URLSearchParams({ layar: 'K-03', keadaan });
   if (matikan.length > 0) q.set('matikan', matikan.join(','));
+  /* `?tarifKanal=1` — PBJT 10% khusus dine_in berdampingan dengan PPN 11% semua kanal.
+     `?layanan=1` — `outlet.service_charge_rate` 10% (G-TANPA-LAYANAN). */
+  if (tarifKanal) q.set('tarifKanal', '1');
+  if (layanan) q.set('layanan', '1');
   await hal.goto(`${alamat}/harness-galeri.html?${q.toString()}`, { waitUntil: 'load' });
   await hal.waitForSelector('.kasir-toolbar', { timeout: 10_000 });
   return { hal, galat };
@@ -132,8 +136,11 @@ test('⛔ toolbar berisi label TERPASANG dalam urutan mockup (ditambah SEMENTARA
     const toolbar = document.querySelector('.kasir-toolbar');
     const header = document.querySelector('.kasir-header');
     const tombol = toolbar ? [...toolbar.querySelectorAll('button')] : [];
+    /* Task 10 (Q8): label terlihat tombol Pajak = kanal aktif ("Takeaway"/"Dine in"), jadi yang
+       dicocokkan ke mockup adalah NAMA AKSESIBEL-nya, "Pajak: <kanal>" → "Pajak". */
+    const nama = (b) => (b.getAttribute('aria-label') ?? b.innerText).trim().replace(/\s+/g, ' ');
     return {
-      label: tombol.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
+      label: tombol.map((b) => nama(b).replace(/^Pajak: .+$/, 'Pajak')),
       diHeader: header && toolbar ? header.contains(toolbar) : false,
     };
   });
@@ -587,4 +594,142 @@ test('⛔ penulisan jejak GAGAL (melempar) → dialog menahan dengan galat, kera
   assert.equal(audit(r.tulis).length, 0);
   assert.equal(outbox(r.tulis).length, 0);
   assert.equal(hapusKeranjang(r.tulis).length, r.hapusAwal, 'keranjang_lokal dihapus padahal jejak gagal');
+});
+
+// ---------------------------------------------------------------------------
+// Task 10 — Pajak = pilihan kanal (FR-C7). Spec § 4 "Pajak sebagai pilihan
+// kanal", § 11 G-KANAL dan G-TANPA-LAYANAN.
+
+const bacaBaris = (hal) =>
+  hal.evaluate(() => {
+    const aside = document.querySelector('.kasir-subtotal')?.parentElement;
+    const baris = aside ? [...aside.querySelectorAll('.kasir-subtotal')] : [];
+    return {
+      baris: baris.map((e) => e.innerText.trim().replace(/\s+/g, ' ')),
+      total: document.querySelector('.kasir-total')?.innerText.trim().replace(/\s+/g, ' ') ?? null,
+    };
+  });
+
+/** Tombol Pajak (nama aksesibel "Pajak: <kanal>"). Ketiadaannya gagal dengan pesan, bukan timeout 30 dtk. */
+async function tombolPajakAda(hal) {
+  const t = hal.locator('.kasir-toolbar').getByRole('button', { name: /^Pajak: / });
+  assert.equal(await t.count(), 1, 'tombol dengan nama aksesibel "Pajak: <kanal>" tidak ada di toolbar');
+  return t;
+}
+
+async function tungguHitungan(hal, nama) {
+  await hal.waitForFunction(
+    (n) => [...document.querySelectorAll('.kasir-subtotal')].some((e) => e.innerText.includes(n)),
+    nama,
+    { timeout: 10_000 }
+  );
+}
+
+test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masing-masing; memilih Dine in mengubah baris "Pajak · <nama tarif>" di keranjang', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', tarifKanal: true });
+  await tungguHitungan(hal, 'PPN 11%');
+  const sebelum = await bacaBaris(hal);
+
+  const pajak = await tombolPajakAda(hal);
+  assert.equal(await pajak.getAttribute('aria-label'), 'Pajak: Takeaway', 'bawaan harus Takeaway');
+  assert.equal((await pajak.innerText()).trim(), 'Takeaway', 'label terlihat harus kanal aktif (Q8)');
+
+  await pajak.click();
+  const lembar = hal.getByRole('dialog', { name: 'Pajak pesanan' });
+  await lembar.waitFor({ timeout: 5_000 });
+  const pilihan = await lembar.getByRole('radio').evaluateAll((n) =>
+    n.map((e) => ({ teks: e.innerText.trim().replace(/\s+/g, ' '), terpilih: e.getAttribute('aria-checked') }))
+  );
+  assert.deepEqual(
+    pilihan,
+    [
+      { teks: 'Takeaway · PPN 11%', terpilih: 'true' },
+      { teks: 'Dine in · PBJT 10%', terpilih: 'false' },
+    ],
+    'lembar harus menyebut tarif yang berlaku untuk MASING-MASING kanal'
+  );
+  assert.equal(
+    await lembar.getByText('Tarif sama untuk kedua kanal').count(),
+    0,
+    'lembar mengaku tarifnya sama padahal berbeda'
+  );
+
+  await lembar.getByRole('radio', { name: /^Dine in/ }).click();
+  await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5_000 });
+  await tungguHitungan(hal, 'PBJT 10%');
+  const sesudah = await bacaBaris(hal);
+  const adaNama = (b, n) => b.baris.some((x) => x.includes(n));
+  assert.ok(adaNama(sebelum, 'PPN 11%') && !adaNama(sebelum, 'PBJT 10%'), `sebelum: ${JSON.stringify(sebelum.baris)}`);
+  assert.ok(adaNama(sesudah, 'PBJT 10%'), `Dine in tidak memunculkan PBJT 10%: ${JSON.stringify(sesudah.baris)}`);
+  assert.ok(!adaNama(sesudah, 'PPN 11%'), `baris PPN 11% masih ada sesudah Dine in: ${JSON.stringify(sesudah.baris)}`);
+  assert.notEqual(sesudah.total, sebelum.total, 'Total tidak berubah ketika tarif berganti');
+
+  assert.equal(await pajak.getAttribute('aria-label'), 'Pajak: Dine in');
+  assert.equal((await pajak.innerText()).trim(), 'Dine in');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('outlet tanpa tarif per kanal: kedua pilihan menyebut tarif yang sama DAN lembarnya mengatakan itu', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await tungguHitungan(hal, 'PPN 11%');
+  await (await tombolPajakAda(hal)).click();
+  const lembar = hal.getByRole('dialog', { name: 'Pajak pesanan' });
+  await lembar.waitFor({ timeout: 5_000 });
+  const teks = await lembar.getByRole('radio').evaluateAll((n) => n.map((e) => e.innerText.trim().replace(/\s+/g, ' ')));
+  assert.deepEqual(teks, ['Takeaway · PPN 11%', 'Dine in · PPN 11%']);
+  assert.equal(
+    await lembar.getByText('Tarif sama untuk kedua kanal').count(),
+    1,
+    'lembar tidak menyatakan bahwa tarifnya sama untuk kedua kanal'
+  );
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('Pajak NONAKTIF dengan alasan saat keranjang kosong; label tetap kanal aktif', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal' });
+  const pajak = await tombolPajakAda(hal);
+  assert.equal(await pajak.isDisabled(), true);
+  const id = await pajak.getAttribute('aria-describedby');
+  assert.ok(id, 'Pajak nonaktif tanpa aria-describedby');
+  const alasan = await hal.evaluate((i) => document.getElementById(i)?.textContent.trim() ?? '', id);
+  assert.ok(alasan.length > 0, 'alasan Pajak nonaktif kosong');
+  assert.equal((await pajak.innerText()).trim(), 'Takeaway');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak, keranjang, K-06, dan K-07', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', tarifKanal: true, layanan: true });
+  await hal.route('**/health', (r) => r.fulfill({ status: 200, body: 'ok' }));
+  await tungguHitungan(hal, 'PPN 11%');
+  const LAYANAN = /layanan|service/i;
+  const panggung = () => hal.evaluate(() => document.querySelector('.galeri-panggung').innerText);
+  const periksa = async (tempat, harapAda) => {
+    const teks = await panggung();
+    assert.ok(teks.includes(harapAda), `${tempat}: "${harapAda}" tidak terbaca — test membaca layar yang salah (nol bukan jawaban)`);
+    const m = teks.match(LAYANAN);
+    assert.equal(m, null, `${tempat}: teks "${m?.[0]}" menyiratkan biaya layanan pada Dine in`);
+  };
+
+  await (await tombolPajakAda(hal)).click();
+  const lembar = hal.getByRole('dialog', { name: 'Pajak pesanan' });
+  await lembar.waitFor({ timeout: 5_000 });
+  await periksa('lembar Pajak', 'Dine in · PBJT 10%');
+  await lembar.getByRole('radio', { name: /^Dine in/ }).click();
+  await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5_000 });
+  await tungguHitungan(hal, 'PBJT 10%');
+  await periksa('keranjang K-03', 'PBJT 10%');
+
+  await hal.getByRole('button', { name: 'Bayar', exact: true }).click();
+  await hal.getByLabel('Nominal diterima').waitFor({ timeout: 10_000 });
+  await periksa('K-06', 'PBJT 10%');
+
+  await hal.getByLabel('Nominal diterima').fill('600.000');
+  await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+  await hal.waitForSelector('text=Transaksi Baru', { timeout: 10_000 });
+  await periksa('K-07', 'Transaksi Baru');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
 });

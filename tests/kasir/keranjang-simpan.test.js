@@ -67,7 +67,7 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null };
+const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -304,4 +304,31 @@ test('⛔ pembersihan yang di-ROLLBACK tidak menghapus keranjang', async () => {
   const pulih = await pulihkanKeranjang(d, 's1');
   assert.equal(pulih.status, 'dipulihkan');
   assert.deepEqual(pulih.keranjang, KERANJANG);
+});
+
+test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+
+  // Dine in ikut tersimpan dan kembali sebagai dine_in.
+  const d1 = db();
+  await simpanKeranjang(d1, 's1', { ...KERANJANG, kanal: 'dine_in' }, JAM);
+  const baru = await pulihkanKeranjang(d1, 's1');
+  assert.equal(baru.status, 'dipulihkan');
+  assert.equal(baru.keranjang.kanal, 'dine_in', 'kanal tidak ikut tersimpan');
+
+  // Baris yang ditulis versi lama (tanpa `kanal`) tetap terbaca, sebagai takeaway.
+  const d2 = db();
+  d2.sqlite
+    .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
+    .run('kini', 's1', JSON.stringify({ baris: [baris()], diskon: null }), JAM().toISOString());
+  const lama = await pulihkanKeranjang(d2, 's1');
+  assert.equal(lama.status, 'dipulihkan', 'keranjang lama tanpa kanal dibuang');
+  assert.equal(lama.keranjang.kanal, 'takeaway');
+
+  // Nilai kanal yang tidak dikenal juga jatuh ke takeaway, bukan dipercaya.
+  const d3 = db();
+  d3.sqlite
+    .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
+    .run('kini', 's1', JSON.stringify({ baris: [baris()], diskon: null, kanal: 'delivery' }), JAM().toISOString());
+  assert.equal((await pulihkanKeranjang(d3, 's1')).keranjang.kanal, 'takeaway');
 });

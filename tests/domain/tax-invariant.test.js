@@ -96,6 +96,22 @@ test('invariant #7: tidak ada angka tarif pajak di packages/domain selain tax.ts
   assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
 });
 
+// Task 10 (Pajak = pilihan kanal): jalur hitung KASIR (`apps/kasir/src/kasir`, termasuk `kanal.ts`)
+// ikut dijaga. Sebelumnya guard ini hanya memindai server dan domain, jadi angka tarif yang
+// menyelinap ke perangkat tidak terlihat siapa pun. Hanya direktori ini, bukan seluruh
+// `apps/kasir`: layar memuat "10%"/"20%" sah (ambang diskon) dan guard yang berisik dimatikan orang.
+const KASIR_HITUNG_SRC = path.join(__dirname, '../../apps/kasir/src/kasir');
+
+test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/kasir (jalur hitung perangkat)', async () => {
+  const { files, findings } = await scan(KASIR_HITUNG_SRC);
+  assert.ok(files.length > 5, 'apps/kasir/src/kasir harus punya banyak file -- guard lulus vakum');
+  assert.ok(
+    files.some((f) => f.endsWith(`${path.sep}kanal.ts`)),
+    'kanal.ts tidak terpindai -- pilihan kanal luput dari guard invariant #7'
+  );
+  assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
+});
+
 // Kedua sentinel di bawah membuktikan POLANYA sendiri benar. Guard yang lolos
 // karena regex-nya tidak pernah match apa pun sama tidak bergunanya dengan
 // guard yang lolos karena daftar filenya kosong.
