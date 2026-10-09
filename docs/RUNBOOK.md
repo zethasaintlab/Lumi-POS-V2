@@ -804,10 +804,16 @@ tambahan, tidak ada yang diubah).
 
 Rilis yang memuat migrasi `0037_order_customer_table_note.sql` (tiga kolom
 `order`: nama pemesan, nomor meja, catatan) juga **server dulu**. Klien baru
-mengirim `customerName`/`tableNumber`/`note` hanya bila diisi kasir; di atas
-server lama, field asing itu diabaikan bila validator server tidak melarangnya,
-tetapi **kolom tidak tersimpan** dan struk cetak ulang dari server kehilangan
-barisnya. Setelah klien terpasang, perangkat mengunduh ulang riwayat (§ 7.4).
+mengirim `customerName`/`tableNumber`/`note` hanya bila diisi kasir. Di atas
+server lama, skema menghapus kunci yang tidak dikenalnya (`removeAdditional`)
+dan server menjawab **201**: ketiga field **HILANG DIAM-DIAM**. Tidak ada
+galat, tidak ada item `gagal-permanen`, tidak ada jejak di antrean; kolom tidak
+tersimpan dan struk cetak ulang dari server kehilangan barisnya. Karena itu
+spec § 14 R8 ("gagal-permanen" untuk klien baru di atas server lama) **tidak
+berlaku untuk tiga field ini** — tidak ada yang dapat diputar ulang lewat
+§ 10.1; satu-satunya pemulihan adalah menerapkan server lebih dulu. Order yang
+sudah terlanjur diterima server lama tanpa ketiga field tidak punya pemulihan
+otomatis. Setelah klien terpasang, perangkat mengunduh ulang riwayat (§ 7.4).
 
 ---
 
