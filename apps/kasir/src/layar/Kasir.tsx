@@ -801,15 +801,12 @@ export function Kasir() {
             bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
             keranjang.
 
-            ⛔ EMPAT aksi hari ini, semuanya TERPASANG mockup (Item manual,
-            Diskon, Pajak, Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
-            Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya pindah ke
-            layar Laci kas (K-18, `layar/LaciKas.tsx`). Empat sisanya di mockup
-            (Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
-            repo ini; tombol yang tidak melakukan apa-apa adalah janji kepada
-            kasir yang produk ini tidak dapat tepati — Task 11/12
-            membangun sisanya (spec § 4 "Toolbar
-            kasir delapan tombol"). */}
+            ⛔ DELAPAN tombol, SEMUANYA terpasang dan bekerja (urutan
+            `LABEL_TOOLBAR_MOCKUP` § 4; G-TOOLBAR lengkap sejak Task 12). Buka
+            laci dan Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya
+            pindah ke layar Laci kas (K-18, `layar/LaciKas.tsx`). Tombol yang
+            tidak melakukan apa-apa adalah janji kepada kasir yang produk ini
+            tidak dapat tepati, jadi tidak ada yang mati. */}
         <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
           {/* Item manual — P4(a), keputusan user (spec § 4 baris 1): dialog
               masukan kode, bukan "barang custom" (keputusan produk tertunda,

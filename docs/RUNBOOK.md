@@ -449,6 +449,16 @@ raw table yang **ditulis sendiri**. Yang diketahui: `tax_rate.rate`,
 tersimpan sebagai `real` di kolom `INTEGER` — hanya `typeof()` SQLite yang
 membedakannya.
 
+### 7.4 Sidik jari skema berubah: perangkat mengunduh ulang riwayat
+
+Sesudah pembaruan yang menambah kolom pada raw table (mis. nama pemesan, nomor
+meja, catatan di `order`, migrasi `0037`), sidik jari skema lokal berubah dan
+perangkat mengunduh ulang riwayat (§ 7.1: `disconnectAndClear()`). Perangkat
+yang offline saat itu berjalan dengan katalog kosong sampai terhubung. Outbox
+tidak tersentuh: penjualan yang belum terkirim tetap aman dan tetap naik
+sesudah terhubung. Ini perilaku yang diharapkan, bukan kerusakan; periksa
+§ 7.2 hanya bila katalog tetap kosong setelah perangkat terhubung.
+
 ---
 
 ## 8. Kas & shift
@@ -769,11 +779,20 @@ klien yang mengirimnya dilepas. Berlaku untuk Transfer, audit Batalkan
    `note` opsional; tanpa ketiganya perilakunya identik dengan sebelumnya).
 3. Baru naikkan tahap rilis klien (§12.1).
 
-⛔ Klien baru di atas server lama menghasilkan baris outbox `gagal-permanen`
-untuk penjualan yang memuat field baru. Penjualannya sudah tersimpan di
-perangkat dan uangnya sudah diterima; memulihkannya berarti memutar ulang
-antrean (§10.1) sesudah server diperbarui. Klien lama di atas server baru
-aman (field opsional).
+⛔ **Urutan wajib: server (migrasi `0037` + kode) → sync rules → klien.** Sync
+rules (`prototypes/05-powersync-jalur-turun/powersync/sync-config.yaml`) memilih
+ketiga kolom dan harus naik SESUDAH `0037` ada; mendahuluinya membuat sync gagal
+memilih kolom yang belum ada. Klien paling akhir.
+
+⛔ Klien baru di atas server lama TIDAK ditolak (OpenAPI `createOrder` tanpa
+`additionalProperties: false`): server menerima penjualan dan **menghilangkan
+nama pemesan, nomor meja, dan catatan secara diam-diam**. Stream riwayat lalu
+menimpa order lokal dengan `NULL`, dan cetak ulang struk kehilangan ketiganya.
+Memutar ulang antrean (§ 10.1) TIDAK memulihkannya: kunci idempotensi
+mengembalikan jawaban yang sama. Ketiga nilai itu **tidak dapat dipulihkan**;
+penjualan dan uangnya tetap utuh. (Rute baru seperti `cart-cleared` berbeda:
+ke server lama ia 404, § 12.4.) Klien lama di atas server baru aman (field
+opsional).
 
 ### 12.3 Jendela update dan penundaan
 
