@@ -134,11 +134,12 @@ test('⛔ N-1: order tanpa ketiga field diterima persis seperti hari ini', async
   assert.equal(body.note ?? null, null);
   const [r] = await bacaSebagai(tenant.id, BACA_ORDER, [p.id]);
   assert.deepEqual({ ...r }, { customer_name: null, table_number: null, note: null });
-  // Arah sebaliknya (klien BARU di atas server LAMA): server lama tidak
-  // mengenal ketiga field; yang menjaganya tetap 201 adalah bahwa body dengan
-  // field asing tidak ditolak oleh validasi skema.
+  // Yang dijaga HANYA: handler tidak menolak kunci tak dikenal di body (400) -- sabotase handler
+  // yang menolak kunci asing membuat ini merah. Ini BUKAN bukti perilaku server lama: skema AJV
+  // (removeAdditional) menghapus kunci asing sebelum handler, jadi sabotase skema tidak
+  // menyalakannya. Klien baru di atas server lama: RUNBOOK § 12.4.
   const asing = muatan(ctx, { fieldYangTidakDikenalServer: 'x' });
-  assert.equal((await kirim(asing)).statusCode, 201, 'field asing ditolak -- klien baru patah di server lama');
+  assert.equal((await kirim(asing)).statusCode, 201, 'handler menolak kunci asing di body');
   // null eksplisit (klien baru tanpa isi) sama sahnya dengan hilang.
   const p2 = muatan(ctx, { customerName: null, tableNumber: null, note: null });
   const res2 = await kirim(p2);
@@ -172,6 +173,19 @@ test('⛔ nomor kartu di nama/meja/catatan → 400 POSSIBLE_CARD_NUMBER', async 
     const res = await kirim(p);
     assert.equal(res.statusCode, 400, `${field}: ${res.body}`);
     assert.equal(JSON.parse(res.body).error.code, 'POSSIBLE_CARD_NUMBER');
+  }
+});
+
+test('⛔ baris baru / karakter kontrol di nama/meja/catatan → 400 VALIDATION_ERROR, tidak tersimpan', async () => {
+  const ctx = await siapkan();
+  for (const [field, nilai] of [['customerName', 'Bu\ndi'], ['tableNumber', 'A\u001b3'], ['note', 'baris1\r\nbaris2']]) {
+    const p = muatan(ctx, { [field]: nilai });
+    const res = await kirim(p);
+    assert.equal(res.statusCode, 400, `${field}: ${res.body}`);
+    const e = JSON.parse(res.body).error;
+    assert.equal(e.code, 'VALIDATION_ERROR');
+    assert.match(e.message, /karakter kontrol atau baris baru/);
+    assert.equal((await bacaSebagai(tenant.id, BACA_ORDER, [p.id])).length, 0, 'order tidak tersimpan');
   }
 });
 

@@ -10,6 +10,7 @@
  */
 import { periksaBukanNomorKartu, type GalatBayar } from './pembayaran-manual.ts';
 
+/** `[ASUMSI]` — spec kasir-design § 12 (rancangan otonom); belum divalidasi ke merchant. */
 export const MAKS_NAMA_PEMESAN = 40;
 /** `[ASUMSI]` — keputusan otonom spec § 12; contoh isi: "4", "A3". */
 export const MAKS_NOMOR_MEJA = 16;
@@ -22,6 +23,11 @@ export function normalisasiTeksPesanan(nilai: unknown): string | null {
   return t === '' ? null : t;
 }
 
+/* C0, DEL, C1, dan pemisah baris Unicode: teks ini dicetak ke ESC/POS, jadi baris baru atau
+   byte kontrol akan menjadi perintah printer / memecah struk. */
+// eslint-disable-next-line no-control-regex
+const KARAKTER_KONTROL = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+
 function periksa(nilai: unknown, label: string, maks: number): GalatBayar | null {
   if (nilai === undefined || nilai === null) return null;
   if (typeof nilai !== 'string') {
@@ -33,6 +39,9 @@ function periksa(nilai: unknown, label: string, maks: number): GalatBayar | null
   // POSSIBLE_CARD_NUMBER tidak boleh tertelan galat panjang.
   const kartu = periksaBukanNomorKartu(t, label);
   if (kartu !== null) return kartu;
+  if (KARAKTER_KONTROL.test(t)) {
+    return { kode: 'VALIDATION_ERROR', pesan: `${label} tidak boleh memuat karakter kontrol atau baris baru.` };
+  }
   if (t.length > maks) {
     return { kode: 'VALIDATION_ERROR', pesan: `${label} maksimal ${maks} karakter.` };
   }

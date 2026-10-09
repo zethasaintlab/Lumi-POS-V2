@@ -68,3 +68,18 @@ test('batas dihitung SESUDAH trim', async () => {
   assert.equal(m.normalisasiTeksPesanan(null), null);
   assert.equal(m.normalisasiTeksPesanan(undefined), null);
 });
+
+test('⛔ karakter kontrol dan baris baru ditolak VALIDATION_ERROR berpesan; teks biasa tetap sah', async () => {
+  const m = await import(MOD);
+  for (const fn of ['periksaNamaPemesan', 'periksaNomorMeja', 'periksaCatatan']) {
+    for (const buruk of ['a\nb', 'a\r\nb', 'a\tb', 'a\u0000b', 'a\u001bb', 'a\u007fb', 'a\u0085b', 'a\u2028b']) {
+      const g = m[fn](buruk);
+      assert.ok(g, `${fn}(${JSON.stringify(buruk)}) harus ditolak`);
+      assert.equal(g.kode, 'VALIDATION_ERROR');
+      assert.match(g.pesan, /karakter kontrol atau baris baru/);
+    }
+    assert.equal(m[fn]('Budi Santoso'), null, `${fn}: teks biasa sah`);
+  }
+  // Baris baru di TEPI dipangkas trim seperti spasi; yang di tengah ditolak.
+  assert.equal(m.periksaCatatan('  Tanpa gula\n'), null);
+});
