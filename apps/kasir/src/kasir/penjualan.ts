@@ -36,6 +36,12 @@ import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
 import type { Keranjang } from './keranjang.ts';
+import {
+  normalisasiTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../packages/domain/src/data-pesanan.ts';
 
 /**
  * K-06/K-07 — menyimpan penjualan di perangkat.
@@ -608,6 +614,17 @@ export function muatanOrder({
     // menembak server sungguhan; test pertama saya justru mengunci
     // bug-nya dengan mengharapkan string.
     total: Number(totals.total),
+    // P5/P6 — HANYA bila terisi: tanpa ketiganya muatan identik dengan klien
+    // N-1, dan server lama tidak melihat field yang tidak dikenalnya.
+    ...(normalisasiTeksPesanan(keranjang.dataPesanan?.namaPemesan) !== null
+      ? { customerName: normalisasiTeksPesanan(keranjang.dataPesanan?.namaPemesan) }
+      : {}),
+    ...(normalisasiTeksPesanan(keranjang.dataPesanan?.nomorMeja) !== null
+      ? { tableNumber: normalisasiTeksPesanan(keranjang.dataPesanan?.nomorMeja) }
+      : {}),
+    ...(normalisasiTeksPesanan(keranjang.dataPesanan?.catatan) !== null
+      ? { note: normalisasiTeksPesanan(keranjang.dataPesanan?.catatan) }
+      : {}),
     // FR-B8 — dikirim sebagai PERMINTAAN, bukan nominal hasilnya.
     //
     // ⛔ Server menghitung ulang dari subtotal-nya SENDIRI, dan itu yang
@@ -700,6 +717,19 @@ export async function simpanPenjualan({
   draf?: DrafTerkirim;
 }): Promise<HasilPenjualan> {
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
+
+  // P5/P6 — aturan yang sama dengan server (`data-pesanan.ts`). Keranjang yang
+  // dipulihkan atau jalur lain dapat membawa teks yang dialog tidak pernah
+  // lihat; yang lolos ke sini akan berhenti `gagal-permanen` (400) di antrean.
+  const dp = keranjang.dataPesanan;
+  const galatData =
+    periksaNamaPemesan(dp?.namaPemesan) ?? periksaNomorMeja(dp?.nomorMeja) ?? periksaCatatan(dp?.catatan);
+  if (galatData !== null) {
+    return { status: 'pembayaran_tidak_sah', kode: galatData.kode, pesan: galatData.pesan };
+  }
+  const namaPemesan = normalisasiTeksPesanan(dp?.namaPemesan);
+  const nomorMeja = normalisasiTeksPesanan(dp?.nomorMeja);
+  const catatan = normalisasiTeksPesanan(dp?.catatan);
 
   const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu });
   const channel = keranjang.kanal ?? 'takeaway';
@@ -810,8 +840,9 @@ export async function simpanPenjualan({
       `INSERT INTO "order"
          (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
           status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
-          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc,
+          customer_name, table_number, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         orderId, konfig.tenantId, konfig.outletId, konfig.deviceId, shift.id,
         receiptNumber, businessDate, sequence, channel,
@@ -824,6 +855,7 @@ export async function simpanPenjualan({
         Number(totals.total),
         Number(amountDue),
         sesi.userId, occurredAt, Number(hlcValue),
+        namaPemesan, nomorMeja, catatan,
       ]
     );
 
@@ -1111,6 +1143,9 @@ export async function simpanPenjualan({
       waktu: occurredAt,
       namaKasir: sesi.userId,
       channel,
+      namaPemesan,
+      nomorMeja,
+      catatan,
       baris: keranjang.baris.map((b, i) => ({
         itemName: b.itemName,
         variationName: b.variationName,

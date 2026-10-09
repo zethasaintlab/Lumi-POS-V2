@@ -1,5 +1,5 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
-import { keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
+import { keranjangKosong, type Keranjang, type BarisKeranjang, type DataPesanan } from './keranjang.ts';
 
 /**
  * KEP-21 — keranjang K-03 yang BERTAHAN melewati muat ulang.
@@ -203,7 +203,18 @@ function uraikan(teks: string): Keranjang | null {
   const kosong = keranjangKosong();
   // Keranjang tersimpan sebelum `kanal` ada, atau nilainya tak dikenal -> bawaan takeaway.
   const kanal = o.kanal === 'dine_in' ? 'dine_in' : 'takeaway';
-  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal };
+  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal, dataPesanan: dataPesananSah(o.dataPesanan) };
+}
+
+/**
+ * Per FIELD, bukan semua-atau-tidak-sama-sekali: nama yang rusak tidak boleh
+ * membuang nomor meja yang utuh, dan keranjang lama (tanpa field ini) menjadi
+ * ketiganya `null`. Keranjang adalah kenyamanan — ia tidak pernah gagal dipulihkan karenanya.
+ */
+function dataPesananSah(nilai: unknown): DataPesanan {
+  const o = typeof nilai === 'object' && nilai !== null ? (nilai as Record<string, unknown>) : {};
+  const teks = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
+  return { namaPemesan: teks(o.namaPemesan), nomorMeja: teks(o.nomorMeja), catatan: teks(o.catatan) };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {

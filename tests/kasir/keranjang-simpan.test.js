@@ -67,7 +67,8 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
+const DATA_KOSONG = { namaPemesan: null, nomorMeja: null, catatan: null };
+const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway', dataPesanan: DATA_KOSONG };
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -328,4 +329,43 @@ test('⛔ pembersihan yang di-ROLLBACK tidak menghapus keranjang', async () => {
   const pulih = await pulihkanKeranjang(d, 's1');
   assert.equal(pulih.status, 'dipulihkan');
   assert.deepEqual(pulih.keranjang, KERANJANG);
+});
+
+// --- Task 11 (kampanye kasir 2C): nama pemesan, nomor meja, catatan ---------
+
+test('⛔ dataPesanan dipulihkan utuh (nama, meja, catatan)', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  const dataPesanan = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' };
+  await simpanKeranjang(d, 's1', { ...KERANJANG, dataPesanan }, JAM);
+  const hasil = await pulihkanKeranjang(d, 's1');
+  assert.equal(hasil.status, 'dipulihkan');
+  assert.deepEqual(hasil.keranjang.dataPesanan, dataPesanan);
+});
+
+test('⛔ keranjang tersimpan SEBELUM dataPesanan ada → ketiganya null, bukan undefined dan bukan gagal', async () => {
+  const { pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  const lama = JSON.stringify({ baris: [baris()], diskon: null, kanal: 'takeaway' });
+  d.sqlite
+    .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
+    .run('kini', 's1', lama, '2026-08-24T10:00:00Z');
+  const hasil = await pulihkanKeranjang(d, 's1');
+  assert.equal(hasil.status, 'dipulihkan');
+  assert.deepEqual(hasil.keranjang.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+});
+
+test('⛔ dataPesanan rusak/bertipe salah dibuang per field — keranjangnya tetap dipulihkan', async () => {
+  const { pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  const isi = JSON.stringify({
+    baris: [baris()], diskon: null, kanal: 'takeaway',
+    dataPesanan: { namaPemesan: 123, nomorMeja: 'A3', catatan: ['x'] },
+  });
+  d.sqlite
+    .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
+    .run('kini', 's1', isi, '2026-08-24T10:00:00Z');
+  const hasil = await pulihkanKeranjang(d, 's1');
+  assert.equal(hasil.status, 'dipulihkan');
+  assert.deepEqual(hasil.keranjang.dataPesanan, { namaPemesan: null, nomorMeja: 'A3', catatan: null });
 });

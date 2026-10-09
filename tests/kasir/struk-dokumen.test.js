@@ -298,3 +298,36 @@ test('⛔ contoh spec-c:376 TETAP mencetak "2x Kopi Susu", bukan "Kopi Susu Regu
   assert.ok(out.includes('2x Kopi Susu'), out);
   assert.ok(!out.includes('Kopi Susu Regular'), `contoh spec berubah:\n${out}`);
 });
+
+// --- Task 11 (kampanye kasir 2C): nama pemesan, nomor meja, catatan ---------
+
+test('struk mencetak "Atas nama", "Meja", "Catatan", dilipat di 32 kolom', async () => {
+  const catatan = 'Es batu dipisah dan gula aren dikurangi setengah lalu sedotan kertas saja tanpa plastik';
+  const data = { ...CONTOH, namaPemesan: 'Budi Santoso', nomorMeja: 'A3', catatan };
+  for (const lebar of [32, 48]) {
+    const out = await cetak(data, lebar);
+    const baris = out.split('\n');
+    assert.ok(baris.some((l) => l.startsWith('Atas nama: Budi Santoso')), `tanpa "Atas nama":\n${out}`);
+    assert.ok(baris.some((l) => l.startsWith('Meja: A3')), `tanpa "Meja":\n${out}`);
+    assert.ok(baris.some((l) => l.startsWith('Catatan: ')), `tanpa "Catatan":\n${out}`);
+    for (const l of baris) assert.ok(l.length <= lebar, `baris ${l.length} > ${lebar}: ${JSON.stringify(l)}`);
+    // Lipat tidak membuang kata: semua kata catatan tetap tercetak.
+    for (const kata of catatan.split(' ')) assert.ok(out.includes(kata), `kata "${kata}" hilang`);
+    // Sebelum baris item, bukan sesudah.
+    const iAtas = out.indexOf('Atas nama:');
+    assert.ok(iAtas >= 0 && iAtas < out.indexOf('2x Kopi Susu'), 'data pesanan harus sebelum baris item');
+  }
+});
+
+test('struk tanpa data pesanan tidak mencetak baris kosong "Atas nama/Meja/Catatan"', async () => {
+  const out = await cetak(CONTOH);
+  assert.ok(!/Atas nama|Meja:|Catatan:/.test(out));
+  const out2 = await cetak({ ...CONTOH, namaPemesan: null, nomorMeja: null, catatan: null });
+  assert.equal(out2, out, 'null harus identik dengan tidak ada');
+});
+
+test('hanya satu dari tiga terisi: hanya barisnya yang tercetak', async () => {
+  const out = await cetak({ ...CONTOH, nomorMeja: '7' });
+  assert.ok(/Meja: 7/.test(out));
+  assert.ok(!/Atas nama|Catatan:/.test(out));
+});

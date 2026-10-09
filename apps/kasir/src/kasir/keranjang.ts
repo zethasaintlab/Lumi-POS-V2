@@ -107,16 +107,35 @@ export interface DiskonKeranjang {
  */
 export type Kanal = 'dine_in' | 'takeaway';
 
+/**
+ * Nama pemesan, nomor meja, catatan — satu pesanan, tiga kolom `order`
+ * (P5(b), P6(a)). `null` = tidak diisi. Teks apa adanya (sudah dipangkas
+ * dialog); batas dan penolakan nomor kartu di `data-pesanan.ts`.
+ */
+export interface DataPesanan {
+  namaPemesan: string | null;
+  nomorMeja: string | null;
+  catatan: string | null;
+}
+
+export const DATA_PESANAN_KOSONG: DataPesanan = { namaPemesan: null, nomorMeja: null, catatan: null };
+
 export interface Keranjang {
   baris: BarisKeranjang[];
   /** `null` = tidak ada diskon. */
   diskon: DiskonKeranjang | null;
   /** Bawaan `'takeaway'`; transaksi baru selalu kembali ke bawaan. */
   kanal: Kanal;
+  /** Bawaan kosong; pesanan baru tidak pernah mewarisi pesanan sebelumnya. */
+  dataPesanan: DataPesanan;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null, kanal: 'takeaway' };
+  return { baris: [], diskon: null, kanal: 'takeaway', dataPesanan: { ...DATA_PESANAN_KOSONG } };
+}
+
+export function setelDataPesanan(k: Keranjang, ubah: Partial<DataPesanan>): Keranjang {
+  return { ...k, dataPesanan: { ...(k.dataPesanan ?? DATA_PESANAN_KOSONG), ...ubah } };
 }
 
 export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {

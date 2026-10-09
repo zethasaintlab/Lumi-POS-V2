@@ -325,3 +325,21 @@ test('⛔ S21: keranjangKosong() berkanal takeaway; kanal dine_in tidak bocor ke
   assert.equal(dine.kanal, 'dine_in', 'setelKanal tidak mengubah kanal');
   assert.equal(keranjangKosong().kanal, 'takeaway', 'kanal dine_in bocor ke keranjang kosong berikutnya');
 });
+
+// --- Task 11 (kampanye kasir 2C): nama pemesan, nomor meja, catatan ---------
+
+test('keranjangKosong membawa dataPesanan kosong; setelDataPesanan mengganti satu field tanpa menyentuh yang lain', async () => {
+  const { keranjangKosong, setelDataPesanan } = await import('../../apps/kasir/src/kasir/keranjang.ts');
+  const k = keranjangKosong();
+  assert.deepEqual(k.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+  const a = setelDataPesanan(k, { namaPemesan: 'Budi' });
+  const b = setelDataPesanan(a, { nomorMeja: 'A3' });
+  assert.deepEqual(b.dataPesanan, { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: null });
+  assert.deepEqual(k.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null }, 'masukan tidak boleh diubah');
+});
+
+test('⛔ pesanan BARU (kosongkan) tidak mewarisi nama/meja/catatan pesanan sebelumnya', async () => {
+  const { keranjangKosong, setelDataPesanan, kosongkan } = await import('../../apps/kasir/src/kasir/keranjang.ts');
+  const terisi = setelDataPesanan(keranjangKosong(), { namaPemesan: 'Budi', nomorMeja: '4', catatan: 'x' });
+  assert.deepEqual(kosongkan(terisi).dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+});

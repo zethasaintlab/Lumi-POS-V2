@@ -349,3 +349,25 @@ test('⛔ cetak ulang transfer menyebut "Transfer", bukan "Lainnya", dan sama de
   db.sqlite.exec(`UPDATE payment SET provider = NULL`);
   assert.ok((await cetak(db)).includes('Lainnya'), 'other tanpa provider harus tetap Lainnya');
 });
+
+// --- Task 11 (kampanye kasir 2C): nama pemesan, nomor meja, catatan ---------
+
+test('⛔ cetak ulang membaca customer_name, table_number, note dari order dan mencetaknya sebelum item', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(
+    `UPDATE "order" SET customer_name='Budi', table_number='A3', note='Tanpa gula' WHERE id='ord-1'`
+  );
+  const out = await cetak(db);
+  assert.ok(out.includes('Atas nama: Budi'), out);
+  assert.ok(out.includes('Meja: A3'), out);
+  assert.ok(out.includes('Catatan: Tanpa gula'), out);
+  assert.ok(out.indexOf('Atas nama:') < out.indexOf('2x Kopi Susu'));
+});
+
+test('cetak ulang order tanpa data pesanan (riwayat lama) tidak mencetak barisnya', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  const out = await cetak(db);
+  assert.ok(!/Atas nama|Meja:|Catatan:/.test(out), out);
+});
