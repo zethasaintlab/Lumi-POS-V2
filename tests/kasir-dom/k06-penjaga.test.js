@@ -1906,6 +1906,16 @@ test('⛔ S9: kotak Kembalian HANYA di tab Tunai — tab QRIS/Kartu/Transfer tan
 // ---------------------------------------------------------------------------
 // Task 10 (PR 2C) -- Pajak = pilihan kanal: K-06/K-07 membawa kanal dari keranjang (P9)
 
+/** K-07 tercapai, atau gagal dengan pesan yang menyebut KANAL (bukan timeout selektor): keranjang
+    yang disimpan dengan kanal lain bertotal lain, sehingga tunai pas menjadi kurang bayar. */
+async function selesaiAtauGagal(hal, kanal) {
+  try {
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 6_000 });
+  } catch {
+    assert.fail(`K-07 tidak tercapai untuk keranjang kanal ${kanal}: penjualan disimpan dengan kanal/total lain dari yang tampil di K-06. Layar: ${(await teks(hal)).replace(/\s+/g, ' ').slice(0, 240)}`);
+  }
+}
+
 test('⛔ P9 kanal: K-06 menghitung pajak kanal keranjang, order.channel tersimpan, dan tidak ada kata layanan/service di K-06 maupun K-07', async () => {
   // 2 × 20.000 = 40.000. Tulis tangan: dine_in -> PBJT 10% = 4.000 (total 44.000);
   // takeaway -> PPN 11% = 4.400 (total 44.400). Outlet bertarif layanan 10%: tidak boleh ikut.
@@ -1928,7 +1938,7 @@ test('⛔ P9 kanal: K-06 menghitung pajak kanal keranjang, order.channel tersimp
 
       await hal.getByLabel('Nominal diterima').fill(String(k.total));
       await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
-      await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+      await selesaiAtauGagal(hal, k.kanal);
       assert.doesNotMatch(await teks(hal), /layanan|service/i, `${k.kanal}: K-07 menyiratkan biaya layanan`);
 
       const order = (await tulisan(hal)).find((t) => /^INSERT INTO "order"/i.test(t.sql));
@@ -1955,6 +1965,37 @@ test('⛔ P9 kanal: QRIS dinamis mengirim POST /orders dengan channel keranjang 
     await hal.waitForSelector('svg[role="img"][aria-label="Kode QRIS"]', { timeout: 10_000 });
     assert.equal(kirim.length, 1, `POST /orders terkirim ${kirim.length}×, harap 1`);
     assert.equal(kirim[0].channel, 'dine_in', `QRIS dinamis mengirim channel "${kirim[0].channel}" untuk keranjang dine_in`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ P9 kanal (fix round 2): QRIS dinamis CONFIRMED dengan keranjang dine_in → order lokal channel dine_in dan tax_amount tarif dine_in', async () => {
+  // 2 × 20.000 = 40.000; dine_in -> PBJT 10% = 4.000 (tulis tangan); takeaway -> PPN 11% = 4.400.
+  const hal = await buka('render=k06&baris=2&kanal=dine_in&pajakKanal=1', {
+    rute: { ...RUTE_QR, '**/payments/*/check-status': { status: 'confirmed' } },
+  });
+  try {
+    await mulaiQrisDinamis(hal).catch(() => {});
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    const order = (await tulisan(hal)).find((t) => /^INSERT INTO "order"/i.test(t.sql));
+    assert.ok(order, 'order lokal tidak ditulis sesudah QRIS dikonfirmasi');
+    assert.equal(order.params[8], 'dine_in', `QRIS confirmed menyimpan order.channel "${order.params[8]}" untuk keranjang dine_in`);
+    assert.equal(BigInt(order.params[11]), 4000n, `QRIS confirmed menyimpan tax_amount ${order.params[11]}, harap 4000 (PBJT dine_in)`);
+    assert.equal(BigInt(order.params[13]), 44000n, `order.total ${order.params[13]}, harap 44000`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ P9 kanal (fix round 2): tunai dengan keranjang dine_in → order.channel dine_in; pesan menyebut kanal', async () => {
+  const hal = await buka('render=k06&baris=2&kanal=dine_in&pajakKanal=1');
+  try {
+    await hal.getByLabel('Nominal diterima').fill('44000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await selesaiAtauGagal(hal, 'dine_in');
+    const order = (await tulisan(hal)).find((t) => /^INSERT INTO "order"/i.test(t.sql));
+    assert.equal(order?.params[8], 'dine_in', `jalur tunai menyimpan order.channel "${order?.params[8]}" untuk keranjang dine_in`);
   } finally {
     await hal.close();
   }

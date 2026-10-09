@@ -57,7 +57,7 @@ function dbPalsu({ tarif = TARIF, urutan = 0, tanggalUrutan = null, lacakStok = 
       // `dalam` DIREKAM per penulisan, bukan hanya dihitung sekali. Tanpa
       // ini, `simpanHlc` yang dipindah ke luar transaksi tetap terlihat
       // "ditulis" dan test hijau untuk kode yang melanggar I10.
-      state.tulis.push({ sql: sql.trim().split('\n')[0], params, dalam: state.diDalamTransaksi });
+      state.tulis.push({ sql: sql.trim().split('\n')[0], sqlLengkap: sql, params, dalam: state.diDalamTransaksi });
       if (/UPDATE device_config/.test(sql)) {
         state.device_config.receipt_sequence = params[0];
         state.device_config.sequence_business_date = params[1];
@@ -1589,10 +1589,19 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   });
   assert.equal(hasil.status, 'tersimpan', hasil.status);
 
-  // Order lokal: `service_charge_amount` literal 0 di VALUES (tidak ada bind-nya), jadi
-  // yang terukur adalah akibatnya: 18 bind tetap, dan total/pajak di bawah.
+  // Order lokal: nilai kolom `service_charge_amount` yang SUNGGUH ditulis dibaca dari SQL
+  // (kolom <-> token VALUES; `?` diambil dari params), bukan dari jumlah params.
   const lengkap = insertOrder(db);
   assert.equal(lengkap.params.length, 18, 'bentuk INSERT order berubah — periksa ulang kolom service_charge_amount');
+  const kolom = /\(([^)]*)\)\s*VALUES/s.exec(lengkap.sqlLengkap)[1].split(',').map((x) => x.trim());
+  const nilai = /VALUES\s*\(([^)]*)\)/s.exec(lengkap.sqlLengkap)[1].split(',').map((x) => x.trim());
+  assert.equal(kolom.length, nilai.length, 'kolom dan VALUES INSERT order tidak sejajar');
+  const i = kolom.indexOf('service_charge_amount');
+  assert.ok(i >= 0, 'kolom service_charge_amount tidak ada di INSERT order');
+  let terikat = 0;
+  for (let j = 0; j < i; j += 1) if (nilai[j] === '?') terikat += 1;
+  const ditulis = nilai[i] === '?' ? lengkap.params[terikat] : nilai[i];
+  assert.equal(Number(ditulis), 0, `order.service_charge_amount lokal tertulis ${ditulis}, harap 0`);
 
   // Total = subtotal − diskon + pajak eksklusif; layanan 10% (2.000) tidak ikut.
   const harap = await pajakLangsung('dine_in', 20000n);

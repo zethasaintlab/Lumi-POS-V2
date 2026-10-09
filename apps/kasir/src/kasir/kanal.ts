@@ -38,3 +38,8 @@ export function ringkasKanal(
   const sama = JSON.stringify(nama('dine_in')) === JSON.stringify(nama('takeaway'));
   return URUTAN_KANAL.map((kanal) => ({ kanal, namaTarif: nama(kanal), sama }));
 }
+
+/** Teks tarif satu kanal di lembar Pajak: nama-nama digabung " + ", atau "tanpa pajak" bila tak ada. */
+export function sebutTarif(namaTarif: readonly string[]): string {
+  return namaTarif.length === 0 ? 'tanpa pajak' : namaTarif.join(' + ');
+}

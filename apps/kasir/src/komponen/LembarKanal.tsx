@@ -1,6 +1,6 @@
 import { Tombol } from '../Tombol.tsx';
 import { LatarDialog } from './LatarDialog.tsx';
-import { labelKanal, type Kanal, type RingkasanKanal } from '../kasir/kanal.ts';
+import { labelKanal, sebutTarif, type Kanal, type RingkasanKanal } from '../kasir/kanal.ts';
 
 /* K-03 -- lembar Pajak: kasir memilih KANAL (Dine in / Takeaway), bukan tarif
  * (FR-C7; spec kasir § 4 "Pajak sebagai pilihan kanal"). Tarif tetap diresolusi
@@ -24,10 +24,6 @@ interface Props {
   tanpaItem: boolean;
   onPilih: (kanal: Kanal) => void;
   onTutup: () => void;
-}
-
-function sebutTarif(namaTarif: readonly string[]): string {
-  return namaTarif.length === 0 ? 'tanpa pajak' : namaTarif.join(' + ');
 }
 
 export function LembarKanal({ aktif, ringkasan, galat, tanpaItem, onPilih, onTutup }: Props) {

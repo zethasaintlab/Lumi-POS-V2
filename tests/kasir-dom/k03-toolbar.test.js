@@ -606,6 +606,23 @@ async function namaTarifGaleri(hal) {
   });
 }
 
+/** Nominal baris "Pajak · <nama>" K-03 sebagai bigint, dan nilai HARAPAN dari Subtotal tampil x rate fixture (half-up, tulis tangan). */
+async function nominalPajak(hal, namaTarif) {
+  return hal.evaluate((nama) => {
+    const rupiah = (t) => BigInt(t.replace(/[^\d]/g, ''));
+    const baris = [...document.querySelectorAll('.kasir-subtotal')];
+    const cari = (awalan) => baris.find((e) => e.textContent.trim().replace(/\s+/g, ' ').startsWith(awalan));
+    const pajak = cari(`Pajak · ${nama}`);
+    const sub = cari('Subtotal');
+    const rate = BigInt(globalThis.__galeriTabel.tax_rate.find((r) => r.name === nama).rate);
+    const subtotal = rupiah(sub.querySelector('.num').textContent);
+    return {
+      tampil: String(rupiah(pajak.querySelector('.num').textContent)),
+      harap: String((subtotal * rate + 5000n) / 10000n),
+    };
+  }, namaTarif).then((h) => ({ tampil: BigInt(h.tampil), harap: BigInt(h.harap) }));
+}
+
 const barisPajak = (hal) =>
   hal.$$eval('.kasir-subtotal', (n) => n.map((e) => e.textContent.trim().replace(/\s+/g, ' ')).filter((t) => t.startsWith('Pajak')));
 
@@ -630,6 +647,10 @@ test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masi
   const awal = await barisPajak(hal2);
   assert.ok(awal.length === 1 && awal[0].startsWith(`Pajak · ${nama.semua[0]}`), `baris pajak awal: ${JSON.stringify(awal)}`);
 
+  const n1 = await nominalPajak(hal2, nama.semua[0]);
+  assert.ok(n1.tampil > 0n, 'nominal pajak awal nol -- penjaga hampa');
+  assert.equal(n1.tampil, n1.harap, `nominal baris Pajak Takeaway ${n1.tampil} ≠ Subtotal × rate ${n1.harap}`);
+
   await tombol.click();
   await hal2.waitForSelector('[role="dialog"]');
   await hal2.waitForFunction(() => !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'), null, { timeout: 5000 });
@@ -639,6 +660,9 @@ test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masi
   assert.ok(opsi[1].startsWith('Dine in') && opsi[1].includes(nama.dine[0]), `pilihan Dine in tak menyebut tarifnya: ${opsi[1]}`);
   assert.ok(!opsi[1].includes(nama.semua[0]), 'Dine in menyebut tarif Takeaway');
   assert.ok(!/Tarif sama/.test(await hal2.locator('[role="dialog"]').innerText()), 'lembar mengklaim tarif sama padahal berbeda');
+  // Kanal aktif ditandai aria-pressed DAN teks "(dipakai)" -- status tidak pernah warna saja.
+  const tanda = await hal2.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => ({ p: e.getAttribute('aria-pressed'), t: e.textContent.includes('(dipakai)') })));
+  assert.deepEqual(tanda, [{ p: 'true', t: true }, { p: 'false', t: false }], `penanda kanal aktif (Takeaway): ${JSON.stringify(tanda)}`);
 
   await hal2.getByRole('button', { name: /^Dine in/ }).click();
   await hal2.waitForFunction(() => !document.querySelector('[role="dialog"]'));
@@ -647,9 +671,16 @@ test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masi
     sesudah.length === 1 && sesudah[0].startsWith(`Pajak · ${nama.dine[0]}`),
     `memilih Dine in tidak mengubah baris pajak keranjang: ${JSON.stringify(sesudah)}`
   );
+  const n2 = await nominalPajak(hal2, nama.dine[0]);
+  assert.equal(n2.tampil, n2.harap, `nominal baris Pajak Dine in ${n2.tampil} ≠ Subtotal × rate ${n2.harap}`);
+  assert.notEqual(n2.tampil, n1.tampil, 'nominal pajak tidak berubah saat kanal (tarif berbeda) berubah');
   const tombolBaru = hal2.getByRole('button', { name: 'Pajak: Dine in' });
   assert.equal(await tombolBaru.count(), 1, 'nama aksesibel tidak berubah menjadi "Pajak: Dine in"');
   assert.equal((await tombolBaru.innerText()).trim(), 'Dine in');
+  await tombolBaru.click();
+  await hal2.waitForSelector('[role="dialog"]');
+  const tanda2 = await hal2.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => ({ p: e.getAttribute('aria-pressed'), t: e.textContent.includes('(dipakai)') })));
+  assert.deepEqual(tanda2, [{ p: 'false', t: false }, { p: 'true', t: true }], `penanda kanal aktif (Dine in): ${JSON.stringify(tanda2)}`);
   await hal2.close();
   assert.equal(g.length, 0, `galat konsol: ${g.join(' | ')}`);
 });
@@ -681,6 +712,7 @@ test('Pajak TETAP AKTIF saat keranjang kosong (FR-C7): lembar menampilkan dua ka
   const isi = await hal.locator('[role="dialog"]').innerText();
   const opsi = await hal.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => e.textContent.trim()));
   assert.equal(opsi.length, 2, `dua pilihan kanal diharapkan: ${JSON.stringify(opsi)}`);
+  assert.doesNotMatch(isi, /tanpa pajak/i, 'keranjang kosong menampilkan "tanpa pajak" palsu padahal tarif ada di katalog');
   assert.doesNotMatch(isi, /Membaca tarif/, 'lembar menggantung "Membaca tarif pajak…" untuk keranjang kosong');
   assert.match(isi, /Nama tarif tampil setelah ada item/, 'lembar tidak menyatakan kapan nama tarif muncul');
   await hal.getByRole('button', { name: /^Dine in/ }).click();

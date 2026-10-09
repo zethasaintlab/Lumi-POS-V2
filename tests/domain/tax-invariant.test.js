@@ -110,10 +110,11 @@ test('invariant #7: tidak ada angka tarif pajak di packages/domain selain tax.ts
 // Task 10 (PR 2C): lapisan klien yang MEMILIH kanal pajak (`kasir/kanal.ts`,
 // `LembarKanal.tsx`) hanya boleh menyebut NAMA tarif dari hasil TaxCalculator.
 // Pemindaian dua direktori ini murah dan bersih hari ini; apps/kasir/src secara
-// keseluruhan belum dipindai: `apps/kasir/src/layar/` TIDAK dipindai (batas tertulis,
-// bukan kelalaian) -- teks layar boleh memuat persentase sebagai tampilan.
-test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/kasir dan apps/kasir/src/komponen', async () => {
-  for (const sub of ['kasir', 'komponen']) {
+// keseluruhan belum dipindai (fix round 2: `layar/` kini ikut, bersih tanpa false positive).
+// Batas tertulis: pola hanya menangkap desimal/persen (0.11, .1, 10%); literal bigint
+// berskala (1100n) TIDAK ditangkap karena 1000n/10000n sah dipakai sebagai skala di tempat lain.
+test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/kasir, komponen, dan layar', async () => {
+  for (const sub of ['kasir', 'komponen', 'layar']) {
     const dir = path.join(__dirname, '../../apps/kasir/src', sub);
     const files = (await collectTsFiles(dir)).concat(await collectTsxFiles(dir));
     assert.ok(files.length > 3, `apps/kasir/src/${sub}: guard lulus vakum (${files.length} file)`);
