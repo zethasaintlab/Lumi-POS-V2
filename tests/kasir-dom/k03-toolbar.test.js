@@ -808,6 +808,7 @@ test('⛔ Catatan/Pelanggan/No. Meja: isi tersimpan, tampil di keranjang, dan di
         `${tombol}: pesan domain "nomor kartu" tidak tampil. Terbaca: ${JSON.stringify(pesan)}`
       );
       assert.ok(!keranjang.includes('4111'), `${tombol}: nomor kartu masuk keranjang`);
+      assert.ok(pesan.every((p) => !/customerName|tableNumber|\bnote\b/.test(p)), `${tombol}: pesan memuat nama field API: ${JSON.stringify(pesan)}`);
     }
   }
 });

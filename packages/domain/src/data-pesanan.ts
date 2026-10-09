@@ -36,15 +36,15 @@ function periksa(nilai: unknown, nama: string, label: string, maks: number): Gal
 }
 
 export function periksaNamaPemesan(nilai: unknown): GalatBayar | null {
-  return periksa(nilai, 'Nama pemesan', 'customerName', MAKS_NAMA_PEMESAN);
+  return periksa(nilai, 'Nama pemesan', 'nama pemesan', MAKS_NAMA_PEMESAN);
 }
 
 export function periksaNomorMeja(nilai: unknown): GalatBayar | null {
-  return periksa(nilai, 'Nomor meja', 'tableNumber', MAKS_NOMOR_MEJA);
+  return periksa(nilai, 'Nomor meja', 'nomor meja', MAKS_NOMOR_MEJA);
 }
 
 export function periksaCatatan(nilai: unknown): GalatBayar | null {
-  return periksa(nilai, 'Catatan', 'note', MAKS_CATATAN);
+  return periksa(nilai, 'Catatan', 'catatan', MAKS_CATATAN);
 }
 
 /** Bentuk yang disimpan: dipangkas, kosong menjadi `null`. */

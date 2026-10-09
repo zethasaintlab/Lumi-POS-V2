@@ -171,3 +171,38 @@ test('⛔ retry dengan idempotency key sama (dan respons hilang) tidak menduplik
   assert.equal(lain.statusCode, 422);
   assert.equal((await dalamTenant(tenant.id, BACA_ORDER, [p.id]))[0].note, 'pedas');
 });
+
+// Batas ditegakkan DATABASE juga, bukan hanya aplikasi: jalur tulis yang lupa
+// memvalidasi tidak boleh menembus. Order contoh disalin dengan INSERT ... SELECT
+// (invariant #2: tidak ada UPDATE atas order) lalu satu kolom diisi batas+1.
+test('⛔ CHECK database menolak batas+1 langsung di tabel order (23514) untuk ketiga kolom', async () => {
+  const p = payload(await setup());
+  assert.equal((await req(p)).statusCode, 201);
+  const batas = { customer_name: 40, table_number: 16, note: 140 };
+  let n = 0;
+  for (const [kolom, maks] of Object.entries(batas)) {
+    for (const [panjang, harapDitolak] of [[maks, false], [maks + 1, true]]) {
+      n += 1;
+      await appSetup.query('BEGIN');
+      await appSetup.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+      await appSetup.query('SAVEPOINT s');
+      let kode = null;
+      try {
+        await appSetup.query(
+          `INSERT INTO "order" (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+              status, channel, subtotal, order_discount, service_charge_amount, tax_amount, rounding_adjustment,
+              total, amount_due, created_by, occurred_at, hlc, ${kolom})
+           SELECT $1, tenant_id, outlet_id, device_id, shift_id, 'K1-20260802-' || lpad($2::text, 4, '0'), business_date, $3,
+              status, channel, subtotal, order_discount, service_charge_amount, tax_amount, rounding_adjustment,
+              total, amount_due, created_by, occurred_at, hlc, repeat('a', $4)
+             FROM "order" WHERE id = $5`,
+          [crypto.randomUUID(), 100 + n, 100 + n, panjang, p.id]
+        );
+      } catch (e) {
+        kode = e.code;
+      }
+      await appSetup.query('ROLLBACK');
+      assert.equal(kode, harapDitolak ? '23514' : null, `${kolom} ${panjang} karakter: kode ${kode}`);
+    }
+  }
+});

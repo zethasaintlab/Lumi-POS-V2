@@ -68,3 +68,12 @@ test('bukan string (angka, objek) → VALIDATION_ERROR', async () => {
     }
   }
 });
+
+test('⛔ pesan nomor kartu untuk kasir berbahasa Indonesia, bukan nama field API', async () => {
+  const m = await import(MOD);
+  for (const [fn, label] of [['periksaNamaPemesan', 'nama pemesan'], ['periksaNomorMeja', 'nomor meja'], ['periksaCatatan', 'catatan']]) {
+    const g = m[fn]('4111 1111 1111 1111');
+    assert.match(g.pesan, new RegExp(label, 'i'), g.pesan);
+    assert.doesNotMatch(g.pesan, /customerName|tableNumber|\bnote\b/, g.pesan);
+  }
+});

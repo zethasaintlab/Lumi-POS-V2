@@ -1703,6 +1703,7 @@ test('⛔ nomor kartu / terlalu panjang di data pesanan DITOLAK di perangkat, ti
     });
     assert.equal(hasil.status, 'pembayaran_tidak_sah', `${JSON.stringify(dataPesanan)} -> ${hasil.status}`);
     assert.equal(hasil.kode, kode);
+    assert.doesNotMatch(hasil.pesan, /customerName|tableNumber|\bnote\b/, `pesan untuk kasir memuat nama field API: ${hasil.pesan}`);
     assert.equal(db.state.tulis.length, 0, 'penjualan tidak boleh tertulis setengah');
   }
 });

@@ -310,8 +310,20 @@ test('struk mencetak "Atas nama", "Meja", "Catatan", dilipat di 32 kolom', async
     assert.ok(out.includes('Meja: A-12'), out);
     assert.ok(out.includes('Catatan: tanpa es'), out);
     // Lipatan tidak membuang kata: kata terakhir tetap tercetak utuh.
-    assert.ok(out.includes('Negara'), 'nama terpotong, bukan dilipat');
-    assert.ok(out.includes('ya'), 'catatan terpotong, bukan dilipat');
+    // Blok dari baris yang diawali label sampai garis pemisah, digabung lagi:
+    // harus sama dengan teks utuh (tidak ada kata yang terbuang).
+    const blok = (awalan) => {
+      const i = baris.findIndex((l) => l.startsWith(awalan));
+      const isi = [];
+      for (let j = i; j < baris.length && /[A-Za-z0-9]/.test(baris[j]) && !baris[j].includes('Kopi Susu'); j++) isi.push(baris[j].trim());
+      return isi.join(' ');
+    };
+    const sesudahNama = blok('Atas nama');
+    assert.ok(sesudahNama.includes('Atas nama: Budi Santoso Wijaya Kusuma Negara'), `nama terpotong, bukan dilipat: ${sesudahNama}`);
+    assert.ok(
+      sesudahNama.includes('Catatan: tanpa es, gula sedikit, tolong dipisah kantongnya ya'),
+      `catatan terpotong, bukan dilipat: ${sesudahNama}`
+    );
     // Sebelum baris item pertama.
     const iNama = baris.findIndex((l) => l.startsWith('Atas nama'));
     const iItem = baris.findIndex((l) => l.includes('Kopi Susu'));
