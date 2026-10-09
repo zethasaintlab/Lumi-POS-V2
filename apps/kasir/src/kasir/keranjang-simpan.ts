@@ -201,7 +201,10 @@ function uraikan(teks: string): Keranjang | null {
   }
 
   const kosong = keranjangKosong();
-  return { ...kosong, baris, diskon: diskonSah(o.diskon) };
+  // ⛔ Kanal asing/hilang -> Takeaway, bukan keranjang dibuang: baris tertulis versi
+  // sebelum kanal ada tidak punya kolom ini, dan keranjangnya tetap sah.
+  const kanal = o.kanal === 'dine_in' ? 'dine_in' : 'takeaway';
+  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {

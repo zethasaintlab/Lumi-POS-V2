@@ -352,6 +352,11 @@ function keTarifSpec(b: BarisTarif): TaxRateSpec {
   };
 }
 
+/** Kanal pesanan; bentuk lama tanpa `kanal` (fixture, keranjang tersimpan) berarti Takeaway. */
+function kanalKeranjang(keranjang: Keranjang): 'dine_in' | 'takeaway' {
+  return keranjang.kanal === 'dine_in' ? 'dine_in' : 'takeaway';
+}
+
 export interface HitunganKeranjang {
   sekarang: Date;
   outlet: BarisOutlet | null;
@@ -383,16 +388,17 @@ export async function hitungKeranjang({
   keranjang,
   shift,
   waktu,
-  channel = 'takeaway',
 }: {
   db: DbLokal;
   konfig: KonfigPerangkat;
   keranjang: Keranjang;
   shift: ShiftAktif;
   waktu: () => Date;
-  channel?: 'dine_in' | 'takeaway';
 }): Promise<HitunganKeranjang> {
   const sekarang = waktu();
+  // ⛔ Kanal datang dari KERANJANG -- satu sumber untuk K-03, K-06, dan `simpanPenjualan`
+  // (FR-C7). Parameter terpisah memberi dua tempat untuk memutuskan tarif pajak.
+  const channel = kanalKeranjang(keranjang);
   const outlet = (
     await db.getAll<BarisOutlet>(
       `SELECT name, timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate,
@@ -654,7 +660,6 @@ export async function simpanPenjualan({
   waktu,
   idBaru,
   hlc,
-  channel = 'takeaway',
   peripheral,
   printerProfile,
   draf,
@@ -674,7 +679,6 @@ export async function simpanPenjualan({
   waktu: () => Date;
   idBaru: () => string;
   hlc: () => bigint;
-  channel?: 'dine_in' | 'takeaway';
   /**
    * Periferal perangkat ini. Boleh TIDAK ADA — merchant yang menjual lewat
    * QRIS tanpa printer adalah kasus nyata, dan aplikasi berjalan penuh di
@@ -703,7 +707,8 @@ export async function simpanPenjualan({
 }): Promise<HasilPenjualan> {
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
 
-  const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu, channel });
+  const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu });
+  const channel = kanalKeranjang(keranjang);
   const { sekarang, outlet, businessDate, lineTotals, statusDsk, orderDiscount, pajak, totals, lacak } =
     hitung;
 

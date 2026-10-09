@@ -33,7 +33,7 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Pesanan tahan',
 ];
 /** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon', 'Batalkan']);
+const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Batalkan']);
 /** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
     Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
 const SEMENTARA = new Set([]);
@@ -133,7 +133,13 @@ test('⛔ toolbar berisi label TERPASANG dalam urutan mockup (ditambah SEMENTARA
     const header = document.querySelector('.kasir-header');
     const tombol = toolbar ? [...toolbar.querySelectorAll('button')] : [];
     return {
-      label: tombol.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
+      /* ⛔ Tombol Pajak: label TERLIHAT = kanal aktif ("Takeaway"/"Dine in"), nama
+         aksesibelnya "Pajak: <kanal>" (Q8). G-TOOLBAR mencocokkan nama aksesibel
+         berawalan "Pajak". */
+      label: tombol.map((b) => {
+        const nama = b.getAttribute('aria-label') ?? '';
+        return /^Pajak\b/.test(nama) ? 'Pajak' : b.innerText.trim().replace(/\s+/g, ' ');
+      }),
       diHeader: header && toolbar ? header.contains(toolbar) : false,
     };
   });
@@ -587,4 +593,123 @@ test('⛔ penulisan jejak GAGAL (melempar) → dialog menahan dengan galat, kera
   assert.equal(audit(r.tulis).length, 0);
   assert.equal(outbox(r.tulis).length, 0);
   assert.equal(hapusKeranjang(r.tulis).length, r.hapusAwal, 'keranjang_lokal dihapus padahal jejak gagal');
+});
+
+// ---------------------------------------------------------------------------
+// Task 10 (PR 2C) -- Pajak = pilihan kanal (FR-C7; spec § 4, § 11 G-KANAL, G-TANPA-LAYANAN)
+
+/** Nama tarif dari fixture galeri itu sendiri (`__galeriTabel`), bukan diketik ulang di test. */
+async function namaTarifGaleri(hal) {
+  return hal.evaluate(() => {
+    const t = globalThis.__galeriTabel.tax_rate;
+    return { semua: t.filter((r) => r.channel === 'all').map((r) => r.name), dine: t.filter((r) => r.channel === 'dine_in').map((r) => r.name) };
+  });
+}
+
+const barisPajak = (hal) =>
+  hal.$$eval('.kasir-subtotal', (n) => n.map((e) => e.textContent.trim().replace(/\s+/g, ' ')).filter((t) => t.startsWith('Pajak')));
+
+test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masing-masing; memilih Dine in mengubah baris "Pajak · <nama tarif>" di keranjang', async () => {
+  const buka = async (kueri) => {
+    const h = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+    const g = [];
+    h.on('pageerror', (e) => g.push(e.message));
+    h.on('console', (m) => m.type() === 'error' && g.push(m.text()));
+    await h.goto(`${alamat}/harness-galeri.html?layar=K-03&keadaan=keranjang-penuh&${kueri}`, { waitUntil: 'load' });
+    await h.waitForSelector('.kasir-baris', { timeout: 10_000 });
+    return { h, g };
+  };
+  const { h: hal2, g } = await buka('pajakKanal=1');
+  const nama = await namaTarifGaleri(hal2);
+  assert.ok(nama.semua.length === 1 && nama.dine.length === 1, `fixture galeri tidak membedakan kanal: ${JSON.stringify(nama)}`);
+
+  // Awal: Takeaway -- nama aksesibel "Pajak: Takeaway", label terlihat "Takeaway", baris memakai tarif `all`.
+  const tombol = hal2.getByRole('button', { name: 'Pajak: Takeaway' });
+  assert.equal(await tombol.count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  assert.equal((await tombol.innerText()).trim(), 'Takeaway', 'label terlihat bukan kanal aktif');
+  const awal = await barisPajak(hal2);
+  assert.ok(awal.length === 1 && awal[0].startsWith(`Pajak · ${nama.semua[0]}`), `baris pajak awal: ${JSON.stringify(awal)}`);
+
+  await tombol.click();
+  await hal2.waitForSelector('[role="dialog"]');
+  await hal2.waitForFunction(() => !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'), null, { timeout: 5000 });
+  const opsi = await hal2.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => e.textContent.trim()));
+  assert.equal(opsi.length, 2, `lembar harus berisi dua pilihan kanal: ${JSON.stringify(opsi)}`);
+  assert.ok(opsi[0].startsWith('Takeaway') && opsi[0].includes(nama.semua[0]), `pilihan Takeaway tak menyebut tarifnya: ${opsi[0]}`);
+  assert.ok(opsi[1].startsWith('Dine in') && opsi[1].includes(nama.dine[0]), `pilihan Dine in tak menyebut tarifnya: ${opsi[1]}`);
+  assert.ok(!opsi[1].includes(nama.semua[0]), 'Dine in menyebut tarif Takeaway');
+  assert.ok(!/Tarif sama/.test(await hal2.locator('[role="dialog"]').innerText()), 'lembar mengklaim tarif sama padahal berbeda');
+
+  await hal2.getByRole('button', { name: /^Dine in/ }).click();
+  await hal2.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  const sesudah = await barisPajak(hal2);
+  assert.ok(
+    sesudah.length === 1 && sesudah[0].startsWith(`Pajak · ${nama.dine[0]}`),
+    `memilih Dine in tidak mengubah baris pajak keranjang: ${JSON.stringify(sesudah)}`
+  );
+  const tombolBaru = hal2.getByRole('button', { name: 'Pajak: Dine in' });
+  assert.equal(await tombolBaru.count(), 1, 'nama aksesibel tidak berubah menjadi "Pajak: Dine in"');
+  assert.equal((await tombolBaru.innerText()).trim(), 'Dine in');
+  await hal2.close();
+  assert.equal(g.length, 0, `galat konsol: ${g.join(' | ')}`);
+});
+
+test('outlet tanpa tarif per kanal: kedua pilihan menyebut tarif yang sama DAN lembarnya mengatakan itu', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  const nama = await namaTarifGaleri(hal);
+  assert.equal(await hal.getByRole('button', { name: 'Pajak: Takeaway' }).count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  await hal.getByRole('button', { name: 'Pajak: Takeaway' }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'), null, { timeout: 5000 });
+  const opsi = await hal.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => e.textContent.trim()));
+  const isi = await hal.locator('[role="dialog"]').innerText();
+  await hal.close();
+  assert.equal(galat.length, 0, galat.join(' | '));
+  assert.equal(opsi.length, 2);
+  for (const o of opsi) assert.ok(o.includes(nama.semua[0]), `pilihan "${o}" tidak menyebut ${nama.semua[0]}`);
+  assert.match(isi, /Tarif sama untuk kedua kanal/, 'lembar tidak mengatakan bahwa tarifnya sama');
+});
+
+test('Pajak NONAKTIF dengan alasan saat keranjang kosong, dan lembar tak terbuka', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal' });
+  const hasil = await hal.evaluate(() => {
+    const b = [...document.querySelectorAll('.kasir-toolbar button')].find((x) => /^Pajak/.test(x.getAttribute('aria-label') ?? ''));
+    const id = b?.getAttribute('aria-describedby');
+    return { ada: !!b, disabled: b?.disabled, alasan: id ? document.getElementById(id)?.textContent.trim() : null };
+  });
+  await hal.close();
+  assert.equal(galat.length, 0, galat.join(' | '));
+  assert.ok(hasil.ada, 'tombol Pajak tidak ada');
+  assert.equal(hasil.disabled, true);
+  assert.ok(hasil.alasan && hasil.alasan.length > 0, 'Pajak nonaktif tanpa alasan terbaca');
+});
+
+test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak dan keranjang', async () => {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  const galat = [];
+  hal.on('pageerror', (e) => galat.push(e.message));
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-03&keadaan=keranjang-penuh&pajakKanal=1&layanan=1`, { waitUntil: 'load' });
+  await hal.waitForSelector('.kasir-baris');
+  // Anti-hampa: fixture memang membawa tarif layanan outlet.
+  const rate = await hal.evaluate(() => globalThis.__galeriTabel.outlet[0].service_charge_rate);
+  assert.notEqual(rate, 0, 'fixture galeri tidak menyetel service_charge_rate');
+
+  assert.equal(await hal.getByRole('button', { name: 'Pajak: Takeaway' }).count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  await hal.getByRole('button', { name: 'Pajak: Takeaway' }).click();
+  await hal.waitForFunction(() => document.querySelector('[role="dialog"]') && !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'));
+  await hal.getByRole('button', { name: /^Dine in/ }).click();
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  // Lembar dibuka LAGI dalam keadaan Dine in aktif.
+  await hal.getByRole('button', { name: 'Pajak: Dine in' }).click();
+  await hal.waitForFunction(() => document.querySelector('[role="dialog"]') && !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'));
+  const lembar = await hal.locator('[role="dialog"]').innerText();
+  await hal.keyboard.press('Escape');
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  const keranjang = await hal.locator('.kasir-utama').innerText();
+  await hal.close();
+  assert.equal(galat.length, 0, galat.join(' | '));
+  assert.ok(lembar.length > 0 && keranjang.includes('Dine in'), 'Dine in tidak terpilih -- penjaga hampa');
+  assert.doesNotMatch(lembar, /layanan|service/i, `lembar Pajak menyiratkan biaya layanan: ${lembar}`);
+  assert.doesNotMatch(keranjang, /layanan|service/i, 'keranjang K-03 menyiratkan biaya layanan');
 });

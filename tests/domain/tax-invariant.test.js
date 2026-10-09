@@ -67,6 +67,17 @@ function stripComments(source) {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+async function collectTsxFiles(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...(await collectTsxFiles(full)));
+    else if (entry.isFile() && entry.name.endsWith('.tsx')) files.push(full);
+  }
+  return files;
+}
+
 async function scan(dir) {
   const files = await collectTsFiles(dir);
   const findings = [];
@@ -94,6 +105,26 @@ test('invariant #7: tidak ada angka tarif pajak di packages/domain selain tax.ts
   const { files, findings } = await scan(DOMAIN_SRC);
   assert.ok(files.length > 1, 'packages/domain/src harus punya lebih dari satu file -- guard lulus vakum');
   assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
+});
+
+// Task 10 (PR 2C): lapisan klien yang MEMILIH kanal pajak (`kasir/kanal.ts`,
+// `LembarKanal.tsx`) hanya boleh menyebut NAMA tarif dari hasil TaxCalculator.
+// Pemindaian dua direktori ini murah dan bersih hari ini; apps/kasir/src secara
+// keseluruhan belum dipindai (teks layar memuat "10%" yang sah sebagai tampilan).
+test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/kasir dan apps/kasir/src/komponen', async () => {
+  for (const sub of ['kasir', 'komponen']) {
+    const dir = path.join(__dirname, '../../apps/kasir/src', sub);
+    const files = (await collectTsFiles(dir)).concat(await collectTsxFiles(dir));
+    assert.ok(files.length > 3, `apps/kasir/src/${sub}: guard lulus vakum (${files.length} file)`);
+    const findings = [];
+    for (const file of files) {
+      const code = stripComments(await readFile(file, 'utf8'));
+      TAX_NUMBER_PATTERN.lastIndex = 0;
+      const matches = code.match(TAX_NUMBER_PATTERN);
+      if (matches !== null) findings.push(`${path.relative(process.cwd(), file)}: ${[...new Set(matches)].join(', ')}`);
+    }
+    assert.deepEqual(findings, [], `angka tarif pajak ditemukan di luar TaxCalculator:\n${findings.join('\n')}`);
+  }
 });
 
 // Kedua sentinel di bawah membuktikan POLANYA sendiri benar. Guard yang lolos

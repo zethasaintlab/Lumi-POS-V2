@@ -543,6 +543,18 @@
   gap: var(--space-3);
 }
 
+/* Lembar Pajak: dua pilihan kanal bertumpuk, masing-masing menyebut tarifnya. */
+.kasir-pilih-kanal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kasir-pilih-kanal-opsi {
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+
 /* K-10 refund — dua kolom (rebuild UI Fase 3.5). Lebar dua kartu mockup
    (2 × 502 + celah). Kolom menyusut menjadi satu pada layar sempit lewat
    `auto-fit`, bukan media query: dialog yang sama muncul di tablet potret. */

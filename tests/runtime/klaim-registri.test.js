@@ -134,8 +134,8 @@ const KLAIM = [
   {
     id: 'ppn-nol-di-fixture',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
-    frasa: '**`ppn` tidak pernah muncul di satu pun fixture. Nol.**',
-    harap: 0,
+    frasa: '**`ppn` muncul di fixture sejak Task 10 (9 Oktober 2026): 4 kemunculan literal di `tests/`.**',
+    harap: 4,
     // ⛔ Ini yang paling penting di registri: ia berubah menjadi bukan-nol
     // tepat pada hari gerbang K-06/K-07 dipenuhi, dan pada hari itu KEDUA
     // dokumen harus ikut berubah.

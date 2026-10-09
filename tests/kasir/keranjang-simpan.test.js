@@ -67,7 +67,7 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null };
+const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -304,4 +304,30 @@ test('⛔ pembersihan yang di-ROLLBACK tidak menghapus keranjang', async () => {
   const pulih = await pulihkanKeranjang(d, 's1');
   assert.equal(pulih.status, 'dipulihkan');
   assert.deepEqual(pulih.keranjang, KERANJANG);
+});
+
+test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+
+  // Dine in ikut tersimpan: kasir yang memuat ulang tab tidak boleh kembali ke
+  // Takeaway diam-diam — tarif pajak dan order.channel berubah tanpa satu pun error.
+  const d = db();
+  await simpanKeranjang(d, 's1', { ...KERANJANG, kanal: 'dine_in' }, JAM);
+  const pulih = await pulihkanKeranjang(d, 's1');
+  assert.equal(pulih.status, 'dipulihkan');
+  assert.equal(pulih.keranjang.kanal, 'dine_in');
+
+  // Baris tertulis versi lama (tanpa `kanal`) dan nilai asing: Takeaway, tanpa membuang keranjangnya.
+  for (const isi of [
+    '{"baris":[{"id":"b1","variationId":"v1","itemName":"K","variationName":"R","unitPrice":20000,"quantityMilli":1000,"modifier":[]}],"diskon":null}',
+    '{"baris":[{"id":"b1","variationId":"v1","itemName":"K","variationName":"R","unitPrice":20000,"quantityMilli":1000,"modifier":[]}],"diskon":null,"kanal":"delivery"}',
+  ]) {
+    const lama = db();
+    lama.sqlite
+      .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?,?,?,?)')
+      .run('kini', 's1', isi, '2026-08-24T10:00:00Z');
+    const hasil = await pulihkanKeranjang(lama, 's1');
+    assert.equal(hasil.status, 'dipulihkan', isi);
+    assert.equal(hasil.keranjang.kanal, 'takeaway', isi);
+  }
 });

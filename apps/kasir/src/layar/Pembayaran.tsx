@@ -622,7 +622,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           shiftId: shift.id,
           keranjang,
           draf: d,
-          channel: 'takeaway',
+          channel: keranjang.kanal,
           total,
           idBaru: () => crypto.randomUUID(),
           sekarang: d.occurredAt,
