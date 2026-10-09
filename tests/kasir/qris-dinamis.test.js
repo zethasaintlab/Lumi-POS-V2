@@ -481,6 +481,31 @@ test('⛔ qrString tersimpan dan terpulihkan BYTE-PER-BYTE: spasi di ujung dan d
   }
 });
 
+test('⛔ drafCocokKeranjang: data pesanan (Pelanggan / No. Meja / Catatan) berbeda pada baris dan total SAMA → TIDAK cocok; normalisasi sama → cocok', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const dp = (o = {}) => ({ namaPemesan: null, nomorMeja: null, catatan: null, ...o });
+  const dgn = (o) => ({ ...KERANJANG, dataPesanan: dp(o) });
+  const tersimpanDari = async (k) => {
+    const d = db();
+    const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+    await mintaQr({ ...argMinta(draf(), { db: d, kirim }), keranjang: k });
+    return pulihkanDraf(d, 's1');
+  };
+  const t = await tersimpanDari(dgn({ namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' }));
+  // Muatan yang diharapkan: ketiganya benar-benar ikut draf (pembanding bukan hampa).
+  assert.equal(t.muatan.note, 'Tanpa gula', 'pembanding hampa: catatan tidak masuk muatan draf');
+  assert.equal(drafCocokKeranjang(t, dgn({ namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' }), 22000n), true, 'pembanding hampa: data pesanan SAMA dianggap berbeda');
+  assert.equal(drafCocokKeranjang(t, dgn({ namaPemesan: '  Budi ', nomorMeja: 'A3', catatan: 'Tanpa gula' }), 22000n), true, 'spasi tepi harus dinormalisasi seperti muatan');
+  assert.equal(drafCocokKeranjang(t, dgn({ namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Es banyak' }), 22000n), false, 'catatan berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(t, dgn({ namaPemesan: 'Sari', nomorMeja: 'A3', catatan: 'Tanpa gula' }), 22000n), false, 'nama pemesan berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(t, dgn({ namaPemesan: 'Budi', nomorMeja: 'B1', catatan: 'Tanpa gula' }), 22000n), false, 'nomor meja berbeda dianggap cocok');
+  assert.equal(drafCocokKeranjang(t, dgn({ namaPemesan: 'Budi', nomorMeja: null, catatan: 'Tanpa gula' }), 22000n), false, 'nomor meja dikosongkan dianggap cocok');
+  // Draf tanpa data pesanan (muatan identik klien lama) vs keranjang yang kini memilikinya.
+  const kosong = await tersimpanDari(KERANJANG);
+  assert.equal(drafCocokKeranjang(kosong, KERANJANG, 22000n), true, 'pembanding hampa: draf tanpa data pesanan, keranjang sama');
+  assert.equal(drafCocokKeranjang(kosong, dgn({ catatan: 'Baru diisi' }), 22000n), false, 'catatan yang baru diisi sesudah QR dianggap cocok');
+});
+
 test('⛔ drafCocokKeranjang: id baris SAJA berbeda, atau modifier / diskon berbeda pada total SAMA → TIDAK cocok', async () => {
   const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
   const b0 = KERANJANG.baris[0];

@@ -15,7 +15,7 @@ import { Pembayaran } from '../layar/Pembayaran.tsx';
 import { ShellKasir } from '../ShellKasir.tsx';
 import { PanelQris } from '../komponen/PanelQris.tsx';
 import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
-import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
+import { keranjangKosong, setelDataPesanan, type Keranjang } from '../kasir/keranjang.ts';
 import type { StatusBayar } from '../kasir/qris-dinamis.ts';
 import { jalurSekarang, langgananJalur, navigasi } from '../rute/navigasi.ts';
 
@@ -162,6 +162,9 @@ if (pakaiRute) {
   /* Kasir mengubah keranjang di K-03 selagi QRIS tertunda (fix round Task 9, C1a). */
   (window as unknown as { __ubahKeranjang: (n: number, harga?: number) => void }).__ubahKeranjang = (n, harga) =>
     setelKeranjang(keranjangUji(n, harga));
+  /* Kasir mengubah Catatan di K-03 sesudah QR tampil (isi baris dan total tetap sama). */
+  (window as unknown as { __ubahCatatan: (c: string | null) => void }).__ubahCatatan = (c) =>
+    setelKeranjang(setelDataPesanan(keranjangSekarang(), { catatan: c }));
   /* Kebalikannya: K-06 dipasang lagi (pemulihan draf QRIS) tanpa membuka database baru. */
   (window as unknown as { __paksaMasuk: () => void }).__paksaMasuk = () => {
     window.history.pushState({}, '', '/bayar');

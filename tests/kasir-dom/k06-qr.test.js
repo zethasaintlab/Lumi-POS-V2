@@ -576,6 +576,30 @@ test('⛔ [C1a] keranjang diubah selagi QRIS tertunda: pemulihan TIDAK menulis p
   }
 });
 
+test('⛔ [I-1] Catatan diubah SESUDAH QR tampil (baris dan total sama): pemulihan TIDAK menulis penjualan; pesan keranjang berbeda, bukan penyimpangan diam', async () => {
+  const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    await mulaiQr(hal);
+    await tutupLayar(hal);
+    await hal.route('**/payments/*/check-status', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'confirmed' }) }));
+    await hal.evaluate(() => window.__ubahCatatan('Es banyak'));
+    await ulangPasang(hal);
+    await hal.waitForSelector('.kasir-bayar-kartu, .kasir-k07', { timeout: 10_000 });
+    await hal.waitForTimeout(2500);
+    assert.equal(await jumlahOrder(hal), 0, 'order lokal ditulis dengan Catatan yang BERBEDA dari muatan yang sudah dikirim ke server — struk dan server menyimpang');
+    const lanjut = hal.getByRole('button', { name: TOMBOL_LANJUT });
+    assert.equal(await lanjut.count(), 1, `kartu tidak menawarkan "${TOMBOL_LANJUT}" — pembanding hampa`);
+    await lanjut.click();
+    await hal.waitForTimeout(1200);
+    assert.equal(await jumlahOrder(hal), 0, 'penjualan lokal ditulis sesudah Catatan berubah');
+    assert.ok(!/Transaksi selesai/.test(await teks(hal)), 'keranjang dengan Catatan berbeda sampai ke K-07');
+    assert.match(await teks(hal), /berbeda dari keranjang/, 'tidak ada pesan keranjang berbeda');
+    assert.equal((await drafLokal(hal)).length, 1, 'draf dihapus padahal belum ditulis sebagai penjualan');
+  } finally {
+    await hal.close();
+  }
+});
+
 test('⛔ [C1a] panel yang dipulihkan menampilkan nominal DRAF (yang ditagih gateway), bukan total keranjang yang sudah berubah', async () => {
   const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
   try {

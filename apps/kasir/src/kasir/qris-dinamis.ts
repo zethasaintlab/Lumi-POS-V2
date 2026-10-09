@@ -3,6 +3,7 @@ import type { KonfigPerangkat } from '../../../../packages/sync-client/src/peran
 import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
 import type { Keranjang } from './keranjang.ts';
+import { normalisasiTeksPesanan } from '../../../../packages/domain/src/data-pesanan.ts';
 
 /**
  * FR-C3 + FR-C14 — jalur penjualan ONLINE-FIRST untuk QRIS dinamis.
@@ -326,6 +327,16 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
     return false;
   }
   if ((d.muatan.discountReasonCode ?? null) !== (dk?.alasanKode ?? null)) return false;
+  /* Data pesanan ikut muatan order yang SUDAH dikirim; mengubahnya sesudah QR tampil membuat
+     order lokal + struk menyimpang dari server (outbox dilewati). Muatan hanya memuatnya bila terisi. */
+  const dp = keranjang.dataPesanan;
+  if (
+    (d.muatan.customerName ?? null) !== normalisasiTeksPesanan(dp?.namaPemesan) ||
+    (d.muatan.tableNumber ?? null) !== normalisasiTeksPesanan(dp?.nomorMeja) ||
+    (d.muatan.note ?? null) !== normalisasiTeksPesanan(dp?.catatan)
+  ) {
+    return false;
+  }
   return keranjang.baris.every((b, i) => {
     const l = baris[i] as Record<string, unknown> | undefined;
     if (
