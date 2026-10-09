@@ -110,7 +110,8 @@ test('invariant #7: tidak ada angka tarif pajak di packages/domain selain tax.ts
 // Task 10 (PR 2C): lapisan klien yang MEMILIH kanal pajak (`kasir/kanal.ts`,
 // `LembarKanal.tsx`) hanya boleh menyebut NAMA tarif dari hasil TaxCalculator.
 // Pemindaian dua direktori ini murah dan bersih hari ini; apps/kasir/src secara
-// keseluruhan belum dipindai (teks layar memuat "10%" yang sah sebagai tampilan).
+// keseluruhan belum dipindai: `apps/kasir/src/layar/` TIDAK dipindai (batas tertulis,
+// bukan kelalaian) -- teks layar boleh memuat persentase sebagai tampilan.
 test('invariant #7: tidak ada angka tarif pajak di apps/kasir/src/kasir dan apps/kasir/src/komponen', async () => {
   for (const sub of ['kasir', 'komponen']) {
     const dir = path.join(__dirname, '../../apps/kasir/src', sub);

@@ -458,7 +458,12 @@ export function Kasir() {
     if (!lembarKanal) return;
     setRingkasanKanal(null);
     setGalatKanal(null);
-    if (!konfig || !shift) return;
+    // Keranjang kosong: tak ada baris yang dikenai tarif, jadi nama tarif belum ada (lembar menyatakannya).
+    if (keranjang.baris.length === 0) return;
+    if (!konfig || !shift) {
+      setGalatKanal('Tarif pajak belum dapat dibaca (shift atau perangkat belum siap). Kanal tetap dapat dipilih.');
+      return;
+    }
     const milik = (urutanKanal.current += 1);
     const hitungUntuk = (kanal: Kanal) =>
       hitungKeranjang({ db, konfig, keranjang: setelKanal(keranjang, kanal), shift, waktu: () => new Date() });
@@ -749,25 +754,17 @@ export function Kasir() {
 
           {/* Pajak -- memilih KANAL pesanan (FR-C7), bukan tarif; spec § 4 "Pajak
               sebagai pilihan kanal". Label terlihat = kanal aktif; nama aksesibel
-              selalu berawalan "Pajak" supaya pembaca layar dan G-TOOLBAR menemukannya.
-              Nonaktif dengan alasan saat keranjang kosong: nama tarif yang
-              ditampilkan lembar dibaca dari hitungan keranjang, yang kosong tidak
-              punya baris yang dikenai tarif. */}
+              berawalan "Pajak". SELALU aktif, juga saat keranjang kosong: FR-C7
+              menjadikan kanal masukan per pesanan, dan kasir boleh memilihnya
+              sebelum memindai. Nama tarif baru muncul di lembar setelah ada item. */}
           <Tombol
             varian="ghost"
             ariaLabel={`Pajak: ${labelKanal(keranjang.kanal)}`}
-            disabled={keranjang.baris.length === 0 || konfig === null}
-            keterangan={keranjang.baris.length === 0 ? 'toolbar-pajak-alasan' : undefined}
             onClick={() => setLembarKanal(true)}
           >
             <Icon name="receipt-text" size={17} />
             <span className="kasir-toolbar-label">{labelKanal(keranjang.kanal)}</span>
           </Tombol>
-          {keranjang.baris.length === 0 && (
-            <span id="toolbar-pajak-alasan" className="sr-only">
-              Keranjang kosong. Pilih kanal pajak setelah ada item.
-            </span>
-          )}
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
               konfirmasi dan jejak audit (spec § 4 baris 7). Tidak di balik
@@ -1300,6 +1297,7 @@ export function Kasir() {
           aktif={keranjang.kanal}
           ringkasan={ringkasanKanal}
           galat={galatKanal}
+          tanpaItem={keranjang.baris.length === 0}
           onPilih={(kanal) => {
             setKeranjang((k) => setelKanal(k, kanal));
             setLembarKanal(false);

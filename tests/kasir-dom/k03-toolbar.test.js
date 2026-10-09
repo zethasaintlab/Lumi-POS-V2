@@ -671,18 +671,23 @@ test('outlet tanpa tarif per kanal: kedua pilihan menyebut tarif yang sama DAN l
   assert.match(isi, /Tarif sama untuk kedua kanal/, 'lembar tidak mengatakan bahwa tarifnya sama');
 });
 
-test('Pajak NONAKTIF dengan alasan saat keranjang kosong, dan lembar tak terbuka', async () => {
+test('Pajak TETAP AKTIF saat keranjang kosong (FR-C7): lembar menampilkan dua kanal + kalimat nama tarif, tidak menggantung "Membaca tarif"; memilih Dine in mengubah label', async () => {
   const { hal, galat } = await bukaK03({ keadaan: 'normal' });
-  const hasil = await hal.evaluate(() => {
-    const b = [...document.querySelectorAll('.kasir-toolbar button')].find((x) => /^Pajak/.test(x.getAttribute('aria-label') ?? ''));
-    const id = b?.getAttribute('aria-describedby');
-    return { ada: !!b, disabled: b?.disabled, alasan: id ? document.getElementById(id)?.textContent.trim() : null };
-  });
+  const tombol = hal.getByRole('button', { name: 'Pajak: Takeaway' });
+  assert.equal(await tombol.count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  assert.equal(await tombol.isDisabled(), false, 'Pajak nonaktif saat keranjang kosong');
+  await tombol.click();
+  await hal.waitForSelector('[role="dialog"]');
+  const isi = await hal.locator('[role="dialog"]').innerText();
+  const opsi = await hal.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => e.textContent.trim()));
+  assert.equal(opsi.length, 2, `dua pilihan kanal diharapkan: ${JSON.stringify(opsi)}`);
+  assert.doesNotMatch(isi, /Membaca tarif/, 'lembar menggantung "Membaca tarif pajak…" untuk keranjang kosong');
+  assert.match(isi, /Nama tarif tampil setelah ada item/, 'lembar tidak menyatakan kapan nama tarif muncul');
+  await hal.getByRole('button', { name: /^Dine in/ }).click();
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  assert.equal(await hal.getByRole('button', { name: 'Pajak: Dine in' }).count(), 1, 'label tidak berubah menjadi Dine in');
   await hal.close();
   assert.equal(galat.length, 0, galat.join(' | '));
-  assert.ok(hasil.ada, 'tombol Pajak tidak ada');
-  assert.equal(hasil.disabled, true);
-  assert.ok(hasil.alasan && hasil.alasan.length > 0, 'Pajak nonaktif tanpa alasan terbaca');
 });
 
 test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak dan keranjang', async () => {

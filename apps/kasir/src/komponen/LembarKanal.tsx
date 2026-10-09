@@ -20,6 +20,8 @@ interface Props {
   ringkasan: RingkasanKanal[] | null;
   /** Pesan bila tarif tidak terbaca; pilihan kanal tetap tersedia. */
   galat: string | null;
+  /** Keranjang kosong: nama tarif belum dapat dibaca; lembar menyatakannya, bukan menggantung. */
+  tanpaItem: boolean;
   onPilih: (kanal: Kanal) => void;
   onTutup: () => void;
 }
@@ -28,7 +30,7 @@ function sebutTarif(namaTarif: readonly string[]): string {
   return namaTarif.length === 0 ? 'tanpa pajak' : namaTarif.join(' + ');
 }
 
-export function LembarKanal({ aktif, ringkasan, galat, onPilih, onTutup }: Props) {
+export function LembarKanal({ aktif, ringkasan, galat, tanpaItem, onPilih, onTutup }: Props) {
   const sama = ringkasan !== null && ringkasan.length > 0 && ringkasan[0].sama;
 
   return (
@@ -36,7 +38,7 @@ export function LembarKanal({ aktif, ringkasan, galat, onPilih, onTutup }: Props
       <h2 className="t-title">Pajak pesanan</h2>
       <p className="t-caption kasir-login-sub">Pilih kanal pesanan. Tarif pajak mengikuti kanal.</p>
 
-      {ringkasan === null && galat === null && (
+      {ringkasan === null && galat === null && !tanpaItem && (
         <p className="t-body-md" role="status">
           Membaca tarif pajak…
         </p>
@@ -66,6 +68,10 @@ export function LembarKanal({ aktif, ringkasan, galat, onPilih, onTutup }: Props
           );
         })}
       </div>
+
+      {tanpaItem && (
+        <p className="t-caption kasir-login-sub">Nama tarif tampil setelah ada item di keranjang.</p>
+      )}
 
       {sama && <p className="t-caption kasir-login-sub">Tarif sama untuk kedua kanal.</p>}
 

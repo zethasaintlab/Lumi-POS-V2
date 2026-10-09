@@ -1606,3 +1606,25 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   }
   assert.equal(muatan.total, Number(hasil.total));
 });
+
+test('⛔ G-TANPA-LAYANAN struk: dine_in + service_charge_rate bukan nol → struk tercetak tanpa baris Service (fix round 1 Task 10)', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db: dbPalsu({ tarif: TARIF_KANAL, outlet: { ...OUTLET, service_charge_rate: 1000 } }),
+    ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'dine_in' } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  assert.equal(hasil.status, 'tersimpan');
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.ok(teks.includes('PBJT'), 'anti-hampa: struk dine_in tidak tercetak / tarif dine_in tidak muncul');
+  assert.doesNotMatch(teks, /service|layanan/i, 'struk dine_in menyiratkan biaya layanan');
+});

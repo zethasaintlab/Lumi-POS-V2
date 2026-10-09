@@ -576,6 +576,29 @@ test('⛔ [C1a] keranjang diubah selagi QRIS tertunda: pemulihan TIDAK menulis p
   }
 });
 
+test('⛔ [I1 fix round 1 Task 10] KANAL diganti selagi QRIS tertunda (tarif dan total sama): pemulihan TIDAK menulis penjualan, sama seperti keranjang berbeda lain', async () => {
+  const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
+  try {
+    await mulaiQr(hal);
+    await tutupLayar(hal);
+    await hal.route('**/payments/*/check-status', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'confirmed' }) }));
+    await hal.evaluate(() => window.__ubahKanal('dine_in'));
+    await ulangPasang(hal);
+    await hal.waitForSelector('.kasir-bayar-kartu, .kasir-k07', { timeout: 10_000 });
+    await hal.waitForTimeout(2500);
+    assert.equal(await jumlahOrder(hal), 0, 'pemulihan menulis penjualan dine_in untuk draf takeaway yang ditagih gateway');
+    const lanjut = hal.getByRole('button', { name: TOMBOL_LANJUT });
+    assert.equal(await lanjut.count(), 1, `kartu tidak menawarkan "${TOMBOL_LANJUT}" — pembanding hampa`);
+    await lanjut.click();
+    await hal.waitForTimeout(1200);
+    assert.equal(await jumlahOrder(hal), 0, 'penjualan ditulis dari kanal yang berbeda dari yang ditagih');
+    assert.ok(!/Transaksi selesai/.test(await teks(hal)), 'kanal berbeda sampai ke K-07');
+    assert.match(await teks(hal), /berbeda dari keranjang/, 'tidak ada pesan keranjang berbeda');
+  } finally {
+    await hal.close();
+  }
+});
+
 test('⛔ [C1a] panel yang dipulihkan menampilkan nominal DRAF (yang ditagih gateway), bukan total keranjang yang sudah berubah', async () => {
   const hal = await buka('render=k06&baris=2&rute=1', { rute: rutePenuh(QRIS_PANJANG) });
   try {

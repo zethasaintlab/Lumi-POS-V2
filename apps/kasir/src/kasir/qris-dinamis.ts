@@ -316,6 +316,9 @@ export function nominalDraf(d: DrafTersimpan): bigint | null {
  */
 export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total: bigint | null): boolean {
   if (total === null || nominalDraf(d) !== total) return false;
+  // ⛔ Kanal ikut: draf takeaway + keranjang dine_in bisa bertarif dan bertotal sama, tapi
+  // penjualan lokal akan tersimpan dengan order.channel yang lain dari order di server.
+  if (d.muatan.channel !== (keranjang.kanal === 'dine_in' ? 'dine_in' : 'takeaway')) return false;
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,
