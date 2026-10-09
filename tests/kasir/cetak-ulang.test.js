@@ -146,6 +146,37 @@ test('cetakan pertama TIDAK ditandai — penandanya opsional', async () => {
   assert.equal(bersih(renderEscPos(dok, PROFIL)).includes('CETAK ULANG'), false);
 });
 
+test('⛔ S6: cetak ulang order dine_in mencetak label kanalnya, bukan Takeaway (kontrol takeaway)', async () => {
+  // Label dibaca dari dokumen.ts lewat selisih dua dokumen, tidak diketik ulang di sini.
+  const { bangunDokumenStruk } = await import('../../apps/kasir/src/cetak/dokumen.ts');
+  const { renderEscPos } = await import(ESCPOS);
+  const data = (channel) => ({
+    namaMerchant: 'M', alamatOutlet: null, receiptNumber: 'K1-X', waktu: 'w', namaKasir: 'k',
+    channel, baris: [], subtotal: 0, diskon: 0, serviceCharge: 0, pajak: [], pembulatan: 0,
+    total: 0, pembayaran: [], kembalian: 0,
+  });
+  const a = bangunDokumenStruk(data('dine_in')).baris;
+  const b = bangunDokumenStruk(data('takeaway')).baris;
+  const i = a.findIndex((r, n) => r.isi !== b[n]?.isi);
+  assert.ok(i >= 0, 'dokumen.ts tidak membedakan kanal');
+  const labelDine = bersih(renderEscPos({ baris: [a[i]] }, PROFIL));
+  const labelTake = bersih(renderEscPos({ baris: [b[i]] }, PROFIL));
+  assert.notEqual(labelDine, labelTake);
+
+  const dine = dbSungguhan();
+  isiOrder(dine);
+  dine.sqlite.exec(`UPDATE "order" SET channel = 'dine_in' WHERE id = 'ord-1'`);
+  const outDine = await cetak(dine);
+  assert.ok(outDine.includes(labelDine.trim()), `cetak ulang dine_in tidak memuat "${labelDine.trim()}"`);
+  assert.equal(outDine.includes(labelTake.trim()), false, `cetak ulang dine_in mencetak "${labelTake.trim()}"`);
+
+  const take = dbSungguhan();
+  isiOrder(take);
+  const outTake = await cetak(take);
+  assert.ok(outTake.includes(labelTake.trim()), `cetak ulang takeaway tidak memuat "${labelTake.trim()}"`);
+  assert.equal(outTake.includes(labelDine.trim()), false, `cetak ulang takeaway mencetak "${labelDine.trim()}"`);
+});
+
 test('modifier dan pembayaran ikut terbangun ulang', async () => {
   const db = dbSungguhan();
   isiOrder(db);

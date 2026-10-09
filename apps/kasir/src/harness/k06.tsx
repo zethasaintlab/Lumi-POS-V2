@@ -14,7 +14,7 @@ import { buatDbPalsu } from '../galeri/db-palsu.ts';
 import { Pembayaran } from '../layar/Pembayaran.tsx';
 import { ShellKasir } from '../ShellKasir.tsx';
 import { PanelQris } from '../komponen/PanelQris.tsx';
-import { setelKeranjang } from '../kasir/simpanan.ts';
+import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
 import type { StatusBayar } from '../kasir/qris-dinamis.ts';
 import { jalurSekarang, langgananJalur, navigasi } from '../rute/navigasi.ts';
@@ -121,6 +121,8 @@ function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
 
 /* `?harga=85000` — harga satuan baris uji (bawaan 20.000), supaya total tidak bulat. */
 setelKeranjang(keranjangUji(Number(q.get('baris') ?? '2'), Number(q.get('harga') ?? '20000')));
+/* Jalur test: kanal keranjang MEMORI saat ini (penjaga S9 — kanal tidak bocor sesudah Transaksi Baru). */
+(window as unknown as { __kanalKeranjang: () => string }).__kanalKeranjang = () => keranjangSekarang().kanal;
 
 /**
  * `kirim` palsu untuk `PanelQris`.

@@ -266,6 +266,20 @@ function movementRefund(db) {
   );
 }
 
+test('⛔ S25: VOID order dine_in menulis baris voided ber-channel dine_in (kontrol takeaway)', async () => {
+  const { batalkan } = await import(MOD);
+  for (const kanal of ['dine_in', 'takeaway']) {
+    const db = dbPalsu({ order: { ...ORDER_TERTUTUP, status: 'open', channel: kanal }, lines: BARIS });
+    const hasil = await batalkan({
+      db, ...args({ alasan: { kode: 'salah_input', catatan: null }, approverId: null }),
+    });
+    assert.equal(hasil.status, 'tersimpan', hasil.status);
+    const insert = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+    // Urutan kolom: id, tenant, outlet, device, shift, nomor, tanggal, urutan, channel (indeks 8).
+    assert.equal(insert.params[8], kanal, `baris voided menyalin channel ${insert.params[8]}, bukan ${kanal}`);
+  }
+});
+
 test('refund parsial menulis restock HANYA untuk baris yang dipilih', async () => {
   const { batalkan } = await import(MOD);
   const db = dbPalsu({ lines: DUA_BARIS });

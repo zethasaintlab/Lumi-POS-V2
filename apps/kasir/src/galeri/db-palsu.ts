@@ -182,6 +182,9 @@ export interface OpsiDbPalsu {
   /** `[EKSPLORASI]` `?tarifKanal=1` — tarif PBJT 10% KHUSUS dine_in di samping PPN 11% semua kanal, supaya
       penjaga G-KANAL (`k03-toolbar.test.js`) melihat dua kanal dengan tarif berbeda. */
   tarifKanal?: boolean;
+  /** `[EKSPLORASI]` `?namaTarif=` — nama tarif dine_in pengganti 'PBJT 10%' (bersama `tarifKanal`), supaya penjaga
+      melihat nama tarif DIBACA dari TaxCalculator, bukan teks yang dipaku di UI. */
+  namaTarif?: string;
   /** `[EKSPLORASI]` `?layanan=1` — `outlet.service_charge_rate` 10% (bukan nol), untuk G-TANPA-LAYANAN:
       Dine in tidak boleh memunculkan biaya layanan di mana pun. */
   layanan?: boolean;
@@ -407,7 +410,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
               id: 'tax-pbjt-dine-in',
               tenant_id: 'ten-galeri',
               outlet_id: null,
-              name: 'PBJT 10%',
+              name: opsi.namaTarif ?? 'PBJT 10%',
               type: 'pbjt',
               rate: 1000,
               is_inclusive: 0,

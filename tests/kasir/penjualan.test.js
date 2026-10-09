@@ -342,6 +342,52 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   assert.equal(payload.total, Number(hasil.total));
 });
 
+// S5: `simpanPenjualan` pernah memanggil bangunDokumenStruk({channel:'takeaway'}) literal.
+// Label kanal DIBACA dari dokumen.ts (bukan diketik) lewat selisih dua dokumen yang hanya beda kanal.
+async function labelKanalDariDokumen() {
+  const { bangunDokumenStruk } = await import('../../apps/kasir/src/cetak/dokumen.ts');
+  const data = (channel) => ({
+    namaMerchant: 'M', alamatOutlet: null, receiptNumber: 'K1-X', waktu: 'w', namaKasir: 'k',
+    channel, baris: [], subtotal: 0, diskon: 0, serviceCharge: 0, pajak: [], pembulatan: 0, total: 0, pembayaran: [], kembalian: 0,
+  });
+  const a = bangunDokumenStruk(data('dine_in')).baris;
+  const b = bangunDokumenStruk(data('takeaway')).baris;
+  const i = a.findIndex((r, n) => r.isi !== b[n]?.isi);
+  assert.ok(i >= 0, 'dokumen.ts tidak membedakan kanal — label tidak dapat dibaca');
+  return { dine_in: a[i].isi, takeaway: b[i].isi };
+}
+
+async function cetakDenganKanal(kanal) {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db: dbPalsu({ tarif: TARIF_KANAL }),
+    ...args({ keranjang: { baris: BARIS, diskon: null, kanal } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  assert.equal(hasil.cetak.status, 'tercetak', JSON.stringify(hasil.cetak));
+  return Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+}
+
+test('⛔ S5: struk penjualan dine_in mencetak label kanal Dine in, bukan Takeaway (kontrol takeaway)', async () => {
+  const label = await labelKanalDariDokumen();
+  assert.notEqual(label.dine_in, label.takeaway);
+  const dine = await cetakDenganKanal('dine_in');
+  assert.ok(dine.includes(label.dine_in), `struk dine_in tidak memuat "${label.dine_in}"`);
+  assert.equal(dine.includes(label.takeaway), false, `struk dine_in mencetak "${label.takeaway}"`);
+  const take = await cetakDenganKanal('takeaway');
+  assert.ok(take.includes(label.takeaway), `struk takeaway tidak memuat "${label.takeaway}"`);
+  assert.equal(take.includes(label.dine_in), false, `struk takeaway mencetak "${label.dine_in}"`);
+});
+
 test('keranjang kosong ditolak', async () => {
   const { simpanPenjualan } = await import(MOD);
   const db = dbPalsu();

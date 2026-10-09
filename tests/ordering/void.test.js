@@ -84,7 +84,7 @@ async function buatVariation(price) {
 // Baris dikirim apa adanya supaya test bisa memakai lebih dari satu variation
 // -- restock harus menulis SATU stock_movement per baris, bukan satu per
 // order.
-async function buatOrder(fx, lines) {
+async function buatOrder(fx, lines, channel = 'takeaway') {
   seq += 1;
   const payload = {
     id: crypto.randomUUID(),
@@ -94,7 +94,7 @@ async function buatOrder(fx, lines) {
     receiptNumber: `K1-20260807-${String(seq).padStart(4, '0')}`,
     businessDate: BUSINESS_DATE,
     sequence: seq,
-    channel: 'takeaway',
+    channel,
     checkId: crypto.randomUUID(),
     lines,
   };
@@ -152,6 +152,22 @@ test('order OPEN dibatalkan -> operasi void, bukan refund', async () => {
   // menjawabnya.
   assert.equal(body.operation, 'void');
   assert.equal(body.order.status, 'voided');
+});
+
+// S25: order pembatal menyalin kanal order asli, tidak literal takeaway.
+test('⛔ S25: void order dine_in melahirkan baris voided ber-channel dine_in (kontrol takeaway)', async () => {
+  const fx = await setupDeviceAndShift();
+  const v = await buatVariation(20000);
+  for (const kanal of ['dine_in', 'takeaway']) {
+    const order = await buatOrder(fx, [await baris(v)], kanal);
+    const res = await batalkan(order.id, batalkanPayload());
+    assert.equal(res.statusCode, 201, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body.order.status, 'voided');
+    assert.equal(body.order.channel, kanal, `respons void: channel ${body.order.channel}, bukan ${kanal}`);
+    const rows = await query('SELECT channel FROM "order" WHERE id = $1', [body.order.id]);
+    assert.equal(rows[0].channel, kanal, `baris voided tersimpan channel ${rows[0].channel}, bukan ${kanal}`);
+  }
 });
 
 // AC FR-B7 pertama: "Tidak ada UPDATE pada order asli saat void maupun

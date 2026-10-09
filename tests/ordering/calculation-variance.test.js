@@ -285,6 +285,35 @@ test('klien yang memakai harga LAMA tidak ditandai -- ia hanya belum tersinkron'
   assert.equal(rows[0].total, '25000');
 });
 
+// S13b: `hitungTotalVersiKlien` harus memakai KANAL order. Harga usang memaksa jalur ini jalan
+// (total klien != total server); tarif dine_in (PBJT 10%) beda dari takeaway (PPN 11%).
+test('⛔ S13b: order dine_in berharga usang dengan total klien konsisten (tarif dine_in) TIDAK ditandai; takeaway dengan total sama ditandai', async () => {
+  const buatTarif = async (over) => {
+    const r = await req('POST', '/tax-rates', {
+      id: crypto.randomUUID(), isInclusive: false, ...over,
+    });
+    assert.equal(r.statusCode, 201, r.body);
+  };
+  await buatTarif({ name: 'PBJT 10%', type: 'pbjt', rate: '0.1000', channel: 'dine_in' });
+  await buatTarif({ name: 'PPN 11%', type: 'ppn', rate: '0.1100', channel: 'all' });
+
+  const fx = await setupDeviceAndShift();
+  const v = await buatVariation(10000);
+  const sekarang = await jamDatabase();
+  await ubahHarga(v, 25000, geser(sekarang, -60));
+
+  // Harga usang 10.000 pernah berlaku. dine_in: 10.000 + PBJT 10% = 11.000. takeaway: 11.100.
+  const dine = await buatOrder(fx, [baris(v.variationId, { unitPrice: 10000 })], { channel: 'dine_in', total: 11000 });
+  assert.equal(dine.statusCode, 201, dine.body);
+  assert.equal(JSON.parse(dine.body).total, 27500, 'fixture: total server dine_in bukan 25.000 + PBJT 10%');
+  assert.equal(JSON.parse(dine.body).hasCalculationVariance, false,
+    'total klien dine_in konsisten dengan harganya dan tarif kanalnya, tetapi ditandai — pembanding memakai kanal lain');
+
+  const kontrol = await buatOrder(fx, [baris(v.variationId, { unitPrice: 10000 })], { channel: 'takeaway', total: 11000 });
+  assert.equal(JSON.parse(kontrol.body).hasCalculationVariance, true,
+    'kontrol: 11.000 tidak konsisten untuk takeaway (PPN 11% = 11.100) dan harus ditandai — penjaga ini hampa');
+});
+
 // Harga MASA DEPAN yang belum berlaku bukan penjelasan. Perangkat tidak
 // mungkin memakainya karena belum pernah berlaku saat penjualan terjadi.
 test('harga terjadwal masa depan bukan penjelasan yang sah', async () => {

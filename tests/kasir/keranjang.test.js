@@ -317,3 +317,11 @@ test('⛔ gantiModifier: cabang PENGGABUNGAN mempertahankan diskon order apa ada
   assert.equal(baru.baris.length, 1, 'fixture: cabang penggabungan tidak berjalan — penjaga hampa');
   assert.equal(baru.diskon, diskon, 'cabang penggabungan gantiModifier menjatuhkan/mengubah diskon order (persetujuan manajer hilang diam-diam)');
 });
+
+test('⛔ S21: keranjangKosong() berkanal takeaway; kanal dine_in tidak bocor ke keranjang kosong berikutnya', async () => {
+  const { keranjangKosong, setelKanal } = await import(MOD);
+  assert.equal(keranjangKosong().kanal, 'takeaway', 'keranjang baru harus kembali ke takeaway');
+  const dine = setelKanal(keranjangKosong(), 'dine_in');
+  assert.equal(dine.kanal, 'dine_in', 'setelKanal tidak mengubah kanal');
+  assert.equal(keranjangKosong().kanal, 'takeaway', 'kanal dine_in bocor ke keranjang kosong berikutnya');
+});

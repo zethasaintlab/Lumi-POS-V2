@@ -1934,7 +1934,9 @@ test('⛔ G-TANPA-LAYANAN K-06/K-07: dine_in + outlet ber-service_charge_rate �
     const sebelum = await teks(hal);
     assert.ok(/Total belanja/i.test(sebelum), 'K-06 tidak dirender — penjaga ini hampa');
     assert.equal(/layanan|service/i.test(sebelum), false, `K-06 menyebut biaya layanan: ${sebelum.match(/.{0,30}(layanan|service).{0,30}/i)?.[0]}`);
-    assert.equal(await nilaiTotal(hal), 44_000n, 'Total K-06 memuat biaya layanan');
+    // Kanal/total dipisah dari cek layanan di atas: selisih di sini bisa saja kanal atau tarif yang salah.
+    const total = await nilaiTotal(hal);
+    assert.equal(total, 44_000n, `Total K-06 ${total}, harap 44.000 (dine_in PBJT 10%) — kanal atau tarif salah; jika lebih besar tepat Rp 4.000 baru curigai biaya layanan`);
 
     await hal.getByLabel('Nominal diterima').fill('100.000');
     await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
@@ -1957,6 +1959,22 @@ test('⛔ G-KANAL K-06 QRIS dinamis: POST /orders membawa channel keranjang (din
     assert.notEqual(badan, null, 'POST /orders tidak terkirim — penjaga ini hampa');
     const muatan = JSON.parse(badan);
     assert.equal(muatan.channel, 'dine_in', `QRIS dinamis mengirim channel ${muatan.channel}, bukan kanal keranjang dine_in`);
+  } finally {
+    await hal.close();
+  }
+});
+
+test('⛔ S9 G-KANAL K-06: bayar dine_in lalu "Transaksi Baru" → keranjang memori kembali takeaway (kanal tidak bocor)', async () => {
+  const hal = await buka('render=k06&baris=2&tarifKanal=1&kanal=dine_in');
+  try {
+    const sebelum = await hal.evaluate(() => window.__kanalKeranjang?.());
+    assert.equal(sebelum, 'dine_in', `kanal awal ${sebelum}, bukan dine_in — penjaga ini hampa`);
+    await hal.getByLabel('Nominal diterima').fill('100.000');
+    await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+    await hal.waitForSelector('text=Transaksi selesai', { timeout: 10_000 });
+    await hal.getByRole('button', { name: 'Transaksi Baru', exact: true }).click();
+    const sesudah = await hal.evaluate(() => window.__kanalKeranjang?.());
+    assert.equal(sesudah, 'takeaway', `sesudah Transaksi Baru kanal keranjang "${sesudah}" — bocor ke transaksi berikutnya`);
   } finally {
     await hal.close();
   }

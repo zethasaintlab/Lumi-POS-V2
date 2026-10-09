@@ -492,3 +492,28 @@ test("⛔ fixture #1: tax_rate type 'ppn' 11% (rate 1100 berskala 10.000) dihitu
     assert.equal(h.perLine.reduce((n, p) => n + p.amount, 0n), h.totalTax);
   }
 });
+
+// Temuan 2: dua tarif — PBJT khusus dine_in, PPN untuk semua kanal. Kanal spesifik menang atas `all`
+// (FR-C7), jadi pilihan kanal benar-benar mengganti tarif, bukan hanya label.
+test('⛔ FR-C7: dua tarif (dine_in PBJT, all PPN) → dine_in memakai PBJT, takeaway memakai PPN', async () => {
+  const { calculateTax } = await import(MOD);
+  const pbjt = { ...PBJT_10, id: 'r-pbjt', name: 'PBJT 10%', channel: 'dine_in' };
+  const ppn = { ...PBJT_10, id: 'r-ppn', name: 'PPN 11%', rateScaled: 1100n, channel: 'all' };
+  // Kedua urutan daftar: hasil tidak boleh bergantung pada siapa yang lebih dulu.
+  for (const taxRates of [[pbjt, ppn], [ppn, pbjt]]) {
+    const masuk = (channel) => ({
+      lines: [baris('a', 40000n)],
+      serviceChargeAmount: 0n,
+      orderDiscount: 0n,
+      taxRates,
+      channel,
+      outletId: 'outlet-1',
+    });
+    const dine = calculateTax(masuk('dine_in'));
+    const take = calculateTax(masuk('takeaway'));
+    assert.deepEqual(dine.lines.map((l) => l.name), ['PBJT 10%'], 'dine_in harus memakai PBJT saja');
+    assert.equal(dine.totalTax, 4000n);
+    assert.deepEqual(take.lines.map((l) => l.name), ['PPN 11%'], 'takeaway harus memakai PPN saja');
+    assert.equal(take.totalTax, 4400n);
+  }
+});
