@@ -2,7 +2,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import type { KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { nomorStruk } from '../../../../packages/domain/src/tanggal-bisnis.ts';
 import { muatanOrder, type DrafTerkirim } from './penjualan.ts';
-import type { Keranjang } from './keranjang.ts';
+import { dataPesananKeranjang, type Keranjang } from './keranjang.ts';
 import { kanalPesanan } from './kanal.ts';
 
 /**
@@ -319,6 +319,16 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
   if (total === null || nominalDraf(d) !== total) return false;
   // Kanal ikut: server sudah menyimpan order dengan kanal draf, dan `confirmed` menulis order lokal dari keranjang.
   if (d.muatan.channel !== kanalPesanan(keranjang)) return false;
+  // Data pesanan juga: server menyimpan order dengan nama/meja/catatan draf, dan `confirmed` menulis order lokal
+  // dari keranjang. Field kosong tidak ada di muatan (N-1), jadi `?? null` membandingkan apa yang tersimpan.
+  const dp = dataPesananKeranjang(keranjang);
+  if (
+    (d.muatan.customerName ?? null) !== dp.namaPemesan ||
+    (d.muatan.tableNumber ?? null) !== dp.nomorMeja ||
+    (d.muatan.note ?? null) !== dp.catatan
+  ) {
+    return false;
+  }
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,

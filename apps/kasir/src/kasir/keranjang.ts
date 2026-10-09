@@ -1,4 +1,5 @@
 import type { PermintaanDiskon } from '../../../../packages/domain/src/diskon.ts';
+import { normalkanTeksPesanan } from '../../../../packages/domain/src/data-pesanan.ts';
 import type { ItemKatalog, VariationKatalog } from '../katalog/baca.ts';
 
 /**
@@ -107,16 +108,50 @@ export interface DiskonKeranjang {
  */
 export type Kanal = 'dine_in' | 'takeaway';
 
+/**
+ * Nama pemesan, nomor meja, catatan (P5(b), P6(a); migrasi 0037). Tiga teks
+ * bebas, `null` = tidak diisi. Tidak memengaruhi angka mana pun. Batas dan
+ * penolakan nomor kartu: `packages/domain/src/data-pesanan.ts`.
+ */
+export interface DataPesanan {
+  namaPemesan: string | null;
+  nomorMeja: string | null;
+  catatan: string | null;
+}
+
+export function dataPesananKosong(): DataPesanan {
+  return { namaPemesan: null, nomorMeja: null, catatan: null };
+}
+
 export interface Keranjang {
   baris: BarisKeranjang[];
   /** `null` = tidak ada diskon. */
   diskon: DiskonKeranjang | null;
   /** Bawaan `takeaway`; mengalir ke `hitungKeranjang`, `simpanPenjualan`, dan `order.channel`. */
   kanal: Kanal;
+  dataPesanan: DataPesanan;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null, kanal: 'takeaway' };
+  return { baris: [], diskon: null, kanal: 'takeaway', dataPesanan: dataPesananKosong() };
+}
+
+/**
+ * Data pesanan efektif: dipangkas, kosong → `null`. Toleran terhadap keranjang
+ * dari sebelum field ini ada. SATU pembaca untuk layar, penulisan, muatan, dan
+ * pencocokan draf, supaya keempatnya tidak berbeda soal apa yang tersimpan.
+ */
+export function dataPesananKeranjang(k: Partial<Pick<Keranjang, 'dataPesanan'>>): DataPesanan {
+  const d = k.dataPesanan;
+  return {
+    namaPemesan: normalkanTeksPesanan(d?.namaPemesan),
+    nomorMeja: normalkanTeksPesanan(d?.nomorMeja),
+    catatan: normalkanTeksPesanan(d?.catatan),
+  };
+}
+
+export function setelDataPesanan(k: Keranjang, dataPesanan: DataPesanan): Keranjang {
+  return { ...k, dataPesanan };
 }
 
 export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {

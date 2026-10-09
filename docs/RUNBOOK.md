@@ -39,6 +39,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Penjualan Transfer tidak sampai ke server" · "Transfer tercatat 'Lainnya'" | §5.7 Transfer |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
+| "Sesudah pembaruan, riwayat kasir kosong sebentar" · "Nama pemesan / meja tidak tercetak" | §7.4 kolom `order` baru |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
 | "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
 | "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
@@ -449,6 +450,23 @@ tersimpan sebagai `real` di kolom `INTEGER` — hanya `typeof()` SQLite yang
 membedakannya.
 
 ---
+
+### 7.4 Sesudah pembaruan: perangkat mengunduh ulang riwayat (nama pemesan, nomor meja, catatan)
+
+Migrasi `0037` menambah tiga kolom ke `order` (`customer_name`, `table_number`,
+`note`; P5(b), P6(a)). Kolom itu ikut raw table perangkat, jadi **sidik jari
+skema lokal berubah sekali** dan setiap perangkat menjalankan
+`disconnectAndClear()` pada boot pertama sesudah pembaruan, lalu mengunduh ulang
+katalog dan riwayat. Antrean upload (`outbox_local`) **tidak tersentuh**.
+**Perangkat yang offline saat itu berjalan dengan katalog kosong sampai
+terhubung** — gejalanya sama dengan §7.2, dan sembuh sendiri begitu terhubung.
+Jangan mengosongkan antrean atau menghapus database lokal untuk "memperbaikinya".
+
+⛔ **Urutan rilis: server lebih dulu, klien sesudahnya.** Klien baru di atas
+server lama mengirim `customerName`/`tableNumber`/`note` yang belum dikenal
+skemanya dan barisnya berhenti `gagal-permanen` di §1. Klien lama di atas server
+baru tidak bermasalah (ketiga field opsional). Catatan rilis wajib menyebut
+keduanya.
 
 ## 8. Kas & shift
 

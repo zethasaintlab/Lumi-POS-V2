@@ -1,5 +1,11 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
-import { keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
+import {
+  normalkanTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../packages/domain/src/data-pesanan.ts';
+import { keranjangKosong, type Keranjang, type BarisKeranjang, type DataPesanan } from './keranjang.ts';
 
 /**
  * KEP-21 — keranjang K-03 yang BERTAHAN melewati muat ulang.
@@ -204,7 +210,23 @@ function uraikan(teks: string): Keranjang | null {
   // Baris yang ditulis sebelum kanal ada (atau nilai tak dikenal) jatuh ke `takeaway`,
   // bawaan lama — bukan dibuang: keranjang itu sah.
   const kanal = o.kanal === 'dine_in' ? 'dine_in' : kosong.kanal;
-  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal };
+  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal, dataPesanan: dataPesananSah(o.dataPesanan) };
+}
+
+/**
+ * Field yang bukan teks, atau melebihi batas, jadi `null` — bukan dipercaya:
+ * keranjang adalah kenyamanan, dan teks 10 KB di sini akan ditolak server
+ * sebagai `gagal-permanen` di antrean. Keranjang lama tanpa field → semua null.
+ */
+function dataPesananSah(nilai: unknown): DataPesanan {
+  const d = typeof nilai === 'object' && nilai !== null ? (nilai as Record<string, unknown>) : {};
+  const ambil = (v: unknown, periksa: (x: unknown) => unknown): string | null =>
+    typeof v === 'string' && periksa(v) === null ? normalkanTeksPesanan(v) : null;
+  return {
+    namaPemesan: ambil(d.namaPemesan, periksaNamaPemesan),
+    nomorMeja: ambil(d.nomorMeja, periksaNomorMeja),
+    catatan: ambil(d.catatan, periksaCatatan),
+  };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {

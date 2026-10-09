@@ -318,3 +318,27 @@ test('⛔ cetak ulang transfer menyebut "Transfer", bukan "Lainnya", dan sama de
   db.sqlite.exec(`UPDATE payment SET provider = NULL`);
   assert.ok((await cetak(db)).includes('Lainnya'), 'other tanpa provider harus tetap Lainnya');
 });
+
+// --- Task 11 (PR 2C): Atas nama / Meja / Catatan dibaca dari `order` ---
+
+test('⛔ cetak ulang mencetak Atas nama, Meja, Catatan dari kolom order, IDENTIK dengan cetakan pertama', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  db.sqlite.exec(`UPDATE "order" SET customer_name = 'Budi', table_number = 'A3', note = 'Tanpa gula' WHERE id = 'ord-1'`);
+  const keluar = await cetak(db);
+  assert.match(keluar, /Atas nama: Budi/);
+  assert.match(keluar, /Meja: A3/);
+  assert.match(keluar, /Catatan: Tanpa gula/);
+
+  // Cetakan pertama dibangun dari keranjang; keduanya lewat `bangunDokumenStruk`,
+  // jadi baris yang sama muncul pada posisi yang sama (sebelum item).
+  assert.ok(keluar.indexOf('Atas nama') < keluar.indexOf('Kopi Susu'), 'baris pesanan sesudah item');
+  assert.equal(await cetak(db), keluar, 'dua cetak ulang berbeda');
+});
+
+test('cetak ulang order tanpa data pesanan (baris lama / NULL) tidak mencetak baris apa pun untuknya', async () => {
+  const db = dbSungguhan();
+  isiOrder(db);
+  const keluar = await cetak(db);
+  assert.ok(!/Atas nama|Meja:|Catatan:/.test(keluar));
+});

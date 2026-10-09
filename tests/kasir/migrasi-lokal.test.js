@@ -430,3 +430,47 @@ test('⛔ T5b `telemetry_local` ada di TABEL_LOKAL_SAJA, bukan TABEL_RAW', async
   assert.ok(TABEL_LOKAL_SAJA.includes('telemetry_local'));
   assert.ok(!TABEL_RAW.includes('telemetry_local'));
 });
+
+// Task 11 (PR 2C) — migrasi 0037 menambah TIGA kolom ke `order`. Perangkat
+// harus mengunduh ulang riwayat SEKALI (satu sidik jari baru), bukan tiga kali,
+// dan antrean upload tidak boleh tersentuh (R4).
+test('⛔ tiga kolom order baru (customer_name, table_number, note) mengubah sidik jari SEKALI; outbox tidak tersentuh', async () => {
+  const { jalankanMigrasi } = await import(MIGRASI);
+  const { kolomPerTabel, sidikJariRawTable, sidikJariSkemaLokal } = await import(SKEMA);
+  const baru = sql();
+  const kolom = kolomPerTabel(baru);
+  const TIGA = ['customer_name', 'table_number', 'note'];
+  for (const k of TIGA) assert.ok(kolom.order.includes(k), `order lokal tanpa ${k} (db/local/001-initial.sql)`);
+
+  // Skema SEBELUM Task 11 = ketiga kolom dicabut. Satu perubahan, satu sidik jari baru ...
+  const sebelum = sidikJariRawTable({ ...kolom, order: kolom.order.filter((c) => !TIGA.includes(c)) });
+  const sesudah = sidikJariRawTable(kolom);
+  assert.notEqual(sebelum, sesudah, 'sidik jari buta terhadap tiga kolom baru');
+  // ... dan masing-masing kolom ikut terhitung (bukan hanya yang pertama).
+  for (const k of TIGA) {
+    assert.notEqual(
+      sidikJariRawTable({ ...kolom, order: kolom.order.filter((c) => c !== k) }),
+      sesudah,
+      `${k} tidak ikut sidik jari`
+    );
+  }
+
+  // Perangkat yang memegang sidik jari lama: SATU kali bersihkan + DDL; boot berikutnya diam.
+  const jejak = [];
+  let tersimpan = sebelum;
+  const deps = {
+    sqlSkema: baru,
+    bacaSidik: async () => tersimpan,
+    jalankanDdl: async (rencana) => { jejak.push(['ddl', rencana]); },
+    bersihkanSync: async () => { jejak.push(['bersih']); },
+    simpanSidik: async (s) => { tersimpan = s; jejak.push(['simpan']); },
+  };
+  await jalankanMigrasi(deps);
+  assert.deepEqual(jejak.map((j) => j[0]), ['bersih', 'ddl', 'simpan']);
+  assert.equal(tersimpan, sidikJariSkemaLokal(baru));
+  await jalankanMigrasi(deps);
+  assert.equal(jejak.length, 3, 'boot kedua membangun ulang lagi — sidik jari tidak stabil');
+
+  // Antrean upload tidak di-drop.
+  assert.ok(!/DROP TABLE[^"]*"outbox_local"/i.test(JSON.stringify(jejak[1][1])), 'outbox_local ikut di-drop — penjualan belum terkirim hilang');
+});

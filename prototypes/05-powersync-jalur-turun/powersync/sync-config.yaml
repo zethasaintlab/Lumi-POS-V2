@@ -167,6 +167,11 @@ streams:
     queries:
       # `order` membawa `outlet_id` dan `device_id` sendiri.
       #
+      # `customer_name`, `table_number`, `note` (migrasi 0037, P5(b)/P6(a))
+      # WAJIB turun: cetak ulang struk (K-09) membaca ketiganya dari `order`
+      # lokal. `customer_name` data pribadi (UU PDP) — nama saja, tanpa
+      # telepon; terbatas tenant oleh parameter di bawah.
+      #
       # `voided_by_order_id` WAJIB turun: order yang sudah di-void tetap
       # berstatus `open` (AC FR-B7 pertama), jadi status dibaca dari
       # ada/tidaknya pembatal. Tanpa kolom ini, order yang dibatalkan tampil
@@ -175,7 +180,8 @@ streams:
                business_date, sequence, channel, status, subtotal,
                order_discount, service_charge_amount, tax_amount, total,
                amount_due, rounding_adjustment, voided_by_order_id,
-               has_calculation_variance, variance_amount, occurred_at, hlc
+               has_calculation_variance, variance_amount, occurred_at, hlc,
+               customer_name, table_number, note
           FROM "order"
          WHERE tenant_id = auth.parameter('tenant_id')
            AND outlet_id = auth.parameter('outlet_id')

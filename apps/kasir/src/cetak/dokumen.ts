@@ -68,6 +68,14 @@ export interface DataStruk {
   kembalian: number;
   /** Ditambahkan pada cetakan kedua dan seterusnya (FR-B11). */
   cetakUlang?: boolean;
+  /**
+   * P5(b)/P6(a), migrasi 0037 — `order.customer_name`, `table_number`, `note`.
+   * Snapshot di `order`, jadi cetak ulang identik dengan cetakan pertama.
+   * Kosong/`null` = baris tidak dicetak.
+   */
+  namaPemesan?: string | null;
+  nomorMeja?: string | null;
+  catatan?: string | null;
 }
 
 const CHANNEL: Record<DataStruk['channel'], string> = {
@@ -113,6 +121,17 @@ export function bangunDokumenStruk(data: DataStruk): ReceiptDocument {
   // sama dapat menagih dua kali, dan tidak ada yang dapat membuktikan mana
   // yang asli.
   if (data.cetakUlang) baris.push({ jenis: 'teks', isi: '** CETAK ULANG **', rata: 'tengah' });
+
+  // Sebelum baris item: yang menyiapkan pesanan membacanya lebih dulu. Teks
+  // panjang dilipat renderer (`lipat`, escpos.ts), tidak dipotong.
+  for (const [label, nilai] of [
+    ['Atas nama', data.namaPemesan],
+    ['Meja', data.nomorMeja],
+    ['Catatan', data.catatan],
+  ] as const) {
+    const t = nilai?.trim();
+    if (t) baris.push({ jenis: 'teks', isi: `${label}: ${t}` });
+  }
 
   baris.push({ jenis: 'garis' });
 

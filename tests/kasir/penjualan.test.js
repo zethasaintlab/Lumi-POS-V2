@@ -1607,3 +1607,75 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   assert.equal(hasil.total, 22000n, 'total memuat biaya layanan atau tarif yang salah');
   assert.equal(hasil.taxAmount, 2000n);
 });
+
+// ---------------------------------------------------------------------------
+// Task 11 — nama pemesan, nomor meja, catatan (P5(b), P6(a); migrasi 0037).
+
+test('nama, meja, catatan ke kolom order lokal dan muatan outbox; check.label NULL', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const db = dbPalsu();
+  const data = { namaPemesan: '  Budi ', nomorMeja: 'A3', catatan: 'Tanpa gula' };
+  const hasil = await simpanPenjualan({
+    db, ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'dine_in', dataPesanan: data } }),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  // Kolom ditulis NAMA-nya, bukan posisi: baca daftar kolom dari SQL, nilai dari params.
+  const t = barisOrder(db);
+  const penuh = t.sqlPenuh;
+  const kolom = penuh.slice(penuh.indexOf('(', penuh.indexOf('"order"')) + 1, penuh.indexOf(')')).split(',').map((c) => c.trim());
+  for (const k of ['customer_name', 'table_number', 'note']) assert.ok(kolom.includes(k), `INSERT order tanpa ${k}`);
+  const nilai = (k) => {
+    const i = kolom.indexOf(k);
+    // Literal di VALUES (mis. 'closed', 0) tidak punya `?`; ketiga kolom ini selalu `?`.
+    const nPlaceholderSebelum = penuh.slice(penuh.indexOf('VALUES')).split(',').slice(0, i).filter((x) => x.includes('?')).length;
+    return t.params[nPlaceholderSebelum];
+  };
+  assert.equal(nilai('customer_name'), 'Budi', 'nama tidak dipangkas');
+  assert.equal(nilai('table_number'), 'A3');
+  assert.equal(nilai('note'), 'Tanpa gula');
+
+  const outbox = db.state.tulis.find((x) => /outbox_local/.test(x.sql));
+  const muatan = JSON.parse(outbox.params[4]);
+  assert.equal(muatan.customerName, 'Budi');
+  assert.equal(muatan.tableNumber, 'A3');
+  assert.equal(muatan.note, 'Tanpa gula');
+
+  // ⛔ check.label tetap NULL: literal NULL di SQL, params hanya id/order/subtotal/total.
+  const cek = db.state.tulis.find((x) => /INSERT INTO "check"/.test(x.sql));
+  assert.match(cek.sqlPenuh, /VALUES \(\?, \?, NULL, \?, \?\)/, 'check.label tidak lagi NULL');
+  assert.ok(!cek.params.includes('Budi'), 'nama pemesan bocor ke check');
+});
+
+test('tanpa data pesanan: muatan outbox TIDAK membawa ketiga field (N-1), kolom NULL', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  for (const keranjang of [
+    { baris: BARIS, diskon: null },
+    { baris: BARIS, diskon: null, kanal: 'takeaway', dataPesanan: { namaPemesan: null, nomorMeja: '  ', catatan: null } },
+  ]) {
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({ db, ...args({ keranjang }) });
+    assert.equal(hasil.status, 'tersimpan', hasil.status);
+    const muatan = JSON.parse(db.state.tulis.find((x) => /outbox_local/.test(x.sql)).params[4]);
+    for (const k of ['customerName', 'tableNumber', 'note']) {
+      assert.ok(!(k in muatan), `${k} ikut terkirim padahal kosong — server lama (N-1) bisa menolak`);
+    }
+    const t = barisOrder(db);
+    assert.deepEqual(t.params.slice(-3), [null, null, null]);
+  }
+});
+
+test('⛔ isi yang melanggar aturan domain (41 karakter / nomor kartu) TIDAK ditulis: penjualan ditolak, tanpa baris', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  for (const dataPesanan of [
+    { namaPemesan: 'a'.repeat(41), nomorMeja: null, catatan: null },
+    { namaPemesan: null, nomorMeja: null, catatan: '4111 1111 1111 1111' },
+  ]) {
+    const db = dbPalsu();
+    const hasil = await simpanPenjualan({
+      db, ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'takeaway', dataPesanan } }),
+    });
+    assert.notEqual(hasil.status, 'tersimpan', 'isi tak sah ikut tersimpan — server akan menolaknya (gagal-permanen di antrean)');
+    assert.equal(db.state.tulis.filter((x) => /INSERT INTO "order"/.test(x.sql)).length, 0);
+  }
+});

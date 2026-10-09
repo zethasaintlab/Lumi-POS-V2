@@ -167,3 +167,18 @@ test('T2 nama tabel selalu dikutip di SQL yang dihasilkan', async () => {
   assert.match(def.order.put.sql, /INSERT OR REPLACE INTO "order"/);
   assert.match(def.check.put.sql, /INSERT OR REPLACE INTO "check"/);
 });
+
+// Task 11 (PR 2C) — migrasi 0037: nama pemesan, nomor meja, catatan.
+test('⛔ order lokal memuat customer_name, table_number, note; put menulis ketiganya sebagai TEKS tanpa konversi', async () => {
+  const { kolomPerTabel, buatDefinisiRaw } = await import(SKEMA);
+  const k = kolomPerTabel(sql());
+  for (const kolom of ['customer_name', 'table_number', 'note']) {
+    assert.ok(k.order.includes(kolom), `order lokal tanpa ${kolom}`);
+  }
+  const def = buatDefinisiRaw(k);
+  for (const kolom of ['customer_name', 'table_number', 'note']) {
+    assert.ok(def.order.put.sql.includes(`"${kolom}"`) || def.order.put.sql.includes(kolom), `put order tanpa ${kolom}`);
+  }
+  assert.equal(def.order.put.params.length, k.order.length, 'jumlah params put order != jumlah kolom');
+  assert.ok(!/ROUND\(\? \*[^)]*\)[^,]*customer_name/.test(def.order.put.sql), 'teks dikonversi seperti angka');
+});

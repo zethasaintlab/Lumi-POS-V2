@@ -22,8 +22,10 @@ import {
 import { bacaGambarKatalog, PESAN_GAMBAR_RUSAK, type GambarItem } from '../katalog/gambar.ts';
 import {
   keranjangKosong,
+  dataPesananKeranjang,
   qtyDiKeranjang,
   satuanKeranjang,
+  setelDataPesanan,
   setelDiskon,
   setelKanal,
   subtotalKeranjang,
@@ -62,6 +64,7 @@ import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
 import { LembarKanal } from '../komponen/LembarKanal.tsx';
+import { DialogTeksPesanan, type ModeTeksPesanan } from '../komponen/DialogTeksPesanan.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { DialogEditItem } from '../komponen/DialogEditItem.tsx';
@@ -157,6 +160,11 @@ export function Kasir() {
   /* Toolbar #3 — Pajak = pilihan KANAL (spec § 4, P9(a)). `null` = lembar tertutup; `ringkasan`
      `null` di dalamnya = tarif tidak terbaca (pilihan kanal tetap sah). */
   const [lembarKanal, setLembarKanal] = useState<{ ringkasan: RingkasanKanal[] | null } | null>(null);
+  /* Toolbar #4-#6 — Catatan, Pelanggan, No. Meja (spec § 4; P5(b), P6(a)). Satu dialog, tiga mode;
+     `null` = tertutup. Isinya milik KERANJANG (`dataPesanan`), bukan state layar: ia ikut tersimpan,
+     ikut dikosongkan Batalkan/Transaksi Baru, dan ikut ke `simpanPenjualan`. */
+  const [dialogTeks, setDialogTeks] = useState<ModeTeksPesanan | null>(null);
+  const dataPesanan = dataPesananKeranjang(keranjang);
   /* Toolbar #7 — Batalkan (spec § 4 baris 7). Dialog konfirmasi, dan
      mengonfirmasi menulis `audit_event` `cart_cleared` (keputusan user
      28 September 2026, issue #76). */
@@ -492,7 +500,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && lembarKanal === null,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && lembarKanal === null && dialogTeks === null,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -765,6 +773,22 @@ export function Kasir() {
               {alasanPajakNonaktif}
             </span>
           )}
+
+          {/* Catatan, Pelanggan, No. Meja — tiga teks pendek yang ikut pesanan dan tercetak di struk
+              (P5(b), P6(a)). Selalu AKTIF, juga saat keranjang kosong: nama atau meja sering dicatat
+              sebelum item pertama. Tidak di balik kill switch: tidak menyentuh uang, kas, maupun pajak. */}
+          <Tombol varian="ghost" onClick={() => setDialogTeks('catatan')}>
+            <Icon name="pencil" size={17} />
+            <span className="kasir-toolbar-label">Catatan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('pelanggan')}>
+            <Icon name="user-round" size={17} />
+            <span className="kasir-toolbar-label">Pelanggan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('meja')}>
+            <Icon name="utensils-crossed" size={17} />
+            <span className="kasir-toolbar-label">No. Meja</span>
+          </Tombol>
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
               konfirmasi dan jejak audit (spec § 4 baris 7). Tidak di balik
@@ -1078,6 +1102,32 @@ export function Kasir() {
           </button>
         </div>
 
+        {/* P5(b)/P6(a) — yang sudah diisi TAMPIL di keranjang, dengan teksnya (bukan hanya tombol
+            berubah): kasir yang menyerahkan pesanan membacanya dari sini. Di atas daftar baris — daftar
+            yang menggulir, jadi blok ini tidak menggeser Bayar. */}
+        {(dataPesanan.namaPemesan !== null || dataPesanan.nomorMeja !== null || dataPesanan.catatan !== null) && (
+          <dl className="kasir-data-pesanan">
+            {dataPesanan.namaPemesan !== null && (
+              <div>
+                <dt className="t-caption">Atas nama</dt>
+                <dd className="t-body-md">{dataPesanan.namaPemesan}</dd>
+              </div>
+            )}
+            {dataPesanan.nomorMeja !== null && (
+              <div>
+                <dt className="t-caption">Meja</dt>
+                <dd className="t-body-md">{dataPesanan.nomorMeja}</dd>
+              </div>
+            )}
+            {dataPesanan.catatan !== null && (
+              <div>
+                <dt className="t-caption">Catatan</dt>
+                <dd className="t-body-md kasir-data-pesanan-catatan">{dataPesanan.catatan}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+
         {/* FR-E4 — peringatan stok. Aturan design system #5: status TIDAK
             PERNAH warna saja, selalu ada teks; di sini teksnya memang
             seluruh pesannya, dan angkanya ikut karena `spec-e:152` menuntut
@@ -1309,6 +1359,35 @@ export function Kasir() {
           )}
           onKonfirmasi={konfirmasiBatal}
           onBatal={() => setDialogBatal(false)}
+        />
+      )}
+
+      {dialogTeks !== null && (
+        <DialogTeksPesanan
+          mode={dialogTeks}
+          nilai={
+            dialogTeks === 'catatan'
+              ? dataPesanan.catatan
+              : dialogTeks === 'pelanggan'
+                ? dataPesanan.namaPemesan
+                : dataPesanan.nomorMeja
+          }
+          onBatal={() => setDialogTeks(null)}
+          onSimpan={(nilai) => {
+            const mode = dialogTeks;
+            setKeranjang((k) => {
+              const d = dataPesananKeranjang(k);
+              return setelDataPesanan(k, {
+                ...d,
+                ...(mode === 'catatan'
+                  ? { catatan: nilai }
+                  : mode === 'pelanggan'
+                    ? { namaPemesan: nilai }
+                    : { nomorMeja: nilai }),
+              });
+            });
+            setDialogTeks(null);
+          }}
         />
       )}
 

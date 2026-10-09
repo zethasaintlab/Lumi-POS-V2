@@ -291,3 +291,32 @@ test('⛔ contoh spec-c:376 TETAP mencetak "2x Kopi Susu", bukan "Kopi Susu Regu
   assert.ok(out.includes('2x Kopi Susu'), out);
   assert.ok(!out.includes('Kopi Susu Regular'), `contoh spec berubah:\n${out}`);
 });
+
+// ---------------------------------------------------------------------------
+// Task 11 (PR 2C) — "Atas nama", "Meja", "Catatan" (P5(b), P6(a)).
+
+test('⛔ struk mencetak "Atas nama", "Meja", "Catatan" SEBELUM baris item, dilipat di 32 kolom', async () => {
+  const keluar = await cetak({
+    ...CONTOH,
+    namaPemesan: 'Budi Santoso',
+    nomorMeja: 'A3',
+    catatan: 'Kopi susu tanpa gula, croissant dipanaskan dan dibelah dua, es dipisah',
+  });
+  const baris = keluar.split('\n');
+  const iNama = baris.findIndex((b) => b.startsWith('Atas nama: Budi Santoso'));
+  const iMeja = baris.findIndex((b) => b.startsWith('Meja: A3'));
+  const iCatatan = baris.findIndex((b) => b.startsWith('Catatan: Kopi susu'));
+  const iItem = baris.findIndex((b) => b.includes('Kopi Susu'));
+  assert.ok(iNama >= 0 && iMeja >= 0 && iCatatan >= 0, `salah satu baris tidak tercetak:\n${keluar}`);
+  assert.ok(iNama < iItem && iMeja < iItem && iCatatan < iItem, 'baris pesanan jatuh sesudah item');
+  // Catatan 70+ karakter MELIPAT ke baris berikutnya, tidak terpotong.
+  assert.ok(baris.slice(iCatatan, iCatatan + 4).join(' ').includes('es dipisah'), 'catatan terpotong, tidak dilipat');
+  for (const b of baris) assert.ok(b.length <= 32, `baris ${b.length} kolom: "${b}"`);
+});
+
+test('struk tanpa nama/meja/catatan tidak mencetak baris apa pun untuknya (identik dengan sebelum 0037)', async () => {
+  const biasa = await cetak(CONTOH);
+  assert.ok(!/Atas nama|Meja:|Catatan:/.test(biasa), 'baris kosong tercetak');
+  const kosong = await cetak({ ...CONTOH, namaPemesan: null, nomorMeja: '  ', catatan: undefined });
+  assert.equal(kosong, biasa, 'field kosong mengubah struk');
+});

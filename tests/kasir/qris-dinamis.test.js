@@ -104,7 +104,7 @@ const argMinta = (d, over = {}) => ({
   kirim: over.kirim,
   konfig: KONFIG,
   shiftId: 's1',
-  keranjang: KERANJANG,
+  keranjang: over.keranjang ?? KERANJANG,
   draf: d,
   total: 22000n,
   idBaru: (() => {
@@ -541,4 +541,23 @@ test('⛔ drafCocokKeranjang: HANYA kanal berbeda (total sama) → TIDAK cocok; 
     false,
     'kanal berbeda dianggap cocok: confirmed akan menulis order lokal dine_in sementara server menyimpan takeaway'
   );
+});
+
+test('⛔ draf QRIS membawa data pesanan di muatan; drafCocokKeranjang menolak data pesanan yang berubah sesudah draf', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  const dengan = { ...KERANJANG, dataPesanan: { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: null } };
+  await mintaQr(argMinta(draf(), { db: d, kirim, keranjang: dengan }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(tersimpan.muatan.customerName, 'Budi', 'draf tidak membawa nama ke server');
+  assert.equal(tersimpan.muatan.tableNumber, 'A3');
+  assert.ok(!('note' in tersimpan.muatan), 'catatan kosong ikut terkirim');
+  assert.equal(drafCocokKeranjang(tersimpan, dengan, 22000n), true, 'keranjang yang sama tidak cocok');
+  assert.equal(
+    drafCocokKeranjang(tersimpan, { ...dengan, dataPesanan: { ...dengan.dataPesanan, namaPemesan: 'Siti' } }, 22000n),
+    false,
+    'nama berubah sesudah draf dianggap cocok: server menyimpan "Budi", struk lokal "Siti"'
+  );
+  assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, 22000n), false, 'data pesanan hilang dianggap cocok');
 });

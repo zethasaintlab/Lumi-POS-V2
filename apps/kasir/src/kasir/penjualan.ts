@@ -35,7 +35,8 @@ import type { PrinterProfile } from '../cetak/escpos.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
-import type { Keranjang } from './keranjang.ts';
+import { dataPesananKeranjang, type Keranjang } from './keranjang.ts';
+import { periksaDataPesanan } from '../../../../packages/domain/src/data-pesanan.ts';
 import { kanalPesanan } from './kanal.ts';
 
 /**
@@ -207,7 +208,14 @@ export type HasilPenjualan =
    * menerima apa pun — yang ditahan adalah potongan yang belum disetujui
    * siapa pun, dan menahannya justru yang FR-B8 minta.
    */
-  | { status: 'butuh_penyetuju_diskon'; nominal: bigint };
+  | { status: 'butuh_penyetuju_diskon'; nominal: bigint }
+  /**
+   * P5(b)/P6(a) — nama pemesan, nomor meja, atau catatan melanggar aturan
+   * domain (batas panjang, nomor kartu). Penjualan TIDAK ditulis: aturan yang
+   * hanya hidup di server menjadikan penjualan ini `gagal-permanen` di antrean.
+   * Dialog sudah menolaknya; ini tempat terakhir sebelum uang berpindah.
+   */
+  | { status: 'data_pesanan_tidak_sah'; kode: KodeGalatBayar; pesan: string };
 
 interface BarisTarif {
   id: string;
@@ -587,6 +595,7 @@ export function muatanOrder({
 }): Record<string, unknown> {
   const hlcValue = hlc;
   const totals = { total };
+  const dp = dataPesananKeranjang(keranjang);
   return {
     id: orderId,
     outletId: konfig.outletId,
@@ -599,6 +608,11 @@ export function muatanOrder({
     checkId,
     hlc: hlcValue.toString(),
     occurredAt,
+    // P5(b)/P6(a): HANYA bila terisi. Server lama (N-1) tidak mengenal field ini;
+    // pesanan tanpa data pesanan tetap persis seperti sebelum migrasi 0037.
+    ...(dp.namaPemesan !== null ? { customerName: dp.namaPemesan } : {}),
+    ...(dp.nomorMeja !== null ? { tableNumber: dp.nomorMeja } : {}),
+    ...(dp.catatan !== null ? { note: dp.catatan } : {}),
     // FR-H6: total dan harga yang DIPAKAI KLIEN. Server tetap menghitung
     // sendiri; ini yang membuatnya dapat membedakan klien yang belum
     // tersinkron dari selisih yang tidak dapat dijelaskan.
@@ -708,6 +722,11 @@ export async function simpanPenjualan({
   const { sekarang, outlet, businessDate, lineTotals, statusDsk, orderDiscount, pajak, totals, lacak } =
     hitung;
 
+  const galatData = periksaDataPesanan(dataPesananKeranjang(keranjang));
+  if (galatData !== null) {
+    return { status: 'data_pesanan_tidak_sah', kode: galatData.kode, pesan: galatData.pesan };
+  }
+
   // ⛔ Ambang diperiksa DI SINI, bukan hanya di layar. Layar dapat dilewati
   // (keranjang yang bertahan, jalur lain yang lahir kelak); yang menulis
   // penjualan adalah tempat terakhir yang dapat menolaknya sebelum uang
@@ -798,6 +817,7 @@ export async function simpanPenjualan({
   const hlcValue = draf?.hlc ?? hlc();
 
   const perLine = new Map(pajak.perLine.map((p) => [p.lineId, p]));
+  const dataPesanan = dataPesananKeranjang(keranjang);
 
   const hasil = await db.transaction(async (tx) => {
     // ⛔ Counter TIDAK dinaikkan lagi untuk penjualan yang drafnya sudah
@@ -812,8 +832,9 @@ export async function simpanPenjualan({
       `INSERT INTO "order"
          (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
           status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
-          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc,
+          customer_name, table_number, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         orderId, konfig.tenantId, konfig.outletId, konfig.deviceId, shift.id,
         receiptNumber, businessDate, sequence, channel,
@@ -826,6 +847,7 @@ export async function simpanPenjualan({
         Number(totals.total),
         Number(amountDue),
         sesi.userId, occurredAt, Number(hlcValue),
+        dataPesanan.namaPemesan, dataPesanan.nomorMeja, dataPesanan.catatan,
       ]
     );
 
@@ -1153,6 +1175,9 @@ export async function simpanPenjualan({
         jumlah: Number(b.metode === 'cash' ? (tendered ?? nominalBagian[i]) : nominalBagian[i]),
       })),
       kembalian: Number(kembalian),
+      namaPemesan: dataPesanan.namaPemesan,
+      nomorMeja: dataPesanan.nomorMeja,
+      catatan: dataPesanan.catatan,
     }),
     printerProfile,
     { id: idBaru(), orderId, waktu: occurredAt }

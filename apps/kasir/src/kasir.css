@@ -1360,6 +1360,48 @@
   padding: 0 var(--space-2);
 }
 
+/* Data pesanan (migrasi 0037): nama, meja, catatan — teks pendek dari dialog toolbar.
+ *
+ * ⛔ `flex: none` + catatan dijepit DUA baris: blok ini berbagi kolom dengan daftar baris yang
+ * menggulir, jadi yang menyusut kalau ia tumbuh adalah daftar, bukan Bayar. Catatan lengkap ada di
+ * dialog dan di struk; di sini cukup untuk dibaca sekilas saat pesanan diserahkan. Diukur:
+ * `k03-toolbar.test.js` (Bayar tidak bergeser). */
+.kasir-data-pesanan {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-alt);
+  border-radius: var(--radius-control);
+}
+
+.kasir-data-pesanan > div {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.kasir-data-pesanan dt {
+  flex: none;
+  min-width: 64px;
+}
+
+.kasir-data-pesanan dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kasir-data-pesanan-catatan {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
 .kasir-baris-daftar {
   display: flex;
   flex-direction: column;

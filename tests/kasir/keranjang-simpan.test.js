@@ -67,7 +67,7 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway' };
+const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway', dataPesanan: { namaPemesan: null, nomorMeja: null, catatan: null } };
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -331,4 +331,35 @@ test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway',
     .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
     .run('kini', 's1', JSON.stringify({ baris: [baris()], diskon: null, kanal: 'delivery' }), JAM().toISOString());
   assert.equal((await pulihkanKeranjang(d3, 's1')).keranjang.kanal, 'takeaway');
+});
+
+test('dataPesanan (nama, meja, catatan) dipulihkan; keranjang lama tanpa field → semua null', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const data = { namaPemesan: 'Budi', nomorMeja: 'A3', catatan: 'Tanpa gula' };
+
+  const d1 = db();
+  await simpanKeranjang(d1, 's1', { ...KERANJANG, dataPesanan: data }, JAM);
+  const baru = await pulihkanKeranjang(d1, 's1');
+  assert.equal(baru.status, 'dipulihkan');
+  assert.deepEqual(baru.keranjang.dataPesanan, data, 'data pesanan tidak ikut tersimpan');
+
+  // Baris yang ditulis versi lama (tanpa `dataPesanan`) tetap terbaca, semuanya null.
+  const d2 = db();
+  d2.sqlite
+    .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
+    .run('kini', 's1', JSON.stringify({ baris: [baris()], diskon: null, kanal: 'takeaway' }), JAM().toISOString());
+  const lama = await pulihkanKeranjang(d2, 's1');
+  assert.equal(lama.status, 'dipulihkan', 'keranjang lama tanpa dataPesanan dibuang');
+  assert.deepEqual(lama.keranjang.dataPesanan, { namaPemesan: null, nomorMeja: null, catatan: null });
+
+  // Bentuk rusak (bukan string / terlalu panjang) tidak dipercaya.
+  const d3 = db();
+  d3.sqlite
+    .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?, ?, ?, ?)')
+    .run('kini', 's1', JSON.stringify({
+      baris: [baris()], diskon: null,
+      dataPesanan: { namaPemesan: 42, nomorMeja: 'x'.repeat(99), catatan: 'ok' },
+    }), JAM().toISOString());
+  const rusak = (await pulihkanKeranjang(d3, 's1')).keranjang.dataPesanan;
+  assert.deepEqual(rusak, { namaPemesan: null, nomorMeja: null, catatan: 'ok' });
 });

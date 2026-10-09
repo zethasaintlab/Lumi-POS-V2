@@ -379,3 +379,16 @@ test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
       hilang.join('\n  ')
   );
 });
+
+test('⛔ stream riwayat menurunkan order.customer_name, table_number, note (migrasi 0037)', () => {
+  // Cetak ulang struk (K-09) membaca ketiganya dari `order` lokal. Kolom yang
+  // tidak diminta SELECT tidak pernah turun, dan tidak ada error — struk ulang
+  // tanpa "Atas nama" untuk setiap penjualan yang diunduh ulang.
+  const q = kueri().find((s) => /FROM "order"/.test(s) && /voided_by_order_id/.test(s));
+  assert.ok(q, 'query order stream riwayat tidak ditemukan');
+  const diminta = kolomDiminta(q);
+  for (const k of ['customer_name', 'table_number', 'note']) {
+    assert.ok(diminta.includes(k), `${k} tidak di-SELECT oleh stream riwayat`);
+  }
+  assert.ok(!diminta.includes('cost_at_sale'), 'cost_at_sale ikut turun');
+});

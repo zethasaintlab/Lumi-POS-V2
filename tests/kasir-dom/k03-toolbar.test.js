@@ -33,7 +33,7 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Pesanan tahan',
 ];
 /** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Batalkan']);
+const TERPASANG = new Set(['Item manual', 'Diskon', 'Pajak', 'Catatan', 'Pelanggan', 'No. Meja', 'Batalkan']);
 /** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
     Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
 const SEMENTARA = new Set([]);
@@ -829,6 +829,206 @@ test('⛔ kanal TIDAK bocor sesudah Batalkan: Dine in → Kosongkan → item bar
     'Pajak: Takeaway',
     'kanal Dine in bocor sesudah Batalkan'
   );
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+// ---------------------------------------------------------------------------
+// Task 11 — Catatan, Pelanggan, No. Meja (P5(b), P6(a); migrasi 0037).
+// Spec § 4 baris 4-6. Nama saja, tanpa telepon (keputusan user); Q7: label
+// "Nama pemesan", tanpa penolakan pola telepon.
+
+const TOMBOL_PESANAN = ['Catatan', 'Pelanggan', 'No. Meja'];
+
+/** Tombol toolbar HARUS ada — gagal dengan kalimat yang menyebut tombolnya, bukan timeout klik 30 dtk. */
+function tombolToolbar(hal, nama) {
+  const t = hal.locator('.kasir-toolbar').getByRole('button', { name: nama, exact: true });
+  return t.count().then((n) => {
+    assert.equal(n, 1, `tombol "${nama}" tidak ada di toolbar K-03 (Task 11)`);
+    return t;
+  });
+}
+
+async function isiDialogPesanan(hal, tombol, label, nilai, { simpan = true } = {}) {
+  await (await tombolToolbar(hal, tombol)).click();
+  const dialog = hal.getByRole('dialog');
+  await dialog.waitFor({ timeout: 5_000 });
+  await dialog.getByLabel(label, { exact: true }).fill(nilai);
+  if (simpan) {
+    await dialog.getByRole('button', { name: 'Simpan', exact: true }).click();
+    await hal.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 3_000 });
+  }
+  return dialog;
+}
+
+const bacaDataPesanan = (hal) =>
+  hal.evaluate(() => document.querySelector('.kasir-data-pesanan')?.innerText.trim().replace(/\s+/g, ' ') ?? null);
+
+test('⛔ Catatan/Pelanggan/No. Meja: isi tersimpan, tampil di keranjang, dan dialog menolak nomor kartu dengan pesan domain', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  for (const nama of TOMBOL_PESANAN) {
+    assert.equal(await hal.locator('.kasir-toolbar').getByRole('button', { name: nama, exact: true }).count(), 1, `tombol "${nama}" tidak ada di toolbar`);
+  }
+
+  await isiDialogPesanan(hal, 'Pelanggan', 'Nama pemesan', '  Budi  ');
+  await isiDialogPesanan(hal, 'No. Meja', 'Nomor meja', 'A3');
+  await isiDialogPesanan(hal, 'Catatan', 'Catatan', 'Tanpa gula');
+  const tampil = await bacaDataPesanan(hal);
+  assert.ok(tampil !== null, 'blok data pesanan tidak muncul di keranjang');
+  assert.match(tampil, /Atas nama.*Budi/, `nama tidak tampil: ${tampil}`);
+  assert.match(tampil, /Meja.*A3/, `meja tidak tampil: ${tampil}`);
+  assert.match(tampil, /Catatan.*Tanpa gula/, `catatan tidak tampil: ${tampil}`);
+
+  // Tersimpan ke keranjang_lokal (pulih sesudah muat ulang), bukan hanya state React.
+  const tulis = await bacaTulis(hal);
+  const simpanan = tulis.filter((t) => /keranjang_lokal/.test(t.sql)).flatMap((t) => t.params).filter((p) => typeof p === 'string' && p.includes('dataPesanan'));
+  assert.ok(simpanan.length > 0, 'keranjang_lokal tidak menerima dataPesanan');
+  assert.match(simpanan[simpanan.length - 1], /"namaPemesan":"Budi"/);
+
+  // Dialog dibuka ulang: isi sebelumnya terisi (dapat disunting).
+  await (await tombolToolbar(hal, 'Pelanggan')).click();
+  assert.equal(await hal.getByRole('dialog').getByLabel('Nama pemesan', { exact: true }).inputValue(), 'Budi');
+  await hal.getByRole('dialog').getByRole('button', { name: 'Batal', exact: true }).click();
+
+  // Nomor kartu (termasuk berpemisah) ditolak dengan pesan domain; Simpan nonaktif; isi lama tidak tertimpa.
+  const dialog = await isiDialogPesanan(hal, 'Catatan', 'Catatan', 'bayar 4111 1111 1111 1111', { simpan: false });
+  assert.equal(await dialog.getByRole('alert').count(), 1, 'dialog TIDAK menolak nomor kartu: tidak ada pesan galat');
+  const pesan = await dialog.getByRole('alert').innerText();
+  assert.match(pesan, /tampak memuat nomor kartu/, `pesan bukan pesan domain: ${pesan}`);
+  assert.equal(await dialog.getByRole('button', { name: 'Simpan', exact: true }).isDisabled(), true, 'Simpan aktif untuk nomor kartu');
+  await dialog.getByLabel('Catatan', { exact: true }).fill('a'.repeat(141));
+  assert.equal(await dialog.getByRole('alert').count(), 1, 'dialog TIDAK menolak 141 karakter: tidak ada pesan galat');
+  assert.match(await dialog.getByRole('alert').innerText(), /Catatan maksimal 140 karakter/);
+  assert.equal(await dialog.getByRole('button', { name: 'Simpan', exact: true }).isDisabled(), true, 'Simpan aktif untuk 141 karakter');
+  await dialog.getByRole('button', { name: 'Batal', exact: true }).click();
+  assert.match((await bacaDataPesanan(hal)) ?? '', /Catatan.*Tanpa gula/, 'Batal menimpa catatan lama');
+
+  // Mengosongkan lalu Simpan = menghapus.
+  await isiDialogPesanan(hal, 'Pelanggan', 'Nama pemesan', '   ');
+  assert.doesNotMatch((await bacaDataPesanan(hal)) ?? '', /Atas nama/, 'nama kosong tetap tampil');
+
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('dialog Pelanggan berlabel "Nama pemesan", satu kolom teks, tanpa kolom telepon', async () => {
+  const { hal, galat } = await bukaK03();
+  await (await tombolToolbar(hal, 'Pelanggan')).click();
+  const dialog = hal.getByRole('dialog');
+  await dialog.waitFor({ timeout: 5_000 });
+  assert.equal(await dialog.getByLabel('Nama pemesan', { exact: true }).count(), 1, 'tidak ada kolom berlabel "Nama pemesan"');
+  const isi = await dialog.evaluate((d) => ({
+    kolom: [...d.querySelectorAll('input, textarea, select')].map((e) => ({ tipe: e.type, nama: e.id })),
+    teks: d.innerText,
+  }));
+  assert.equal(isi.kolom.length, 1, `dialog Pelanggan punya ${isi.kolom.length} kolom — nama saja, satu kolom`);
+  assert.equal(isi.kolom[0].tipe, 'text');
+  assert.doesNotMatch(isi.teks, /telepon|telp|hp\b|whatsapp|phone/i, `dialog menyebut telepon: ${isi.teks}`);
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('tombol Catatan/Pelanggan/No. Meja tetap AKTIF saat keranjang kosong (nama boleh dicatat sebelum item)', async () => {
+  const { hal, galat } = await bukaK03();
+  for (const nama of TOMBOL_PESANAN) {
+    assert.equal(await (await tombolToolbar(hal, nama)).isDisabled(), false, `${nama} nonaktif`);
+  }
+  await isiDialogPesanan(hal, 'No. Meja', 'Nomor meja', '7');
+  assert.match((await bacaDataPesanan(hal)) ?? '', /Meja.*7/, 'meja tidak tampil di keranjang kosong');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('⛔ scanner global mati selama dialog Catatan/Pelanggan/No. Meja terbuka', async () => {
+  const { hal, galat } = await bukaK03();
+  const sebelum = await hal.locator('.kasir-baris').count();
+  for (const nama of TOMBOL_PESANAN) {
+    await (await tombolToolbar(hal, nama)).click();
+    await hal.waitForSelector('[role="dialog"]');
+    await hal.evaluate((kode) => {
+      for (const ch of kode) window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }, '8992761111017');
+    await hal.waitForTimeout(250);
+    assert.equal(await hal.locator('.kasir-baris').count(), sebelum, `scan masuk ke keranjang selama dialog ${nama} terbuka`);
+    assert.equal(await hal.locator('[role="dialog"]').count(), 1, `dialog ${nama} tertutup sendiri`);
+    await hal.getByRole('dialog').getByRole('button', { name: 'Batal', exact: true }).click();
+    await hal.waitForSelector('[role="dialog"]', { state: 'detached' });
+  }
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('⛔ tujuh tombol toolbar MUAT di kolom katalog pada 1024 dan 1280 (tanpa terpotong atau membungkus), dan Bayar TIDAK bergeser saat data pesanan terisi', async () => {
+  for (const lebar of [1024, 1280]) {
+    const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+    await hal.setViewportSize({ width: lebar, height: lebar === 1024 ? 768 : 800 });
+    await hal.waitForSelector('.kasir-baris');
+    const ukur = () => hal.evaluate(() => {
+      const bar = document.querySelector('.kasir-toolbar');
+      const panel = document.querySelector('.kasir-grid-panel');
+      const r = bar.getBoundingClientRect();
+      const p = panel.getBoundingClientRect();
+      const bayar = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Bayar');
+      const b = bayar.getBoundingClientRect();
+      return {
+        tombol: [...bar.querySelectorAll('button')].map((x) => { const q = x.getBoundingClientRect(); return { n: x.innerText.trim(), kiri: q.left, kanan: q.right, atas: q.top, bawah: q.bottom }; }),
+        bar: { kiri: r.left, kanan: r.right, atas: r.top, bawah: r.bottom, scrollW: bar.scrollWidth, clientW: bar.clientWidth },
+        panelKanan: p.right,
+        bayar: { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) },
+      };
+    });
+    const a = await ukur();
+    assert.equal(a.tombol.length, 7, `${a.tombol.length} tombol di ${lebar}px`);
+    assert.ok(a.bar.scrollW <= a.bar.clientW, `${lebar}px: toolbar meluap (scrollWidth ${a.bar.scrollW} > ${a.bar.clientW}) — tombol terpotong`);
+    for (const t of a.tombol) {
+      assert.ok(t.kanan <= a.panelKanan + 0.5, `${lebar}px: tombol "${t.n}" melewati tepi kolom katalog (${t.kanan} > ${a.panelKanan}) dan menaungi keranjang`);
+      assert.ok(t.atas >= a.bar.atas - 0.5 && t.bawah <= a.bar.bawah + 0.5, `${lebar}px: tombol "${t.n}" membungkus ke baris lain`);
+    }
+    await isiDialogPesanan(hal, 'Pelanggan', 'Nama pemesan', 'Budi Santoso Wijayakusuma');
+    await isiDialogPesanan(hal, 'No. Meja', 'Nomor meja', 'Teras 12');
+    await isiDialogPesanan(hal, 'Catatan', 'Catatan', 'Kopi susu tanpa gula, croissant dipanaskan dan dibelah dua, es dipisah, sedotan kertas, kantong terpisah untuk dibawa pulang');
+    const b = await ukur();
+    assert.deepEqual(b.bayar, a.bayar, `${lebar}px: Bayar bergeser ${JSON.stringify(a.bayar)} → ${JSON.stringify(b.bayar)} saat data pesanan terisi`);
+    await hal.close();
+    assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  }
+});
+
+test('⛔ data pesanan TIDAK bocor ke transaksi berikutnya (Bayar → Transaksi Baru) maupun sesudah Batalkan', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.route('**/health', (r) => r.fulfill({ status: 200, body: 'ok' }));
+  await hal.waitForSelector('.kasir-baris');
+  await isiDialogPesanan(hal, 'Pelanggan', 'Nama pemesan', 'Budi');
+  await hal.locator('.kasir-toolbar').getByRole('button', { name: 'Batalkan', exact: true }).click();
+  await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5_000 });
+  assert.equal(await bacaDataPesanan(hal), null, 'data pesanan bocor sesudah Batalkan');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+});
+
+test('⛔ penjualan membawa data pesanan: INSERT order dan muatan outbox memuat nama, meja, catatan; Transaksi Baru membersihkannya', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.route('**/health', (r) => r.fulfill({ status: 200, body: 'ok' }));
+  await hal.waitForSelector('.kasir-baris');
+  await isiDialogPesanan(hal, 'Pelanggan', 'Nama pemesan', 'Budi');
+  await isiDialogPesanan(hal, 'No. Meja', 'Nomor meja', 'A3');
+  await isiDialogPesanan(hal, 'Catatan', 'Catatan', 'Tanpa gula');
+  await hal.getByRole('button', { name: 'Bayar', exact: true }).click();
+  await hal.getByLabel('Nominal diterima').fill('600.000');
+  await hal.getByRole('button', { name: 'Konfirmasi bayar' }).click();
+  await hal.waitForSelector('text=Transaksi Baru', { timeout: 10_000 });
+  const tulis = await bacaTulis(hal);
+  const order = tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.ok(order, 'INSERT order tidak ditulis');
+  assert.deepEqual(order.params.slice(-3), ['Budi', 'A3', 'Tanpa gula'], 'kolom order tidak memuat data pesanan');
+  const keluar = tulis.find((t) => /INSERT INTO outbox_local/.test(t.sql) && t.params.some((p) => p.includes('"customerName"')));
+  assert.ok(keluar, 'muatan outbox tidak memuat customerName');
+  await hal.getByRole('button', { name: 'Transaksi Baru' }).click();
+  await hal.waitForSelector('.kasir-toolbar', { timeout: 10_000 });
+  assert.equal(await bacaDataPesanan(hal), null, 'data pesanan bocor ke transaksi berikutnya');
   await hal.close();
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
 });

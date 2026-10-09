@@ -3536,6 +3536,17 @@ paths:
                     - kompensasi_keluhan
                     - lainnya
                 discountReasonNote: { type: string, nullable: true }
+                # P5(b)/P6(a), migrasi 0037 -- nama pemesan (<= 40, NAMA SAJA,
+                # tanpa telepon), nomor meja (<= 16), catatan pesanan (<= 140).
+                # OPSIONAL: klien versi N-1 tidak mengirimnya, dan tidak boleh
+                # patah. SENGAJA tanpa `type`: ajv mengoersi 42 menjadi "42",
+                # dan `data-pesanan.ts` (packages/domain) satu-satunya sumber
+                # kebenaran untuk bentuk dan batasnya -- nomor kartu menjawab
+                # POSSIBLE_CARD_NUMBER, bukan VALIDATION_ERROR umum. Kosong
+                # disimpan NULL. `check.label` tidak ikut -- tetap NULL.
+                customerName: {}
+                tableNumber: {}
+                note: {}
                 lines:
                   type: array
                   minItems: 1
@@ -8306,6 +8317,11 @@ components:
         sequence: { type: integer }
         status: { type: string, enum: [open, paid, closed, voided, refunded, abandoned] }
         channel: { type: string, enum: [dine_in, takeaway] }
+        # Migrasi 0037. NULL = tidak diisi. Tidak masuk `required`: order
+        # lama dan klien N-1 tidak punya ketiganya.
+        customerName: { type: string, nullable: true }
+        tableNumber: { type: string, nullable: true }
+        note: { type: string, nullable: true }
         subtotal: { type: integer }
         orderDiscount: { type: integer }
         serviceChargeAmount: { type: integer }

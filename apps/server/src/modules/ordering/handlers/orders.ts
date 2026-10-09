@@ -30,6 +30,12 @@ import {
 } from '../../sync/index.ts';
 import { computeLineTotal, computeOrderTotals } from '../../../../../../packages/domain/src/money.ts';
 import { calculateTax } from '../../../../../../packages/domain/src/tax.ts';
+import {
+  normalkanTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../../../packages/domain/src/data-pesanan.ts';
 import type { TaxBreakdown } from '../../../../../../packages/domain/src/tax.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -73,6 +79,9 @@ interface OrderRow {
   occurred_at: Date;
   recorded_at: string;
   hlc: string;
+  customer_name: string | null;
+  table_number: string | null;
+  note: string | null;
 }
 
 interface CheckRow {
@@ -152,6 +161,13 @@ interface OrderInput {
   occurredAt?: string;
   checkId: string;
   lines: OrderLineInput[];
+  /**
+   * P5(b)/P6(a), migrasi 0037. OPSIONAL: klien N-1 tidak mengirimnya.
+   * `check.label` TIDAK ikut -- tetap NULL.
+   */
+  customerName?: unknown;
+  tableNumber?: unknown;
+  note?: unknown;
   /**
    * FR-H6 — total yang DIHITUNG KLIEN. Opsional. Server tetap menghitung
    * sendiri dan menyimpan hitungannya; nilai ini hanya dibandingkan.
@@ -338,6 +354,9 @@ function toOrder(order: OrderRow, check: CheckRow, lines: LineWithModifiers[]) {
     taxAmount: Number(order.tax_amount),
     roundingAdjustment: Number(order.rounding_adjustment),
     total: Number(order.total),
+    customerName: order.customer_name,
+    tableNumber: order.table_number,
+    note: order.note,
     amountDue: Number(order.amount_due),
     // FR-H6 -- klien perlu tahu bahwa hitungannya berbeda, supaya ia dapat
     // menampilkannya ke kasir alih-alih diam-diam menyimpan angka lain.
@@ -366,12 +385,12 @@ const INSERT_ORDER_SQL = `
     id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
     status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
     rounding_adjustment, total, amount_due, has_calculation_variance, variance_amount,
-    created_by, occurred_at, hlc
+    created_by, occurred_at, hlc, customer_name, table_number, note
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     'open', $9, $10, $18, 0, $11,
     0, $12, $12, $16, $17,
-    $13, COALESCE($14::timestamptz, now()), $15
+    $13, COALESCE($14::timestamptz, now()), $15, $19, $20, $21
   )
   RETURNING *
 `;
@@ -460,6 +479,9 @@ async function insertOrderTree(
       variance.flagged,
       variance.amount === null ? null : variance.amount.toString(),
       orderDiscount.toString(),
+      normalkanTeksPesanan(body.customerName),
+      normalkanTeksPesanan(body.tableNumber),
+      normalkanTeksPesanan(body.note),
     ]);
     const orderRow = orderRows[0];
 
@@ -772,6 +794,15 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
       }
       if (body.hlc !== undefined) {
         assertHlcValid(body.hlc);
+      }
+      // P5(b)/P6(a): aturan yang SAMA dengan dialog kasir (packages/domain),
+      // bukan salinan. Nomor kartu berbeda kode dari VALIDATION_ERROR biasa.
+      for (const galat of [
+        periksaNamaPemesan(body.customerName),
+        periksaNomorMeja(body.tableNumber),
+        periksaCatatan(body.note),
+      ]) {
+        if (galat !== null) throw new HttpError(400, galat.kode, galat.pesan);
       }
 
       // HLC -- keputusan desain PLAN §"HLC": klien kirim -> update() (menghormati
