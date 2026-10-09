@@ -296,7 +296,7 @@ Sengaja **bukan** `tenant.default_vertical_profile_id`: itu membuat siklus FK `t
 | `has_calculation_variance` | bool | Ditandai server (FR-H6) |
 | `variance_amount` | bigint nullable | |
 | `voided_by_order_id` | ulid nullable | Menunjuk record void |
-| `customer_name` | text nullable | Nama pemesan ("atas nama"), ≤ 40. **Nama saja, tanpa nomor telepon.** Tercetak di struk. Data pribadi (UU PDP): turun ke perangkat hanya lewat stream `riwayat`, terbatas tenant + outlet + perangkat (P5(b)) |
+| `customer_name` | text nullable | Nama pemesan ("atas nama"), ≤ 40 `[ASUMSI]` (batas dari `docs/superpowers/specs/2026-09-28-kasir-design.md` § 12, keputusan otonom; belum divalidasi ke merchant). **Nama saja, tanpa nomor telepon.** Tercetak di struk. Data pribadi (UU PDP): turun ke perangkat hanya lewat stream `riwayat`, terbatas tenant + outlet + perangkat (P5(b)) |
 | `table_number` | text nullable | Nomor meja sebagai **data**, ≤ 16 `[ASUMSI]` (mis. "4", "A3"). Bukan manajemen meja (v1.1); disimpan karena pemesanan per meja membutuhkannya (P5(b)) |
 | `note` | text nullable | Catatan tingkat pesanan, ≤ 140; tercetak di struk (P6(a)). Bukan catatan per item |
 | `created_by`, `occurred_at`, `recorded_at`, `hlc` | | |
