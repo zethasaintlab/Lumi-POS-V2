@@ -39,6 +39,7 @@ Tiga hal yang harus dibaca sebelum menyentuh apa pun:
 | "Penjualan Transfer tidak sampai ke server" · "Transfer tercatat 'Lainnya'" | §5.7 Transfer |
 | "Sudah upgrade tapi masih ditolak kuota" | §6 langganan |
 | "Katalog di kasir kosong / tidak berubah" | §7 jalur turun |
+| "Sesudah update, riwayat dan katalog kasir kosong sebentar" | §7.4 unduh ulang sesudah update |
 | "Tutup kas minta otorisasi padahal cocok" | §8 kas & shift |
 | "Refund ditolak, katanya barangnya sudah kembali" | §4.5 batas restock refund |
 | "Laci tidak mau terbuka" · "Kok minta PIN untuk buka laci" | §8.5 no-sale |
@@ -448,6 +449,25 @@ raw table yang **ditulis sendiri**. Yang diketahui: `tax_rate.rate`,
 tersimpan sebagai `real` di kolom `INTEGER` — hanya `typeof()` SQLite yang
 membedakannya.
 
+### 7.4 Sesudah update, perangkat mengunduh ulang katalog dan riwayat
+
+Rilis yang menambah kolom ke raw table lokal mengubah sidik jari skema, jadi
+setiap perangkat menjalankan `disconnectAndClear()` dan membangun ulang tabel
+rawnya. Rilis dengan **nama pemesan, nomor meja, dan catatan pesanan**
+(`order.customer_name`, `order.table_number`, `order.note`, migrasi
+`0037_order_customer_table_note.sql`) melakukannya **sekali** untuk ketiganya.
+
+- Katalog dan riwayat penjualan perangkat turun lagi dari server (stream
+  `katalog` dan `riwayat`). Yang belum terkirim di `outbox_local` **tidak
+  tersentuh** — itu tabel murni lokal.
+- ⛔ Perangkat yang **offline** saat pembaruan terpasang berjalan dengan
+  **katalog kosong sampai terhubung**. Katakan itu kepada merchant sebelum
+  mereka memasang pembaruan di jam sepi; jangan menunggu mereka menelepon
+  karena grid kosong. Penjualan yang sudah tersimpan tetap aman di antrean.
+- Urutan rilis: **server dulu, klien sesudahnya** (§ 12.4). Server menerima
+  field baru sebagai opsional, jadi klien lama di atas server baru tidak
+  berubah perilakunya.
+
 ---
 
 ## 8. Kas & shift
@@ -781,6 +801,13 @@ berhenti `gagal-permanen` (404). Penjualan tidak terhenti dan jejaknya aman di
 antrean lokal; setelah server diperbarui, putar ulang lewat § 10.1. Gejala dan
 pemulihan: § 8.7 dan § 8.7.1. Klien lama di atas server baru aman (rute
 tambahan, tidak ada yang diubah).
+
+Rilis yang memuat migrasi `0037_order_customer_table_note.sql` (tiga kolom
+`order`: nama pemesan, nomor meja, catatan) juga **server dulu**. Klien baru
+mengirim `customerName`/`tableNumber`/`note` hanya bila diisi kasir; di atas
+server lama, field asing itu diabaikan bila validator server tidak melarangnya,
+tetapi **kolom tidak tersimpan** dan struk cetak ulang dari server kehilangan
+barisnya. Setelah klien terpasang, perangkat mengunduh ulang riwayat (§ 7.4).
 
 ---
 

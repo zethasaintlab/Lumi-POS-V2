@@ -134,6 +134,11 @@ test('⛔ N-1: order tanpa ketiga field diterima persis seperti hari ini', async
   assert.equal(body.note ?? null, null);
   const [r] = await bacaSebagai(tenant.id, BACA_ORDER, [p.id]);
   assert.deepEqual({ ...r }, { customer_name: null, table_number: null, note: null });
+  // Arah sebaliknya (klien BARU di atas server LAMA): server lama tidak
+  // mengenal ketiga field; yang menjaganya tetap 201 adalah bahwa body dengan
+  // field asing tidak ditolak oleh validasi skema.
+  const asing = muatan(ctx, { fieldYangTidakDikenalServer: 'x' });
+  assert.equal((await kirim(asing)).statusCode, 201, 'field asing ditolak -- klien baru patah di server lama');
   // null eksplisit (klien baru tanpa isi) sama sahnya dengan hilang.
   const p2 = muatan(ctx, { customerName: null, tableNumber: null, note: null });
   const res2 = await kirim(p2);
