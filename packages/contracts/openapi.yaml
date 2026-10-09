@@ -3536,6 +3536,16 @@ paths:
                     - kompensasi_keluhan
                     - lainnya
                 discountReasonNote: { type: string, nullable: true }
+                # P5(b)/P6(a) -- OPSIONAL; klien versi N-1 tidak mengirimnya.
+                # Dipangkas, kosong menjadi NULL. Batas dan penolakan nomor
+                # kartu: packages/domain/src/data-pesanan.ts (satu aturan
+                # dengan perangkat). `check.label` tetap NULL. SENGAJA tanpa
+                # `type`/`maxLength` (pola sama dengan `total`): koersi AJV
+                # mengubah angka jadi teks, dan batasnya milik satu tempat
+                # saja -- teks (string, maks 40/16/140).
+                customerName: {}
+                tableNumber: {}
+                note: {}
                 lines:
                   type: array
                   minItems: 1
@@ -8325,6 +8335,9 @@ components:
         occurredAt: { type: string, format: date-time }
         recordedAt: { type: string, format: date-time }
         hlc: { type: string }
+        customerName: { type: string, nullable: true }
+        tableNumber: { type: string, nullable: true }
+        note: { type: string, nullable: true }
         checkId: { type: string }
         lines:
           type: array

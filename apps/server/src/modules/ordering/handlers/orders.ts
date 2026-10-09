@@ -30,6 +30,13 @@ import {
 } from '../../sync/index.ts';
 import { computeLineTotal, computeOrderTotals } from '../../../../../../packages/domain/src/money.ts';
 import { calculateTax } from '../../../../../../packages/domain/src/tax.ts';
+import {
+  normalisasiTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../../../packages/domain/src/data-pesanan.ts';
+import type { GalatBayar } from '../../../../../../packages/domain/src/pembayaran-manual.ts';
 import type { TaxBreakdown } from '../../../../../../packages/domain/src/tax.ts';
 import type { Hlc } from '../../../../../../packages/domain/src/hlc.ts';
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -73,6 +80,9 @@ interface OrderRow {
   occurred_at: Date;
   recorded_at: string;
   hlc: string;
+  customer_name: string | null;
+  table_number: string | null;
+  note: string | null;
 }
 
 interface CheckRow {
@@ -157,6 +167,13 @@ interface OrderInput {
    * sendiri dan menyimpan hitungannya; nilai ini hanya dibandingkan.
    */
   total?: unknown;
+  /**
+   * P5(b)/P6(a) -- OPSIONAL; klien versi N-1 tidak mengirimnya (R8).
+   * Divalidasi `data-pesanan.ts`, satu aturan dengan perangkat.
+   */
+  customerName?: unknown;
+  tableNumber?: unknown;
+  note?: unknown;
 }
 
 // --- validasi uang/kuantitas: sama pola dengan assertPriceValid (prices.ts)
@@ -347,6 +364,9 @@ function toOrder(order: OrderRow, check: CheckRow, lines: LineWithModifiers[]) {
     occurredAt: order.occurred_at,
     recordedAt: order.recorded_at,
     hlc: order.hlc,
+    customerName: order.customer_name,
+    tableNumber: order.table_number,
+    note: order.note,
     checkId: check.id,
     lines: lines.map((l) => toOrderLine(l.line, l.modifiers)),
   };
@@ -366,12 +386,12 @@ const INSERT_ORDER_SQL = `
     id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
     status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
     rounding_adjustment, total, amount_due, has_calculation_variance, variance_amount,
-    created_by, occurred_at, hlc
+    created_by, occurred_at, hlc, customer_name, table_number, note
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     'open', $9, $10, $18, 0, $11,
     0, $12, $12, $16, $17,
-    $13, COALESCE($14::timestamptz, now()), $15
+    $13, COALESCE($14::timestamptz, now()), $15, $19, $20, $21
   )
   RETURNING *
 `;
@@ -460,6 +480,11 @@ async function insertOrderTree(
       variance.flagged,
       variance.amount === null ? null : variance.amount.toString(),
       orderDiscount.toString(),
+      // P5/P6 -- sudah divalidasi di createOrder; di sini hanya dipangkas.
+      // check.label SENGAJA tidak disentuh (INSERT_CHECK_SQL menulis NULL).
+      normalisasiTeksPesanan(body.customerName),
+      normalisasiTeksPesanan(body.tableNumber),
+      normalisasiTeksPesanan(body.note),
     ]);
     const orderRow = orderRows[0];
 
@@ -772,6 +797,14 @@ export function createOrderHandlers(pool: Pool, hlc: Hlc): Record<string, unknow
       }
       if (body.hlc !== undefined) {
         assertHlcValid(body.hlc);
+      }
+      // P5/P6 -- sebelum transaksi dibuka, sejajar validasi di atas.
+      for (const galat of [
+        periksaNamaPemesan(body.customerName),
+        periksaNomorMeja(body.tableNumber),
+        periksaCatatan(body.note),
+      ] satisfies (GalatBayar | null)[]) {
+        if (galat) throw new HttpError(400, galat.kode, galat.pesan);
       }
 
       // HLC -- keputusan desain PLAN §"HLC": klien kirim -> update() (menghormati
