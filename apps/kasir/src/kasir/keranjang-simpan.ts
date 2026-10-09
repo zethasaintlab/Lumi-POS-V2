@@ -93,7 +93,7 @@ export async function simpanKeranjang(
  * `bigint`. Konvensi yang sama dengan setiap uang yang melewati JSON di repo
  * ini (muatan outbox, `after` di `audit_event`).
  */
-function serialkan(k: Keranjang): string {
+export function serialkan(k: Keranjang): string {
   return JSON.stringify(k, (_kunci, nilai: unknown) =>
     typeof nilai === 'bigint' ? nilai.toString() : nilai
   );
@@ -160,7 +160,7 @@ export async function pulihkanKeranjang(db: DbLokal, shiftId: string): Promise<H
  * ia lihat, dan persetujuan yang dipulihkan setengah adalah potongan tanpa
  * penyetuju.
  */
-function uraikan(teks: string): Keranjang | null {
+export function uraikan(teks: string): Keranjang | null {
   let mentah: unknown;
   try {
     mentah = JSON.parse(teks);

@@ -127,7 +127,7 @@ test('T3 setiap raw table punya kolom id', async () => {
 // kedua yang diam-diam.
 test('T3 tabel murni lokal tidak pernah didaftarkan sebagai raw table', async () => {
   const { TABEL_RAW, TABEL_LOKAL_SAJA } = await import(SKEMA);
-  for (const t of ['outbox_local', 'device_config', 'stock_snapshot']) {
+  for (const t of ['outbox_local', 'device_config', 'stock_snapshot', 'keranjang_tahan']) {
     assert.ok(TABEL_LOKAL_SAJA.includes(t), `${t} harus ada di TABEL_LOKAL_SAJA`);
     assert.ok(!TABEL_RAW.includes(t), `${t} TIDAK BOLEH jadi raw table`);
   }

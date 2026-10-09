@@ -206,6 +206,29 @@ test('tutup: selisih di bawah ambang tidak menuntut penyetuju', async () => {
   assert.equal(hasil.selisih, -5000);
 });
 
+test('⛔ Task 12: tutup DITOLAK selama ada Pesanan tahan — tanpa tulis apa pun dan tanpa angka laci', async () => {
+  const { tutupKas } = await import(MOD);
+  const db = dbPalsu();
+  const dasar = db.getAll;
+  db.getAll = async (sql, p) =>
+    /FROM keranjang_tahan/.test(sql)
+      ? [{ id: 'th1', jumlah_item: 2, subtotal: 40000, dibuat_pada: '2026-08-13T08:00:00Z' }]
+      : dasar(sql, p);
+
+  const hasil = await tutupKas({
+    db, shiftId: 's1', hitungan: 2485000, // selisih nol: SEHARUSNYA tertutup bila tak ada tahanan
+    sesi: { userId: 'u-sari' }, approverId: null,
+    alasan: null, waktu: JAM, idBaru: ID, hlc: () => 7n,
+  });
+
+  assert.equal(hasil.status, 'ada_tahanan');
+  assert.deepEqual(hasil.daftar, [{ id: 'th1', jumlahItem: 2, subtotal: 40000n, dibuatPada: '2026-08-13T08:00:00Z' }]);
+  assert.deepEqual(Object.keys(hasil).sort(), ['daftar', 'status'], 'penolakan tidak boleh membawa saldo/selisih (hitungan buta)');
+  assert.equal(db.state.tulis.length, 0, 'penolakan tidak boleh menulis apa pun');
+  assert.equal(db.state.transaksi, 0);
+  assert.equal(db.state.shift.status, 'open');
+});
+
 test('⛔ selisih di atas ambang MENUNTUT penyetuju dan alasan', async () => {
   const { tutupKas } = await import(MOD);
 

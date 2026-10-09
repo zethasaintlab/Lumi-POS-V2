@@ -367,6 +367,30 @@ CREATE TABLE draf_qris_lokal (
   dibuat_pada   TEXT NOT NULL
 );
 
+-- Task 12 (PR 2C, spec § 4 "Pesanan tahan") — keranjang yang DITAHAN kasir
+-- untuk dilanjutkan, lalu memulai keranjang baru.
+--
+-- ⛔ Murni lokal, SENGAJA bukan raw table dan BUKAN `order` berstatus `open`:
+-- alasan persis `keranjang_lokal` (menulis `order` berarti mengirimnya ke
+-- server; berbagi order antar device saat offline adalah non-goal v1).
+-- Tabel baru murni lokal sampai ke perangkat yang sudah ada lewat
+-- `migrasiAditifLokal` (CREATE di setiap boot) -- preseden `draf_qris_lokal`;
+-- sidik jari raw table TIDAK berubah, jadi katalog tidak diunduh ulang.
+--
+-- ⛔ BANYAK baris (tidak seperti `keranjang_lokal`): `id` ULID/UUID klien.
+-- `shift_id` mengikat tahanan ke shift; K-12 menolak tutup selama ada.
+-- `jumlah_item` dan `subtotal` hanya ringkasan DAFTAR (baris keranjang dan
+-- rupiah utuh pada harga saat ditahan); kebenarannya `isi`, JSON `Keranjang`
+-- dari serializer yang SAMA dengan `keranjang_lokal` (bigint sebagai string).
+CREATE TABLE keranjang_tahan (
+  id          TEXT PRIMARY KEY NOT NULL,
+  shift_id    TEXT NOT NULL,
+  isi         TEXT NOT NULL,
+  jumlah_item INTEGER NOT NULL,
+  subtotal    INTEGER NOT NULL,
+  dibuat_pada TEXT NOT NULL
+);
+
 CREATE TABLE keranjang_lokal (
   id TEXT PRIMARY KEY NOT NULL,
   shift_id TEXT NOT NULL,

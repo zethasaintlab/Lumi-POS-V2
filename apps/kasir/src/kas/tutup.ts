@@ -16,6 +16,7 @@ import {
   type TipeMovement,
 } from '../../../../packages/domain/src/buku-kas.ts';
 import { bacaAmbangOutlet } from '../kasir/diskon.ts';
+import { daftarTahanan, type RingkasTahanan } from '../kasir/keranjang-tahan.ts';
 import { bangunUlangSnapshot } from '../inventori/stok.ts';
 import {
   posisiPenjualan,
@@ -455,7 +456,10 @@ export type HasilTutup =
   | { status: 'sudah_tertutup' }
   | { status: 'butuh_otorisasi'; selisih: number }
   | { status: 'butuh_alasan'; selisih: number }
-  | { status: 'penyetuju_sama_dengan_aktor' };
+  | { status: 'penyetuju_sama_dengan_aktor' }
+  // Task 12 (spec § 4, R7): Pesanan tahan masih ada. `daftar` TIDAK memuat
+  // satu angka laci pun, jadi menolak tidak membocorkan hitungan buta.
+  | { status: 'ada_tahanan'; daftar: RingkasTahanan[] };
 
 export async function tutupKas({
   db,
@@ -483,6 +487,12 @@ export async function tutupKas({
   // Shift yang sudah tertutup TIDAK dapat dibuka ulang (`spec-d` state
   // machine: `CLOSED` tidak punya transisi keluar).
   if (shift.status === 'closed') return { status: 'sudah_tertutup' };
+
+  // ⛔ SEBELUM saldo dihitung: penolakan ini tidak boleh bergantung pada, atau
+  // membawa, angka laci. Tahanan murni lokal (R7) -- server tidak melihatnya,
+  // jadi hanya perangkat ini yang dapat menahan penutupan.
+  const tahanan = await daftarTahanan(db, shiftId);
+  if (tahanan.length > 0) return { status: 'ada_tahanan', daftar: tahanan };
 
   const seharusnya = await saldoSeharusnya(db, shift);
   const selisih = hitungan - seharusnya;
