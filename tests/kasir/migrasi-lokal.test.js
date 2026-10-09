@@ -430,3 +430,58 @@ test('⛔ T5b `telemetry_local` ada di TABEL_LOKAL_SAJA, bukan TABEL_RAW', async
   assert.ok(TABEL_LOKAL_SAJA.includes('telemetry_local'));
   assert.ok(!TABEL_RAW.includes('telemetry_local'));
 });
+
+// ⛔ PR 2C Task 11 (P5(b) + P6(a); spec § 14 R4) -- tiga kolom `order` dalam
+// SATU migrasi. Perangkat membangun ulang tabel rawnya SEKALI, bukan tiga
+// kali, dan `outbox_local` (penjualan yang belum terkirim) tidak tersentuh.
+function sqlTanpaTigaKolomOrder() {
+  const asli = sql();
+  const mulai = asli.indexOf('CREATE TABLE "order"');
+  const akhir = asli.indexOf('\n);', mulai);
+  const blok = asli.slice(mulai, akhir);
+  const lama = blok.replace(/,?\s*customer_name TEXT\s*,\s*table_number TEXT\s*,\s*note TEXT/, '');
+  assert.notEqual(lama, blok, 'DDL order lokal tidak memuat ketiga kolom (urutan customer_name, table_number, note)');
+  return asli.slice(0, mulai) + lama + asli.slice(akhir);
+}
+
+test('⛔ tiga kolom order baru mengubah sidik jari SEKALI — satu migrasi, bukan tiga', async () => {
+  const { kolomPerTabel, sidikJariSkemaLokal } = await import(SKEMA);
+  const baru = kolomPerTabel(sql()).order;
+  for (const k of ['customer_name', 'table_number', 'note']) {
+    assert.ok(baru.includes(k), `order lokal tanpa ${k}`);
+  }
+  const lama = sidikJariSkemaLokal(sqlTanpaTigaKolomOrder());
+  const sekarang = sidikJariSkemaLokal(sql());
+  assert.notEqual(lama, sekarang, 'sidik jari buta terhadap ketiga kolom');
+
+  // Perangkat lama -> sekarang: tepat SATU putaran bangun-ulang + bersihkan.
+  const { jalankanMigrasi } = await import(MIGRASI);
+  let bersih = 0;
+  let ddl = 0;
+  let tersimpan = lama;
+  const jalankan = () =>
+    jalankanMigrasi({
+      sqlSkema: sql(),
+      bacaSidik: async () => tersimpan,
+      jalankanDdl: async (r) => {
+        ddl += 1;
+        assert.ok(
+          !r.drop.some((d) => d.includes('"outbox_local"')),
+          'outbox_local ikut di-drop -- penjualan yang belum terkirim hilang'
+        );
+      },
+      bersihkanSync: async () => {
+        bersih += 1;
+      },
+      simpanSidik: async (s) => {
+        tersimpan = s;
+      },
+    });
+  await jalankan();
+  assert.equal(bersih, 1, 'disconnectAndClear harus diambil tepat sekali');
+  assert.equal(ddl, 1);
+  // Boot berikutnya: tidak ada yang berubah lagi.
+  await jalankan();
+  assert.equal(bersih, 1, 'boot kedua membangun ulang lagi');
+  assert.equal(ddl, 1);
+});

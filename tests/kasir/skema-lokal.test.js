@@ -167,3 +167,20 @@ test('T2 nama tabel selalu dikutip di SQL yang dihasilkan', async () => {
   assert.match(def.order.put.sql, /INSERT OR REPLACE INTO "order"/);
   assert.match(def.check.put.sql, /INSERT OR REPLACE INTO "check"/);
 });
+
+// PR 2C Task 11 -- `put` raw table diturunkan dari DDL; kolom yang lupa di DDL
+// lokal hilang diam-diam dari `put`, dan nama pemesan turun sebagai kosong.
+test('⛔ order lokal memuat customer_name, table_number, note — dan put memasukkannya', async () => {
+  const { kolomPerTabel, buatDefinisiRaw } = await import(SKEMA);
+  const k = kolomPerTabel(sql());
+  const def = buatDefinisiRaw(k);
+  for (const kol of ['customer_name', 'table_number', 'note']) {
+    assert.ok(k.order.includes(kol), `DDL order lokal tanpa ${kol}`);
+    assert.ok(def.order.put.sql.includes(kol), `put order tanpa ${kol}`);
+  }
+  assert.equal(def.order.put.params.length, k.order.length);
+  // Teks apa adanya: tidak ada kolom berskala di ketiganya.
+  assert.ok(!/CAST\(ROUND\(\? \* \d+\) AS INTEGER\)[^]*customer_name/.test(def.order.put.sql));
+  // check.label tetap kolom lokal yang ada tetapi bukan tempat nama pemesan.
+  assert.ok(k.check.includes('label'));
+});

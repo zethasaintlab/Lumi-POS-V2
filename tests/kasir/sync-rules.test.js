@@ -379,3 +379,19 @@ test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
       hilang.join('\n  ')
   );
 });
+
+// PR 2C Task 11 (P5(b), P6(a)) -- tanpa ketiga kolom di SELECT, nama pemesan,
+// meja, dan catatan tidak pernah turun: cetak ulang K-09 pada perangkat yang
+// sudah `disconnectAndClear()` kehilangan baris "Atas nama/Meja/Catatan"
+// TANPA error. customer_name data pribadi (UU PDP): ia turun hanya lewat
+// query `order` yang sudah disaring tenant + outlet + perangkat.
+test('⛔ stream riwayat membawa customer_name, table_number, note pada query order', () => {
+  const q = kueri().find((x) => /\bFROM\s+"order"/i.test(x));
+  assert.ok(q, 'query "order" tidak ditemukan di sync-config');
+  const kolom = kolomDiminta(q);
+  for (const k of ['customer_name', 'table_number', 'note']) {
+    assert.ok(kolom.includes(k), `query order tanpa ${k}: ${kolom.join(', ')}`);
+  }
+  assert.match(q, /tenant_id = auth\.parameter\('tenant_id'\)/);
+  assert.match(q, /device_id = auth\.parameter\('device_id'\)/);
+});

@@ -424,7 +424,11 @@ CREATE TABLE "order" (
   -- menangkapnya: penjaga drift hanya membandingkan kolom yang ada di KEDUA
   -- sisi. `KOLOM_SENGAJA_TIDAK_TURUN` sekarang menutup celah itu.
   voided_by_order_id TEXT,
-  created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
+  created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL,
+  -- PR 2C Task 11 (P5(b) dan P6(a), migrasi server 0037): nama pemesan, nomor
+  -- meja, catatan -- opsional, teks apa adanya. Ketiganya ditambah dalam SATU
+  -- perubahan supaya sidik jari berubah sekali. `check.label` tetap NULL.
+  customer_name TEXT, table_number TEXT, note TEXT
 );
 CREATE TABLE "check" (
   id TEXT PRIMARY KEY NOT NULL, order_id TEXT NOT NULL, label TEXT,
