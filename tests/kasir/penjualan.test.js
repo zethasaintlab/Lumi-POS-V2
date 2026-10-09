@@ -1707,3 +1707,32 @@ test('⛔ nomor kartu / terlalu panjang di data pesanan DITOLAK di perangkat, ti
     assert.equal(db.state.tulis.length, 0, 'penjualan tidak boleh tertulis setengah');
   }
 });
+
+test('⛔ struk hasil simpanPenjualan (bukan bangunDokumenStruk langsung) memuat Atas nama, Meja, Catatan', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
+  const hasil = await simpanPenjualan({
+    db: dbPalsu(),
+    ...args({
+      keranjang: {
+        baris: BARIS, diskon: null, kanal: 'takeaway',
+        dataPesanan: { namaPemesan: 'Budi', nomorMeja: 'A-12', catatan: 'tanpa es' },
+      },
+    }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.ok(teks.includes('PBJT') || teks.includes('PB1') || teks.length > 0, 'anti-hampa: struk tidak tercetak');
+  for (const baris of ['Atas nama: Budi', 'Meja: A-12', 'Catatan: tanpa es']) {
+    assert.ok(teks.includes(baris), `struk dari simpanPenjualan tanpa "${baris}"`);
+  }
+});

@@ -77,3 +77,14 @@ test('⛔ pesan nomor kartu untuk kasir berbahasa Indonesia, bukan nama field AP
     assert.doesNotMatch(g.pesan, /customerName|tableNumber|\bnote\b/, g.pesan);
   }
 });
+
+test('bersihkanTeksPesanan: trim, kosong → null, spasi saja → null, bukan string → null', async () => {
+  const { bersihkanTeksPesanan } = await import(MOD);
+  assert.equal(bersihkanTeksPesanan('  Budi  '), 'Budi');
+  assert.equal(bersihkanTeksPesanan(''), null);
+  assert.equal(bersihkanTeksPesanan('   \t '), null);
+  assert.equal(bersihkanTeksPesanan(null), null);
+  assert.equal(bersihkanTeksPesanan(undefined), null);
+  assert.equal(bersihkanTeksPesanan(42), null);
+  assert.equal(bersihkanTeksPesanan('a  b'), 'a  b', 'spasi di tengah tidak diubah');
+});

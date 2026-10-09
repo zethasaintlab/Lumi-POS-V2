@@ -328,6 +328,11 @@ test('struk mencetak "Atas nama", "Meja", "Catatan", dilipat di 32 kolom', async
     const iNama = baris.findIndex((l) => l.startsWith('Atas nama'));
     const iItem = baris.findIndex((l) => l.includes('Kopi Susu'));
     assert.ok(iNama >= 0 && iNama < iItem, 'Atas nama harus sebelum baris item');
+    const iMeja = baris.findIndex((l) => l.startsWith('Meja:'));
+    const iCatatan = baris.findIndex((l) => l.startsWith('Catatan:'));
+    assert.ok(iNama < iMeja && iMeja < iCatatan, `urutan harus Atas nama < Meja < Catatan (${iNama}, ${iMeja}, ${iCatatan})`);
+    assert.ok(iCatatan < iItem, `Catatan (baris ${iCatatan}) harus sebelum baris item pertama (${iItem})`);
+    assert.ok(iMeja < iItem, `Meja (baris ${iMeja}) harus sebelum baris item pertama (${iItem})`);
   }
 });
 
