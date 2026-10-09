@@ -317,6 +317,8 @@ export function nominalDraf(d: DrafTersimpan): bigint | null {
  */
 export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total: bigint | null): boolean {
   if (total === null || nominalDraf(d) !== total) return false;
+  // Kanal ikut: server sudah menyimpan order dengan kanal draf, dan `confirmed` menulis order lokal dari keranjang.
+  if (d.muatan.channel !== kanalPesanan(keranjang)) return false;
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,

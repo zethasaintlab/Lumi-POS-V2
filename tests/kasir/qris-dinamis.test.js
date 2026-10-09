@@ -528,3 +528,17 @@ test('⛔ order QRIS dinamis dikirim dengan KANAL keranjang (FR-C7), bukan dipak
     assert.equal(order.body.channel, kanal, `muatan order QRIS dinamis bukan ${kanal}`);
   }
 });
+
+test('⛔ drafCocokKeranjang: HANYA kanal berbeda (total sama) → TIDAK cocok; kanal sama cocok', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR123' } } });
+  await mintaQr({ ...argMinta(draf(), { db: d, kirim }), keranjang: { ...KERANJANG, kanal: 'takeaway' } });
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'takeaway' }, 22000n), true, 'pembanding hampa: kanal sama dianggap berbeda');
+  assert.equal(
+    drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'dine_in' }, 22000n),
+    false,
+    'kanal berbeda dianggap cocok: confirmed akan menulis order lokal dine_in sementara server menyimpan takeaway'
+  );
+});

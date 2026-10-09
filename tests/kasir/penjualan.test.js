@@ -1566,9 +1566,19 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   const { simpanPenjualan } = await import(MOD);
   const outlet = { ...OUTLET, service_charge_rate: 1000 };
   const db = dbPalsu({ tarif: TARIF_DUA_KANAL, outlet });
+  const { PROFIL_58MM } = await import('../../apps/kasir/src/cetak/profil.ts');
+  const dicetak = [];
   const hasil = await simpanPenjualan({
     db,
     ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'dine_in' } }),
+    printerProfile: PROFIL_58MM,
+    peripheral: {
+      printReceipt: async (bytes) => { dicetak.push(bytes); },
+      openCashDrawer: async () => {},
+      listDevices: async () => [],
+      testDevice: async () => false,
+      onBarcodeScanned: () => () => {},
+    },
   });
   assert.equal(hasil.status, 'tersimpan', hasil.status);
 
@@ -1586,6 +1596,12 @@ test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) 
   for (const [k, v] of Object.entries(muatan)) {
     if (/service/i.test(k)) assert.equal(Number(v), 0, `muatan outbox ${k} bukan 0`);
   }
+
+  // Struk yang SUNGGUH dicetak tidak memuat baris layanan/service pada Dine in.
+  const teks = Buffer.from(dicetak.flatMap((b) => [...b])).toString('latin1');
+  assert.match(teks, /Dine-in/, 'struk tidak tercetak atau tidak menyebut Dine-in — pemeriksaan hampa');
+  assert.match(teks, /PBJT 10%/, 'struk tidak memuat baris tarif — pemeriksaan hampa');
+  assert.equal(/layanan|service/i.test(teks), false, 'struk Dine in memuat baris layanan/service');
 
   // 20.000 − 0 + PBJT 10% eksklusif (2.000); tanpa biaya layanan 2.000 lagi.
   assert.equal(hasil.total, 22000n, 'total memuat biaya layanan atau tarif yang salah');

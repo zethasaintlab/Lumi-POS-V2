@@ -691,13 +691,13 @@ export function Kasir() {
             bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
             keranjang.
 
-            ⛔ TIGA aksi hari ini, semuanya TERPASANG mockup (Item manual,
-            Diskon, Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
-            Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya pindah ke
-            layar Laci kas (K-18, `layar/LaciKas.tsx`). Lima sisanya di mockup
-            (Pajak, Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
+            ⛔ EMPAT aksi hari ini, semuanya TERPASANG mockup (Item manual,
+            Diskon, Pajak, Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka
+            laci dan Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya
+            pindah ke layar Laci kas (K-18, `layar/LaciKas.tsx`). Empat sisanya
+            di mockup (Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
             repo ini; tombol yang tidak melakukan apa-apa adalah janji kepada
-            kasir yang produk ini tidak dapat tepati — Task 10/11/12
+            kasir yang produk ini tidak dapat tepati — Task 11/12
             membangun sisanya (spec § 4 "Toolbar
             kasir delapan tombol"). */}
         <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
