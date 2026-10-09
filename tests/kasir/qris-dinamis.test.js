@@ -561,3 +561,15 @@ test('⛔ draf QRIS membawa data pesanan di muatan; drafCocokKeranjang menolak d
   );
   assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, 22000n), false, 'data pesanan hilang dianggap cocok');
 });
+
+test('dataPesananDrafCocok memisahkan penyebab: data pesanan berubah saja → false; baris berubah saja → true', async () => {
+  const { mintaQr, pulihkanDraf, dataPesananDrafCocok } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  const baris0 = KERANJANG.baris[0];
+  assert.equal(dataPesananDrafCocok(tersimpan, { ...KERANJANG, dataPesanan: { namaPemesan: 'Siti', nomorMeja: null, catatan: null } }), false);
+  assert.equal(dataPesananDrafCocok(tersimpan, { ...KERANJANG, baris: [{ ...baris0, quantityMilli: 2000 }] }), true,
+    'perubahan baris salah dituduh data pesanan — pesan galat K-06 menyesatkan');
+});

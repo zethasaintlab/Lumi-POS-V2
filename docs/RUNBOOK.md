@@ -463,10 +463,17 @@ terhubung** — gejalanya sama dengan §7.2, dan sembuh sendiri begitu terhubung
 Jangan mengosongkan antrean atau menghapus database lokal untuk "memperbaikinya".
 
 ⛔ **Urutan rilis: server lebih dulu, klien sesudahnya.** Klien baru di atas
-server lama mengirim `customerName`/`tableNumber`/`note` yang belum dikenal
-skemanya dan barisnya berhenti `gagal-permanen` di §1. Klien lama di atas server
-baru tidak bermasalah (ketiga field opsional). Catatan rilis wajib menyebut
-keduanya.
+server lama TIDAK menghasilkan galat: `POST /orders` tidak menolak field tak
+dikenal, jadi server lama **menerima dan membuang** `customerName`/`tableNumber`/
+`note` (diukur: `tests/ordering/data-pesanan.test.js`, "field tak dikenal
+diterima dan diabaikan"). Penjualan tersimpan, antrean §1 sehat, **tetapi nama,
+meja, dan catatan hilang diam-diam di server**. Struk pertama (dari perangkat)
+benar; cetak ulang sesudah riwayat turun dari server tidak punya "Atas nama",
+"Meja", "Catatan". Gejalanya "nol baris, bukan error": tidak ada yang merah.
+Penghilangannya tidak dapat dipulihkan dari server — data itu hanya ada di
+`order` lokal perangkat sebelum kolomnya dibangun ulang. Klien lama di atas
+server baru tidak bermasalah (ketiga field opsional). Catatan rilis wajib
+menyebut urutan ini.
 
 ## 8. Kas & shift
 

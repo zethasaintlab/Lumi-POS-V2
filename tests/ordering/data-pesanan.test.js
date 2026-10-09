@@ -203,3 +203,14 @@ test('constraint kolom: CHECK panjang ada di database (40/16/140), bukan hanya d
     assert.match(rows[0].def, new RegExp(`<= ${maks}\\b`), `batas ${kolom} bukan ${maks}: ${rows[0].def}`);
   }
 });
+
+test('⛔ field tak dikenal diterima dan DIABAIKAN (perilaku server lama terhadap klien baru; RUNBOOK §7.4)', async () => {
+  // Server sebelum 0037 tidak mengenal customerName/tableNumber/note. Bila POST /orders menolak
+  // field asing, klien baru di atas server lama berhenti `gagal-permanen`; kenyataannya server
+  // MENERIMA dan MEMBUANG-nya, sehingga data hilang diam-diam. Runbook menyatakan yang kedua.
+  const p = payloadOrder({ fieldDariMasaDepan: 'x', customerName: 'Budi' });
+  const res = await kirim(p);
+  assert.equal(res.statusCode, 201, `field asing ditolak: ${res.body}`);
+  assert.equal('fieldDariMasaDepan' in JSON.parse(res.body), false);
+  assert.equal((await barisOrder(p.id)).customer_name, 'Budi');
+});

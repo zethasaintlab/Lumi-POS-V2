@@ -311,6 +311,19 @@ export function nominalDraf(d: DrafTersimpan): bigint | null {
 }
 
 /**
+ * Nama/meja/catatan keranjang sama dengan yang dikirim draf. Terpisah supaya layar dapat menyebut
+ * data pesanan sebagai penyebab ketidakcocokan. Field kosong tidak ada di muatan (N-1): `?? null`.
+ */
+export function dataPesananDrafCocok(d: DrafTersimpan, keranjang: Keranjang): boolean {
+  const dp = dataPesananKeranjang(keranjang);
+  return (
+    (d.muatan.customerName ?? null) === dp.namaPemesan &&
+    (d.muatan.tableNumber ?? null) === dp.nomorMeja &&
+    (d.muatan.note ?? null) === dp.catatan
+  );
+}
+
+/**
  * Apakah keranjang SAAT INI sama dengan yang ditagih draf — baris (id, produk, qty, harga)
  * dan total. ⛔ Pemulihan memakai nominal dan muatan DRAF; penjualan lokal hanya boleh ditulis
  * dari keranjang yang cocok, karena gateway menagih total draf, bukan total keranjang baru.
@@ -319,16 +332,7 @@ export function drafCocokKeranjang(d: DrafTersimpan, keranjang: Keranjang, total
   if (total === null || nominalDraf(d) !== total) return false;
   // Kanal ikut: server sudah menyimpan order dengan kanal draf, dan `confirmed` menulis order lokal dari keranjang.
   if (d.muatan.channel !== kanalPesanan(keranjang)) return false;
-  // Data pesanan juga: server menyimpan order dengan nama/meja/catatan draf, dan `confirmed` menulis order lokal
-  // dari keranjang. Field kosong tidak ada di muatan (N-1), jadi `?? null` membandingkan apa yang tersimpan.
-  const dp = dataPesananKeranjang(keranjang);
-  if (
-    (d.muatan.customerName ?? null) !== dp.namaPemesan ||
-    (d.muatan.tableNumber ?? null) !== dp.nomorMeja ||
-    (d.muatan.note ?? null) !== dp.catatan
-  ) {
-    return false;
-  }
+  if (!dataPesananDrafCocok(d, keranjang)) return false;
   const baris = d.muatan.lines;
   if (!Array.isArray(baris) || baris.length !== keranjang.baris.length) return false;
   /* Modifier dan diskon ikut dibandingkan: total yang sama dapat berasal dari isi berbeda,

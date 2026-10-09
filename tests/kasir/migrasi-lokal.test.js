@@ -472,5 +472,12 @@ test('⛔ tiga kolom order baru (customer_name, table_number, note) mengubah sid
   assert.equal(jejak.length, 3, 'boot kedua membangun ulang lagi — sidik jari tidak stabil');
 
   // Antrean upload tidak di-drop.
-  assert.ok(!/DROP TABLE[^"]*"outbox_local"/i.test(JSON.stringify(jejak[1][1])), 'outbox_local ikut di-drop — penjualan belum terkirim hilang');
+  // Dibaca dari DAFTAR pernyataan (bukan JSON.stringify, yang meng-escape kutip dan membuat regex hampa).
+  const rencanaDdlJalan = jejak[1][1];
+  assert.ok(Array.isArray(rencanaDdlJalan.drop), 'bentuk rencana DDL berubah — asersi outbox tidak lagi memeriksa apa pun');
+  assert.ok(rencanaDdlJalan.drop.includes('DROP TABLE IF EXISTS "order"'), 'sentinel: raw table order harus ikut di-drop');
+  assert.ok(
+    !rencanaDdlJalan.drop.some((d) => d.includes('outbox_local')),
+    'outbox_local ikut di-drop — penjualan belum terkirim hilang'
+  );
 });

@@ -9,6 +9,7 @@ import { buatPemanggilApi } from '../lokal/api.ts';
 import {
   cadangkanNomor,
   bersihkanDraf,
+  dataPesananDrafCocok,
   drafCocokKeranjang,
   mintaQr,
   nominalDraf,
@@ -47,6 +48,7 @@ import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, subtotalKeranjang } from '../kasir/keranjang.ts';
 import { nilaiDiskon } from '../../../../packages/domain/src/diskon.ts';
 import { Tombol } from '../Tombol.tsx';
+import { pesanPenjualanGagal } from '../kasir/pesan-penjualan.ts';
 import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
 
 /* K-06 Pembayaran + K-07 Konfirmasi & Kembalian (IA §2.2).
@@ -678,15 +680,25 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
       draf,
     })
       .then(async (hasil) => {
-        await bersihkanDraf(db);
-        setDrafTertunda(null);
+        /* ⛔ Draf dibersihkan HANYA bila penjualan tidak gagal karena data pesanan: uangnya sudah lunas di
+           server dan draf adalah satu-satunya jejak yang memulihkannya. Data pesanan dapat dibetulkan di
+           kasir, lalu pemulihan menulis penjualan. (Sebenarnya `drafCocokKeranjang` sudah memastikan data
+           sama dengan yang divalidasi server; ini pagar kedua.) */
+        if (hasil.status !== 'data_pesanan_tidak_sah') {
+          await bersihkanDraf(db);
+          setDrafTertunda(null);
+        }
         pemberitahu.beritahu();
         if (hasil.status === 'tersimpan') {
           setPanelQris(null);
           setSelesai(hasil);
           return;
         }
-        setGalat('Pembayaran lunas di server, tetapi penjualan gagal ditulis di perangkat.');
+        setGalat(
+          hasil.status === 'data_pesanan_tidak_sah'
+            ? `Pembayaran lunas di server. ${pesanPenjualanGagal(hasil, rupiah)}`
+            : 'Pembayaran lunas di server, tetapi penjualan gagal ditulis di perangkat.'
+        );
       })
       .catch((e: Error) => setGalat(`Penjualan TIDAK tersimpan: ${e.message}`))
       .finally(() => setMenyimpan(false));
@@ -727,31 +739,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           pemberitahu.beritahu();
           return;
         }
-        if (hasil.status === 'kurang_bayar') {
-          // Tombol sudah nonaktif untuk tunai kurang; jalur ini cadangan, TANPA angka kurang (satu sumber: rencana).
-          setGalat('Uang diterima kurang dari tagihan tunai. Penjualan belum tersimpan.');
-          return;
-        }
-        if (hasil.status === 'pembayaran_tidak_sah') {
-          /* ⛔ Pesan SERVER, kata demi kata — aturannya satu sumber
-             (`packages/domain/src/pembayaran-manual.ts`). Menulis ulang
-             kalimatnya di sini berarti kasir membaca dua penjelasan berbeda
-             untuk penolakan yang sama, tergantung apakah ia sedang online. */
-          setGalat(`${hasil.pesan} Penjualan belum tersimpan.`);
-          return;
-        }
-        if (hasil.status === 'butuh_penyetuju_diskon') {
-          /* ⛔ Penjualan TIDAK ditulis, dan layar mengatakannya. Kasir yang
-             hanya membaca "gagal" akan menekan Bayar lagi; yang membaca
-             kalimat ini tahu bahwa yang harus terjadi berikutnya ada di K-03,
-             bukan di sini. */
-          setGalat(
-            `Diskon ${rupiah(hasil.nominal)} melewati batas dan belum disetujui manajer. ` +
-              'Penjualan belum tersimpan — kembali ke kasir untuk meminta persetujuan.'
-          );
-          return;
-        }
-        setGalat('Keranjang kosong.');
+        /* ⛔ Pemetaan status → kalimat ada di `pesanPenjualanGagal` (satu sumber, diuji per status);
+           cabang inline yang terlewat dulu jatuh ke "Keranjang kosong." untuk keranjang berisi. */
+        setGalat(pesanPenjualanGagal(hasil, rupiah));
       })
       .catch((e: Error) => setGalat(`Penjualan TIDAK tersimpan: ${e.message}`))
       .finally(() => {
@@ -1025,8 +1015,11 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
                   if (drafTertunda !== null && drafTertunda.paymentId === panelQris.paymentId && !drafCocok) {
                     setPanelQris(null);
                     setGalat(
-                      `Pembayaran QRIS ${rupiah(panelQris.nominal)} sudah LUNAS di server, tetapi isi keranjang berbeda dari ` +
-                        'yang ditagih. Penjualan TIDAK ditulis. Kembalikan keranjang ke isi semula, lalu buka Pembayaran lagi.'
+                      `Pembayaran QRIS ${rupiah(panelQris.nominal)} sudah LUNAS di server, tetapi ` +
+                        (dataPesananDrafCocok(drafTertunda, keranjang)
+                          ? 'isi keranjang berbeda dari yang ditagih. '
+                          : 'nama pemesan, nomor meja, atau catatan berbeda dari yang ditagih. ') +
+                        'Penjualan TIDAK ditulis. Kembalikan ke isi semula, lalu buka Pembayaran lagi.'
                     );
                     return;
                   }

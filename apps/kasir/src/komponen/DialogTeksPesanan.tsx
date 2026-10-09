@@ -89,7 +89,14 @@ export function DialogTeksPesanan({ mode, nilai, onSimpan, onBatal }: Props) {
         <h2 className="t-title">{k.judul}</h2>
         <p className="t-caption kasir-login-sub">{k.petunjuk}</p>
 
-        <Bidang label={k.label} value={teks} onChange={setTeks} placeholder={k.contoh} autoFokus />
+        <Bidang
+          label={k.label}
+          value={teks}
+          onChange={setTeks}
+          placeholder={k.contoh}
+          hint={`${teks.trim().length} / ${k.maks} karakter`}
+          autoFokus
+        />
 
         {galat !== null && (
           <p className="t-caption kasir-login-galat" role="alert">

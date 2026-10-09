@@ -3544,9 +3544,12 @@ paths:
                 # kebenaran untuk bentuk dan batasnya -- nomor kartu menjawab
                 # POSSIBLE_CARD_NUMBER, bukan VALIDATION_ERROR umum. Kosong
                 # disimpan NULL. `check.label` tidak ikut -- tetap NULL.
-                customerName: {}
-                tableNumber: {}
-                note: {}
+                customerName:
+                  description: Nama pemesan (teks, <= 40 karakter, nama saja tanpa telepon). Kosong/null disimpan NULL.
+                tableNumber:
+                  description: Nomor meja (teks, <= 16 karakter). Kosong/null disimpan NULL.
+                note:
+                  description: Catatan pesanan (teks, <= 140 karakter), tercetak di struk. Kosong/null disimpan NULL.
                 lines:
                   type: array
                   minItems: 1
