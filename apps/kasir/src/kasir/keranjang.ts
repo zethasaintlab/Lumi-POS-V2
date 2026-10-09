@@ -100,14 +100,27 @@ export interface DiskonKeranjang {
   nominalDisetujui: bigint | null;
 }
 
+/**
+ * Kanal pesanan (FR-C7). Satu-satunya masukan per pesanan yang boleh
+ * memengaruhi pajak: tarif tetap diresolusi `TaxCalculator`, bukan dipilih kasir.
+ * Memilih Dine in tidak pernah menyiratkan biaya layanan (G-TANPA-LAYANAN).
+ */
+export type Kanal = 'dine_in' | 'takeaway';
+
 export interface Keranjang {
   baris: BarisKeranjang[];
   /** `null` = tidak ada diskon. */
   diskon: DiskonKeranjang | null;
+  /** Bawaan `'takeaway'`; transaksi baru selalu kembali ke bawaan. */
+  kanal: Kanal;
 }
 
 export function keranjangKosong(): Keranjang {
-  return { baris: [], diskon: null };
+  return { baris: [], diskon: null, kanal: 'takeaway' };
+}
+
+export function setelKanal(k: Keranjang, kanal: Kanal): Keranjang {
+  return k.kanal === kanal ? k : { ...k, kanal };
 }
 
 export function setelDiskon(k: Keranjang, diskon: DiskonKeranjang | null): Keranjang {

@@ -2029,3 +2029,22 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* K-03 lembar Pajak (kanal). Dua pilihan 56 px (aksi menyangkut uang), tersusun vertikal. */
+.kasir-kanal-daftar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.kasir-kanal-pilihan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  text-align: left;
+}
+.kasir-kanal-isi {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}

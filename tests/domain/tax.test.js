@@ -433,3 +433,62 @@ test('nilai number (bukan bigint) ditolak -- float tidak boleh masuk jalur pajak
     /bigint/i
   );
 });
+
+// --- Fixture #1 (uang-pembayaran-kas.md § "tiga fixture ini") -----------------
+// `tax_rate.type = 'ppn'` 11% (rateScaled 1100n, skala 10.000). Angka harapan
+// dihitung TANGAN dari FR-C8, bukan dari pemanggilan calculateTax lain.
+
+const PPN_11 = {
+  id: 'rate-ppn-11',
+  type: 'ppn',
+  name: 'PPN 11%',
+  rateScaled: 1100n,
+  isInclusive: false,
+  outletId: null,
+  channel: 'all',
+  appliesTo: 'all_items',
+  appliesToIds: [],
+};
+
+test("⛔ fixture #1: tax_rate type 'ppn' 11% (rate 1100 berskala 10.000) dihitung TaxCalculator", async () => {
+  const { calculateTax } = await import(MOD);
+  const masuk = (rate, discount) => ({
+    lines: [baris('a', 60000n), baris('b', 30000n)],
+    serviceChargeAmount: 0n,
+    orderDiscount: discount,
+    taxRates: [rate],
+    channel: 'dine_in',
+    outletId: 'outlet-1',
+  });
+
+  // Eksklusif tanpa diskon: 90.000 x 11% = 9.900 persis.
+  const e0 = calculateTax(masuk(PPN_11, 0n));
+  assert.equal(e0.totalTax, 9900n);
+  assert.equal(e0.totalTaxExclusive, 9900n);
+  assert.equal(e0.lines[0].name, 'PPN 11%');
+
+  // Eksklusif, diskon order 9.000: dasar 81.000 x 11% = 8.910 persis.
+  const e1 = calculateTax(masuk(PPN_11, 9000n));
+  assert.equal(e1.lines[0].base, 81000n);
+  assert.equal(e1.totalTax, 8910n);
+  assert.equal(e1.totalTaxExclusive, 8910n);
+
+  // Eksklusif dengan sisa pembulatan: 85.050 x 11% = 9.355,5 -> half-up 9.356.
+  const e2 = calculateTax({ ...masuk(PPN_11, 0n), lines: [baris('a', 85050n)] });
+  assert.equal(e2.totalTax, 9356n);
+
+  // Inklusif, diskon 9.000: 81.000 - round(81.000 / 1,11) = 81.000 - 72.973 = 8.027.
+  const i1 = calculateTax(masuk({ ...PPN_11, isInclusive: true }, 9000n));
+  assert.equal(i1.totalTax, 8027n);
+  assert.equal(i1.totalTaxExclusive, 0n, 'inklusif tidak menambah total');
+  assert.equal(i1.lines[0].isInclusive, true);
+
+  // Inklusif tanpa diskon: 90.000 - round(90.000 / 1,11) = 90.000 - 81.081 = 8.919.
+  const i0 = calculateTax(masuk({ ...PPN_11, isInclusive: true }, 0n));
+  assert.equal(i0.totalTax, 8919n);
+
+  // SUM(perLine) == totalTax pada kedua mode.
+  for (const h of [e0, e1, e2, i0, i1]) {
+    assert.equal(h.perLine.reduce((n, p) => n + p.amount, 0n), h.totalTax);
+  }
+});

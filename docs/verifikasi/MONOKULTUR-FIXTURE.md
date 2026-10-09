@@ -101,6 +101,8 @@ seluruh `TaxCalculator` berdiri di atas satu jenis saja.
 yang gerbangnya jaga. `service_charge` sebagai `tax_rate.type` juga nol —
 sejalan dengan `service_charge_amount` yang masih selalu ditulis `0`.
 
+**Dipenuhi 9 Oktober 2026 (Task 10, kampanye kasir 2C): `'ppn'` kini muncul di fixture test (6 kemunculan).** `TaxCalculator` menangani `ppn` 11% eksklusif dan inklusif tanpa perubahan (`tests/domain/tax.test.js`, angka dihitung tangan), dan jalur perangkat/server/K-06 memakainya bersama kanal `dine_in` (`penjualan.test.js`, `tax-in-orders.test.js`, `k06-penjaga.test.js`). Kalimat dan tabel di atas adalah potret 2 September 2026 dan sengaja tidak ditulis ulang. Separuh fixture #2 yang menuntut `service_charge_amount != 0` **belum** dipenuhi (Q2 terbuka, service charge tidak dibangun).
+
 ### Yang nol dengan alasan yang sah
 
 - `retail` (1 berkas) — UI retail adalah non-goal v1, dan endpointnya menolak

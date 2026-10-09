@@ -130,3 +130,22 @@ test('sentinel: pola TIDAK menangkap angka sah yang bertebaran di kode ini', () 
     assert.equal(TAX_NUMBER_PATTERN.test(contoh), false, `pola salah menangkap angka sah: ${contoh}`);
   }
 });
+
+// Task 10 (kampanye kasir 2C): scan di atas hanya melihat apps/server dan packages/domain, jadi
+// kode klien baru yang memilih KANAL tidak terjaga. Daftar ini sengaja SEMPIT (dua berkas jalur
+// kanal): memindai seluruh apps/kasir/src dimatikan orang oleh teks UI yang sah ("12%" di galeri).
+const JALUR_KANAL = [
+  path.join(__dirname, '../../apps/kasir/src/kasir/kanal.ts'),
+  path.join(__dirname, '../../apps/kasir/src/komponen/LembarKanal.tsx'),
+];
+
+test('invariant #7: jalur kanal klien (kanal.ts, LembarKanal.tsx) tanpa angka tarif pajak', async () => {
+  const findings = [];
+  for (const file of JALUR_KANAL) {
+    const code = stripComments(await readFile(file, 'utf8')); // melempar bila berkas hilang: tidak vakum
+    TAX_NUMBER_PATTERN.lastIndex = 0;
+    const matches = code.match(TAX_NUMBER_PATTERN);
+    if (matches !== null) findings.push(`${path.relative(process.cwd(), file)}: ${[...new Set(matches)].join(', ')}`);
+  }
+  assert.deepEqual(findings, [], `angka tarif pajak ditemukan di jalur kanal klien:\n${findings.join('\n')}`);
+});

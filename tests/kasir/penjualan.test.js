@@ -248,6 +248,91 @@ test('payload order cocok dengan kontrak POST /orders', async () => {
   assert.equal(payload.hlc, '42');
 });
 
+// --- Task 10 (kampanye kasir 2C): kanal Dine in / Takeaway ------------------
+
+// Dua tarif: PBJT 10% khusus dine_in, PPN 11% untuk semua kanal. Resolusi
+// FR-C7: kanal spesifik menang atas `all`, jadi dine_in -> PBJT, takeaway -> PPN.
+const TARIF_KANAL = [
+  {
+    id: 'tr-pbjt', tenant_id: 't1', outlet_id: null, name: 'PBJT 10%', type: 'pbjt',
+    rate: 1000, is_inclusive: 0, phase: 'subtotal', channel: 'dine_in',
+    applies_to: 'all_items', applies_to_ids: null,
+    effective_from: '2026-01-01T00:00:00Z', effective_to: null,
+  },
+  {
+    id: 'tr-ppn', tenant_id: 't1', outlet_id: null, name: 'PPN 11%', type: 'ppn',
+    rate: 1100, is_inclusive: 0, phase: 'subtotal', channel: 'all',
+    applies_to: 'all_items', applies_to_ids: null,
+    effective_from: '2026-01-01T00:00:00Z', effective_to: null,
+  },
+];
+
+async function pajakLangsung(channel) {
+  const { calculateTax } = await import('../../packages/domain/src/tax.ts');
+  return calculateTax({
+    lines: [{ lineId: 'b1', itemId: 'v1', categoryId: null, amount: 20000n }],
+    serviceChargeAmount: 0n,
+    orderDiscount: 0n,
+    taxRates: TARIF_KANAL.map((t) => ({
+      id: t.id, name: t.name, rateScaled: BigInt(t.rate), isInclusive: false,
+      jurisdiction: null, outletId: null, channel: t.channel, appliesTo: 'all_items', appliesToIds: [],
+    })),
+    channel,
+    outletId: 'o1',
+  });
+}
+
+test('⛔ G-KANAL: dine_in memilih tarif kanal dine_in; order.channel tersimpan dine_in', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const hitungDineIn = await pajakLangsung('dine_in');
+  const hitungTakeaway = await pajakLangsung('takeaway');
+  assert.notEqual(hitungDineIn.totalTax, hitungTakeaway.totalTax, 'fixture harus membedakan kanal');
+
+  const db = dbPalsu({ tarif: TARIF_KANAL });
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'dine_in' } }),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.equal(order.params[8], 'dine_in', 'order.channel lokal bukan dine_in');
+  assert.equal(order.params[11], Number(hitungDineIn.totalTax), 'tax_amount bukan hasil TaxCalculator untuk dine_in');
+  assert.equal(hasil.taxAmount, hitungDineIn.totalTax);
+
+  const outbox = db.state.tulis.find((t) => /outbox_local/.test(t.sql));
+  assert.equal(JSON.parse(outbox.params[4]).channel, 'dine_in', 'muatan outbox channel bukan dine_in');
+
+  // Sisi sebaliknya: tanpa `kanal` (keranjang lama) -> takeaway -> PPN.
+  const db2 = dbPalsu({ tarif: TARIF_KANAL });
+  const h2 = await simpanPenjualan({ db: db2, ...args() });
+  assert.equal(h2.taxAmount, hitungTakeaway.totalTax);
+  assert.equal(db2.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql)).params[8], 'takeaway');
+});
+
+test('⛔ G-TANPA-LAYANAN: dine_in dengan outlet.service_charge_rate 1000 (10%) → service_charge_amount 0 di order lokal dan muatan outbox; total = subtotal − diskon + pajak eksklusif', async () => {
+  const { simpanPenjualan } = await import(MOD);
+  const hitung = await pajakLangsung('dine_in'); // serviceChargeAmount 0n
+  const db = dbPalsu({ tarif: TARIF_KANAL, outlet: { ...OUTLET, service_charge_rate: 1000 } });
+  const hasil = await simpanPenjualan({
+    db,
+    ...args({ keranjang: { baris: BARIS, diskon: null, kanal: 'dine_in' } }),
+  });
+  assert.equal(hasil.status, 'tersimpan', hasil.status);
+
+  // subtotal 20.000 − diskon 0 + pajak eksklusif; biaya layanan 10% akan menambah 2.000.
+  assert.equal(hasil.total, 20000n + hitung.totalTaxExclusive, 'total memuat biaya layanan');
+  assert.equal(hasil.taxAmount, hitung.totalTax, 'dasar pajak memuat biaya layanan');
+
+  const order = db.state.tulis.find((t) => /INSERT INTO "order"/.test(t.sql));
+  assert.equal(order.params[10], 0, 'order_discount');
+  assert.equal(order.params[11], Number(hitung.totalTax));
+
+  const payload = JSON.parse(db.state.tulis.find((t) => /outbox_local/.test(t.sql)).params[4]);
+  assert.equal(payload.serviceChargeAmount ?? 0, 0, 'muatan outbox membawa biaya layanan');
+  assert.equal(payload.total, Number(hasil.total));
+});
+
 test('keranjang kosong ditolak', async () => {
   const { simpanPenjualan } = await import(MOD);
   const db = dbPalsu();

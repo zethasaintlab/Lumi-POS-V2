@@ -25,6 +25,7 @@ import {
   qtyDiKeranjang,
   satuanKeranjang,
   setelDiskon,
+  setelKanal,
   subtotalKeranjang,
   tambah,
   type BarisKeranjang,
@@ -57,6 +58,8 @@ import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
+import { LembarKanal } from '../komponen/LembarKanal.tsx';
+import { LABEL_KANAL, ringkasKanal, type RingkasKanal } from '../kasir/kanal.ts';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
@@ -146,6 +149,10 @@ export function Kasir() {
      baris outlet terbaca. */
   const [ambangDiskon, setAmbangDiskon] = useState<AmbangDiskon>(AMBANG_DISKON_BAWAAN);
   const [dialogDiskon, setDialogDiskon] = useState(false);
+  /* Toolbar #3 — Pajak = pilihan KANAL (P9(a)). Lembar, bukan dialog yang menahan masukan. */
+  const [lembarKanal, setLembarKanal] = useState(false);
+  const [ringkasanKanal, setRingkasanKanal] = useState<RingkasKanal[] | null>(null);
+  const [galatKanal, setGalatKanal] = useState<string | null>(null);
   /* Toolbar #1 — Item manual (P4(a), spec § 4 baris 1). Dialog, alasan yang
      sama dengan Diskon/Kas manual: tidak punya keadaan yang berguna lewat
      URL. */
@@ -442,6 +449,33 @@ export function Kasir() {
       });
   }, [db, konfig, shift, keranjang]);
 
+  /* Nama tarif tiap kanal, dari `hitungKeranjang` (TaxCalculator) — dihitung saat lembar
+     Pajak dibuka. Keranjang kosong: tidak ada baris, jadi tidak ada nama tarif. */
+  useEffect(() => {
+    if (!lembarKanal) return;
+    setGalatKanal(null);
+    if (!konfig || !shift || keranjang.baris.length === 0) {
+      setRingkasanKanal(null);
+      return;
+    }
+    let hidup = true;
+    const hitung = (kanal: 'dine_in' | 'takeaway') =>
+      hitungKeranjang({ db, konfig, keranjang: setelKanal(keranjang, kanal), shift, waktu: () => new Date() });
+    void Promise.all([hitung('dine_in'), hitung('takeaway')])
+      .then(([dine_in, takeaway]) => {
+        if (hidup) setRingkasanKanal(ringkasKanal({ dine_in, takeaway }));
+      })
+      .catch(() => {
+        if (hidup) {
+          setRingkasanKanal(null);
+          setGalatKanal('Nama tarif tidak dapat dibaca dari perangkat. Kanal tetap dapat dipilih.');
+        }
+      });
+    return () => {
+      hidup = false;
+    };
+  }, [lembarKanal, db, konfig, shift, keranjang]);
+
   const pindai = useRef<(kode: string) => void>(() => {});
   /* Penanda awal pengukuran latensi keranjang. `null` = tidak ada ketukan
      yang sedang diukur; lihat `pilihVariation`. */
@@ -459,7 +493,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !lembarKanal && !dialogManual && !dialogBatal,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -658,11 +692,11 @@ export function Kasir() {
             bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
             keranjang.
 
-            ⛔ TIGA aksi hari ini, semuanya TERPASANG mockup (Item manual,
-            Diskon, Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
+            ⛔ EMPAT aksi hari ini, semuanya TERPASANG mockup (Item manual,
+            Diskon, Pajak, Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
             Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya pindah ke
-            layar Laci kas (K-18, `layar/LaciKas.tsx`). Lima sisanya di mockup
-            (Pajak, Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
+            layar Laci kas (K-18, `layar/LaciKas.tsx`). Empat sisanya di mockup
+            (Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
             repo ini; tombol yang tidak melakukan apa-apa adalah janji kepada
             kasir yang produk ini tidak dapat tepati — Task 10/11/12
             membangun sisanya (spec § 4 "Toolbar
@@ -713,6 +747,18 @@ export function Kasir() {
               )}
             </>
           )}
+
+          {/* Pajak — memilih KANAL (Takeaway/Dine in), bukan tarif (FR-C6/C7). Label terlihat =
+              kanal aktif; nama aksesibel "Pajak: <kanal>" (Q8 bawaan). Tanpa kill switch, dan
+              aktif juga saat keranjang kosong: kanal dipilih sebelum item pertama. */}
+          <Tombol
+            varian="ghost"
+            ariaLabel={`Pajak: ${LABEL_KANAL[keranjang.kanal]}`}
+            onClick={() => setLembarKanal(true)}
+          >
+            <Icon name="receipt-text" size={17} />
+            <span className="kasir-toolbar-label">{LABEL_KANAL[keranjang.kanal]}</span>
+          </Tombol>
 
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
               konfirmasi dan jejak audit (spec § 4 baris 7). Tidak di balik
@@ -1234,6 +1280,19 @@ export function Kasir() {
           onSimpan={(d) => {
             setKeranjang((k) => setelDiskon(k, d));
             setDialogDiskon(false);
+          }}
+        />
+      )}
+
+      {lembarKanal && (
+        <LembarKanal
+          aktif={keranjang.kanal}
+          ringkas={ringkasanKanal}
+          galat={galatKanal}
+          onBatal={() => setLembarKanal(false)}
+          onPilih={(k) => {
+            setKeranjang((c) => setelKanal(c, k));
+            setLembarKanal(false);
           }}
         />
       )}

@@ -174,6 +174,52 @@ test('FR-C7: order dine_in memakai tarif all, bukan tarif takeaway', async () =>
   assert.equal(order.taxAmount, 2000, '20.000 x 10%');
 });
 
+// --- Task 10 (kampanye kasir 2C): kanal dine_in memilih tarif dine_in ---
+
+test('⛔ server: channel dine_in memilih tarif dine_in dan tax_amount sama dengan perangkat', async () => {
+  await akhiriTarifSeed();
+  // Fixture dua tarif: PBJT 10% khusus dine_in, PPN 11% untuk semua kanal.
+  const tarifDineIn = await buatTarif({ rate: '0.1000', channel: 'dine_in', name: 'PBJT 10%', type: 'pbjt' });
+  const tarifSemua = await buatTarif({ rate: '0.1100', channel: 'all', name: 'PPN 11%', type: 'ppn' });
+  const fx = await setupDeviceAndShift();
+
+  const dineIn = await buatOrder(fx, { channel: 'dine_in' });
+  const takeaway = await buatOrder(fx, { channel: 'takeaway' });
+  assert.equal(dineIn.channel, 'dine_in');
+
+  // Pembanding: TaxCalculator yang SAMA dipanggil langsung (jalur perangkat), bukan angka yang diketik.
+  const { calculateTax } = await import('../../packages/domain/src/tax.ts');
+  const spek = [
+    { id: 'a', name: 'PBJT 10%', rateScaled: 1000n, isInclusive: false, outletId: null, channel: 'dine_in', appliesTo: 'all_items', appliesToIds: [] },
+    { id: 'b', name: 'PPN 11%', rateScaled: 1100n, isInclusive: false, outletId: null, channel: 'all', appliesTo: 'all_items', appliesToIds: [] },
+  ];
+  const hitung = (channel) =>
+    calculateTax({
+      lines: [{ lineId: 'l', itemId: 'i', categoryId: null, amount: 20000n }],
+      serviceChargeAmount: 0n, orderDiscount: 0n, taxRates: spek, channel, outletId: base.outlet.id,
+    });
+  assert.equal(BigInt(dineIn.taxAmount), hitung('dine_in').totalTax, 'dine_in: tarif dine_in menang atas all');
+  assert.equal(BigInt(takeaway.taxAmount), hitung('takeaway').totalTax, 'takeaway: jatuh ke PPN all');
+  assert.notEqual(dineIn.taxAmount, takeaway.taxAmount, 'fixture harus membedakan kedua kanal');
+  assert.equal(dineIn.lines[0].taxRateId, tarifDineIn.id, 'snapshot menunjuk tarif dine_in');
+  assert.equal(takeaway.lines[0].taxRateId, tarifSemua.id, 'snapshot takeaway menunjuk PPN all');
+});
+
+test('⛔ server: dine_in + service_charge_rate bukan nol → service_charge_amount 0 (G-TANPA-LAYANAN)', async () => {
+  await akhiriTarifSeed();
+  await buatTarif({ rate: '0.1100', channel: 'all', name: 'PPN 11%', type: 'ppn' });
+  await owner.query('BEGIN');
+  await owner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant.id]);
+  await owner.query('UPDATE outlet SET service_charge_rate = 0.1000 WHERE id = $1', [base.outlet.id]);
+  await owner.query('COMMIT');
+  const fx = await setupDeviceAndShift();
+  const order = await buatOrder(fx, { channel: 'dine_in' });
+  assert.equal(order.serviceChargeAmount, 0, 'Dine in tidak boleh menyiratkan biaya layanan');
+  // 20.000 + PPN 11% = 22.200; biaya layanan 10% akan membuat 24.420.
+  assert.equal(order.taxAmount, 2200);
+  assert.equal(order.total, 22200);
+});
+
 // --- T12: snapshot kebal perubahan tarif ---
 //
 // INI acceptance criteria FR-C6 kedua, dan alasan seluruh mekanisme snapshot
