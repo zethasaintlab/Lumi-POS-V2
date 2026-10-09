@@ -296,10 +296,16 @@ Sengaja **bukan** `tenant.default_vertical_profile_id`: itu membuat siklus FK `t
 | `has_calculation_variance` | bool | Ditandai server (FR-H6) |
 | `variance_amount` | bigint nullable | |
 | `voided_by_order_id` | ulid nullable | Menunjuk record void |
+| `customer_name` | text nullable | Nama pemesan ("atas nama"), ≤ 40. **Nama saja, tanpa nomor telepon.** Tercetak di struk. Data pribadi (UU PDP): turun ke perangkat hanya lewat stream `riwayat`, terbatas tenant + outlet + perangkat (P5(b)) |
+| `table_number` | text nullable | Nomor meja sebagai **data**, ≤ 16 `[ASUMSI]` (mis. "4", "A3"). Bukan manajemen meja (v1.1); disimpan karena pemesanan per meja membutuhkannya (P5(b)) |
+| `note` | text nullable | Catatan tingkat pesanan, ≤ 140; tercetak di struk (P6(a)). Bukan catatan per item |
 | `created_by`, `occurred_at`, `recorded_at`, `hlc` | | |
+
+Ketiga kolom opsional (`customer_name`, `table_number`, `note`) ditambah dalam satu migrasi (`0037_order_customer_table_note.sql`, expand: nullable, tanpa default). Tidak satu pun boleh memuat nomor kartu (FR-C5).
 
 ### `check`
 `id` · `order_id` · `label` · `subtotal` · `total`
+**`label` tetap `NULL`** — nama pemesan ada di `order.customer_name`, bukan di sini (P5(b)).
 **v1: constraint aplikasi 1:1 dengan `order`.** Melonggarkannya nanti tidak memerlukan perubahan skema (KEP-06).
 
 ### `order_line`
