@@ -81,6 +81,7 @@ Menggantikan aturan lama di `CLAUDE.md` yang bertentangan:
 - Posisi Bayar sama untuk 0, 3, dan 20 item
 - K-14 minimal 3 baris tabel
 - Tinggi bilah nav sama di semua layar
+  - Catatan (sub-proyek 2, keputusan kampanye 26 September 2026, spec `docs/superpowers/specs/2026-09-28-kasir-design.md` § 3): sejak topbar dan bilah digabung, invarian ini diukur sebagai **header 68 px** (`k14-tata-letak.test.js` + `header.test.js`). Kata-kata di atas tidak ditulis ulang.
 - Nol hex hardcoded di komponen
 - Ratchet `test:schema`
 - Suite PostgreSQL berurutan
@@ -206,6 +207,12 @@ Keputusan kelas 2 (`docs/PROTOKOL-OTONOM.md` § 1): dapat dibalik, memakai bawaa
 - **Parser `kolomPerTabel` memotong digit (ditemukan Task 11, 9 Oktober 2026, KELAS 3, menunggu user).** `apps/kasir/src/lokal/skema.ts:468/477` memakai `[a-z_]+`, jadi definisi raw table dan `put` menamai `payment.card_last` (seharusnya `card_last4`) dan `item_image.data_base` (seharusnya `data_base64`) — kolom yang tidak ada di SQLite lokal. Memperbaiki mengubah sidik jari skema lagi (R4). Dikunci sebagai pengecualian `KOLOM_TIDAK_DITURUNKAN` di `tests/kasir/sync-rules.test.js` (penjaga merah saat parser diperbaiki, sengaja). Juga utang: `VALIDATE CONSTRAINT` untuk tiga CHECK `order` (0037, NOT VALID).
 - **Utang Task 12 dari tinjauan Opus (DEFER, 9 Oktober 2026).** M3: cek tahanan di `tutupKas` di luar transaksi tutup dan `catatHitungan` tanpa cek; daftar K-12 dibaca sekali saat mount (multi-tab dapat membuat tahanan sesudahnya, hitungan buta sudah bocor saat ditolak). M4: tahanan yatim shift lain tidak dibersihkan (menyimpan nama/catatan pelanggan di perangkat). M5: modifier yang hilang dari katalog mempertahankan harga tersimpan `[ASUMSI]` (deteksi FR-H6, bukan pencegahan). M6: `tahanKeranjang` tidak memeriksa shift terbuka; tidak ada tes crash di tengah Lanjutkan.
 - **Utang PR 2C dari tinjauan akhir Opus (DEFER, 9 Oktober 2026).** M1: kanal dan data pesanan pada keranjang kosong tidak bertahan lewat muat ulang (`simpanKeranjang` menghapus `keranjang_lokal` bila tanpa baris) dan Lanjutkan hanya memeriksa `baris.length`, jadi nama/meja yang sudah diketik dapat tertimpa isi tahanan. M2 (KEPUTUSAN PRODUK, menunggu user): kanal awal selalu Takeaway; `vertical_profile.default_channel` sudah ada di skema tetapi tidak dipakai — outlet dine-in mengganti kanal di setiap pesanan. M5: teks bebas (nama, catatan) dicetak lewat `keByte` (`& 0xff`); karakter di luar Latin-1 rusak di struk. Celah draf QRIS tertunda juga ada di `batalkanKeranjang` (sudah ada sebelum PR ini; Tahan/Lanjutkan/Buang kini menolak selama draf ada).
+- **Utang dokumen sub-proyek 2 (Task 17, Oktober 2026).**
+  - **Q2 service charge** `[ASUMSI]`: jawaban user tidak ditemukan di berkas yang di-commit; bawaan plan (a) berlaku — service charge TIDAK dibangun, `service_charge_amount` terkunci nol di klien dan server, fixture #2 (`uang-pembayaran-kas.md:274`) terpenuhi separuh (`dine_in` saja). Merge PR 2C menunggu jawaban.
+  - **Q3 (sub-proyek 3):** laporan exception FR-G5 untuk konfirmasi manual per kasir (QRIS statis, Transfer) dan baris `cart_cleared`/`cart_line_reduced` per kasir; metrik dan alarmnya.
+  - `product/IA-lumi-pos-v1.md` §2.2/§7 sudah memuat Laci kas (K-18, `/laci`) dan `product/ERD-lumi-pos-v1.md` memuat `order.customer_name`/`table_number`/`note` (dibaca 10 Oktober 2026); yang masih basi dan di luar Q9: `IA:264` "K-01…K-17" dan "52 layar" di `CLAUDE.md`.
+  - `docs/referensi-visual/BANDING.md` angka pikselnya potret sebelum sub-proyek 2; bagian "Sesudah sub-proyek 2" memuat selisih tanpa angka baru. Pengukuran ulang `alat/banding*.mjs` belum dijalankan.
+  - Lonceng back-office (ikon notifikasi) tetap terbuka untuk sub-proyek 3.
 
 ## Ledger
 
