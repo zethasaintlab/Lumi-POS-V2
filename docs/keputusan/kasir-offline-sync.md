@@ -123,3 +123,7 @@ Aturannya sekarang: **setiap operasi yang perangkat kirim lewat outbox wajib pun
 
 Konsekuensi lain yang mengikat: **penyetuju dibekukan di `outbox_local.approver_id`**, alasan yang sama dengan `actor_id` — antrean dapat terkuras setelah pergantian shift. Header KOSONG tidak pernah dikirim: `getApproverId` menolaknya dengan pesan yang sama persis dengan header yang hilang, jadi mengirimnya hanya memindahkan kegagalan.
 
+
+### ⛔ Parser kolom memotong digit — diperbaiki 10 Oktober 2026, ongkosnya satu rebuild armada
+
+`kolomPerTabel` memakai `[a-z_]+`, jadi `payment.card_last4` terbaca `card_last` dan `item_image.data_base64` terbaca `data_base`; definisi raw table dan `put` menamai kolom yang tidak ada di SQLite lokal (data turun tidak tertulis, tanpa galat). Regex kini `[a-z0-9_]+` (skema, migrasi, helper DDL tes). Penjaga: `tests/kasir/skema-lokal.test.js` T2 membandingkan parser dengan `PRAGMA table_info`. Sidik jari bergeser `fnv1a-9d089a5a-3234+fnv1a-a8f24689-1800` → `fnv1a-ee8fa872-3237+fnv1a-c8925697-1802`: setiap perangkat membangun ulang raw table dan mengunduh ulang katalog + riwayat sekali (RUNBOOK R4), sama seperti 0035/0036.

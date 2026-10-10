@@ -57,7 +57,7 @@ function tipeSaja(sisa) {
 }
 
 function bacaCreateTable(sql, keluaran) {
-  const re = /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s*\(/gi;
+  const re = /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z0-9_]+)"?\s*\(/gi;
   let m;
   while ((m = re.exec(sql))) {
     const nama = m[1];
@@ -72,7 +72,7 @@ function bacaCreateTable(sql, keluaran) {
     for (const bagian of bagiKoma(sql.slice(re.lastIndex, i - 1))) {
       const t = bagian.trim();
       if (t.length === 0 || AWALAN_BATASAN.test(t)) continue;
-      const nk = /^"?([a-z_]+)"?\s+([\s\S]+)$/i.exec(t);
+      const nk = /^"?([a-z0-9_]+)"?\s+([\s\S]+)$/i.exec(t);
       if (!nk) continue;
       const tipe = tipeSaja(nk[2]);
       if (tipe) keluaran[nama][nk[1]] = tipe;
@@ -90,12 +90,12 @@ function bacaAlterTable(sql, keluaran) {
   // bentuk itu, dan keduanya lolos tanpa pernah diperiksa. Ketahuan hanya
   // karena migrasi 0031 kebetulan menambahkan kolom yang ADA di skema lokal —
   // arah kesalahan yang berlawanan, dan satu-satunya yang berteriak.
-  const rePernyataan = /ALTER TABLE\s+(?:IF EXISTS\s+)?"?([a-z_]+)"?\s+([\s\S]*?);/gi;
+  const rePernyataan = /ALTER TABLE\s+(?:IF EXISTS\s+)?"?([a-z0-9_]+)"?\s+([\s\S]*?);/gi;
   let m;
   while ((m = rePernyataan.exec(sql))) {
     const tabel = m[1];
     // Setiap potongan `ADD COLUMN <nama> <tipe...>` di dalam pernyataan itu.
-    const reKolom = /ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s+([\s\S]*?)(?=(?:,\s*)?ADD (?:COLUMN|CONSTRAINT)\b|$)/gi;
+    const reKolom = /ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z0-9_]+)"?\s+([\s\S]*?)(?=(?:,\s*)?ADD (?:COLUMN|CONSTRAINT)\b|$)/gi;
     let k;
     while ((k = reKolom.exec(m[2]))) {
       const tipe = tipeSaja(k[2]);
