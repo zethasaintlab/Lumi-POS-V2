@@ -576,16 +576,17 @@ export function TutupKas() {
         awalan="Rp"
         inputMode="numeric"
         value={hitunganTeks}
-        /* ⛔ Yang diketik DIPERTAHANKAN apa adanya (digit dan titik), dan yang
+        /* ⛔ Yang diketik DIPERTAHANKAN apa adanya (tanpa saringan: koma dan minus
+           yang dibuang diam-diam mengubah "25,5" jadi 255), dan yang
            menafsirkannya `bacaRupiah` — parser yang sama yang dipakai seluruh
            repo. Memformat ulang teksnya sambil kasir mengetik akan menjadi
            pemformat KEDUA, dan `CLAUDE.md` menetapkan hanya boleh ada satu.
 
-           Titik dibiarkan masuk justru supaya `bacaRupiah` yang memutuskan:
+           Semua karakter dibiarkan masuk justru supaya `bacaRupiah` yang memutuskan:
            ia menerima `670.500` (kelompok tiga) dan MENOLAK `25.5` (desimal),
            dan aturan itu tidak boleh punya salinan di sini. */
         onChange={(v) => {
-          setHitunganTeks(v.replace(/[^\d.]/g, ''));
+          setHitunganTeks(v);
           setGalat(null);
         }}
         placeholder="0"

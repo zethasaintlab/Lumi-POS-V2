@@ -322,7 +322,7 @@ export function DialogPembatalan({
               else jalankan(null);
             }}
           >
-            {menyimpan ? 'Menyimpan…' : rencana.operasi === 'void' ? 'Batalkan' : 'Kembalikan dana'}
+            {menyimpan ? 'Menyimpan…' : rencana.operasi === 'void' ? 'Konfirmasi void' : 'Kembalikan dana'}
           </Tombol>
         </div>
     </LatarDialog>

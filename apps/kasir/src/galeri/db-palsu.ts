@@ -204,6 +204,10 @@ export interface OpsiDbPalsu {
   ringkasanBernilai?: boolean;
   /** `?gagalRingkasan=1` (Task 15 fix) — pembacaan refund milik `ringkasanShift` (posisi penjualan) melempar. */
   gagalRingkasan?: boolean;
+  /** `?ordOpen=1` (Task 16 fix) — `ord-1` berstatus `open` tanpa pembayaran, supaya dialog VOID K-10 dapat dibuka. Fixture bawaan tidak berubah. */
+  ordOpen?: boolean;
+  /** `?gagalBacaPerangkat=1` (Task 16 fix) — pembacaan `device_config` melempar (K-01: "Perangkat tidak terbaca"). */
+  gagalBacaPerangkat?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -226,7 +230,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     return opsi.riwayatVariatif && n >= 3
       ? { ...o, business_date: '2026-08-31', receipt_number: o.receipt_number.replace('20260901', '20260831') }
       : o;
-  }).map((o) =>
+  }).map((o) => (opsi.ordOpen && o.id === 'ord-1' ? { ...o, status: 'open' } : o)).map((o) =>
     opsi.strukPanjang && o.id === 'ord-1'
       ? {
           ...o,
@@ -315,7 +319,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
        laci dari uang bank, dan K-12 yang hanya pernah dilihat dengan tunai
        tidak pernah merender rincian per metode sama sekali. */
     payment: order
-      .filter((o) => o.status !== 'voided')
+      .filter((o) => o.status !== 'voided' && !(opsi.ordOpen && o.id === 'ord-1'))
       .flatMap((o, i): Record<string, unknown>[] => {
         const transfer = (opsi.transfer || opsi.riwayatVariatif) && o.id === 'ord-1';
         const nontunai = i % 3 === 1 || transfer;
@@ -681,6 +685,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
       const tabel = tabelDari(sql);
       urutan.push(`baca:${tabel}`);
+      if (opsi.gagalBacaPerangkat && tabel === 'device_config') {
+        throw new Error('galeri: pembacaan device_config gagal');
+      }
       if (opsi.gagalRingkasan && tabel === 'refund' && /JOIN\s+"order"/i.test(sql)) {
         throw new Error('galeri: pembacaan ringkasan shift gagal');
       }

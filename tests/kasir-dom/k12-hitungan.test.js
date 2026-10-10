@@ -306,3 +306,24 @@ test('K-12 tanpa tahanan: tidak ada panel penolakan dan "Lanjut" bergantung pada
   await hal.close();
   assert.equal(ada, false, 'panel penolakan tampil padahal tidak ada tahanan');
 });
+
+// ---------------------------------------------------------------------------
+// Task 16 fix: koma dan minus tidak boleh dibuang diam-diam oleh kolom hitungan
+// ("25,5" → 255 adalah selisih 10× yang lolos sebagai hitungan sah).
+
+for (const ketik of ['25,5', '-50000', '12,34', 'abc']) {
+  test(`⛔ K-12 hitungan fisik "${ketik}" tetap terlihat dan DITOLAK (Lanjut nonaktif), tidak menjadi angka lain`, async () => {
+    const { hal } = await bukaK12('normal');
+    hal.setDefaultTimeout(3000);
+    const kolom = hal.getByLabel('Hitungan fisik laci');
+    await kolom.fill(ketik);
+    const nilai = await kolom.inputValue();
+    const lanjut = hal.getByRole('button', { name: 'Lanjut', exact: true });
+    const mati = await lanjut.isDisabled();
+    const teks = await hal.evaluate(() => document.querySelector('.kasir-konten')?.innerText ?? '');
+    await hal.close();
+    assert.equal(nilai, ketik, `kolom mengubah "${ketik}" menjadi "${nilai}" diam-diam sebelum dibaca bacaRupiah`);
+    assert.equal(mati, true, `"${ketik}" membuat Lanjut menyala — hitungan fisik tidak sah lolos`);
+    assert.match(teks, /Masukkan rupiah utuh, tanpa desimal\./, `"${ketik}" ditolak tanpa petunjuk bentuk tidak sah`);
+  });
+}

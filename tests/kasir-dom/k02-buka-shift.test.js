@@ -183,7 +183,7 @@ const KASUS_DITERIMA = [
   { ketik: '1.500.000', harapan: 1_500_000 },
   { ketik: 'Rp 750.000', harapan: 750_000 },
 ];
-const KASUS_DITOLAK = ['', '25.5', 'abc', '12.34', '1.5000'];
+const KASUS_DITOLAK = ['', '25.5', 'abc', '12.34', '1.5000', '25,5', '-50000', '12,34'];
 
 async function tulisan(hal) {
   return hal.evaluate(() =>
@@ -221,13 +221,13 @@ for (const ketik of KASUS_DITOLAK) {
     await hal.getByLabel('Saldo awal kas').fill(ketik);
     const tombol = mulaiShift(hal);
     assert.equal(await tombol.isDisabled(), true, `"${ketik}" membuat Mulai Shift menyala — bacaRupiah mengembalikan null untuknya`);
+    /* ⛔ Yang diketik TETAP terlihat apa adanya: "25,5" tidak boleh diam-diam menjadi "255" (10×),
+       "-50000" tidak boleh kehilangan minus, "abc" tidak boleh lenyap jadi kolom kosong. */
+    assert.equal(await hal.getByLabel('Saldo awal kas').inputValue(), ketik, `kolom mengubah "${ketik}" diam-diam sebelum dibaca bacaRupiah`);
     const idAlasan = await tombol.getAttribute('aria-describedby');
     const alasan = idAlasan && (await hal.evaluate((id) => document.getElementById(id)?.textContent.trim() ?? null, idAlasan));
-    assert.equal(alasan, 'Isi saldo awal kas.', `alasan nonaktif untuk "${ketik}" bukan "Isi saldo awal kas."`);
-    if (/^\d+\.\d{1,2}$|^\d+\.\d{4,}$/.test(ketik)) {
-      const teks = await hal.locator('.kasir-shift-kartu').innerText();
-      assert.match(teks, /Masukkan rupiah utuh, tanpa desimal\./, `"${ketik}" ditolak tanpa petunjuk desimal`);
-    }
+    const harapanAlasan = ketik === '' ? 'Isi saldo awal kas.' : 'Masukkan rupiah utuh, tanpa desimal.';
+    assert.equal(alasan, harapanAlasan, `alasan nonaktif untuk "${ketik}" bukan "${harapanAlasan}" (kosong dan bentuk tidak sah harus terbedakan)`);
     await tombol.click({ force: true }).catch(() => {});
     await hal.waitForTimeout(200);
     const t = await tulisan(hal);

@@ -229,3 +229,10 @@ test('⛔ K-01: perangkat yang belum terdaftar disebut belum terdaftar, bukan ko
   await hal.close();
   assert.equal(u.sub, 'Perangkat belum terdaftar', `subjudul "${u.sub}" untuk perangkat tanpa device_config`);
 });
+
+test('⛔ K-01: device_config yang GAGAL dibaca disebut "Perangkat tidak terbaca", bukan "belum terdaftar"', async () => {
+  const hal = await bukaK01Keadaan('normal&gagalBacaPerangkat=1');
+  const u = await ukurKepala(hal);
+  await hal.close();
+  assert.equal(u.sub, 'Perangkat tidak terbaca', `subjudul "${u.sub}" saat pembacaan device_config melempar`);
+});

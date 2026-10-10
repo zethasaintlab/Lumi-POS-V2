@@ -156,15 +156,15 @@ export function BukaShift() {
               awalan="Rp"
               inputMode="numeric"
               value={saldoTeks}
-              /* Digit dan titik DIPERTAHANKAN apa adanya; yang menafsirkannya
-                 `bacaRupiah` (menerima `1.500.000`, menolak `25.5`). Memformat
-                 ulang sambil mengetik akan menjadi pemformat KEDUA. */
+              /* ⛔ Teks disimpan APA ADANYA, tanpa saringan: koma dan minus yang
+                 dibuang diam-diam mengubah "25,5" menjadi 255 (10×) dan "-50000"
+                 menjadi 50000. Yang menafsirkan atau menolak hanya `bacaRupiah`
+                 (menerima `1.500.000`, `Rp 750.000`; menolak `25.5`, `25,5`, `abc`). */
               onChange={(v) => {
-                setSaldoTeks(v.replace(/[^\d.]/g, ''));
+                setSaldoTeks(v);
                 setGalat(null);
               }}
               placeholder="0"
-              hint={saldoTeks !== '' && saldoTidakSah ? 'Masukkan rupiah utuh, tanpa desimal.' : undefined}
             />
           </div>
 
@@ -197,7 +197,8 @@ export function BukaShift() {
           <div>
             {saldoTidakSah && (
               <p id="bukashift-mulai-alasan" className="t-caption">
-                Isi saldo awal kas.
+                {/* Kosong dan bentuk tidak sah adalah dua kabar berbeda. */}
+                {saldoTeks.trim() === '' ? 'Isi saldo awal kas.' : 'Masukkan rupiah utuh, tanpa desimal.'}
               </p>
             )}
             <p className="t-caption kasir-login-sub">
