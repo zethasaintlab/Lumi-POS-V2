@@ -470,7 +470,7 @@ export function kolomPerTabel(sqlText: string): Record<string, string[]> {
     // Nama tabel boleh dikutip -- `"order"` dan `"check"` adalah kata kunci
     // SQL. Parser yang melewatkannya membuat `put` untuk order kehilangan
     // seluruh kolomnya, dan penjualan turun kosong tanpa satu pun error.
-    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s*\(/i.exec(p);
+    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z0-9_]+)"?\s*\(/i.exec(p);
     if (!m) continue;
 
     const buka = p.indexOf('(');
@@ -479,7 +479,7 @@ export function kolomPerTabel(sqlText: string): Record<string, string[]> {
     for (const bagian of bagiKolom(p.slice(buka + 1, tutup))) {
       const t = bagian.trim();
       if (t.length === 0 || AWALAN_BATASAN.test(t)) continue;
-      const nama = /^"?([a-z_]+)"?/i.exec(t);
+      const nama = /^"?([a-z0-9_]+)"?/i.exec(t);
       if (nama) kolom.push(nama[1]);
     }
     hasil[m[1]] = kolom;
@@ -551,7 +551,7 @@ function fnv1a(kanonik: string): string {
 export function batasanNotNull(sqlText: string): Record<string, string[]> {
   const hasil: Record<string, string[]> = {};
   for (const p of pecahPernyataan(sqlText)) {
-    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s*\(/i.exec(p);
+    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z0-9_]+)"?\s*\(/i.exec(p);
     if (!m) continue;
 
     const buka = p.indexOf('(');
@@ -561,7 +561,7 @@ export function batasanNotNull(sqlText: string): Record<string, string[]> {
       const t = bagian.trim();
       if (t.length === 0 || AWALAN_BATASAN.test(t)) continue;
       if (!/\bNOT\s+NULL\b/i.test(t)) continue;
-      const nama = /^"?([a-z_]+)"?/i.exec(t);
+      const nama = /^"?([a-z0-9_]+)"?/i.exec(t);
       if (nama) wajib.push(nama[1]);
     }
     hasil[m[1]] = wajib;

@@ -290,7 +290,7 @@ function kolomPerTabel() {
   for (const berkas of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
     const sql = readFileSync(join(dir, berkas), 'utf8').replace(/\r\n?/g, '\n');
     for (const m of sql.matchAll(/CREATE TABLE\s+"?(\w+)"?\s*\(([^]*?)\n\)/g)) {
-      for (const k of m[2].matchAll(/^\s{2}"?([a-z_]+)"?\s+[a-z]/gim)) tambah(m[1], k[1]);
+      for (const k of m[2].matchAll(/^\s{2}"?([a-z0-9_]+)"?\s+[a-z]/gim)) tambah(m[1], k[1]);
     }
     // ⛔ SATU pernyataan `ALTER TABLE` dapat menambah BEBERAPA kolom, dipisah
     // koma — bentuk yang dipakai 0031 (`discount_threshold_percent` +
@@ -307,7 +307,7 @@ function kolomPerTabel() {
     // Bentuknya sekarang dua langkah: potong per pernyataan, lalu cari SETIAP
     // `ADD COLUMN` di dalamnya.
     for (const m of sql.matchAll(/ALTER TABLE\s+"?(\w+)"?([^]*?);/g)) {
-      for (const k of m[2].matchAll(/ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?/gi)) {
+      for (const k of m[2].matchAll(/ADD COLUMN\s+(?:IF NOT EXISTS\s+)?"?([a-z0-9_]+)"?/gi)) {
         tambah(m[1], k[1]);
       }
     }
@@ -322,7 +322,7 @@ function kolomDiminta(q) {
   return m[1]
     .split(',')
     .map((x) => x.trim().replace(/^[a-z]+\./i, ''))
-    .filter((x) => /^[a-z_]+$/.test(x) && x !== '*');
+    .filter((x) => /^[a-z0-9_]+$/.test(x) && x !== '*');
 }
 
 test('pembaca kolom melihat CREATE TABLE **dan** ALTER TABLE ADD COLUMN', () => {
@@ -413,13 +413,12 @@ const KOLOM_TIDAK_DITURUNKAN = {
   'order.recorded_at': 'jam server; lokal NULL sampai kelak dibutuhkan',
   'order_line.cost_at_sale': '⛔ FR-F5: tidak PERNAH turun; lokal menulis 0',
   'payment.check_id': 'ditulis lokal; stream payment tidak membutuhkannya',
-  'payment.card_last': 'BUG PARSER DILAPORKAN: kolomPerTabel memotong digit — kolom asli card_last4. Belum diperbaiki (di luar Task 11)',
+  'payment.card_last4': 'TIDAK turun (sync-config.yaml § payment): tidak membawa sisa data kartu ke tablet',
   'payment.card_brand': 'ditulis lokal; tidak ditampilkan dari unduhan',
   'payment.acquirer': 'ditulis lokal; tidak ditampilkan dari unduhan',
   'payment.mdr_estimated': 'estimasi MDR ditulis lokal; laporan memakai server',
   'refund.recorded_at': 'jam server',
   'refund.hlc': 'ditulis lokal',
-  'item_image.data_base': 'BUG PARSER DILAPORKAN: kolomPerTabel memotong digit — kolom asli data_base64, yang TURUN. Belum diperbaiki (di luar Task 11)',
 };
 
 function kolomSelectPerTabel() {
