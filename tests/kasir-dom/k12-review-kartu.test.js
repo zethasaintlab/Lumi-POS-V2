@@ -4,8 +4,9 @@
 //
 // Fase 3.10 rebuild UI kasir (`docs/RENCANA-REBUILD-UI.md`). BANDING § K-12:
 // "Dua kartu berdampingan … dapat dikejar: tata letak dua kartu cocok untuk
-// tahap `review`". Rincian saldo di kartu kiri, selisih + alasan di kartu
-// kanan.
+// tahap `review`". Rincian saldo di kartu kiri; sejak keputusan kampanye
+// Hidupkan desain (keputusan bawaan #1, 28 Sep 2026) selisih + alasan ikut kartu
+// Rekonsiliasi kiri dan kartu kanan = Ringkasan shift.
 //
 // ⛔ HANYA tahap `review`. Tahap `hitung` tetap hitungan buta (FR-D2,
 // `k12-hitungan-buta.test.js`): mockup menaruh rekonsiliasi dan input di satu
@@ -115,32 +116,44 @@ const ukur = (hal) =>
     const diharapkan = cari('Kas diharapkan');
     const selisih = konten.querySelector('.kasir-selisih');
     const alasan = [...konten.querySelectorAll('legend')].find((l) => l.textContent.trim() === 'Alasan selisih');
+    const judulKiri = [...konten.querySelectorAll('h2')].find((h) => h.textContent.trim() === 'Rekonsiliasi kas');
+    const judulKanan = [...konten.querySelectorAll('h2')].find((h) => h.textContent.trim() === 'Ringkasan shift');
     const kiri = kartuDari(diharapkan);
-    const kanan = kartuDari(selisih);
+    const kanan = kartuDari(judulKanan);
     const r = (e) => e && (({ left, right, top }) => ({ l: Math.round(left), r: Math.round(right), t: Math.round(top) }))(e.getBoundingClientRect());
     return {
-      ada: { diharapkan: Boolean(diharapkan), selisih: Boolean(selisih), alasan: Boolean(alasan) },
+      ada: {
+        diharapkan: Boolean(diharapkan),
+        selisih: Boolean(selisih),
+        alasan: Boolean(alasan),
+        judulKiri: Boolean(judulKiri),
+        judulKanan: Boolean(judulKanan),
+      },
+      judulKiriDiKiri: Boolean(judulKiri && kiri && kiri.contains(judulKiri)),
+      selisihDiKiri: Boolean(selisih && kiri && kiri.contains(selisih)),
       kiri: r(kiri),
       kanan: r(kanan),
       berbeda: kiri !== null && kanan !== null && kiri !== kanan,
-      alasanDiKanan: Boolean(alasan && kanan && kanan.contains(alasan)),
+      alasanDiKiri: Boolean(alasan && kiri && kiri.contains(alasan)),
     };
   });
 
 for (const keadaan of ['normal', 'offline']) {
-  test(`⛔ ${keadaan}: review dalam dua kartu — rincian kiri, selisih + alasan kanan`, async (t) => {
+  test(`⛔ ${keadaan}: review dalam dua kartu — Rekonsiliasi kas kiri (rincian, selisih, alasan), Ringkasan shift kanan`, async (t) => {
     const { hal, galat } = await bukaReview(keadaan);
     const u = await ukur(hal);
     await hal.close();
     t.diagnostic(JSON.stringify(u));
     assert.deepEqual(galat, []);
     /* SENTINEL: review yang PENUH benar-benar tercapai. */
-    assert.deepEqual(u.ada, { diharapkan: true, selisih: true, alasan: true }, 'tahap review penuh tidak tercapai');
+    assert.deepEqual(u.ada, { diharapkan: true, selisih: true, alasan: true, judulKiri: true, judulKanan: true }, 'tahap review penuh tidak tercapai');
     assert.ok(u.kiri, 'rincian saldo tidak di dalam kartu');
-    assert.ok(u.kanan, 'panel selisih tidak di dalam kartu');
-    assert.ok(u.berbeda, 'rincian dan selisih berada di kartu yang SAMA');
-    assert.ok(u.kanan.l > u.kiri.r, 'kartu selisih tidak di kanan kartu rincian');
+    assert.ok(u.kanan, '"Ringkasan shift" tidak di dalam kartu');
+    assert.ok(u.berbeda, 'Rekonsiliasi dan Ringkasan shift berada di kartu yang SAMA');
+    assert.ok(u.kanan.l > u.kiri.r, 'kartu Ringkasan shift tidak di kanan kartu Rekonsiliasi');
     assert.equal(u.kanan.t, u.kiri.t, 'kedua kartu tidak sejajar di atas');
-    assert.ok(u.alasanDiKanan, 'alasan selisih tidak di kartu kanan');
+    assert.ok(u.judulKiriDiKiri, 'judul "Rekonsiliasi kas" tidak di kartu kiri');
+    assert.ok(u.selisihDiKiri, 'panel selisih tidak di kartu Rekonsiliasi (kiri)');
+    assert.ok(u.alasanDiKiri, 'alasan selisih tidak di kartu Rekonsiliasi (kiri)');
   });
 }

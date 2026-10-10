@@ -1,6 +1,6 @@
 'use strict';
 
-// K-12 tahap REVIEW — "Tutup Kas" terlihat tanpa menggulir.
+// K-12 tahap REVIEW — "Tutup Shift" (dulu "Tutup Kas", keputusan kampanye Hidupkan desain) terlihat tanpa menggulir.
 //
 // ## ⛔ Cacat yang penjaga ini tutup
 //
@@ -133,7 +133,7 @@ async function bukaReview(keadaan) {
      dengan `k03-kepadatan.test.js`. Tanpa ini, `.galeri-bar`+`.galeri-tanya`
      mendorong panggung turun beberapa ratus piksel dari puncak jendela, dan
      `getBoundingClientRect().bottom <= innerHeight` (dibandingkan terhadap
-     JENDELA, bukan terhadap `.kasir-konten`) salah menuduh "Tutup Kas" di
+     JENDELA, bukan terhadap `.kasir-konten`) salah menuduh "Tutup Shift" di
      luar layar padahal yang menggeser hanya chrome galerinya sendiri. */
   await hal.addStyleTag({
     content:
@@ -154,7 +154,7 @@ async function bukaReview(keadaan) {
 
 // ---------------------------------------------------------------------------
 
-test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenario', async (t) => {
+test('⛔ "Tutup Shift" terlihat tanpa menggulir di tahap review, di kedua skenario', async (t) => {
   const pelanggar = [];
   const catatan = [];
 
@@ -174,8 +174,8 @@ test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenari
       const semua = [...document.querySelectorAll('button')].filter(
         (b) => !b.closest('[role="tablist"]')
       );
-      const tombol = semua.find((b) => /^Tutup Kas$/i.test(b.innerText.trim()));
-      if (!tombol) return { err: 'tombol "Tutup Kas" tidak ada' };
+      const tombol = semua.find((b) => /^Tutup Shift$/i.test(b.innerText.trim()));
+      if (!tombol) return { err: 'tombol "Tutup Shift" tidak ada' };
       const b = tombol.getBoundingClientRect();
       const aksiBawah = document.querySelector('.kasir-aksi-bawah');
       const header = document.querySelector('.kasir-header');
@@ -203,22 +203,22 @@ test('⛔ "Tutup Kas" terlihat tanpa menggulir di tahap review, di kedua skenari
 
     if (ukur.bawahTombol > ukur.tinggiJendela) {
       pelanggar.push(
-        `  ${keadaan}: "Tutup Kas" berakhir di ${ukur.bawahTombol}px sementara jendela ` +
+        `  ${keadaan}: "Tutup Shift" berakhir di ${ukur.bawahTombol}px sementara jendela ` +
           `berhenti di ${ukur.tinggiJendela}px — ${ukur.bawahTombol - ukur.tinggiJendela}px ` +
           'di luar layar.'
       );
     }
     if (ukur.tinggiTombol < 56) {
       pelanggar.push(
-        `  ${keadaan}: tinggi "Tutup Kas" ${ukur.tinggiTombol}px, di bawah 56px yang ` +
+        `  ${keadaan}: tinggi "Tutup Shift" ${ukur.tinggiTombol}px, di bawah 56px yang ` +
           'aturan design system #3 tuntut untuk aksi menyangkut uang.'
       );
     }
     if (!ukur.diAksiBawah) {
-      pelanggar.push(`  ${keadaan}: "Tutup Kas" tidak berada di dalam \`.kasir-aksi-bawah\`.`);
+      pelanggar.push(`  ${keadaan}: "Tutup Shift" tidak berada di dalam \`.kasir-aksi-bawah\`.`);
     }
     if (ukur.diHeader) {
-      pelanggar.push(`  ${keadaan}: "Tutup Kas" bocor ke dalam \`.kasir-header\`.`);
+      pelanggar.push(`  ${keadaan}: "Tutup Shift" bocor ke dalam \`.kasir-header\`.`);
     }
   }
 
