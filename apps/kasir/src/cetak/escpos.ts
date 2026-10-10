@@ -172,14 +172,17 @@ function duaKolom(kiri: string, kanan: string, lebar: number): string {
  * kolom selesai. `teks` tepat/maksimal `charsPerLine` kolom; perataan tengah
  * TIDAK dipadatkan dengan spasi (printer: `ESC a`, pratinjau: `text-align`).
  */
-export type BarisTataLetak = { teks: string; rata: Perataan; tebal: boolean } | { garis: true };
+export type BarisTataLetak =
+  | { teks: string; rata: Perataan; tebal: boolean }
+  /** Garis pemisah; `teks` = `'-'` × `charsPerLine`, supaya printer dan pratinjau membaca SATU sumber. */
+  | { garis: true; teks: string };
 
 /** Satu kelompok per `BarisStruk` — kelompok menentukan kapan kode ESC dipasang. */
 function kelompokTataLetak(dok: ReceiptDocument, profil: PrinterProfile): BarisTataLetak[][] {
   const lebar = profil.charsPerLine;
   return dok.baris.map((b): BarisTataLetak[] => {
     if (b.jenis === 'kosong') return [{ teks: '', rata: 'kiri', tebal: false }];
-    if (b.jenis === 'garis') return [{ garis: true }];
+    if (b.jenis === 'garis') return [{ garis: true, teks: '-'.repeat(lebar) }];
     if (b.jenis === 'duaKolom') {
       return [{ teks: duaKolom(keAscii(b.kiri), keAscii(b.kanan), lebar), rata: 'kiri', tebal: b.tebal === true }];
     }
@@ -202,7 +205,6 @@ export function tataLetakStruk(dok: ReceiptDocument, profil: PrinterProfile): Ba
 
 export function renderEscPos(dok: ReceiptDocument, profil: PrinterProfile): Uint8Array {
   const out: number[] = [];
-  const lebar = profil.charsPerLine;
 
   out.push(...dariHex(profil.initCommand));
 
@@ -210,7 +212,7 @@ export function renderEscPos(dok: ReceiptDocument, profil: PrinterProfile): Uint
     const awal = kelompok[0];
     if (awal === undefined) continue;
     if ('garis' in awal) {
-      out.push(...keByte('-'.repeat(lebar)), LF);
+      out.push(...keByte(awal.teks), LF);
       continue;
     }
 
@@ -219,10 +221,7 @@ export function renderEscPos(dok: ReceiptDocument, profil: PrinterProfile): Uint
     if (awal.rata !== 'kiri') out.push(ESC, 0x61, RATA[awal.rata]);
     if (awal.tebal) out.push(ESC, 0x45, 0x01);
 
-    for (const baris of kelompok) {
-      if ('garis' in baris) continue;
-      out.push(...keByte(baris.teks), LF);
-    }
+    for (const baris of kelompok) out.push(...keByte(baris.teks), LF);
 
     if (awal.tebal) out.push(ESC, 0x45, 0x00);
     // ⛔ Dikembalikan ke kiri SELALU, bukan hanya saat baris berikutnya

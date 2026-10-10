@@ -1025,7 +1025,7 @@
 .kasir-kertas-baris { white-space: pre; min-height: 1lh; text-align: left; }
 .kasir-kertas-baris[data-rata="tengah"] { text-align: center; }
 .kasir-kertas-baris[data-rata="kanan"] { text-align: right; }
-.kasir-kertas-baris[data-tebal] { font-weight: 700; }
+.kasir-kertas-baris[data-tebal="ya"] { font-weight: 700; }
 
 /* K-03 kasir: grid produk + keranjang.
 

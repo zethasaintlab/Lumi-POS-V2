@@ -83,7 +83,7 @@ export function PratinjauStruk({ orderId, onTutup }: { orderId: string; onTutup:
   if (dok === null) {
     return (
       <div className="kasir-pratinjau" data-pratinjau="struk-kosong">
-        <h2 className="t-title">Preview struk</h2>
+        <h2 className="t-title">Pratinjau struk</h2>
         <EmptyState title="Struk tidak tersedia" body="Transaksi ini tidak dapat dibangun ulang menjadi struk." />
         {tutup}
       </div>
@@ -97,7 +97,7 @@ export function PratinjauStruk({ orderId, onTutup }: { orderId: string; onTutup:
       data-lebar={profil.charsPerLine}
       data-dokumen={JSON.stringify(dok, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}
     >
-      <h2 className="t-title">Preview struk</h2>
+      <h2 className="t-title">Pratinjau struk</h2>
       <div className="kasir-pratinjau-toggle" role="group" aria-label="Lebar kertas">
         {(['58', '80'] as const).map((w) => (
           <button
@@ -112,24 +112,22 @@ export function PratinjauStruk({ orderId, onTutup }: { orderId: string; onTutup:
         ))}
       </div>
 
+      <p className="t-caption kasir-login-sub">
+        Lebar ini hanya untuk pratinjau. Struk dicetak sesuai printer yang terpasang.
+      </p>
+
       <div className="kasir-kertas" aria-label="Pratinjau struk">
-        {baris.map((b, i) =>
-          'garis' in b ? (
-            <div key={i} className="kasir-kertas-baris" data-struk-baris="">
-              {'-'.repeat(profil.charsPerLine)}
-            </div>
-          ) : (
-            <div
-              key={i}
-              className="kasir-kertas-baris"
-              data-struk-baris=""
-              data-rata={b.rata}
-              data-tebal={b.tebal ? 'ya' : undefined}
-            >
-              {b.teks}
-            </div>
-          )
-        )}
+        {baris.map((b, i) => (
+          <div
+            key={i}
+            className="kasir-kertas-baris"
+            data-struk-baris=""
+            data-rata={'garis' in b ? 'kiri' : b.rata}
+            data-tebal={'garis' in b ? 'tidak' : b.tebal ? 'ya' : 'tidak'}
+          >
+            {b.teks}
+          </div>
+        ))}
       </div>
 
       {pesan && (

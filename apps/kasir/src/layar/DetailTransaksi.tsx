@@ -260,7 +260,7 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
       <Tombol onClick={() => setPratinjau(true)}>Pratinjau struk</Tombol>
 
       {pratinjau && (
-        <LatarDialog label="Preview struk" onBatal={() => setPratinjau(false)}>
+        <LatarDialog label="Pratinjau struk" onBatal={() => setPratinjau(false)}>
           <PratinjauStruk orderId={order.id} onTutup={() => setPratinjau(false)} />
         </LatarDialog>
       )}

@@ -270,7 +270,7 @@ test('render bersifat MURNI — dokumen yang sama menghasilkan byte yang sama', 
 // ---------------------------------------------------------------------------
 // G-STRUK (spec § 11) — pratinjau tidak dapat menyimpang dari byte yang dicetak.
 
-/** Byte → baris teks: urutan ESC/GS dan perintah profil dibuang, dipecah di LF. */
+/** Byte → baris {teks, rata, tebal}: ESC a n / ESC E n dilacak sebagai KEADAAN printer, per baris. */
 function teksDariByte(bytes, profil) {
   const dariHex = (h) => h.trim().split(/\s+/).filter(Boolean).map((x) => parseInt(x, 16));
   let b = [...bytes];
@@ -282,14 +282,19 @@ function teksDariByte(bytes, profil) {
   lepas(dariHex(profil.initCommand), true);
   if (profil.hasCutter) lepas(dariHex(profil.cutCommand), false);
   lepas(dariHex(profil.drawerCommand), false);
+  const RATA = ['kiri', 'tengah', 'kanan'];
+  let rata = 'kiri';
+  let tebal = false;
   let teks = '';
+  const hasil = [];
   for (let i = 0; i < b.length; i++) {
-    if (b[i] === 0x1b && (b[i + 1] === 0x61 || b[i + 1] === 0x45)) { i += 2; continue; }
+    if (b[i] === 0x1b && b[i + 1] === 0x61) { rata = RATA[b[i + 2]]; i += 2; continue; }
+    if (b[i] === 0x1b && b[i + 1] === 0x45) { tebal = b[i + 2] === 1; i += 2; continue; }
+    if (b[i] === 0x0a) { hasil.push({ teks, rata, tebal }); teks = ''; continue; }
     teks += String.fromCharCode(b[i]);
   }
-  const baris = teks.split('\n');
-  assert.equal(baris.pop(), '', 'byte tidak diakhiri LF');
-  return baris;
+  assert.equal(teks, '', 'byte tidak diakhiri LF');
+  return hasil;
 }
 
 const DOK_G_STRUK = {
@@ -302,6 +307,8 @@ const DOK_G_STRUK = {
     { jenis: 'duaKolom', kiri: '2× Kopi Susu Gula Aren Dingin Ukuran Besar', kanan: 'Rp 50.000' },
     { jenis: 'duaKolom', kiri: 'Diskon – promo…', kanan: '− Rp 8.000', tebal: true },
     { jenis: 'teks', isi: 'Terima kasih · datang lagi — “ya”', rata: 'kanan' },
+    { jenis: 'teks', isi: 'Catatan tebal kiri yang cukup panjang sampai harus dilipat dua', tebal: true },
+    { jenis: 'teks', isi: 'Tengah panjang yang dilipat menjadi dua baris tengah', rata: 'tengah' },
     { jenis: 'garis' },
   ],
   potong: true,
@@ -312,10 +319,16 @@ for (const [nama, profil] of [['58mm', PROFIL_58], ['80mm', PROFIL_80]]) {
   test(`⛔ G-STRUK: tataLetakStruk SAMA dengan teks yang diturunkan dari byte renderEscPos (${nama})`, async () => {
     const { renderEscPos, tataLetakStruk } = await import(MOD);
     const lebar = profil.charsPerLine;
-    const dariLayout = tataLetakStruk(DOK_G_STRUK, profil).map((b) => ('garis' in b ? '-'.repeat(lebar) : b.teks));
+    const layout = tataLetakStruk(DOK_G_STRUK, profil);
+    const dariLayout = layout.map((b) => b.teks);
+    // Triple {teks, rata, tebal}: atribut printer (ESC a / ESC E) ikut dibandingkan, bukan hanya teks.
+    const tiga = layout.map((b) => ({ teks: b.teks, rata: 'garis' in b ? 'kiri' : b.rata, tebal: 'garis' in b ? false : b.tebal }));
     const dariBytes = teksDariByte(renderEscPos(DOK_G_STRUK, profil), profil);
     assert.ok(dariLayout.length > 8, 'tata letak terlalu pendek — penjaga hampa');
-    assert.deepEqual(dariLayout, dariBytes);
+    for (const r of ['tengah', 'kanan']) assert.ok(tiga.some((t) => t.rata === r), `dokumen uji tanpa baris ${r} — penjaga hampa`);
+    assert.ok(tiga.some((t) => t.tebal && t.rata === 'kiri'), 'dokumen uji tanpa baris tebal-kiri — penjaga hampa');
+    assert.ok(layout.some((b) => 'garis' in b && b.teks === '-'.repeat(lebar)), 'teks garis bukan sumber tunggal');
+    assert.deepEqual(dariBytes, tiga);
     for (const l of dariLayout) assert.ok(l.length <= lebar, `baris ${l.length} > ${lebar}: ${l}`);
     // Dua kolom yang tidak muat: kolom KIRI dipotong, angka kanan utuh.
     assert.ok(dariLayout.some((l) => l.length === lebar && l.endsWith('Rp 50.000')), 'dua kolom tidak dipotong-kiri');

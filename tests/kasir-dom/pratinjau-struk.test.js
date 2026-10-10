@@ -81,11 +81,11 @@ after(async () => {
 });
 
 
-async function bukaPratinjauK09(profil) {
+async function bukaPratinjauK09(query = '') {
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
-  await hal.goto(`${alamat}/harness-galeri.html?layar=K-09&keadaan=normal`, { waitUntil: 'load' });
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-09&keadaan=normal${query}`, { waitUntil: 'load' });
   await hal.getByRole('button', { name: 'Pratinjau struk', exact: true }).click();
   await hal.waitForSelector('[data-pratinjau="struk"] [data-struk-baris]', { timeout: 10_000 });
   return { hal, galat };
@@ -97,23 +97,45 @@ const bacaPratinjau = (hal) =>
     return {
       lebar: Number(p.dataset.lebar),
       dokumen: JSON.parse(p.dataset.dokumen),
+      pressed: [...p.querySelectorAll('[aria-pressed="true"]')].map((e) => e.textContent.trim()),
       baris: [...p.querySelectorAll('[data-struk-baris]')].map((e) => ({
         teks: e.textContent,
         rata: e.dataset.rata ?? null,
+        tebal: e.dataset.tebal === 'ya',
         textAlign: getComputedStyle(e).textAlign,
+        fontWeight: getComputedStyle(e).fontWeight,
       })),
     };
   });
 
+/** Harapan lengkap {teks, rata, tebal} dari tataLetakStruk — garis: kiri, tidak tebal. */
 async function harapan(dokumen, profilNama) {
   const { tataLetakStruk } = await import('../../apps/kasir/src/cetak/escpos.ts');
   const { PROFIL_58MM, PROFIL_80MM } = await import('../../apps/kasir/src/cetak/profil.ts');
   const profil = profilNama === '80' ? PROFIL_80MM : PROFIL_58MM;
-  return tataLetakStruk(dokumen, profil).map((b) => ('garis' in b ? { teks: '-'.repeat(profil.charsPerLine), rata: null } : b));
+  return tataLetakStruk(dokumen, profil).map((b) => ({
+    teks: b.teks,
+    rata: 'garis' in b ? 'kiri' : b.rata,
+    tebal: 'garis' in b ? false : b.tebal,
+  }));
 }
 
-test('⛔ baris pratinjau di DOM = tataLetakStruk untuk dokumen yang sama; toggle 80mm mengubah lebar kolom 32 → 48', async () => {
-  const { hal, galat } = await bukaPratinjauK09();
+const ALIGN = { kiri: ['left', 'start'], tengah: ['center'], kanan: ['right', 'end'] };
+
+function cocokkan(nama, dom, harap) {
+  assert.deepEqual(
+    dom.baris.map(({ teks, rata, tebal }) => ({ teks, rata, tebal })),
+    harap,
+    `${nama}: teks/rata/tebal DOM menyimpang dari tataLetakStruk`
+  );
+  dom.baris.forEach((b, i) => {
+    assert.ok(ALIGN[harap[i].rata].includes(b.textAlign), `${nama} baris ${i}: text-align ${b.textAlign}, harap ${harap[i].rata}`);
+    assert.equal(Number(b.fontWeight) >= 600, harap[i].tebal, `${nama} baris ${i}: font-weight ${b.fontWeight}, tebal harap ${harap[i].tebal}`);
+  });
+}
+
+test('⛔ baris pratinjau di DOM = tataLetakStruk untuk dokumen yang sama (teks, rata, tebal); toggle 80mm mengubah lebar kolom 32 → 48', async () => {
+  const { hal, galat } = await bukaPratinjauK09('&strukPanjang=1');
   const p58 = await bacaPratinjau(hal);
   const e58 = await harapan(p58.dokumen, '58');
   await hal.getByRole('button', { name: '80mm', exact: true }).click();
@@ -124,25 +146,55 @@ test('⛔ baris pratinjau di DOM = tataLetakStruk untuk dokumen yang sama; toggl
   assert.deepEqual(galat, []);
   assert.equal(p58.lebar, 32, 'lebar bawaan galeri (baseline 58mm)');
   assert.equal(p80.lebar, 48);
-  assert.ok(e58.length > 6, 'dokumen terlalu pendek — penjaga hampa');
-  assert.deepEqual(p58.baris.map((b) => b.teks), e58.map((b) => b.teks), 'baris pratinjau 58mm menyimpang dari tataLetakStruk');
-  assert.deepEqual(p80.baris.map((b) => b.teks), e80.map((b) => b.teks), 'baris pratinjau 80mm menyimpang dari tataLetakStruk');
+  assert.ok(e58.length > 8, 'dokumen terlalu pendek — penjaga hampa');
+  // Dokumen uji harus MENYENTUH lipat, potong-kiri, transliterasi, tengah, tebal — diturunkan dari harapan, bukan dari DOM.
+  for (const [nama, e, w] of [['58', e58, 32], ['80', e80, 48]]) {
+    assert.ok(e.some((b) => b.rata === 'tengah'), `${nama}mm: harapan tanpa baris tengah — penjaga hampa`);
+    assert.ok(e.some((b) => b.tebal), `${nama}mm: harapan tanpa baris tebal — penjaga hampa`);
+    assert.ok(e.some((b) => b.teks === '-'.repeat(w)), `${nama}mm: harapan tanpa garis ${w} kolom`);
+  }
+  const namaPanjang = 'Kopi Susu Gula Aren Dingin Ukuran Besar Tanpa Es Tambah Shot Espresso Ekstra Dua';
+  assert.ok(p58.dokumen.baris.some((b) => JSON.stringify(b).includes(namaPanjang)), 'fixture strukPanjang tidak sampai ke dokumen');
+  // Potong-kiri: nama produk meluap di dua kolom, angka kanan UTUH (bukan "Rp 25.0").
+  assert.ok(e58.some((b) => b.teks.length === 32 && /^\dx Kopi Susu/.test(b.teks) && /29\.000$/.test(b.teks)), 'dua kolom meluap tidak dipotong-kiri di 58mm: ' + JSON.stringify(e58.map((b) => b.teks)));
+  assert.ok(e80.some((b) => b.teks.length === 48 && /^\dx Kopi Susu Gula Aren Dingin Ukuran Besar/.test(b.teks) && /29\.000$/.test(b.teks)), 'dua kolom 80mm: ' + JSON.stringify(e80.map((b) => b.teks)));
+  // Lipat: catatan panjang menjadi >= 2 baris di 58mm (pemesan/catatan dari fixture).
+  assert.ok(e58.filter((b) => /Tanpa gula|es dipisah|sedotan|bungkus|kantong|terpisah/.test(b.teks)).length >= 2, 'catatan panjang tidak terlipat di 58mm: ' + JSON.stringify(e58.map((b) => b.teks)));
+  cocokkan('58mm', p58, e58);
+  cocokkan('80mm', p80, e80);
   assert.ok(p80.baris.some((b) => b.teks.length === 48), 'tidak ada baris selebar 48 kolom');
   assert.ok(p58.baris.every((b) => b.teks.length <= 32) && p80.baris.every((b) => b.teks.length <= 48));
-  // Transliterasi ikut: yang tampil adalah yang TERCETAK, bukan tipografi layar.
   assert.ok([...p58.baris, ...p80.baris].every((b) => /^[\x20-\x7e]*$/.test(b.teks)), 'ada karakter non-ASCII di pratinjau');
+  const semua = [...p58.baris, ...p80.baris];
+  assert.ok(semua.some((b) => /\.\.\./.test(b.teks)), 'transliterasi … → ... tidak terlihat di struk uji');
+  assert.ok(semua.some((b) => /^Diskon +- \d/.test(b.teks)), 'transliterasi − → - tidak terlihat di baris Diskon');
 });
 
-test('⛔ perataan tengah dirender dengan text-align, tidak dipadatkan dengan spasi', async () => {
+test('⛔ baris pertama pratinjau = nama outlet fixture, bukan "LumiPOS"', async () => {
   const { hal } = await bukaPratinjauK09();
   const p = await bacaPratinjau(hal);
   await hal.close();
-  const tengah = p.baris.filter((b) => b.rata === 'tengah');
-  assert.ok(tengah.length > 0, 'dokumen uji tidak punya baris tengah — penjaga hampa');
-  for (const b of tengah) {
-    assert.equal(b.textAlign, 'center', `baris tengah text-align ${b.textAlign}`);
-    assert.equal(b.teks, b.teks.trim(), `baris tengah dipadatkan spasi: ${JSON.stringify(b.teks)}`);
-  }
+  assert.equal(p.baris[0].teks.trim(), 'ORIGEN Menteng');
+  assert.equal(p.baris[0].rata, 'tengah');
+  assert.equal(p.dokumen.baris[0].isi, 'ORIGEN Menteng', 'dokumen yang dikirim ke pratinjau tidak diawali nama outlet');
+  assert.ok(!p.baris.some((b) => /LumiPOS/.test(b.teks)));
+});
+
+test('⛔ profil 80mm terpilih → lebar bawaan 48 tanpa menekan toggle', async () => {
+  const { hal } = await bukaPratinjauK09('&profil80=1');
+  const p = await bacaPratinjau(hal);
+  await hal.close();
+  assert.equal(p.lebar, 48, `data-lebar ${p.lebar} — profil 80mm terpilih, harap 48`);
+  assert.deepEqual(p.pressed, ['80mm']);
+  cocokkan('80mm bawaan', p, await harapan(p.dokumen, '80'));
+});
+
+test('toggle hanya mengubah pratinjau, dan UI menyatakannya', async () => {
+  const { hal } = await bukaPratinjauK09();
+  const t = await hal.$eval('[data-pratinjau="struk"]', (e) => e.textContent);
+  await hal.close();
+  assert.match(t, /hanya untuk pratinjau/);
+  assert.match(t, /Pratinjau struk/);
 });
 
 test('teks pratinjau --font-mono 13px, satu-satunya elemen mono di layar', async () => {

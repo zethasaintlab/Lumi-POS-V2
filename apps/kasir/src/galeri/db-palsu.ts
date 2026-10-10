@@ -189,6 +189,11 @@ export interface OpsiDbPalsu {
   drafQris?: boolean;
   /** `?tahanan=N` (Task 12) — tanam N Pesanan tahan (Americano Hot, harga LAMA Rp 10.000 + diskon Rp 1.000) di shift galeri. */
   tahanan?: number;
+  /** `?strukPanjang=1` (Task 13 fix) — `ord-1` memuat nama produk panjang (lipat + dua kolom meluap di 58 dan 80 mm),
+      `…`, dan diskon (`−`), supaya penjaga G-STRUK menyentuh transliterasi, lipat, dan potong-kiri pada struk sungguhan. */
+  strukPanjang?: boolean;
+  /** `?profil80=1` (Task 13 fix) — profil printer 80 mm (48 kolom) TERPILIH di `device_config`, untuk lebar bawaan pratinjau. */
+  profil80?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -198,7 +203,16 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* `?jumlahGagal=500` — override jumlah item gagal (jalur test header: hitungan 3 digit). */
   if (opsi.jumlahGagal !== undefined) antre.gagal = opsi.jumlahGagal;
   const item = itemUntuk(skenario);
-  const order = orderUntuk(skenario);
+  const order = orderUntuk(skenario).map((o) =>
+    opsi.strukPanjang && o.id === 'ord-1'
+      ? {
+          ...o,
+          order_discount: 5_000,
+          customer_name: 'Bapak Bambang Sutejo Wibisono Kusumawardhana',
+          note: 'Tanpa gula, es dipisah, sedotan kertas… tolong dibungkus rapi dua kantong terpisah',
+        }
+      : o
+  );
 
   /* ⛔ Stok datang dari `stock_movement`, bukan dari kolom `quantity` — itu
      konvensi data repo ini, dan galeri yang memakai kolom karangan akan
@@ -264,7 +278,16 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         ]
       : [],
     order,
-    order_line: barisOrderUntuk(order),
+    order_line: barisOrderUntuk(order).map((b) =>
+      opsi.strukPanjang && b.order_id === 'ord-1'
+        ? {
+            ...b,
+            item_name: b.id.endsWith('l0')
+              ? 'Kopi Susu Gula Aren Dingin Ukuran Besar Tanpa Es Tambah Shot Espresso Ekstra Dua'
+              : 'Matcha Latte Oat Premium Kyoto Uji Ceremonial Grade Extra Panjang…',
+          }
+        : b
+    ),
     /* Campuran metode, bukan tunai seluruhnya: `spec-d:201` memisahkan uang
        laci dari uang bank, dan K-12 yang hanya pernah dilihat dengan tunai
        tidak pernah merender rincian per metode sama sekali. */
@@ -356,6 +379,22 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         drawer_command: null,
         image_support: 0,
       },
+      ...(opsi.profil80
+        ? [
+            {
+              id: 'pp-80',
+              name: 'Epson TM-T82 (80 mm)',
+              paper_width_mm: 80,
+              chars_per_line: 48,
+              codepage: 'cp437',
+              has_cutter: 1,
+              init_command: null,
+              cut_command: null,
+              drawer_command: null,
+              image_support: 0,
+            },
+          ]
+        : []),
     ],
     outlet: [
       {
@@ -445,7 +484,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         outlet_id: 'outlet-1',
         base_url: BASE_URL_TAK_TERJANGKAU,
         token_secret: 'galeri',
-        printer_profile_id: null,
+        printer_profile_id: opsi.profil80 ? 'pp-80' : null,
         peripheral_id: null,
         hlc_teks: '0',
         receipt_sequence: 1,
