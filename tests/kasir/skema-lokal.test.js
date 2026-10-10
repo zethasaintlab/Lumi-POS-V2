@@ -167,3 +167,33 @@ test('T2 nama tabel selalu dikutip di SQL yang dihasilkan', async () => {
   assert.match(def.order.put.sql, /INSERT OR REPLACE INTO "order"/);
   assert.match(def.check.put.sql, /INSERT OR REPLACE INTO "check"/);
 });
+
+// ⛔ Kolom hasil parser dibandingkan dengan SQLite SUNGGUHAN, bukan dengan
+// daftar tulisan tangan. Regex `[a-z_]+` memotong `card_last4` jadi `card_last`
+// dan `data_base64` jadi `data_base`; `put` lalu menulis ke kolom yang tidak
+// ada dan data turun hilang tanpa galat ("nol baris, bukan error").
+test('T2 kolomPerTabel == PRAGMA table_info SQLite untuk SEMUA tabel (termasuk nama berdigit)', async () => {
+  const { DatabaseSync } = require('node:sqlite');
+  const { kolomPerTabel, pecahPernyataan } = await import(SKEMA);
+  const db = new DatabaseSync(':memory:');
+  for (const p of pecahPernyataan(sql())) db.exec(p);
+
+  const parser = kolomPerTabel(sql());
+  const tabel = Object.keys(parser);
+  assert.ok(tabel.length > 20, `hanya ${tabel.length} tabel terbaca`);
+
+  const selisih = [];
+  let diperiksa = 0;
+  for (const t of tabel) {
+    const asli = db.prepare(`PRAGMA table_info("${t}")`).all().map((r) => r.name);
+    diperiksa += asli.length;
+    if (JSON.stringify(asli) !== JSON.stringify(parser[t])) {
+      selisih.push(`${t}: SQLite=[${asli.join(',')}] parser=[${parser[t].join(',')}]`);
+    }
+  }
+  assert.ok(diperiksa > 100, `hanya ${diperiksa} kolom dibandingkan`);
+  assert.deepEqual(selisih, [], `parser menyimpang dari SQLite:\n  ${selisih.join('\n  ')}`);
+  // Kedua kolom yang memicu cacat ini disebut eksplisit agar pesan gagalnya jelas.
+  assert.ok(parser.payment.includes('card_last4'), 'payment.card_last4 terpotong');
+  assert.ok(parser.item_image.includes('data_base64'), 'item_image.data_base64 terpotong');
+});
