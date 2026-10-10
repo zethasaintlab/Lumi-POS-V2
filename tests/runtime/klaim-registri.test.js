@@ -134,8 +134,8 @@ const KLAIM = [
   {
     id: 'ppn-nol-di-fixture',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
-    frasa: '**`ppn` tidak pernah muncul di satu pun fixture. Nol.**',
-    harap: 0,
+    frasa: '**`ppn` muncul di fixture sejak Task 10 (9 Oktober 2026): 2 baris fixture `type: \'ppn\'` di `tests/`.**',
+    harap: 2,
     // ⛔ Ini yang paling penting di registri: ia berubah menjadi bukan-nol
     // tepat pada hari gerbang K-06/K-07 dipenuhi, dan pada hari itu KEDUA
     // dokumen harus ikut berubah.
@@ -145,7 +145,7 @@ const KLAIM = [
     ukur: () =>
       isiSemua(berkasSumber('tests', /\.js$/, { lewati: ['klaim-registri.test.js'] }))
         .join('\n')
-        .split("'ppn'").length - 1,
+        .split("type: 'ppn'").length - 1,
   },
   {
     id: 'kasir-non-tunai',

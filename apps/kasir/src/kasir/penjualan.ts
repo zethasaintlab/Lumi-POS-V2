@@ -22,6 +22,12 @@ import {
   type GalatBayar,
   type KodeGalatBayar,
 } from '../../../../packages/domain/src/pembayaran-manual.ts';
+import {
+  bersihkanTeksPesanan,
+  periksaCatatan,
+  periksaNamaPemesan,
+  periksaNomorMeja,
+} from '../../../../packages/domain/src/data-pesanan.ts';
 import { statusDiskon } from './diskon.ts';
 import { calculateTax, type TaxRateSpec } from '../../../../packages/domain/src/tax.ts';
 import { nomorStruk, tanggalBisnis } from '../../../../packages/domain/src/tanggal-bisnis.ts';
@@ -35,7 +41,7 @@ import type { PrinterProfile } from '../cetak/escpos.ts';
 import { counterpartUntuk, deltaBertanda } from '../../../../packages/domain/src/buku-kas.ts';
 import type { Sesi } from '../identitas/login.ts';
 import type { ShiftAktif } from '../kas/shift.ts';
-import type { Keranjang } from './keranjang.ts';
+import { DATA_PESANAN_KOSONG, type Keranjang } from './keranjang.ts';
 
 /**
  * K-06/K-07 — menyimpan penjualan di perangkat.
@@ -352,6 +358,21 @@ function keTarifSpec(b: BarisTarif): TaxRateSpec {
   };
 }
 
+/** Kanal pesanan; bentuk lama tanpa `kanal` (fixture, keranjang tersimpan) berarti Takeaway. */
+function kanalKeranjang(keranjang: Keranjang): 'dine_in' | 'takeaway' {
+  return keranjang.kanal === 'dine_in' ? 'dine_in' : 'takeaway';
+}
+
+/** Data pesanan keranjang, dipangkas; bentuk lama tanpa `dataPesanan` = semua `null`. */
+function dataPesananBersih(keranjang: Keranjang) {
+  const d = keranjang.dataPesanan ?? DATA_PESANAN_KOSONG;
+  return {
+    namaPemesan: bersihkanTeksPesanan(d.namaPemesan),
+    nomorMeja: bersihkanTeksPesanan(d.nomorMeja),
+    catatan: bersihkanTeksPesanan(d.catatan),
+  };
+}
+
 export interface HitunganKeranjang {
   sekarang: Date;
   outlet: BarisOutlet | null;
@@ -383,16 +404,17 @@ export async function hitungKeranjang({
   keranjang,
   shift,
   waktu,
-  channel = 'takeaway',
 }: {
   db: DbLokal;
   konfig: KonfigPerangkat;
   keranjang: Keranjang;
   shift: ShiftAktif;
   waktu: () => Date;
-  channel?: 'dine_in' | 'takeaway';
 }): Promise<HitunganKeranjang> {
   const sekarang = waktu();
+  // ⛔ Kanal datang dari KERANJANG -- satu sumber untuk K-03, K-06, dan `simpanPenjualan`
+  // (FR-C7). Parameter terpisah memberi dua tempat untuk memutuskan tarif pajak.
+  const channel = kanalKeranjang(keranjang);
   const outlet = (
     await db.getAll<BarisOutlet>(
       `SELECT name, timezone, business_day_ends_at, rounding_increment, rounding_mode, service_charge_rate,
@@ -608,6 +630,15 @@ export function muatanOrder({
     // menembak server sungguhan; test pertama saya justru mengunci
     // bug-nya dengan mengharapkan string.
     total: Number(totals.total),
+    // P5/P6 -- hanya bila diisi: tanpa ketiganya muatan identik dengan klien N-1.
+    ...(() => {
+      const d = dataPesananBersih(keranjang);
+      return {
+        ...(d.namaPemesan !== null ? { customerName: d.namaPemesan } : {}),
+        ...(d.nomorMeja !== null ? { tableNumber: d.nomorMeja } : {}),
+        ...(d.catatan !== null ? { note: d.catatan } : {}),
+      };
+    })(),
     // FR-B8 — dikirim sebagai PERMINTAAN, bukan nominal hasilnya.
     //
     // ⛔ Server menghitung ulang dari subtotal-nya SENDIRI, dan itu yang
@@ -654,7 +685,6 @@ export async function simpanPenjualan({
   waktu,
   idBaru,
   hlc,
-  channel = 'takeaway',
   peripheral,
   printerProfile,
   draf,
@@ -674,7 +704,6 @@ export async function simpanPenjualan({
   waktu: () => Date;
   idBaru: () => string;
   hlc: () => bigint;
-  channel?: 'dine_in' | 'takeaway';
   /**
    * Periferal perangkat ini. Boleh TIDAK ADA — merchant yang menjual lewat
    * QRIS tanpa printer adalah kasus nyata, dan aplikasi berjalan penuh di
@@ -703,7 +732,20 @@ export async function simpanPenjualan({
 }): Promise<HasilPenjualan> {
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
 
-  const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu, channel });
+  // P5/P6 -- aturan yang SAMA dengan server (domain). Diperiksa SEBELUM satu
+  // baris ditulis: nomor kartu di catatan yang lolos di sini berhenti
+  // `gagal-permanen` di antrean berjam-jam kemudian.
+  const dataPesanan = dataPesananBersih(keranjang);
+  const galatData =
+    periksaNamaPemesan(dataPesanan.namaPemesan) ??
+    periksaNomorMeja(dataPesanan.nomorMeja) ??
+    periksaCatatan(dataPesanan.catatan);
+  if (galatData !== null) {
+    return { status: 'pembayaran_tidak_sah', kode: galatData.kode, pesan: galatData.pesan };
+  }
+
+  const hitung = await hitungKeranjang({ db, konfig, keranjang, shift, waktu });
+  const channel = kanalKeranjang(keranjang);
   const { sekarang, outlet, businessDate, lineTotals, statusDsk, orderDiscount, pajak, totals, lacak } =
     hitung;
 
@@ -811,8 +853,9 @@ export async function simpanPenjualan({
       `INSERT INTO "order"
          (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
           status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
-          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+          rounding_adjustment, total, amount_due, created_by, occurred_at, hlc,
+          customer_name, table_number, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         orderId, konfig.tenantId, konfig.outletId, konfig.deviceId, shift.id,
         receiptNumber, businessDate, sequence, channel,
@@ -825,6 +868,7 @@ export async function simpanPenjualan({
         Number(totals.total),
         Number(amountDue),
         sesi.userId, occurredAt, Number(hlcValue),
+        dataPesanan.namaPemesan, dataPesanan.nomorMeja, dataPesanan.catatan,
       ]
     );
 
@@ -1112,6 +1156,7 @@ export async function simpanPenjualan({
       waktu: occurredAt,
       namaKasir: sesi.userId,
       channel,
+      ...dataPesanan,
       baris: keranjang.baris.map((b, i) => ({
         itemName: b.itemName,
         variationName: b.variationName,

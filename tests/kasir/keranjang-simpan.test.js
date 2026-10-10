@@ -67,7 +67,8 @@ function baris(over = {}) {
   };
 }
 
-const KERANJANG = { baris: [baris()], diskon: null };
+const DATA_KOSONG = { namaPemesan: null, nomorMeja: null, catatan: null };
+const KERANJANG = { baris: [baris()], diskon: null, kanal: 'takeaway', dataPesanan: DATA_KOSONG };
 
 const jumlahBaris = (d) => d.sqlite.prepare('SELECT COUNT(*) AS n FROM keranjang_lokal').get().n;
 
@@ -304,4 +305,54 @@ test('⛔ pembersihan yang di-ROLLBACK tidak menghapus keranjang', async () => {
   const pulih = await pulihkanKeranjang(d, 's1');
   assert.equal(pulih.status, 'dipulihkan');
   assert.deepEqual(pulih.keranjang, KERANJANG);
+});
+
+test('kanal dipulihkan; keranjang lama tanpa kanal dipulihkan sebagai takeaway', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+
+  // Dine in ikut tersimpan: kasir yang memuat ulang tab tidak boleh kembali ke
+  // Takeaway diam-diam — tarif pajak dan order.channel berubah tanpa satu pun error.
+  const d = db();
+  await simpanKeranjang(d, 's1', { ...KERANJANG, kanal: 'dine_in' }, JAM);
+  const pulih = await pulihkanKeranjang(d, 's1');
+  assert.equal(pulih.status, 'dipulihkan');
+  assert.equal(pulih.keranjang.kanal, 'dine_in');
+
+  // Baris tertulis versi lama (tanpa `kanal`) dan nilai asing: Takeaway, tanpa membuang keranjangnya.
+  for (const isi of [
+    '{"baris":[{"id":"b1","variationId":"v1","itemName":"K","variationName":"R","unitPrice":20000,"quantityMilli":1000,"modifier":[]}],"diskon":null}',
+    '{"baris":[{"id":"b1","variationId":"v1","itemName":"K","variationName":"R","unitPrice":20000,"quantityMilli":1000,"modifier":[]}],"diskon":null,"kanal":"delivery"}',
+  ]) {
+    const lama = db();
+    lama.sqlite
+      .prepare('INSERT INTO keranjang_lokal (id, shift_id, isi, diperbarui_pada) VALUES (?,?,?,?)')
+      .run('kini', 's1', isi, '2026-08-24T10:00:00Z');
+    const hasil = await pulihkanKeranjang(lama, 's1');
+    assert.equal(hasil.status, 'dipulihkan', isi);
+    assert.equal(hasil.keranjang.kanal, 'takeaway', isi);
+  }
+});
+
+// P5/P6 (migrasi 0037). Nama, meja, dan catatan ikut keranjang yang bertahan:
+// kasir yang memuat ulang tab tidak mengetik ulang nama pelanggan di depannya.
+test('⛔ data pesanan bertahan melewati muat ulang; keranjang lama tanpa field → semua null', async () => {
+  const { simpanKeranjang, pulihkanKeranjang } = await import(MOD);
+  const d = db();
+  const isi = { ...KERANJANG, dataPesanan: { namaPemesan: 'Budi', nomorMeja: 'A-12', catatan: 'tanpa es' } };
+  await simpanKeranjang(d, 's1', isi, JAM);
+  assert.deepEqual((await pulihkanKeranjang(d, 's1')).keranjang.dataPesanan, isi.dataPesanan);
+
+  // Baris tersimpan versi lama: tidak punya `dataPesanan` sama sekali.
+  d.sqlite.prepare('UPDATE keranjang_lokal SET isi = ?').run(
+    JSON.stringify({ baris: [baris()], diskon: null, kanal: 'takeaway' })
+  );
+  const lama = await pulihkanKeranjang(d, 's1');
+  assert.equal(lama.status, 'dipulihkan');
+  assert.deepEqual(lama.keranjang.dataPesanan, DATA_KOSONG);
+
+  // Bentuk rusak (angka, objek) → null, bukan keranjang dibuang.
+  d.sqlite.prepare('UPDATE keranjang_lokal SET isi = ?').run(
+    JSON.stringify({ baris: [baris()], diskon: null, dataPesanan: { namaPemesan: 5, nomorMeja: {}, catatan: ' ' } })
+  );
+  assert.deepEqual((await pulihkanKeranjang(d, 's1')).keranjang.dataPesanan, DATA_KOSONG);
 });

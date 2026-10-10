@@ -433,3 +433,61 @@ test('nilai number (bukan bigint) ditolak -- float tidak boleh masuk jalur pajak
     /bigint/i
   );
 });
+
+// --- Task 10 (PR 2C): fixture #1 `uang-pembayaran-kas.md` § "tiga fixture" ---
+
+// ⛔ `tax_rate.type = 'ppn'` 11% — jenis pajak yang paling banyak dipakai
+// merchant Indonesia dan NOL di fixture sebelum Task 10. `TaxRateSpec` tidak
+// membawa `type` (hanya kolom DB), jadi yang dibuktikan di sini adalah angka:
+// rate 1100 berskala 10.000. Nilai harapan ditulis tangan, bukan dihitung
+// ulang dengan rumus yang sama.
+const PPN_11 = {
+  id: 'rate-ppn-11',
+  name: 'PPN 11%',
+  rateScaled: 1100n,
+  isInclusive: false,
+  jurisdiction: 'ID',
+  outletId: null,
+  channel: 'all',
+  appliesTo: 'all_items',
+  appliesToIds: [],
+};
+
+test('⛔ fixture #1: tax_rate type ppn 11% (rate 1100 berskala 10.000) dihitung TaxCalculator', async () => {
+  const { calculateTax } = await import(MOD);
+  const masuk = (rate, lines, orderDiscount = 0n) => ({
+    lines, serviceChargeAmount: 0n, orderDiscount,
+    taxRates: [rate], channel: 'takeaway', outletId: 'outlet-1',
+  });
+
+  // Eksklusif: 100.000 x 11% = 11.000, ditambahkan ke total.
+  const eks = calculateTax(masuk(PPN_11, [baris('a', 100000n)]));
+  assert.equal(eks.totalTax, 11000n);
+  assert.equal(eks.totalTaxExclusive, 11000n);
+  assert.equal(eks.lines[0].name, 'PPN 11%');
+  assert.equal(eks.lines[0].rateScaled, 1100n);
+
+  // Eksklusif + diskon order 10.000: dasar 90.000 x 11% = 9.900.
+  const eksDiskon = calculateTax(masuk(PPN_11, [baris('a', 60000n), baris('b', 40000n)], 10000n));
+  assert.equal(eksDiskon.lines[0].base, 90000n);
+  assert.equal(eksDiskon.totalTax, 9900n);
+  assert.equal(eksDiskon.totalTaxExclusive, 9900n);
+
+  // Inklusif: 111.000 berisi 100.000 + 11.000. Total TIDAK bertambah.
+  const inkl = { ...PPN_11, isInclusive: true };
+  const inklusif = calculateTax(masuk(inkl, [baris('a', 111000n)]));
+  assert.equal(inklusif.totalTax, 11000n);
+  assert.equal(inklusif.totalTaxExclusive, 0n);
+
+  // Inklusif + diskon order 11.000: dasar 100.000 → 100.000 − round(100.000/1,11)
+  // = 100.000 − 90.090 = 9.910.
+  const inklDiskon = calculateTax(masuk(inkl, [baris('a', 111000n)], 11000n));
+  assert.equal(inklDiskon.lines[0].base, 100000n);
+  assert.equal(inklDiskon.totalTax, 9910n);
+  assert.equal(inklDiskon.totalTaxExclusive, 0n);
+
+  // Tepi pembulatan (half-up, bukan floor): 100.050 x 11% = 11.005,5 -> 11.006;
+  // inklusif 125.000: 125.000/1,11 = 112.612,61 -> 112.613, jadi pajaknya 12.387.
+  assert.equal(calculateTax(masuk(PPN_11, [baris('a', 100050n)])).totalTax, 11006n);
+  assert.equal(calculateTax(masuk(inkl, [baris('a', 125000n)])).totalTax, 12387n);
+});

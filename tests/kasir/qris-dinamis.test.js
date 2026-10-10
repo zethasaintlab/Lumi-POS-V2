@@ -433,6 +433,16 @@ test('⛔ drafCocokKeranjang: keranjang yang sama cocok; qty, harga, baris tamba
   assert.equal(drafCocokKeranjang(tersimpan, KERANJANG, null), false, 'total tak diketahui dianggap cocok');
 });
 
+test('⛔ drafCocokKeranjang: draf takeaway + keranjang dine_in (tarif dan total SAMA) TIDAK cocok — kanal ikut dibandingkan (fix round 1 Task 10)', async () => {
+  const { mintaQr, pulihkanDraf, drafCocokKeranjang } = await import(MOD);
+  const d = db();
+  const kirim = pengirim({ '/payments': { status: 201, body: { qrString: 'QR' } } });
+  await mintaQr(argMinta(draf(), { db: d, kirim }));
+  const tersimpan = await pulihkanDraf(d, 's1');
+  assert.equal(tersimpan.muatan.channel, 'takeaway', 'fixture: draf bukan takeaway');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'takeaway' }, 22000n), true, 'pembanding hampa: kanal sama dianggap berbeda');
+  assert.equal(drafCocokKeranjang(tersimpan, { ...KERANJANG, kanal: 'dine_in' }, 22000n), false, 'kanal berbeda dianggap cocok — order.channel tersimpan lain dari yang ditagih');
+});
 
 // ---------------------------------------------------------------------------
 // ⛔ Fix round 2 Task 9 — celah penjaga yang sabotase independen temukan

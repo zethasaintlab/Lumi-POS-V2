@@ -379,3 +379,84 @@ test('⛔ setiap kolom yang di-SELECT ada di skema PostgreSQL', () => {
       hilang.join('\n  ')
   );
 });
+
+// P5/P6 (migrasi 0037). Kolom yang tidak ada di SELECT tidak pernah turun: K-08
+// dan cetak ulang di perangkat yang membangun ulang riwayat kehilangan "Atas
+// nama", "Meja", dan "Catatan" tanpa satu pun error.
+test('⛔ SELECT order menurunkan customer_name, table_number, note', () => {
+  const q = kueri().find((s) => /FROM "order"\s*(WHERE|$)/.test(s));
+  assert.ok(q, 'query riwayat atas "order" tidak ditemukan');
+  for (const kolom of ['customer_name', 'table_number', 'note']) {
+    assert.match(q, new RegExp(`\\b${kolom}\\b`), `${kolom} tidak ada di SELECT "order"`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Penjaga drift UMUM: setiap kolom raw table lokal harus DITURUNKAN oleh sync
+// rules, atau tercatat di daftar pengecualian dengan alasan. Kolom yang hilang
+// dari SELECT tidak pernah error: ia hanya tidak pernah terisi di perangkat
+// (ditemukan lewat sabotase Task 11 — hanya penjaga khusus tiga kolom yang merah).
+
+/** Tabel raw yang TIDAK punya query turun sama sekali: ditulis perangkat, naik lewat outbox. */
+const TABEL_TANPA_TURUN = {
+  stock_movement: 'ditulis lokal (penjualan), naik lewat outbox; tidak ada stream turun',
+  sold_out_flag: 'ditulis lokal, naik lewat outbox; penyebaran antar perangkat v1.1',
+  cash_drawer_shift: 'ditulis lokal (shift), naik lewat outbox',
+  cash_movement: 'ditulis lokal, naik lewat outbox',
+  audit_event: 'ditulis lokal, naik lewat outbox',
+};
+
+/** Kolom lokal yang SAH tidak ada di SELECT. Satu alasan per entri. */
+const KOLOM_TIDAK_DITURUNKAN = {
+  'order.owned_by_device_id': 'order open KEP-21 tidak dipakai v1; kolom hanya di server',
+  'order.created_by': 'ditulis lokal; tidak dibaca K-08/cetak ulang dari hasil unduhan',
+  'order.recorded_at': 'jam server; lokal NULL sampai kelak dibutuhkan',
+  'order_line.cost_at_sale': '⛔ FR-F5: tidak PERNAH turun; lokal menulis 0',
+  'payment.check_id': 'ditulis lokal; stream payment tidak membutuhkannya',
+  'payment.card_last4': 'TIDAK turun (sync-config.yaml § payment): tidak membawa sisa data kartu ke tablet',
+  'payment.card_brand': 'ditulis lokal; tidak ditampilkan dari unduhan',
+  'payment.acquirer': 'ditulis lokal; tidak ditampilkan dari unduhan',
+  'payment.mdr_estimated': 'estimasi MDR ditulis lokal; laporan memakai server',
+  'refund.recorded_at': 'jam server',
+  'refund.hlc': 'ditulis lokal',
+};
+
+function kolomSelectPerTabel() {
+  const per = {};
+  for (const s of kueri()) {
+    const m = /^SELECT\s+(.*?)\s+FROM\s+"?(\w+)"?/s.exec(s);
+    if (!m) continue;
+    const kolom = m[1].split(',').map((c) => c.trim().replace(/^\w+\./, '').split(/\s+as\s+/i).pop());
+    (per[m[2]] ??= new Set());
+    for (const c of kolom) per[m[2]].add(c);
+  }
+  return per;
+}
+
+test('⛔ setiap kolom raw table lokal diturunkan sync rules, atau tercatat di pengecualian dengan alasan', async () => {
+  const { kolomPerTabel, TABEL_RAW } = await import('../../apps/kasir/src/lokal/skema.ts');
+  const lokal = kolomPerTabel(readFileSync(resolve(__dirname, '../../db/local/001-initial.sql'), 'utf8'));
+  const select = kolomSelectPerTabel();
+  assert.ok(Object.keys(select).length >= 10, 'parser SELECT per tabel tidak melihat query');
+
+  const drift = [];
+  for (const tabel of TABEL_RAW) {
+    if (select[tabel] === undefined) {
+      assert.ok(TABEL_TANPA_TURUN[tabel], `raw table ${tabel} tidak punya query turun dan tidak ada di TABEL_TANPA_TURUN`);
+      continue;
+    }
+    assert.equal(TABEL_TANPA_TURUN[tabel], undefined, `${tabel} punya query turun tetapi masih di TABEL_TANPA_TURUN`);
+    if (select[tabel].has('*')) continue;
+    for (const kolom of lokal[tabel]) {
+      if (!select[tabel].has(kolom) && !KOLOM_TIDAK_DITURUNKAN[`${tabel}.${kolom}`]) drift.push(`${tabel}.${kolom}`);
+    }
+  }
+  assert.deepEqual(drift, [], `kolom lokal TIDAK ada di SELECT sync rules dan bukan pengecualian: ${drift.join(', ')}`);
+
+  // Pengecualian tidak boleh basi: kolomnya harus masih ada di lokal dan masih tidak di SELECT.
+  for (const kunci of Object.keys(KOLOM_TIDAK_DITURUNKAN)) {
+    const [tabel, kolom] = kunci.split('.');
+    assert.ok(lokal[tabel]?.includes(kolom), `pengecualian basi: ${kunci} tidak ada di skema lokal`);
+    assert.ok(!select[tabel]?.has(kolom), `pengecualian basi: ${kunci} ternyata diturunkan — hapus dari daftar`);
+  }
+});

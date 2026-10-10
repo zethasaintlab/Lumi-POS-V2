@@ -14,7 +14,7 @@ import { buatDbPalsu } from '../galeri/db-palsu.ts';
 import { Pembayaran } from '../layar/Pembayaran.tsx';
 import { ShellKasir } from '../ShellKasir.tsx';
 import { PanelQris } from '../komponen/PanelQris.tsx';
-import { setelKeranjang } from '../kasir/simpanan.ts';
+import { keranjangSekarang, setelKeranjang } from '../kasir/simpanan.ts';
 import { keranjangKosong, type Keranjang } from '../kasir/keranjang.ts';
 import type { StatusBayar } from '../kasir/qris-dinamis.ts';
 import { jalurSekarang, langgananJalur, navigasi } from '../rute/navigasi.ts';
@@ -84,6 +84,9 @@ dbAktif = buatDbPalsu(skenarioUji, {
   matikanFitur: matikan,
   pembulatan: pembulatanUji,
   modePembulatan: modeUji ?? undefined,
+  /* Task 10: `?pajakKanal=1` (PBJT dine_in + PPN all) dan `?layanan=1` (outlet.service_charge_rate 10%). */
+  pajakKanal: new URLSearchParams(window.location.search).get('pajakKanal') === '1',
+  layanan: new URLSearchParams(window.location.search).get('layanan') === '1',
 });
 
 const q = new URLSearchParams(window.location.search);
@@ -100,6 +103,8 @@ function keranjangUji(jumlahBaris: number, harga = 20000): Keranjang {
   if (jumlahBaris === 0) return keranjangKosong();
   return {
     ...keranjangKosong(),
+    /* `?kanal=dine_in` -- kanal pesanan yang dibawa keranjang (Task 10, FR-C7). */
+    kanal: q.get('kanal') === 'dine_in' ? 'dine_in' : 'takeaway',
     baris: Array.from({ length: jumlahBaris }, (_, i) => ({
       id: `uji-${i}`,
       variationId: `var-${i}`,
@@ -154,6 +159,9 @@ if (pakaiRute) {
   /* Kasir mengubah keranjang di K-03 selagi QRIS tertunda (fix round Task 9, C1a). */
   (window as unknown as { __ubahKeranjang: (n: number, harga?: number) => void }).__ubahKeranjang = (n, harga) =>
     setelKeranjang(keranjangUji(n, harga));
+  /* Kasir mengganti KANAL di K-03 selagi QRIS tertunda (fix round 1 Task 10, I1). */
+  (window as unknown as { __ubahKanal: (k: 'dine_in' | 'takeaway') => void }).__ubahKanal = (kanal) =>
+    setelKeranjang({ ...keranjangSekarang(), kanal });
   /* Kebalikannya: K-06 dipasang lagi (pemulihan draf QRIS) tanpa membuka database baru. */
   (window as unknown as { __paksaMasuk: () => void }).__paksaMasuk = () => {
     window.history.pushState({}, '', '/bayar');

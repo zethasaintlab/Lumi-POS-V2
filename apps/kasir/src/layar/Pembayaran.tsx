@@ -622,7 +622,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           shiftId: shift.id,
           keranjang,
           draf: d,
-          channel: 'takeaway',
+          channel: keranjang.kanal,
           total,
           idBaru: () => crypto.randomUUID(),
           sekarang: d.occurredAt,
@@ -733,6 +733,9 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           setGalat('Uang diterima kurang dari tagihan tunai. Penjualan belum tersimpan.');
           return;
         }
+        // Status ini juga pagar KEDUA data pesanan (nama, meja, catatan) dari
+        // `simpanPenjualan`; dialog K-03 sudah menolaknya lebih dulu, jadi
+        // ke sini hanya sampai keranjang tersimpan yang tak lagi sah.
         if (hasil.status === 'pembayaran_tidak_sah') {
           /* ⛔ Pesan SERVER, kata demi kata — aturannya satu sumber
              (`packages/domain/src/pembayaran-manual.ts`). Menulis ulang

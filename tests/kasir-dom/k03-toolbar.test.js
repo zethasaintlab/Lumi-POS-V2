@@ -32,8 +32,8 @@ const LABEL_TOOLBAR_MOCKUP = [
   'Batalkan',
   'Pesanan tahan',
 ];
-/** Label mockup yang SUDAH dibangun (Task 5, 5B). Task 10/11/12 menambah. */
-const TERPASANG = new Set(['Item manual', 'Diskon', 'Batalkan']);
+/** Label mockup yang SUDAH dibangun: SEMUA delapan sejak Task 12 (Pesanan tahan). */
+const TERPASANG = new Set(LABEL_TOOLBAR_MOCKUP);
 /** Label NON-mockup yang masih di toolbar. KOSONG sejak Task 4 (Laci kas):
     Buka laci dan Kas masuk / keluar pindah ke layar K-18. */
 const SEMENTARA = new Set([]);
@@ -110,7 +110,7 @@ after(async () => {
  * karena beberapa test butuh cart TERISI (`keranjang-penuh`).
  */
 async function bukaK03(opsi = {}) {
-  const { keadaan = 'normal', matikan = [] } = opsi;
+  const { keadaan = 'normal', matikan = [], ekstra = {} } = opsi;
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
@@ -119,6 +119,7 @@ async function bukaK03(opsi = {}) {
   });
   const q = new URLSearchParams({ layar: 'K-03', keadaan });
   if (matikan.length > 0) q.set('matikan', matikan.join(','));
+  for (const [k, v] of Object.entries(ekstra)) q.set(k, String(v));
   await hal.goto(`${alamat}/harness-galeri.html?${q.toString()}`, { waitUntil: 'load' });
   await hal.waitForSelector('.kasir-toolbar', { timeout: 10_000 });
   return { hal, galat };
@@ -133,7 +134,13 @@ test('⛔ toolbar berisi label TERPASANG dalam urutan mockup (ditambah SEMENTARA
     const header = document.querySelector('.kasir-header');
     const tombol = toolbar ? [...toolbar.querySelectorAll('button')] : [];
     return {
-      label: tombol.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
+      /* ⛔ Tombol Pajak: label TERLIHAT = kanal aktif ("Takeaway"/"Dine in"), nama
+         aksesibelnya "Pajak: <kanal>" (Q8). G-TOOLBAR mencocokkan nama aksesibel
+         berawalan "Pajak". */
+      label: tombol.map((b) => {
+        const nama = b.getAttribute('aria-label') ?? '';
+        return /^Pajak\b/.test(nama) ? 'Pajak' : b.innerText.trim().replace(/\s+/g, ' ');
+      }),
       diHeader: header && toolbar ? header.contains(toolbar) : false,
     };
   });
@@ -142,12 +149,12 @@ test('⛔ toolbar berisi label TERPASANG dalam urutan mockup (ditambah SEMENTARA
   assert.equal(galat.length, 0, `galat konsol saat memuat K-03: ${galat.join(' | ')}`);
   assert.equal(hasil.diHeader, false, '`.kasir-toolbar` dirender di dalam `.kasir-header`.');
 
-  const tanpaSementara = hasil.label.filter((l) => !SEMENTARA.has(l));
-  const harapTerpasang = LABEL_TOOLBAR_MOCKUP.filter((l) => TERPASANG.has(l));
+  // ⛔ G-TOOLBAR LENGKAP (Task 12): SEMUA delapan, urutan mockup, tanpa tombol lain.
+  assert.equal(SEMENTARA.size, 0, 'SEMENTARA harus kosong sejak Task 12');
   assert.deepEqual(
-    tanpaSementara,
-    harapTerpasang,
-    `label toolbar (tanpa SEMENTARA) ${JSON.stringify(hasil.label)} — harap urutan mockup ${JSON.stringify(harapTerpasang)}`
+    hasil.label,
+    LABEL_TOOLBAR_MOCKUP,
+    `label toolbar ${JSON.stringify(hasil.label)} — harap TEPAT delapan, urutan mockup ${JSON.stringify(LABEL_TOOLBAR_MOCKUP)}`
   );
 
   for (const l of hasil.label) {
@@ -449,11 +456,13 @@ test('⛔ Batalkan: konfirmasi "Kosongkan keranjang? N item", lalu keranjang kos
   await hal.getByRole('button', { name: 'Kosongkan', exact: true }).click();
   await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
   const tulis = await bacaTulis(hal);
+  const beritahuBatal = await hal.evaluate(() => window.__galeriBeritahu);
   const dialogTertutup = (await hal.locator('[role="dialog"]').count()) === 0;
   await hal.close();
 
   assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
   assert.ok(dialogTertutup, 'dialog konfirmasi tetap terbuka sesudah berhasil');
+  assert.equal(beritahuBatal, 1, `pemberitahu.beritahu() dipanggil ${beritahuBatal}x sesudah Batalkan (harus 1x: outbox cart_cleared perlu didorong)`);
   assert.equal(audit(tulis).length, 0 + 1, `harus TEPAT satu audit_event; ada ${audit(tulis).length} — nol audit adalah cacat yang fitur ini cegah`);
   const p = audit(tulis)[0].params;
   assert.equal(p[5], 'cart_cleared', `event_type ${p[5]}`);
@@ -587,4 +596,524 @@ test('⛔ penulisan jejak GAGAL (melempar) → dialog menahan dengan galat, kera
   assert.equal(audit(r.tulis).length, 0);
   assert.equal(outbox(r.tulis).length, 0);
   assert.equal(hapusKeranjang(r.tulis).length, r.hapusAwal, 'keranjang_lokal dihapus padahal jejak gagal');
+});
+
+// ---------------------------------------------------------------------------
+// Task 10 (PR 2C) -- Pajak = pilihan kanal (FR-C7; spec § 4, § 11 G-KANAL, G-TANPA-LAYANAN)
+
+/** Nama tarif dari fixture galeri itu sendiri (`__galeriTabel`), bukan diketik ulang di test. */
+async function namaTarifGaleri(hal) {
+  return hal.evaluate(() => {
+    const t = globalThis.__galeriTabel.tax_rate;
+    return { semua: t.filter((r) => r.channel === 'all').map((r) => r.name), dine: t.filter((r) => r.channel === 'dine_in').map((r) => r.name) };
+  });
+}
+
+/** Nominal baris "Pajak · <nama>" K-03 sebagai bigint, dan nilai HARAPAN dari Subtotal tampil x rate fixture (half-up, tulis tangan). */
+async function nominalPajak(hal, namaTarif) {
+  return hal.evaluate((nama) => {
+    const rupiah = (t) => BigInt(t.replace(/[^\d]/g, ''));
+    const baris = [...document.querySelectorAll('.kasir-subtotal')];
+    const cari = (awalan) => baris.find((e) => e.textContent.trim().replace(/\s+/g, ' ').startsWith(awalan));
+    const pajak = cari(`Pajak · ${nama}`);
+    const sub = cari('Subtotal');
+    const rate = BigInt(globalThis.__galeriTabel.tax_rate.find((r) => r.name === nama).rate);
+    const subtotal = rupiah(sub.querySelector('.num').textContent);
+    return {
+      tampil: String(rupiah(pajak.querySelector('.num').textContent)),
+      harap: String((subtotal * rate + 5000n) / 10000n),
+    };
+  }, namaTarif).then((h) => ({ tampil: BigInt(h.tampil), harap: BigInt(h.harap) }));
+}
+
+const barisPajak = (hal) =>
+  hal.$$eval('.kasir-subtotal', (n) => n.map((e) => e.textContent.trim().replace(/\s+/g, ' ')).filter((t) => t.startsWith('Pajak')));
+
+test('⛔ G-KANAL DOM: lembar Pajak menampilkan dua kanal dengan nama tarif masing-masing; memilih Dine in mengubah baris "Pajak · <nama tarif>" di keranjang', async () => {
+  const buka = async (kueri) => {
+    const h = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+    const g = [];
+    h.on('pageerror', (e) => g.push(e.message));
+    h.on('console', (m) => m.type() === 'error' && g.push(m.text()));
+    await h.goto(`${alamat}/harness-galeri.html?layar=K-03&keadaan=keranjang-penuh&${kueri}`, { waitUntil: 'load' });
+    await h.waitForSelector('.kasir-baris', { timeout: 10_000 });
+    return { h, g };
+  };
+  const { h: hal2, g } = await buka('pajakKanal=1');
+  const nama = await namaTarifGaleri(hal2);
+  assert.ok(nama.semua.length === 1 && nama.dine.length === 1, `fixture galeri tidak membedakan kanal: ${JSON.stringify(nama)}`);
+
+  // Awal: Takeaway -- nama aksesibel "Pajak: Takeaway", label terlihat "Takeaway", baris memakai tarif `all`.
+  const tombol = hal2.getByRole('button', { name: 'Pajak: Takeaway' });
+  assert.equal(await tombol.count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  assert.equal((await tombol.innerText()).trim(), 'Takeaway', 'label terlihat bukan kanal aktif');
+  const awal = await barisPajak(hal2);
+  assert.ok(awal.length === 1 && awal[0].startsWith(`Pajak · ${nama.semua[0]}`), `baris pajak awal: ${JSON.stringify(awal)}`);
+
+  const n1 = await nominalPajak(hal2, nama.semua[0]);
+  assert.ok(n1.tampil > 0n, 'nominal pajak awal nol -- penjaga hampa');
+  assert.equal(n1.tampil, n1.harap, `nominal baris Pajak Takeaway ${n1.tampil} ≠ Subtotal × rate ${n1.harap}`);
+
+  await tombol.click();
+  await hal2.waitForSelector('[role="dialog"]');
+  await hal2.waitForFunction(() => !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'), null, { timeout: 5000 });
+  const opsi = await hal2.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => e.textContent.trim()));
+  assert.equal(opsi.length, 2, `lembar harus berisi dua pilihan kanal: ${JSON.stringify(opsi)}`);
+  assert.ok(opsi[0].startsWith('Takeaway') && opsi[0].includes(nama.semua[0]), `pilihan Takeaway tak menyebut tarifnya: ${opsi[0]}`);
+  assert.ok(opsi[1].startsWith('Dine in') && opsi[1].includes(nama.dine[0]), `pilihan Dine in tak menyebut tarifnya: ${opsi[1]}`);
+  assert.ok(!opsi[1].includes(nama.semua[0]), 'Dine in menyebut tarif Takeaway');
+  assert.ok(!/Tarif sama/.test(await hal2.locator('[role="dialog"]').innerText()), 'lembar mengklaim tarif sama padahal berbeda');
+  // Kanal aktif ditandai aria-pressed DAN teks "(dipakai)" -- status tidak pernah warna saja.
+  const tanda = await hal2.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => ({ p: e.getAttribute('aria-pressed'), t: e.textContent.includes('(dipakai)') })));
+  assert.deepEqual(tanda, [{ p: 'true', t: true }, { p: 'false', t: false }], `penanda kanal aktif (Takeaway): ${JSON.stringify(tanda)}`);
+
+  await hal2.getByRole('button', { name: /^Dine in/ }).click();
+  await hal2.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  const sesudah = await barisPajak(hal2);
+  assert.ok(
+    sesudah.length === 1 && sesudah[0].startsWith(`Pajak · ${nama.dine[0]}`),
+    `memilih Dine in tidak mengubah baris pajak keranjang: ${JSON.stringify(sesudah)}`
+  );
+  const n2 = await nominalPajak(hal2, nama.dine[0]);
+  assert.equal(n2.tampil, n2.harap, `nominal baris Pajak Dine in ${n2.tampil} ≠ Subtotal × rate ${n2.harap}`);
+  assert.notEqual(n2.tampil, n1.tampil, 'nominal pajak tidak berubah saat kanal (tarif berbeda) berubah');
+  const tombolBaru = hal2.getByRole('button', { name: 'Pajak: Dine in' });
+  assert.equal(await tombolBaru.count(), 1, 'nama aksesibel tidak berubah menjadi "Pajak: Dine in"');
+  assert.equal((await tombolBaru.innerText()).trim(), 'Dine in');
+  await tombolBaru.click();
+  await hal2.waitForSelector('[role="dialog"]');
+  const tanda2 = await hal2.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => ({ p: e.getAttribute('aria-pressed'), t: e.textContent.includes('(dipakai)') })));
+  assert.deepEqual(tanda2, [{ p: 'false', t: false }, { p: 'true', t: true }], `penanda kanal aktif (Dine in): ${JSON.stringify(tanda2)}`);
+  await hal2.close();
+  assert.equal(g.length, 0, `galat konsol: ${g.join(' | ')}`);
+});
+
+test('outlet tanpa tarif per kanal: kedua pilihan menyebut tarif yang sama DAN lembarnya mengatakan itu', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  const nama = await namaTarifGaleri(hal);
+  assert.equal(await hal.getByRole('button', { name: 'Pajak: Takeaway' }).count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  await hal.getByRole('button', { name: 'Pajak: Takeaway' }).click();
+  await hal.waitForSelector('[role="dialog"]');
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'), null, { timeout: 5000 });
+  const opsi = await hal.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => e.textContent.trim()));
+  const isi = await hal.locator('[role="dialog"]').innerText();
+  await hal.close();
+  assert.equal(galat.length, 0, galat.join(' | '));
+  assert.equal(opsi.length, 2);
+  for (const o of opsi) assert.ok(o.includes(nama.semua[0]), `pilihan "${o}" tidak menyebut ${nama.semua[0]}`);
+  assert.match(isi, /Tarif sama untuk kedua kanal/, 'lembar tidak mengatakan bahwa tarifnya sama');
+});
+
+test('Pajak TETAP AKTIF saat keranjang kosong (FR-C7): lembar menampilkan dua kanal + kalimat nama tarif, tidak menggantung "Membaca tarif"; memilih Dine in mengubah label', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal' });
+  const tombol = hal.getByRole('button', { name: 'Pajak: Takeaway' });
+  assert.equal(await tombol.count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  assert.equal(await tombol.isDisabled(), false, 'Pajak nonaktif saat keranjang kosong');
+  await tombol.click();
+  await hal.waitForSelector('[role="dialog"]');
+  const isi = await hal.locator('[role="dialog"]').innerText();
+  const opsi = await hal.$$eval('[role="dialog"] .kasir-pilih-kanal-opsi', (n) => n.map((e) => e.textContent.trim()));
+  assert.equal(opsi.length, 2, `dua pilihan kanal diharapkan: ${JSON.stringify(opsi)}`);
+  assert.doesNotMatch(isi, /tanpa pajak/i, 'keranjang kosong menampilkan "tanpa pajak" palsu padahal tarif ada di katalog');
+  assert.doesNotMatch(isi, /Membaca tarif/, 'lembar menggantung "Membaca tarif pajak…" untuk keranjang kosong');
+  assert.match(isi, /Nama tarif tampil setelah ada item/, 'lembar tidak menyatakan kapan nama tarif muncul');
+  await hal.getByRole('button', { name: /^Dine in/ }).click();
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  assert.equal(await hal.getByRole('button', { name: 'Pajak: Dine in' }).count(), 1, 'label tidak berubah menjadi Dine in');
+  await hal.close();
+  assert.equal(galat.length, 0, galat.join(' | '));
+});
+
+test('⛔ G-TANPA-LAYANAN DOM: Dine in dipilih, outlet galeri dengan service_charge_rate bukan nol → tidak ada teks /layanan|service/i di lembar Pajak dan keranjang', async () => {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  const galat = [];
+  hal.on('pageerror', (e) => galat.push(e.message));
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-03&keadaan=keranjang-penuh&pajakKanal=1&layanan=1`, { waitUntil: 'load' });
+  await hal.waitForSelector('.kasir-baris');
+  // Anti-hampa: fixture memang membawa tarif layanan outlet.
+  const rate = await hal.evaluate(() => globalThis.__galeriTabel.outlet[0].service_charge_rate);
+  assert.notEqual(rate, 0, 'fixture galeri tidak menyetel service_charge_rate');
+
+  assert.equal(await hal.getByRole('button', { name: 'Pajak: Takeaway' }).count(), 1, 'tombol "Pajak: Takeaway" tidak ada');
+  await hal.getByRole('button', { name: 'Pajak: Takeaway' }).click();
+  await hal.waitForFunction(() => document.querySelector('[role="dialog"]') && !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'));
+  await hal.getByRole('button', { name: /^Dine in/ }).click();
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  // Lembar dibuka LAGI dalam keadaan Dine in aktif.
+  await hal.getByRole('button', { name: 'Pajak: Dine in' }).click();
+  await hal.waitForFunction(() => document.querySelector('[role="dialog"]') && !document.querySelector('[role="dialog"]').innerText.includes('Membaca tarif'));
+  const lembar = await hal.locator('[role="dialog"]').innerText();
+  await hal.keyboard.press('Escape');
+  await hal.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  const keranjang = await hal.locator('.kasir-utama').innerText();
+  await hal.close();
+  assert.equal(galat.length, 0, galat.join(' | '));
+  assert.ok(lembar.length > 0 && keranjang.includes('Dine in'), 'Dine in tidak terpilih -- penjaga hampa');
+  assert.doesNotMatch(lembar, /layanan|service/i, `lembar Pajak menyiratkan biaya layanan: ${lembar}`);
+  assert.doesNotMatch(keranjang, /layanan|service/i, 'keranjang K-03 menyiratkan biaya layanan');
+});
+
+// ---------------------------------------------------------------------------
+// Task 11 -- Catatan / Pelanggan / No. Meja (P5, P6; migrasi 0037).
+// ---------------------------------------------------------------------------
+
+/** [tombol toolbar, label kolom di dialog, awalan yang tampil di keranjang, isi uji]. */
+const MODE_DATA_PESANAN = [
+  ['Catatan', 'Catatan', 'Catatan: ', 'tanpa es, gula sedikit'],
+  ['Pelanggan', 'Nama pemesan', 'Atas nama: ', 'Budi'],
+  ['No. Meja', 'Nomor meja', 'Meja: ', 'A-12'],
+];
+
+async function isiDialog(hal, tombol, labelKolom, isi) {
+  await hal.getByRole('button', { name: tombol, exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]', { timeout: 3000 });
+  await hal.getByRole('textbox', { name: labelKolom, exact: true }).fill(isi);
+}
+
+test('⛔ Catatan/Pelanggan/No. Meja: isi tersimpan, tampil di keranjang, dan dialog menolak nomor kartu dengan pesan domain', async () => {
+  for (const [tombol, labelKolom, awalan, isi] of MODE_DATA_PESANAN) {
+    // --- isi sah: tersimpan, dialog tertutup, tampil di keranjang ---
+    {
+      const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+      await isiDialog(hal, tombol, labelKolom, `  ${isi}  `);
+      await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+      await hal
+        .waitForFunction((t) => document.body.innerText.includes(t), awalan + isi, { timeout: 3000 })
+        .catch(() => {});
+      const teks = await hal.evaluate(() => document.querySelector('.kasir-keranjang')?.innerText ?? '');
+      const dialog = await hal.locator('[role="dialog"]').count();
+      // Dibuka lagi: nilai tersimpan terisi kembali, bisa diubah.
+      await hal.getByRole('button', { name: tombol, exact: true }).click();
+      await hal.waitForSelector('[role="dialog"]', { timeout: 3000 });
+      const nilaiLagi = await hal.getByRole('textbox', { name: labelKolom, exact: true }).inputValue();
+      await hal.close();
+      assert.equal(galat.length, 0, `${tombol}: galat konsol ${galat.join(' | ')}`);
+      assert.equal(dialog, 0, `${tombol}: dialog tetap terbuka sesudah Simpan`);
+      assert.ok(teks.includes(awalan + isi), `${tombol}: keranjang tidak menampilkan "${awalan}${isi}". Terbaca: ${teks.slice(0, 300)}`);
+      assert.equal(nilaiLagi, isi, `${tombol}: nilai tersimpan tidak terisi kembali (dipangkas)`);
+    }
+
+    // --- nomor kartu: ditolak dengan pesan domain, tidak tersimpan ---
+    {
+      const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+      await isiDialog(hal, tombol, labelKolom, '4111 1111 1111 1111');
+      await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+      await hal.waitForSelector('[role="alert"]', { timeout: 3000 }).catch(() => {});
+      const pesan = await hal.locator('[role="dialog"] [role="alert"]').allInnerTexts();
+      const dialog = await hal.locator('[role="dialog"]').count();
+      const keranjang = await hal.evaluate(() => document.querySelector('.kasir-keranjang')?.innerText ?? '');
+      await hal.close();
+      assert.equal(galat.length, 0, `${tombol} kartu: galat konsol ${galat.join(' | ')}`);
+      assert.equal(dialog, 1, `${tombol}: dialog menutup padahal isinya nomor kartu`);
+      assert.ok(
+        pesan.some((p) => /nomor kartu/i.test(p)),
+        `${tombol}: pesan domain "nomor kartu" tidak tampil. Terbaca: ${JSON.stringify(pesan)}`
+      );
+      assert.ok(!keranjang.includes('4111'), `${tombol}: nomor kartu masuk keranjang`);
+      assert.ok(pesan.every((p) => !/customerName|tableNumber|\bnote\b/.test(p)), `${tombol}: pesan memuat nama field API: ${JSON.stringify(pesan)}`);
+    }
+  }
+});
+
+test('dialog Pelanggan berlabel "Nama pemesan", satu kolom teks, tanpa kolom telepon', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.getByRole('button', { name: 'Pelanggan', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]', { timeout: 3000 });
+  const hasil = await hal.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    return {
+      input: [...d.querySelectorAll('input, textarea, select')].map((e) => ({ tipe: e.type, nama: e.labels?.[0]?.innerText ?? '' })),
+      teks: d.innerText,
+    };
+  });
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.deepEqual(hasil.input, [{ tipe: 'text', nama: 'Nama pemesan' }], 'dialog Pelanggan harus satu kolom teks "Nama pemesan"');
+  assert.ok(!/telepon|telpon|\bhp\b|whatsapp|\bwa\b/i.test(hasil.teks), `dialog Pelanggan menyinggung nomor telepon: ${hasil.teks}`);
+});
+
+test('⛔ scanner global mati selama dialog Catatan/Pelanggan/No. Meja terbuka', async () => {
+  for (const [tombol] of MODE_DATA_PESANAN) {
+    const { hal, galat } = await bukaK03();
+    await hal.getByRole('button', { name: tombol, exact: true }).click();
+    await hal.waitForSelector('[role="dialog"]');
+    const sebelum = await hal.locator('.kasir-baris').count();
+    await hal.evaluate((kode) => {
+      for (const ch of kode) window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }, KODE_BARCODE_FIXTURE);
+    await hal.waitForTimeout(300);
+    const sesudah = await hal.locator('.kasir-baris').count();
+    await hal.close();
+    assert.equal(galat.length, 0, `${tombol}: galat konsol ${galat.join(' | ')}`);
+    assert.equal(sesudah, sebelum, `${tombol}: scan SELAMA dialog terbuka menambah item (${sebelum} → ${sesudah})`);
+  }
+});
+
+test('Batal menutup dialog tanpa mengubah isi; mengosongkan kolom lalu Simpan menghapus nilainya', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await isiDialog(hal, 'No. Meja', 'Nomor meja', 'B-3');
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await hal.waitForFunction(() => document.body.innerText.includes('Meja: B-3'), null, { timeout: 3000 });
+  await isiDialog(hal, 'No. Meja', 'Nomor meja', 'C-9');
+  await hal.getByRole('button', { name: 'Batal', exact: true }).click();
+  const sesudahBatal = await hal.evaluate(() => document.querySelector('.kasir-keranjang')?.innerText ?? '');
+  await isiDialog(hal, 'No. Meja', 'Nomor meja', '   ');
+  await hal.getByRole('button', { name: 'Simpan', exact: true }).click();
+  await hal.waitForFunction(() => !document.body.innerText.includes('Meja: '), null, { timeout: 3000 }).catch(() => {});
+  const sesudahKosong = await hal.evaluate(() => document.querySelector('.kasir-keranjang')?.innerText ?? '');
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(sesudahBatal.includes('Meja: B-3') && !sesudahBatal.includes('C-9'), `Batal mengubah isi: ${sesudahBatal.slice(0, 200)}`);
+  assert.ok(!sesudahKosong.includes('Meja: '), 'kolom dikosongkan lalu Simpan, tetapi "Meja:" masih tampil');
+});
+
+// ---------------------------------------------------------------------------
+// Task 12 — Pesanan tahan (G-TAHAN, sisi layar) + jejak Buang (G-BATAL-AUDIT).
+// Spec § 4 "Pesanan tahan", § 12 butir 7. `?tahanan=N` menanam N tahanan
+// berisi Americano Hot dengan harga LAMA (Rp 10.000, katalog 22.000) + diskon nominal Rp 1.000 di shift galeri.
+// ---------------------------------------------------------------------------
+
+/** Total yang SEHARUSNYA tertulis di jejak Buang: dihitung langsung dari fungsi domain (bukan angka diketik
+    maupun subtotal) untuk tahanan galeri: 1 x Rp 10.000, diskon nominal Rp 1.000, PPN 11% eksklusif. */
+async function totalDomainTahananGaleri() {
+  const { computeLineTotal, computeOrderTotals } = await import('../../packages/domain/src/money.ts');
+  const { calculateTax } = await import('../../packages/domain/src/tax.ts');
+  const { nilaiDiskon } = await import('../../packages/domain/src/diskon.ts');
+  const baris = computeLineTotal({ unitPrice: 10000n, quantityMilli: 1000n, modifiers: [], discountAmount: 0n });
+  const orderDiscount = nilaiDiskon(baris, { tipe: 'nominal', nilai: 1000n });
+  const pajak = calculateTax({
+    lines: [{ lineId: 'th-baris-1', itemId: 'item-americano-vHot', categoryId: null, amount: baris }],
+    serviceChargeAmount: 0n,
+    orderDiscount,
+    taxRates: [
+      {
+        id: 'tax-ppn', name: 'PPN 11%', rateScaled: 1100n, isInclusive: false, jurisdiction: 'ID', outletId: null,
+        channel: 'all', appliesTo: 'all_items', appliesToIds: [],
+      },
+    ],
+    channel: 'takeaway',
+    outletId: 'outlet-galeri',
+  });
+  const totals = computeOrderTotals({ lineTotals: [baris], orderDiscount, serviceChargeAmount: 0n, taxAmount: pajak.totalTaxExclusive });
+  return { subtotal: baris, total: totals.total };
+}
+
+const tahanTulis = (tulis) => tulis.filter((t) => /keranjang_tahan/.test(t.sql));
+const dialogTahan = (hal) => hal.locator('[role="dialog"]');
+
+async function bukaDialogTahan(hal) {
+  const n = await hal.getByRole('button', { name: 'Pesanan tahan', exact: true }).count();
+  assert.equal(n, 1, 'tombol toolbar "Pesanan tahan" tidak ada');
+  await hal.getByRole('button', { name: 'Pesanan tahan', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"]', { timeout: 3000 });
+}
+
+test('⛔ Pesanan tahan: daftar shift ini — Tahan pesanan ini · Lanjutkan · Buang; Tahan nonaktif dengan alasan saat keranjang kosong', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal', ekstra: { tahanan: 1 } });
+  await bukaDialogTahan(hal);
+  const hasil = await hal.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const tombol = (n) => [...d.querySelectorAll('button')].find((b) => b.innerText.trim() === n);
+    const tahan = tombol('Tahan pesanan ini');
+    const alasanId = tahan?.getAttribute('aria-describedby');
+    return {
+      teks: d.innerText,
+      tahanAda: !!tahan,
+      tahanMati: tahan?.disabled ?? null,
+      alasan: alasanId ? document.getElementById(alasanId)?.textContent ?? '' : '',
+      lanjut: [...d.querySelectorAll('button')].filter((b) => b.innerText.trim() === 'Lanjutkan').length,
+      buang: [...d.querySelectorAll('button')].filter((b) => b.innerText.trim() === 'Buang').length,
+      lanjutMati: tombol('Lanjutkan')?.disabled ?? null,
+    };
+  });
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(hasil.tahanAda, 'tombol "Tahan pesanan ini" tidak ada di dialog');
+  assert.equal(hasil.tahanMati, true, '"Tahan pesanan ini" tidak nonaktif padahal keranjang kosong');
+  assert.match(hasil.alasan, /kosong/i, `Tahan nonaktif tanpa alasan terbaca: "${hasil.alasan}"`);
+  assert.equal(hasil.lanjut, 1, 'satu tahanan harus punya satu tombol Lanjutkan');
+  assert.equal(hasil.buang, 1, 'satu tahanan harus punya satu tombol Buang');
+  assert.equal(hasil.lanjutMati, false, 'Lanjutkan nonaktif padahal keranjang kosong');
+  assert.match(hasil.teks, /1 item/, `daftar tidak menyebut jumlah item: ${hasil.teks}`);
+});
+
+test('Pesanan tahan: shift tanpa tahanan menampilkan keadaan KOSONG bertulis', async () => {
+  const { hal } = await bukaK03({ keadaan: 'normal' });
+  await bukaDialogTahan(hal);
+  const teks = await dialogTahan(hal).innerText();
+  await hal.close();
+  assert.match(teks, /Belum ada pesanan tahan/);
+});
+
+test('⛔ G-TAHAN DOM: Tahan → keranjang kosong + keranjang_lokal dihapus + tahanan tertulis (dalam transaksi), nol audit; Lanjutkan mati selama keranjang berjalan tidak kosong', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  await bukaDialogTahan(hal);
+
+  // Keranjang berjalan TIDAK kosong: tidak ada jalan menimpanya diam-diam.
+  const sebelumTahan = await hal.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    return { teks: d.innerText, tahanMati: [...d.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Tahan pesanan ini')?.disabled };
+  });
+  assert.equal(sebelumTahan.tahanMati, false, 'Tahan nonaktif padahal keranjang berisi');
+
+  await hal.getByRole('button', { name: 'Tahan pesanan ini', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
+  const tulis = await bacaTulis(hal);
+  const dialogTertutup = (await dialogTahan(hal).count()) === 0;
+
+  await bukaDialogTahan(hal);
+  const sesudah = await hal.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    return { teks: d.innerText, lanjut: [...d.querySelectorAll('button')].filter((b) => b.innerText.trim() === 'Lanjutkan').length };
+  });
+  await hal.close();
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(dialogTertutup, 'dialog tetap terbuka sesudah Tahan');
+  const masuk = tahanTulis(tulis).filter((t) => /^INSERT INTO keranjang_tahan/.test(t.sql));
+  assert.equal(masuk.length, 1, 'tahanan tidak tertulis');
+  assert.equal(masuk[0].dalam, true, 'INSERT tahanan di LUAR transaksi');
+  assert.ok(hapusKeranjang(tulis).some((t) => t.dalam), 'keranjang berjalan tidak dikosongkan DALAM transaksi tahan');
+  assert.equal(audit(tulis).length, 0, 'tahan menulis audit — belum ada yang dibatalkan');
+  assert.equal(outbox(tulis).length, 0, 'tahan menulis outbox');
+  assert.equal(sesudah.lanjut, 1, `tahanan tidak muncul di daftar: ${sesudah.teks}`);
+});
+
+test('⛔ G-TAHAN DOM: keranjang berjalan berisi → Lanjutkan nonaktif dengan kalimat "Tahan pesanan ini dulu"', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', ekstra: { tahanan: 1 } });
+  await hal.waitForSelector('.kasir-baris');
+  await bukaDialogTahan(hal);
+  const hasil = await hal.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const lanjut = [...d.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Lanjutkan');
+    return { mati: lanjut?.disabled, teks: d.innerText };
+  });
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(hasil.mati, true, 'Lanjutkan aktif padahal keranjang berjalan berisi — pesanan akan tertimpa diam-diam');
+  assert.match(hasil.teks, /Tahan pesanan ini dulu/);
+});
+
+test('⛔ G-TAHAN DOM (Review Focus 3): Lanjutkan sesudah harga berubah → harga BARU di keranjang, kasir diberi tahu, tahanan terhapus', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal', ekstra: { tahanan: 1 } });
+  await bukaDialogTahan(hal);
+  await hal.getByRole('button', { name: 'Lanjutkan', exact: true }).click();
+  await hal.waitForSelector('.kasir-baris', { timeout: 5000 });
+  const hasil = await hal.evaluate(() => ({
+    baris: [...document.querySelectorAll('.kasir-baris')].map((b) => b.innerText),
+    halaman: document.body.innerText,
+  }));
+  const tulis = await bacaTulis(hal);
+  const dialogTertutup = (await dialogTahan(hal).count()) === 0;
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.ok(dialogTertutup, 'dialog tetap terbuka sesudah Lanjutkan');
+  assert.equal(hasil.baris.length, 1);
+  assert.match(hasil.baris[0], /Americano/);
+  assert.doesNotMatch(hasil.baris[0], /10\.000/, `baris masih memakai harga LAMA Rp 10.000: ${hasil.baris[0]}`);
+  assert.match(hasil.halaman, /Harga berubah/, 'kasir tidak diberi tahu bahwa harga berubah sejak ditahan');
+  const hapus = tahanTulis(tulis).filter((t) => /^DELETE FROM keranjang_tahan/.test(t.sql));
+  assert.equal(hapus.length, 1);
+  assert.equal(hapus[0].dalam, true, 'DELETE tahanan di LUAR transaksi');
+  assert.equal(audit(tulis).length, 0, 'lanjutkan menulis audit');
+});
+
+test('⛔ G-TAHAN DOM: item yang tidak ada lagi di katalog dibuang dan NAMANYA disebut', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh' });
+  await hal.waitForSelector('.kasir-baris');
+  await bukaDialogTahan(hal);
+  await hal.getByRole('button', { name: 'Tahan pesanan ini', exact: true }).click();
+  await hal.waitForFunction(() => document.querySelectorAll('.kasir-baris').length === 0, null, { timeout: 5000 });
+  await bukaDialogTahan(hal);
+  await hal.getByRole('button', { name: 'Lanjutkan', exact: true }).click();
+  await hal.waitForFunction(() => /tidak tersedia/i.test(document.body.innerText), null, { timeout: 5000 }).catch(() => {});
+  const halaman = await hal.evaluate(() => document.body.innerText);
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.match(halaman, /tidak tersedia/i, 'item yang hilang dibuang tanpa kabar');
+  assert.match(halaman, /Item Keranjang 1\b/, 'nama item yang dibuang tidak disebut');
+});
+
+test('⛔ G-BATAL-AUDIT DOM: Buang tahanan minta konfirmasi, lalu SATU audit cart_cleared + satu outbox, DELETE tahanan dalam transaksi yang sama; batal di konfirmasi tidak menulis apa pun', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'normal', ekstra: { tahanan: 1 } });
+  await bukaDialogTahan(hal);
+  await hal.getByRole('button', { name: 'Buang', exact: true }).click();
+  // Konfirmasi: belum ada yang tertulis.
+  await hal.getByRole('button', { name: 'Ya, buang', exact: true }).waitFor({ timeout: 3000 });
+  assert.equal(audit(await bacaTulis(hal)).length, 0, 'audit tertulis SEBELUM konfirmasi');
+  await hal.getByRole('button', { name: 'Batal', exact: true }).click();
+  assert.equal(audit(await bacaTulis(hal)).length, 0, 'audit tertulis padahal kasir menekan Batal');
+  assert.equal(tahanTulis(await bacaTulis(hal)).length, 0, 'tahanan dihapus padahal kasir menekan Batal');
+
+  await hal.getByRole('button', { name: 'Buang', exact: true }).click();
+  await hal.getByRole('button', { name: 'Ya, buang', exact: true }).click();
+  await hal.waitForFunction(() => /Belum ada pesanan tahan/.test(document.body.innerText), null, { timeout: 5000 });
+  const tulis = await bacaTulis(hal);
+  const beritahu = await hal.evaluate(() => window.__galeriBeritahu);
+  await hal.close();
+  // ⛔ Buang harus mendorong pengiriman (outbox cart_cleared): tanpa isyarat, indikator sinkron baru tahu ~1 dtk kemudian.
+  assert.equal(beritahu, 1, `pemberitahu.beritahu() dipanggil ${beritahu}x sesudah Buang (harus 1x)`);
+
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(audit(tulis).length, 1, `harus TEPAT satu audit_event; ada ${audit(tulis).length}`);
+  const p = audit(tulis)[0].params;
+  assert.equal(p[5], 'cart_cleared');
+  assert.equal(p[6], 'shift-galeri');
+  assert.equal(p[4], 'user-galeri');
+  const after = JSON.parse(p[7]);
+  assert.equal(after.line_count, 1);
+  assert.equal(after.quantity_milli, 1000);
+  // ⛔ Total jejak = HITUNGAN DOMAIN (`hitungKeranjang`), bukan subtotal kolom tahanan. Anti-hampa: keduanya BERBEDA.
+  const ekspektasi = await totalDomainTahananGaleri();
+  assert.notEqual(ekspektasi.total, ekspektasi.subtotal, 'fixture hampa: total == subtotal, jejak subtotal tak terbedakan');
+  assert.equal(after.total, String(ekspektasi.total), `total audit ${after.total} != hitungan domain ${ekspektasi.total} (subtotal ${ekspektasi.subtotal})`);
+  assert.equal(outbox(tulis).length, 1);
+  assert.equal(audit(tulis)[0].dalam, true);
+  const hapus = tahanTulis(tulis).filter((t) => /^DELETE FROM keranjang_tahan/.test(t.sql));
+  assert.equal(hapus.length, 1);
+  assert.equal(hapus[0].dalam, true, 'DELETE tahanan di LUAR transaksi jejaknya');
+});
+
+test('⛔ scanner global mati selama dialog Pesanan tahan terbuka', async () => {
+  const { hal, galat } = await bukaK03();
+  await bukaDialogTahan(hal);
+  const sebelum = await hal.locator('.kasir-baris').count();
+  await hal.evaluate((kode) => {
+    for (const ch of kode) window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  }, KODE_BARCODE_FIXTURE);
+  await hal.waitForTimeout(300);
+  const sesudah = await hal.locator('.kasir-baris').count();
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  assert.equal(sesudah, sebelum, `keranjang berubah (${sebelum} → ${sesudah}) dari scan SELAMA dialog Pesanan tahan terbuka`);
+});
+
+test('⛔ I3 DOM: draf QRIS tertunda → Tahan/Buang ditolak dengan alasan terbaca di dialog; keranjang dan tahanan utuh (Lanjutkan: unit)', async () => {
+  const { hal, galat } = await bukaK03({ keadaan: 'keranjang-penuh', ekstra: { tahanan: 1, drafQris: 1 } });
+  await hal.waitForSelector('.kasir-baris');
+  const sebelum = await keadaanKeranjang(hal);
+  await bukaDialogTahan(hal);
+  const alasan = [];
+  await hal.getByRole('button', { name: 'Tahan pesanan ini', exact: true }).click();
+  await hal.waitForSelector('[role="dialog"] [role="alert"]', { timeout: 3000 }).catch(() => {});
+  alasan.push(await hal.evaluate(() => document.querySelector('[role="dialog"] [role="alert"]')?.innerText ?? '(tidak ada alasan; dialog ' + (document.querySelector('[role="dialog"]') ? 'terbuka' : 'TERTUTUP: Tahan lolos') + ')'));
+  assert.match(alasan[0], /QRIS/, `Tahan tidak ditolak karena draf QRIS: "${alasan[0]}"`);
+  await hal.getByRole('button', { name: 'Buang', exact: true }).click();
+  await hal.getByRole('button', { name: 'Ya, buang', exact: true }).click();
+  await hal.waitForFunction(() => /QRIS/.test(document.querySelector('[role="dialog"] [role="alert"]')?.innerText ?? ''), null, { timeout: 3000 }).catch(() => {});
+  alasan.push(await hal.evaluate(() => document.querySelector('[role="dialog"] [role="alert"]')?.innerText ?? '(tidak ada alasan penolakan Buang)'));
+  const tulis = await bacaTulis(hal);
+  const sesudah = await keadaanKeranjang(hal);
+  const dialogMasihAda = (await dialogTahan(hal).count()) === 1;
+  await hal.close();
+  assert.equal(galat.length, 0, `galat konsol: ${galat.join(' | ')}`);
+  for (const a of alasan) assert.match(a, /QRIS/, `alasan penolakan tidak menyebut QRIS: "${a}"`);
+  assert.ok(dialogMasihAda, 'dialog tertutup padahal ditolak');
+  assert.equal(sesudah.baris, sebelum.baris, 'keranjang berjalan berubah');
+  assert.equal(tahanTulis(tulis).length, 0, 'tahanan ditulis/dihapus padahal draf QRIS ada');
+  // Fake galeri tidak me-rollback, jadi audit TIDAK diperiksa di sini; atomisitasnya dijaga keranjang-tahan.test.js (SQLite sungguhan).
 });

@@ -25,6 +25,8 @@ import {
   qtyDiKeranjang,
   satuanKeranjang,
   setelDiskon,
+  setelKanal,
+  setelDataPesanan,
   subtotalKeranjang,
   tambah,
   type BarisKeranjang,
@@ -34,6 +36,16 @@ import { periksaTambahStok } from '../kasir/batas-stok.ts';
 import { bacaAmbangDiskon, LABEL_ALASAN_DISKON, statusDiskon } from '../kasir/diskon.ts';
 import { hitungKeranjang, type HitunganKeranjang } from '../kasir/penjualan.ts';
 import { batalkanKeranjang } from '../kasir/keranjang-batal.ts';
+import {
+  bacaTahanan,
+  buangTahanan,
+  daftarTahanan,
+  hargaKiniDariKatalog,
+  lanjutkanTahanan,
+  tahanKeranjang,
+  type RingkasTahanan,
+} from '../kasir/keranjang-tahan.ts';
+import { DialogPesananTahan } from '../komponen/DialogPesananTahan.tsx';
 import { kurangiBarisKeranjang } from '../kasir/keranjang-kurang.ts';
 import { muatHlc } from '../lokal/hlc.ts';
 import { tampilkanKuantitas } from '../../../../packages/domain/src/kuantitas.ts';
@@ -57,7 +69,10 @@ import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { usePemindaiGlobal } from '../kasir/pemindai-global.ts';
 import { DialogDiskon } from '../komponen/DialogDiskon.tsx';
+import { LembarKanal } from '../komponen/LembarKanal.tsx';
+import { labelKanal, ringkasKanal, type Kanal, type RingkasanKanal } from '../kasir/kanal.ts';
 import { DialogKodeManual } from '../komponen/DialogKodeManual.tsx';
+import { DialogTeksPesanan, type ModeTeksPesanan } from '../komponen/DialogTeksPesanan.tsx';
 import { bacaFitur, fiturAktif, type PetaFitur } from '../fitur/baca.ts';
 import { DialogModifier } from '../komponen/DialogModifier.tsx';
 import { DialogEditItem } from '../komponen/DialogEditItem.tsx';
@@ -146,6 +161,12 @@ export function Kasir() {
      baris outlet terbaca. */
   const [ambangDiskon, setAmbangDiskon] = useState<AmbangDiskon>(AMBANG_DISKON_BAWAAN);
   const [dialogDiskon, setDialogDiskon] = useState(false);
+  /* Lembar Pajak (FR-C7): ringkasan tarif per kanal dihitung SAAT dibuka, lewat
+     `hitungKeranjang` dua kali (satu per kanal) -- bukan disimpan, supaya tarif
+     yang berubah di katalog tidak tampil basi. */
+  const [lembarKanal, setLembarKanal] = useState(false);
+  const [ringkasanKanal, setRingkasanKanal] = useState<RingkasanKanal[] | null>(null);
+  const [galatKanal, setGalatKanal] = useState<string | null>(null);
   /* Toolbar #1 — Item manual (P4(a), spec § 4 baris 1). Dialog, alasan yang
      sama dengan Diskon/Kas manual: tidak punya keadaan yang berguna lewat
      URL. */
@@ -154,6 +175,13 @@ export function Kasir() {
      mengonfirmasi menulis `audit_event` `cart_cleared` (keputusan user
      28 September 2026, issue #76). */
   const [dialogBatal, setDialogBatal] = useState(false);
+  /* Toolbar #4-6 -- Catatan, Pelanggan, No. Meja (spec § 4 baris 4-6; P5, P6).
+     SATU dialog, tiga mode; `null` = tertutup. */
+  const [dialogTeks, setDialogTeks] = useState<ModeTeksPesanan | null>(null);
+  /* Toolbar #8 -- Pesanan tahan (Task 12). `daftarTahan === null` = sedang dibaca. */
+  const [dialogTahan, setDialogTahan] = useState(false);
+  const [daftarTahan, setDaftarTahan] = useState<RingkasTahanan[] | null>(null);
+  const [galatTahan, setGalatTahan] = useState<string | null>(null);
   /* `ARCH:358` — kill switch per fitur per merchant. Dibaca dari perangkat,
      jadi ia tetap berlaku offline; fitur yang belum pernah disegarkan
      mengikuti bawaan kode dan tetap menyala. */
@@ -330,6 +358,92 @@ export function Kasir() {
     return null;
   };
 
+  /* Toolbar #8 -- Pesanan tahan (Task 12). Murni lokal; tiap perpindahan satu
+     transaksi (`kasir/keranjang-tahan.ts`). Pesan galat dikembalikan ke dialog,
+     yang menahan dirinya terbuka -- tahanan tidak pernah hilang diam-diam. */
+  const muatTahanan = async () => {
+    if (!shift) {
+      setDaftarTahan([]);
+      return;
+    }
+    try {
+      setDaftarTahan(await daftarTahanan(db, shift.id));
+      setGalatTahan(null);
+    } catch (e) {
+      setGalatTahan((e as Error).message);
+      setDaftarTahan([]);
+    }
+  };
+  const bukaTahan = () => {
+    setDaftarTahan(null);
+    setGalatTahan(null);
+    setDialogTahan(true);
+    void muatTahanan();
+  };
+  const tahanSekarang = async (): Promise<string | null> => {
+    if (!shift) return 'Shift tidak dikenali. Pesanan TIDAK ditahan.';
+    const h = await tahanKeranjang(db, shift.id, keranjang, () => new Date(), () => crypto.randomUUID());
+    if (!h.ok) return h.pesan;
+    setelKeranjang(keranjangKosong());
+    setDialogTahan(false);
+    return null;
+  };
+  const lanjutkanDari = async (id: string): Promise<string | null> => {
+    if (keranjang.baris.length > 0) {
+      return 'Keranjang berjalan belum kosong. Tahan pesanan ini dulu.';
+    }
+    if (katalog.length === 0) return 'Katalog belum terbaca, harga ulang tidak dapat dihitung. Pesanan TIDAK dilanjutkan.';
+    const harga = await hargaKiniDariKatalog(db, katalog);
+    const hasil = await lanjutkanTahanan(db, id, harga);
+    if (hasil === null) {
+      await muatTahanan();
+      return 'Pesanan tahan tidak ditemukan atau tidak terbaca. Daftar dimuat ulang.';
+    }
+    setelKeranjang(hasil.keranjang);
+    /* ⛔ Kasir diberi tahu, tidak pernah diam-diam: harga berubah dan/atau item
+       hilang dari katalog (spec § 4). */
+    const kabar: string[] = [];
+    if (hasil.subtotalBerubah) {
+      kabar.push(`Harga berubah sejak ditahan. Subtotal kini ${rupiah(subtotalKeranjang(hasil.keranjang))}.`);
+    }
+    if (hasil.barisDibuang.length > 0) {
+      kabar.push(`Tidak tersedia lagi dan dibuang dari pesanan: ${hasil.barisDibuang.join(', ')}.`);
+    }
+    setPesanStok(kabar.length > 0 ? kabar.join(' ') : null);
+    setDialogTahan(false);
+    return null;
+  };
+  const buangDari = async (id: string): Promise<string | null> => {
+    if (!konfig || !sesi || !shift) return 'Sesi atau shift tidak dikenali. Pesanan TIDAK dibuang.';
+    const t = await bacaTahanan(db, id);
+    if (t === null) {
+      await muatTahanan();
+      return 'Pesanan tahan tidak ditemukan. Daftar dimuat ulang.';
+    }
+    /* Total jejak = `hitungKeranjang` atas keranjang tahanan, fungsi yang sama
+       dengan Batalkan -- bukan aritmetika kedua. */
+    const total =
+      t.keranjang !== null && t.keranjang.baris.length > 0
+        ? (await hitungKeranjang({ db, konfig, keranjang: t.keranjang, shift, waktu: () => new Date() })).totals.total
+        : 0n;
+    const hlc = await muatHlc(db, () => Date.now());
+    try {
+      await buangTahanan(db, id, {
+        konfig,
+        sesi,
+        total,
+        waktu: () => new Date(),
+        idBaru: () => crypto.randomUUID(),
+        hlc: () => hlc.tick(),
+      });
+    } catch (e) {
+      return (e as Error).message;
+    }
+    pemberitahu.beritahu();
+    await muatTahanan();
+    return null;
+  };
+
   /* ⛔ Simpan Edit Item. Qty yang TURUN (atau baris dihapus) menulis jejak
      `cart_line_reduced` + outbox + `keranjang_lokal` hasil edit dalam SATU
      transaksi lokal (Task 5C, issue #76 Q2); kenaikan qty dan perubahan
@@ -442,6 +556,35 @@ export function Kasir() {
       });
   }, [db, konfig, shift, keranjang]);
 
+  /* Lembar Pajak: tarif tiap kanal dihitung dengan keranjang yang SAMA kecuali `kanal`.
+     Balapan ditutup `urutanKanal` seperti `urutanHitung` di atas. */
+  const urutanKanal = useRef(0);
+  useEffect(() => {
+    if (!lembarKanal) return;
+    setRingkasanKanal(null);
+    setGalatKanal(null);
+    // Keranjang kosong: tak ada baris yang dikenai tarif, jadi nama tarif belum ada (lembar menyatakannya).
+    if (keranjang.baris.length === 0) return;
+    if (!konfig || !shift) {
+      setGalatKanal('Tarif pajak belum dapat dibaca (shift atau perangkat belum siap). Kanal tetap dapat dipilih.');
+      return;
+    }
+    const milik = (urutanKanal.current += 1);
+    const hitungUntuk = (kanal: Kanal) =>
+      hitungKeranjang({ db, konfig, keranjang: setelKanal(keranjang, kanal), shift, waktu: () => new Date() });
+    void Promise.all([hitungUntuk('dine_in'), hitungUntuk('takeaway')])
+      .then(([dine_in, takeaway]) => {
+        if (urutanKanal.current === milik) setRingkasanKanal(ringkasKanal({ dine_in, takeaway }));
+      })
+      .catch(() => {
+        if (urutanKanal.current === milik) {
+          setGalatKanal('Tarif pajak tidak dapat dibaca dari perangkat. Kanal tetap dapat dipilih; tarifnya dihitung saat pembayaran.');
+        }
+      });
+    // Hanya saat lembar dibuka: keranjang tidak berubah selagi lembar menutupi layar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lembarKanal]);
+
   const pindai = useRef<(kode: string) => void>(() => {});
   /* Penanda awal pengukuran latensi keranjang. `null` = tidak ada ketukan
      yang sedang diukur; lihat `pilihVariation`. */
@@ -459,7 +602,7 @@ export function Kasir() {
        BELAKANG dialog — perubahan yang tidak terlihat siapa pun sampai
        struk tercetak. */
     aktif:
-      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal,
+      pilihan === null && edit === null && !membayar && !dialogDiskon && !dialogManual && !dialogBatal && !lembarKanal && dialogTeks === null && !dialogTahan,
   });
 
   if (!siap) return <Memuat judul="Membaca katalog dari perangkat…" bentuk="grid" jumlah={12} />;
@@ -658,15 +801,12 @@ export function Kasir() {
             bawah) — ia hanya selebar kolom katalog, sisa layar tetap milik
             keranjang.
 
-            ⛔ TIGA aksi hari ini, semuanya TERPASANG mockup (Item manual,
-            Diskon, Batalkan; urutan `LABEL_TOOLBAR_MOCKUP` § 4). Buka laci dan
-            Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya pindah ke
-            layar Laci kas (K-18, `layar/LaciKas.tsx`). Lima sisanya di mockup
-            (Pajak, Catatan, Pelanggan, No. Meja, Pesanan tahan) nol kode di
-            repo ini; tombol yang tidak melakukan apa-apa adalah janji kepada
-            kasir yang produk ini tidak dapat tepati — Task 10/11/12
-            membangun sisanya (spec § 4 "Toolbar
-            kasir delapan tombol"). */}
+            ⛔ DELAPAN tombol, SEMUANYA terpasang dan bekerja (urutan
+            `LABEL_TOOLBAR_MOCKUP` § 4; G-TOOLBAR lengkap sejak Task 12). Buka
+            laci dan Kas masuk/keluar KELUAR dari sini di Task 4 — keduanya
+            pindah ke layar Laci kas (K-18, `layar/LaciKas.tsx`). Tombol yang
+            tidak melakukan apa-apa adalah janji kepada kasir yang produk ini
+            tidak dapat tepati, jadi tidak ada yang mati. */}
         <div className="kasir-toolbar" role="group" aria-label="Aksi lain">
           {/* Item manual — P4(a), keputusan user (spec § 4 baris 1): dialog
               masukan kode, bukan "barang custom" (keputusan produk tertunda,
@@ -714,6 +854,37 @@ export function Kasir() {
             </>
           )}
 
+          {/* Pajak -- memilih KANAL pesanan (FR-C7), bukan tarif; spec § 4 "Pajak
+              sebagai pilihan kanal". Label terlihat = kanal aktif; nama aksesibel
+              berawalan "Pajak". SELALU aktif, juga saat keranjang kosong: FR-C7
+              menjadikan kanal masukan per pesanan, dan kasir boleh memilihnya
+              sebelum memindai. Nama tarif baru muncul di lembar setelah ada item. */}
+          <Tombol
+            varian="ghost"
+            ariaLabel={`Pajak: ${labelKanal(keranjang.kanal)}`}
+            onClick={() => setLembarKanal(true)}
+          >
+            <Icon name="receipt-text" size={17} />
+            <span className="kasir-toolbar-label">{labelKanal(keranjang.kanal)}</span>
+          </Tombol>
+
+          {/* Catatan / Pelanggan / No. Meja -- data pesanan opsional (P5, P6).
+              Selalu aktif, juga saat keranjang kosong: kasir sering menanyakan
+              nama sebelum memindai. Isinya tampil di keranjang dan tersimpan
+              di `order` (migrasi 0037). */}
+          <Tombol varian="ghost" onClick={() => setDialogTeks('catatan')}>
+            <Icon name="pencil" size={17} />
+            <span className="kasir-toolbar-label">Catatan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('pelanggan')}>
+            <Icon name="user-round" size={17} />
+            <span className="kasir-toolbar-label">Pelanggan</span>
+          </Tombol>
+          <Tombol varian="ghost" onClick={() => setDialogTeks('meja')}>
+            <Icon name="utensils-crossed" size={17} />
+            <span className="kasir-toolbar-label">No. Meja</span>
+          </Tombol>
+
           {/* Batalkan — mengosongkan keranjang yang belum dibayar, dengan
               konfirmasi dan jejak audit (spec § 4 baris 7). Tidak di balik
               kill switch: kill switch tidak boleh menyentuh audit
@@ -733,6 +904,14 @@ export function Kasir() {
               {alasanBatalNonaktif}
             </span>
           )}
+
+          {/* Pesanan tahan -- tombol kedelapan mockup (Task 12). SELALU aktif:
+              daftar tahanan dapat dibuka juga saat keranjang kosong (di sanalah
+              Lanjutkan). Tahan pesanan ini nonaktif DENGAN alasan di dalam dialog. */}
+          <Tombol varian="ghost" onClick={bukaTahan}>
+            <Icon name="circle-pause" size={17} />
+            <span className="kasir-toolbar-label">Pesanan tahan</span>
+          </Tombol>
         </div>
 
         {/* ⛔ Pencarian dan urutan berbagi SATU baris kontrol, 2 September 2026.
@@ -1072,6 +1251,18 @@ export function Kasir() {
           </p>
         )}
 
+        {/* P5/P6 -- data pesanan yang sudah diisi, terlihat kasir sebelum menagih.
+            Teks, bukan warna saja; tidak tampil bila tidak ada yang diisi. */}
+        {(keranjang.dataPesanan?.namaPemesan ||
+          keranjang.dataPesanan?.nomorMeja ||
+          keranjang.dataPesanan?.catatan) && (
+          <div className="kasir-data-pesanan t-caption">
+            {keranjang.dataPesanan?.namaPemesan && <p>Atas nama: {keranjang.dataPesanan.namaPemesan}</p>}
+            {keranjang.dataPesanan?.nomorMeja && <p>Meja: {keranjang.dataPesanan.nomorMeja}</p>}
+            {keranjang.dataPesanan?.catatan && <p>Catatan: {keranjang.dataPesanan.catatan}</p>}
+          </div>
+        )}
+
         {keranjang.baris.length === 0 ? (
           <div className="kasir-keranjang-kosong">
             {/* Ikon di keadaan kosong, bukan hiasan: panel yang isinya satu
@@ -1149,7 +1340,9 @@ export function Kasir() {
           </div>
         )}
 
-        {/* ⛔ Baris pajak memakai NAMA TARIF, bukan kata "Pajak".
+        {/* ⛔ Baris pajak: "Pajak · <nama tarif>" (keputusan bawaan #5) -- nama dari
+            `TaxRate.name`, tidak pernah diketik. Di STRUK dan K-06 kata "Pajak"
+            sendirian tetap dilarang:
             `spec-c:404` melarang string generik itu di struk, dan layar yang
             menyebutnya berbeda dari struk membuat kasir yang mencocokkan
             keduanya menyimpulkan salah satunya salah. Satu baris per tarif,
@@ -1159,7 +1352,7 @@ export function Kasir() {
             keputusan merchant yang auditor perlu lihat, bukan ketiadaan. */}
         {hitungan?.pajak.lines.map((t) => (
           <div className="kasir-subtotal" key={t.taxRateId}>
-            <span className="t-body-md">{t.name}</span>
+            <span className="t-body-md">Pajak · {t.name}</span>
             <span className="t-body-md num">+ {rupiah(t.amount)}</span>
           </div>
         ))}
@@ -1238,6 +1431,20 @@ export function Kasir() {
         />
       )}
 
+      {lembarKanal && (
+        <LembarKanal
+          aktif={keranjang.kanal}
+          ringkasan={ringkasanKanal}
+          galat={galatKanal}
+          tanpaItem={keranjang.baris.length === 0}
+          onPilih={(kanal) => {
+            setKeranjang((k) => setelKanal(k, kanal));
+            setLembarKanal(false);
+          }}
+          onTutup={() => setLembarKanal(false)}
+        />
+      )}
+
       {dialogBatal && (
         <DialogKonfirmasiKosongkan
           jumlahItem={tampilkanKuantitas(
@@ -1245,6 +1452,46 @@ export function Kasir() {
           )}
           onKonfirmasi={konfirmasiBatal}
           onBatal={() => setDialogBatal(false)}
+        />
+      )}
+
+      {dialogTahan && (
+        <DialogPesananTahan
+          daftar={daftarTahan}
+          galatMuat={galatTahan}
+          formatUang={rupiah}
+          keranjangKosong={keranjang.baris.length === 0}
+          onTahan={tahanSekarang}
+          onLanjutkan={lanjutkanDari}
+          onBuang={buangDari}
+          onTutup={() => setDialogTahan(false)}
+        />
+      )}
+
+      {dialogTeks !== null && (
+        <DialogTeksPesanan
+          mode={dialogTeks}
+          nilaiAwal={
+            dialogTeks === 'catatan'
+              ? (keranjang.dataPesanan?.catatan ?? null)
+              : dialogTeks === 'pelanggan'
+                ? (keranjang.dataPesanan?.namaPemesan ?? null)
+                : (keranjang.dataPesanan?.nomorMeja ?? null)
+          }
+          onSimpan={(nilai) => {
+            setKeranjang((k) =>
+              setelDataPesanan(
+                k,
+                dialogTeks === 'catatan'
+                  ? { catatan: nilai }
+                  : dialogTeks === 'pelanggan'
+                    ? { namaPemesan: nilai }
+                    : { nomorMeja: nilai }
+              )
+            );
+            setDialogTeks(null);
+          }}
+          onBatal={() => setDialogTeks(null)}
         />
       )}
 

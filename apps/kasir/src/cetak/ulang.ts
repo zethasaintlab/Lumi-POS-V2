@@ -38,6 +38,9 @@ interface BarisOrderStruk {
   amount_due: number;
   created_by: string;
   outlet_id: string;
+  customer_name: string | null;
+  table_number: string | null;
+  note: string | null;
 }
 
 /**
@@ -90,7 +93,8 @@ export async function bangunUlangStruk(
   const order = (
     await db.getAll<BarisOrderStruk>(
       `SELECT receipt_number, occurred_at, channel, subtotal, order_discount, tax_amount,
-              rounding_adjustment, total, amount_due, created_by, outlet_id
+              rounding_adjustment, total, amount_due, created_by, outlet_id,
+              customer_name, table_number, note
          FROM "order" WHERE id = ?`,
       [orderId]
     )
@@ -160,6 +164,9 @@ export async function bangunUlangStruk(
     waktu: order.occurred_at,
     namaKasir: order.created_by,
     channel: order.channel === 'dine_in' ? 'dine_in' : 'takeaway',
+    namaPemesan: order.customer_name,
+    nomorMeja: order.table_number,
+    catatan: order.note,
     baris: baris.map((b) => ({
       itemName: b.item_name,
       variationName: b.variation_name,

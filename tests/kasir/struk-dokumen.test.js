@@ -291,3 +291,53 @@ test('⛔ contoh spec-c:376 TETAP mencetak "2x Kopi Susu", bukan "Kopi Susu Regu
   assert.ok(out.includes('2x Kopi Susu'), out);
   assert.ok(!out.includes('Kopi Susu Regular'), `contoh spec berubah:\n${out}`);
 });
+
+// P5/P6 (migrasi 0037) -- "Atas nama", "Meja", "Catatan" dicetak SEBELUM baris
+// item, dan dilipat (bukan dipotong) pada 32 kolom: catatan "tanpa es, gula
+// sedikit" yang terpotong adalah pesanan yang disiapkan salah.
+test('struk mencetak "Atas nama", "Meja", "Catatan", dilipat di 32 kolom', async () => {
+  const data = {
+    ...CONTOH,
+    namaPemesan: 'Budi Santoso Wijaya Kusuma Negara',
+    nomorMeja: 'A-12',
+    catatan: 'tanpa es, gula sedikit, tolong dipisah kantongnya ya',
+  };
+  for (const lebar of [32, 48]) {
+    const out = await cetak(data, lebar);
+    const baris = out.split('\n');
+    for (const l of baris) assert.ok(l.length <= lebar, `baris ${l.length} > ${lebar}: ${JSON.stringify(l)}`);
+    assert.ok(out.includes('Atas nama: Budi'), out);
+    assert.ok(out.includes('Meja: A-12'), out);
+    assert.ok(out.includes('Catatan: tanpa es'), out);
+    // Lipatan tidak membuang kata: kata terakhir tetap tercetak utuh.
+    // Blok dari baris yang diawali label sampai garis pemisah, digabung lagi:
+    // harus sama dengan teks utuh (tidak ada kata yang terbuang).
+    const blok = (awalan) => {
+      const i = baris.findIndex((l) => l.startsWith(awalan));
+      const isi = [];
+      for (let j = i; j < baris.length && /[A-Za-z0-9]/.test(baris[j]) && !baris[j].includes('Kopi Susu'); j++) isi.push(baris[j].trim());
+      return isi.join(' ');
+    };
+    const sesudahNama = blok('Atas nama');
+    assert.ok(sesudahNama.includes('Atas nama: Budi Santoso Wijaya Kusuma Negara'), `nama terpotong, bukan dilipat: ${sesudahNama}`);
+    assert.ok(
+      sesudahNama.includes('Catatan: tanpa es, gula sedikit, tolong dipisah kantongnya ya'),
+      `catatan terpotong, bukan dilipat: ${sesudahNama}`
+    );
+    // Sebelum baris item pertama.
+    const iNama = baris.findIndex((l) => l.startsWith('Atas nama'));
+    const iItem = baris.findIndex((l) => l.includes('Kopi Susu'));
+    assert.ok(iNama >= 0 && iNama < iItem, 'Atas nama harus sebelum baris item');
+    const iMeja = baris.findIndex((l) => l.startsWith('Meja:'));
+    const iCatatan = baris.findIndex((l) => l.startsWith('Catatan:'));
+    assert.ok(iNama < iMeja && iMeja < iCatatan, `urutan harus Atas nama < Meja < Catatan (${iNama}, ${iMeja}, ${iCatatan})`);
+    assert.ok(iCatatan < iItem, `Catatan (baris ${iCatatan}) harus sebelum baris item pertama (${iItem})`);
+    assert.ok(iMeja < iItem, `Meja (baris ${iMeja}) harus sebelum baris item pertama (${iItem})`);
+  }
+});
+
+test('tanpa data pesanan, struk persis seperti sebelumnya (tidak ada baris kosong tambahan)', async () => {
+  const dasar = await cetak(CONTOH);
+  assert.equal(await cetak({ ...CONTOH, namaPemesan: null, nomorMeja: null, catatan: null }), dasar);
+  assert.ok(!dasar.includes('Atas nama') && !dasar.includes('Meja:') && !dasar.includes('Catatan:'));
+});

@@ -102,6 +102,11 @@ export const TABEL_LOKAL_SAJA = [
   // tengah menunggu tidak menghilangkan jejak transaksi yang pelanggannya
   // mungkin sudah bayar.
   'draf_qris_lokal',
+  // Task 12 -- Pesanan tahan. Murni lokal, SENGAJA bukan raw table (alasan
+  // `keranjang_lokal`: menulis `order` berarti dikirim ke server; berbagi order
+  // antar device saat offline adalah non-goal v1). Tabel lokal baru dibuat di
+  // perangkat lama oleh `migrasiAditifLokal`, tanpa menyentuh sidik jari.
+  'keranjang_tahan',
   'device_config',
   'skema_lokal',
   // Keduanya SENGAJA tidak didaftarkan: sesi kasir tidak punya padanan di

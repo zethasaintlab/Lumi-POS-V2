@@ -236,7 +236,8 @@ test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header
     const tombol = toolbar ? [...toolbar.querySelectorAll('button')] : [];
     return {
       toolbarAda: !!toolbar,
-      label: tombol.map((b) => b.innerText.trim().replace(/\s+/g, ' ')),
+      /* Pajak: label terlihat = kanal aktif, nama aksesibel "Pajak: <kanal>" (Task 10, Q8). */
+      label: tombol.map((b) => (/^Pajak\b/.test(b.getAttribute('aria-label') ?? '') ? 'Pajak' : b.innerText.trim().replace(/\s+/g, ' '))),
       tinggiMin: tombol.length ? Math.min(...tombol.map((b) => Math.round(b.getBoundingClientRect().height))) : 0,
       diHeader: header && toolbar ? header.contains(toolbar) : false,
       toolbarKanan: toolbar ? Math.round(toolbar.getBoundingClientRect().right) : 0,
@@ -262,14 +263,16 @@ test('⛔ aksi K-03 ada di .kasir-toolbar di atas kolom katalog, tidak di header
      manual" masuk lebih dulu, mengikuti urutan `LABEL_TOOLBAR_MOCKUP` di
      `k03-toolbar.test.js`. Task 5B menambah "Batalkan" tepat sesudah
      "Diskon". Task 4 (Laci kas) MENGELUARKAN "Buka laci" dan "Kas masuk /
-     keluar" dari toolbar ini — keduanya pindah ke layar K-18. */
+     keluar" dari toolbar ini — keduanya pindah ke layar K-18. Task 11
+     menambah "Catatan", "Pelanggan", "No. Meja" tepat sesudah "Pajak"
+     (P5, P6). Task 12 menambah "Pesanan tahan" -- lengkap delapan. */
   assert.deepEqual(
     hasil.label,
-    ['Item manual', 'Diskon', 'Batalkan'],
-    'isi toolbar tidak sesuai. Tiga label ini yang punya kode di repo hari ' +
-      'ini (Item manual, Diskon, Batalkan (Task 5B)); Buka laci dan Kas masuk / ' +
-      'keluar pindah ke layar Laci kas (K-18, Task 4); lima lainnya di mockup ' +
-      'belum, dan tombol yang tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
+    ['Item manual', 'Diskon', 'Pajak', 'Catatan', 'Pelanggan', 'No. Meja', 'Batalkan', 'Pesanan tahan'],
+    'isi toolbar tidak sesuai. Delapan label mockup lengkap (Item manual, Diskon, Pajak (Task 10), ' +
+      'Catatan, Pelanggan, No. Meja (Task 11), Batalkan (Task 5B), Pesanan tahan (Task 12)); ' +
+      'Buka laci dan Kas masuk / keluar pindah ke layar Laci kas (K-18, Task 4), dan tombol ' +
+      'yang tidak melakukan apa-apa tidak boleh ditambahkan ke sini.'
   );
 
   /* Aturan design system #3. */

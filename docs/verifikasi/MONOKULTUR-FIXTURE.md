@@ -70,7 +70,7 @@ dengan "52 layar" dan "414 AC".
 | Dimensi | Nilai | Kemunculan | Berkas |
 |---|---|---:|---:|
 | `tax_rate.type` | `pbjt` | 12 | 9 |
-| | **`ppn`** | **0** | **0** |
+| | `ppn` | 2 baris fixture `type: 'ppn'` (diukur 9 Oktober 2026; sebelumnya 0) | 2 |
 | | **`service_charge`** | **0** | **0** |
 | `order.channel` | `takeaway` | 71 | 48 |
 | | **`dine_in`** | **4** | **3** |
@@ -90,7 +90,7 @@ dengan "52 layar" dan "414 AC".
 
 ### ⛔ Temuan terbesar, dan ia bukan metode pembayaran
 
-**`ppn` tidak pernah muncul di satu pun fixture. Nol.**
+**`ppn` muncul di fixture sejak Task 10 (9 Oktober 2026): 2 baris fixture `type: 'ppn'` di `tests/`.** (Sebelum itu nol; riwayat audit di bawah tetap berlaku untuk keadaan 2 September.)
 
 `tax_rate.type` punya empat nilai (`pbjt`, `ppn`, `service_charge`, `none`) dan
 hanya `pbjt` yang pernah diuji. PPN adalah **pajak nasional 11%** — jenis pajak

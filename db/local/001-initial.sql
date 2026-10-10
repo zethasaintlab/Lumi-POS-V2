@@ -367,6 +367,30 @@ CREATE TABLE draf_qris_lokal (
   dibuat_pada   TEXT NOT NULL
 );
 
+-- Task 12 (PR 2C, spec § 4 "Pesanan tahan") — keranjang yang DITAHAN kasir
+-- untuk dilanjutkan, lalu memulai keranjang baru.
+--
+-- ⛔ Murni lokal, SENGAJA bukan raw table dan BUKAN `order` berstatus `open`:
+-- alasan persis `keranjang_lokal` (menulis `order` berarti mengirimnya ke
+-- server; berbagi order antar device saat offline adalah non-goal v1).
+-- Tabel baru murni lokal sampai ke perangkat yang sudah ada lewat
+-- `migrasiAditifLokal` (CREATE di setiap boot) -- preseden `draf_qris_lokal`;
+-- sidik jari raw table TIDAK berubah, jadi katalog tidak diunduh ulang.
+--
+-- ⛔ BANYAK baris (tidak seperti `keranjang_lokal`): `id` ULID/UUID klien.
+-- `shift_id` mengikat tahanan ke shift; K-12 menolak tutup selama ada.
+-- `jumlah_item` dan `subtotal` hanya ringkasan DAFTAR (baris keranjang dan
+-- rupiah utuh pada harga saat ditahan); kebenarannya `isi`, JSON `Keranjang`
+-- dari serializer yang SAMA dengan `keranjang_lokal` (bigint sebagai string).
+CREATE TABLE keranjang_tahan (
+  id          TEXT PRIMARY KEY NOT NULL,
+  shift_id    TEXT NOT NULL,
+  isi         TEXT NOT NULL,
+  jumlah_item INTEGER NOT NULL,
+  subtotal    INTEGER NOT NULL,
+  dibuat_pada TEXT NOT NULL
+);
+
 CREATE TABLE keranjang_lokal (
   id TEXT PRIMARY KEY NOT NULL,
   shift_id TEXT NOT NULL,
@@ -424,6 +448,9 @@ CREATE TABLE "order" (
   -- menangkapnya: penjaga drift hanya membandingkan kolom yang ada di KEDUA
   -- sisi. `KOLOM_SENGAJA_TIDAK_TURUN` sekarang menutup celah itu.
   voided_by_order_id TEXT,
+  -- Migrasi 0037 (P5/P6): nama pemesan, nomor meja, catatan. Satu migrasi,
+  -- satu perubahan sidik jari. Nullable: order lama dan klien N-1 tanpa isi.
+  customer_name TEXT, table_number TEXT, note TEXT,
   created_by TEXT NOT NULL, occurred_at TEXT NOT NULL, recorded_at TEXT, hlc INTEGER NOT NULL
 );
 CREATE TABLE "check" (

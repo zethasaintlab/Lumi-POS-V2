@@ -543,6 +543,18 @@
   gap: var(--space-3);
 }
 
+/* Lembar Pajak: dua pilihan kanal bertumpuk, masing-masing menyebut tarifnya. */
+.kasir-pilih-kanal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.kasir-pilih-kanal-opsi {
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+
 /* K-10 refund — dua kolom (rebuild UI Fase 3.5). Lebar dua kartu mockup
    (2 × 502 + celah). Kolom menyusut menjadi satu pada layar sempit lewat
    `auto-fit`, bukan media query: dialog yang sama muncul di tablet potret. */
@@ -1354,6 +1366,19 @@
   gap: var(--space-2);
 }
 
+/* P5/P6 -- ringkasan Atas nama / Meja / Catatan di atas daftar baris. Melipat
+   panjang (catatan 140 karakter), tidak memotong. */
+.kasir-data-pesanan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.kasir-data-pesanan p {
+  margin: 0;
+}
+
 .kasir-keranjang-kosongkan {
   flex: none;
   min-width: var(--touch-min);
@@ -2028,4 +2053,33 @@
 .kasir-menu-item[aria-disabled="true"] {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Pesanan tahan (Task 12): daftar di dialog. Hanya token. */
+.kasir-tahan-daftar {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.kasir-tahan-baris {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.kasir-tahan-isi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.kasir-tahan-aksi {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }

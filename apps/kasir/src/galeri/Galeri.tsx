@@ -80,6 +80,20 @@ pasangLokalPalsu({
   pemberitahu: buatPemberitahu(),
 });
 
+/* Task 12 fix 2 (D12): jumlah panggilan `beritahu()` dibaca test DOM lewat `window.__galeriBeritahu` --
+   penulisan yang tidak mendorong pengiriman (Buang tahanan, Batalkan) tidak boleh senyap. */
+function pemberitahuTercatat() {
+  const p = buatPemberitahu();
+  const w = window as { __galeriBeritahu?: number };
+  w.__galeriBeritahu = 0;
+  const asli = p.beritahu.bind(p);
+  p.beritahu = () => {
+    w.__galeriBeritahu = (w.__galeriBeritahu ?? 0) + 1;
+    asli();
+  };
+  return p;
+}
+
 const LAYAR = [
   { id: 'K-03', nama: 'Kasir (grid + keranjang)', render: () => <Kasir /> },
   /* ⛔ TANPA shell: `App.tsx:45` merender `<Login />` telanjang saat sesi
@@ -184,7 +198,7 @@ export function Galeri() {
   }, []);
 
   /* `?editItem=1` — fixture Edit Item (`OpsiDbPalsu.editItem`), jalur test. */
-  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet } = useMemo(() => {
+  const { editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, namaPengguna, namaOutlet, pajakKanal, layanan, tahanan, drafQris } = useMemo(() => {
     const q = new URLSearchParams(window.location.search);
     return {
       editItem: q.get('editItem') === '1',
@@ -193,6 +207,10 @@ export function Galeri() {
       tanpaKasManual: q.get('tanpaKasManual') === '1',
       gagalBacaKas: q.get('gagalBacaKas') === '1',
       transfer: q.get('transfer') === '1',
+      pajakKanal: q.get('pajakKanal') === '1',
+      layanan: q.get('layanan') === '1',
+      drafQris: q.get('drafQris') === '1',
+      tahanan: q.get('tahanan') ? Number(q.get('tahanan')) : undefined,
       /* Jalur test header (R2): hitungan gagal 3 digit dan nama pengguna panjang. */
       jumlahGagal: q.get('jumlahGagal') ? Number(q.get('jumlahGagal')) : undefined,
       namaPengguna: q.get('namaPengguna') ?? undefined,
@@ -218,7 +236,7 @@ export function Galeri() {
        kegagalan MEMBACA: database terbuka, query menolak. Itu yang menagih
        keadaan error milik tiap layar (aturan DS #7), dan itu yang benar-benar
        terjadi pada perangkat yang OPFS-nya penuh. */
-    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal });
+    const db = buatDbPalsu(skenario, { tanpaShift: layarId === 'K-02', matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, pajakKanal, layanan, tahanan, drafQris });
     dbSkenario = db;
     return {
       tahap: 'siap',
@@ -240,10 +258,10 @@ export function Galeri() {
         } as never,
         db,
         keputusanMigrasi: { tindakan: 'tidak-ada' } as never,
-        pemberitahu: buatPemberitahu(),
+        pemberitahu: pemberitahuTercatat(),
       },
     };
-  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal]);
+  }, [skenario, layarId, matikanFitur, editItem, stokKetat, bolehNegatif, tanpaKasManual, transfer, gagalBacaKas, jumlahGagal, pajakKanal, layanan, tahanan, drafQris]);
 
   return (
     <div className="galeri">

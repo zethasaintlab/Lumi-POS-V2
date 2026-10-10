@@ -179,6 +179,16 @@ export interface OpsiDbPalsu {
   pembulatan?: number;
   /** `[EKSPLORASI]` `?modePembulatan=up` — `outlet.rounding_mode` (bawaan half_up). */
   modePembulatan?: 'half_up' | 'up' | 'down';
+  /** `[EKSPLORASI]` Task 10 `?pajakKanal=1` -- tambah PBJT 10% khusus `dine_in` di samping PPN 11% (`all`), supaya
+      kedua kanal punya tarif BERBEDA (G-KANAL). Tanpa ini kedua kanal memakai PPN 11% yang sama. */
+  pajakKanal?: boolean;
+  /** `[EKSPLORASI]` Task 10 `?layanan=1` -- `outlet.service_charge_rate` 10% (1000 berskala 10.000), untuk
+      G-TANPA-LAYANAN: Dine in tidak boleh menyiratkan biaya layanan walau outlet menyetel tarifnya. */
+  layanan?: boolean;
+  /** `?drafQris=1` (Task 12 fix) — satu draf QRIS dinamis tertunda di shift galeri (membekukan Tahan/Lanjutkan/Buang). */
+  drafQris?: boolean;
+  /** `?tahanan=N` (Task 12) — tanam N Pesanan tahan (Americano Hot, harga LAMA Rp 10.000 + diskon Rp 1.000) di shift galeri. */
+  tahanan?: number;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -362,7 +372,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
            `'nearest'` yang sempat di sini tidak dikenal `simpanPenjualan`, dan
            kegagalannya baru terlihat saat K-07 dicoba dari galeri. */
         rounding_mode: opsi.modePembulatan ?? 'half_up',
-        service_charge_rate: 0,
+        service_charge_rate: opsi.layanan ? 1000 : 0,
         vertical_profile_id: 'vp-1',
         discount_threshold_percent: 2000,
         discount_threshold_amount: 50000,
@@ -395,6 +405,25 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         effective_from: '2026-01-01T00:00:00.000Z',
         effective_to: null,
       },
+      ...(opsi.pajakKanal
+        ? [
+            {
+              id: 'tax-pbjt-dine',
+              tenant_id: 'ten-galeri',
+              outlet_id: null,
+              name: 'PBJT 10% Dine in',
+              type: 'pbjt',
+              rate: 1000,
+              is_inclusive: 0,
+              jurisdiction: 'ID-JK',
+              channel: 'dine_in',
+              applies_to: 'all_items',
+              applies_to_ids: null,
+              effective_from: '2026-01-01T00:00:00.000Z',
+              effective_to: null,
+            },
+          ]
+        : []),
     ],
     vertical_profile: [
       {
@@ -493,9 +522,47 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
             },
           ]
         : [],
+    // Pesanan tahan (Task 12): ditanam hanya bila diminta; harga LAMA Rp 10.000 supaya Lanjutkan membuktikan harga ulang.
+    keranjang_tahan: Array.from({ length: opsi.tahanan ?? 0 }, (_, i) => ({
+      id: `tahan-${i + 1}`,
+      shift_id: 'shift-galeri',
+      isi: JSON.stringify({
+        baris: [
+          {
+            id: `th-baris-${i + 1}`,
+            variationId: 'item-americano-vHot',
+            itemName: 'Americano',
+            variationName: 'Hot',
+            variationCount: 1,
+            unitPrice: 10000,
+            quantityMilli: 1000,
+            modifier: [],
+          },
+        ],
+        // Diskon nominal DI BAWAH ambang (tanpa persetujuan) + PPN eksklusif galeri: total != subtotal,
+        // supaya jejak Buang yang memakai subtotal (bukan `hitungKeranjang`) tertangkap penjaga.
+        diskon: {
+          minta: { tipe: 'nominal', nilai: '1000' },
+          alasanKode: 'pelanggan_langganan',
+          alasanCatatan: null,
+          approverId: null,
+          nominalDisetujui: null,
+        },
+      }),
+      jumlah_item: 1,
+      subtotal: 10000,
+      dibuat_pada: `2026-09-01T0${i + 1}:00:00.000Z`,
+    })) as Record<string, unknown>[],
     print_job: [],
     // Draf QRIS dinamis (`qris-dinamis.ts`): satu baris, diisi/dihapus di `jalankan`.
-    draf_qris_lokal: [],
+    draf_qris_lokal: opsi.drafQris
+      ? [
+          {
+            id: 'kini', order_id: 'ord-qris', payment_id: 'pay-qris', shift_id: 'shift-galeri',
+            draf: '{}', muatan: '{}', qr_string: null, dibuat_pada: '2026-09-01T02:00:00.000Z',
+          },
+        ]
+      : [],
     fitur_lokal: (opsi.matikanFitur ?? []).map((kunci) => ({ kunci, aktif: 0 })),
     telemetry_local: [],
     // Diisi di `getAll` — WebP-nya di-encode kanvas, dan itu async.
@@ -570,6 +637,18 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
             min_selections: 1,
           })) as T[];
         }
+      }
+      /* Pesanan tahan (Task 12): hanya dua bentuk WHERE -- `shift_id = ?` dan `id = ?` -- bukan mesin SQL. */
+      if (tabel === 'draf_qris_lokal' && /WHERE\s+shift_id\s*=/i.test(sql)) {
+        return (perTabel.draf_qris_lokal as Record<string, unknown>[]).filter((r) => r.shift_id === (params ?? [])[0]) as T[];
+      }
+      if (tabel === 'keranjang_tahan') {
+        const kolom = /WHERE\s+shift_id\s*=/i.test(sql) ? 'shift_id' : /WHERE\s+id\s*=/i.test(sql) ? 'id' : null;
+        const hasil = (perTabel.keranjang_tahan as Record<string, unknown>[]).filter(
+          (r) => kolom === null || r[kolom] === (params ?? [])[0]
+        );
+        if (/\bcount\s*\(/i.test(sql)) return [{ n: hasil.length }] as T[];
+        return hasil as T[];
       }
       const baris = perTabel[tabel] ?? [];
 
@@ -705,6 +784,15 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         id: params[0], order_id: params[1], payment_id: params[2], shift_id: params[3],
         draf: params[4], muatan: params[5], qr_string: params[6], dibuat_pada: params[7],
       });
+    }
+    if (/^INSERT INTO keranjang_tahan/i.test(sql.trim()) && params?.length === 6) {
+      perTabel.keranjang_tahan.push({
+        id: params[0], shift_id: params[1], isi: params[2], jumlah_item: params[3], subtotal: params[4], dibuat_pada: params[5],
+      });
+    }
+    if (/^DELETE FROM keranjang_tahan/i.test(sql.trim())) {
+      const i = (perTabel.keranjang_tahan as { id: unknown }[]).findIndex((r) => r.id === params?.[0]);
+      if (i >= 0) perTabel.keranjang_tahan.splice(i, 1);
     }
     if (/^DELETE FROM draf_qris_lokal/i.test(sql.trim())) perTabel.draf_qris_lokal.length = 0;
     /* Urutan parameter = `catatKasManual` (`kas/manual.ts`): id, shift_id, type,

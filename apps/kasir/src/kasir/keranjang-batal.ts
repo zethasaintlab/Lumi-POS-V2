@@ -56,6 +56,7 @@ export async function batalkanKeranjang({
   waktu,
   idBaru,
   hlc,
+  hapus = bersihkanKeranjangDi,
 }: {
   db: DbLokal;
   konfig: KonfigPerangkat;
@@ -67,6 +68,13 @@ export async function batalkanKeranjang({
   waktu: () => Date;
   idBaru: () => string;
   hlc: () => bigint;
+  /**
+   * Apa yang dihapus DI DALAM transaksi jejak. Bawaan: keranjang berjalan
+   * (`keranjang_lokal`). Pesanan tahan yang dibuang memberi penghapusan
+   * barisnya sendiri -- jejak yang SAMA, satu transaksi, tanpa menyentuh
+   * keranjang berjalan milik pesanan lain.
+   */
+  hapus?: (tx: DbLokal) => Promise<void>;
 }): Promise<HasilBatalKeranjang> {
   // Keranjang kosong tidak menghasilkan peristiwa: tidak ada yang dibatalkan.
   if (keranjang.baris.length === 0) return { status: 'keranjang_kosong' };
@@ -128,7 +136,7 @@ export async function batalkanKeranjang({
     });
 
     // ⛔ Penghapusan keranjang DI DALAM transaksi yang sama.
-    await bersihkanKeranjangDi(tx);
+    await hapus(tx);
   });
 
   return { status: 'tercatat', id };

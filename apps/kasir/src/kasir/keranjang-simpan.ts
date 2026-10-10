@@ -1,5 +1,6 @@
 import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
-import { keranjangKosong, type Keranjang, type BarisKeranjang } from './keranjang.ts';
+import { keranjangKosong, type Keranjang, type BarisKeranjang, type DataPesanan } from './keranjang.ts';
+import { bersihkanTeksPesanan } from '../../../../packages/domain/src/data-pesanan.ts';
 
 /**
  * KEP-21 — keranjang K-03 yang BERTAHAN melewati muat ulang.
@@ -92,7 +93,7 @@ export async function simpanKeranjang(
  * `bigint`. Konvensi yang sama dengan setiap uang yang melewati JSON di repo
  * ini (muatan outbox, `after` di `audit_event`).
  */
-function serialkan(k: Keranjang): string {
+export function serialkan(k: Keranjang): string {
   return JSON.stringify(k, (_kunci, nilai: unknown) =>
     typeof nilai === 'bigint' ? nilai.toString() : nilai
   );
@@ -159,7 +160,7 @@ export async function pulihkanKeranjang(db: DbLokal, shiftId: string): Promise<H
  * ia lihat, dan persetujuan yang dipulihkan setengah adalah potongan tanpa
  * penyetuju.
  */
-function uraikan(teks: string): Keranjang | null {
+export function uraikan(teks: string): Keranjang | null {
   let mentah: unknown;
   try {
     mentah = JSON.parse(teks);
@@ -201,7 +202,20 @@ function uraikan(teks: string): Keranjang | null {
   }
 
   const kosong = keranjangKosong();
-  return { ...kosong, baris, diskon: diskonSah(o.diskon) };
+  // ⛔ Kanal asing/hilang -> Takeaway, bukan keranjang dibuang: baris tertulis versi
+  // sebelum kanal ada tidak punya kolom ini, dan keranjangnya tetap sah.
+  const kanal = o.kanal === 'dine_in' ? 'dine_in' : 'takeaway';
+  return { ...kosong, baris, diskon: diskonSah(o.diskon), kanal, dataPesanan: dataPesananSah(o.dataPesanan) };
+}
+
+/** Bentuk lama/rusak → `null` per bidang; keranjangnya sendiri tetap sah. */
+function dataPesananSah(nilai: unknown): DataPesanan {
+  const o = typeof nilai === 'object' && nilai !== null ? (nilai as Record<string, unknown>) : {};
+  return {
+    namaPemesan: bersihkanTeksPesanan(o.namaPemesan),
+    nomorMeja: bersihkanTeksPesanan(o.nomorMeja),
+    catatan: bersihkanTeksPesanan(o.catatan),
+  };
 }
 
 function diskonSah(nilai: unknown): Keranjang['diskon'] {
