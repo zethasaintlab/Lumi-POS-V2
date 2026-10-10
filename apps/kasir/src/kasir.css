@@ -1001,6 +1001,31 @@
   border-radius: var(--radius-card);
   background: var(--accent-soft);
 }
+/* Angka kembalian: 32/700 berwarna aksen (mockup; spec § 8). */
+.kasir-k07-kembalian .num { color: var(--primary); font-weight: 700; }
+
+/* Pratinjau struk (spec § 8): kertas putih berbayangan; teks --font-mono 13 px,
+   satu-satunya pemakaian mono di layar. Tengah/kanan lewat text-align, bukan
+   spasi — printer memakai ESC a. */
+.kasir-pratinjau { display: flex; flex-direction: column; gap: var(--space-4); }
+.kasir-pratinjau-toggle { display: flex; gap: var(--space-2); }
+.kasir-pratinjau-toggle .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--primary); }
+.kasir-kertas {
+  align-self: center;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: var(--space-4);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-raised);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+.kasir-kertas-baris { white-space: pre; min-height: 1lh; text-align: left; }
+.kasir-kertas-baris[data-rata="tengah"] { text-align: center; }
+.kasir-kertas-baris[data-rata="kanan"] { text-align: right; }
+.kasir-kertas-baris[data-tebal] { font-weight: 700; }
 
 /* K-03 kasir: grid produk + keranjang.
 

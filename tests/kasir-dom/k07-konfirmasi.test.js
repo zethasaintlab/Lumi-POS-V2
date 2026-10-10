@@ -225,7 +225,7 @@ async function ukur(hal) {
       angkaKembalian: angka ? `${getComputedStyle(angka).fontSize}` : null,
       warnaAngka: angka ? getComputedStyle(angka).color : null,
       bobotAngka: angka ? getComputedStyle(angka).fontWeight : null,
-      nomorStruk: (dialog.textContent.match(/[A-Z0-9]+-\d{8}-\d{4}|TRX-\S+/) ?? [null])[0],
+      nomorStruk: ([...dialog.querySelectorAll('p')].find((e) => /dibayar/.test(e.textContent))?.textContent.trim().split(/\s/)[0]) ?? null,
       tombolKirim: [...dialog.querySelectorAll('button')].map((b) => b.textContent.trim()),
       status: [...dialog.querySelectorAll('[role="status"]')].map((e) => e.textContent.trim()),
       baru: baru && r(baru),
@@ -305,7 +305,7 @@ for (const lebar of [1024, 1280]) {
     /* "Cetak Struk" membuka PRATINJAU (mode, bukan rute); isinya diuji
        `pratinjau-struk.test.js`. Di sini hanya kabelnya. */
     await hal.getByRole('button', { name: 'Cetak Struk', exact: true }).click();
-    await hal.waitForSelector('[data-pratinjau="struk"]', { timeout: 10_000 });
+    await hal.waitForSelector('[data-pratinjau^="struk"]', { timeout: 10_000 });
     await hal.close();
   });
 }

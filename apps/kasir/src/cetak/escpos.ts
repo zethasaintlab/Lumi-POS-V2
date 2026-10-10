@@ -167,45 +167,68 @@ function duaKolom(kiri: string, kanan: string, lebar: number): string {
   return kiriDipotong + ' '.repeat(lebar - kiriDipotong.length - kanan.length) + kanan;
 }
 
+/**
+ * Satu baris yang SUDAH ditata: transliterasi, lipat, dan potong-kiri dua
+ * kolom selesai. `teks` tepat/maksimal `charsPerLine` kolom; perataan tengah
+ * TIDAK dipadatkan dengan spasi (printer: `ESC a`, pratinjau: `text-align`).
+ */
+export type BarisTataLetak = { teks: string; rata: Perataan; tebal: boolean } | { garis: true };
+
+/** Satu kelompok per `BarisStruk` — kelompok menentukan kapan kode ESC dipasang. */
+function kelompokTataLetak(dok: ReceiptDocument, profil: PrinterProfile): BarisTataLetak[][] {
+  const lebar = profil.charsPerLine;
+  return dok.baris.map((b): BarisTataLetak[] => {
+    if (b.jenis === 'kosong') return [{ teks: '', rata: 'kiri', tebal: false }];
+    if (b.jenis === 'garis') return [{ garis: true }];
+    if (b.jenis === 'duaKolom') {
+      return [{ teks: duaKolom(keAscii(b.kiri), keAscii(b.kanan), lebar), rata: 'kiri', tebal: b.tebal === true }];
+    }
+    return lipat(keAscii(b.isi), lebar).map((teks) => ({
+      teks,
+      rata: b.rata ?? 'kiri',
+      tebal: b.tebal === true,
+    }));
+  });
+}
+
+/**
+ * ⛔ SATU-SATUNYA tata letak struk: printer (`renderEscPos`) dan pratinjau
+ * (`PratinjauStruk`) keduanya membacanya, jadi pratinjau tidak dapat
+ * menyimpang dari byte yang dicetak. Murni.
+ */
+export function tataLetakStruk(dok: ReceiptDocument, profil: PrinterProfile): BarisTataLetak[] {
+  return kelompokTataLetak(dok, profil).flat();
+}
+
 export function renderEscPos(dok: ReceiptDocument, profil: PrinterProfile): Uint8Array {
   const out: number[] = [];
   const lebar = profil.charsPerLine;
 
   out.push(...dariHex(profil.initCommand));
 
-  for (const b of dok.baris) {
-    if (b.jenis === 'kosong') {
-      out.push(LF);
-      continue;
-    }
-
-    if (b.jenis === 'garis') {
+  for (const kelompok of kelompokTataLetak(dok, profil)) {
+    const awal = kelompok[0];
+    if (awal === undefined) continue;
+    if ('garis' in awal) {
       out.push(...keByte('-'.repeat(lebar)), LF);
-      continue;
-    }
-
-    if (b.jenis === 'duaKolom') {
-      if (b.tebal) out.push(ESC, 0x45, 0x01);
-      out.push(...keByte(duaKolom(keAscii(b.kiri), keAscii(b.kanan), lebar)), LF);
-      if (b.tebal) out.push(ESC, 0x45, 0x00);
       continue;
     }
 
     // Perataan diserahkan ke PRINTER (`ESC a n`), bukan dihitung dengan spasi:
     // spasi yang dihitung sendiri bergeser begitu codepage atau font berubah.
-    const rata = b.rata ?? 'kiri';
-    if (rata !== 'kiri') out.push(ESC, 0x61, RATA[rata]);
-    if (b.tebal) out.push(ESC, 0x45, 0x01);
+    if (awal.rata !== 'kiri') out.push(ESC, 0x61, RATA[awal.rata]);
+    if (awal.tebal) out.push(ESC, 0x45, 0x01);
 
-    for (const potongan of lipat(keAscii(b.isi), lebar)) {
-      out.push(...keByte(potongan), LF);
+    for (const baris of kelompok) {
+      if ('garis' in baris) continue;
+      out.push(...keByte(baris.teks), LF);
     }
 
-    if (b.tebal) out.push(ESC, 0x45, 0x00);
+    if (awal.tebal) out.push(ESC, 0x45, 0x00);
     // ⛔ Dikembalikan ke kiri SELALU, bukan hanya saat baris berikutnya
     // berbeda. Perataan ESC/POS bersifat menetap: satu baris tengah yang
     // tidak dikembalikan membuat seluruh sisa struk ikut tertengah.
-    if (rata !== 'kiri') out.push(ESC, 0x61, RATA.kiri);
+    if (awal.rata !== 'kiri') out.push(ESC, 0x61, RATA.kiri);
   }
 
   if (dok.bukaLaci) out.push(...dariHex(profil.drawerCommand));
