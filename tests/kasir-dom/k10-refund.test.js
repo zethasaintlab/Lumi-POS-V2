@@ -148,3 +148,47 @@ for (const tinggi of [800, 768]) {
     assert.equal(kembalikan.r, u.aksi.r, 'aksi utama tidak di kanan bilah aksi');
   });
 }
+
+// ---------------------------------------------------------------------------
+// Sisa selisih K-10 (Task 16, spec § 2): subjudul mockup "Aksi ini tidak dapat
+// dibatalkan." dan tombol utama yang nonaktif membawa alasannya.
+//
+// ⛔ Dialog VOID tidak dapat dicapai di galeri (satu-satunya order fixture
+// berstatus `closed`), jadi label "Konfirmasi void" mockup tidak dibangun —
+// perubahan tanpa penjaga bukan perubahan yang boleh masuk.
+
+test('⛔ refund: subjudul memuat "Aksi ini tidak dapat dibatalkan." dan batas sama dengan Total K-09', async () => {
+  const { hal } = await bukaRefund(800);
+  const u = await hal.evaluate(() => {
+    const d = document.querySelector('.kasir-dialog');
+    return { sub: d.querySelector('h2 + p')?.textContent.trim() ?? null };
+  });
+  /* Harapan batas: baris "Total" K-09 di belakang dialog (komponen LAIN, dari order yang sama). */
+  const total = await hal.evaluate(() => {
+    const el = [...document.querySelectorAll('dt, span, p, td, div')].find((e) => e.children.length === 0 && /^Total$/.test(e.textContent.trim()));
+    const nilai = el?.nextElementSibling?.textContent ?? el?.parentElement?.textContent ?? '';
+    return /Rp\s[\d.]+/.exec(nilai)?.[0] ?? null;
+  });
+  await hal.close();
+  assert.ok(u.sub, 'subjudul dialog refund tidak ada');
+  assert.match(u.sub, /Aksi ini tidak dapat dibatalkan\.$/, `subjudul "${u.sub}" tanpa peringatan "Aksi ini tidak dapat dibatalkan." (mockup)`);
+  assert.ok(total, 'baris Total K-09 tidak ditemukan — harapan batas refund kehilangan sumbernya');
+  assert.ok(u.sub.includes(`Maksimal ${total}.`), `batas refund di subjudul "${u.sub}" tidak sama dengan Total K-09 ${total}`);
+});
+
+test('⛔ refund: Kembalikan dana nonaktif sebelum alasan dipilih, dengan alasan yang dirujuk aria-describedby', async () => {
+  const { hal } = await bukaRefund(800);
+  const tombol = hal.locator('.kasir-dialog-aksi').getByRole('button', { name: 'Kembalikan dana' });
+  const awal = {
+    nonaktif: await tombol.isDisabled(),
+    id: await tombol.getAttribute('aria-describedby'),
+  };
+  const alasanAwal = awal.id && (await hal.evaluate((id) => document.getElementById(id)?.textContent.trim() ?? null, awal.id));
+  await hal.locator('.kasir-dialog input[type=radio]').first().check();
+  const sesudah = { nonaktif: await tombol.isDisabled(), id: await tombol.getAttribute('aria-describedby') };
+  await hal.close();
+  assert.equal(awal.nonaktif, true, 'Kembalikan dana menyala sebelum alasan dipilih');
+  assert.equal(alasanAwal, 'Pilih alasan pembatalan.', `alasan tombol nonaktif: ${JSON.stringify(alasanAwal)}`);
+  assert.equal(sesudah.nonaktif, false, 'Kembalikan dana tetap nonaktif sesudah alasan dipilih');
+  assert.equal(sesudah.id, null, 'Kembalikan dana menyala tetapi masih menunjuk alasan nonaktif');
+});

@@ -432,6 +432,14 @@
   text-align: center;
 }
 
+.kasir-login-kepala {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: var(--space-3);
+  text-align: left;
+}
+
 .kasir-login-ikon {
   display: inline-flex;
   align-items: center;
@@ -632,9 +640,9 @@
 }
 .kasir-shift-kolom {
   display: grid;
-  /* Kolom kanan selebar isinya (maks 12rem): tombol pecahan 56 px berisi
-     "+ Rp 500.000" butuh ruang, dan kolom 3fr:2fr membuatnya MELUAP menimpa
-     kolom kanan — terukur di tangkapan sesudah pertama. */
+  /* Kolom kanan selebar isinya (maks 12rem); kolom "Saldo awal kas" mengambil
+     sisanya. (Tombol pecahan yang dulu meluap ke kolom kanan sudah dihapus,
+     keputusan user 28 September 2026.) */
   grid-template-columns: minmax(0, 1fr) minmax(0, 12rem);
   gap: var(--space-6);
   align-items: start;

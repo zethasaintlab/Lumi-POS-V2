@@ -87,6 +87,7 @@ after(async () => {
 
 async function bukaK02(lebar) {
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  hal.setDefaultTimeout(3000); // elemen yang hilang gagal CEPAT dengan pesan, bukan timeout 30 detik
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
   await hal.goto(`${alamat}/harness-galeri.html?layar=K-02&keadaan=normal`, { waitUntil: 'load' });
@@ -168,3 +169,109 @@ for (const lebar of [1024, 1280]) {
     assert.ok(u.mulai.w < u.kartu.w / 2, 'Mulai Shift selebar kartu');
   });
 }
+
+// ---------------------------------------------------------------------------
+// G-NOMINAL K-02 — kolom "Saldo awal kas" (keputusan user 28 September 2026, #76).
+//
+// ⛔ HARAPAN di bawah ditulis dari tabel `KASUS` (angka yang diketik → angka
+// yang HARUS tersimpan), bukan dibaca dari DOM layar itu sendiri. Yang dibaca
+// dari db palsu (`__galeriTulis`) adalah apa yang SUNGGUH ditulis `bukaShift`.
+
+const KASUS_DITERIMA = [
+  { ketik: '0', harapan: 0 }, // laci kosong adalah keadaan nyata, bukan "belum diisi"
+  { ketik: '250000', harapan: 250_000 },
+  { ketik: '1.500.000', harapan: 1_500_000 },
+  { ketik: 'Rp 750.000', harapan: 750_000 },
+];
+const KASUS_DITOLAK = ['', '25.5', 'abc', '12.34', '1.5000'];
+
+async function tulisan(hal) {
+  return hal.evaluate(() =>
+    (globalThis.__galeriTulis ?? []).map((t) => ({
+      sql: t.sql,
+      params: t.params.map((p) => (typeof p === 'bigint' ? String(p) : p)),
+    }))
+  );
+}
+
+const mulaiShift = (hal) => hal.getByRole('button', { name: 'Mulai Shift' });
+
+test('⛔ kolom kosong → Mulai Shift nonaktif dengan alasan; TIDAK membuka shift bersaldo Rp 0', async () => {
+  const { hal } = await bukaK02(1280);
+  const kolom = hal.getByLabel('Saldo awal kas');
+  assert.equal(await kolom.count(), 1, 'kolom berlabel "Saldo awal kas" tidak ada');
+  assert.equal(await kolom.inputValue(), '', 'kolom tidak mulai kosong — saldo awal tidak boleh punya nilai bawaan');
+  const tombol = mulaiShift(hal);
+  assert.equal(await tombol.isDisabled(), true, 'Mulai Shift menyala dengan kolom kosong (membuka shift bersaldo Rp 0 tanpa diketik)');
+  const idAlasan = await tombol.getAttribute('aria-describedby');
+  assert.ok(idAlasan, 'Mulai Shift nonaktif tanpa aria-describedby ke alasannya');
+  const alasan = await hal.evaluate((id) => document.getElementById(id)?.textContent.trim() ?? null, idAlasan);
+  assert.equal(alasan, 'Isi saldo awal kas.', 'alasan Mulai Shift nonaktif bukan "Isi saldo awal kas."');
+  await tombol.click({ force: true }).catch(() => {});
+  await hal.waitForTimeout(300);
+  const t = await tulisan(hal);
+  assert.equal(t.filter((x) => /INSERT INTO cash_drawer_shift/i.test(x.sql)).length, 0, 'shift ditulis dari kolom kosong');
+  assert.equal(t.filter((x) => /INSERT INTO cash_movement/i.test(x.sql)).length, 0, 'movement opening_float ditulis dari kolom kosong');
+  await hal.close();
+});
+
+for (const ketik of KASUS_DITOLAK) {
+  test(`⛔ "${ketik}" tidak terbaca → Mulai Shift nonaktif, tidak ada yang ditulis`, async () => {
+    const { hal } = await bukaK02(1280);
+    await hal.getByLabel('Saldo awal kas').fill(ketik);
+    const tombol = mulaiShift(hal);
+    assert.equal(await tombol.isDisabled(), true, `"${ketik}" membuat Mulai Shift menyala — bacaRupiah mengembalikan null untuknya`);
+    const idAlasan = await tombol.getAttribute('aria-describedby');
+    const alasan = idAlasan && (await hal.evaluate((id) => document.getElementById(id)?.textContent.trim() ?? null, idAlasan));
+    assert.equal(alasan, 'Isi saldo awal kas.', `alasan nonaktif untuk "${ketik}" bukan "Isi saldo awal kas."`);
+    if (/^\d+\.\d{1,2}$|^\d+\.\d{4,}$/.test(ketik)) {
+      const teks = await hal.locator('.kasir-shift-kartu').innerText();
+      assert.match(teks, /Masukkan rupiah utuh, tanpa desimal\./, `"${ketik}" ditolak tanpa petunjuk desimal`);
+    }
+    await tombol.click({ force: true }).catch(() => {});
+    await hal.waitForTimeout(200);
+    const t = await tulisan(hal);
+    assert.equal(t.filter((x) => /INSERT INTO cash_drawer_shift/i.test(x.sql)).length, 0, `"${ketik}" menulis shift`);
+    await hal.close();
+  });
+}
+
+for (const { ketik, harapan } of KASUS_DITERIMA) {
+  test(`⛔ "${ketik}" diterima tepat sebagai ${harapan}: opening_float shift = delta movement = angka yang diketik`, async () => {
+    const { hal } = await bukaK02(1280);
+    await hal.getByLabel('Saldo awal kas').fill(ketik);
+    const tombol = mulaiShift(hal);
+    assert.equal(await tombol.isDisabled(), false, `"${ketik}" sah (${harapan}) tetapi Mulai Shift nonaktif`);
+    assert.equal(await tombol.getAttribute('aria-describedby'), null, 'Mulai Shift menyala tetapi masih menunjuk alasan nonaktif');
+    await tombol.click();
+    await hal.waitForFunction(() => (globalThis.__galeriTulis ?? []).some((t) => /INSERT INTO cash_movement/i.test(t.sql)), null, { timeout: 5_000 }).catch(() => {});
+    const t = await tulisan(hal);
+    const shift = t.filter((x) => /INSERT INTO cash_drawer_shift/i.test(x.sql));
+    const mov = t.filter((x) => /INSERT INTO cash_movement/i.test(x.sql) && /opening_float/.test(x.sql));
+    await hal.close();
+    assert.equal(shift.length, 1, `INSERT cash_drawer_shift ${shift.length}×, harus tepat 1`);
+    assert.equal(mov.length, 1, `INSERT cash_movement opening_float ${mov.length}×, harus tepat 1 (saldo laci hanya dari cash_movement)`);
+    assert.equal(Number(shift[0].params[5]), harapan, `opening_float shift ${shift[0].params[5]}, diketik "${ketik}" harus ${harapan}`);
+    assert.equal(Number(mov[0].params[2]), harapan, `delta movement opening_float ${mov[0].params[2]}, harus ${harapan} (positif)`);
+    assert.equal(mov[0].params[1], shift[0].params[0], 'movement opening_float menunjuk shift lain');
+  });
+}
+
+test('kolom Saldo awal kas: awalan Rp, rata kanan, tanpa nilai bawaan, tanpa tombol pecahan atau Hapus', async () => {
+  const { hal } = await bukaK02(1280);
+  const info = await hal.evaluate(() => {
+    const label = [...document.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Saldo awal kas');
+    const input = label && document.getElementById(label.htmlFor);
+    return {
+      awalan: input?.parentElement?.textContent.trim().startsWith('Rp') ?? false,
+      rata: input ? getComputedStyle(input).textAlign : null,
+      inputMode: input?.getAttribute('inputmode') ?? null,
+      tombol: [...document.querySelectorAll('.kasir-shift-kartu button')].map((b) => b.textContent.trim()),
+    };
+  });
+  await hal.close();
+  assert.equal(info.awalan, true, 'kolom Saldo awal kas tanpa awalan "Rp"');
+  assert.equal(info.rata, 'right', `kolom rata ${info.rata}, mockup rata kanan`);
+  assert.equal(info.inputMode, 'numeric', 'papan ketik numerik tidak diminta');
+  assert.deepEqual(info.tombol, ['Mulai Shift'], `K-02 hanya punya satu tombol, ada: ${JSON.stringify(info.tombol)}`);
+});
