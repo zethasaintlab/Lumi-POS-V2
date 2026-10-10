@@ -7,9 +7,10 @@
 // Shift" di kanan bawah; repo satu kolom terpusat tanpa kartu. Yang dikejar:
 //
 //   1. Kartu 624 px (`--surface` + bayangan) dengan ikon.
-//   2. Dua kolom: saldo awal (angka + pecahan 56 px) di kiri, "Staf pembuka"
-//      sebagai TEKS di kanan — diambil dari sesi, bukan field yang dapat
-//      diubah.
+//   2. Dua kolom: kolom "Saldo awal kas" (awalan Rp, 56 px, nilai bebas)
+//      di kiri, "Staf pembuka" sebagai TEKS di kanan — diambil dari sesi,
+//      bukan field yang dapat diubah. Keputusan user 28 September 2026
+//      (#76): tombol pecahan DIHAPUS, kolom bebas menggantikannya.
 //   3. "Mulai Shift" 56 px di kanan bawah kartu.
 //
 // ## Prasyarat
@@ -115,12 +116,11 @@ const ukur = (hal) =>
       if (getComputedStyle(e).boxShadow !== 'none' && getComputedStyle(e).backgroundColor !== 'rgba(0, 0, 0, 0)') { kartu = e; break; }
     }
     const semua = kartu ? [...kartu.querySelectorAll('*')] : [];
-    const saldo = semua.find((e) => e.classList.contains('t-display'));
+    const label = semua.find((e) => e.tagName === 'LABEL' && e.textContent.trim() === 'Saldo awal kas');
+    const kolom = label && document.getElementById(label.htmlFor);
     const staf = semua.find((e) => e.children.length === 0 && e.textContent.trim() === 'Staf pembuka');
     const mulai = kartu && [...kartu.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Mulai Shift');
     const tombolPecahan = kartu ? [...kartu.querySelectorAll('button')].filter((b) => b.textContent.trim().startsWith('+')) : [];
-    const pecahan = tombolPecahan.map((b) => Math.round(b.getBoundingClientRect().height));
-    const pecahanKanan = Math.max(0, ...tombolPecahan.map((b) => Math.round(b.getBoundingClientRect().right)));
     const token = (nama) => {
       const e = document.createElement('div');
       e.style.background = `var(${nama})`;
@@ -133,13 +133,12 @@ const ukur = (hal) =>
       panggung: Math.round(document.querySelector('.galeri-panggung > *').getBoundingClientRect().width),
       kartu: kartu && r(kartu),
       ikon: Boolean(kartu?.querySelector('svg')),
-      saldo: saldo && r(saldo),
+      kolom: kolom && r(kolom),
       staf: staf && r(staf),
       teksKartu: kartu?.innerText.replace(/\s+/g, ' ') ?? '',
       mulai: mulai && r(mulai),
-      pecahan,
+      jumlahPecahan: tombolPecahan.length,
       padding: kartu ? parseFloat(getComputedStyle(kartu).paddingRight) : 0,
-      pecahanKanan,
       latarLayar: kartu ? getComputedStyle(kartu.parentElement).backgroundColor : null,
       sunk: token('--surface-sunk'),
     };
@@ -158,13 +157,12 @@ for (const lebar of [1024, 1280]) {
     assert.ok(u.ikon, 'kartu tanpa ikon');
     assert.ok(u.staf, '"Staf pembuka" tidak tampil');
     assert.match(u.teksKartu, /Staf pembuka Kasir Galeri/, 'nama staf pembuka bukan dari sesi');
-    assert.ok(u.staf.l > u.saldo.r, 'Staf pembuka tidak berdampingan dengan saldo awal');
-    /* ⛔ Ditemukan di tangkapan sesudah pertama: tombol pecahan MELUAP ke
-       kolom kanan dan menimpa "Tanggal bisnis". Nol error. */
-    assert.ok(u.pecahanKanan < u.staf.l, `tombol pecahan meluap ke kolom kanan (${u.pecahanKanan} ≥ ${u.staf.l})`);
+    assert.ok(u.kolom, 'kolom "Saldo awal kas" tidak ada (keputusan user 28 September 2026, #76: kolom bebas, bukan tombol pecahan)');
+    assert.ok(u.staf.l > u.kolom.r, 'Staf pembuka tidak berdampingan dengan kolom Saldo awal kas');
+    assert.ok(u.kolom.h >= 56, `kolom Saldo awal kas ${u.kolom.h} px — aksi menyangkut uang 56`);
+    assert.equal(u.jumlahPecahan, 0, 'tombol pecahan "+ Rp …" masih ada — keputusan user 28 September 2026 (#76) menghapusnya');
     /* Kartu putih di atas layar putih tidak terlihat sebagai kartu. */
     assert.equal(u.latarLayar, u.sunk, 'latar di belakang kartu bukan --surface-sunk');
-    assert.ok(u.pecahan.length === 4 && Math.min(...u.pecahan) >= 56, `pecahan ${JSON.stringify(u.pecahan)} — 4 × 56 px`);
     assert.ok(u.mulai && u.mulai.h >= 56, 'Mulai Shift hilang atau < 56 px');
     assert.equal(u.mulai.r, Math.round(u.kartu.r - u.padding), 'Mulai Shift tidak di tepi kanan kartu');
     assert.ok(u.mulai.w < u.kartu.w / 2, 'Mulai Shift selebar kartu');
