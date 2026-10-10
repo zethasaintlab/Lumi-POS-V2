@@ -46,7 +46,9 @@ test('bacaRupiah menerima yang diketik manusia', async () => {
   assert.equal(bacaRupiah('25000'), 25000);
   assert.equal(bacaRupiah('25.000'), 25000);
   assert.equal(bacaRupiah('Rp 25.000'), 25000);
-  assert.equal(bacaRupiah(' 25 000 '), 25000);
+  assert.equal(bacaRupiah(' 25000 '), 25000, 'spasi di tepi sah');
+  // Dahulu ' 25 000 ' → 25000; kini spasi DI DALAM angka tidak sah ('25 5' pernah menjadi 255, 10× salah).
+  assert.equal(bacaRupiah('25 000'), null);
 });
 
 test('⛔ bacaRupiah menolak yang bukan angka utuh, bukan mengembalikan NaN', async () => {

@@ -873,6 +873,10 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
        "sedang menyimpan" (kunci tab nav, ketukan ganda) tanpa timer. */
     const tahan = (globalThis as { __galeriTahanPenjualan?: Promise<void> }).__galeriTahanPenjualan;
     if (tahan && /^INSERT INTO "order"/i.test(sql.trim())) await tahan;
+    /* `__galeriTahanShift` (Task 16 fix 2): promise yang ditunggu sebelum INSERT shift, supaya test dapat
+       mengukur jendela "sedang menyimpan" Mulai Shift tanpa timer. */
+    const tahanShift = (globalThis as { __galeriTahanShift?: Promise<void> }).__galeriTahanShift;
+    if (tahanShift && /^INSERT INTO cash_drawer_shift/i.test(sql.trim())) await tahanShift;
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
     urutan.push(`tulis:${sql.replace(/\s+/g, ' ').trim()}`);
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;

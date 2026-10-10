@@ -26,7 +26,7 @@ import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts'
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
-import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { bacaRupiah, rupiah, rupiahTerlaluBesar } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { Bidang } from '../Bidang.tsx';
 import { daftarTahanan, type RingkasTahanan } from '../kasir/keranjang-tahan.ts';
 import { LangkahKas, type Langkah } from '../komponen/LangkahKas.tsx';
@@ -256,6 +256,10 @@ export function TutupKas() {
      Nol yang benar-benar DIKETIK tetap sah: laci yang memang kosong ada. */
   const hitunganTerbaca = bacaRupiah(hitunganTeks);
   const hitunganTidakSah = hitunganTerbaca === null;
+  /* Di atas MAX_SAFE_INTEGER → tidak sah, BUKAN dijepit atau dibulatkan. */
+  const alasanHitungan = rupiahTerlaluBesar(hitunganTeks)
+    ? 'Hitungan terlalu besar.'
+    : 'Masukkan rupiah utuh, tanpa desimal.';
   const hitungan = hitunganTerbaca ?? 0;
 
   const simpan = (approverId: string | null) => {
@@ -590,7 +594,7 @@ export function TutupKas() {
           setGalat(null);
         }}
         placeholder="0"
-        hint={hitunganTeks !== '' && hitunganTidakSah ? 'Masukkan rupiah utuh, tanpa desimal.' : undefined}
+        hint={hitunganTeks !== '' && hitunganTidakSah ? alasanHitungan : undefined}
       />
 
       {/* Jalan pintas, bukan satu-satunya jalan. Ia MENAMBAH ke angka yang
@@ -668,7 +672,9 @@ export function TutupKas() {
           ? 'Sedang memproses hitungan.'
           : tahanan.length > 0
             ? 'Masih ada pesanan tahan. Lanjutkan atau buang dulu.'
-            : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
+            : hitunganTeks !== '' && hitunganTidakSah
+              ? alasanHitungan
+              : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
       </span>
     </div>
   );

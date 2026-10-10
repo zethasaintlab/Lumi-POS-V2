@@ -11,7 +11,7 @@ import { useSesi } from '../konteks/useSesi.ts';
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
-import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { bacaRupiah, rupiah, rupiahTerlaluBesar } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { Bidang } from '../Bidang.tsx';
 
 /* K-02 — Buka Shift (IA §2.2).
@@ -100,6 +100,15 @@ export function BukaShift() {
      Keputusan user 28 September 2026 (#76); pola `TutupKas.tsx`. */
   const saldo = bacaRupiah(saldoTeks);
   const saldoTidakSah = saldo === null;
+  /* Tiga kabar berbeda: kosong · bentuk tidak sah · di atas batas aman. Yang
+     terakhir TIDAK dijepit ke batas — nilai yang dibulatkan diam-diam adalah
+     uang yang bukan milik kasir. */
+  const alasanSaldo =
+    saldoTeks.trim() === ''
+      ? 'Isi saldo awal kas.'
+      : rupiahTerlaluBesar(saldoTeks)
+        ? 'Saldo awal terlalu besar.'
+        : 'Masukkan rupiah utuh, tanpa desimal.';
 
   const simpan = () => {
     if (saldo === null) return;
@@ -197,8 +206,7 @@ export function BukaShift() {
           <div>
             {saldoTidakSah && (
               <p id="bukashift-mulai-alasan" className="t-caption">
-                {/* Kosong dan bentuk tidak sah adalah dua kabar berbeda. */}
-                {saldoTeks.trim() === '' ? 'Isi saldo awal kas.' : 'Masukkan rupiah utuh, tanpa desimal.'}
+                {alasanSaldo}
               </p>
             )}
             <p className="t-caption kasir-login-sub">
