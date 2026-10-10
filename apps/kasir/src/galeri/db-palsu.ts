@@ -168,6 +168,10 @@ export interface OpsiDbPalsu {
   tanpaKasManual?: boolean;
   /** `?transfer=1` — pembayaran `ord-1` menjadi Transfer (`other` + `bank_transfer`), untuk penjaga label K-09. */
   transfer?: boolean;
+  /** `?riwayatVariatif=1` (Task 14) — K-08 dengan data BERAGAM: dua tanggal bisnis (`ord-3`..`ord-7` di 2026-08-31),
+      `ord-1` Transfer, `ord-3` CAMPURAN (QRIS statis + tunai), supaya kolom Item/Metode dan penyaring punya apa
+      yang dibedakan. Tanpa ini semua order sehari dan hanya tunai/QRIS — penjaga yang hanya melihat satu nilai. */
+  riwayatVariatif?: boolean;
   /** `?gagalBacaKas=1` — MENGGAGALKAN hanya `bacaKasManualShift` (query `cash_movement … type IN`), bukan
       pembacaan lain: keadaan `error` galeri gagal lebih awal di konfigurasi perangkat dan tidak pernah
       mencapai riwayat. Test dapat menyetel `window.__galeriGagalBacaKas` sesudah muat untuk membaca-ulang. */
@@ -203,7 +207,12 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* `?jumlahGagal=500` — override jumlah item gagal (jalur test header: hitungan 3 digit). */
   if (opsi.jumlahGagal !== undefined) antre.gagal = opsi.jumlahGagal;
   const item = itemUntuk(skenario);
-  const order = orderUntuk(skenario).map((o) =>
+  const order = orderUntuk(skenario).map((o) => {
+    const n = Number(o.id.slice(4));
+    return opsi.riwayatVariatif && n >= 3
+      ? { ...o, business_date: '2026-08-31', receipt_number: o.receipt_number.replace('20260901', '20260831') }
+      : o;
+  }).map((o) =>
     opsi.strukPanjang && o.id === 'ord-1'
       ? {
           ...o,
@@ -293,18 +302,38 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
        tidak pernah merender rincian per metode sama sekali. */
     payment: order
       .filter((o) => o.status !== 'voided')
-      .map((o, i) => ({
-        order_id: o.id,
-        id: `pay-${o.id}`,
-        method: opsi.transfer && o.id === 'ord-1' ? 'other' : i % 3 === 1 ? 'qris_static' : 'cash',
-        provider: opsi.transfer && o.id === 'ord-1' ? 'bank_transfer' : null,
-        amount: o.total,
-        /* Uang yang diserahkan dibulatkan ke atas pecahan Rp 50.000 — bentuk
-           yang kasir lihat sehari-hari. Non-tunai NULL (`spec-d:201`). */
-        tendered_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000,
-        change_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000 - o.total,
-        status: 'confirmed',
-      })),
+      .flatMap((o, i): Record<string, unknown>[] => {
+        const transfer = (opsi.transfer || opsi.riwayatVariatif) && o.id === 'ord-1';
+        const nontunai = i % 3 === 1 || transfer;
+        const tunai = (jumlah: number, sufiks = '') => ({
+          order_id: o.id,
+          id: `pay-${o.id}${sufiks}`,
+          method: 'cash',
+          provider: null,
+          amount: jumlah,
+          tendered_amount: Math.ceil(jumlah / 50_000) * 50_000,
+          change_amount: Math.ceil(jumlah / 50_000) * 50_000 - jumlah,
+          status: 'confirmed',
+        });
+        /* CAMPURAN: QRIS statis Rp 20.000 + sisanya tunai — dua baris `payment`, tidak pernah digabung. */
+        if (opsi.riwayatVariatif && o.id === 'ord-3') {
+          return [
+            { order_id: o.id, id: `pay-${o.id}-q`, method: 'qris_static', provider: null, amount: 20_000, tendered_amount: null, change_amount: null, status: 'confirmed' },
+            tunai(o.total - 20_000, '-t'),
+          ];
+        }
+        if (!nontunai) return [tunai(o.total)];
+        return [{
+          order_id: o.id,
+          id: `pay-${o.id}`,
+          method: transfer ? 'other' : 'qris_static',
+          provider: transfer ? 'bank_transfer' : null,
+          amount: o.total,
+          tendered_amount: null,
+          change_amount: null,
+          status: 'confirmed',
+        }];
+      }),
     refund: [],
     cash_drawer_shift: opsi.tanpaShift ? [] : [
       {

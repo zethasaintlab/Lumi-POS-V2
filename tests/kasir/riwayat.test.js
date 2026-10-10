@@ -20,8 +20,9 @@ function dbPalsu(data = {}) {
         if (/WHERE o\.id = \?/.test(sql)) return (data.order ?? []).filter((o) => o.id === params[0]);
         return data.order ?? [];
       }
-      if (/FROM order_line/.test(sql)) return (data.order_line ?? []).filter((l) => l.order_id === params[0]);
-      if (/FROM payment/.test(sql)) return (data.payment ?? []).filter((p) => p.order_id === params[0]);
+      // `IN (…)` = K-08 daftar (seluruh jendela sekaligus); `= ?` = K-09 detail.
+      if (/FROM order_line/.test(sql)) return (data.order_line ?? []).filter((l) => (/\bIN\s*\(/i.test(sql) ? params.includes(l.order_id) : l.order_id === params[0]));
+      if (/FROM payment/.test(sql)) return (data.payment ?? []).filter((p) => (/\bIN\s*\(/i.test(sql) ? params.includes(p.order_id) : p.order_id === params[0]));
       if (/FROM refund/.test(sql)) return (data.refund ?? []).filter((r) => r.order_id === params[0]);
       if (/FROM outbox_local/.test(sql)) return data.outbox ?? [];
       return [];
@@ -306,4 +307,100 @@ test('⛔ detail riwayat membawa provider pembayaran (transfer = other + bank_tr
   const peta = Object.fromEntries(d.pembayaran.map((p) => [p.id, p]));
   assert.equal(peta.p1.provider, 'bank_transfer', 'provider hilang -- layar menyebutnya Lainnya');
   assert.equal(peta.p2.provider, null, 'provider yang tidak ada harus null, bukan undefined');
+});
+
+// ---------------------------------------------------------------------------
+// K-08 (kampanye Hidupkan desain, sub-proyek 2): kolom Item + Metode, penyaring.
+// Fixture sengaja bervariasi: tunai, campuran, transfer, QRIS, `other` tanpa
+// provider, dua tanggal bisnis, order pembatal tanpa pembayaran.
+
+function fixtureVariatif() {
+  const o = (id, no, tgl, jam, extra = {}) => ({
+    ...ORDER, id, receipt_number: no, business_date: tgl, occurred_at: jam, sequence: Number(no.slice(-4)), ...extra,
+  });
+  const l = (order_id, n) => Array.from({ length: n }, (_, i) => ({ id: `${order_id}-l${i}`, order_id }));
+  const p = (order_id, method, provider = null, status = 'confirmed') => ({ id: `${order_id}-${method}-${provider}`, order_id, method, provider, status });
+  return dbPalsu({
+    order: [
+      o('t', 'K1-20260813-0001', '2026-08-13', '2026-08-13T01:00:00Z'),
+      o('c', 'K1-20260813-0002', '2026-08-13', '2026-08-13T02:00:00Z'),
+      o('x', 'K1-20260813-0003', '2026-08-13', '2026-08-13T03:00:00Z'),
+      o('q', 'K1-20260812-0009', '2026-08-12', '2026-08-12T04:00:00Z'),
+      o('o', 'K1-20260812-0010', '2026-08-12', '2026-08-12T05:00:00Z'),
+      o('b', 'K1-20260812-0011', '2026-08-12', '2026-08-12T06:00:00Z', { status: 'voided', total: 0, voided_by_order_id: 't' }),
+    ],
+    order_line: [...l('t', 1), ...l('c', 3), ...l('x', 2), ...l('q', 2), ...l('o', 1)],
+    payment: [
+      p('t', 'cash'),
+      p('c', 'cash'), p('c', 'qris_static'),
+      p('x', 'other', 'bank_transfer'),
+      p('q', 'qris_static'),
+      p('o', 'other'),
+      p('o', 'card_edc', null, 'failed'), // gagal: bukan bagian metode
+    ],
+  });
+}
+
+test('jumlahBaris dan metode per order', async () => {
+  const { bacaRiwayat } = await import(MOD);
+  const hasil = Object.fromEntries((await bacaRiwayat(fixtureVariatif())).map((r) => [r.id, r]));
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(hasil).map(([k, v]) => [k, v.jumlahBaris])),
+    { t: 1, c: 3, x: 2, q: 2, o: 1, b: 0 }
+  );
+  assert.deepEqual(hasil.c.metode.map((m) => m.method).sort(), ['cash', 'qris_static']);
+  assert.deepEqual(hasil.x.metode, [{ method: 'other', provider: 'bank_transfer' }]);
+  assert.deepEqual(hasil.o.metode, [{ method: 'other', provider: null }], 'pembayaran gagal tidak ikut');
+  assert.deepEqual(hasil.b.metode, []);
+});
+
+test('⛔ dua metode → "Campuran"; transfer → "Transfer"', async () => {
+  const { labelMetodeRingkas } = await import(MOD);
+  assert.equal(labelMetodeRingkas([{ method: 'cash', provider: null }]), 'Tunai');
+  assert.equal(labelMetodeRingkas([{ method: 'cash', provider: null }, { method: 'cash', provider: null }]), 'Tunai');
+  assert.equal(labelMetodeRingkas([{ method: 'cash', provider: null }, { method: 'qris_static', provider: null }]), 'Campuran');
+  assert.equal(labelMetodeRingkas([{ method: 'other', provider: 'bank_transfer' }]), 'Transfer');
+  assert.equal(labelMetodeRingkas([{ method: 'other', provider: null }]), 'Lainnya');
+  // Transfer + other tanpa provider = dua metode di mata pemilik.
+  assert.equal(labelMetodeRingkas([{ method: 'other', provider: 'bank_transfer' }, { method: 'other', provider: null }]), 'Campuran');
+  assert.equal(labelMetodeRingkas([]), '—', 'tanpa pembayaran bukan "Tunai"');
+});
+
+test('saring tanggal bisnis hanya di jendela riwayat lokal', async () => {
+  const { bacaRiwayat } = await import(MOD);
+  const db = fixtureVariatif();
+  assert.deepEqual((await bacaRiwayat(db, { saring: { tanggalBisnis: '2026-08-12' } })).map((r) => r.id).sort(), ['b', 'o', 'q']);
+  assert.deepEqual((await bacaRiwayat(db, { saring: { tanggalBisnis: '2026-08-13' } })).map((r) => r.id).sort(), ['c', 't', 'x']);
+  assert.deepEqual(await bacaRiwayat(db, { saring: { tanggalBisnis: '2026-01-01' } }), [], 'tanggal di luar jendela: kosong, tidak dikarang');
+  assert.equal((await bacaRiwayat(db, { saring: {} })).length, 6, 'tanpa saringan = seluruh jendela');
+});
+
+test('saring metode', async () => {
+  const { bacaRiwayat } = await import(MOD);
+  const db = fixtureVariatif();
+  const ids = async (metode, tanggalBisnis) =>
+    (await bacaRiwayat(db, { saring: { metode, tanggalBisnis } })).map((r) => r.id).sort();
+  assert.deepEqual(await ids('cash'), ['c', 't'], 'campuran ikut karena punya bagian tunai');
+  assert.deepEqual(await ids('qris_static'), ['c', 'q']);
+  assert.deepEqual(await ids('transfer'), ['x'], '"Transfer" opsi sendiri, bukan bagian dari "Lainnya"');
+  assert.deepEqual(await ids('other'), ['o'], '"Lainnya" tanpa transfer');
+  assert.deepEqual(await ids('card_edc'), [], 'pembayaran gagal tidak dihitung');
+  assert.deepEqual(await ids('cash', '2026-08-12'), [], 'kedua saringan digabung (AND)');
+  assert.deepEqual(await ids('qris_static', '2026-08-12'), ['q']);
+});
+
+test('⛔ status tetap turunan pembatal + status kirim FR-H3, bukan "Selesai" tunggal', async () => {
+  const { bacaRiwayat } = await import(MOD);
+  const db = dbPalsu({
+    order: [
+      { ...ORDER, id: 'a', status: 'open', occurred_at: '2026-08-13T01:00:00Z' },
+      { ...ORDER, id: 'p', status: 'voided', voided_by_order_id: 'a', occurred_at: '2026-08-13T02:00:00Z', receipt_number: 'K1-20260813-0002' },
+    ],
+    outbox: [{ entity_id: 'a', status: 'failed' }],
+  });
+  const h = Object.fromEntries((await bacaRiwayat(db)).map((r) => [r.id, r]));
+  assert.equal(h.a.dibatalkan, true);
+  assert.equal(h.a.statusSync, 'failed');
+  assert.equal(h.p.membatalkan, 'a');
+  assert.equal(h.p.statusSync, 'ok');
 });

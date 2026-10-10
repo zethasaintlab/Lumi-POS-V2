@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, EmptyState, SegmentedControl } from 'ds';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { Badge, EmptyState, potongSentuh, SegmentedControl } from 'ds';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { Paginasi } from '../komponen/Paginasi.tsx';
 import { potongHalaman, PER_HALAMAN_RIWAYAT } from '../komponen/halaman.ts';
 import {
   bacaRiwayat,
   cariRiwayat,
+  labelMetodeRingkas,
   LABEL_URUTAN_RIWAYAT,
+  saringRiwayat,
   urutkanRiwayat,
   type RingkasOrder,
   type UrutanRiwayat,
@@ -17,6 +19,7 @@ import { Bidang } from '../Bidang.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
 import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { LABEL_METODE } from '../../../../packages/domain/src/metode-tampilan.ts';
 
 /* K-08 — Riwayat Transaksi (IA §2.2).
 
@@ -44,12 +47,15 @@ const TEKS_SYNC: Record<string, string> = {
 };
 
 export function Riwayat() {
+  const idTanggal = useId();
   const { db } = useDbLokal();
   const [daftar, setDaftar] = useState<RingkasOrder[]>([]);
   const [siap, setSiap] = useState(false);
   const [gagal, setGagal] = useState<string | null>(null);
   const [kueri, setKueri] = useState('');
   const [urutan, setUrutan] = useState<UrutanRiwayat>('terbaru');
+  const [tanggal, setTanggal] = useState('');
+  const [metode, setMetode] = useState('');
   const [halamanKe, setHalamanKe] = useState(1);
 
   useEffect(() => {
@@ -76,8 +82,12 @@ export function Riwayat() {
   }, [db]);
 
   const terlihat = useMemo(
-    () => urutkanRiwayat(cariRiwayat(daftar, kueri), urutan),
-    [daftar, kueri, urutan]
+    () =>
+      urutkanRiwayat(
+        cariRiwayat(saringRiwayat(daftar, { tanggalBisnis: tanggal, metode }), kueri),
+        urutan
+      ),
+    [daftar, kueri, urutan, tanggal, metode]
   );
   const halaman = potongHalaman(terlihat, halamanKe, PER_HALAMAN_RIWAYAT);
 
@@ -88,7 +98,7 @@ export function Riwayat() {
      jaring kedua, tapi jaring kedua bukan pengganti yang pertama. */
   useEffect(() => {
     setHalamanKe(1);
-  }, [kueri, urutan]);
+  }, [kueri, urutan, tanggal, metode]);
 
   if (!siap) return <Memuat judul="Membaca riwayat penjualan perangkat ini…" bentuk="baris" jumlah={8} />;
 
@@ -129,6 +139,13 @@ export function Riwayat() {
       <div className="kasir-kontrol-grid">
         <Bidang label="Cari nomor struk" value={kueri} onChange={setKueri} placeholder="K1-20260813-0001" />
         <div className="kasir-urutan">
+          <label className="label" htmlFor={idTanggal}>Tanggal</label>
+          {/* Tanggal BISNIS (`business_date`), bukan tanggal kalender perangkat.
+              Tanggal di luar jendela riwayat lokal menghasilkan kalimat kosong —
+              tidak ada transaksi yang dikarang. Kosong = semua tanggal. */}
+          <input id={idTanggal} className="field" type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
+        </div>
+        <div className="kasir-urutan">
           <span className="label">Urutkan</span>
           <SegmentedControl
             ariaLabel="Urutkan riwayat"
@@ -142,18 +159,46 @@ export function Riwayat() {
         </div>
       </div>
 
+      {/* Penyaring Metode bayar: opsinya KODE LAPORAN (`LABEL_METODE`) — "Transfer"
+          opsi sendiri, tidak di bawah "Lainnya". Chip yang aktif diketuk lagi =
+          semua metode; chip, bukan `<select>`, supaya semua opsi terlihat
+          sekaligus dan kasir tidak membuka daftar untuk menyaring. */}
+      <div className="kasir-saring" role="group" aria-label="Metode bayar">
+        {Object.entries(LABEL_METODE).map(([kode, label]) => (
+          <button
+            key={kode}
+            type="button"
+            className="chip sentuh"
+            style={potongSentuh(['kiri', 'kanan'], 'var(--space-2)')}
+            aria-pressed={metode === kode}
+            onClick={() => setMetode(metode === kode ? '' : kode)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Tabel dalam `.card` bundle (Fase 3.9, mengikuti mockup). Kolom
           Waktu PERTAMA; kepala kolom memakai grid yang sama dengan baris. */}
       <div className="card kasir-riwayat-kartu">
         {terlihat.length === 0 ? (
           <div className="card-pad">
-            <EmptyState title="Tidak ada struk yang cocok" body={`Tidak ada hasil untuk "${kueri}".`} />
+            <EmptyState
+              title="Tidak ada struk yang cocok"
+              body={
+                kueri.trim() !== ''
+                  ? `Tidak ada hasil untuk "${kueri}" dengan penyaring yang dipilih.`
+                  : 'Tidak ada transaksi yang cocok dengan tanggal dan metode bayar yang dipilih.'
+              }
+            />
           </div>
         ) : (
           <>
             <div className="kasir-riwayat-kepala t-caption kasir-login-sub" aria-hidden="true">
               <span>Waktu</span>
               <span>Nomor struk</span>
+              <span className="kasir-riwayat-angka">Item</span>
+              <span>Metode</span>
               <span className="kasir-riwayat-angka">Total</span>
               <span>Status</span>
             </div>
@@ -189,6 +234,8 @@ export function Riwayat() {
                       {o.membatalkan && <Badge tone="neutral">Pembatalan</Badge>}
                     </span>
 
+                    <span className="t-body-md num kasir-riwayat-angka">{o.jumlahBaris}</span>
+                    <span className="t-body-md">{labelMetodeRingkas(o.metode)}</span>
                     <span className="t-body-md num kasir-riwayat-angka">{rupiah(o.total)}</span>
                     {/* Status sinkronisasi: `warning` untuk gagal, bukan `danger`.
                         Penjualannya TERSIMPAN — yang belum terjadi adalah

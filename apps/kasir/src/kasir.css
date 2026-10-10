@@ -1683,7 +1683,7 @@
 .kasir-riwayat-kepala,
 .kasir-riwayat-baris {
   display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr) 10rem 9rem;
+  grid-template-columns: 6rem minmax(0, 1fr) 4rem 8rem 9rem 9rem;
   align-items: center;
   column-gap: var(--space-3);
 }
