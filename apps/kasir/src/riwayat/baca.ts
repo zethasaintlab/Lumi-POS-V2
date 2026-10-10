@@ -111,7 +111,11 @@ export async function bacaRiwayat(
   db: DbLokal,
   { batas = 50, saring = {} }: { batas?: number; saring?: SaringRiwayat } = {}
 ): Promise<RingkasOrder[]> {
-  const baris = await db.getAll<BarisOrder>(SQL_DAFTAR, [batas]);
+  // `LIMIT` di SQL menentukan jendelanya; pemotongan di sini menjaga arti
+  // `batas` bila sumber (mis. fake uji) tidak menegakkannya.
+  const baris = (await db.getAll<BarisOrder>(SQL_DAFTAR, [batas]))
+    .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))
+    .slice(0, batas);
   if (baris.length === 0) return [];
 
   // Terburuk-menang, dan itu WAJIB: satu order punya beberapa baris outbox

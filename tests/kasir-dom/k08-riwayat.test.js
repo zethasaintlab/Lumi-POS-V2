@@ -299,3 +299,62 @@ test('penyaring tanpa hasil → kalimat kosong di dalam kartu, bukan tabel koson
   assert.equal(u.kartu, true, 'kalimat kosong tidak di dalam kartu');
   assert.equal(u.kontrol, 7, 'penyaring harus tetap ada agar kasir dapat melepasnya');
 });
+
+// ---------------------------------------------------------------------------
+// Tinjauan akhir P1 — "nol baris, bukan error". K-08 membaca BATAS (100)
+// transaksi terakhir; penyaring yang tidak menemukan apa pun di jendela itu
+// TIDAK BOLEH terbaca sebagai "tidak ada penjualan". Harapan dari fixture
+// (`?riwayatPenuh=1`: 120 order, Transfer hanya di 20 yang terlama).
+
+const BATAS_JENDELA = 100;
+const tglId = (ymd) =>
+  new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${ymd}T00:00:00Z`));
+
+async function bukaPenuh() {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-08&keadaan=normal&riwayatPenuh=1`, { waitUntil: 'load' });
+  await hal.waitForSelector('.kasir-riwayat-baris', { timeout: 10_000 });
+  await hal.waitForTimeout(500);
+  const tabel = await hal.evaluate(() => JSON.parse(JSON.stringify(window.__galeriTabel)));
+  const jendela = [...tabel.order].sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)).slice(0, BATAS_JENDELA);
+  const ids = new Set(jendela.map((o) => o.id));
+  const transfer = (o) => tabel.payment.some((p) => p.order_id === o.id && p.method === 'other' && p.provider === 'bank_transfer');
+  return { hal, tabel, jendela, ids, transfer };
+}
+
+test('⛔ K-08: jendela penuh → keterangan cakupan tetap; kalimat kosong tersaring menyebut batas jendela', async () => {
+  const { hal, tabel, jendela, ids, transfer } = await bukaPenuh();
+  // Penjaga hampa: ada order di luar jendela, dan Transfer HANYA di luar jendela.
+  assert.ok(tabel.order.length > BATAS_JENDELA, 'fixture tidak melebihi jendela');
+  assert.ok(tabel.order.some((o) => !ids.has(o.id) && transfer(o)), 'tidak ada Transfer di luar jendela — penjaga hampa');
+  assert.ok(!jendela.some(transfer), 'ada Transfer di dalam jendela — penjaga hampa');
+  const tertua = jendela.map((o) => o.business_date).sort()[0];
+
+  const ket = await hal.$eval('[data-cakupan="jendela"]', (e) => e.textContent.trim()).catch(() => null);
+  assert.ok(ket, 'tidak ada keterangan cakupan jendela padahal jendela penuh');
+  assert.ok(ket.includes(`${BATAS_JENDELA} transaksi terakhir`), `keterangan tanpa N: ${ket}`);
+  assert.ok(ket.includes(tglId(tertua)), `keterangan tanpa tanggal bisnis tertua (${tglId(tertua)}): ${ket}`);
+
+  await hal.locator('[role="group"][aria-label="Metode bayar"] button', { hasText: /^Transfer$/ }).click();
+  await hal.waitForTimeout(200);
+  const u = await hal.evaluate(() => ({
+    baris: document.querySelectorAll('.kasir-riwayat-baris').length,
+    kosong: document.querySelector('.kasir-konten .empty')?.textContent.trim() ?? null,
+    ket: document.querySelector('[data-cakupan="jendela"]')?.textContent.trim() ?? null,
+  }));
+  await hal.close();
+  assert.equal(u.baris, 0);
+  assert.ok(u.kosong?.includes(`${BATAS_JENDELA} transaksi terakhir perangkat ini`), `kalimat kosong tidak menyebut batas jendela: ${u.kosong}`);
+  assert.ok(u.ket, 'keterangan cakupan hilang saat tersaring');
+});
+
+test('K-08: jendela belum penuh → tanpa keterangan cakupan, kalimat kosong tidak menyebut batas', async () => {
+  const { hal } = await bukaVariatif();
+  const ada = await hal.locator('[data-cakupan="jendela"]').count();
+  await hal.getByLabel('Tanggal', { exact: true }).fill('2026-01-01');
+  await hal.waitForTimeout(200);
+  const kosong = await hal.$eval('.kasir-konten .empty', (e) => e.textContent.trim());
+  await hal.close();
+  assert.equal(ada, 0, 'keterangan cakupan muncul padahal seluruh riwayat lokal terbaca');
+  assert.doesNotMatch(kosong, /transaksi terakhir/, kosong);
+});

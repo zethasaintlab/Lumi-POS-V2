@@ -11,6 +11,7 @@ import {
   STOK_HABIS_VAR,
   STOK_TIPIS_VAR,
   orderUntuk,
+  orderRiwayatPenuh,
   type NamaSkenario,
 } from './skenario.ts';
 
@@ -206,6 +207,10 @@ export interface OpsiDbPalsu {
   gagalRingkasan?: boolean;
   /** `?ordOpen=1` (Task 16 fix) — `ord-1` berstatus `open` tanpa pembayaran, supaya dialog VOID K-10 dapat dibuka. Fixture bawaan tidak berubah. */
   ordOpen?: boolean;
+  /** `?riwayatPenuh=1` (tinjauan akhir P1) — 120 order, jendela K-08 (100) PENUH; Transfer hanya di luar jendela. */
+  riwayatPenuh?: boolean;
+  /** `?tanpaKonfigPerangkat=1` (tinjauan akhir D2) — `device_config` kosong, tabel lain utuh: pratinjau struk tanpa outlet. */
+  tanpaKonfigPerangkat?: boolean;
   /** `?gagalBacaPerangkat=1` (Task 16 fix) — pembacaan `device_config` melempar (K-01: "Perangkat tidak terbaca"). */
   gagalBacaPerangkat?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
@@ -217,7 +222,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* `?jumlahGagal=500` — override jumlah item gagal (jalur test header: hitungan 3 digit). */
   if (opsi.jumlahGagal !== undefined) antre.gagal = opsi.jumlahGagal;
   const item = itemUntuk(skenario);
-  const orderDasar = orderUntuk(skenario);
+  const orderDasar = opsi.riwayatPenuh ? orderRiwayatPenuh() : orderUntuk(skenario);
   const o4 = orderDasar.find((o) => o.id === 'ord-4');
   const tambahan = opsi.ringkasanBernilai && o4
     ? [
@@ -321,7 +326,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     payment: order
       .filter((o) => o.status !== 'voided' && !(opsi.ordOpen && o.id === 'ord-1'))
       .flatMap((o, i): Record<string, unknown>[] => {
-        const transfer = (opsi.transfer || opsi.riwayatVariatif) && o.id === 'ord-1';
+        const transfer = ((opsi.transfer || opsi.riwayatVariatif) && o.id === 'ord-1') || (opsi.riwayatPenuh && Number(o.id.slice(4)) >= 101);
         const nontunai = i % 3 === 1 || transfer;
         const tunai = (jumlah: number, sufiks = '') => ({
           order_id: o.id,
@@ -525,7 +530,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         default_tax_type: 'ppn',
       },
     ],
-    device_config: perangkatTerdaftarUntuk(skenario) ? [
+    device_config: perangkatTerdaftarUntuk(skenario) && !opsi.tanpaKonfigPerangkat ? [
       {
         id: 1,
         device_id: 'dev-galeri',

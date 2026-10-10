@@ -26,6 +26,8 @@ export function PratinjauStruk({ orderId, onTutup }: { orderId: string; onTutup:
   const { db } = useDbLokal();
   const [dok, setDok] = useState<ReceiptDocument | null | undefined>(undefined);
   const [berlaku, setBerlaku] = useState<PrinterProfile | null>(null);
+  /* `null` = konfigurasi perangkat TIDAK terbaca: tanpa outlet, struk akan
+     tercetak bernama merchant kosong, jadi "Cetak" dinonaktifkan. */
   const [outletId, setOutletId] = useState<string | null>(null);
   const [gagal, setGagal] = useState<string | null>(null);
   const [pilih, setPilih] = useState<Lebar>('berlaku');
@@ -42,7 +44,7 @@ export function PratinjauStruk({ orderId, onTutup }: { orderId: string; onTutup:
       const [daftar, dipilih] = await Promise.all([bacaProfilPrinter(db), bacaPilihanProfil(db)]);
       const d = await bangunUlangStruk(db, orderId, { namaMerchant: outlet?.name ?? '' });
       if (!hidup) return;
-      setOutletId(konfig?.outletId ?? '');
+      setOutletId(konfig?.outletId ?? null);
       setBerlaku(profilBerlaku(daftar, dipilih).profil ?? PROFIL_58MM);
       setDok(d);
     })().catch((e: Error) => {
@@ -66,7 +68,7 @@ export function PratinjauStruk({ orderId, onTutup }: { orderId: string; onTutup:
     setMencetak(true);
     setPesan(null);
     try {
-      setPesan(kalimatCetak(await cetakUlangOrder(db, orderId, outletId ?? ''), true));
+      setPesan(kalimatCetak(await cetakUlangOrder(db, orderId, outletId!), true));
     } catch (e) {
       setPesan(`Gagal mencetak: ${(e as Error).message}`);
     } finally {
@@ -135,9 +137,20 @@ export function PratinjauStruk({ orderId, onTutup }: { orderId: string; onTutup:
           {pesan}
         </p>
       )}
+      {outletId === null && (
+        <p id="alasan-cetak-nonaktif" className="t-caption" role="status" data-cetak="nonaktif">
+          Perangkat belum terbaca, jadi struk belum dapat dicetak. Pratinjau di atas tetap benar; coba lagi sesudah perangkat terbaca.
+        </p>
+      )}
       <div className="kasir-bayar-baris">
         {tutup}
-        <Tombol varian="primary" kritis disabled={mencetak} onClick={() => void cetak()}>
+        <Tombol
+          varian="primary"
+          kritis
+          disabled={mencetak || outletId === null}
+          keterangan={outletId === null ? 'alasan-cetak-nonaktif' : undefined}
+          onClick={() => void cetak()}
+        >
           Cetak
         </Tombol>
       </div>

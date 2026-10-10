@@ -256,3 +256,32 @@ test('pratinjau dari K-07: dibuka, keadaan "tidak dapat dibangun" terbaca, Tutup
   await hal.close();
   assert.match(teks, /tidak dapat dibangun ulang menjadi struk/, teks);
 });
+
+test('⛔ konfigurasi perangkat tak terbaca → pratinjau tetap tampil, "Cetak" nonaktif dengan alasan terlihat', async () => {
+  const { hal } = await bukaPratinjauK09('&tanpaKonfigPerangkat=1');
+  const u = await hal.evaluate(() => {
+    const cetak = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Cetak');
+    const alasan = document.querySelector('[data-pratinjau="struk"] [data-cetak="nonaktif"]');
+    return {
+      baris: document.querySelectorAll('[data-pratinjau="struk"] [data-struk-baris]').length,
+      disabled: cetak?.disabled ?? null,
+      alasan: alasan?.textContent.trim() ?? null,
+      terhubung: cetak && alasan ? cetak.getAttribute('aria-describedby') === alasan.id : false,
+    };
+  });
+  await hal.close();
+  assert.ok(u.baris > 0, 'pratinjau tidak tampil');
+  assert.equal(u.disabled, true, '"Cetak" aktif padahal konfigurasi perangkat tak terbaca — struk akan bernama merchant kosong');
+  assert.match(u.alasan ?? '', /Perangkat belum terbaca/, `alasan: ${u.alasan}`);
+  assert.equal(u.terhubung, true, 'alasan tidak terhubung ke tombol lewat aria-describedby');
+});
+
+test('konfigurasi perangkat terbaca → "Cetak" aktif, tanpa alasan nonaktif', async () => {
+  const { hal } = await bukaPratinjauK09();
+  const u = await hal.evaluate(() => ({
+    disabled: [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Cetak')?.disabled,
+    alasan: document.querySelector('[data-cetak="nonaktif"]') !== null,
+  }));
+  await hal.close();
+  assert.deepEqual(u, { disabled: false, alasan: false });
+});

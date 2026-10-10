@@ -46,6 +46,13 @@ const TEKS_SYNC: Record<string, string> = {
   failed: 'Gagal kirim',
 };
 
+/* `2026-08-31` → `31 Agu 2026`. Tanggal bisnis adalah tanggal KALENDER tanpa
+   zona, jadi diformat di UTC; zona perangkat akan menggeser harinya. */
+const FORMAT_TANGGAL = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+function tanggalBisnisTampil(ymd: string): string {
+  return FORMAT_TANGGAL.format(new Date(`${ymd}T00:00:00Z`));
+}
+
 export function Riwayat() {
   const idTanggal = useId();
   const { db } = useDbLokal();
@@ -80,6 +87,17 @@ export function Riwayat() {
       hidup = false;
     };
   }, [db]);
+
+  /* ⛔ "Nol baris, bukan error": layar hanya membaca `BATAS` transaksi terakhir.
+     Jendela PENUH berarti mungkin ada yang lebih lama di luar jangkauan, jadi
+     penyaring yang kosong TIDAK boleh terbaca "tidak ada penjualan". Layar
+     menyatakan cakupannya (N dan tanggal bisnis tertua) dan kalimat kosong
+     menyebut batas yang sama. Belum penuh = seluruh riwayat lokal terbaca. */
+  const cakupan = useMemo(() => {
+    if (daftar.length < BATAS) return null;
+    const tertua = daftar.map((o) => o.businessDate).sort()[0]!;
+    return { n: daftar.length, tertua: tanggalBisnisTampil(tertua) };
+  }, [daftar]);
 
   const terlihat = useMemo(
     () =>
@@ -178,6 +196,12 @@ export function Riwayat() {
         ))}
       </div>
 
+      {cakupan && (
+        <p className="t-caption kasir-login-sub" data-cakupan="jendela">
+          Menampilkan {cakupan.n} transaksi terakhir di perangkat ini (mulai {cakupan.tertua}).
+        </p>
+      )}
+
       {/* Tabel dalam `.card` bundle (Fase 3.9, mengikuti mockup). Kolom
           Waktu PERTAMA; kepala kolom memakai grid yang sama dengan baris. */}
       <div className="card kasir-riwayat-kartu">
@@ -186,9 +210,10 @@ export function Riwayat() {
             <EmptyState
               title="Tidak ada struk yang cocok"
               body={
-                kueri.trim() !== ''
+                (kueri.trim() !== ''
                   ? `Tidak ada hasil untuk "${kueri}" dengan penyaring yang dipilih.`
-                  : 'Tidak ada transaksi yang cocok dengan tanggal dan metode bayar yang dipilih.'
+                  : 'Tidak ada transaksi yang cocok dengan tanggal dan metode bayar yang dipilih.') +
+                (cakupan ? ` Pencarian hanya mencakup ${cakupan.n} transaksi terakhir perangkat ini.` : '')
               }
             />
           </div>

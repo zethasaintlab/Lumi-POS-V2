@@ -404,3 +404,11 @@ test('⛔ status tetap turunan pembatal + status kirim FR-H3, bukan "Selesai" tu
   assert.equal(h.p.membatalkan, 'a');
   assert.equal(h.p.statusSync, 'ok');
 });
+
+test('⛔ jendela riwayat = `batas` order TERBARU, juga bila sumber mengembalikan lebih banyak', async () => {
+  const { bacaRiwayat } = await import(MOD);
+  const db = dbPalsu({
+    order: [1, 2, 3, 4, 5].map((i) => ({ ...ORDER, id: `o${i}`, sequence: i, occurred_at: `2026-08-13T0${i}:00:00Z` })),
+  });
+  assert.deepEqual((await bacaRiwayat(db, { batas: 3 })).map((o) => o.id), ['o5', 'o4', 'o3']);
+});
