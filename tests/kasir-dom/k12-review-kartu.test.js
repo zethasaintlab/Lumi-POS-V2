@@ -174,18 +174,19 @@ async function harapan(opsi) {
   const { posisiPenjualan } = await import('../../packages/domain/src/posisi-penjualan.ts');
   const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
   const db = buatDbPalsu('normal', opsi);
-  const bayar = await db.getAll('SELECT * FROM payment WHERE status = ?', ['confirmed']);
+  const orders = (await db.getAll('SELECT * FROM "order" WHERE shift_id = ?', ['shift-galeri'])).filter((o) => o.shift_id === undefined || o.shift_id === 'shift-galeri');
+  const idShift = new Set(orders.map((o) => o.id));
+  const bayar = (await db.getAll('SELECT * FROM payment WHERE status = ?', ['confirmed'])).filter((b) => idShift.has(b.order_id));
   const per = {};
   for (const b of bayar) {
     const kode = b.method === 'other' && b.provider === 'bank_transfer' ? 'transfer' : b.method;
     per[LABEL[kode]] = (per[LABEL[kode]] ?? 0) + b.amount;
   }
-  const orders = await db.getAll('SELECT * FROM "order"', []);
   const pos = posisiPenjualan({
     orders: orders.map((o) => ({ id: o.id, status: o.status, total: o.total, taxAmount: o.tax_amount, voidedByOrderId: o.voided_by_order_id })),
     refunds: [],
   });
-  return { per, total: rupiah(Number(pos.omzetBersih)), totalBayar: rupiah(bayar.reduce((a, b) => a + b.amount, 0)) };
+  return { per: Object.fromEntries(Object.entries(per).map(([k, v]) => [k, rupiah(v)])), tunai: rupiah(per.Tunai), total: rupiah(Number(pos.omzetBersih)), totalBayar: rupiah(bayar.reduce((a, b) => a + b.amount, 0)) };
 }
 
 const bacaRingkasan = (hal) =>
@@ -222,12 +223,21 @@ for (const [nama, opsi, query, hitungan] of [
     }
     assert.ok(r.ada, 'kartu "Ringkasan shift" tidak ada di review');
     assert.ok(r.teks.includes('Penjualan per metode'), 'judul "Penjualan per metode" tidak ada di review');
+    /* Angka (bukan label) dari kartu review tidak boleh ada di hitung: label lain
+       ("Omzet") tidak boleh meloloskan kebocoran. Non-tunai dikecualikan (sah). */
+    for (const [nama, nilai] of [['Total penjualan', h.total], ['total Tunai', h.tunai]]) {
+      const angka = nilai.replace(/^Rp\s*/, '');
+      assert.ok(!teksHitung.includes(angka), `${nama} (${angka}) bocor ke tahap hitung dengan label lain (FR-D2)`);
+      assert.ok(r.teks.includes(angka) || r.metode.Tunai === h.tunai, `${nama} tidak ada di kartu review`);
+    }
+    assert.ok(r.teks.includes('Pembayaran diterima, sebelum void dan refund'), 'keterangan basis per metode (FR-G2) hilang');
+    assert.ok(r.teks.includes('Hanya transaksi dari perangkat ini'), 'label cakupan perangkat (FR-G4) hilang');
     assert.deepEqual(Object.keys(r.stat), ['Total penjualan'], 'stat Ringkasan shift');
     assert.equal(r.stat['Total penjualan'], h.total, 'Total penjualan bukan omzet bersih posisi-penjualan');
     assert.notEqual(h.total, h.totalBayar, 'fixture tidak membedakan omzet dari jumlah pembayaran -- penjaga hampa');
     assert.deepEqual(
       r.metode,
-      Object.fromEntries(Object.entries(h.per).map(([k, v]) => [k, `Rp ${v.toLocaleString('id-ID')}`])),
+      h.per,
       'baris per metode tidak sama dengan lipatan pembayaran fixture'
     );
   });
@@ -240,5 +250,5 @@ test('⛔ Ringkasan shift memakai labelMetode dengan provider: transfer → "Tra
   assert.deepEqual(galat, []);
   assert.ok('Transfer' in r.metode, `baris Transfer tidak ada: ${Object.keys(r.metode).join(', ')}`);
   assert.ok(!('Lainnya' in r.metode), 'transfer bersembunyi di "Lainnya"');
-  assert.equal(r.metode.Transfer, 'Rp 54.000');
+  assert.equal(r.metode.Transfer, (await harapan({ transfer: true })).per.Transfer);
 });

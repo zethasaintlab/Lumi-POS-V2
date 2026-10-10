@@ -648,3 +648,47 @@ test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan shift 
   assert.equal(peta.other?.total, 5000);
   assert.equal(l.perMetode.reduce((t, m) => t + m.total, 0), 180000, 'uang hilang dari pengelompokan');
 });
+
+// ---------------------------------------------------------------------------
+// Ringkasan shift K-12 (review): Total penjualan = omzet BERSIH `posisiPenjualan`.
+// Fixture SQLite sungguhan dengan void DAN refund, supaya omzetBersih (150.000)
+// ≠ omzetKotor (160.000) ≠ jumlah pembayaran terkonfirmasi (200.000).
+function dbDenganVoidRefund() {
+  const db = dbTransferSungguhan();
+  db.sqlite.exec('DELETE FROM payment; DELETE FROM "check"; DELETE FROM "order";');
+  const order = (id, seq, status, total, voidedBy) => db.sqlite.exec(`
+    INSERT INTO "order"
+      (id, tenant_id, outlet_id, device_id, shift_id, receipt_number, business_date, sequence,
+       status, channel, subtotal, order_discount, service_charge_amount, tax_amount,
+       rounding_adjustment, total, amount_due, created_by, occurred_at, hlc, voided_by_order_id)
+    VALUES ('${id}','t1','o1','d1','s1','K1-${id}','2026-08-13',${seq},
+            '${status}','takeaway',${total},0,0,0,0,${total},${total},'u-sari',
+            '2026-08-13T10:00:00Z',${seq},${voidedBy ? `'${voidedBy}'` : 'NULL'})`);
+  const bayar = (id, method, jumlah) => {
+    db.sqlite.exec(`INSERT INTO "check" (id, order_id, subtotal, total) VALUES ('c-${id}','${id}',${jumlah},${jumlah})`);
+    db.sqlite.exec(`
+      INSERT INTO payment (id, order_id, check_id, method, provider, amount, status, tendered_at)
+      VALUES ('p-${id}','${id}','c-${id}','${method}',NULL,${jumlah},'confirmed','2026-08-13T10:00:00Z')`);
+  };
+  order('A', 1, 'closed', 100000); bayar('A', 'cash', 100000);
+  order('B', 2, 'closed', 60000); bayar('B', 'qris_static', 60000);
+  order('C', 3, 'closed', 40000); bayar('C', 'cash', 40000);
+  order('V', 4, 'voided', 40000, 'C'); // pembatal C: C keluar dari omzet
+  db.sqlite.exec(`
+    INSERT INTO refund (id, order_id, amount, reason_code, method, created_by, approved_by, occurred_at, hlc)
+    VALUES ('ref-B','B',10000,'salah_input','qris_static','u-sari','u-budi','2026-08-13T11:00:00Z',9)`);
+  return db;
+}
+
+test('⛔ ringkasanShift: totalPenjualan = omzetBersih (setelah void DAN refund), bukan kotor, bukan jumlah pembayaran', async () => {
+  const { ringkasanShift } = await import(MOD);
+  const r = await ringkasanShift(dbDenganVoidRefund(), 's1');
+  const bayar = r.perMetode.reduce((t, m) => t + m.total, 0);
+  assert.equal(bayar, 200000, 'fixture: jumlah pembayaran');
+  assert.equal(r.totalPenjualan, 150000n, 'omzet bersih = 160.000 kotor − 10.000 refund (C dibatalkan)');
+  assert.notEqual(r.totalPenjualan, 160000n);
+  assert.notEqual(Number(r.totalPenjualan), bayar);
+  // Per metode = pembayaran diterima, TIDAK dikurangi void/refund (agregasi tak berubah).
+  const peta = Object.fromEntries(r.perMetode.map((m) => [m.metode, m.total]));
+  assert.deepEqual(peta, { cash: 140000, qris_static: 60000 });
+});

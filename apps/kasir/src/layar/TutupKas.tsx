@@ -187,7 +187,7 @@ export function TutupKas() {
         <Baris label="Omzet bersih" nilai={laporan.penjualan.omzetBersih} tebal />
         <p className="t-caption kasir-login-sub">
           Setelah void &amp; refund · {laporan.penjualan.jumlahTransaksi} transaksi · rata-rata{' '}
-          {rupiah(Number(laporan.penjualan.rataRataPerTransaksi))}
+          {rupiah(laporan.penjualan.rataRataPerTransaksi)}
         </p>
         {/* FR-G4 — `spec-g:111`. Tanpa kalimat ini, kasir atau owner yang
             membaca satu tablet membacanya sebagai angka seluruh outlet. */}
@@ -415,10 +415,11 @@ export function TutupKas() {
               <>
                 <div className="kasir-ringkas-stat">
                   <span className="t-caption">Total penjualan</span>
-                  <span className="t-display num">{rupiah(Number(ringkasan.totalPenjualan))}</span>
+                  <span className="t-display num">{rupiah(ringkasan.totalPenjualan)}</span>
                   <span className="t-caption">Setelah void dan refund</span>
                 </div>
                 <h3 className="t-body-md">Penjualan per metode</h3>
+                <p className="t-caption">Pembayaran diterima, sebelum void dan refund</p>
                 {ringkasan.perMetode.length === 0 ? (
                   <p className="t-body-md">Belum ada pembayaran di shift ini.</p>
                 ) : (
@@ -429,6 +430,7 @@ export function TutupKas() {
                     </p>
                   ))
                 )}
+                <p className="t-caption">Hanya transaksi dari perangkat ini.</p>
               </>
             )}
           </section>
