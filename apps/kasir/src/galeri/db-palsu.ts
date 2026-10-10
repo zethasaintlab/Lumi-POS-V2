@@ -198,6 +198,12 @@ export interface OpsiDbPalsu {
   strukPanjang?: boolean;
   /** `?profil80=1` (Task 13 fix) — profil printer 80 mm (48 kolom) TERPILIH di `device_config`, untuk lebar bawaan pratinjau. */
   profil80?: boolean;
+  /** `?ringkasanBernilai=1` (Task 15 fix) — K-12 Ringkasan shift dengan void DAN refund BERNILAI: `ord-8` (closed 40.000,
+      dibatalkan oleh `ord-9`, pembatal bernilai 40.000, kas dibalik) + refund 10.000 pada `ord-2`, supaya omzet bersih
+      ≠ omzet kotor ≠ kotor + void ≠ jumlah pembayaran. Tanpa opsi, fixture bawaan tidak berubah (saldo K-12 Rp 670.500). */
+  ringkasanBernilai?: boolean;
+  /** `?gagalRingkasan=1` (Task 15 fix) — pembacaan refund milik `ringkasanShift` (posisi penjualan) melempar. */
+  gagalRingkasan?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -207,7 +213,15 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* `?jumlahGagal=500` — override jumlah item gagal (jalur test header: hitungan 3 digit). */
   if (opsi.jumlahGagal !== undefined) antre.gagal = opsi.jumlahGagal;
   const item = itemUntuk(skenario);
-  const order = orderUntuk(skenario).map((o) => {
+  const orderDasar = orderUntuk(skenario);
+  const o4 = orderDasar.find((o) => o.id === 'ord-4');
+  const tambahan = opsi.ringkasanBernilai && o4
+    ? [
+        { ...o4, id: 'ord-8', receipt_number: 'K1-20260901-0008', total: 40_000, amount_due: 40_000, subtotal: 36_036, tax_amount: 3_964 },
+        { ...o4, id: 'ord-9', receipt_number: 'K1-20260901-0009', status: 'voided', voided_by_order_id: 'ord-8', total: 40_000, amount_due: 40_000, subtotal: 0, tax_amount: 0 },
+      ]
+    : [];
+  const order = [...orderDasar, ...tambahan].map((o) => {
     const n = Number(o.id.slice(4));
     return opsi.riwayatVariatif && n >= 3
       ? { ...o, business_date: '2026-08-31', receipt_number: o.receipt_number.replace('20260901', '20260831') }
@@ -334,7 +348,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
           status: 'confirmed',
         }];
       }),
-    refund: [],
+    refund: opsi.ringkasanBernilai
+      ? [{ id: 'ref-galeri-1', order_id: 'ord-2', amount: 10_000, reason_code: 'salah_input', method: 'qris_static', created_by: 'user-galeri', approved_by: 'user-galeri', occurred_at: '2026-09-01T08:00:00.000Z', hlc: 40 }]
+      : [],
     cash_drawer_shift: opsi.tanpaShift ? [] : [
       {
         id: 'shift-galeri',
@@ -361,7 +377,8 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         id: `cm-${i}`,
         shift_id: 'shift-galeri',
         type: 'sale',
-        delta: o.total,
+        // Pembatal bernilai (hanya `ringkasanBernilai`) MEMBALIK kas penjualan aslinya.
+        delta: o.status === 'voided' ? -o.total : o.total,
         occurred_at: o.occurred_at,
       })),
       /* Kas manual (Task 4, K-18): satu masuk dan dua keluar, TERBARU DULU —
@@ -651,6 +668,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* Catatan penulisan galeri — lihat `execute`. */
   const tulis: { sql: string; params: readonly unknown[]; dalam: boolean }[] = [];
   (globalThis as { __galeriTulis?: unknown }).__galeriTulis = tulis;
+  /* Urutan BACA/TULIS (`baca:<tabel>`, `tulis:<sql>`), untuk penjaga "ringkasan dibaca sesudah hitungan tercatat". */
+  const urutan: string[] = [];
+  (globalThis as { __galeriUrutan?: string[] }).__galeriUrutan = urutan;
 
   const db: DbLokal = {
     async getAll<T>(sql: string, params?: readonly unknown[]): Promise<T[]> {
@@ -660,6 +680,10 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       // berpacu dengan timer.
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
       const tabel = tabelDari(sql);
+      urutan.push(`baca:${tabel}`);
+      if (opsi.gagalRingkasan && tabel === 'refund' && /JOIN\s+"order"/i.test(sql)) {
+        throw new Error('galeri: pembacaan ringkasan shift gagal');
+      }
       /* `__galeriTahanDraf`: menahan BACA draf QRIS sampai test melepasnya, supaya jendela
          "pemulihan draf belum selesai" dapat diukur tanpa timer (fix round Task 9, C1c). */
       if (tabel === 'draf_qris_lokal') await (globalThis as { __galeriTahanDraf?: Promise<void> }).__galeriTahanDraf;
@@ -843,6 +867,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
     const tahan = (globalThis as { __galeriTahanPenjualan?: Promise<void> }).__galeriTahanPenjualan;
     if (tahan && /^INSERT INTO "order"/i.test(sql.trim())) await tahan;
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
+    urutan.push(`tulis:${sql.replace(/\s+/g, ' ').trim()}`);
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
     /* Draf QRIS ([EKSPLORASI] Task 9): urutan kolom = `simpanDraf`. Hanya agar
        pemulihan draf (`pulihkanDraf`) dapat dirender ulang di harness. */

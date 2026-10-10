@@ -684,7 +684,6 @@ function Baris({
   nilai: number | bigint;
   tebal?: boolean;
 }) {
-  const n = Number(nilai);
   return (
     <div className="kasir-subtotal">
       <span className="t-body-md">{label}</span>
@@ -695,7 +694,7 @@ function Baris({
           salah. Cabang itu kini menghasilkan hal yang sama persis dengan
           `rupiah(n)`, dan dua tempat yang memutuskan format nilai negatif
           adalah tepat yang pemindahan ke `packages/domain` selesaikan. */}
-      <span className={tebal ? 't-title num' : 't-body-md num'}>{rupiah(n)}</span>
+      <span className={tebal ? 't-title num' : 't-body-md num'}>{rupiah(nilai)}</span>
     </div>
   );
 }

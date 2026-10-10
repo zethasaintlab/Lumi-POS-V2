@@ -652,7 +652,10 @@ test('⛔ transfer tampil sebagai kelompok transfer, bukan other (laporan shift 
 // ---------------------------------------------------------------------------
 // Ringkasan shift K-12 (review): Total penjualan = omzet BERSIH `posisiPenjualan`.
 // Fixture SQLite sungguhan dengan void DAN refund, supaya omzetBersih (150.000)
-// ≠ omzetKotor (160.000) ≠ jumlah pembayaran terkonfirmasi (200.000).
+// ≠ omzetKotor (185.000) ≠ jumlah pembayaran terkonfirmasi (225.000).
+// Batas yang dinyatakan: node:sqlite mengembalikan INTEGER sebagai `number`, jadi perMetode.total
+// presisi hanya sampai 2^53; test ini TIDAK membuktikan total > 2^53 (totalPenjualan bigint-nya
+// datang dari `posisiPenjualan`, bukan dari kolom).
 function dbDenganVoidRefund() {
   const db = dbTransferSungguhan();
   db.sqlite.exec('DELETE FROM payment; DELETE FROM "check"; DELETE FROM "order";');
@@ -664,16 +667,20 @@ function dbDenganVoidRefund() {
     VALUES ('${id}','t1','o1','d1','s1','K1-${id}','2026-08-13',${seq},
             '${status}','takeaway',${total},0,0,0,0,${total},${total},'u-sari',
             '2026-08-13T10:00:00Z',${seq},${voidedBy ? `'${voidedBy}'` : 'NULL'})`);
-  const bayar = (id, method, jumlah) => {
+  const bayar = (id, method, jumlah, { provider = null, status = 'confirmed' } = {}) => {
     db.sqlite.exec(`INSERT INTO "check" (id, order_id, subtotal, total) VALUES ('c-${id}','${id}',${jumlah},${jumlah})`);
     db.sqlite.exec(`
       INSERT INTO payment (id, order_id, check_id, method, provider, amount, status, tendered_at)
-      VALUES ('p-${id}','${id}','c-${id}','${method}',NULL,${jumlah},'confirmed','2026-08-13T10:00:00Z')`);
+      VALUES ('p-${id}','${id}','c-${id}','${method}',${provider ? `'${provider}'` : 'NULL'},${jumlah},'${status}','2026-08-13T10:00:00Z')`);
   };
   order('A', 1, 'closed', 100000); bayar('A', 'cash', 100000);
   order('B', 2, 'closed', 60000); bayar('B', 'qris_static', 60000);
   order('C', 3, 'closed', 40000); bayar('C', 'cash', 40000);
   order('V', 4, 'voided', 40000, 'C'); // pembatal C: C keluar dari omzet
+  order('D', 5, 'closed', 25000); bayar('D', 'other', 25000, { provider: 'bank_transfer' });
+  // Belum/tidak jadi uang: tidak boleh masuk perMetode (QRIS menunggu, pembayaran gagal).
+  order('E', 6, 'open', 30000); bayar('E', 'qris_dynamic', 30000, { status: 'pending_confirmation' });
+  order('F', 7, 'open', 20000); bayar('F', 'card_edc', 20000, { status: 'failed' });
   db.sqlite.exec(`
     INSERT INTO refund (id, order_id, amount, reason_code, method, created_by, approved_by, occurred_at, hlc)
     VALUES ('ref-B','B',10000,'salah_input','qris_static','u-sari','u-budi','2026-08-13T11:00:00Z',9)`);
@@ -684,11 +691,18 @@ test('⛔ ringkasanShift: totalPenjualan = omzetBersih (setelah void DAN refund)
   const { ringkasanShift } = await import(MOD);
   const r = await ringkasanShift(dbDenganVoidRefund(), 's1');
   const bayar = r.perMetode.reduce((t, m) => t + m.total, 0);
-  assert.equal(bayar, 200000, 'fixture: jumlah pembayaran');
-  assert.equal(r.totalPenjualan, 150000n, 'omzet bersih = 160.000 kotor − 10.000 refund (C dibatalkan)');
-  assert.notEqual(r.totalPenjualan, 160000n);
+  assert.equal(bayar, 225000, 'fixture: jumlah pembayaran TERKONFIRMASI');
+  assert.equal(r.totalPenjualan, 175000n, 'omzet bersih = 185.000 kotor − 10.000 refund (C dibatalkan)');
+  assert.notEqual(r.totalPenjualan, 185000n);
   assert.notEqual(Number(r.totalPenjualan), bayar);
-  // Per metode = pembayaran diterima, TIDAK dikurangi void/refund (agregasi tak berubah).
+});
+
+test('⛔ ringkasanShift: transfer terpisah dari other; pending/failed tidak masuk perMetode', async () => {
+  const { ringkasanShift } = await import(MOD);
+  const r = await ringkasanShift(dbDenganVoidRefund(), 's1');
   const peta = Object.fromEntries(r.perMetode.map((m) => [m.metode, m.total]));
-  assert.deepEqual(peta, { cash: 140000, qris_static: 60000 });
+  // Pembayaran diterima, TIDAK dikurangi void/refund (agregasi tak berubah).
+  assert.deepEqual(peta, { cash: 140000, qris_static: 60000, transfer: 25000 });
+  assert.ok(!('other' in peta), 'transfer jatuh ke "other"/Lainnya');
+  assert.ok(!('qris_dynamic' in peta) && !('card_edc' in peta), 'pembayaran pending/failed ikut terhitung');
 });

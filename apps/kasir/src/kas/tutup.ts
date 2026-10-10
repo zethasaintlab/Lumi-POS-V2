@@ -646,6 +646,9 @@ export interface RingkasanShift {
  *
  * ⛔ Dipanggil sesudah `catatHitungan`, tidak pernah dari `ringkasanSebelumHitung`:
  * total tunai dan omzet adalah petunjuk angka target (FR-D2).
+ *
+ * Batas: `perMetode.total` adalah `number` (kolom INTEGER), presisi sampai 2^53;
+ * hanya `totalPenjualan` (bigint dari `posisiPenjualan`) yang bebas batas itu.
  */
 export async function ringkasanShift(db: DbLokal, shiftId: string): Promise<RingkasanShift> {
   const bayar = await pembayaranTunai(db, shiftId);
