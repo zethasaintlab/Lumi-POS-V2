@@ -634,6 +634,25 @@ async function bacaPosisiPenjualan(db: DbLokal, shiftId: string): Promise<Posisi
   });
 }
 
+export interface RingkasanShift {
+  /** `omzetBersih` dari `posisiPenjualan` -- satu-satunya definisi omzet. */
+  totalPenjualan: bigint;
+  /** Kunci = kode laporan (`transfer` terpisah dari `other`); total tunai PENUH. */
+  perMetode: { metode: string; jumlah: number; total: number }[];
+}
+
+/**
+ * Kartu "Ringkasan shift" K-12, HANYA tahap `review` (keputusan bawaan #1).
+ *
+ * ⛔ Dipanggil sesudah `catatHitungan`, tidak pernah dari `ringkasanSebelumHitung`:
+ * total tunai dan omzet adalah petunjuk angka target (FR-D2).
+ */
+export async function ringkasanShift(db: DbLokal, shiftId: string): Promise<RingkasanShift> {
+  const bayar = await pembayaranTunai(db, shiftId);
+  const penjualan = await bacaPosisiPenjualan(db, shiftId);
+  return { totalPenjualan: penjualan.omzetBersih, perMetode: agregasiPerMetode(bayar) };
+}
+
 export interface LaporanShift {
   shiftId: string;
   businessDate: string;

@@ -87,19 +87,20 @@ after(async () => {
 
 /* Hitungan jauh dari saldo seharusnya — selisih melewati ambang, keenam radio
    alasan tampil: review yang PALING penuh (pola `k12-aksi-slot`). */
-async function bukaReview(keadaan) {
+async function bukaReview(keadaan, { hitungan = '300000', query = '' } = {}) {
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
-  await hal.goto(`${alamat}/harness-galeri.html?layar=K-12&keadaan=${keadaan}`, { waitUntil: 'load' });
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-12&keadaan=${keadaan}${query}`, { waitUntil: 'load' });
   await hal.waitForSelector('.kasir-konten', { timeout: 10_000 });
   await hal.waitForTimeout(1200);
   const bidang = hal.getByLabel(/hitungan fisik/i);
   await bidang.waitFor({ state: 'visible', timeout: 5_000 });
-  await bidang.fill('300000');
+  const teksHitung = await hal.evaluate(() => document.querySelector('.kasir-konten').innerText);
+  await bidang.fill(hitungan);
   await hal.getByRole('button', { name: 'Lanjut' }).click();
   await hal.waitForTimeout(1000);
-  return { hal, galat };
+  return { hal, galat, teksHitung };
 }
 
 const ukur = (hal) =>
@@ -157,3 +158,87 @@ for (const keadaan of ['normal', 'offline']) {
     assert.ok(u.alasanDiKiri, 'alasan selisih tidak di kartu Rekonsiliasi (kiri)');
   });
 }
+
+/* ---------------------------------------------------------------------------
+   Ringkasan shift (keputusan bawaan #1). HARAPAN datang dari fixture galeri
+   dan dihitung di sini, bukan dibaca dari DOM yang sedang diuji:
+   - per metode: lipatan baris `payment` fixture (label ditulis di test),
+   - Total penjualan: `posisiPenjualan` (satu-satunya definisi omzet) atas
+     baris `order`/`refund` fixture. Fixture memuat order batal, jadi angkanya
+     BERBEDA dari jumlah pembayaran -- penjaga yang menjumlah `payment` merah.
+--------------------------------------------------------------------------- */
+const LABEL = { cash: 'Tunai', qris_static: 'QRIS (statis)', transfer: 'Transfer' };
+
+async function harapan(opsi) {
+  const { buatDbPalsu } = await import('../../apps/kasir/src/galeri/db-palsu.ts');
+  const { posisiPenjualan } = await import('../../packages/domain/src/posisi-penjualan.ts');
+  const { rupiah } = await import('../../packages/domain/src/uang-tampilan.ts');
+  const db = buatDbPalsu('normal', opsi);
+  const bayar = await db.getAll('SELECT * FROM payment WHERE status = ?', ['confirmed']);
+  const per = {};
+  for (const b of bayar) {
+    const kode = b.method === 'other' && b.provider === 'bank_transfer' ? 'transfer' : b.method;
+    per[LABEL[kode]] = (per[LABEL[kode]] ?? 0) + b.amount;
+  }
+  const orders = await db.getAll('SELECT * FROM "order"', []);
+  const pos = posisiPenjualan({
+    orders: orders.map((o) => ({ id: o.id, status: o.status, total: o.total, taxAmount: o.tax_amount, voidedByOrderId: o.voided_by_order_id })),
+    refunds: [],
+  });
+  return { per, total: rupiah(Number(pos.omzetBersih)), totalBayar: rupiah(bayar.reduce((a, b) => a + b.amount, 0)) };
+}
+
+const bacaRingkasan = (hal) =>
+  hal.evaluate(() => {
+    const judul = [...document.querySelectorAll('h2')].find((h) => h.textContent.trim() === 'Ringkasan shift');
+    const kartu = judul?.closest('section');
+    const baris = (sel) =>
+      Object.fromEntries(
+        [...(kartu?.querySelectorAll(sel) ?? [])].map((e) => {
+          const [a, b] = e.querySelectorAll(':scope > span');
+          return [a.textContent.trim(), b.textContent.replace(/\s+/g, ' ').trim()];
+        })
+      );
+    return {
+      ada: Boolean(kartu),
+      teks: kartu ? kartu.innerText : '',
+      stat: baris('.kasir-ringkas-stat'),
+      metode: baris('.kasir-ringkas-metode'),
+    };
+  });
+
+for (const [nama, opsi, query, hitungan] of [
+  ['QRIS + tunai, selisih nol', {}, '', '670500'],
+  ['QRIS + tunai + transfer, selisih kurang', { transfer: true }, '&transfer=1', '300000'],
+]) {
+  test(`⛔ "Total penjualan" dan "Penjualan per metode" HANYA di tahap review -- ${nama}`, async () => {
+    const h = await harapan(opsi);
+    const { hal, galat, teksHitung } = await bukaReview('normal', { hitungan, query });
+    const r = await bacaRingkasan(hal);
+    await hal.close();
+    assert.deepEqual(galat, []);
+    for (const kata of ['Total penjualan', 'Penjualan per metode', 'Ringkasan shift']) {
+      assert.ok(!teksHitung.includes(kata), `"${kata}" bocor ke tahap hitung (FR-D2)`);
+    }
+    assert.ok(r.ada, 'kartu "Ringkasan shift" tidak ada di review');
+    assert.ok(r.teks.includes('Penjualan per metode'), 'judul "Penjualan per metode" tidak ada di review');
+    assert.deepEqual(Object.keys(r.stat), ['Total penjualan'], 'stat Ringkasan shift');
+    assert.equal(r.stat['Total penjualan'], h.total, 'Total penjualan bukan omzet bersih posisi-penjualan');
+    assert.notEqual(h.total, h.totalBayar, 'fixture tidak membedakan omzet dari jumlah pembayaran -- penjaga hampa');
+    assert.deepEqual(
+      r.metode,
+      Object.fromEntries(Object.entries(h.per).map(([k, v]) => [k, `Rp ${v.toLocaleString('id-ID')}`])),
+      'baris per metode tidak sama dengan lipatan pembayaran fixture'
+    );
+  });
+}
+
+test('⛔ Ringkasan shift memakai labelMetode dengan provider: transfer → "Transfer", bukan "Lainnya"', async () => {
+  const { hal, galat } = await bukaReview('normal', { query: '&transfer=1' });
+  const r = await bacaRingkasan(hal);
+  await hal.close();
+  assert.deepEqual(galat, []);
+  assert.ok('Transfer' in r.metode, `baris Transfer tidak ada: ${Object.keys(r.metode).join(', ')}`);
+  assert.ok(!('Lainnya' in r.metode), 'transfer bersembunyi di "Lainnya"');
+  assert.equal(r.metode.Transfer, 'Rp 54.000');
+});

@@ -10,10 +10,12 @@ import {
   catatHitungan,
   laporanShift,
   ringkasanSebelumHitung,
+  ringkasanShift,
   tutupKas,
   type LaporanShift,
   type RincianSaldo,
   type RingkasanAwal,
+  type RingkasanShift,
 } from '../kas/tutup.ts';
 import { LABEL_MOVEMENT } from '../../../../packages/domain/src/buku-kas.ts';
 import { muatHlc } from '../lokal/hlc.ts';
@@ -116,6 +118,8 @@ export function TutupKas() {
     percobaan: number;
     rincian: RincianSaldo;
   } | null>(null);
+  /* `'gagal'` = ringkasan tidak terbaca; menutup shift tetap mungkin. */
+  const [ringkasan, setRingkasan] = useState<RingkasanShift | 'gagal' | null>(null);
   const [kodeAlasan, setKodeAlasan] = useState('');
   const [catatan, setCatatan] = useState('');
   const [mintaOtorisasi, setMintaOtorisasi] = useState(false);
@@ -320,6 +324,7 @@ export function TutupKas() {
             ini; tahap `hitung` tetap hitungan buta (FR-D2). */}
         <div className="kasir-review-kolom">
           <section className="card card-pad kasir-dialog-sel">
+            <h2 className="t-title">Rekonsiliasi kas</h2>
             {/* ⛔ RINCIAN PENUH, dan hanya di langkah 2. Di tahap `hitung` tidak
                 satu pun angka ini boleh muncul — bukan totalnya, bukan bagiannya,
                 bukan petunjuknya (FR-D2). Yang membedakan keduanya bukan CSS:
@@ -341,8 +346,6 @@ export function TutupKas() {
             ))}
             <Baris label="Kas diharapkan" nilai={review.saldoSeharusnya} tebal />
             <Baris label="Hitungan fisik" nilai={hitungan} />
-          </section>
-          <section className="card card-pad kasir-dialog-sel">
             {/* ⛔ PANEL, bukan baris teks merah. Tiga keadaan, masing-masing dengan
                 perlakuannya sendiri — dan selisih NOL punya perlakuannya juga:
                 laci yang cocok adalah kabar baik, dan kabar baik yang dirender
@@ -399,6 +402,36 @@ export function TutupKas() {
               </>
             )}
           </section>
+          <section className="card card-pad kasir-dialog-sel">
+            <h2 className="t-title">Ringkasan shift</h2>
+            {/* ⛔ Hanya di `review`: data dibaca SESUDAH hitungan tercatat, dan
+                memakai `.kasir-ringkas-*`, bukan `.kasir-subtotal` -- penjaga
+                hitungan buta memanen `.kasir-subtotal` sebagai angka saldo. */}
+            {ringkasan === 'gagal' || ringkasan === null ? (
+              <p className="t-body-md kasir-login-galat" role="alert">
+                Ringkasan shift tidak dapat dibaca. Menutup shift tetap bisa dilanjutkan.
+              </p>
+            ) : (
+              <>
+                <div className="kasir-ringkas-stat">
+                  <span className="t-caption">Total penjualan</span>
+                  <span className="t-display num">{rupiah(Number(ringkasan.totalPenjualan))}</span>
+                  <span className="t-caption">Setelah void dan refund</span>
+                </div>
+                <h3 className="t-body-md">Penjualan per metode</h3>
+                {ringkasan.perMetode.length === 0 ? (
+                  <p className="t-body-md">Belum ada pembayaran di shift ini.</p>
+                ) : (
+                  ringkasan.perMetode.map((m) => (
+                    <p key={m.metode} className="kasir-ringkas-metode">
+                      <span className="t-body-md">{labelMetode(m.metode)}</span>
+                      <span className="t-body-md num">{rupiah(m.total)}</span>
+                    </p>
+                  ))
+                )}
+              </>
+            )}
+          </section>
         </div>
 
           <p className="t-body-md kasir-login-galat kasir-pesan-tetap" role="alert">
@@ -428,8 +461,8 @@ export function TutupKas() {
             yang ditekan dua kali atau tidak ditekan sama sekali — dan yang
             tidak ditekan meninggalkan shift terbuka semalaman.
 
-            Task 15 memakai `.kasir-aksi-bawah` yang sama ini untuk K-12 lagi
-            (label "Tutup Kas" berganti "Tutup Shift" di sana). */}
+            Label "Tutup Kas" berganti "Tutup Shift" (Task 15, keputusan
+            kampanye Hidupkan desain). */}
         <div className="kasir-aksi-bawah">
           {/* Hitung ULANG tetap mungkin — tapi tercatat sebagai percobaan
               baru, dan layar mengatakannya. `spec-d`: kasir tidak dapat
@@ -444,6 +477,7 @@ export function TutupKas() {
             disabled={sibuk}
             onClick={() => {
               setReview(null);
+              setRingkasan(null);
               setHitunganTeks('');
               setGalat(null);
             }}
@@ -459,7 +493,7 @@ export function TutupKas() {
               else simpan(null);
             }}
           >
-            {sibuk ? 'Menutup…' : 'Tutup Kas'}
+            {sibuk ? 'Menutup…' : 'Tutup Shift'}
           </Tombol>
         </div>
       </>
@@ -615,7 +649,11 @@ export function TutupKas() {
                 hlc: () => jam.tick(),
               })
             )
-            .then((h) => setReview(h))
+            .then(async (h) => {
+              /* Ringkasan gagal tidak boleh menahan kasir menutup shift. */
+              setRingkasan(await ringkasanShift(db, shift.id).catch(() => 'gagal' as const));
+              setReview(h);
+            })
             .catch((e: Error) => setGalat(e.message))
             .finally(() => setSibuk(false));
         }}

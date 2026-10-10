@@ -580,6 +580,21 @@
   align-items: start;
 }
 
+/* K-12 kartu "Ringkasan shift": tile Total penjualan + baris per metode. */
+.kasir-ringkas-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--secondary);
+}
+.kasir-ringkas-metode {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
 .kasir-dialog-sel {
   display: flex;
   flex-direction: column;
