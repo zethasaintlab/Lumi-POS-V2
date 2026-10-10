@@ -29,9 +29,9 @@ export interface RencanaDdl {
 }
 
 function namaTabelDari(pernyataan: string): string | null {
-  const t = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?/i.exec(pernyataan);
+  const t = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z0-9_]+)"?/i.exec(pernyataan);
   if (t) return t[1];
-  const i = /^CREATE(?:\s+UNIQUE)?\s+INDEX\s+(?:IF NOT EXISTS\s+)?[a-z_]+\s+ON\s+"?([a-z_]+)"?/i.exec(
+  const i = /^CREATE(?:\s+UNIQUE)?\s+INDEX\s+(?:IF NOT EXISTS\s+)?[a-z0-9_]+\s+ON\s+"?([a-z0-9_]+)"?/i.exec(
     pernyataan
   );
   return i ? i[1] : null;

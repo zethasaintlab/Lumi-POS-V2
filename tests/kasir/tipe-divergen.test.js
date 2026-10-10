@@ -73,6 +73,11 @@ test('T4 parser benar-benar melihat kolom -- bukan hijau karena kosong', async (
   assert.equal(lokal.item_variation.conversion_factor, 'integer');
   // Kolom yang ditambahkan lewat ALTER TABLE (migrasi 0018) juga terbaca.
   assert.equal(pg.item_modifier_list.id, 'text');
+  // Kolom berdigit: parser lama melewatkannya diam-diam di kedua sisi.
+  assert.equal(pg.payment.card_last4, 'text');
+  assert.equal(lokal.payment.card_last4, 'text');
+  assert.equal(pg.item_image.data_base64, 'text');
+  assert.equal(lokal.item_image.data_base64, 'text');
 });
 
 test('T4 setiap KELAS divergensi punya perlakuan tertulis', async () => {

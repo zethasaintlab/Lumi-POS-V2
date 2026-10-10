@@ -185,7 +185,7 @@ async function pelanggarPk(sqlText) {
   const hasil = [];
 
   for (const p of pecahPernyataan(sqlText)) {
-    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z_]+)"?\s*\(/i.exec(p);
+    const m = /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?([a-z0-9_]+)"?\s*\(/i.exec(p);
     if (!m) continue;
     const tabel = m[1];
 
@@ -198,7 +198,7 @@ async function pelanggarPk(sqlText) {
       // alias rowid, dan SQLite mengisinya otomatis — NULL di sana mustahil.
       if (/\bINTEGER\s+PRIMARY\s+KEY\b/i.test(d)) continue;
 
-      const nama = /^"?([a-z_]+)"?/i.exec(d);
+      const nama = /^"?([a-z0-9_]+)"?/i.exec(d);
       if (!nama) continue;
       if ((wajib[tabel] ?? []).includes(nama[1])) continue;
 
