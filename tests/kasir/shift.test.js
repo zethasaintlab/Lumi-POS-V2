@@ -40,7 +40,9 @@ const KONFIG = {
 const SESI = { userId: 'u-sari', nama: 'Sari', peran: ['cashier'], masukPada: '', wajibGantiPin: false };
 
 function dbPalsu({ outlet = OUTLET, shift = [] } = {}) {
-  const state = { outlet, shift, outbox: [], transaksi: 0 };
+  const state = { outlet, shift, outbox: [], movement: [], transaksi: 0 };
+  // SQLite punya SATU penulis: transaksi berjalan SERIAL. Tanpa antrean ini tes balapan hampa.
+  let antrean = Promise.resolve();
   const db = {
     state,
     async getAll(sql, params = []) {
@@ -52,10 +54,18 @@ function dbPalsu({ outlet = OUTLET, shift = [] } = {}) {
     },
     async execute(sql, params = []) {
       if (/INSERT INTO cash_drawer_shift/.test(sql)) {
+        // Urutan kolom = `bukaShift`: id, tenant_id, outlet_id, device_id, business_date, ['open'], opening_float, opened_by, opened_at.
         state.shift.push({
           id: params[0], tenant_id: params[1], outlet_id: params[2], device_id: params[3],
-          business_date: params[4], status: params[5], opening_float: params[6],
-          opened_by: params[7], opened_at: params[8],
+          business_date: params[4], status: 'open', opening_float: params[5],
+          opened_by: params[6], opened_at: params[7],
+        });
+      }
+      if (/INSERT INTO cash_movement/.test(sql)) {
+        // id, shift_id, ['opening_float'], delta, counterpart_type, created_by, occurred_at, hlc.
+        state.movement.push({
+          id: params[0], shift_id: params[1], type: /'opening_float'/.test(sql) ? 'opening_float' : '?',
+          delta: params[2], counterpart_type: params[3], created_by: params[4],
         });
       }
       if (/INSERT INTO outbox_local/.test(sql)) {
@@ -64,8 +74,12 @@ function dbPalsu({ outlet = OUTLET, shift = [] } = {}) {
       return { rowsAffected: 1 };
     },
     async transaction(fn) {
-      state.transaksi += 1;
-      return fn(db);
+      const jalan = antrean.then(() => {
+        state.transaksi += 1;
+        return fn(db);
+      });
+      antrean = jalan.catch(() => {});
+      return jalan;
     },
   };
   return db;
@@ -225,4 +239,54 @@ test('shift aktif dapat dibaca kembali setelah restart', async () => {
   const aktif = await shiftAktif(db, 'd1');
   assert.equal(aktif.id, 's-aktif');
   assert.equal(await shiftAktif(db, 'd2'), null);
+});
+
+test('⛔ shift dan movement opening_float menyimpan angka yang sama, delta POSITIF, shift_id sama', async () => {
+  const { bukaShift } = await import(MOD);
+  const db = dbPalsu();
+  const hasil = await bukaShift({
+    db, konfig: KONFIG, sesi: SESI, saldoAwal: 750000,
+    waktu: () => JAM, idBaru: (() => { let n = 0; return () => `id-${++n}`; })(), idOutbox: () => 'ob-m', hlc: () => 7n,
+  });
+  assert.equal(hasil.status, 'terbuka');
+  assert.equal(db.state.shift[0].status, 'open', 'status shift bukan open');
+  assert.equal(db.state.shift[0].opening_float, 750000, `opening_float shift ${db.state.shift[0].opening_float}, harus 750000`);
+  assert.equal(db.state.movement.length, 1, 'harus tepat SATU movement opening_float');
+  const m = db.state.movement[0];
+  assert.equal(m.type, 'opening_float');
+  assert.equal(m.delta, 750000, `delta movement opening_float ${m.delta}, harus +750000 (positif, sama dengan opening_float)`);
+  assert.equal(m.shift_id, db.state.shift[0].id, 'movement opening_float menunjuk shift lain');
+  assert.equal(m.created_by, 'u-sari');
+  assert.equal(JSON.parse(db.state.outbox[0].payload).openingFloat, 750000, 'openingFloat di outbox berbeda');
+});
+
+for (const [nama, nilai] of [['negatif', -1], ['MAX_SAFE+1', Number.MAX_SAFE_INTEGER + 1], ['desimal', 1500.5], ['NaN', NaN]]) {
+  test(`⛔ saldoAwal ${nama} → saldo_tidak_valid TANPA satu tulisan pun`, async () => {
+    const { bukaShift } = await import(MOD);
+    const db = dbPalsu();
+    const hasil = await bukaShift({
+      db, konfig: KONFIG, sesi: SESI, saldoAwal: nilai,
+      waktu: () => JAM, idBaru: () => 'x', idOutbox: () => 'x', hlc: () => 7n,
+    });
+    assert.equal(hasil.status, 'saldo_tidak_valid', `saldoAwal ${nama} menghasilkan status "${hasil.status}" — harus ditolak sebelum menulis`);
+    assert.equal(db.state.shift.length, 0, 'shift ditulis untuk saldo tidak valid');
+    assert.equal(db.state.movement.length, 0, 'movement ditulis untuk saldo tidak valid');
+    assert.equal(db.state.outbox.length, 0, 'outbox ditulis untuk saldo tidak valid');
+    assert.equal(db.state.transaksi, 0, 'transaksi dibuka untuk saldo tidak valid');
+  });
+}
+
+test('⛔ balapan: dua bukaShift PARALEL di perangkat yang sama → tepat satu terbuka, satu sudah_ada', async () => {
+  const { bukaShift } = await import(MOD);
+  const db = dbPalsu();
+  const panggil = (n) => bukaShift({
+    db, konfig: KONFIG, sesi: SESI, saldoAwal: 100000 * n,
+    waktu: () => JAM, idBaru: (() => { let i = 0; return () => `s${n}-${++i}`; })(), idOutbox: () => `ob-${n}`, hlc: () => BigInt(n),
+  });
+  const [a, b] = await Promise.all([panggil(1), panggil(2)]);
+  const status = [a.status, b.status].sort();
+  assert.deepEqual(status, ['sudah_ada', 'terbuka'], `status ${JSON.stringify(status)} — dua shift terbuka di satu perangkat`);
+  assert.equal(db.state.shift.length, 1, `${db.state.shift.length} shift tertulis; spec-d: MAKSIMAL SATU shift open per device`);
+  assert.equal(db.state.movement.length, 1, 'movement opening_float ganda');
+  assert.equal(db.state.outbox.length, 1, 'outbox shift ganda');
 });

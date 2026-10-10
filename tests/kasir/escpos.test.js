@@ -266,3 +266,84 @@ test('render bersifat MURNI — dokumen yang sama menghasilkan byte yang sama', 
   };
   assert.deepEqual(renderEscPos(dok, PROFIL_80), renderEscPos(dok, PROFIL_80));
 });
+
+// ---------------------------------------------------------------------------
+// G-STRUK (spec § 11) — pratinjau tidak dapat menyimpang dari byte yang dicetak.
+
+/** Byte → baris {teks, rata, tebal}: ESC a n / ESC E n dilacak sebagai KEADAAN printer, per baris. */
+function teksDariByte(bytes, profil) {
+  const dariHex = (h) => h.trim().split(/\s+/).filter(Boolean).map((x) => parseInt(x, 16));
+  let b = [...bytes];
+  const lepas = (awalan, dari) => {
+    if (awalan.length && (dari ? b.slice(0, awalan.length) : b.slice(-awalan.length)).join() === awalan.join()) {
+      b = dari ? b.slice(awalan.length) : b.slice(0, -awalan.length);
+    }
+  };
+  lepas(dariHex(profil.initCommand), true);
+  if (profil.hasCutter) lepas(dariHex(profil.cutCommand), false);
+  lepas(dariHex(profil.drawerCommand), false);
+  const RATA = ['kiri', 'tengah', 'kanan'];
+  let rata = 'kiri';
+  let tebal = false;
+  let teks = '';
+  const hasil = [];
+  for (let i = 0; i < b.length; i++) {
+    if (b[i] === 0x1b && b[i + 1] === 0x61) { rata = RATA[b[i + 2]]; i += 2; continue; }
+    if (b[i] === 0x1b && b[i + 1] === 0x45) { tebal = b[i + 2] === 1; i += 2; continue; }
+    if (b[i] === 0x0a) { hasil.push({ teks, rata, tebal }); teks = ''; continue; }
+    teks += String.fromCharCode(b[i]);
+  }
+  assert.equal(teks, '', 'byte tidak diakhiri LF');
+  return hasil;
+}
+
+const DOK_G_STRUK = {
+  baris: [
+    { jenis: 'teks', isi: 'LUMI KOPI — Cabang Sudirman', rata: 'tengah', tebal: true },
+    { jenis: 'kosong' },
+    { jenis: 'garis' },
+    { jenis: 'teks', isi: 'Kopi Susu Gula Aren Dingin Ukuran Besar Tanpa Es Tambah Shot Espresso Ekstra Dua' },
+    { jenis: 'teks', isi: 'Supercalifragilisticexpialidocious-Supercalifragilisticexpialidocious-X' },
+    { jenis: 'duaKolom', kiri: '2× Kopi Susu Gula Aren Dingin Ukuran Besar', kanan: 'Rp 50.000' },
+    { jenis: 'duaKolom', kiri: 'Diskon – promo…', kanan: '− Rp 8.000', tebal: true },
+    { jenis: 'teks', isi: 'Terima kasih · datang lagi — “ya”', rata: 'kanan' },
+    { jenis: 'teks', isi: 'Catatan tebal kiri yang cukup panjang sampai harus dilipat dua', tebal: true },
+    { jenis: 'teks', isi: 'Tengah panjang yang dilipat menjadi dua baris tengah', rata: 'tengah' },
+    { jenis: 'garis' },
+  ],
+  potong: true,
+  bukaLaci: true,
+};
+
+for (const [nama, profil] of [['58mm', PROFIL_58], ['80mm', PROFIL_80]]) {
+  test(`⛔ G-STRUK: tataLetakStruk SAMA dengan teks yang diturunkan dari byte renderEscPos (${nama})`, async () => {
+    const { renderEscPos, tataLetakStruk } = await import(MOD);
+    const lebar = profil.charsPerLine;
+    const layout = tataLetakStruk(DOK_G_STRUK, profil);
+    const dariLayout = layout.map((b) => b.teks);
+    // Triple {teks, rata, tebal}: atribut printer (ESC a / ESC E) ikut dibandingkan, bukan hanya teks.
+    const tiga = layout.map((b) => ({ teks: b.teks, rata: 'garis' in b ? 'kiri' : b.rata, tebal: 'garis' in b ? false : b.tebal }));
+    const dariBytes = teksDariByte(renderEscPos(DOK_G_STRUK, profil), profil);
+    assert.ok(dariLayout.length > 8, 'tata letak terlalu pendek — penjaga hampa');
+    for (const r of ['tengah', 'kanan']) assert.ok(tiga.some((t) => t.rata === r), `dokumen uji tanpa baris ${r} — penjaga hampa`);
+    assert.ok(tiga.some((t) => t.tebal && t.rata === 'kiri'), 'dokumen uji tanpa baris tebal-kiri — penjaga hampa');
+    assert.ok(layout.some((b) => 'garis' in b && b.teks === '-'.repeat(lebar)), 'teks garis bukan sumber tunggal');
+    assert.deepEqual(dariBytes, tiga);
+    for (const l of dariLayout) assert.ok(l.length <= lebar, `baris ${l.length} > ${lebar}: ${l}`);
+    // Dua kolom yang tidak muat: kolom KIRI dipotong, angka kanan utuh.
+    assert.ok(dariLayout.some((l) => l.length === lebar && l.endsWith('Rp 50.000')), 'dua kolom tidak dipotong-kiri');
+    assert.ok(dariLayout.some((l) => l.includes('Diskon - promo...') && l.endsWith('- Rp 8.000')), 'transliterasi hilang');
+    assert.ok(dariLayout.every((l) => !/[^\x20-\x7e]/.test(l)), 'karakter non-ASCII lolos ke tata letak');
+  });
+}
+
+test('tataLetakStruk murni — dokumen sama, tata letak sama, tanpa mengubah masukan', async () => {
+  const { tataLetakStruk } = await import(MOD);
+  const salinan = JSON.stringify(DOK_G_STRUK);
+  const a = tataLetakStruk(DOK_G_STRUK, PROFIL_58);
+  assert.deepEqual(tataLetakStruk(DOK_G_STRUK, PROFIL_58), a);
+  assert.equal(JSON.stringify(DOK_G_STRUK), salinan);
+  // Perataan dan tebal dibawa sebagai ATRIBUT, tidak dipadatkan dengan spasi.
+  const tengah = a.find((b) => 'teks' in b && b.rata === 'tengah');
+  assert.ok(tengah && tengah.tebal === true && tengah.teks === 'LUMI KOPI - Cabang Sudirman', JSON.stringify(tengah));
+});

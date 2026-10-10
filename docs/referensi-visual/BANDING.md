@@ -4,6 +4,16 @@ Gambar di `banding/` dan angka di bawah dibangkitkan `alat/banding.mjs`. Mockup
 ada di kiri, galeri di kanan. Galeri dibangun dari `c71abba` (`main` sesudah
 #55); PR #56 (K-12 diperkaya) **belum** termasuk.
 
+> ⛔ **Potret bertanggal.** Tabel di bawah mengukur galeri SEBELUM sub-proyek 2
+> (aplikasi kasir). Bagian "Sesudah sub-proyek 2" di akhir berkas mencatat
+> selisih yang ditutup, yang disengaja tetap, dan yang ditolak — keputusan
+> kampanye Hidupkan desain, 26 September 2026
+> (`docs/superpowers/specs/2026-09-28-kasir-design.md`). Baris lama yang
+> bertentangan dengannya (mis. "kembalian hanya di K-07", "panel QRIS mengganti
+> layar penuh", "tidak ada layar struk") adalah riwayat, bukan keadaan sekarang.
+> Angka piksel di bagian akhir TIDAK diukur ulang di sini; yang tertulis di sana
+> dijaga penjaga DOM yang disebut, bukan potret.
+
 ## ⛔ Batas pengukuran — baca dulu
 
 - **Viewport.** Mockup Kasir dirancang untuk 1280×800. Galeri merender
@@ -52,8 +62,8 @@ dicapai dan diukur. Pasangan dan selisihnya ada di § Fase 2 di bawah.
 | `edit-item` | K-04/K-05 `komponen/DialogModifier.tsx` — ⚠ fungsi berbeda | K-03 `normal` → kartu ber-"pilihan" |
 | `bayar` tunai / kartu | K-06 `layar/Pembayaran.tsx` | K-03 `keranjang-penuh` → Bayar (→ Kartu (EDC)) |
 | `bayar` qris-* | K-06 `komponen/PanelQris.tsx` | `harness-k06.html?render=panel&status=…` |
-| `sukses` | K-07, tahap selesai `Pembayaran.tsx` | K-06 → uang diterima ≥ tagihan → Simpan Penjualan |
-| `struk` | **tidak ada layar** — `cetak/dokumen.ts` hanya menghasilkan dokumen cetak | — (butuh fitur pratinjau struk) |
+| `sukses` | K-07, tahap selesai `Pembayaran.tsx` | K-06 → "Nominal diterima" ≥ tagihan → "Konfirmasi bayar" (sebelum sub-proyek 2: "Simpan Penjualan") |
+| `struk` | sebelum sub-proyek 2: **tidak ada layar**. Sejak sub-proyek 2: pratinjau struk (`komponen/PratinjauStruk.tsx`, mode dari K-07 dan K-09) | K-07 → "Cetak Struk", atau K-09 → "Pratinjau struk" |
 | `void` | K-10 `komponen/DialogPembatalan.tsx` | `?layar=K-09` → Kembalikan dana |
 | `laci` | Kas masuk/keluar `komponen/DialogKasManual.tsx` (FR-D5) + buka laci K-16 `komponen/DialogNoSale.tsx` | K-03 → Kas masuk / keluar · K-03 → Buka laci |
 | Back-office, 6 layar / 10 kombinasi | B-xx di `apps/backoffice` — di luar cakupan kampanye | — |
@@ -345,3 +355,27 @@ Tidak ada layar struk di repo. `apps/kasir/src/cetak/dokumen.ts` menghasilkan
 dokumen untuk printer 58/80 mm. Mockup `struk` (58mm, 80mm) adalah pratinjau
 di layar: **butuh fitur yang belum ada — pratinjau struk**. Mockup memakai kata
 "Pajak" di struk: **ditolak #2**.
+
+---
+
+## Sesudah sub-proyek 2 — aplikasi kasir (Oktober 2026)
+
+Keputusan kampanye Hidupkan desain, 26 September 2026; rancangan di
+`docs/superpowers/specs/2026-09-28-kasir-design.md`, urutan dikerjakan di
+`docs/superpowers/plans/2026-09-28-kasir*.md`. Kolom "Penjaga" menyebut berkas
+test yang mengukur atau menegakkannya; tidak ada angka piksel baru yang
+diklaim di sini.
+
+| Layar | Selisih yang DITUTUP (kini mengikuti mockup) | Selisih yang TETAP, disengaja | Penjaga |
+|---|---|---|---|
+| Header semua layar ber-shell | Satu baris 68 px, tab berikon, menu pengguna + Keluar, lonceng, pita FR-H8 setinggi banner | Jarak antar-elemen 16 px dan antar-tab 8 px (mockup 20/4): token spasi tidak punya 20; nama pengguna panjang dipotong ellipsis, bukan tab (R2) | `header.test.js`, `k14-tata-letak.test.js` (68 px sama di semua layar) |
+| K-03 Kasir | Toolbar delapan tombol berfungsi, keranjang tanpa stepper (baris satu tombol, lencana qty), Edit Item, baris "Pajak · nama tarif", tombol kosongkan keranjang | Bilah toolbar natural 44 px, bukan 68 px (IA:62: 12 kartu pada 1024×768); tanpa pil Online/Offline (indikator di header); "Item manual" memindai kode katalog, bukan harga bebas | `k03-chrome.test.js`, `k03-toolbar.test.js`, `tombol-hidup.test.js`, `edit-item.test.js` |
+| K-06 Pembayaran | Kartu bertoggle empat metode (termasuk Transfer), Total di atas, kolom "Nominal diterima" + tiga pintasan 44 px, panel Kembalian hidup, QR di dalam kartu, aksi "Konfirmasi bayar" | Wadah overlay dialog (bukan halaman penuh); bagian isi kartu menggulir, blok aksi tidak bergeser (P8); "Konfirmasi bayar" QRIS dinamis menunggu gateway, tidak pernah menandai lunas dari ketukan | `k06-penjaga.test.js` P1–P9, `k06-qr.test.js` |
+| K-07 Transaksi berhasil | Kartu dengan ikon centang, grid "Cetak Struk" · "Transaksi Baru", kembalian berwarna `--primary` | Tanpa WhatsApp/Email; nomor `K1-…` bukan `TRX-…`; baris pembulatan tetap tampil | `k07-konfirmasi.test.js` |
+| Pratinjau struk | Layar pratinjau 58/80 mm (mode, bukan rute), kertas putih berbayangan, `--font-mono` 13 px; tombol "Pratinjau struk" di K-09 | Toggle 58/80 hanya pratinjau; "Pajak" tanpa nama tarif di cetak ulang adalah batas yang dinyatakan; struk belum memuat label pesanan sampai task terkait selesai | `tests/runtime/pratinjau-struk-satu-tata-letak.test.js`, `pratinjau-struk.test.js`, `cetak-ulang.test.js` |
+| K-08 Riwayat | Penyaring Tanggal (input tanggal) + Metode (chip, bukan dropdown), kolom Item dan Metode ("Campuran") | Status turunan pembatal + status kirim; nomor `K1-…` | `k08-riwayat.test.js` |
+| K-12 Tutup kas | Tahap `review`: dua kartu (Rekonsiliasi kiri, Ringkasan shift kanan) + bilah aksi bawah "Tutup Shift" | Tahap `hitung` tanpa satu angka pun (FR-D2); "Jumlah transaksi" dan "Produk terlaris" belum dibangun; 56 px untuk aksi uang, bukan 44 | `k12-hitungan-buta.test.js`, `k12-review-kartu.test.js`, `k12-aksi-slot.test.js` |
+| K-02 Buka shift | Kolom "Saldo awal kas" (`bacaRupiah`), tanpa tombol pecahan | Tanpa "Kembali", "Cash drawer", "Staf pembuka"/"Waktu buka" sebagai masukan | `k02-buka-shift.test.js` (G-NOMINAL) |
+| K-01 Login | Judul "Masuk ke kasir" + subjudul `Perangkat: <kode>` | Enam titik PIN (`spec-f:122`); tanpa salam "Halo, …" | `k01-login.test.js` |
+| K-10 Void/refund | Peringatan "Aksi ini tidak dapat dibatalkan." dan alasan tombol nonaktif | Sistem memilih void/refund; alasan daftar tertutup; dialog, bukan dua kartu berdampingan | `k10-refund.test.js` |
+| Laci kas | Layar tab ketiga `/laci`: form kas manual + riwayat kas manual shift | Alasan daftar tertutup (FR-D6); tanpa saldo laci (FR-D2); "Buka laci tanpa transaksi" (FR-D7) tambahan di luar mockup | `laci-kas.test.js` |

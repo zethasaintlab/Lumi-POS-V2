@@ -17,7 +17,8 @@ import {
 } from '../kasir/qris-dinamis.ts';
 import type { DrafTerkirim } from '../kasir/penjualan.ts';
 import { EmptyState, Icon } from 'ds';
-import { cetakUlangOrder, kalimatCetak } from '../cetak/cetak-ulang.ts';
+import { kalimatCetak } from '../cetak/cetak-ulang.ts';
+import { PratinjauStruk } from '../komponen/PratinjauStruk.tsx';
 import { Memuat } from '../komponen/Memuat.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
@@ -191,8 +192,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
   } | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
   // K-07 — cetak ulang dari layar konfirmasi (FR-B11).
-  const [mencetakUlang, setMencetakUlang] = useState(false);
-  const [pesanCetakUlang, setPesanCetakUlang] = useState<string | null>(null);
+  const [pratinjau, setPratinjau] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [selesai, setSelesai] = useState<Extract<HasilPenjualan, { status: 'tersimpan' }> | null>(null);
 
@@ -330,32 +330,36 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
      terbesar di layar), karena itu satu-satunya angka yang kasir dan
      pelanggan baca bersamaan. */
   if (selesai) {
-    /* K-07 TETAP overlay penuh (`kasir-overlay-bayar`/`kasir-overlay-lebar`,
-       kartu 536 px): perombakannya milik PR 2D. Wadah ini dulu dipasang
-       `Kasir.tsx` untuk K-06 dan K-07 sekaligus; K-06 kini halaman, jadi K-07
-       membawa wadahnya sendiri. */
+    /* K-07 overlay penuh (`kasir-overlay-bayar`/`kasir-overlay-lebar`, kartu
+       536 px). Wadah ini dulu dipasang `Kasir.tsx` untuk K-06 dan K-07
+       sekaligus; K-06 kini halaman, jadi K-07 membawa wadahnya sendiri.
+       "Cetak Struk" membuka pratinjau DI KARTU YANG SAMA (mode, bukan rute). */
     return (
       <div className="overlay kasir-overlay-bayar" role="dialog" aria-modal="true" aria-label="Pembayaran">
         <div className="dialog kasir-overlay-lebar">
+        {pratinjau ? (
+          <PratinjauStruk orderId={selesai.orderId} onTutup={() => setPratinjau(false)} />
+        ) : (
         <div className="kasir-shift kasir-k07">
-          {/* Rebuild UI Fase 3.3, mengikuti mockup: ikon + judul di atas angka.
-              Ikonnya berlatar `--success-soft` dan disertai judul (DS #5: status
-              tidak pernah warna saja). */}
+          {/* Mengikuti mockup: ikon + judul di atas angka. Ikonnya berlatar
+              `--success-soft` dan disertai judul (DS #5: status tidak pernah
+              warna saja). */}
           <span className="kasir-k07-ikon" aria-hidden="true">
             <Icon name="check" size={28} />
           </span>
           <h2 className="t-title">Transaksi selesai</h2>
 
-          {/* ⛔ Angka kembalian TETAP warna teks. Mockup mewarnainya aksen, dan
-              aksen adalah warna AKSI (DS #2) — ia bersaing dengan Transaksi Baru.
-              Yang dikejar panelnya, dari token yang sudah ada. */}
+          {/* Angka kembalian 32/700 berwarna `--primary` (mockup; keputusan
+              kampanye Hidupkan desain, spec § 8). Nilainya hasil
+              `simpanPenjualan` — K-07 tidak menghitung apa pun. */}
           <div className="kasir-k07-kembalian">
             <p className="t-body-md">Kembalian</p>
             <p className="t-display num">{rupiah(selesai.kembalian)}</p>
           </div>
 
           <p className="t-body-md">
-            {selesai.receiptNumber} · dibayar <span className="num">{rupiah(selesai.amountDue)}</span>
+            {selesai.receiptNumber}
+            {sesi ? ` · ${sesi.nama}` : ''} · dibayar <span className="num">{rupiah(selesai.amountDue)}</span>
           </p>
           {selesai.roundingAdjustment !== 0n && (
             <p className="t-caption kasir-login-sub num">
@@ -378,27 +382,12 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
           <p className="t-caption" role="status" data-cetak="pertama">
             {kalimatCetak(selesai.cetak, false)}
           </p>
-          {pesanCetakUlang && (
-            <p className="t-caption" role="status" data-cetak="ulang">
-              {pesanCetakUlang}
-            </p>
-          )}
 
           <div className="kasir-bayar-baris">
-            {/* FR-B11 — jalur cetak ulang yang SAMA dengan K-09. */}
-            <Tombol
-              kritis
-              disabled={mencetakUlang || !konfig}
-              onClick={() => {
-                if (!konfig) return;
-                setMencetakUlang(true);
-                void cetakUlangOrder(db, selesai.orderId, konfig.outletId)
-                  .then((h) => setPesanCetakUlang(kalimatCetak(h, true)))
-                  .catch((e: Error) => setPesanCetakUlang(`Gagal mencetak: ${e.message}`))
-                  .finally(() => setMencetakUlang(false));
-              }}
-            >
-              {mencetakUlang ? 'Mencetak…' : 'Cetak ulang struk'}
+            {/* P8(a): grid dua tombol — "Kirim WhatsApp"/"Kirim Email" tidak
+                dirender (tidak ada tombol mati). */}
+            <Tombol kritis onClick={() => setPratinjau(true)}>
+              Cetak Struk
             </Tombol>
             <Tombol
               varian="primary"
@@ -415,6 +404,7 @@ export function Pembayaran({ onKembali }: { onKembali: () => void }) {
             </Tombol>
           </div>
         </div>
+        )}
         </div>
       </div>
     );

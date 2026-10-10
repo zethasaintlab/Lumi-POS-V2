@@ -432,6 +432,14 @@
   text-align: center;
 }
 
+.kasir-login-kepala {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: var(--space-3);
+  text-align: left;
+}
+
 .kasir-login-ikon {
   display: inline-flex;
   align-items: center;
@@ -580,6 +588,21 @@
   align-items: start;
 }
 
+/* K-12 kartu "Ringkasan shift": tile Total penjualan + baris per metode. */
+.kasir-ringkas-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--secondary);
+}
+.kasir-ringkas-metode {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
 .kasir-dialog-sel {
   display: flex;
   flex-direction: column;
@@ -617,9 +640,9 @@
 }
 .kasir-shift-kolom {
   display: grid;
-  /* Kolom kanan selebar isinya (maks 12rem): tombol pecahan 56 px berisi
-     "+ Rp 500.000" butuh ruang, dan kolom 3fr:2fr membuatnya MELUAP menimpa
-     kolom kanan — terukur di tangkapan sesudah pertama. */
+  /* Kolom kanan selebar isinya (maks 12rem); kolom "Saldo awal kas" mengambil
+     sisanya. (Tombol pecahan yang dulu meluap ke kolom kanan sudah dihapus,
+     keputusan user 28 September 2026.) */
   grid-template-columns: minmax(0, 1fr) minmax(0, 12rem);
   gap: var(--space-6);
   align-items: start;
@@ -1001,6 +1024,31 @@
   border-radius: var(--radius-card);
   background: var(--accent-soft);
 }
+/* Angka kembalian: 32/700 berwarna aksen (mockup; spec § 8). */
+.kasir-k07-kembalian .num { color: var(--primary); font-weight: 700; }
+
+/* Pratinjau struk (spec § 8): kertas putih berbayangan; teks --font-mono 13 px,
+   satu-satunya pemakaian mono di layar. Tengah/kanan lewat text-align, bukan
+   spasi — printer memakai ESC a. */
+.kasir-pratinjau { display: flex; flex-direction: column; gap: var(--space-4); }
+.kasir-pratinjau-toggle { display: flex; gap: var(--space-2); }
+.kasir-pratinjau-toggle .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--primary); }
+.kasir-kertas {
+  align-self: center;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: var(--space-4);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-raised);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+.kasir-kertas-baris { white-space: pre; min-height: 1lh; text-align: left; }
+.kasir-kertas-baris[data-rata="tengah"] { text-align: center; }
+.kasir-kertas-baris[data-rata="kanan"] { text-align: right; }
+.kasir-kertas-baris[data-tebal="ya"] { font-weight: 700; }
 
 /* K-03 kasir: grid produk + keranjang.
 
@@ -1658,7 +1706,7 @@
 .kasir-riwayat-kepala,
 .kasir-riwayat-baris {
   display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr) 10rem 9rem;
+  grid-template-columns: 6rem minmax(0, 1fr) 4rem 8rem 9rem 9rem;
   align-items: center;
   column-gap: var(--space-3);
 }

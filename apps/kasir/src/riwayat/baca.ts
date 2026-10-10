@@ -2,6 +2,7 @@ import type { DbLokal } from '../../../../packages/sync-client/src/ports.ts';
 import { statusRecordBanyak } from '../../../../packages/sync-client/src/status.ts';
 import type { StateIndikator } from '../../../../packages/sync-client/src/status.ts';
 import { sisaPerBaris } from '../../../../packages/domain/src/pilihan-refund.ts';
+import { kodeLaporanMetode, labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts';
 
 /**
  * K-08 Riwayat Transaksi + K-09 Detail Transaksi.
@@ -37,6 +38,45 @@ export interface RingkasOrder {
   dibatalkanOleh: string | null;
   /** Order ini adalah PEMBATAL bagi order lain. */
   membatalkan: string | null;
+  /** Jumlah BARIS pesanan (kolom Item K-08), bukan jumlah kuantitas. */
+  jumlahBaris: number;
+  /** Bagian pembayaran terkonfirmasi, satu entri per baris `payment`. */
+  metode: { method: string; provider: string | null }[];
+}
+
+/** Penyaring K-08. Keduanya hanya bekerja di jendela riwayat yang sudah dibaca. */
+export interface SaringRiwayat {
+  /** `business_date` persis (`YYYY-MM-DD`) — tanggal bisnis, bukan tanggal kalender. */
+  tanggalBisnis?: string;
+  /** KODE LAPORAN (`kodeLaporanMetode`): `transfer` terpisah dari `other`. */
+  metode?: string;
+}
+
+/**
+ * Kolom Metode K-08: satu kode laporan → labelnya; lebih dari satu kode
+ * berbeda → "Campuran". Tanpa pembayaran terkonfirmasi → "—" (bukan "Tunai").
+ *
+ * ⛔ Kode LAPORAN, bukan `method` mentah: `other`+`bank_transfer` dan `other`
+ * tanpa provider adalah dua metode di mata pemilik, jadi bersama = Campuran.
+ */
+export function labelMetodeRingkas(metode: RingkasOrder['metode']): string {
+  const kode = new Set(metode.map((m) => kodeLaporanMetode(m.method, m.provider)));
+  if (kode.size === 0) return '—';
+  if (kode.size > 1) return 'Campuran';
+  const [satu] = kode;
+  return labelMetode(satu!);
+}
+
+/** Order cocok metode bila SALAH SATU bagian bayarnya berkode itu (campuran ikut). */
+export function saringRiwayat<T extends Pick<RingkasOrder, 'businessDate' | 'metode'>>(
+  daftar: readonly T[],
+  saring: SaringRiwayat
+): T[] {
+  return daftar.filter(
+    (o) =>
+      (!saring.tanggalBisnis || o.businessDate === saring.tanggalBisnis) &&
+      (!saring.metode || o.metode.some((m) => kodeLaporanMetode(m.method, m.provider) === saring.metode))
+  );
 }
 
 interface BarisOrder {
@@ -69,9 +109,13 @@ const SQL_DAFTAR = `
 
 export async function bacaRiwayat(
   db: DbLokal,
-  { batas = 50 }: { batas?: number } = {}
+  { batas = 50, saring = {} }: { batas?: number; saring?: SaringRiwayat } = {}
 ): Promise<RingkasOrder[]> {
-  const baris = await db.getAll<BarisOrder>(SQL_DAFTAR, [batas]);
+  // `LIMIT` di SQL menentukan jendelanya; pemotongan di sini menjaga arti
+  // `batas` bila sumber (mis. fake uji) tidak menegakkannya.
+  const baris = (await db.getAll<BarisOrder>(SQL_DAFTAR, [batas]))
+    .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))
+    .slice(0, batas);
   if (baris.length === 0) return [];
 
   // Terburuk-menang, dan itu WAJIB: satu order punya beberapa baris outbox
@@ -79,6 +123,31 @@ export async function bacaRiwayat(
   // pembayarannya gagal terkirim tidak boleh terlihat `ok` — justru itu
   // penjualan yang uangnya berisiko.
   const status = await statusRecordBanyak(db, baris.map((b) => b.id));
+
+  // Jumlah baris dan bagian bayar dibaca SEKALI untuk seluruh jendela (bukan
+  // N+1). Pencocokan order dilakukan di sini, bukan di SQL: lipat transfer
+  // (`kodeLaporanMetode`) hidup di TypeScript, tidak ditulis ulang sebagai CASE.
+  const ids = baris.map((b) => b.id);
+  const tanda = ids.map(() => '?').join(',');
+  const [barisPesanan, bayar] = await Promise.all([
+    db.getAll<{ order_id: string }>(`SELECT order_id FROM order_line WHERE order_id IN (${tanda})`, ids),
+    db.getAll<{ order_id: string; method: string; provider: string | null; status: string }>(
+      `SELECT order_id, method, provider, status FROM payment WHERE order_id IN (${tanda})`,
+      ids
+    ),
+  ]);
+  const adaId = new Set(ids);
+  const jumlahBaris = new Map<string, number>();
+  for (const l of barisPesanan) {
+    if (adaId.has(l.order_id)) jumlahBaris.set(l.order_id, (jumlahBaris.get(l.order_id) ?? 0) + 1);
+  }
+  const metodeOrder = new Map<string, RingkasOrder['metode']>();
+  for (const p of bayar) {
+    if (!adaId.has(p.order_id) || p.status !== 'confirmed') continue;
+    const daftar = metodeOrder.get(p.order_id) ?? [];
+    daftar.push({ method: p.method, provider: p.provider ?? null });
+    metodeOrder.set(p.order_id, daftar);
+  }
 
   // Peta terbalik: order mana yang dibatalkan order mana. Dibangun dari
   // daftar yang sama, bukan lewat query kedua — pembatal dan yang dibatalkan
@@ -102,7 +171,7 @@ export async function bacaRiwayat(
     (a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at)
   );
 
-  return terurut.map((b) => ({
+  const hasil: RingkasOrder[] = terurut.map((b) => ({
     id: b.id,
     receiptNumber: b.receipt_number,
     businessDate: b.business_date,
@@ -113,7 +182,10 @@ export async function bacaRiwayat(
     dibatalkan: dibatalkanOleh.has(b.id),
     dibatalkanOleh: dibatalkanOleh.get(b.id) ?? null,
     membatalkan: b.voided_by_order_id,
+    jumlahBaris: jumlahBaris.get(b.id) ?? 0,
+    metode: metodeOrder.get(b.id) ?? [],
   }));
+  return saringRiwayat(hasil, saring);
 }
 
 export interface BarisDetail {

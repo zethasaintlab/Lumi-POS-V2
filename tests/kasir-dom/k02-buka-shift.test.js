@@ -7,9 +7,10 @@
 // Shift" di kanan bawah; repo satu kolom terpusat tanpa kartu. Yang dikejar:
 //
 //   1. Kartu 624 px (`--surface` + bayangan) dengan ikon.
-//   2. Dua kolom: saldo awal (angka + pecahan 56 px) di kiri, "Staf pembuka"
-//      sebagai TEKS di kanan — diambil dari sesi, bukan field yang dapat
-//      diubah.
+//   2. Dua kolom: kolom "Saldo awal kas" (awalan Rp, 56 px, nilai bebas)
+//      di kiri, "Staf pembuka" sebagai TEKS di kanan — diambil dari sesi,
+//      bukan field yang dapat diubah. Keputusan user 28 September 2026
+//      (#76): tombol pecahan DIHAPUS, kolom bebas menggantikannya.
 //   3. "Mulai Shift" 56 px di kanan bawah kartu.
 //
 // ## Prasyarat
@@ -86,6 +87,7 @@ after(async () => {
 
 async function bukaK02(lebar) {
   const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  hal.setDefaultTimeout(3000); // elemen yang hilang gagal CEPAT dengan pesan, bukan timeout 30 detik
   const galat = [];
   hal.on('pageerror', (e) => galat.push(e.message));
   await hal.goto(`${alamat}/harness-galeri.html?layar=K-02&keadaan=normal`, { waitUntil: 'load' });
@@ -115,12 +117,11 @@ const ukur = (hal) =>
       if (getComputedStyle(e).boxShadow !== 'none' && getComputedStyle(e).backgroundColor !== 'rgba(0, 0, 0, 0)') { kartu = e; break; }
     }
     const semua = kartu ? [...kartu.querySelectorAll('*')] : [];
-    const saldo = semua.find((e) => e.classList.contains('t-display'));
+    const label = semua.find((e) => e.tagName === 'LABEL' && e.textContent.trim() === 'Saldo awal kas');
+    const kolom = label && document.getElementById(label.htmlFor);
     const staf = semua.find((e) => e.children.length === 0 && e.textContent.trim() === 'Staf pembuka');
     const mulai = kartu && [...kartu.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Mulai Shift');
     const tombolPecahan = kartu ? [...kartu.querySelectorAll('button')].filter((b) => b.textContent.trim().startsWith('+')) : [];
-    const pecahan = tombolPecahan.map((b) => Math.round(b.getBoundingClientRect().height));
-    const pecahanKanan = Math.max(0, ...tombolPecahan.map((b) => Math.round(b.getBoundingClientRect().right)));
     const token = (nama) => {
       const e = document.createElement('div');
       e.style.background = `var(${nama})`;
@@ -133,13 +134,12 @@ const ukur = (hal) =>
       panggung: Math.round(document.querySelector('.galeri-panggung > *').getBoundingClientRect().width),
       kartu: kartu && r(kartu),
       ikon: Boolean(kartu?.querySelector('svg')),
-      saldo: saldo && r(saldo),
+      kolom: kolom && r(kolom),
       staf: staf && r(staf),
       teksKartu: kartu?.innerText.replace(/\s+/g, ' ') ?? '',
       mulai: mulai && r(mulai),
-      pecahan,
+      jumlahPecahan: tombolPecahan.length,
       padding: kartu ? parseFloat(getComputedStyle(kartu).paddingRight) : 0,
-      pecahanKanan,
       latarLayar: kartu ? getComputedStyle(kartu.parentElement).backgroundColor : null,
       sunk: token('--surface-sunk'),
     };
@@ -158,15 +158,180 @@ for (const lebar of [1024, 1280]) {
     assert.ok(u.ikon, 'kartu tanpa ikon');
     assert.ok(u.staf, '"Staf pembuka" tidak tampil');
     assert.match(u.teksKartu, /Staf pembuka Kasir Galeri/, 'nama staf pembuka bukan dari sesi');
-    assert.ok(u.staf.l > u.saldo.r, 'Staf pembuka tidak berdampingan dengan saldo awal');
-    /* ⛔ Ditemukan di tangkapan sesudah pertama: tombol pecahan MELUAP ke
-       kolom kanan dan menimpa "Tanggal bisnis". Nol error. */
-    assert.ok(u.pecahanKanan < u.staf.l, `tombol pecahan meluap ke kolom kanan (${u.pecahanKanan} ≥ ${u.staf.l})`);
+    assert.ok(u.kolom, 'kolom "Saldo awal kas" tidak ada (keputusan user 28 September 2026, #76: kolom bebas, bukan tombol pecahan)');
+    assert.ok(u.staf.l > u.kolom.r, 'Staf pembuka tidak berdampingan dengan kolom Saldo awal kas');
+    assert.ok(u.kolom.h >= 56, `kolom Saldo awal kas ${u.kolom.h} px — aksi menyangkut uang 56`);
+    assert.equal(u.jumlahPecahan, 0, 'tombol pecahan "+ Rp …" masih ada — keputusan user 28 September 2026 (#76) menghapusnya');
     /* Kartu putih di atas layar putih tidak terlihat sebagai kartu. */
     assert.equal(u.latarLayar, u.sunk, 'latar di belakang kartu bukan --surface-sunk');
-    assert.ok(u.pecahan.length === 4 && Math.min(...u.pecahan) >= 56, `pecahan ${JSON.stringify(u.pecahan)} — 4 × 56 px`);
     assert.ok(u.mulai && u.mulai.h >= 56, 'Mulai Shift hilang atau < 56 px');
     assert.equal(u.mulai.r, Math.round(u.kartu.r - u.padding), 'Mulai Shift tidak di tepi kanan kartu');
     assert.ok(u.mulai.w < u.kartu.w / 2, 'Mulai Shift selebar kartu');
   });
 }
+
+// ---------------------------------------------------------------------------
+// G-NOMINAL K-02 — kolom "Saldo awal kas" (keputusan user 28 September 2026, #76).
+//
+// ⛔ HARAPAN di bawah ditulis dari tabel `KASUS` (angka yang diketik → angka
+// yang HARUS tersimpan), bukan dibaca dari DOM layar itu sendiri. Yang dibaca
+// dari db palsu (`__galeriTulis`) adalah apa yang SUNGGUH ditulis `bukaShift`.
+
+const KASUS_DITERIMA = [
+  { ketik: '0', harapan: 0 }, // laci kosong adalah keadaan nyata, bukan "belum diisi"
+  { ketik: '250000', harapan: 250_000 },
+  { ketik: '1.500.000', harapan: 1_500_000 },
+  { ketik: 'Rp 750.000', harapan: 750_000 },
+  { ketik: '670.550', harapan: 670_550 }, // tidak bulat: bukan kelipatan pecahan
+  { ketik: '123457', harapan: 123_457 },
+  { ketik: '9007199254740991', harapan: Number.MAX_SAFE_INTEGER },
+];
+const RAKSASA = '99999999999999999999';
+const KASUS_DITOLAK = ['', '25.5', 'abc', '12.34', '1.5000', '25,5', '-50000', '12,34', '1,500,000', '12,500', '25 5', '7 50', '750 000', RAKSASA, '9007199254740992'];
+const alasanUntuk = (ketik) =>
+  ketik === '' ? 'Isi saldo awal kas.' : ketik === RAKSASA || ketik === '9007199254740992' ? 'Saldo awal terlalu besar.' : 'Masukkan rupiah utuh, tanpa desimal.';
+
+async function tulisan(hal) {
+  return hal.evaluate(() =>
+    (globalThis.__galeriTulis ?? []).map((t) => ({
+      sql: t.sql,
+      params: t.params.map((p) => (typeof p === 'bigint' ? String(p) : p)),
+    }))
+  );
+}
+
+const mulaiShift = (hal) => hal.getByRole('button', { name: 'Mulai Shift' });
+
+test('⛔ kolom kosong → Mulai Shift nonaktif dengan alasan; TIDAK membuka shift bersaldo Rp 0', async () => {
+  const { hal } = await bukaK02(1280);
+  const kolom = hal.getByLabel('Saldo awal kas');
+  assert.equal(await kolom.count(), 1, 'kolom berlabel "Saldo awal kas" tidak ada');
+  assert.equal(await kolom.inputValue(), '', 'kolom tidak mulai kosong — saldo awal tidak boleh punya nilai bawaan');
+  const tombol = mulaiShift(hal);
+  assert.equal(await tombol.isDisabled(), true, 'Mulai Shift menyala dengan kolom kosong (membuka shift bersaldo Rp 0 tanpa diketik)');
+  const idAlasan = await tombol.getAttribute('aria-describedby');
+  assert.ok(idAlasan, 'Mulai Shift nonaktif tanpa aria-describedby ke alasannya');
+  const alasan = await hal.evaluate((id) => document.getElementById(id)?.textContent.trim() ?? null, idAlasan);
+  assert.equal(alasan, 'Isi saldo awal kas.', 'alasan Mulai Shift nonaktif bukan "Isi saldo awal kas."');
+  await tombol.click({ force: true }).catch(() => {});
+  await hal.waitForTimeout(300);
+  const t = await tulisan(hal);
+  assert.equal(t.filter((x) => /INSERT INTO cash_drawer_shift/i.test(x.sql)).length, 0, 'shift ditulis dari kolom kosong');
+  assert.equal(t.filter((x) => /INSERT INTO cash_movement/i.test(x.sql)).length, 0, 'movement opening_float ditulis dari kolom kosong');
+  await hal.close();
+});
+
+for (const ketik of KASUS_DITOLAK) {
+  test(`⛔ "${ketik}" tidak terbaca → Mulai Shift nonaktif, tidak ada yang ditulis`, async () => {
+    const { hal } = await bukaK02(1280);
+    await hal.getByLabel('Saldo awal kas').fill(ketik);
+    const tombol = mulaiShift(hal);
+    assert.equal(await tombol.isDisabled(), true, `"${ketik}" membuat Mulai Shift menyala — bacaRupiah mengembalikan null untuknya`);
+    /* ⛔ Yang diketik TETAP terlihat apa adanya: "25,5" tidak boleh diam-diam menjadi "255" (10×),
+       "-50000" tidak boleh kehilangan minus, "abc" tidak boleh lenyap jadi kolom kosong. */
+    assert.equal(await hal.getByLabel('Saldo awal kas').inputValue(), ketik, `kolom mengubah "${ketik}" diam-diam sebelum dibaca bacaRupiah`);
+    const idAlasan = await tombol.getAttribute('aria-describedby');
+    const alasan = idAlasan && (await hal.evaluate((id) => document.getElementById(id)?.textContent.trim() ?? null, idAlasan));
+    const harapanAlasan = alasanUntuk(ketik);
+    assert.equal(alasan, harapanAlasan, `alasan nonaktif untuk "${ketik}" bukan "${harapanAlasan}" (kosong dan bentuk tidak sah harus terbedakan)`);
+    await tombol.click({ force: true }).catch(() => {});
+    await hal.waitForTimeout(200);
+    const t = await tulisan(hal);
+    assert.equal(t.filter((x) => /INSERT INTO cash_drawer_shift/i.test(x.sql)).length, 0, `"${ketik}" menulis shift`);
+    await hal.close();
+  });
+}
+
+for (const { ketik, harapan } of KASUS_DITERIMA) {
+  test(`⛔ "${ketik}" diterima tepat sebagai ${harapan}: opening_float shift = delta movement = angka yang diketik`, async () => {
+    const { hal } = await bukaK02(1280);
+    await hal.getByLabel('Saldo awal kas').fill(ketik);
+    const tombol = mulaiShift(hal);
+    assert.equal(await tombol.isDisabled(), false, `"${ketik}" sah (${harapan}) tetapi Mulai Shift nonaktif`);
+    assert.equal(await tombol.getAttribute('aria-describedby'), null, 'Mulai Shift menyala tetapi masih menunjuk alasan nonaktif');
+    await tombol.click();
+    await hal.waitForFunction(() => (globalThis.__galeriTulis ?? []).some((t) => /INSERT INTO cash_movement/i.test(t.sql)), null, { timeout: 5_000 }).catch(() => {});
+    const t = await tulisan(hal);
+    const shift = t.filter((x) => /INSERT INTO cash_drawer_shift/i.test(x.sql));
+    const mov = t.filter((x) => /INSERT INTO cash_movement/i.test(x.sql) && /opening_float/.test(x.sql));
+    await hal.close();
+    assert.equal(shift.length, 1, `INSERT cash_drawer_shift ${shift.length}×, harus tepat 1`);
+    assert.equal(mov.length, 1, `INSERT cash_movement opening_float ${mov.length}×, harus tepat 1 (saldo laci hanya dari cash_movement)`);
+    assert.equal(Number(shift[0].params[5]), harapan, `opening_float shift ${shift[0].params[5]}, diketik "${ketik}" harus ${harapan}`);
+    assert.equal(Number(mov[0].params[2]), harapan, `delta movement opening_float ${mov[0].params[2]}, harus ${harapan} (positif)`);
+    assert.equal(mov[0].params[1], shift[0].params[0], 'movement opening_float menunjuk shift lain');
+  });
+}
+
+test('kolom Saldo awal kas: awalan Rp, rata kanan, tanpa nilai bawaan, tanpa tombol pecahan atau Hapus', async () => {
+  const { hal } = await bukaK02(1280);
+  const info = await hal.evaluate(() => {
+    const label = [...document.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Saldo awal kas');
+    const input = label && document.getElementById(label.htmlFor);
+    return {
+      awalan: input?.parentElement?.textContent.trim().startsWith('Rp') ?? false,
+      rata: input ? getComputedStyle(input).textAlign : null,
+      inputMode: input?.getAttribute('inputmode') ?? null,
+      tombol: [...document.querySelectorAll('.kasir-shift-kartu button')].map((b) => b.textContent.trim()),
+    };
+  });
+  await hal.close();
+  assert.equal(info.awalan, true, 'kolom Saldo awal kas tanpa awalan "Rp"');
+  assert.equal(info.rata, 'right', `kolom rata ${info.rata}, mockup rata kanan`);
+  assert.equal(info.inputMode, 'numeric', 'papan ketik numerik tidak diminta');
+  assert.deepEqual(info.tombol, ['Mulai Shift'], `K-02 hanya punya satu tombol, ada: ${JSON.stringify(info.tombol)}`);
+});
+
+test('⛔ sah lalu tidak sah: isi "250000", lalu ubah ke "25,5" → tombol nonaktif, alasan benar, nol INSERT', async () => {
+  const { hal } = await bukaK02(1280);
+  const kolom = hal.getByLabel('Saldo awal kas');
+  await kolom.fill('250000');
+  assert.equal(await mulaiShift(hal).isDisabled(), false, 'prasyarat: 250000 harus menyalakan Mulai Shift');
+  await kolom.fill('25,5');
+  const tombol = mulaiShift(hal);
+  const mati = await tombol.isDisabled();
+  const idAlasan = await tombol.getAttribute('aria-describedby');
+  const alasan = idAlasan && (await hal.evaluate((id) => document.getElementById(id)?.textContent.trim() ?? null, idAlasan));
+  await tombol.click({ force: true }).catch(() => {});
+  await hal.waitForTimeout(200);
+  const t = await tulisan(hal);
+  await hal.close();
+  assert.equal(mati, true, 'sesudah 250000 diubah ke "25,5" Mulai Shift masih menyala (nilai lama bertahan)');
+  assert.equal(alasan, 'Masukkan rupiah utuh, tanpa desimal.');
+  assert.equal(t.filter((x) => /INSERT INTO (cash_drawer_shift|cash_movement)/i.test(x.sql)).length, 0, 'shift/movement ditulis dari bentuk tidak sah');
+});
+
+test('⛔ nilai raksasa tidak menulis apa pun, tidak dijepit, dan Mulai Shift menyala lagi setelah dikoreksi', async () => {
+  const { hal } = await bukaK02(1280);
+  const kolom = hal.getByLabel('Saldo awal kas');
+  await kolom.fill(RAKSASA);
+  await mulaiShift(hal).click({ force: true }).catch(() => {});
+  await hal.waitForTimeout(200);
+  const t = await tulisan(hal);
+  const nilai = await kolom.inputValue();
+  assert.equal(t.filter((x) => /INSERT INTO (cash_drawer_shift|cash_movement)/i.test(x.sql)).length, 0, 'nilai raksasa menulis shift');
+  assert.equal(nilai, RAKSASA, 'nilai raksasa dijepit/diubah diam-diam di kolom');
+  await kolom.fill('500000');
+  const hidup = !(await mulaiShift(hal).isDisabled());
+  await hal.close();
+  assert.equal(hidup, true, 'Mulai Shift tidak menyala lagi sesudah nilai dikoreksi');
+});
+
+test('⛔ Mulai Shift NONAKTIF selama menyimpan: ketukan kedua tidak membuat shift kedua', async () => {
+  const { hal } = await bukaK02(1280);
+  await hal.evaluate(() => {
+    globalThis.__galeriTahanShift = new Promise((r) => { globalThis.__lepasShift = r; });
+  });
+  await hal.getByLabel('Saldo awal kas').fill('300000');
+  const tombol = mulaiShift(hal);
+  await tombol.click();
+  await hal.waitForTimeout(300);
+  const selama = { mati: await hal.getByRole('button', { name: /Menyimpan/ }).isDisabled().catch(() => null) };
+  await hal.getByRole('button', { name: /Menyimpan|Mulai Shift/ }).click({ force: true }).catch(() => {});
+  await hal.evaluate(() => globalThis.__lepasShift());
+  await hal.waitForTimeout(500);
+  const t = await tulisan(hal);
+  await hal.close();
+  assert.equal(selama.mati, true, 'tombol tidak nonaktif selama menyimpan (tidak ada tombol "Menyimpan…" yang mati)');
+  assert.equal(t.filter((x) => /INSERT INTO cash_drawer_shift/i.test(x.sql)).length, 1, 'ketukan ganda menulis lebih dari satu shift');
+});

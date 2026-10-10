@@ -10,10 +10,12 @@ import {
   catatHitungan,
   laporanShift,
   ringkasanSebelumHitung,
+  ringkasanShift,
   tutupKas,
   type LaporanShift,
   type RincianSaldo,
   type RingkasanAwal,
+  type RingkasanShift,
 } from '../kas/tutup.ts';
 import { LABEL_MOVEMENT } from '../../../../packages/domain/src/buku-kas.ts';
 import { muatHlc } from '../lokal/hlc.ts';
@@ -24,7 +26,7 @@ import { labelMetode } from '../../../../packages/domain/src/metode-tampilan.ts'
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
-import { bacaRupiah, rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { bacaRupiah, rupiah, rupiahTerlaluBesar } from '../../../../packages/domain/src/uang-tampilan.ts';
 import { Bidang } from '../Bidang.tsx';
 import { daftarTahanan, type RingkasTahanan } from '../kasir/keranjang-tahan.ts';
 import { LangkahKas, type Langkah } from '../komponen/LangkahKas.tsx';
@@ -116,6 +118,8 @@ export function TutupKas() {
     percobaan: number;
     rincian: RincianSaldo;
   } | null>(null);
+  /* `'gagal'` = ringkasan tidak terbaca; menutup shift tetap mungkin. */
+  const [ringkasan, setRingkasan] = useState<RingkasanShift | 'gagal' | null>(null);
   const [kodeAlasan, setKodeAlasan] = useState('');
   const [catatan, setCatatan] = useState('');
   const [mintaOtorisasi, setMintaOtorisasi] = useState(false);
@@ -183,7 +187,7 @@ export function TutupKas() {
         <Baris label="Omzet bersih" nilai={laporan.penjualan.omzetBersih} tebal />
         <p className="t-caption kasir-login-sub">
           Setelah void &amp; refund · {laporan.penjualan.jumlahTransaksi} transaksi · rata-rata{' '}
-          {rupiah(Number(laporan.penjualan.rataRataPerTransaksi))}
+          {rupiah(laporan.penjualan.rataRataPerTransaksi)}
         </p>
         {/* FR-G4 — `spec-g:111`. Tanpa kalimat ini, kasir atau owner yang
             membaca satu tablet membacanya sebagai angka seluruh outlet. */}
@@ -252,6 +256,10 @@ export function TutupKas() {
      Nol yang benar-benar DIKETIK tetap sah: laci yang memang kosong ada. */
   const hitunganTerbaca = bacaRupiah(hitunganTeks);
   const hitunganTidakSah = hitunganTerbaca === null;
+  /* Di atas MAX_SAFE_INTEGER → tidak sah, BUKAN dijepit atau dibulatkan. */
+  const alasanHitungan = rupiahTerlaluBesar(hitunganTeks)
+    ? 'Hitungan terlalu besar.'
+    : 'Masukkan rupiah utuh, tanpa desimal.';
   const hitungan = hitunganTerbaca ?? 0;
 
   const simpan = (approverId: string | null) => {
@@ -320,6 +328,7 @@ export function TutupKas() {
             ini; tahap `hitung` tetap hitungan buta (FR-D2). */}
         <div className="kasir-review-kolom">
           <section className="card card-pad kasir-dialog-sel">
+            <h2 className="t-title">Rekonsiliasi kas</h2>
             {/* ⛔ RINCIAN PENUH, dan hanya di langkah 2. Di tahap `hitung` tidak
                 satu pun angka ini boleh muncul — bukan totalnya, bukan bagiannya,
                 bukan petunjuknya (FR-D2). Yang membedakan keduanya bukan CSS:
@@ -341,8 +350,6 @@ export function TutupKas() {
             ))}
             <Baris label="Kas diharapkan" nilai={review.saldoSeharusnya} tebal />
             <Baris label="Hitungan fisik" nilai={hitungan} />
-          </section>
-          <section className="card card-pad kasir-dialog-sel">
             {/* ⛔ PANEL, bukan baris teks merah. Tiga keadaan, masing-masing dengan
                 perlakuannya sendiri — dan selisih NOL punya perlakuannya juga:
                 laci yang cocok adalah kabar baik, dan kabar baik yang dirender
@@ -399,6 +406,38 @@ export function TutupKas() {
               </>
             )}
           </section>
+          <section className="card card-pad kasir-dialog-sel">
+            <h2 className="t-title">Ringkasan shift</h2>
+            {/* ⛔ Hanya di `review`: data dibaca SESUDAH hitungan tercatat, dan
+                memakai `.kasir-ringkas-*`, bukan `.kasir-subtotal` -- penjaga
+                hitungan buta memanen `.kasir-subtotal` sebagai angka saldo. */}
+            {ringkasan === 'gagal' || ringkasan === null ? (
+              <p className="t-body-md kasir-login-galat" role="alert">
+                Ringkasan shift tidak dapat dibaca. Menutup shift tetap bisa dilanjutkan.
+              </p>
+            ) : (
+              <>
+                <div className="kasir-ringkas-stat">
+                  <span className="t-caption">Total penjualan</span>
+                  <span className="t-display num">{rupiah(ringkasan.totalPenjualan)}</span>
+                  <span className="t-caption">Setelah void dan refund</span>
+                </div>
+                <h3 className="t-body-md">Penjualan per metode</h3>
+                <p className="t-caption">Pembayaran diterima, sebelum void dan refund</p>
+                {ringkasan.perMetode.length === 0 ? (
+                  <p className="t-body-md">Belum ada pembayaran di shift ini.</p>
+                ) : (
+                  ringkasan.perMetode.map((m) => (
+                    <p key={m.metode} className="kasir-ringkas-metode">
+                      <span className="t-body-md">{labelMetode(m.metode)}</span>
+                      <span className="t-body-md num">{rupiah(m.total)}</span>
+                    </p>
+                  ))
+                )}
+                <p className="t-caption">Hanya transaksi dari perangkat ini.</p>
+              </>
+            )}
+          </section>
         </div>
 
           <p className="t-body-md kasir-login-galat kasir-pesan-tetap" role="alert">
@@ -428,8 +467,8 @@ export function TutupKas() {
             yang ditekan dua kali atau tidak ditekan sama sekali — dan yang
             tidak ditekan meninggalkan shift terbuka semalaman.
 
-            Task 15 memakai `.kasir-aksi-bawah` yang sama ini untuk K-12 lagi
-            (label "Tutup Kas" berganti "Tutup Shift" di sana). */}
+            Label "Tutup Kas" berganti "Tutup Shift" (Task 15, keputusan
+            kampanye Hidupkan desain). */}
         <div className="kasir-aksi-bawah">
           {/* Hitung ULANG tetap mungkin — tapi tercatat sebagai percobaan
               baru, dan layar mengatakannya. `spec-d`: kasir tidak dapat
@@ -444,6 +483,7 @@ export function TutupKas() {
             disabled={sibuk}
             onClick={() => {
               setReview(null);
+              setRingkasan(null);
               setHitunganTeks('');
               setGalat(null);
             }}
@@ -459,7 +499,7 @@ export function TutupKas() {
               else simpan(null);
             }}
           >
-            {sibuk ? 'Menutup…' : 'Tutup Kas'}
+            {sibuk ? 'Menutup…' : 'Tutup Shift'}
           </Tombol>
         </div>
       </>
@@ -540,20 +580,21 @@ export function TutupKas() {
         awalan="Rp"
         inputMode="numeric"
         value={hitunganTeks}
-        /* ⛔ Yang diketik DIPERTAHANKAN apa adanya (digit dan titik), dan yang
+        /* ⛔ Yang diketik DIPERTAHANKAN apa adanya (tanpa saringan: koma dan minus
+           yang dibuang diam-diam mengubah "25,5" jadi 255), dan yang
            menafsirkannya `bacaRupiah` — parser yang sama yang dipakai seluruh
            repo. Memformat ulang teksnya sambil kasir mengetik akan menjadi
            pemformat KEDUA, dan `CLAUDE.md` menetapkan hanya boleh ada satu.
 
-           Titik dibiarkan masuk justru supaya `bacaRupiah` yang memutuskan:
+           Semua karakter dibiarkan masuk justru supaya `bacaRupiah` yang memutuskan:
            ia menerima `670.500` (kelompok tiga) dan MENOLAK `25.5` (desimal),
            dan aturan itu tidak boleh punya salinan di sini. */
         onChange={(v) => {
-          setHitunganTeks(v.replace(/[^\d.]/g, ''));
+          setHitunganTeks(v);
           setGalat(null);
         }}
         placeholder="0"
-        hint={hitunganTeks !== '' && hitunganTidakSah ? 'Masukkan rupiah utuh, tanpa desimal.' : undefined}
+        hint={hitunganTeks !== '' && hitunganTidakSah ? alasanHitungan : undefined}
       />
 
       {/* Jalan pintas, bukan satu-satunya jalan. Ia MENAMBAH ke angka yang
@@ -615,7 +656,11 @@ export function TutupKas() {
                 hlc: () => jam.tick(),
               })
             )
-            .then((h) => setReview(h))
+            .then(async (h) => {
+              /* Ringkasan gagal tidak boleh menahan kasir menutup shift. */
+              setRingkasan(await ringkasanShift(db, shift.id).catch(() => 'gagal' as const));
+              setReview(h);
+            })
             .catch((e: Error) => setGalat(e.message))
             .finally(() => setSibuk(false));
         }}
@@ -627,7 +672,9 @@ export function TutupKas() {
           ? 'Sedang memproses hitungan.'
           : tahanan.length > 0
             ? 'Masih ada pesanan tahan. Lanjutkan atau buang dulu.'
-            : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
+            : hitunganTeks !== '' && hitunganTidakSah
+              ? alasanHitungan
+              : 'Isi hitungan fisik dulu, dalam rupiah utuh.'}
       </span>
     </div>
   );
@@ -644,7 +691,6 @@ function Baris({
   nilai: number | bigint;
   tebal?: boolean;
 }) {
-  const n = Number(nilai);
   return (
     <div className="kasir-subtotal">
       <span className="t-body-md">{label}</span>
@@ -655,7 +701,7 @@ function Baris({
           salah. Cabang itu kini menghasilkan hal yang sama persis dengan
           `rupiah(n)`, dan dua tempat yang memutuskan format nilai negatif
           adalah tepat yang pemindahan ke `packages/domain` selesaikan. */}
-      <span className={tebal ? 't-title num' : 't-body-md num'}>{rupiah(n)}</span>
+      <span className={tebal ? 't-title num' : 't-body-md num'}>{rupiah(nilai)}</span>
     </div>
   );
 }

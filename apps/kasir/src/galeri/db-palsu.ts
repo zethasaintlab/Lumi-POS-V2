@@ -11,6 +11,7 @@ import {
   STOK_HABIS_VAR,
   STOK_TIPIS_VAR,
   orderUntuk,
+  orderRiwayatPenuh,
   type NamaSkenario,
 } from './skenario.ts';
 
@@ -168,6 +169,10 @@ export interface OpsiDbPalsu {
   tanpaKasManual?: boolean;
   /** `?transfer=1` — pembayaran `ord-1` menjadi Transfer (`other` + `bank_transfer`), untuk penjaga label K-09. */
   transfer?: boolean;
+  /** `?riwayatVariatif=1` (Task 14) — K-08 dengan data BERAGAM: dua tanggal bisnis (`ord-3`..`ord-7` di 2026-08-31),
+      `ord-1` Transfer, `ord-3` CAMPURAN (QRIS statis + tunai), supaya kolom Item/Metode dan penyaring punya apa
+      yang dibedakan. Tanpa ini semua order sehari dan hanya tunai/QRIS — penjaga yang hanya melihat satu nilai. */
+  riwayatVariatif?: boolean;
   /** `?gagalBacaKas=1` — MENGGAGALKAN hanya `bacaKasManualShift` (query `cash_movement … type IN`), bukan
       pembacaan lain: keadaan `error` galeri gagal lebih awal di konfigurasi perangkat dan tidak pernah
       mencapai riwayat. Test dapat menyetel `window.__galeriGagalBacaKas` sesudah muat untuk membaca-ulang. */
@@ -189,6 +194,25 @@ export interface OpsiDbPalsu {
   drafQris?: boolean;
   /** `?tahanan=N` (Task 12) — tanam N Pesanan tahan (Americano Hot, harga LAMA Rp 10.000 + diskon Rp 1.000) di shift galeri. */
   tahanan?: number;
+  /** `?strukPanjang=1` (Task 13 fix) — `ord-1` memuat nama produk panjang (lipat + dua kolom meluap di 58 dan 80 mm),
+      `…`, dan diskon (`−`), supaya penjaga G-STRUK menyentuh transliterasi, lipat, dan potong-kiri pada struk sungguhan. */
+  strukPanjang?: boolean;
+  /** `?profil80=1` (Task 13 fix) — profil printer 80 mm (48 kolom) TERPILIH di `device_config`, untuk lebar bawaan pratinjau. */
+  profil80?: boolean;
+  /** `?ringkasanBernilai=1` (Task 15 fix) — K-12 Ringkasan shift dengan void DAN refund BERNILAI: `ord-8` (closed 40.000,
+      dibatalkan oleh `ord-9`, pembatal bernilai 40.000, kas dibalik) + refund 10.000 pada `ord-2`, supaya omzet bersih
+      ≠ omzet kotor ≠ kotor + void ≠ jumlah pembayaran. Tanpa opsi, fixture bawaan tidak berubah (saldo K-12 Rp 670.500). */
+  ringkasanBernilai?: boolean;
+  /** `?gagalRingkasan=1` (Task 15 fix) — pembacaan refund milik `ringkasanShift` (posisi penjualan) melempar. */
+  gagalRingkasan?: boolean;
+  /** `?ordOpen=1` (Task 16 fix) — `ord-1` berstatus `open` tanpa pembayaran, supaya dialog VOID K-10 dapat dibuka. Fixture bawaan tidak berubah. */
+  ordOpen?: boolean;
+  /** `?riwayatPenuh=1` (tinjauan akhir P1) — 120 order, jendela K-08 (100) PENUH; Transfer hanya di luar jendela. */
+  riwayatPenuh?: boolean;
+  /** `?tanpaKonfigPerangkat=1` (tinjauan akhir D2) — `device_config` kosong, tabel lain utuh: pratinjau struk tanpa outlet. */
+  tanpaKonfigPerangkat?: boolean;
+  /** `?gagalBacaPerangkat=1` (Task 16 fix) — pembacaan `device_config` melempar (K-01: "Perangkat tidak terbaca"). */
+  gagalBacaPerangkat?: boolean;
   /** `?negatif=1` bersama `editItem`: stok BOLEH negatif (jalur peringatan, spec-e:146). */
   bolehNegatif?: boolean;
 }
@@ -198,7 +222,29 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* `?jumlahGagal=500` — override jumlah item gagal (jalur test header: hitungan 3 digit). */
   if (opsi.jumlahGagal !== undefined) antre.gagal = opsi.jumlahGagal;
   const item = itemUntuk(skenario);
-  const order = orderUntuk(skenario);
+  const orderDasar = opsi.riwayatPenuh ? orderRiwayatPenuh() : orderUntuk(skenario);
+  const o4 = orderDasar.find((o) => o.id === 'ord-4');
+  const tambahan = opsi.ringkasanBernilai && o4
+    ? [
+        { ...o4, id: 'ord-8', receipt_number: 'K1-20260901-0008', total: 40_000, amount_due: 40_000, subtotal: 36_036, tax_amount: 3_964 },
+        { ...o4, id: 'ord-9', receipt_number: 'K1-20260901-0009', status: 'voided', voided_by_order_id: 'ord-8', total: 40_000, amount_due: 40_000, subtotal: 0, tax_amount: 0 },
+      ]
+    : [];
+  const order = [...orderDasar, ...tambahan].map((o) => {
+    const n = Number(o.id.slice(4));
+    return opsi.riwayatVariatif && n >= 3
+      ? { ...o, business_date: '2026-08-31', receipt_number: o.receipt_number.replace('20260901', '20260831') }
+      : o;
+  }).map((o) => (opsi.ordOpen && o.id === 'ord-1' ? { ...o, status: 'open' } : o)).map((o) =>
+    opsi.strukPanjang && o.id === 'ord-1'
+      ? {
+          ...o,
+          order_discount: 5_000,
+          customer_name: 'Bapak Bambang Sutejo Wibisono Kusumawardhana',
+          note: 'Tanpa gula, es dipisah, sedotan kertas… tolong dibungkus rapi dua kantong terpisah',
+        }
+      : o
+  );
 
   /* ⛔ Stok datang dari `stock_movement`, bukan dari kolom `quantity` — itu
      konvensi data repo ini, dan galeri yang memakai kolom karangan akan
@@ -264,25 +310,56 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         ]
       : [],
     order,
-    order_line: barisOrderUntuk(order),
+    order_line: barisOrderUntuk(order).map((b) =>
+      opsi.strukPanjang && b.order_id === 'ord-1'
+        ? {
+            ...b,
+            item_name: b.id.endsWith('l0')
+              ? 'Kopi Susu Gula Aren Dingin Ukuran Besar Tanpa Es Tambah Shot Espresso Ekstra Dua'
+              : 'Matcha Latte Oat Premium Kyoto Uji Ceremonial Grade Extra Panjang…',
+          }
+        : b
+    ),
     /* Campuran metode, bukan tunai seluruhnya: `spec-d:201` memisahkan uang
        laci dari uang bank, dan K-12 yang hanya pernah dilihat dengan tunai
        tidak pernah merender rincian per metode sama sekali. */
     payment: order
-      .filter((o) => o.status !== 'voided')
-      .map((o, i) => ({
-        order_id: o.id,
-        id: `pay-${o.id}`,
-        method: opsi.transfer && o.id === 'ord-1' ? 'other' : i % 3 === 1 ? 'qris_static' : 'cash',
-        provider: opsi.transfer && o.id === 'ord-1' ? 'bank_transfer' : null,
-        amount: o.total,
-        /* Uang yang diserahkan dibulatkan ke atas pecahan Rp 50.000 — bentuk
-           yang kasir lihat sehari-hari. Non-tunai NULL (`spec-d:201`). */
-        tendered_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000,
-        change_amount: i % 3 === 1 || (opsi.transfer && o.id === 'ord-1') ? null : Math.ceil(o.total / 50_000) * 50_000 - o.total,
-        status: 'confirmed',
-      })),
-    refund: [],
+      .filter((o) => o.status !== 'voided' && !(opsi.ordOpen && o.id === 'ord-1'))
+      .flatMap((o, i): Record<string, unknown>[] => {
+        const transfer = ((opsi.transfer || opsi.riwayatVariatif) && o.id === 'ord-1') || (opsi.riwayatPenuh && Number(o.id.slice(4)) >= 101);
+        const nontunai = i % 3 === 1 || transfer;
+        const tunai = (jumlah: number, sufiks = '') => ({
+          order_id: o.id,
+          id: `pay-${o.id}${sufiks}`,
+          method: 'cash',
+          provider: null,
+          amount: jumlah,
+          tendered_amount: Math.ceil(jumlah / 50_000) * 50_000,
+          change_amount: Math.ceil(jumlah / 50_000) * 50_000 - jumlah,
+          status: 'confirmed',
+        });
+        /* CAMPURAN: QRIS statis Rp 20.000 + sisanya tunai — dua baris `payment`, tidak pernah digabung. */
+        if (opsi.riwayatVariatif && o.id === 'ord-3') {
+          return [
+            { order_id: o.id, id: `pay-${o.id}-q`, method: 'qris_static', provider: null, amount: 20_000, tendered_amount: null, change_amount: null, status: 'confirmed' },
+            tunai(o.total - 20_000, '-t'),
+          ];
+        }
+        if (!nontunai) return [tunai(o.total)];
+        return [{
+          order_id: o.id,
+          id: `pay-${o.id}`,
+          method: transfer ? 'other' : 'qris_static',
+          provider: transfer ? 'bank_transfer' : null,
+          amount: o.total,
+          tendered_amount: null,
+          change_amount: null,
+          status: 'confirmed',
+        }];
+      }),
+    refund: opsi.ringkasanBernilai
+      ? [{ id: 'ref-galeri-1', order_id: 'ord-2', amount: 10_000, reason_code: 'salah_input', method: 'qris_static', created_by: 'user-galeri', approved_by: 'user-galeri', occurred_at: '2026-09-01T08:00:00.000Z', hlc: 40 }]
+      : [],
     cash_drawer_shift: opsi.tanpaShift ? [] : [
       {
         id: 'shift-galeri',
@@ -309,7 +386,8 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         id: `cm-${i}`,
         shift_id: 'shift-galeri',
         type: 'sale',
-        delta: o.total,
+        // Pembatal bernilai (hanya `ringkasanBernilai`) MEMBALIK kas penjualan aslinya.
+        delta: o.status === 'voided' ? -o.total : o.total,
         occurred_at: o.occurred_at,
       })),
       /* Kas manual (Task 4, K-18): satu masuk dan dua keluar, TERBARU DULU —
@@ -356,6 +434,22 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         drawer_command: null,
         image_support: 0,
       },
+      ...(opsi.profil80
+        ? [
+            {
+              id: 'pp-80',
+              name: 'Epson TM-T82 (80 mm)',
+              paper_width_mm: 80,
+              chars_per_line: 48,
+              codepage: 'cp437',
+              has_cutter: 1,
+              init_command: null,
+              cut_command: null,
+              drawer_command: null,
+              image_support: 0,
+            },
+          ]
+        : []),
     ],
     outlet: [
       {
@@ -436,7 +530,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         default_tax_type: 'ppn',
       },
     ],
-    device_config: perangkatTerdaftarUntuk(skenario) ? [
+    device_config: perangkatTerdaftarUntuk(skenario) && !opsi.tanpaKonfigPerangkat ? [
       {
         id: 1,
         device_id: 'dev-galeri',
@@ -445,7 +539,7 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
         outlet_id: 'outlet-1',
         base_url: BASE_URL_TAK_TERJANGKAU,
         token_secret: 'galeri',
-        printer_profile_id: null,
+        printer_profile_id: opsi.profil80 ? 'pp-80' : null,
         peripheral_id: null,
         hlc_teks: '0',
         receipt_sequence: 1,
@@ -583,6 +677,9 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
   /* Catatan penulisan galeri — lihat `execute`. */
   const tulis: { sql: string; params: readonly unknown[]; dalam: boolean }[] = [];
   (globalThis as { __galeriTulis?: unknown }).__galeriTulis = tulis;
+  /* Urutan BACA/TULIS (`baca:<tabel>`, `tulis:<sql>`), untuk penjaga "ringkasan dibaca sesudah hitungan tercatat". */
+  const urutan: string[] = [];
+  (globalThis as { __galeriUrutan?: string[] }).__galeriUrutan = urutan;
 
   const db: DbLokal = {
     async getAll<T>(sql: string, params?: readonly unknown[]): Promise<T[]> {
@@ -592,6 +689,13 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
       // berpacu dengan timer.
       if (skenario === 'memuat') return TAK_PERNAH_SELESAI;
       const tabel = tabelDari(sql);
+      urutan.push(`baca:${tabel}`);
+      if (opsi.gagalBacaPerangkat && tabel === 'device_config') {
+        throw new Error('galeri: pembacaan device_config gagal');
+      }
+      if (opsi.gagalRingkasan && tabel === 'refund' && /JOIN\s+"order"/i.test(sql)) {
+        throw new Error('galeri: pembacaan ringkasan shift gagal');
+      }
       /* `__galeriTahanDraf`: menahan BACA draf QRIS sampai test melepasnya, supaya jendela
          "pemulihan draf belum selesai" dapat diukur tanpa timer (fix round Task 9, C1c). */
       if (tabel === 'draf_qris_lokal') await (globalThis as { __galeriTahanDraf?: Promise<void> }).__galeriTahanDraf;
@@ -774,7 +878,12 @@ export function buatDbPalsu(skenario: NamaSkenario, opsi: OpsiDbPalsu = {}): DbL
        "sedang menyimpan" (kunci tab nav, ketukan ganda) tanpa timer. */
     const tahan = (globalThis as { __galeriTahanPenjualan?: Promise<void> }).__galeriTahanPenjualan;
     if (tahan && /^INSERT INTO "order"/i.test(sql.trim())) await tahan;
+    /* `__galeriTahanShift` (Task 16 fix 2): promise yang ditunggu sebelum INSERT shift, supaya test dapat
+       mengukur jendela "sedang menyimpan" Mulai Shift tanpa timer. */
+    const tahanShift = (globalThis as { __galeriTahanShift?: Promise<void> }).__galeriTahanShift;
+    if (tahanShift && /^INSERT INTO cash_drawer_shift/i.test(sql.trim())) await tahanShift;
     tulis.push({ sql: sql.replace(/\s+/g, ' ').trim(), params: params ?? [], dalam });
+    urutan.push(`tulis:${sql.replace(/\s+/g, ' ').trim()}`);
     if (/^DELETE FROM keranjang_lokal/i.test(sql.trim())) perTabel.keranjang_lokal.length = 0;
     /* Draf QRIS ([EKSPLORASI] Task 9): urutan kolom = `simpanDraf`. Hanya agar
        pemulihan draf (`pulihkanDraf`) dapat dirender ulang di harness. */

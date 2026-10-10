@@ -4,6 +4,8 @@ import { Memuat } from '../komponen/Memuat.tsx';
 import { bacaDetail, type DetailOrder } from '../riwayat/baca.ts';
 import { bacaKonfigPerangkat, type KonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 import { cetakUlangOrder, kalimatCetak } from '../cetak/cetak-ulang.ts';
+import { PratinjauStruk } from '../komponen/PratinjauStruk.tsx';
+import { LatarDialog } from '../komponen/LatarDialog.tsx';
 import { DialogPembatalan } from '../komponen/DialogPembatalan.tsx';
 import { useDbLokal } from '../konteks/DbLokalProvider.tsx';
 import { GagalBaca } from '../komponen/GagalBaca.tsx';
@@ -47,6 +49,7 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
   const [muatUlang, setMuatUlang] = useState(0);
   const [pesanCetak, setPesanCetak] = useState<string | null>(null);
   const [mencetak, setMencetak] = useState(false);
+  const [pratinjau, setPratinjau] = useState(false);
 
   /* FR-B11 — cetak ulang struk (`spec-b:145`). Jalurnya satu, dipakai K-07
      juga: `cetak/cetak-ulang.ts`. */
@@ -253,6 +256,14 @@ export function DetailTransaksi({ orderId }: { orderId: string }) {
       <Tombol disabled={mencetak} onClick={() => void cetakUlang()}>
         {mencetak ? 'Mencetak…' : 'Cetak ulang struk'}
       </Tombol>
+
+      <Tombol onClick={() => setPratinjau(true)}>Pratinjau struk</Tombol>
+
+      {pratinjau && (
+        <LatarDialog label="Pratinjau struk" onBatal={() => setPratinjau(false)}>
+          <PratinjauStruk orderId={order.id} onTutup={() => setPratinjau(false)} />
+        </LatarDialog>
+      )}
 
       {/* ⛔ Teks, bukan hanya warna (aturan design system #5). Ia juga tidak
           menghilang sendiri: kasir yang berpaling sebentar harus tetap dapat

@@ -11,7 +11,8 @@ import { useSesi } from '../konteks/useSesi.ts';
 import { Tombol } from '../Tombol.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
-import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { bacaRupiah, rupiah, rupiahTerlaluBesar } from '../../../../packages/domain/src/uang-tampilan.ts';
+import { Bidang } from '../Bidang.tsx';
 
 /* K-02 — Buka Shift (IA §2.2).
 
@@ -22,20 +23,13 @@ import { rupiah } from '../../../../packages/domain/src/uang-tampilan.ts';
    sini — yang ditulis masuk ke SQLite lokal dan `outbox_local`, dan relay
    yang mengirimkannya kapan pun koneksi kembali. */
 
-/* Pecahan yang benar-benar dipakai laci kafe Indonesia.
-
-   Kasir mengetik saldo awal sekali per shift, dengan tangan yang sering
-   sibuk; tombol pecahan menghilangkan lima ketukan dan seluruh peluang salah
-   ketik nol. Angka bebas tetap mungkin lewat tombol hapus + pecahan lain. */
-const PECAHAN = [50000, 100000, 200000, 500000];
-
 export function BukaShift() {
   const { db } = useDbLokal();
   const { sesi } = useSesi();
   const [konfig, setKonfig] = useState<KonfigPerangkat | null>(null);
   const [aktif, setAktif] = useState<ShiftAktif | null>(null);
   const [siap, setSiap] = useState(false);
-  const [saldo, setSaldo] = useState(0);
+  const [saldoTeks, setSaldoTeks] = useState('');
   const [galat, setGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
   const [hlc, setHlc] = useState<Hlc | null>(null);
@@ -99,7 +93,25 @@ export function BukaShift() {
     );
   }
 
+  /* ⛔ `bacaRupiah`, bukan `Number()` dan bukan `?? 0`. Kolom kosong BUKAN
+     saldo Rp 0 — itu laci yang belum dihitung, dan shift bersaldo 0 yang
+     lahir dari kolom kosong menjadikan semua selisih kas hari itu salah.
+     Nol yang benar-benar DIKETIK tetap sah (laci kosong adalah keadaan nyata).
+     Keputusan user 28 September 2026 (#76); pola `TutupKas.tsx`. */
+  const saldo = bacaRupiah(saldoTeks);
+  const saldoTidakSah = saldo === null;
+  /* Tiga kabar berbeda: kosong · bentuk tidak sah · di atas batas aman. Yang
+     terakhir TIDAK dijepit ke batas — nilai yang dibulatkan diam-diam adalah
+     uang yang bukan milik kasir. */
+  const alasanSaldo =
+    saldoTeks.trim() === ''
+      ? 'Isi saldo awal kas.'
+      : rupiahTerlaluBesar(saldoTeks)
+        ? 'Saldo awal terlalu besar.'
+        : 'Masukkan rupiah utuh, tanpa desimal.';
+
   const simpan = () => {
+    if (saldo === null) return;
     const g = validasiSaldoAwal(saldo);
     if (g) {
       setGalat(g);
@@ -147,39 +159,22 @@ export function BukaShift() {
 
         <div className="kasir-shift-kolom">
           <div className="kasir-dialog-sel">
-            <p className="t-body-md">Saldo awal</p>
-            <p className="t-display num">{rupiah(saldo)}</p>
-
-            <div className="kasir-pecahan">
-              {PECAHAN.map((p) => (
-                <Tombol
-                  key={p}
-                  kritis
-                  disabled={menyimpan}
-                  onClick={() => {
-                    setSaldo((s) => s + p);
-                    setGalat(null);
-                  }}
-                >
-                  + {rupiah(p)}
-                </Tombol>
-              ))}
-              <Tombol
-                varian="ghost"
-                kritis
-                disabled={menyimpan || saldo === 0}
-                keterangan={menyimpan || saldo === 0 ? 'bukashift-hapus-alasan' : undefined}
-                onClick={() => {
-                  setSaldo(0);
-                  setGalat(null);
-                }}
-              >
-                Hapus
-              </Tombol>
-              <span id="bukashift-hapus-alasan" className="sr-only">
-                {menyimpan ? 'Sedang menyimpan shift.' : 'Belum ada saldo awal untuk dihapus.'}
-              </span>
-            </div>
+            <Bidang
+              label="Saldo awal kas"
+              ukuran="lg"
+              awalan="Rp"
+              inputMode="numeric"
+              value={saldoTeks}
+              /* ⛔ Teks disimpan APA ADANYA, tanpa saringan: koma dan minus yang
+                 dibuang diam-diam mengubah "25,5" menjadi 255 (10×) dan "-50000"
+                 menjadi 50000. Yang menafsirkan atau menolak hanya `bacaRupiah`
+                 (menerima `1.500.000`, `Rp 750.000`; menolak `25.5`, `25,5`, `abc`). */
+              onChange={(v) => {
+                setSaldoTeks(v);
+                setGalat(null);
+              }}
+              placeholder="0"
+            />
           </div>
 
           {/* Mockup menampilkan staf pembuka sebagai field. Di sini TEKS: ia
@@ -208,11 +203,24 @@ export function BukaShift() {
             kasir, bukan hanya benar di kode. Merchant yang tidak tahu bahwa ini
             berfungsi offline akan menelepon support saat internet mati. */}
         <div className="kasir-bayar-baris">
-          <p className="t-caption kasir-login-sub">
-            Shift tersimpan di perangkat ini dan terkirim sendiri saat internet kembali.
-          </p>
+          <div>
+            {saldoTidakSah && (
+              <p id="bukashift-mulai-alasan" className="t-caption">
+                {alasanSaldo}
+              </p>
+            )}
+            <p className="t-caption kasir-login-sub">
+              Shift tersimpan di perangkat ini dan terkirim sendiri saat internet kembali.
+            </p>
+          </div>
           {/* Satu aksi utama per layar (aturan #2), 56px karena menyangkut uang. */}
-          <Tombol varian="primary" kritis disabled={menyimpan} onClick={simpan}>
+          <Tombol
+            varian="primary"
+            kritis
+            disabled={menyimpan || saldoTidakSah}
+            keterangan={saldoTidakSah ? 'bukashift-mulai-alasan' : undefined}
+            onClick={simpan}
+          >
             {menyimpan ? 'Menyimpan…' : 'Mulai Shift'}
           </Tombol>
         </div>

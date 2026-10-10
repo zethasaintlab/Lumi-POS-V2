@@ -455,13 +455,13 @@ Urutan ini digantikan oleh keputusan kampanye Hidupkan desain, 26 September 2026
 | Invarian | Penjaga |
 |---|---|
 | Hitungan buta K-12: rincian saldo hanya di tahap `review` | `tests/kasir-dom/k12-hitungan-buta.test.js` |
-| QRIS mengganti layar penuh saat panelnya aktif | `k06-penjaga.test.js` P1 |
+| Selama QRIS menunggu: pemilih metode terkunci, tab nav terkunci, tidak ada jalur ketukan yang menandai lunas (menggantikan "QRIS mengganti layar penuh" — keputusan kampanye Hidupkan desain, 26 September 2026, spec sub-proyek 2 § 7) | `k06-penjaga.test.js` P1 + `k06-qr.test.js` |
 | Pembulatan FR-C9 satu sumber (`rencanaBayarKeranjang`); kembalian K-06 sama persis dengan yang tersimpan (keputusan user 28 Sep 2026) | `k06-penjaga.test.js` P2 + P3 + `tests/kasir/penjualan.test.js` |
-| Target sentuh ≥ 44px; aksi utama kasir 56px | sebagian: `k03-chrome`, `k06-penjaga`, `k12-aksi-slot`. **Belum ada penjaga umum lintas layar** |
+| Target sentuh ≥ 44px; aksi utama kasir 56px | sebagian: `k03-chrome`, `k06-penjaga`, `k12-aksi-slot`, `edit-item` (S8). Penjaga lintas layar `area-sentuh.test.js` hanya menjangkau elemen ber-`.sentuh`/`.sentuh-uang`; **elemen lain belum punya penjaga umum** |
 | K-03: ≥ 12 kartu tanpa scroll pada 1024×768 | `k03-chrome.test.js` (IA:62) |
 | K-03: Bayar di posisi sama untuk 0, 3, 20 item | `k03-bayar-tetap.test.js` |
 | K-14: tabel item gagal ≥ 3 baris utuh | `k14-tata-letak.test.js` |
-| Tinggi bilah nav sama di semua layar | `k14-tata-letak.test.js` |
+| Tinggi header 68 px sama di semua layar ber-shell (menggantikan "tinggi bilah nav" — keputusan kampanye Hidupkan desain, 26 September 2026, spec sub-proyek 2 § 3) | `k14-tata-letak.test.js` + `tests/kasir-dom/header.test.js` |
 | `ds-bundle/` tidak disunting | `tests/runtime/ds-bundle-vendor.test.js` |
 | Palet ikuti nilai mockup, bukan diketik ulang di kode | `tests/runtime/token-mockup.test.js` (nilai token di berkas) + `tests/kasir-dom/palet-berlaku.test.js` (nilai yang sungguh dirender di peramban, kedua viewport). Menggantikan baris lama "Aksen `#0D5C63` tidak berubah" — keputusan kampanye Hidupkan desain, 26 September 2026 (`docs/RENCANA-HIDUPKAN-DESAIN.md`), lahir Fase 1 Task 1–2 |
 | Nol hex hardcoded di komponen | `tests/runtime/nol-hex-css.test.js` — memindai `apps/*/src/**/*.css` dan `packages/ds/*.css` (kecuali `lumi.css`/`tokens-mockup.css`, yang justru mendefinisikan token dengan nilai literal). Sebelumnya "belum ada penjaga untuk CSS"; penjaga lahir kampanye Hidupkan desain, Task 2, 26 September 2026 |

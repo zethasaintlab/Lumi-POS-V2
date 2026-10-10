@@ -572,6 +572,23 @@ export function orderUntuk(skenario: NamaSkenario): BarisOrderPalsu[] {
 }
 
 /**
+ * K-08 dengan jendela PENUH (`?riwayatPenuh=1`): 120 order, lebih dari batas 100
+ * yang dibaca layar. ord-1..60 di 2026-09-01, ord-61..100 di 2026-08-31, dan
+ * ord-101..120 (yang TERLAMA, di luar jendela) di 2026-08-30 — hanya merekalah
+ * yang berpembayaran Transfer (lihat db-palsu). Fixture bawaan tidak berubah.
+ */
+export function orderRiwayatPenuh(): BarisOrderPalsu[] {
+  return Array.from({ length: 120 }, (_, k) => {
+    const i = k + 1;
+    const tgl = i <= 60 ? '2026-09-01' : i <= 100 ? '2026-08-31' : '2026-08-30';
+    return order(i, 18_000 + ((i * 3700) % 96_000), {
+      business_date: tgl,
+      receipt_number: `K1-${tgl.replace(/-/g, '')}-${String(i).padStart(4, '0')}`,
+    });
+  });
+}
+
+/**
  * Baris pesanan untuk setiap order — DUA baris per order, jumlahnya tepat
  * `subtotal`. Order pembatal tidak punya baris (ia menunjuk order asli).
  *

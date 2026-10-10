@@ -180,8 +180,8 @@ export function DialogPembatalan({
         </h2>
         <p className="t-caption kasir-login-sub">
           {rencana.operasi === 'void'
-            ? 'Transaksi belum dibayar. Stok akan dikembalikan.'
-            : `Transaksi sudah dibayar. Maksimal ${rupiah(sisaDapatDirefund)}.`}
+            ? 'Transaksi belum dibayar. Stok akan dikembalikan. Aksi ini tidak dapat dibatalkan.'
+            : `Transaksi sudah dibayar. Maksimal ${rupiah(sisaDapatDirefund)}. Aksi ini tidak dapat dibatalkan.`}
         </p>
 
         {/* Rebuild UI Fase 3.5 — DUA kolom pada refund, mengikuti mockup
@@ -292,6 +292,14 @@ export function DialogPembatalan({
           )}
         </div>
 
+        {/* Tombol mati tanpa penjelasan dibaca kasir sebagai rusak. Alasan yang
+            sudah punya kalimat sendiri (`galatAlasan`, `galat`) tidak diulang. */}
+        {!siap && !galatAlasan && !galat && (
+          <p id="batal-aksi-alasan" className="t-caption">
+            {kode === '' ? 'Pilih alasan pembatalan.' : 'Pilih jumlah yang dikembalikan.'}
+          </p>
+        )}
+
         {(galatAlasan || galat) && (
           <p className="t-body-md kasir-login-galat" role="alert">
             {galatAlasan ?? galat}
@@ -306,6 +314,7 @@ export function DialogPembatalan({
             varian="danger"
             kritis
             disabled={!siap || menyimpan}
+            keterangan={!siap && !galatAlasan && !galat ? 'batal-aksi-alasan' : undefined}
             onClick={() => {
               // Refund menuntut PIN manajer; void tidak. Yang menentukan
               // adalah `rencana`, bukan pilihan kasir.
@@ -313,7 +322,7 @@ export function DialogPembatalan({
               else jalankan(null);
             }}
           >
-            {menyimpan ? 'Menyimpan…' : rencana.operasi === 'void' ? 'Batalkan' : 'Kembalikan dana'}
+            {menyimpan ? 'Menyimpan…' : rencana.operasi === 'void' ? 'Konfirmasi void' : 'Kembalikan dana'}
           </Tombol>
         </div>
     </LatarDialog>

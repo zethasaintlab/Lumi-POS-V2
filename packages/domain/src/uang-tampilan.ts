@@ -86,24 +86,41 @@ export function rupiah(nilai: number | bigint | string): string {
  * Nol yang benar-benar DIKETIK tetap diterima: produk gratis itu sah.
  */
 export function bacaRupiah(teks: string): number | null {
-  // ⛔ Bentuknya diperiksa SEBELUM titik dibuang, bukan sesudah.
-  //
-  // Versi pertama membuang setiap titik lalu memeriksa sisanya. `25.5` —
-  // desimal, yang tidak sah untuk rupiah — menjadi `255`: diterima, dan
-  // **salah 10×**. Ditemukan test, bukan review.
-  //
-  // Titik hanya sah sebagai pemisah RIBUAN, yaitu dalam kelompok tepat tiga
-  // digit. Spasi dibuang lebih dulu karena ia tidak pernah menjadi pemisah
-  // desimal.
-  const bersih = String(teks ?? '')
-    .replace(/rp/gi, '')
-    .replace(/\s/g, '')
-    .trim();
-  if (bersih.length === 0) return null;
+  const digit = digitRupiah(teks);
+  if (digit === null) return null;
+  /* ⛔ Di atas MAX_SAFE_INTEGER → `null`, BUKAN angka yang dibulatkan: `parseInt`
+     pada "99999999999999999999" menghasilkan 100000000000000000000, dan itu
+     tertulis sebagai nominal yang tampak sah. */
+  const nilai = BigInt(digit);
+  if (nilai > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Number(nilai);
+}
 
-  const polos = /^\d+$/;
-  const berkelompok = /^\d{1,3}(\.\d{3})+$/;
-  if (!polos.test(bersih) && !berkelompok.test(bersih)) return null;
+/**
+ * Bentuk angka rupiah yang SAH tetapi di atas `Number.MAX_SAFE_INTEGER`.
+ * Layar memakainya untuk alasan "terlalu besar" yang terpisah dari "tidak sah".
+ */
+export function rupiahTerlaluBesar(teks: string): boolean {
+  const digit = digitRupiah(teks);
+  return digit !== null && BigInt(digit) > BigInt(Number.MAX_SAFE_INTEGER);
+}
 
-  return Number.parseInt(bersih.replace(/\./g, ''), 10);
+/**
+ * Digit murni dari bentuk yang sah, atau `null`.
+ *
+ * ⛔ Bentuknya diperiksa SEBELUM titik dibuang, bukan sesudah.
+ *
+ * Versi pertama membuang setiap titik lalu memeriksa sisanya. `25.5` —
+ * desimal, yang tidak sah untuk rupiah — menjadi `255`: diterima, dan
+ * **salah 10×**. Ditemukan test, bukan review.
+ *
+ * Versi kedua membuang SEMUA spasi dulu: `25 5` menjadi `255` dan `750 000`
+ * menjadi `750000` — salah 10× dengan jalan lain. Spasi (juga NBSP) hanya sah
+ * di tepi dan sesudah "Rp"; di dalam angka bentuknya tidak sah.
+ *
+ * Titik hanya sah sebagai pemisah RIBUAN, yaitu dalam kelompok tepat tiga digit.
+ */
+function digitRupiah(teks: string): string | null {
+  const m = /^\s*(?:rp\s*)?(\d+|\d{1,3}(?:\.\d{3})+)\s*$/i.exec(String(teks ?? ''));
+  return m ? m[1]!.replace(/\./g, '') : null;
 }

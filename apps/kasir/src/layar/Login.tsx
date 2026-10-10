@@ -9,6 +9,7 @@ import { simpanSesi } from '../konteks/useSesi.ts';
 import { Keypad } from '../komponen/Keypad.tsx';
 import { navigasi } from '../rute/navigasi.ts';
 import { BASIS } from '../rute/tabel.ts';
+import { bacaKonfigPerangkat } from '../../../../packages/sync-client/src/perangkat.ts';
 
 /* K-01 — Login PIN (IA §2.2).
 
@@ -34,6 +35,20 @@ export function Login() {
   const [memeriksa, setMemeriksa] = useState(false);
   const [detikTersisa, setDetikTersisa] = useState(0);
   const [gagalTeknis, setGagalTeknis] = useState<string | null>(null);
+  /* Subjudul kartu mockup: "Perangkat: …". `undefined` = belum terbaca. Gagal
+     membaca BUKAN "belum terdaftar" — dua kalimat, supaya kasir tidak
+     mengira perangkatnya hilang padahal hanya pembacaannya yang gagal. */
+  const [perangkat, setPerangkat] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let hidup = true;
+    void bacaKonfigPerangkat(db).then(
+      (k) => hidup && setPerangkat(k ? k.deviceCode : null),
+      () => hidup && setPerangkat(''),
+    );
+    return () => {
+      hidup = false;
+    };
+  }, [db]);
 
   /* Hitung mundur penguncian (`spec-f:220` — "hitungan mundur ditampilkan").
 
@@ -95,10 +110,24 @@ export function Login() {
           (510 px, ikon gembok, judul 20 px). Enam titik dan tombol 56 px tidak
           berubah: `spec-f:122` dan DS #3 mengalahkan mockup (4 titik, 44 px). */}
       <div className="kasir-login-kartu">
-        <span className="kasir-login-ikon" aria-hidden="true">
-          <Icon name="lock" size={24} />
-        </span>
-        <h1 className="t-title">Masukkan PIN</h1>
+        <div className="kasir-login-kepala">
+          <span className="kasir-login-ikon" aria-hidden="true">
+            <Icon name="lock" size={24} />
+          </span>
+          <div>
+            <h1 className="t-title">Masuk ke kasir</h1>
+            <p className="t-caption kasir-login-sub">
+              {perangkat === undefined
+                ? '\u00a0'
+                : perangkat === ''
+                  ? 'Perangkat tidak terbaca'
+                  : perangkat === null
+                    ? 'Perangkat belum terdaftar'
+                    : `Perangkat: ${perangkat}`}
+            </p>
+          </div>
+        </div>
+        <h2 className="t-title">Masukkan PIN</h2>
         <p className="t-body-md kasir-login-sub">
           {terkunci
             ? `Terkunci. Coba lagi dalam ${detikTersisa} detik.`

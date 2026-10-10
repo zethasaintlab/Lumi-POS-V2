@@ -167,3 +167,72 @@ for (const lebar of [1024, 1280]) {
     assert.ok(Math.min(...u.tombol) >= 56, `tombol angka ${Math.min(...u.tombol)} px — < 56`);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Sisa selisih K-01 (Task 16, spec § 2): judul/subjudul kartu mengikuti
+// mockup — "Masuk ke kasir" + "Perangkat: <nama>" di samping ikon, lalu
+// "Masukkan PIN" sebagai judul bagian PIN. Salam "Halo, …" TIDAK dibangun.
+
+/** Kode perangkat dari FIXTURE (sumber data), bukan dibaca dari DOM layar. */
+function kodePerangkatFixture() {
+  const m = /device_code:\s*'([^']+)'/.exec(fs.readFileSync(path.join(AKAR, 'apps/kasir/src/galeri/db-palsu.ts'), 'utf8'));
+  assert.ok(m, 'fixture db-palsu.ts tidak punya device_code — penjaga ini kehilangan sumber harapannya');
+  return m[1];
+}
+
+async function bukaK01Keadaan(keadaan) {
+  const hal = await peramban.newPage({ viewport: { width: 1280, height: 800 } });
+  hal.setDefaultTimeout(3000);
+  await hal.goto(`${alamat}/harness-galeri.html?layar=K-01&keadaan=${keadaan}`, { waitUntil: 'load' });
+  await hal.waitForSelector('text=Masukkan PIN', { timeout: 10_000 });
+  await hal.waitForTimeout(300);
+  return hal;
+}
+
+const ukurKepala = (hal) =>
+  hal.evaluate(() => {
+    const login = document.querySelector('.kasir-login');
+    const r = (e) => { const x = e.getBoundingClientRect(); return { l: Math.round(x.left), r: Math.round(x.right), t: Math.round(x.top), b: Math.round(x.bottom) }; };
+    const h1 = login.querySelector('h1');
+    const h2 = login.querySelector('h2');
+    const ikon = login.querySelector('svg');
+    const sub = h1?.nextElementSibling;
+    return {
+      judul: h1?.textContent.trim() ?? null,
+      sub: sub?.textContent.trim() ?? null,
+      bagianPin: h2?.textContent.trim() ?? null,
+      bagianPinGaya: h2 ? `${getComputedStyle(h2).fontSize}/${getComputedStyle(h2).fontWeight}` : null,
+      ikon: ikon && r(ikon),
+      h1: h1 && r(h1),
+      h2: h2 && r(h2),
+      teks: login.innerText.replace(/\s+/g, ' '),
+    };
+  });
+
+test('⛔ K-01: judul "Masuk ke kasir" + "Perangkat: <kode>" di samping ikon, "Masukkan PIN" di atas papan angka', async () => {
+  const harapan = kodePerangkatFixture();
+  const hal = await bukaK01Keadaan('normal');
+  const u = await ukurKepala(hal);
+  await hal.close();
+  assert.equal(u.judul, 'Masuk ke kasir', 'judul kartu bukan "Masuk ke kasir" (mockup)');
+  assert.equal(u.sub, `Perangkat: ${harapan}`, `subjudul "${u.sub}" — harus "Perangkat: ${harapan}" (device_code fixture)`);
+  assert.equal(u.bagianPin, 'Masukkan PIN', 'judul bagian PIN hilang');
+  assert.equal(u.bagianPinGaya, '20px/600', `judul bagian PIN ${u.bagianPinGaya}, harus 20px/600`);
+  assert.ok(u.ikon.r <= u.h1.l, 'ikon tidak di kiri judul');
+  assert.ok(u.h2.t >= u.h1.b, '"Masukkan PIN" tidak di bawah header kartu');
+  assert.ok(!/Halo,/.test(u.teks), 'salam "Halo, …" tampil — tidak dibangun (kasir dikenali dari PIN, spec-f)');
+});
+
+test('⛔ K-01: perangkat yang belum terdaftar disebut belum terdaftar, bukan kode kosong', async () => {
+  const hal = await bukaK01Keadaan('kosong');
+  const u = await ukurKepala(hal);
+  await hal.close();
+  assert.equal(u.sub, 'Perangkat belum terdaftar', `subjudul "${u.sub}" untuk perangkat tanpa device_config`);
+});
+
+test('⛔ K-01: device_config yang GAGAL dibaca disebut "Perangkat tidak terbaca", bukan "belum terdaftar"', async () => {
+  const hal = await bukaK01Keadaan('normal&gagalBacaPerangkat=1');
+  const u = await ukurKepala(hal);
+  await hal.close();
+  assert.equal(u.sub, 'Perangkat tidak terbaca', `subjudul "${u.sub}" saat pembacaan device_config melempar`);
+});

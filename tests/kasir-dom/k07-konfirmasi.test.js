@@ -10,8 +10,9 @@
 //   2. Ikon centang dalam lingkaran lembut + judul "Transaksi selesai".
 //   3. Kembalian di panel `--accent-soft`, angka 32 px. Angkanya tetap warna
 //      teks: aksen adalah warna AKSI (DS #2), mockup mewarnainya — ditolak.
-//   4. Tombol "Cetak ulang struk" lewat jalur cetak ulang yang SAMA dengan K-09
-//      (`cetak/cetak-ulang.ts`), dan "Transaksi Baru" di kanan bawah, 56 px.
+//   4. (Task 13, PR 2D) Grid dua tombol: "Cetak Struk" membuka pratinjau
+//      (cetak ulang lewat `cetak/cetak-ulang.ts`, diuji `pratinjau-struk`), dan
+//      "Transaksi Baru" di kanan bawah, 56 px. Angka kembalian 32/700 `--primary`.
 //
 // ⛔ Dan satu cacat yang ditemukan saat membaca K-07: `HasilPenjualan.cetak`
 // dikembalikan `simpanPenjualan` justru supaya layar dapat berkata "struk
@@ -144,7 +145,7 @@ async function ukur(hal) {
     const dialog = document.querySelector('.overlay .dialog');
     const tombol = (t) => [...dialog.querySelectorAll('button')].find((b) => b.textContent.trim() === t);
     const baru = tombol('Transaksi Baru');
-    const ulang = tombol('Cetak ulang struk');
+    const ulang = tombol('Cetak Struk');
     const kembalian = [...dialog.querySelectorAll('*')].find(
       (e) => e.children.length > 0 && [...e.children].some((c) => c.textContent.trim() === 'Kembalian')
     );
@@ -223,6 +224,9 @@ async function ukur(hal) {
       latarKembalian: kembalian ? getComputedStyle(kembalian).backgroundColor : null,
       angkaKembalian: angka ? `${getComputedStyle(angka).fontSize}` : null,
       warnaAngka: angka ? getComputedStyle(angka).color : null,
+      bobotAngka: angka ? getComputedStyle(angka).fontWeight : null,
+      nomorStruk: ([...dialog.querySelectorAll('p')].find((e) => /dibayar/.test(e.textContent))?.textContent.trim().split(/\s/)[0]) ?? null,
+      tombolKirim: [...dialog.querySelectorAll('button')].map((b) => b.textContent.trim()),
       status: [...dialog.querySelectorAll('[role="status"]')].map((e) => e.textContent.trim()),
       baru: baru && r(baru),
       ulang: ulang && r(ulang),
@@ -230,7 +234,7 @@ async function ukur(hal) {
          kedua token lain. Versi pertama membaca `color` elemen terlepas —
          string kosong — dan penjaga DS #2 di bawah hijau pada angka yang
          diwarnai aksen; sabotase yang menemukannya. */
-      token: { accentSoft: token('--accent-soft'), successSoft: token('--success-soft'), accent: token('--accent') },
+      token: { accentSoft: token('--accent-soft'), successSoft: token('--success-soft'), accent: token('--accent'), primary: token('--primary') },
     };
   });
 }
@@ -250,10 +254,13 @@ for (const lebar of [1024, 1280]) {
     assert.equal(u.latarIkon, u.token.successSoft, 'ikon centang tidak di atas lingkaran --success-soft');
     assert.equal(u.latarKembalian, u.token.accentSoft, `panel kembalian ${u.latarKembalian}, bukan --accent-soft`);
     assert.equal(u.angkaKembalian, '32px', `angka kembalian ${u.angkaKembalian}`);
-    /* ⛔ DS #2: aksen adalah warna AKSI. Angka yang diwarnai aksen bersaing
-       dengan tombol Transaksi Baru. */
-    assert.match(u.token.accent, /^rgb/, 'token --accent tidak terbaca — penjaga DS #2 hampa');
-    assert.notEqual(u.warnaAngka, u.token.accent, 'angka kembalian berwarna aksen — DS #2');
+    /* ⛔ Keputusan kampanye Hidupkan desain (spec § 8): angka kembalian K-07
+       berwarna `--primary` (mockup), 32/700 — menggantikan penolakan DS #2
+       lama. Aksen di sini angka, bukan aksi kedua. */
+    assert.match(u.token.primary, /^rgb/, 'token --primary tidak terbaca — penjaga warna angka hampa');
+    assert.equal(u.warnaAngka, u.token.primary, `angka kembalian ${u.warnaAngka} — harap --primary ${u.token.primary}`);
+    assert.equal(u.bobotAngka, '700', `bobot angka kembalian ${u.bobotAngka} — harap 700`);
+    assert.match(u.nomorStruk ?? '', /^K1-\d{8}-\d{4}$/, `nomor struk K-07 ${u.nomorStruk} — harap pola K1-YYYYMMDD-NNNN, bukan TRX-`);
     assert.equal(
       u.dialogShadow,
       u.shadowModal,
@@ -277,7 +284,7 @@ for (const lebar of [1024, 1280]) {
     );
   });
 
-  test(`⛔ ${lebar}: hasil cetak terbaca, Cetak ulang di kiri, Transaksi Baru 56 px di kanan`, async () => {
+  test(`⛔ K-07: grid tombol — "Cetak Struk" membuka pratinjau, "Transaksi Baru" 56 px; kalimat hasil cetak pertama tetap (${lebar})`, async () => {
     const { hal, galat } = await bukaK07(lebar);
     const u = await ukur(hal);
     assert.deepEqual(galat, []);
@@ -287,31 +294,19 @@ for (const lebar of [1024, 1280]) {
       u.status.some((s) => /Belum ada printer terpasang/.test(s)) && u.status.length === 1,
       `hasil cetak pertama tidak dirender: ${JSON.stringify(u.status)}`
     );
-    assert.ok(u.ulang, 'tombol "Cetak ulang struk" tidak ada di K-07');
+    /* P8(a): grid = DUA tombol. "Kirim WhatsApp"/"Kirim Email" tidak dirender. */
+    assert.deepEqual(u.tombolKirim, ['Cetak Struk', 'Transaksi Baru'], `tombol K-07: ${JSON.stringify(u.tombolKirim)}`);
+    assert.ok(u.ulang, 'tombol "Cetak Struk" tidak ada di K-07');
     assert.ok(u.baru && u.baru.h >= 56, `Transaksi Baru ${u.baru?.h} px — 56 px`);
-    assert.equal(u.ulang.t, u.baru.t, 'Cetak ulang tidak sebaris dengan Transaksi Baru');
-    assert.ok(u.ulang.l < u.baru.l, 'Cetak ulang tidak di kiri');
+    assert.equal(u.ulang.t, u.baru.t, 'Cetak Struk tidak sebaris dengan Transaksi Baru');
+    assert.ok(u.ulang.l < u.baru.l, 'Cetak Struk tidak di kiri');
     assert.ok(u.baru.w < u.dialog.w / 2, 'Transaksi Baru selebar kartu');
 
-    /* Tombolnya TERSAMBUNG ke `cetakUlangOrder`: kalimat cetak ULANG muncul
-       di elemennya sendiri. Di galeri kalimatnya cabang "tidak dapat dibangun
-       ulang" — DB palsu galeri tidak menyimpan penjualan yang baru ditulis,
-       jadi `bangunUlangStruk` tidak menemukan ordernya. Isi struk cetak ulang
-       diuji `tests/kasir/cetak-ulang.test.js` di atas SQLite sungguhan; yang
-       dijaga di sini kabelnya. */
-    await hal.getByRole('button', { name: 'Cetak ulang struk' }).click();
-    await hal.waitForTimeout(800);
-    const ulang = await hal.$$eval('.overlay .dialog [data-cetak="ulang"]', (n) => n.map((e) => e.textContent.trim()));
-    const pertama = await hal.$$eval('.overlay .dialog [data-cetak="pertama"]', (n) => n.map((e) => e.textContent.trim()));
+    /* "Cetak Struk" membuka PRATINJAU (mode, bukan rute); isinya diuji
+       `pratinjau-struk.test.js`. Di sini hanya kabelnya. */
+    await hal.getByRole('button', { name: 'Cetak Struk', exact: true }).click();
+    await hal.waitForSelector('[data-pratinjau^="struk"]', { timeout: 10_000 });
     await hal.close();
-    assert.equal(ulang.length, 1, 'menekan Cetak ulang tidak menghasilkan kalimat cetak ulang');
-    assert.match(
-      ulang[0],
-      /Belum ada printer terpasang|Struk dicetak ulang|Gagal mencetak|tidak dapat dibangun ulang menjadi struk/,
-      `kalimat cetak ulang tidak dikenal: ${ulang[0]}`
-    );
-    /* Hasil cetak PERTAMA tetap terbaca — pesan cetak ulang tidak menimpanya. */
-    assert.equal(pertama.length, 1, 'hasil cetak pertama hilang setelah cetak ulang');
   });
 }
 

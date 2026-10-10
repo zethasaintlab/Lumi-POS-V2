@@ -774,6 +774,49 @@ nama tidak tampil dua kali berdampingan.
 Palet, ikon, dan bobot yang dipakai wordmark semuanya nilai mockup — lihat
 § 2, § 3, § 8 di atas.
 
+## 10. Tata letak aplikasi kasir (sub-proyek 2)
+
+Keputusan kampanye Hidupkan desain, 26 September 2026; rancangan di
+`docs/superpowers/specs/2026-09-28-kasir-design.md`. Bagian ini deskriptif
+terhadap kode di branch `hidupkan-desain-2d-kasir`; angka diukur oleh test yang
+disebut, bukan dibaca dari CSS.
+
+- **Tinggi baris (`line-height`) empat token** — display 1,15 · title 1,3 ·
+  body 1,5 · small 1,4 (`--leading-display`/`-title`/`-small` di
+  `packages/ds/lumi.css`; body mengikuti `--leading-body` bundle). Diterapkan
+  pada kelas bundle yang memetakan ke token itu. Dijaga G-LH (`tests/kasir-dom/skala-teks.test.js`).
+- **Header satu baris, 68 px**, sama di setiap layar ber-shell
+  (`apps/kasir/src/kasir.css`, `ShellKasir.tsx`), menggantikan topbar + bilah
+  navigasi dua lapis. Isi: wordmark · empat tab berikon (Kasir · Riwayat · Laci
+  kas · Tutup shift) · indikator sinkron · lonceng · menu pengguna (nama,
+  Status sinkronisasi, Perangkat, Keluar). Jarak antar-elemen 16 px dan
+  antar-tab 8 px (mockup 20/4: token spasi tidak punya 20). Nama pengguna
+  panjang dipotong ellipsis, tab tidak. Dijaga `tests/kasir-dom/header.test.js`
+  dan `k14-tata-letak.test.js`.
+- **Toolbar K-03** — delapan tombol ikon-di-atas-label (70×44, ikon 17 px,
+  label 13/600). Bilahnya natural ~44 px, **bukan 68 px mockup**: memaksanya
+  membuat K-03 kehilangan kartu pada 1024×768 (IA:62, `k03-kepadatan.test.js`).
+- **Baris keranjang** satu tombol (min-tinggi 58 px) dengan lencana qty, tanpa
+  stepper; qty diubah di layar Edit Item (tombol −/+ 56 px).
+- **`.kasir-aksi-bawah`** — bilah aksi bawah generik, SAUDARA area yang
+  menggulir (bukan anaknya) supaya aksi utama tetap terlihat tanpa menggulir:
+  flex `none`, `padding: --space-3 --space-4`, `border-top: 1px solid --border`,
+  latar `--surface`, aksi rata kanan. Dipakai K-12 tahap `review` ("Hitung
+  ulang" + "Tutup Shift"). Dijaga `k12-aksi-slot.test.js`.
+- **Pratinjau struk** — kertas putih (`--surface`) dengan `--shadow-raised`,
+  `--font-mono` (`'Courier New', ui-monospace, monospace`) pada
+  `--text-small` (13 px). **Satu-satunya pemakaian monospace di produk**
+  (komentar di `tokens-mockup.css`); angka uang di layar lain tetap
+  `tabular-nums`. Perataan tengah/kanan lewat `text-align`, bukan spasi.
+- **K-07** — kartu dengan ikon centang, panel kembalian `--accent-soft`
+  berangka 32/700 berwarna `--primary` (angka, bukan aksi kedua; aksen tetap
+  satu aksi utama per layar), grid dua tombol.
+- **K-12 tahap `review`** — dua kartu berdampingan (Rekonsiliasi kas ·
+  Ringkasan shift); tahap `hitung` tidak berubah (hitungan buta).
+- **Kolom nominal** (K-02 "Saldo awal kas", K-06 "Nominal diterima", K-12,
+  Laci kas) — awalan `Rp`, rata kanan, dibaca `bacaRupiah`. `.field-lg` belum
+  `tabular-nums` (DS #4) — utang di ledger.
+
 ---
 
 ## Verifikasi dokumen ini
@@ -794,6 +837,9 @@ Palet, ikon, dan bobot yang dipakai wordmark semuanya nilai mockup — lihat
   ulang terhadap kampanye ini.
 - **Alasan di balik keputusan ditandai eksplisit** sebagai keputusan produk di
   setiap tempat ia muncul, karena ia tidak terbaca dari nilai token.
+- **§ 10 ditambahkan Oktober 2026** (sub-proyek 2, kasir): deskriptif terhadap
+  branch `hidupkan-desain-2d-kasir`; nilai yang tidak diukur test yang disebut
+  di bagian itu tidak diklaim.
 - **§ 8 dan § 9 ditambahkan 26 September 2026**, di luar audit token commit
   `4dbe377` — keduanya deskriptif terhadap kode yang ada di branch ini pada
   tanggal itu, bukan hasil pemindaian ulang seluruh dokumen.

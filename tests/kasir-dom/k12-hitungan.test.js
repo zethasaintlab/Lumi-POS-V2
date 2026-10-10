@@ -306,3 +306,65 @@ test('K-12 tanpa tahanan: tidak ada panel penolakan dan "Lanjut" bergantung pada
   await hal.close();
   assert.equal(ada, false, 'panel penolakan tampil padahal tidak ada tahanan');
 });
+
+// ---------------------------------------------------------------------------
+// Task 16 fix: koma dan minus tidak boleh dibuang diam-diam oleh kolom hitungan
+// ("25,5" → 255 adalah selisih 10× yang lolos sebagai hitungan sah).
+
+for (const ketik of ['25,5', '-50000', '12,34', 'abc', '1,500,000', '12,500', '25 5', '7 50', '750 000']) {
+  test(`⛔ K-12 hitungan fisik "${ketik}" tetap terlihat dan DITOLAK (Lanjut nonaktif), tidak menjadi angka lain`, async () => {
+    const { hal } = await bukaK12('normal');
+    hal.setDefaultTimeout(3000);
+    const kolom = hal.getByLabel('Hitungan fisik laci');
+    await kolom.fill(ketik);
+    const nilai = await kolom.inputValue();
+    const lanjut = hal.getByRole('button', { name: 'Lanjut', exact: true });
+    const mati = await lanjut.isDisabled();
+    const teks = await hal.evaluate(() => document.querySelector('.kasir-konten')?.innerText ?? '');
+    await hal.close();
+    assert.equal(nilai, ketik, `kolom mengubah "${ketik}" menjadi "${nilai}" diam-diam sebelum dibaca bacaRupiah`);
+    assert.equal(mati, true, `"${ketik}" membuat Lanjut menyala — hitungan fisik tidak sah lolos`);
+    assert.match(teks, /Masukkan rupiah utuh, tanpa desimal\./, `"${ketik}" ditolak tanpa petunjuk bentuk tidak sah`);
+  });
+}
+
+const tulisHitungan = (hal) =>
+  hal.evaluate(() => (globalThis.__galeriTulis ?? []).filter((t) => /UPDATE cash_drawer_shift|shift_count_attempt/i.test(t.sql + JSON.stringify(t.params, (_, v) => (typeof v === 'bigint' ? String(v) : v)))).length);
+
+test('⛔ K-12 hitungan raksasa: Lanjut nonaktif, alasan "terlalu besar" terlihat, nol tulisan, tidak dijepit', async () => {
+  const { hal } = await bukaK12('normal');
+  hal.setDefaultTimeout(3000);
+  const kolom = hal.getByLabel('Hitungan fisik laci');
+  await kolom.fill('99999999999999999999');
+  const lanjut = hal.getByRole('button', { name: 'Lanjut', exact: true });
+  const mati = await lanjut.isDisabled();
+  const nilai = await kolom.inputValue();
+  await lanjut.click({ force: true }).catch(() => {});
+  await hal.waitForTimeout(500);
+  const teks = await hal.evaluate(() => document.querySelector('.kasir-konten')?.innerText ?? '');
+  const n = await tulisHitungan(hal);
+  await hal.close();
+  assert.equal(mati, true, 'hitungan raksasa menyalakan Lanjut (countedAmount 1e20 tertulis)');
+  assert.ok(!/Kas diharapkan/.test(teks), 'hitungan raksasa lolos ke tahap review (countedAmount 1e20 dihitung)');
+  assert.match(teks, /Hitungan terlalu besar\./, 'alasan "terlalu besar" tidak terlihat');
+  assert.equal(nilai, '99999999999999999999', 'nilai dijepit/diubah diam-diam');
+  assert.equal(n, 0, `${n} tulisan hitungan untuk nilai raksasa`);
+});
+
+test('⛔ K-12 kolom kosong: Lanjut nonaktif dan NOL tulisan percobaan hitungan; hitungan sah menulis (anti-hampa)', async () => {
+  const { hal } = await bukaK12('normal');
+  hal.setDefaultTimeout(3000);
+  const lanjut = hal.getByRole('button', { name: 'Lanjut', exact: true });
+  const mati = await lanjut.isDisabled();
+  await lanjut.click({ force: true }).catch(() => {});
+  await hal.waitForTimeout(300);
+  const kosong = await tulisHitungan(hal);
+  await hal.getByLabel('Hitungan fisik laci').fill('670500');
+  await lanjut.click();
+  await hal.waitForTimeout(800);
+  const sah = await tulisHitungan(hal);
+  await hal.close();
+  assert.equal(mati, true, 'kolom kosong menyalakan Lanjut');
+  assert.equal(kosong, 0, `${kosong} tulisan percobaan hitungan dari kolom kosong`);
+  assert.ok(sah > 0, 'hitungan sah tidak menulis apa pun — penjaga "nol tulisan" ini hampa (pola SQL berubah?)');
+});

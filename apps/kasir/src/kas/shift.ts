@@ -141,7 +141,17 @@ export async function bukaShift({
   // mengirim baris yang tidak ada di perangkat.
   const hlcValue = hlc();
 
+  /* ⛔ Pemeriksaan "sudah ada shift terbuka" diulang DI DALAM transaksi:
+     baca-lalu-tulis atomik. Pemeriksaan di luar (di atas) hanya jalan pintas;
+     dua panggilan paralel sama-sama lolos darinya dan tanpa pemeriksaan ini
+     membuka dua shift di satu perangkat (`spec-d`: maksimal satu). */
+  let sudahAdaId: string | null = null;
   await db.transaction(async (tx) => {
+    const terbuka = await shiftAktif(tx, konfig.deviceId);
+    if (terbuka) {
+      sudahAdaId = terbuka.id;
+      return;
+    }
     await tx.execute(
       `INSERT INTO cash_drawer_shift
          (id, tenant_id, outlet_id, device_id, business_date, status, opening_float, opened_by, opened_at)
@@ -212,6 +222,8 @@ export async function bukaShift({
       actorId: sesi.userId,
     });
   });
+
+  if (sudahAdaId !== null) return { status: 'sudah_ada', shiftId: sudahAdaId };
 
   return {
     status: 'terbuka',
