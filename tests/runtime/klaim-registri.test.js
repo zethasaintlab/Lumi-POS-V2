@@ -150,8 +150,8 @@ const KLAIM = [
   {
     id: 'kasir-non-tunai',
     berkas: 'docs/verifikasi/MONOKULTUR-FIXTURE.md',
-    frasa: '**Hanya EMPAT berkas test kasir**',
-    harap: 4,
+    frasa: '**Hanya LIMA berkas test kasir**',
+    harap: 5,
     // ⛔ Hanya PEMBILANGNYA yang terdaftar. Penyebut ("dari 48") bergeser
     // setiap kali berkas test apa pun ditambahkan — termasuk yang tidak ada
     // hubungannya dengan pembayaran — dan ia sudah basi dua kali dalam satu
@@ -181,8 +181,8 @@ const KLAIM = [
   {
     id: 'empty-state-tanpa-antrean',
     berkas: 'docs/verifikasi/KELAS-GAGAL.md',
-    frasa: '**Ukuran: 29 dari 43 berkas ber-`<EmptyState>`**',
-    harap: '29/43',
+    frasa: '**Ukuran: 30 dari 44 berkas ber-`<EmptyState>`**',
+    harap: '30/44',
     ukur: () => {
       const semua = berkasSumber('apps', /\.tsx$/).filter((f) =>
         fs.readFileSync(f, 'utf8').includes('<EmptyState')

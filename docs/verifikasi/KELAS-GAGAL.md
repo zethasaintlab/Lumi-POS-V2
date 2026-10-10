@@ -79,8 +79,8 @@ cacat** — tidak satu pun diperbaiki, dan sebagian mungkin ternyata aman.
 
 ### K1 — Empty state yang tidak dapat membedakan "tidak ada" dari "belum sampai"
 
-**Ukuran: 29 dari 43 berkas ber-`<EmptyState>`** tidak menyebut sinkronisasi
-sama sekali (14 menyebut). Naik dari 27 pada 25 September 2026 tanpa perubahan
+**Ukuran: 30 dari 44 berkas ber-`<EmptyState>`** tidak menyebut sinkronisasi
+sama sekali (14 menyebut; 10 Oktober 2026 naik satu oleh `PratinjauStruk.tsx`, Task 13). Naik dari 27 pada 25 September 2026 tanpa perubahan
 perilaku: `DetailTransaksi.tsx` hanya menyebut "antrean" di komentar cetak
 ulangnya, dan komentar itu pindah ke `cetak/cetak-ulang.ts` (rebuild UI Fase
 3.3). Angka ini hitungan kata, bukan pemilahan.
